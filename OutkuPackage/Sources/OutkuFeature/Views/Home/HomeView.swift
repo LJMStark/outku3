@@ -244,6 +244,8 @@ struct PetAvatarView: View {
 struct TimelineContentView: View {
     @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
+    @State private var currentTime = Date()
+    private let timer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -259,6 +261,11 @@ struct TimelineContentView: View {
                     label: "Sunrise",
                     iconColor: AppTimelineColors.sun
                 )
+
+                // Current time indicator (if today)
+                if Calendar.current.isDateInToday(appState.selectedDate) {
+                    CurrentTimeIndicator(currentTime: currentTime)
+                }
 
                 TimelineMarkerRow(
                     time: createTime(hour: 9, minute: 0),
@@ -304,6 +311,9 @@ struct TimelineContentView: View {
             )
             .padding(.horizontal, 20)
         }
+        .onReceive(timer) { _ in
+            currentTime = Date()
+        }
     }
 
     private func createTime(hour: Int, minute: Int) -> Date {
@@ -311,6 +321,50 @@ struct TimelineContentView: View {
         components.hour = hour
         components.minute = minute
         return Calendar.current.date(from: components) ?? Date()
+    }
+}
+
+// MARK: - Current Time Indicator
+
+struct CurrentTimeIndicator: View {
+    let currentTime: Date
+    @Environment(ThemeManager.self) private var theme
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 0) {
+            Text(AppDateFormatters.time.string(from: currentTime).uppercased())
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(theme.colors.accent)
+                .frame(width: 70, alignment: .leading)
+
+            // Current time dot and line
+            ZStack {
+                Rectangle()
+                    .fill(theme.colors.accent)
+                    .frame(width: 2, height: 40)
+
+                Circle()
+                    .fill(theme.colors.accent)
+                    .frame(width: 10, height: 10)
+            }
+
+            // "Now" label
+            HStack(spacing: 6) {
+                Text("NOW")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background {
+                        Capsule()
+                            .fill(theme.colors.accent)
+                    }
+            }
+            .padding(.leading, 16)
+
+            Spacer()
+        }
+        .frame(height: 44)
     }
 }
 
@@ -484,26 +538,112 @@ struct HaikuSectionView: View {
     @Environment(ThemeManager.self) private var theme
 
     var body: some View {
-        VStack(spacing: 24) {
-            // Haiku text - centered, poetic style
-            VStack(spacing: 8) {
-                ForEach(appState.currentHaiku.lines, id: \.self) { line in
-                    Text(line)
-                        .font(.system(size: 18, weight: .medium, design: .serif))
+        VStack(spacing: 20) {
+            // Sun times header
+            HStack(spacing: AppSpacing.xl) {
+                SunTimeView(
+                    icon: "sunrise.fill",
+                    time: appState.sunTimes.sunrise,
+                    label: "Sunrise",
+                    color: theme.colors.sunrise
+                )
+
+                Spacer()
+
+                // Weather info
+                VStack(spacing: 4) {
+                    Image(systemName: appState.weather.condition.rawValue)
+                        .font(.system(size: 28))
+                        .foregroundStyle(theme.colors.accent)
+
+                    Text("\(appState.weather.temperature)°")
+                        .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(theme.colors.primaryText)
                 }
-            }
-            .multilineTextAlignment(.center)
 
-            // Pet illustration - large, centered
-            ZStack {
-                // Background grass/field illustration would go here
-                // For now, using the pixel pet
-                PixelPetView(size: .large, animated: true)
-                    .frame(height: 200)
+                Spacer()
+
+                SunTimeView(
+                    icon: "sunset.fill",
+                    time: appState.sunTimes.sunset,
+                    label: "Sunset",
+                    color: theme.colors.sunset
+                )
             }
+            .padding(.horizontal, AppSpacing.md)
+
+            // Haiku card
+            VStack(spacing: 16) {
+                // Haiku text
+                VStack(spacing: 6) {
+                    ForEach(appState.currentHaiku.lines, id: \.self) { line in
+                        Text(line)
+                            .font(.system(size: 17, weight: .medium, design: .serif))
+                            .foregroundStyle(theme.colors.primaryText)
+                    }
+                }
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, AppSpacing.lg)
+
+                // Divider
+                Rectangle()
+                    .fill(theme.colors.timeline.opacity(0.5))
+                    .frame(width: 60, height: 2)
+
+                // Pet illustration
+                PixelPetView(size: .large, animated: true, scene: .outdoor)
+                    .frame(height: 180)
+            }
+            .padding(.vertical, AppSpacing.xl)
+            .padding(.horizontal, AppSpacing.md)
+            .background {
+                RoundedRectangle(cornerRadius: AppCornerRadius.large)
+                    .fill(theme.colors.cardBackground)
+                    .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 4)
+            }
+
+            // Refresh haiku button
+            Button {
+                Task {
+                    await appState.loadTodayHaiku()
+                }
+            } label: {
+                HStack(spacing: AppSpacing.sm) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 12))
+                    Text("New Haiku")
+                        .font(AppTypography.caption)
+                }
+                .foregroundStyle(theme.colors.secondaryText)
+            }
+            .buttonStyle(.plain)
         }
-        .padding(.vertical, 24)
+    }
+}
+
+// MARK: - Sun Time View
+
+struct SunTimeView: View {
+    let icon: String
+    let time: Date
+    let label: String
+    let color: Color
+    @Environment(ThemeManager.self) private var theme
+
+    var body: some View {
+        VStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 24))
+                .foregroundStyle(color)
+
+            Text(AppDateFormatters.time.string(from: time))
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(theme.colors.primaryText)
+
+            Text(label)
+                .font(.system(size: 11))
+                .foregroundStyle(theme.colors.secondaryText)
+        }
     }
 }
 
