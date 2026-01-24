@@ -14,7 +14,7 @@ struct PetStatusView: View {
                     // Pet display
                     PetStatusHeaderView()
 
-                    // Stats section
+                    // Progress section
                     PetStatsSection()
 
                     // Physical stats
@@ -26,13 +26,17 @@ struct PetStatusView: View {
                     // Task statistics
                     TaskStatisticsSection()
 
+                    // Feed button
+                    FeedPetButton()
+                        .padding(.horizontal, AppSpacing.xl)
+
                     Spacer()
                         .frame(height: AppSpacing.xxl)
                 }
                 .padding(.top, AppSpacing.lg)
             }
             .background(theme.colors.background)
-            .navigationTitle(appState.pet.name)
+            .navigationTitle("Pet Status")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -46,6 +50,43 @@ struct PetStatusView: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Feed Pet Button
+
+struct FeedPetButton: View {
+    @Environment(AppState.self) private var appState
+    @Environment(ThemeManager.self) private var theme
+    @State private var isFeeding = false
+
+    var body: some View {
+        Button {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                isFeeding = true
+            }
+            // 模拟喂食效果
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                isFeeding = false
+            }
+        } label: {
+            HStack(spacing: AppSpacing.sm) {
+                Image(systemName: isFeeding ? "heart.fill" : "leaf.fill")
+                    .font(.system(size: 18))
+
+                Text("Feed \(appState.pet.name)")
+                    .font(AppTypography.headline)
+            }
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, AppSpacing.lg)
+            .background {
+                RoundedRectangle(cornerRadius: AppCornerRadius.large)
+                    .fill(theme.colors.accent)
+            }
+        }
+        .buttonStyle(.plain)
+        .scaleEffect(isFeeding ? 0.95 : 1.0)
     }
 }
 
@@ -69,31 +110,77 @@ struct PetStatusHeaderView: View {
 
             // Name and pronouns
             VStack(spacing: AppSpacing.xs) {
-                Text(appState.pet.name)
-                    .font(AppTypography.title)
-                    .foregroundStyle(theme.colors.primaryText)
+                HStack(spacing: AppSpacing.sm) {
+                    Text(appState.pet.name)
+                        .font(AppTypography.title)
+                        .foregroundStyle(theme.colors.primaryText)
 
-                Text(appState.pet.pronouns.rawValue)
-                    .font(AppTypography.subheadline)
+                    Text("(\(appState.pet.pronouns.rawValue.lowercased()))")
+                        .font(AppTypography.subheadline)
+                        .foregroundStyle(theme.colors.secondaryText)
+                }
+
+                // Adventures and age
+                HStack(spacing: AppSpacing.lg) {
+                    Label("\(appState.pet.adventuresCount) adventures", systemImage: "star.fill")
+                        .font(AppTypography.caption)
+                        .foregroundStyle(theme.colors.secondaryText)
+
+                    Label("\(appState.pet.age) days old", systemImage: "calendar")
+                        .font(AppTypography.caption)
+                        .foregroundStyle(theme.colors.secondaryText)
+                }
+            }
+
+            // Status and Mood badges
+            HStack(spacing: AppSpacing.md) {
+                StatusBadge(
+                    icon: "face.smiling.fill",
+                    label: "Status",
+                    value: appState.pet.status.rawValue
+                )
+
+                StatusBadge(
+                    icon: "heart.fill",
+                    label: "Mood",
+                    value: appState.pet.mood.rawValue
+                )
+            }
+            .padding(.horizontal, AppSpacing.xl)
+        }
+    }
+}
+
+// MARK: - Status Badge
+
+struct StatusBadge: View {
+    let icon: String
+    let label: String
+    let value: String
+    @Environment(ThemeManager.self) private var theme
+
+    var body: some View {
+        HStack(spacing: AppSpacing.sm) {
+            Image(systemName: icon)
+                .font(.system(size: 14))
+                .foregroundStyle(theme.colors.accent)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(AppTypography.caption)
                     .foregroundStyle(theme.colors.secondaryText)
-            }
 
-            // Adventures count
-            HStack(spacing: AppSpacing.sm) {
-                Image(systemName: "star.fill")
-                    .font(.system(size: 14))
-                    .foregroundStyle(theme.colors.accent)
-
-                Text("\(appState.pet.adventuresCount) Adventures")
+                Text(value)
                     .font(AppTypography.subheadline)
+                    .fontWeight(.medium)
                     .foregroundStyle(theme.colors.primaryText)
             }
-            .padding(.horizontal, AppSpacing.lg)
-            .padding(.vertical, AppSpacing.sm)
-            .background {
-                Capsule()
-                    .fill(theme.colors.accent.opacity(0.15))
-            }
+        }
+        .padding(.horizontal, AppSpacing.lg)
+        .padding(.vertical, AppSpacing.sm)
+        .background {
+            RoundedRectangle(cornerRadius: AppCornerRadius.medium)
+                .fill(theme.colors.cardBackground)
         }
     }
 }
@@ -106,71 +193,52 @@ struct PetStatsSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppSpacing.md) {
-            Text("Status")
+            Text("Progress to Next Stage")
                 .font(AppTypography.headline)
                 .foregroundStyle(theme.colors.primaryText)
                 .padding(.horizontal, AppSpacing.xl)
 
+            // Progress card
             VStack(spacing: AppSpacing.md) {
-                // Age
-                StatRowView(
-                    icon: "calendar",
-                    label: "Age",
-                    value: "\(appState.pet.age) days"
-                )
-
-                // Status
-                StatRowView(
-                    icon: "heart.fill",
-                    label: "Status",
-                    value: appState.pet.status.rawValue
-                )
-
-                // Stage
-                StatRowView(
-                    icon: "sparkles",
-                    label: "Stage",
-                    value: appState.pet.stage.rawValue
-                )
-
-                // Progress
-                VStack(alignment: .leading, spacing: AppSpacing.sm) {
-                    HStack {
-                        Image(systemName: "arrow.up.circle.fill")
-                            .font(.system(size: 16))
-                            .foregroundStyle(theme.colors.accent)
-                            .frame(width: 24)
-
-                        Text("Progress")
-                            .font(AppTypography.body)
-                            .foregroundStyle(theme.colors.primaryText)
-
-                        Spacer()
-
-                        Text("\(Int(appState.pet.progress * 100))%")
+                HStack {
+                    VStack(alignment: .leading, spacing: AppSpacing.xs) {
+                        Text("Current: \(appState.pet.stage.rawValue)")
                             .font(AppTypography.subheadline)
                             .foregroundStyle(theme.colors.secondaryText)
-                    }
 
-                    // Progress bar
-                    GeometryReader { geometry in
-                        ZStack(alignment: .leading) {
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(theme.colors.timeline)
-                                .frame(height: 8)
-
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(theme.colors.accent)
-                                .frame(width: geometry.size.width * appState.pet.progress, height: 8)
+                        if let nextStage = appState.pet.stage.nextStage {
+                            Text("Next: \(nextStage.rawValue)")
+                                .font(AppTypography.subheadline)
+                                .foregroundStyle(theme.colors.accent)
                         }
                     }
-                    .frame(height: 8)
+
+                    Spacer()
+
+                    Text("\(Int(appState.pet.progress * 100))%")
+                        .font(AppTypography.title2)
+                        .fontWeight(.bold)
+                        .foregroundStyle(theme.colors.accent)
                 }
-                .padding(AppSpacing.lg)
-                .background {
-                    RoundedRectangle(cornerRadius: AppCornerRadius.medium)
-                        .fill(theme.colors.cardBackground)
+
+                // Progress bar
+                GeometryReader { geometry in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(theme.colors.timeline)
+                            .frame(height: 12)
+
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(theme.colors.accent)
+                            .frame(width: geometry.size.width * appState.pet.progress, height: 12)
+                    }
                 }
+                .frame(height: 12)
+            }
+            .padding(AppSpacing.xl)
+            .background {
+                RoundedRectangle(cornerRadius: AppCornerRadius.large)
+                    .fill(theme.colors.cardBackground)
             }
             .padding(.horizontal, AppSpacing.xl)
         }
