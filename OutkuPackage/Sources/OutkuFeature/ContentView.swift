@@ -7,7 +7,6 @@ public struct ContentView: View {
     @State private var themeManager = ThemeManager.shared
     @State private var authManager = AuthManager.shared
     @State private var isOnboardingComplete: Bool = false
-    @State private var isAuthInitialized: Bool = false
 
     // For demo purposes, set to false to show onboarding
     // In production, this would be persisted in UserDefaults or AppStorage
@@ -15,21 +14,11 @@ public struct ContentView: View {
 
     public var body: some View {
         ZStack {
-            if !isAuthInitialized {
-                // Loading state while checking auth
-                loadingView
-            } else if !authManager.authState.isAuthenticated {
-                // Not logged in - show login
-                LoginView {
-                    // After login, check onboarding
-                }
-                .environment(themeManager)
-                .environment(authManager)
-            } else if hasCompletedOnboarding || isOnboardingComplete {
-                // Logged in and onboarded - show main app
+            if hasCompletedOnboarding || isOnboardingComplete {
+                // Show main app
                 mainAppView
             } else {
-                // Logged in but not onboarded - show onboarding
+                // Show onboarding for new users
                 OnboardingView(isOnboardingComplete: $isOnboardingComplete)
                     .environment(appState)
                     .environment(themeManager)
@@ -41,24 +30,8 @@ public struct ContentView: View {
             }
         }
         .task {
+            // Initialize auth in background (for restoring previous session)
             await authManager.initialize()
-            isAuthInitialized = true
-        }
-    }
-
-    private var loadingView: some View {
-        ZStack {
-            themeManager.colors.background
-                .ignoresSafeArea()
-
-            VStack(spacing: 16) {
-                Image(systemName: "pawprint.fill")
-                    .font(.system(size: 48))
-                    .foregroundColor(themeManager.colors.accent)
-
-                ProgressView()
-                    .tint(themeManager.colors.accent)
-            }
         }
     }
 

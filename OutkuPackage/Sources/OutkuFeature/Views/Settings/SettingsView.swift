@@ -14,6 +14,9 @@ struct SettingsView: View {
 
                 // Settings content
                 VStack(spacing: AppSpacing.xl) {
+                    // Account Section (Sign In)
+                    AccountSection()
+
                     // Widget Preview
                     WidgetPreviewSection()
 
@@ -415,6 +418,218 @@ struct IntegrationRowView: View {
                 showError = true
             }
             isConnecting = false
+        }
+    }
+}
+
+// MARK: - Account Section
+
+struct AccountSection: View {
+    @Environment(ThemeManager.self) private var theme
+    @Environment(AuthManager.self) private var authManager
+    @State private var isSigningIn = false
+    @State private var showError = false
+    @State private var errorMessage = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.md) {
+            Text("Account")
+                .font(AppTypography.headline)
+                .foregroundStyle(theme.colors.primaryText)
+                .padding(.horizontal, AppSpacing.xl)
+
+            if authManager.authState.isAuthenticated, let user = authManager.currentUser {
+                // Logged in state
+                signedInView(user: user)
+            } else {
+                // Not logged in state
+                signInOptionsView
+            }
+        }
+    }
+
+    private func signedInView(user: User) -> some View {
+        VStack(spacing: AppSpacing.sm) {
+            HStack(spacing: AppSpacing.md) {
+                // Avatar
+                ZStack {
+                    Circle()
+                        .fill(theme.colors.accent.opacity(0.15))
+                        .frame(width: 50, height: 50)
+
+                    if let avatarURL = user.avatarURL {
+                        AsyncImage(url: avatarURL) { image in
+                            image
+                                .resizable()
+                                .scaledToFill()
+                        } placeholder: {
+                            Image(systemName: "person.fill")
+                                .font(.system(size: 20))
+                                .foregroundStyle(theme.colors.accent)
+                        }
+                        .frame(width: 50, height: 50)
+                        .clipShape(Circle())
+                    } else {
+                        Image(systemName: "person.fill")
+                            .font(.system(size: 20))
+                            .foregroundStyle(theme.colors.accent)
+                    }
+                }
+
+                // User info
+                VStack(alignment: .leading, spacing: AppSpacing.xs) {
+                    Text(user.displayName ?? "User")
+                        .font(AppTypography.body)
+                        .foregroundStyle(theme.colors.primaryText)
+
+                    if let email = user.email {
+                        Text(email)
+                            .font(AppTypography.caption)
+                            .foregroundStyle(theme.colors.secondaryText)
+                    }
+                }
+
+                Spacer()
+
+                // Provider badge
+                HStack(spacing: 4) {
+                    Image(systemName: user.authProvider == .apple ? "apple.logo" : "g.circle.fill")
+                        .font(.system(size: 12))
+                    Text(user.authProvider == .apple ? "Apple" : "Google")
+                        .font(AppTypography.caption)
+                }
+                .foregroundStyle(theme.colors.secondaryText)
+            }
+            .padding(AppSpacing.lg)
+            .background {
+                RoundedRectangle(cornerRadius: AppCornerRadius.medium)
+                    .fill(theme.colors.cardBackground)
+            }
+
+            // Sign out button
+            Button {
+                Task {
+                    await authManager.signOut()
+                }
+            } label: {
+                HStack {
+                    Image(systemName: "rectangle.portrait.and.arrow.right")
+                        .font(.system(size: 16))
+
+                    Text("Sign Out")
+                        .font(AppTypography.body)
+
+                    Spacer()
+                }
+                .foregroundStyle(.red)
+                .padding(AppSpacing.lg)
+                .background {
+                    RoundedRectangle(cornerRadius: AppCornerRadius.medium)
+                        .fill(theme.colors.cardBackground)
+                }
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, AppSpacing.xl)
+    }
+
+    private var signInOptionsView: some View {
+        VStack(spacing: AppSpacing.sm) {
+            // Description
+            Text("Sign in to sync your data across devices")
+                .font(AppTypography.subheadline)
+                .foregroundStyle(theme.colors.secondaryText)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, AppSpacing.xl)
+
+            // Apple Sign In
+            Button {
+                signInWithApple()
+            } label: {
+                HStack(spacing: AppSpacing.md) {
+                    Image(systemName: "apple.logo")
+                        .font(.system(size: 18))
+
+                    Text("Sign in with Apple")
+                        .font(AppTypography.body)
+
+                    Spacer()
+
+                    if isSigningIn {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                    }
+                }
+                .foregroundStyle(theme.colors.primaryText)
+                .padding(AppSpacing.lg)
+                .background {
+                    RoundedRectangle(cornerRadius: AppCornerRadius.medium)
+                        .fill(theme.colors.cardBackground)
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(isSigningIn)
+            .padding(.horizontal, AppSpacing.xl)
+
+            // Google Sign In
+            Button {
+                signInWithGoogle()
+            } label: {
+                HStack(spacing: AppSpacing.md) {
+                    Image(systemName: "g.circle.fill")
+                        .font(.system(size: 18))
+
+                    Text("Sign in with Google")
+                        .font(AppTypography.body)
+
+                    Spacer()
+
+                    if isSigningIn {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                    }
+                }
+                .foregroundStyle(theme.colors.primaryText)
+                .padding(AppSpacing.lg)
+                .background {
+                    RoundedRectangle(cornerRadius: AppCornerRadius.medium)
+                        .fill(theme.colors.cardBackground)
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(isSigningIn)
+            .padding(.horizontal, AppSpacing.xl)
+        }
+        .alert("Sign In Error", isPresented: $showError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(errorMessage)
+        }
+    }
+
+    private func signInWithApple() {
+        isSigningIn = true
+        Task {
+            do {
+                try await authManager.signInWithApple()
+            } catch {
+                errorMessage = error.localizedDescription
+                showError = true
+            }
+            isSigningIn = false
+        }
+    }
+
+    private func signInWithGoogle() {
+        isSigningIn = true
+        Task {
+            do {
+                try await authManager.signInWithGoogle()
+            } catch {
+                errorMessage = error.localizedDescription
+                showError = true
+            }
+            isSigningIn = false
         }
     }
 }
