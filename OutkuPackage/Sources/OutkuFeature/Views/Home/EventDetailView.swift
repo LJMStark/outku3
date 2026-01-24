@@ -1,23 +1,27 @@
 import SwiftUI
 
+// MARK: - Event Detail Formatters
+
+private enum EventDetailFormatters {
+    static let time: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "h:mm a"
+        return formatter
+    }()
+
+    static let date: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEEE, MMMM d"
+        return formatter
+    }()
+}
+
 // MARK: - Event Detail View
 
 struct EventDetailView: View {
     let event: CalendarEvent
     @Environment(\.dismiss) private var dismiss
     @Environment(ThemeManager.self) private var theme
-
-    private var timeFormatter: DateFormatter {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "h:mm a"
-        return formatter
-    }
-
-    private var dateFormatter: DateFormatter {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEEE, MMMM d"
-        return formatter
-    }
 
     var body: some View {
         NavigationStack {
@@ -57,7 +61,7 @@ struct EventDetailView: View {
                                 .foregroundStyle(theme.colors.accent)
                                 .frame(width: 24)
 
-                            Text(dateFormatter.string(from: event.startTime))
+                            Text(EventDetailFormatters.date.string(from: event.startTime))
                                 .font(AppTypography.body)
                                 .foregroundStyle(theme.colors.primaryText)
                         }
@@ -68,7 +72,7 @@ struct EventDetailView: View {
                                 .foregroundStyle(theme.colors.accent)
                                 .frame(width: 24)
 
-                            Text("\(timeFormatter.string(from: event.startTime)) - \(timeFormatter.string(from: event.endTime))")
+                            Text("\(EventDetailFormatters.time.string(from: event.startTime)) - \(EventDetailFormatters.time.string(from: event.endTime))")
                                 .font(AppTypography.body)
                                 .foregroundStyle(theme.colors.primaryText)
 

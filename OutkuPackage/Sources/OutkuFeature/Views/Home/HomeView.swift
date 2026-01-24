@@ -1,5 +1,27 @@
 import SwiftUI
 
+// MARK: - Shared Date Formatters
+
+private enum DateFormatters {
+    static let headerDate: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEE, MMM dd"
+        return formatter
+    }()
+
+    static let time: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "h:mm a"
+        return formatter
+    }()
+
+    static let separatorDate: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEE, MMM d"
+        return formatter
+    }()
+}
+
 // MARK: - Home View
 
 struct HomeView: View {
@@ -37,18 +59,6 @@ struct AppHeaderView: View {
     // Bottom border color - darker brown
     private let borderColor = Color(hex: "#8B6914")
 
-    private var dateFormatter: DateFormatter {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEE, MMM dd"
-        return formatter
-    }
-
-    private var timeFormatter: DateFormatter {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "h:mm a"
-        return formatter
-    }
-
     var body: some View {
         VStack(spacing: 0) {
             // Content area
@@ -56,7 +66,7 @@ struct AppHeaderView: View {
                 // Left side: Date, Time, Weather
                 VStack(alignment: .leading, spacing: 8) {
                     // Large date - extrabold style
-                    Text(dateFormatter.string(from: appState.selectedDate))
+                    Text(DateFormatters.headerDate.string(from: appState.selectedDate))
                         .font(.system(size: 34, weight: .heavy))
                         .tracking(-0.5)
                         .foregroundStyle(.white)
@@ -64,7 +74,7 @@ struct AppHeaderView: View {
 
                     // Time and weather row with dot separator
                     HStack(spacing: 12) {
-                        Text(timeFormatter.string(from: Date()))
+                        Text(DateFormatters.time.string(from: Date()))
                             .font(.system(size: 13, weight: .semibold))
                             .tracking(0.5)
                             .foregroundStyle(.white.opacity(0.9))
@@ -354,12 +364,6 @@ struct DateSeparatorView: View {
     let date: Date
     @Environment(ThemeManager.self) private var theme
 
-    private var dateFormatter: DateFormatter {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEE, MMM d"
-        return formatter
-    }
-
     // Dark green color for the separator
     private let separatorColor = Color(hex: "#2D5016")
 
@@ -369,7 +373,7 @@ struct DateSeparatorView: View {
                 .fill(separatorColor)
                 .frame(height: 2)
 
-            Text(dateFormatter.string(from: date))
+            Text(DateFormatters.separatorDate.string(from: date))
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(theme.colors.primaryText)
 
@@ -392,19 +396,13 @@ struct TimelineMarkerRow: View {
 
     @Environment(ThemeManager.self) private var theme
 
-    private var timeFormatter: DateFormatter {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "h:mm a"
-        return formatter
-    }
-
     // Timeline line color - dark green
     private let lineColor = Color(hex: "#2D5016")
 
     var body: some View {
         HStack(alignment: .center, spacing: 0) {
             // Time label
-            Text(timeFormatter.string(from: time).uppercased())
+            Text(DateFormatters.time.string(from: time).uppercased())
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(theme.colors.primaryText)
                 .frame(width: 70, alignment: .leading)
@@ -452,19 +450,13 @@ struct TimelineEventRow: View {
     @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
 
-    private var timeFormatter: DateFormatter {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "h:mm a"
-        return formatter
-    }
-
     // Timeline line color - dark green
     private let lineColor = Color(hex: "#2D5016")
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
             // Time label
-            Text(timeFormatter.string(from: event.startTime).uppercased())
+            Text(DateFormatters.time.string(from: event.startTime).uppercased())
                 .font(.system(size: 13, weight: .bold))
                 .foregroundStyle(theme.colors.primaryText)
                 .frame(width: 70, alignment: .leading)
