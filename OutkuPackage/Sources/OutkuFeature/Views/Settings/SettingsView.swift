@@ -1,5 +1,101 @@
 import SwiftUI
 
+// MARK: - Reusable Components
+
+/// 通用卡片背景修饰符
+private struct CardBackgroundModifier: ViewModifier {
+    @Environment(ThemeManager.self) private var theme
+
+    func body(content: Content) -> some View {
+        content
+            .padding(AppSpacing.lg)
+            .background {
+                RoundedRectangle(cornerRadius: AppCornerRadius.medium)
+                    .fill(theme.colors.cardBackground)
+            }
+    }
+}
+
+private extension View {
+    func cardBackground() -> some View {
+        modifier(CardBackgroundModifier())
+    }
+}
+
+/// 通用 Section 标题
+private struct SectionHeader: View {
+    let title: String
+    @Environment(ThemeManager.self) private var theme
+
+    var body: some View {
+        Text(title)
+            .font(AppTypography.headline)
+            .foregroundStyle(theme.colors.primaryText)
+            .padding(.horizontal, AppSpacing.xl)
+    }
+}
+
+/// 通用设置行（带图标、标题和 Toggle）
+private struct SettingsToggleRow: View {
+    let icon: String
+    let title: String
+    @Binding var isOn: Bool
+    @Environment(ThemeManager.self) private var theme
+
+    var body: some View {
+        HStack {
+            Image(systemName: icon)
+                .font(.system(size: 18))
+                .foregroundStyle(theme.colors.accent)
+                .frame(width: 24)
+
+            Text(title)
+                .font(AppTypography.body)
+                .foregroundStyle(theme.colors.primaryText)
+
+            Spacer()
+
+            Toggle("", isOn: $isOn)
+                .labelsHidden()
+                .tint(theme.colors.accent)
+        }
+        .cardBackground()
+    }
+}
+
+/// 通用登录按钮
+private struct SignInButton: View {
+    let icon: String
+    let title: String
+    let isLoading: Bool
+    let action: () -> Void
+    @Environment(ThemeManager.self) private var theme
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: AppSpacing.md) {
+                Image(systemName: icon)
+                    .font(.system(size: 18))
+
+                Text(title)
+                    .font(AppTypography.body)
+
+                Spacer()
+
+                if isLoading {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                }
+            }
+            .foregroundStyle(theme.colors.primaryText)
+            .cardBackground()
+        }
+        .buttonStyle(.plain)
+        .disabled(isLoading)
+        .padding(.horizontal, AppSpacing.xl)
+    }
+}
+
 // MARK: - Settings View
 
 struct SettingsView: View {
@@ -29,6 +125,9 @@ struct SettingsView: View {
                     // Sound Settings
                     SoundSettingsSection()
 
+                    // Hardware Device
+                    HardwareDeviceSection()
+
                     // Integrations
                     IntegrationsSection()
 
@@ -55,18 +154,12 @@ struct WidgetPreviewSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppSpacing.md) {
-            Text("Widget Preview")
-                .font(AppTypography.headline)
-                .foregroundStyle(theme.colors.primaryText)
-                .padding(.horizontal, AppSpacing.xl)
+            SectionHeader(title: "Widget Preview")
 
-            // Widget preview card
             VStack(spacing: AppSpacing.lg) {
-                // Mini pet display
                 PixelPetView(size: .small, animated: false)
                     .frame(height: 80)
 
-                // Today's progress
                 VStack(spacing: AppSpacing.sm) {
                     HStack {
                         Text("Today")
@@ -80,7 +173,6 @@ struct WidgetPreviewSection: View {
                             .foregroundStyle(theme.colors.primaryText)
                     }
 
-                    // Progress bar
                     GeometryReader { geometry in
                         ZStack(alignment: .leading) {
                             RoundedRectangle(cornerRadius: 4)
@@ -95,7 +187,6 @@ struct WidgetPreviewSection: View {
                     .frame(height: 6)
                 }
 
-                // Streak
                 HStack(spacing: AppSpacing.sm) {
                     Image(systemName: "flame.fill")
                         .font(.system(size: 14))
@@ -114,7 +205,6 @@ struct WidgetPreviewSection: View {
             }
             .padding(.horizontal, AppSpacing.xl)
 
-            // Widget hint
             Text("Add this widget to your home screen")
                 .font(AppTypography.caption)
                 .foregroundStyle(theme.colors.secondaryText)
@@ -127,14 +217,10 @@ struct WidgetPreviewSection: View {
 
 struct PetFormSelectionSection: View {
     @Environment(AppState.self) private var appState
-    @Environment(ThemeManager.self) private var theme
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppSpacing.md) {
-            Text("Pet Form")
-                .font(AppTypography.headline)
-                .foregroundStyle(theme.colors.primaryText)
-                .padding(.horizontal, AppSpacing.xl)
+            SectionHeader(title: "Pet Form")
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: AppSpacing.md) {
@@ -192,14 +278,10 @@ struct PetFormOptionView: View {
 
 struct ThemeSelectionSection: View {
     @Environment(ThemeManager.self) private var themeManager
-    @Environment(AppState.self) private var appState
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppSpacing.md) {
-            Text("Theme")
-                .font(AppTypography.headline)
-                .foregroundStyle(themeManager.colors.primaryText)
-                .padding(.horizontal, AppSpacing.xl)
+            SectionHeader(title: "Theme")
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: AppSpacing.md) {
@@ -230,7 +312,6 @@ struct ThemeOptionView: View {
     var body: some View {
         Button(action: action) {
             VStack(spacing: AppSpacing.sm) {
-                // Color preview
                 ZStack {
                     RoundedRectangle(cornerRadius: AppCornerRadius.medium)
                         .fill(theme.colors.background)
@@ -249,7 +330,6 @@ struct ThemeOptionView: View {
                         .stroke(isSelected ? themeManager.colors.accent : .clear, lineWidth: 3)
                 }
 
-                // Theme name
                 Text(theme.rawValue)
                     .font(AppTypography.caption)
                     .foregroundStyle(isSelected ? themeManager.colors.accent : themeManager.colors.secondaryText)
@@ -267,13 +347,14 @@ struct SoundSettingsSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppSpacing.md) {
-            Text("Sound & Haptics")
-                .font(AppTypography.headline)
-                .foregroundStyle(theme.colors.primaryText)
-                .padding(.horizontal, AppSpacing.xl)
+            SectionHeader(title: "Sound & Haptics")
 
             VStack(spacing: AppSpacing.sm) {
-                soundToggleRow
+                SettingsToggleRow(
+                    icon: "speaker.wave.2.fill",
+                    title: "Sound Effects",
+                    isOn: $soundService.isSoundEnabled
+                )
                 if soundService.isSoundEnabled {
                     volumeControlCard
                 }
@@ -282,35 +363,8 @@ struct SoundSettingsSection: View {
         }
     }
 
-    // MARK: - Subviews
-
-    private var soundToggleRow: some View {
-        HStack {
-            Image(systemName: "speaker.wave.2.fill")
-                .font(.system(size: 18))
-                .foregroundStyle(theme.colors.accent)
-                .frame(width: 24)
-
-            Text("Sound Effects")
-                .font(AppTypography.body)
-                .foregroundStyle(theme.colors.primaryText)
-
-            Spacer()
-
-            Toggle("", isOn: $soundService.isSoundEnabled)
-                .labelsHidden()
-                .tint(theme.colors.accent)
-        }
-        .padding(AppSpacing.lg)
-        .background {
-            RoundedRectangle(cornerRadius: AppCornerRadius.medium)
-                .fill(theme.colors.cardBackground)
-        }
-    }
-
     private var volumeControlCard: some View {
         VStack(alignment: .leading, spacing: AppSpacing.sm) {
-            // Volume slider
             HStack {
                 Image(systemName: "speaker.fill")
                     .font(.system(size: 12))
@@ -324,7 +378,6 @@ struct SoundSettingsSection: View {
                     .foregroundStyle(theme.colors.secondaryText)
             }
 
-            // Test sound button
             Button {
                 soundService.playWithHaptic(.taskComplete, haptic: .success)
             } label: {
@@ -338,10 +391,289 @@ struct SoundSettingsSection: View {
             }
             .buttonStyle(.plain)
         }
-        .padding(AppSpacing.lg)
-        .background {
-            RoundedRectangle(cornerRadius: AppCornerRadius.medium)
-                .fill(theme.colors.cardBackground)
+        .cardBackground()
+    }
+}
+
+// MARK: - Hardware Device Section
+
+struct HardwareDeviceSection: View {
+    @Environment(ThemeManager.self) private var theme
+    @State private var bleService = BLEService.shared
+    @State private var showDeviceList = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.md) {
+            SectionHeader(title: "E-ink Device")
+
+            VStack(spacing: AppSpacing.sm) {
+                connectionStatusCard
+
+                SettingsToggleRow(
+                    icon: "arrow.triangle.2.circlepath",
+                    title: "Auto Reconnect",
+                    isOn: $bleService.autoReconnect
+                )
+
+                if bleService.connectionState.isConnected {
+                    syncButton
+                }
+            }
+            .padding(.horizontal, AppSpacing.xl)
+        }
+        .sheet(isPresented: $showDeviceList) {
+            DeviceListSheet(bleService: bleService, isPresented: $showDeviceList)
+        }
+    }
+
+    private var connectionStatusCard: some View {
+        Button {
+            if bleService.connectionState == .connected {
+                bleService.disconnect()
+            } else {
+                showDeviceList = true
+            }
+        } label: {
+            HStack(spacing: AppSpacing.md) {
+                ZStack {
+                    Circle()
+                        .fill(connectionColor.opacity(0.15))
+                        .frame(width: 40, height: 40)
+
+                    if bleService.connectionState == .scanning {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                    } else {
+                        Image(systemName: connectionIcon)
+                            .font(.system(size: 18))
+                            .foregroundStyle(connectionColor)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: AppSpacing.xs) {
+                    Text(connectionTitle)
+                        .font(AppTypography.body)
+                        .foregroundStyle(theme.colors.primaryText)
+
+                    Text(connectionSubtitle)
+                        .font(AppTypography.caption)
+                        .foregroundStyle(theme.colors.secondaryText)
+                }
+
+                Spacer()
+
+                if bleService.connectionState.isConnected {
+                    Circle()
+                        .fill(theme.colors.taskComplete)
+                        .frame(width: 10, height: 10)
+                } else {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 20))
+                        .foregroundStyle(theme.colors.accent)
+                }
+            }
+            .cardBackground()
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var syncButton: some View {
+        Button {
+            syncToDevice()
+        } label: {
+            HStack {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.system(size: 16))
+
+                Text("Sync to Device")
+                    .font(AppTypography.body)
+
+                Spacer()
+
+                if let lastSync = bleService.lastSyncTime {
+                    Text(lastSync, style: .relative)
+                        .font(AppTypography.caption)
+                        .foregroundStyle(theme.colors.secondaryText)
+                }
+            }
+            .foregroundStyle(theme.colors.accent)
+            .cardBackground()
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var connectionIcon: String {
+        switch bleService.connectionState {
+        case .connected, .connecting: return "antenna.radiowaves.left.and.right"
+        case .scanning: return "magnifyingglass"
+        case .disconnected: return "antenna.radiowaves.left.and.right.slash"
+        case .error: return "exclamationmark.triangle"
+        }
+    }
+
+    private var connectionColor: Color {
+        switch bleService.connectionState {
+        case .connected: return theme.colors.taskComplete
+        case .connecting, .scanning: return theme.colors.accent
+        case .disconnected: return theme.colors.secondaryText
+        case .error: return .red
+        }
+    }
+
+    private var connectionTitle: String {
+        switch bleService.connectionState {
+        case .connected:
+            return bleService.connectedDevice?.name ?? "Connected"
+        case .connecting:
+            return "Connecting..."
+        case .scanning:
+            return "Scanning..."
+        case .disconnected:
+            return "No Device Connected"
+        case .error(let message):
+            return "Error: \(message)"
+        }
+    }
+
+    private var connectionSubtitle: String {
+        switch bleService.connectionState {
+        case .connected: return "Tap to disconnect"
+        case .connecting, .scanning: return "Please wait..."
+        case .disconnected, .error: return "Tap to connect"
+        }
+    }
+
+    private func syncToDevice() {
+        Task {
+            let appState = AppState.shared
+            try? await bleService.syncAllData(
+                pet: appState.pet,
+                tasks: appState.tasks,
+                events: appState.events,
+                weather: appState.weather
+            )
+        }
+    }
+}
+
+// MARK: - Device List Sheet
+
+struct DeviceListSheet: View {
+    let bleService: BLEService
+    @Binding var isPresented: Bool
+    @Environment(ThemeManager.self) private var theme
+    @State private var isScanning = false
+    @State private var devices: [BLEDevice] = []
+    @State private var errorMessage: String?
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: AppSpacing.lg) {
+                if isScanning {
+                    VStack(spacing: AppSpacing.md) {
+                        ProgressView()
+                            .scaleEffect(1.5)
+                        Text("Scanning for devices...")
+                            .font(AppTypography.body)
+                            .foregroundStyle(theme.colors.secondaryText)
+                    }
+                    .frame(maxHeight: .infinity)
+                } else if devices.isEmpty {
+                    VStack(spacing: AppSpacing.md) {
+                        Image(systemName: "antenna.radiowaves.left.and.right.slash")
+                            .font(.system(size: 48))
+                            .foregroundStyle(theme.colors.secondaryText)
+
+                        Text("No devices found")
+                            .font(AppTypography.headline)
+                            .foregroundStyle(theme.colors.primaryText)
+
+                        Text("Make sure your E-ink device is powered on and nearby")
+                            .font(AppTypography.subheadline)
+                            .foregroundStyle(theme.colors.secondaryText)
+                            .multilineTextAlignment(.center)
+
+                        Button("Scan Again") {
+                            startScanning()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(theme.colors.accent)
+                    }
+                    .padding(AppSpacing.xl)
+                    .frame(maxHeight: .infinity)
+                } else {
+                    List(devices) { device in
+                        Button {
+                            connectToDevice(device)
+                        } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: AppSpacing.xs) {
+                                    Text(device.name)
+                                        .font(AppTypography.body)
+                                        .foregroundStyle(theme.colors.primaryText)
+
+                                    Text("Signal: \(device.rssi) dBm")
+                                        .font(AppTypography.caption)
+                                        .foregroundStyle(theme.colors.secondaryText)
+                                }
+
+                                Spacer()
+
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 14))
+                                    .foregroundStyle(theme.colors.secondaryText)
+                            }
+                        }
+                    }
+                    .listStyle(.plain)
+                }
+
+                if let error = errorMessage {
+                    Text(error)
+                        .font(AppTypography.caption)
+                        .foregroundStyle(.red)
+                        .padding(.horizontal, AppSpacing.xl)
+                }
+            }
+            .background(theme.colors.background)
+            .navigationTitle("Connect Device")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        isPresented = false
+                    }
+                }
+            }
+        }
+        .task {
+            startScanning()
+        }
+    }
+
+    private func startScanning() {
+        isScanning = true
+        errorMessage = nil
+        devices = []
+
+        Task {
+            do {
+                devices = try await bleService.scanForDevices(timeout: 10)
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+            isScanning = false
+        }
+    }
+
+    private func connectToDevice(_ device: BLEDevice) {
+        Task {
+            do {
+                try await bleService.connect(to: device)
+                isPresented = false
+            } catch {
+                errorMessage = error.localizedDescription
+            }
         }
     }
 }
@@ -350,14 +682,10 @@ struct SoundSettingsSection: View {
 
 struct IntegrationsSection: View {
     @Environment(AppState.self) private var appState
-    @Environment(ThemeManager.self) private var theme
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppSpacing.md) {
-            Text("Integrations")
-                .font(AppTypography.headline)
-                .foregroundStyle(theme.colors.primaryText)
-                .padding(.horizontal, AppSpacing.xl)
+            SectionHeader(title: "Integrations")
 
             VStack(spacing: AppSpacing.sm) {
                 ForEach(appState.integrations) { integration in
@@ -382,7 +710,6 @@ struct IntegrationRowView: View {
             handleIntegrationTap()
         } label: {
             HStack(spacing: AppSpacing.md) {
-                // Icon
                 ZStack {
                     Circle()
                         .fill(theme.colors.accent.opacity(0.15))
@@ -398,7 +725,6 @@ struct IntegrationRowView: View {
                     }
                 }
 
-                // Info
                 VStack(alignment: .leading, spacing: AppSpacing.xs) {
                     Text(integration.name)
                         .font(AppTypography.body)
@@ -411,7 +737,6 @@ struct IntegrationRowView: View {
 
                 Spacer()
 
-                // Action indicator
                 if integration.isConnected {
                     Circle()
                         .fill(theme.colors.taskComplete)
@@ -426,11 +751,7 @@ struct IntegrationRowView: View {
                         .frame(width: 10, height: 10)
                 }
             }
-            .padding(AppSpacing.lg)
-            .background {
-                RoundedRectangle(cornerRadius: AppCornerRadius.medium)
-                    .fill(theme.colors.cardBackground)
-            }
+            .cardBackground()
         }
         .buttonStyle(.plain)
         .disabled(isConnecting || !canConnect)
@@ -442,34 +763,18 @@ struct IntegrationRowView: View {
     }
 
     private var statusText: String {
-        if isConnecting {
-            return "Connecting..."
-        } else if integration.isConnected {
-            return "Connected"
-        } else if canConnect {
-            return "Tap to connect"
-        } else {
-            return "Not connected"
-        }
+        if isConnecting { return "Connecting..." }
+        if integration.isConnected { return "Connected" }
+        return canConnect ? "Tap to connect" : "Not connected"
     }
 
     private var statusColor: Color {
-        if integration.isConnected {
-            return theme.colors.taskComplete
-        } else if canConnect {
-            return theme.colors.accent
-        } else {
-            return theme.colors.secondaryText
-        }
+        if integration.isConnected { return theme.colors.taskComplete }
+        return canConnect ? theme.colors.accent : theme.colors.secondaryText
     }
 
     private var canConnect: Bool {
-        switch integration.type {
-        case .googleCalendar, .googleTasks, .appleCalendar, .appleReminders:
-            return true
-        case .todoist:
-            return false
-        }
+        integration.type != .todoist
     }
 
     private func handleIntegrationTap() {
@@ -538,16 +843,11 @@ struct AccountSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppSpacing.md) {
-            Text("Account")
-                .font(AppTypography.headline)
-                .foregroundStyle(theme.colors.primaryText)
-                .padding(.horizontal, AppSpacing.xl)
+            SectionHeader(title: "Account")
 
             if authManager.authState.isAuthenticated, let user = authManager.currentUser {
-                // Logged in state
                 signedInView(user: user)
             } else {
-                // Not logged in state
                 signInOptionsView
             }
         }
@@ -556,32 +856,8 @@ struct AccountSection: View {
     private func signedInView(user: User) -> some View {
         VStack(spacing: AppSpacing.sm) {
             HStack(spacing: AppSpacing.md) {
-                // Avatar
-                ZStack {
-                    Circle()
-                        .fill(theme.colors.accent.opacity(0.15))
-                        .frame(width: 50, height: 50)
+                userAvatar(user)
 
-                    if let avatarURL = user.avatarURL {
-                        AsyncImage(url: avatarURL) { image in
-                            image
-                                .resizable()
-                                .scaledToFill()
-                        } placeholder: {
-                            Image(systemName: "person.fill")
-                                .font(.system(size: 20))
-                                .foregroundStyle(theme.colors.accent)
-                        }
-                        .frame(width: 50, height: 50)
-                        .clipShape(Circle())
-                    } else {
-                        Image(systemName: "person.fill")
-                            .font(.system(size: 20))
-                            .foregroundStyle(theme.colors.accent)
-                    }
-                }
-
-                // User info
                 VStack(alignment: .leading, spacing: AppSpacing.xs) {
                     Text(user.displayName ?? "User")
                         .font(AppTypography.body)
@@ -596,114 +872,91 @@ struct AccountSection: View {
 
                 Spacer()
 
-                // Provider badge
-                HStack(spacing: 4) {
-                    Image(systemName: user.authProvider == .apple ? "apple.logo" : "g.circle.fill")
-                        .font(.system(size: 12))
-                    Text(user.authProvider == .apple ? "Apple" : "Google")
-                        .font(AppTypography.caption)
-                }
-                .foregroundStyle(theme.colors.secondaryText)
+                providerBadge(for: user.authProvider)
             }
-            .padding(AppSpacing.lg)
-            .background {
-                RoundedRectangle(cornerRadius: AppCornerRadius.medium)
-                    .fill(theme.colors.cardBackground)
-            }
+            .cardBackground()
 
-            // Sign out button
-            Button {
-                Task {
-                    await authManager.signOut()
-                }
-            } label: {
-                HStack {
-                    Image(systemName: "rectangle.portrait.and.arrow.right")
-                        .font(.system(size: 16))
-
-                    Text("Sign Out")
-                        .font(AppTypography.body)
-
-                    Spacer()
-                }
-                .foregroundStyle(.red)
-                .padding(AppSpacing.lg)
-                .background {
-                    RoundedRectangle(cornerRadius: AppCornerRadius.medium)
-                        .fill(theme.colors.cardBackground)
-                }
-            }
-            .buttonStyle(.plain)
+            signOutButton
         }
         .padding(.horizontal, AppSpacing.xl)
     }
 
+    @ViewBuilder
+    private func userAvatar(_ user: User) -> some View {
+        ZStack {
+            Circle()
+                .fill(theme.colors.accent.opacity(0.15))
+                .frame(width: 50, height: 50)
+
+            if let avatarURL = user.avatarURL {
+                AsyncImage(url: avatarURL) { image in
+                    image.resizable().scaledToFill()
+                } placeholder: {
+                    personIcon
+                }
+                .frame(width: 50, height: 50)
+                .clipShape(Circle())
+            } else {
+                personIcon
+            }
+        }
+    }
+
+    private var personIcon: some View {
+        Image(systemName: "person.fill")
+            .font(.system(size: 20))
+            .foregroundStyle(theme.colors.accent)
+    }
+
+    private func providerBadge(for provider: AuthProvider) -> some View {
+        let isApple = provider == .apple
+        return HStack(spacing: 4) {
+            Image(systemName: isApple ? "apple.logo" : "g.circle.fill")
+                .font(.system(size: 12))
+            Text(isApple ? "Apple" : "Google")
+                .font(AppTypography.caption)
+        }
+        .foregroundStyle(theme.colors.secondaryText)
+    }
+
+    private var signOutButton: some View {
+        Button {
+            Task { await authManager.signOut() }
+        } label: {
+            HStack {
+                Image(systemName: "rectangle.portrait.and.arrow.right")
+                    .font(.system(size: 16))
+                Text("Sign Out")
+                    .font(AppTypography.body)
+                Spacer()
+            }
+            .foregroundStyle(.red)
+            .cardBackground()
+        }
+        .buttonStyle(.plain)
+    }
+
     private var signInOptionsView: some View {
         VStack(spacing: AppSpacing.sm) {
-            // Description
             Text("Sign in to sync your data across devices")
                 .font(AppTypography.subheadline)
                 .foregroundStyle(theme.colors.secondaryText)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, AppSpacing.xl)
 
-            // Apple Sign In
-            Button {
-                signInWithApple()
-            } label: {
-                HStack(spacing: AppSpacing.md) {
-                    Image(systemName: "apple.logo")
-                        .font(.system(size: 18))
+            SignInButton(
+                icon: "apple.logo",
+                title: "Sign in with Apple",
+                isLoading: isSigningIn,
+                action: signInWithApple
+            )
 
-                    Text("Sign in with Apple")
-                        .font(AppTypography.body)
-
-                    Spacer()
-
-                    if isSigningIn {
-                        ProgressView()
-                            .scaleEffect(0.8)
-                    }
-                }
-                .foregroundStyle(theme.colors.primaryText)
-                .padding(AppSpacing.lg)
-                .background {
-                    RoundedRectangle(cornerRadius: AppCornerRadius.medium)
-                        .fill(theme.colors.cardBackground)
-                }
-            }
-            .buttonStyle(.plain)
-            .disabled(isSigningIn)
-            .padding(.horizontal, AppSpacing.xl)
-
-            // Google Sign In
-            Button {
-                signInWithGoogle()
-            } label: {
-                HStack(spacing: AppSpacing.md) {
-                    Image(systemName: "g.circle.fill")
-                        .font(.system(size: 18))
-
-                    Text("Sign in with Google")
-                        .font(AppTypography.body)
-
-                    Spacer()
-
-                    if isSigningIn {
-                        ProgressView()
-                            .scaleEffect(0.8)
-                    }
-                }
-                .foregroundStyle(theme.colors.primaryText)
-                .padding(AppSpacing.lg)
-                .background {
-                    RoundedRectangle(cornerRadius: AppCornerRadius.medium)
-                        .fill(theme.colors.cardBackground)
-                }
-            }
-            .buttonStyle(.plain)
-            .disabled(isSigningIn)
-            .padding(.horizontal, AppSpacing.xl)
+            SignInButton(
+                icon: "g.circle.fill",
+                title: "Sign in with Google",
+                isLoading: isSigningIn,
+                action: signInWithGoogle
+            )
         }
         .alert("Sign In Error", isPresented: $showError) {
             Button("OK", role: .cancel) {}
@@ -713,23 +966,18 @@ struct AccountSection: View {
     }
 
     private func signInWithApple() {
-        isSigningIn = true
-        Task {
-            do {
-                try await authManager.signInWithApple()
-            } catch {
-                errorMessage = error.localizedDescription
-                showError = true
-            }
-            isSigningIn = false
-        }
+        performSignIn { try await authManager.signInWithApple() }
     }
 
     private func signInWithGoogle() {
+        performSignIn { try await authManager.signInWithGoogle() }
+    }
+
+    private func performSignIn(_ action: @escaping () async throws -> Void) {
         isSigningIn = true
         Task {
             do {
-                try await authManager.signInWithGoogle()
+                try await action()
             } catch {
                 errorMessage = error.localizedDescription
                 showError = true
@@ -742,14 +990,9 @@ struct AccountSection: View {
 // MARK: - About Section
 
 struct AboutSection: View {
-    @Environment(ThemeManager.self) private var theme
-
     var body: some View {
         VStack(alignment: .leading, spacing: AppSpacing.md) {
-            Text("About")
-                .font(AppTypography.headline)
-                .foregroundStyle(theme.colors.primaryText)
-                .padding(.horizontal, AppSpacing.xl)
+            SectionHeader(title: "About")
 
             VStack(spacing: AppSpacing.sm) {
                 AboutRowView(label: "Version", value: "1.0.0")
@@ -757,7 +1000,6 @@ struct AboutSection: View {
             }
             .padding(.horizontal, AppSpacing.xl)
 
-            // Links
             VStack(spacing: AppSpacing.sm) {
                 LinkRowView(label: "Privacy Policy", icon: "lock.shield")
                 LinkRowView(label: "Terms of Service", icon: "doc.text")
@@ -785,11 +1027,7 @@ struct AboutRowView: View {
                 .font(AppTypography.subheadline)
                 .foregroundStyle(theme.colors.secondaryText)
         }
-        .padding(AppSpacing.lg)
-        .background {
-            RoundedRectangle(cornerRadius: AppCornerRadius.medium)
-                .fill(theme.colors.cardBackground)
-        }
+        .cardBackground()
     }
 }
 
@@ -818,11 +1056,7 @@ struct LinkRowView: View {
                     .font(.system(size: 14))
                     .foregroundStyle(theme.colors.secondaryText)
             }
-            .padding(AppSpacing.lg)
-            .background {
-                RoundedRectangle(cornerRadius: AppCornerRadius.medium)
-                    .fill(theme.colors.cardBackground)
-            }
+            .cardBackground()
         }
         .buttonStyle(.plain)
     }
