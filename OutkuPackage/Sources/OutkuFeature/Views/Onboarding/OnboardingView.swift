@@ -11,8 +11,9 @@ struct OnboardingView: View {
     @State private var petName: String = ""
     @State private var selectedPronouns: PetPronouns = .theyThem
     @State private var selectedForm: PetForm = .cat
+    @State private var isConnectingAccount: Bool = false
 
-    private let totalPages = 5
+    private let totalPages = 6
 
     var body: some View {
         ZStack {
@@ -39,11 +40,14 @@ struct OnboardingView: View {
                     PetNamingPage(petName: $petName, selectedPronouns: $selectedPronouns)
                         .tag(3)
 
+                    ConnectAccountPage(isConnecting: $isConnectingAccount)
+                        .tag(4)
+
                     CompletionPage(
                         petName: petName.isEmpty ? "Your Pet" : petName,
                         selectedForm: selectedForm
                     )
-                    .tag(4)
+                    .tag(5)
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
                 .animation(.easeInOut(duration: 0.3), value: currentPage)
@@ -487,6 +491,180 @@ struct PronounsButton: View {
                 }
         }
         .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Connect Account Page
+
+struct ConnectAccountPage: View {
+    @Binding var isConnecting: Bool
+    @Environment(ThemeManager.self) private var theme
+    @Environment(AuthManager.self) private var authManager
+    @State private var showContent = false
+    @State private var showError = false
+    @State private var errorMessage = ""
+
+    var body: some View {
+        VStack(spacing: AppSpacing.xxl) {
+            Spacer()
+
+            VStack(spacing: AppSpacing.md) {
+                Text("Connect Your Calendar")
+                    .font(AppTypography.title)
+                    .foregroundStyle(theme.colors.primaryText)
+
+                Text("Sync your tasks and events to help your pet understand your day")
+                    .font(AppTypography.body)
+                    .foregroundStyle(theme.colors.secondaryText)
+                    .multilineTextAlignment(.center)
+            }
+            .opacity(showContent ? 1 : 0)
+
+            // Integration icons
+            HStack(spacing: AppSpacing.xl) {
+                IntegrationIcon(icon: "calendar", label: "Calendar", color: .red)
+                IntegrationIcon(icon: "checklist", label: "Tasks", color: .blue)
+                IntegrationIcon(icon: "bell.fill", label: "Reminders", color: .orange)
+            }
+            .opacity(showContent ? 1 : 0)
+            .offset(y: showContent ? 0 : 20)
+
+            // Connection buttons
+            VStack(spacing: AppSpacing.md) {
+                // Google Sign In
+                Button {
+                    connectWithGoogle()
+                } label: {
+                    HStack(spacing: AppSpacing.md) {
+                        Image(systemName: "g.circle.fill")
+                            .font(.system(size: 24))
+
+                        Text("Connect with Google")
+                            .font(AppTypography.headline)
+
+                        Spacer()
+
+                        if isConnecting {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                        } else if authManager.hasCalendarAccess {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                        }
+                    }
+                    .foregroundStyle(theme.colors.primaryText)
+                    .padding(AppSpacing.lg)
+                    .background {
+                        RoundedRectangle(cornerRadius: AppCornerRadius.medium)
+                            .fill(theme.colors.cardBackground)
+                    }
+                }
+                .buttonStyle(.plain)
+                .disabled(isConnecting || authManager.hasCalendarAccess)
+
+                // Apple Calendar (optional)
+                Button {
+                    connectWithApple()
+                } label: {
+                    HStack(spacing: AppSpacing.md) {
+                        Image(systemName: "apple.logo")
+                            .font(.system(size: 24))
+
+                        Text("Use Apple Calendar")
+                            .font(AppTypography.headline)
+
+                        Spacer()
+
+                        if authManager.authState.isAuthenticated && authManager.currentUser?.authProvider == .apple {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                        }
+                    }
+                    .foregroundStyle(theme.colors.primaryText)
+                    .padding(AppSpacing.lg)
+                    .background {
+                        RoundedRectangle(cornerRadius: AppCornerRadius.medium)
+                            .fill(theme.colors.cardBackground)
+                    }
+                }
+                .buttonStyle(.plain)
+                .disabled(isConnecting)
+
+                // Skip option
+                Text("You can connect accounts later in Settings")
+                    .font(AppTypography.caption)
+                    .foregroundStyle(theme.colors.secondaryText)
+                    .padding(.top, AppSpacing.sm)
+            }
+            .padding(.horizontal, AppSpacing.lg)
+            .opacity(showContent ? 1 : 0)
+            .offset(y: showContent ? 0 : 30)
+
+            Spacer()
+            Spacer()
+        }
+        .padding(.horizontal, AppSpacing.xl)
+        .onAppear {
+            withAnimation(.spring(response: 0.6, dampingFraction: 0.7).delay(0.1)) {
+                showContent = true
+            }
+        }
+        .alert("Connection Error", isPresented: $showError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(errorMessage)
+        }
+    }
+
+    private func connectWithGoogle() {
+        isConnecting = true
+        Task {
+            do {
+                try await authManager.signInWithGoogle()
+            } catch {
+                errorMessage = error.localizedDescription
+                showError = true
+            }
+            isConnecting = false
+        }
+    }
+
+    private func connectWithApple() {
+        isConnecting = true
+        Task {
+            do {
+                try await authManager.signInWithApple()
+            } catch {
+                errorMessage = error.localizedDescription
+                showError = true
+            }
+            isConnecting = false
+        }
+    }
+}
+
+struct IntegrationIcon: View {
+    let icon: String
+    let label: String
+    let color: Color
+    @Environment(ThemeManager.self) private var theme
+
+    var body: some View {
+        VStack(spacing: AppSpacing.sm) {
+            ZStack {
+                Circle()
+                    .fill(color.opacity(0.15))
+                    .frame(width: 50, height: 50)
+
+                Image(systemName: icon)
+                    .font(.system(size: 22))
+                    .foregroundStyle(color)
+            }
+
+            Text(label)
+                .font(AppTypography.caption)
+                .foregroundStyle(theme.colors.secondaryText)
+        }
     }
 }
 
