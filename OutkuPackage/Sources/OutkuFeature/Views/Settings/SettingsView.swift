@@ -159,16 +159,6 @@ struct PetFormOptionView: View {
     let action: () -> Void
     @Environment(ThemeManager.self) private var theme
 
-    private var formIcon: String {
-        switch form {
-        case .cat: return "cat.fill"
-        case .dog: return "dog.fill"
-        case .bunny: return "hare.fill"
-        case .bird: return "bird.fill"
-        case .dragon: return "flame.fill"
-        }
-    }
-
     var body: some View {
         Button(action: action) {
             VStack(spacing: AppSpacing.sm) {
@@ -177,7 +167,7 @@ struct PetFormOptionView: View {
                         .fill(theme.colors.cardBackground)
                         .frame(width: 60, height: 60)
 
-                    Image(systemName: formIcon)
+                    Image(systemName: form.iconName)
                         .font(.system(size: 24))
                         .foregroundStyle(isSelected ? theme.colors.accent : theme.colors.secondaryText)
                 }

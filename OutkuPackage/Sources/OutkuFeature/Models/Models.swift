@@ -1,5 +1,44 @@
 import Foundation
 
+// MARK: - Calendar Helpers
+
+public extension Calendar {
+    func isWorkHours(_ date: Date = Date()) -> Bool {
+        let hour = component(.hour, from: date)
+        return hour >= 9 && hour < 18
+    }
+
+    func isWeekend(_ date: Date = Date()) -> Bool {
+        let weekday = component(.weekday, from: date)
+        return weekday == 1 || weekday == 7
+    }
+
+    func isNightTime(_ date: Date = Date()) -> Bool {
+        let hour = component(.hour, from: date)
+        return hour >= 21 || hour < 6
+    }
+
+    func isSleepyTime(_ date: Date = Date()) -> Bool {
+        let hour = component(.hour, from: date)
+        return hour >= 22 || hour < 6
+    }
+}
+
+// MARK: - Date Formatting Helpers
+
+public extension Date {
+    func formatRelativeDay() -> String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(self) {
+            return "Today"
+        } else if calendar.isDateInTomorrow(self) {
+            return "Tomorrow"
+        } else {
+            return AppDateFormatters.shortDate.string(from: self)
+        }
+    }
+}
+
 // MARK: - Tab Navigation
 
 public enum AppTab: String, CaseIterable, Identifiable {
@@ -331,6 +370,16 @@ public enum PetForm: String, CaseIterable, Sendable, Codable {
     case bunny = "Bunny"
     case bird = "Bird"
     case dragon = "Dragon"
+
+    public var iconName: String {
+        switch self {
+        case .cat: return "cat.fill"
+        case .dog: return "dog.fill"
+        case .bunny: return "hare.fill"
+        case .bird: return "bird.fill"
+        case .dragon: return "flame.fill"
+        }
+    }
 }
 
 // MARK: - Streak Model

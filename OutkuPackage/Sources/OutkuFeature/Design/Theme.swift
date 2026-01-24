@@ -190,3 +190,70 @@ public enum AppCornerRadius {
     public static let extraLarge: CGFloat = 20
     public static let pill: CGFloat = 100
 }
+
+// MARK: - Shared Date Formatters
+
+public enum AppDateFormatters {
+    public static let headerDate: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEE, MMM dd"
+        return formatter
+    }()
+
+    public static let time: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "h:mm a"
+        return formatter
+    }()
+
+    public static let separatorDate: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEE, MMM d"
+        return formatter
+    }()
+
+    public static let shortDate: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d"
+        return formatter
+    }()
+}
+
+// MARK: - Header Colors
+
+public enum AppHeaderColors {
+    public static let background = Color(hex: "#C4944A")
+    public static let border = Color(hex: "#8B6914")
+    public static let iconAccent = Color(hex: "#D69E2E")
+}
+
+// MARK: - Timeline Colors
+
+public enum AppTimelineColors {
+    public static let line = Color(hex: "#2D5016")
+    public static let google = Color(hex: "#4285F4")
+    public static let sun = Color(hex: "#FFB347")
+}
+
+// MARK: - Card Style Modifier
+
+public struct CardStyle: ViewModifier {
+    let cornerRadius: CGFloat
+    let shadowOpacity: Double
+    @Environment(ThemeManager.self) private var theme
+
+    public func body(content: Content) -> some View {
+        content
+            .background {
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .fill(theme.colors.cardBackground)
+                    .shadow(color: .black.opacity(shadowOpacity), radius: 10, x: 0, y: 4)
+            }
+    }
+}
+
+public extension View {
+    func cardStyle(cornerRadius: CGFloat = AppCornerRadius.large, shadowOpacity: Double = 0.05) -> some View {
+        modifier(CardStyle(cornerRadius: cornerRadius, shadowOpacity: shadowOpacity))
+    }
+}

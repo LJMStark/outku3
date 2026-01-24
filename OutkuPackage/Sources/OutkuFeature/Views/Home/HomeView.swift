@@ -1,27 +1,5 @@
 import SwiftUI
 
-// MARK: - Shared Date Formatters
-
-private enum DateFormatters {
-    static let headerDate: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEE, MMM dd"
-        return formatter
-    }()
-
-    static let time: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "h:mm a"
-        return formatter
-    }()
-
-    static let separatorDate: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEE, MMM d"
-        return formatter
-    }()
-}
-
 // MARK: - Home View
 
 struct HomeView: View {
@@ -53,38 +31,26 @@ struct AppHeaderView: View {
     @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
 
-    // Header background - warm brown
-    private let headerColor = Color(hex: "#C4944A")
-
-    // Bottom border color - darker brown
-    private let borderColor = Color(hex: "#8B6914")
-
     var body: some View {
         VStack(spacing: 0) {
-            // Content area
             HStack(alignment: .bottom) {
-                // Left side: Date, Time, Weather
                 VStack(alignment: .leading, spacing: 8) {
-                    // Large date - extrabold style
-                    Text(DateFormatters.headerDate.string(from: appState.selectedDate))
+                    Text(AppDateFormatters.headerDate.string(from: appState.selectedDate))
                         .font(.system(size: 34, weight: .heavy))
                         .tracking(-0.5)
                         .foregroundStyle(.white)
                         .shadow(color: .black.opacity(0.1), radius: 1, x: 0, y: 1)
 
-                    // Time and weather row with dot separator
                     HStack(spacing: 12) {
-                        Text(DateFormatters.time.string(from: Date()))
+                        Text(AppDateFormatters.time.string(from: Date()))
                             .font(.system(size: 13, weight: .semibold))
                             .tracking(0.5)
                             .foregroundStyle(.white.opacity(0.9))
 
-                        // Dot separator
                         Circle()
                             .fill(.white.opacity(0.4))
                             .frame(width: 4, height: 4)
 
-                        // Weather
                         HStack(spacing: 6) {
                             Image(systemName: "sun.max.fill")
                                 .font(.system(size: 14))
@@ -99,12 +65,11 @@ struct AppHeaderView: View {
 
                 Spacer()
 
-                // Right side: Navigation buttons
                 HStack(spacing: 14) {
                     HeaderIconButton(
                         icon: "house.fill",
                         label: "HOME",
-                        iconColor: Color(hex: "#C4944A"),
+                        iconColor: AppHeaderColors.background,
                         isSelected: appState.selectedTab == .home
                     ) {
                         appState.selectedTab = .home
@@ -113,7 +78,7 @@ struct AppHeaderView: View {
                     HeaderIconButton(
                         icon: "pawprint.fill",
                         label: "TIKO",
-                        iconColor: Color(hex: "#C4944A"),
+                        iconColor: AppHeaderColors.background,
                         isSelected: appState.selectedTab == .pet,
                         usePetImage: true
                     ) {
@@ -123,7 +88,7 @@ struct AppHeaderView: View {
                     HeaderIconButton(
                         icon: "gearshape.fill",
                         label: "MENU",
-                        iconColor: Color(hex: "#D69E2E"),
+                        iconColor: AppHeaderColors.iconAccent,
                         isSelected: appState.selectedTab == .settings
                     ) {
                         appState.selectedTab = .settings
@@ -135,14 +100,13 @@ struct AppHeaderView: View {
             .padding(.top, 56)
             .padding(.bottom, 20)
 
-            // Bottom border - 8px dark brown
             Rectangle()
-                .fill(borderColor)
+                .fill(AppHeaderColors.border)
                 .frame(height: 8)
         }
-        .background(headerColor)
+        .background(AppHeaderColors.background)
         .background(
-            headerColor
+            AppHeaderColors.background
                 .ignoresSafeArea(edges: .top)
         )
     }
@@ -289,62 +253,54 @@ struct TimelineContentView: View {
 
             // Timeline items
             VStack(spacing: 0) {
-                // Sunrise
                 TimelineMarkerRow(
                     time: appState.sunTimes.sunrise,
                     icon: "sunrise",
                     label: "Sunrise",
-                    iconColor: Color(hex: "#FFB347")
+                    iconColor: AppTimelineColors.sun
                 )
 
-                // Day Start
                 TimelineMarkerRow(
                     time: createTime(hour: 9, minute: 0),
                     icon: "calendar.badge.clock",
                     label: "Day Start",
-                    iconColor: Color(hex: "#4285F4"),
+                    iconColor: AppTimelineColors.google,
                     showGoogleIcon: true
                 )
 
-                // Events
                 ForEach(appState.events) { event in
                     TimelineEventRow(event: event)
                 }
 
-                // Sunset
                 TimelineMarkerRow(
                     time: appState.sunTimes.sunset,
                     icon: "sunset",
                     label: "Sunset",
-                    iconColor: Color(hex: "#FFB347")
+                    iconColor: AppTimelineColors.sun
                 )
             }
             .padding(.horizontal, 20)
 
-            // Next day separator (if scrolling)
             DateSeparatorView(date: Calendar.current.date(byAdding: .day, value: 1, to: appState.selectedDate) ?? appState.selectedDate)
                 .padding(.top, 24)
 
-            // Sunrise for next day
             TimelineMarkerRow(
                 time: appState.sunTimes.sunrise,
                 icon: "sunrise",
                 label: "Sunrise",
-                iconColor: Color(hex: "#FFB347")
+                iconColor: AppTimelineColors.sun
             )
             .padding(.horizontal, 20)
 
-            // Haiku section
             HaikuSectionView()
                 .padding(.top, 20)
                 .padding(.horizontal, 20)
 
-            // Sunset for next day
             TimelineMarkerRow(
                 time: appState.sunTimes.sunset,
                 icon: "sunset",
                 label: "Sunset",
-                iconColor: Color(hex: "#FFB347")
+                iconColor: AppTimelineColors.sun
             )
             .padding(.horizontal, 20)
         }
@@ -364,21 +320,18 @@ struct DateSeparatorView: View {
     let date: Date
     @Environment(ThemeManager.self) private var theme
 
-    // Dark green color for the separator
-    private let separatorColor = Color(hex: "#2D5016")
-
     var body: some View {
         HStack(spacing: 12) {
             Rectangle()
-                .fill(separatorColor)
+                .fill(AppTimelineColors.line)
                 .frame(height: 2)
 
-            Text(DateFormatters.separatorDate.string(from: date))
+            Text(AppDateFormatters.separatorDate.string(from: date))
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(theme.colors.primaryText)
 
             Rectangle()
-                .fill(separatorColor)
+                .fill(AppTimelineColors.line)
                 .frame(height: 2)
         }
         .padding(.horizontal, 20)
@@ -396,28 +349,21 @@ struct TimelineMarkerRow: View {
 
     @Environment(ThemeManager.self) private var theme
 
-    // Timeline line color - dark green
-    private let lineColor = Color(hex: "#2D5016")
-
     var body: some View {
         HStack(alignment: .center, spacing: 0) {
-            // Time label
-            Text(DateFormatters.time.string(from: time).uppercased())
+            Text(AppDateFormatters.time.string(from: time).uppercased())
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(theme.colors.primaryText)
                 .frame(width: 70, alignment: .leading)
 
-            // Vertical line segment
             Rectangle()
-                .fill(lineColor)
+                .fill(AppTimelineColors.line)
                 .frame(width: 2, height: 40)
 
-            // Icon and label
             HStack(spacing: 8) {
                 if showGoogleIcon {
-                    // Google Calendar icon placeholder
                     RoundedRectangle(cornerRadius: 4)
-                        .fill(Color(hex: "#4285F4"))
+                        .fill(AppTimelineColors.google)
                         .frame(width: 24, height: 24)
                         .overlay {
                             Image(systemName: "calendar")
@@ -425,7 +371,6 @@ struct TimelineMarkerRow: View {
                                 .foregroundStyle(.white)
                         }
                 } else {
-                    // Sun icon with emoji style
                     Image(systemName: icon + ".fill")
                         .font(.system(size: 24))
                         .foregroundStyle(iconColor)
@@ -450,26 +395,20 @@ struct TimelineEventRow: View {
     @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
 
-    // Timeline line color - dark green
-    private let lineColor = Color(hex: "#2D5016")
-
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
-            // Time label
-            Text(DateFormatters.time.string(from: event.startTime).uppercased())
+            Text(AppDateFormatters.time.string(from: event.startTime).uppercased())
                 .font(.system(size: 13, weight: .bold))
                 .foregroundStyle(theme.colors.primaryText)
                 .frame(width: 70, alignment: .leading)
                 .padding(.top, 12)
 
-            // Vertical line
             VStack(spacing: 0) {
                 Rectangle()
-                    .fill(lineColor)
+                    .fill(AppTimelineColors.line)
                     .frame(width: 2)
             }
 
-            // Event card
             Button {
                 appState.selectEvent(event)
             } label: {
@@ -490,25 +429,21 @@ struct EventCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // Title
             Text(event.title)
                 .font(.system(size: 17, weight: .bold))
                 .foregroundStyle(theme.colors.primaryText)
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
 
-            // Duration, source, participants
             HStack(spacing: 8) {
                 Text(event.durationText)
                     .font(.system(size: 14))
                     .foregroundStyle(theme.colors.secondaryText)
 
-                // Source icon (Google Calendar)
                 Image(systemName: "g.circle.fill")
                     .font(.system(size: 14))
-                    .foregroundStyle(Color(hex: "#4285F4"))
+                    .foregroundStyle(AppTimelineColors.google)
 
-                // Participants
                 if !event.participants.isEmpty {
                     HStack(spacing: 4) {
                         Image(systemName: "person.2.fill")
@@ -520,7 +455,6 @@ struct EventCard: View {
                 }
             }
 
-            // Description
             if let description = event.description, !description.isEmpty {
                 Text(description)
                     .font(.system(size: 15))

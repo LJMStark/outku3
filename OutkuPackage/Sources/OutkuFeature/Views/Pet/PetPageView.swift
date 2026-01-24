@@ -245,9 +245,8 @@ struct TaskRowView: View {
                         .fill(Color(hex: task.priority.color))
                         .frame(width: 6, height: 6)
 
-                    // Due date if exists
                     if let dueDate = task.dueDate {
-                        Text(formatDueDate(dueDate))
+                        Text(dueDate.formatRelativeDay())
                             .font(AppTypography.caption)
                             .foregroundStyle(theme.colors.secondaryText)
                     }
@@ -263,19 +262,6 @@ struct TaskRowView: View {
                 .shadow(color: .black.opacity(0.03), radius: 4, x: 0, y: 2)
         }
         .opacity(task.isCompleted ? 0.7 : 1)
-    }
-
-    private func formatDueDate(_ date: Date) -> String {
-        let calendar = Calendar.current
-        if calendar.isDateInToday(date) {
-            return "Today"
-        } else if calendar.isDateInTomorrow(date) {
-            return "Tomorrow"
-        } else {
-            let formatter = DateFormatter()
-            formatter.dateFormat = "MMM d"
-            return formatter.string(from: date)
-        }
     }
 }
 
