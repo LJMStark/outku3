@@ -46,6 +46,7 @@ public final class AppState: @unchecked Sendable {
     private let googleTasksAPI = GoogleTasksAPI.shared
     private let eventKitService = EventKitService.shared
     private let widgetDataService = WidgetDataService.shared
+    private let cloudKitService = CloudKitService.shared
 
     private init() {
         Task { @MainActor in
@@ -109,6 +110,7 @@ public final class AppState: @unchecked Sendable {
         lastError = nil
         defer { isLoading = false }
 
+        // Supabase sync
         if let userId = userId {
             let result = await syncManager.performFullSync(userId: userId)
             if case .partial(_, let failed) = result, failed > 0 {
@@ -118,7 +120,27 @@ public final class AppState: @unchecked Sendable {
             }
         }
 
+        // CloudKit sync
+        await syncWithCloudKit()
+
         await loadLocalData()
+    }
+
+    @MainActor
+    public func syncWithCloudKit() async {
+        do {
+            // Sync pet data
+            let syncedPet = try await cloudKitService.syncPet(local: pet)
+            pet = syncedPet
+            try? await localStorage.savePet(pet)
+
+            // Sync streak data
+            let syncedStreak = try await cloudKitService.syncStreak(local: streak)
+            streak = syncedStreak
+            try? await localStorage.saveStreak(streak)
+        } catch {
+            // CloudKit sync is optional, don't show error to user
+        }
     }
 
     @MainActor
