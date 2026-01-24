@@ -45,6 +45,7 @@ public final class AppState: @unchecked Sendable {
     private let googleCalendarAPI = GoogleCalendarAPI.shared
     private let googleTasksAPI = GoogleTasksAPI.shared
     private let eventKitService = EventKitService.shared
+    private let widgetDataService = WidgetDataService.shared
 
     private init() {
         Task { @MainActor in
@@ -166,6 +167,9 @@ public final class AppState: @unchecked Sendable {
             last30DaysCompleted: monthCompleted,
             last30DaysTotal: monthTasks.count
         )
+
+        // Update widget data
+        widgetDataService.updateFromAppState(pet: pet, streak: streak, statistics: statistics)
     }
 
     @MainActor
