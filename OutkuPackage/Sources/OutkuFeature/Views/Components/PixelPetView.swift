@@ -52,7 +52,18 @@ struct PixelPetView: View {
     @State private var starOpacities: [Double] = []
     @State private var isPressed: Bool = false
 
+    // Mood-specific animation states
+    @State private var sleepyBreathScale: CGFloat = 1.0
+    @State private var sleepyZOffset: CGFloat = 0
+    @State private var showZzz: Bool = false
+    @State private var excitedSparkles: Bool = false
+    @State private var sparkleOffsets: [CGSize] = []
+    @State private var sparkleOpacities: [Double] = []
+    @State private var missingLookDirection: CGFloat = 0
+    @State private var focusedPulse: CGFloat = 1.0
+
     private let timer = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
+    private let moodTimer = Timer.publish(every: 2.0, on: .main, in: .common).autoconnect()
 
     // 当前场景（优先使用传入的，否则使用 appState 中的）
     private var currentScene: PetScene {
@@ -68,6 +79,9 @@ struct PixelPetView: View {
                 // Scene background
                 sceneBackground
                     .frame(width: geometry.size.width, height: geometry.size.height)
+
+                // Mood-specific effects
+                moodEffects
 
                 // Celebration stars
                 if showStars {
@@ -87,7 +101,7 @@ struct PixelPetView: View {
                     .offset(y: 40 * size.scale + bounceOffset * 0.3)
                     .scaleEffect(x: celebrationScale, y: 1.0 - (celebrationScale - 1.0) * 0.5)
 
-                // Pet body
+                // Pet body with mood-specific transforms
                 PixelArtBody(
                     pixelSize: size.pixelSize,
                     primaryColor: petPrimaryColor,
@@ -97,8 +111,8 @@ struct PixelPetView: View {
                     petForm: appState.pet.currentForm,
                     mood: appState.pet.mood
                 )
-                .offset(y: bounceOffset)
-                .scaleEffect(celebrationScale)
+                .offset(x: missingLookDirection, y: bounceOffset)
+                .scaleEffect(celebrationScale * sleepyBreathScale * focusedPulse)
                 .rotationEffect(.degrees(celebrationRotation))
                 .scaleEffect(isPressed ? 0.95 : 1.0)
             }
@@ -122,9 +136,24 @@ struct PixelPetView: View {
                 bounceOffset = animationPhase % 2 == 0 ? 0 : -5
             }
         }
+        .onReceive(moodTimer) { _ in
+            guard animated else { return }
+            triggerMoodAnimation()
+        }
         .onChange(of: appState.pet.adventuresCount) { oldValue, newValue in
             if newValue > oldValue {
                 triggerCelebrationAnimation()
+            }
+        }
+        .onChange(of: appState.pet.mood) { _, newMood in
+            resetMoodAnimations()
+            if animated {
+                triggerMoodAnimation()
+            }
+        }
+        .onAppear {
+            if animated {
+                triggerMoodAnimation()
             }
         }
     }
@@ -276,6 +305,171 @@ struct PixelPetView: View {
                 .fill(Color.white.opacity(0.9))
                 .frame(width: 20, height: 20)
                 .offset(x: -12, y: 3)
+        }
+    }
+
+    // MARK: - Mood Effects
+
+    @ViewBuilder
+    private var moodEffects: some View {
+        switch appState.pet.mood {
+        case .sleepy:
+            // Zzz 效果
+            if showZzz {
+                ZStack {
+                    Text("Z")
+                        .font(.system(size: 14 * size.scale, weight: .bold))
+                        .foregroundStyle(theme.colors.secondaryText.opacity(0.6))
+                        .offset(x: 30 * size.scale, y: -40 * size.scale + sleepyZOffset)
+                    Text("z")
+                        .font(.system(size: 10 * size.scale, weight: .bold))
+                        .foregroundStyle(theme.colors.secondaryText.opacity(0.4))
+                        .offset(x: 40 * size.scale, y: -50 * size.scale + sleepyZOffset * 0.8)
+                    Text("z")
+                        .font(.system(size: 8 * size.scale, weight: .bold))
+                        .foregroundStyle(theme.colors.secondaryText.opacity(0.3))
+                        .offset(x: 48 * size.scale, y: -58 * size.scale + sleepyZOffset * 0.6)
+                }
+            }
+
+        case .excited:
+            // 闪烁星星效果
+            if excitedSparkles {
+                ForEach(0..<4, id: \.self) { index in
+                    Image(systemName: "sparkle")
+                        .font(.system(size: 10 * size.scale))
+                        .foregroundStyle(theme.colors.accent)
+                        .offset(sparkleOffsets.indices.contains(index) ? sparkleOffsets[index] : .zero)
+                        .opacity(sparkleOpacities.indices.contains(index) ? sparkleOpacities[index] : 0)
+                }
+            }
+
+        case .missing:
+            // 问号效果
+            Text("?")
+                .font(.system(size: 16 * size.scale, weight: .bold))
+                .foregroundStyle(theme.colors.secondaryText.opacity(0.5))
+                .offset(x: 35 * size.scale, y: -45 * size.scale)
+
+        case .focused:
+            // 专注光环
+            Circle()
+                .stroke(theme.colors.accent.opacity(0.3), lineWidth: 2)
+                .frame(width: 80 * size.scale * focusedPulse, height: 80 * size.scale * focusedPulse)
+
+        case .happy:
+            // 小心形效果（偶尔出现）
+            EmptyView()
+        }
+    }
+
+    // MARK: - Mood Animations
+
+    private func triggerMoodAnimation() {
+        switch appState.pet.mood {
+        case .sleepy:
+            triggerSleepyAnimation()
+        case .excited:
+            triggerExcitedAnimation()
+        case .missing:
+            triggerMissingAnimation()
+        case .focused:
+            triggerFocusedAnimation()
+        case .happy:
+            triggerHappyIdleAnimation()
+        }
+    }
+
+    private func resetMoodAnimations() {
+        sleepyBreathScale = 1.0
+        showZzz = false
+        excitedSparkles = false
+        missingLookDirection = 0
+        focusedPulse = 1.0
+    }
+
+    private func triggerSleepyAnimation() {
+        // 呼吸效果
+        withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
+            sleepyBreathScale = 1.03
+        }
+
+        // Zzz 浮动效果
+        showZzz = true
+        withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
+            sleepyZOffset = -10
+        }
+    }
+
+    private func triggerExcitedAnimation() {
+        // 跳跃动画
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.5)) {
+            bounceOffset = -15
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
+                bounceOffset = 0
+            }
+        }
+
+        // 闪烁星星
+        excitedSparkles = true
+        sparkleOffsets = [
+            CGSize(width: -35, height: -30),
+            CGSize(width: 35, height: -35),
+            CGSize(width: -40, height: -50),
+            CGSize(width: 40, height: -45)
+        ]
+        sparkleOpacities = Array(repeating: 1.0, count: 4)
+
+        withAnimation(.easeOut(duration: 1.0)) {
+            sparkleOpacities = Array(repeating: 0.0, count: 4)
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            excitedSparkles = false
+        }
+    }
+
+    private func triggerMissingAnimation() {
+        // 左右张望效果
+        withAnimation(.easeInOut(duration: 1.0)) {
+            missingLookDirection = -8
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            withAnimation(.easeInOut(duration: 1.0)) {
+                missingLookDirection = 8
+            }
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            withAnimation(.easeInOut(duration: 0.5)) {
+                missingLookDirection = 0
+            }
+        }
+    }
+
+    private func triggerFocusedAnimation() {
+        // 专注脉冲效果
+        withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
+            focusedPulse = 1.02
+        }
+    }
+
+    private func triggerHappyIdleAnimation() {
+        // 偶尔的小跳跃
+        if Int.random(in: 0...2) == 0 {
+            withAnimation(.spring(response: 0.2, dampingFraction: 0.5)) {
+                bounceOffset = -8
+            }
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                    bounceOffset = 0
+                }
+            }
         }
     }
 
