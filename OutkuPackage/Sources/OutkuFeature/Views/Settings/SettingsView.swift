@@ -282,6 +282,7 @@ struct IntegrationsSection: View {
 struct IntegrationRowView: View {
     let integration: Integration
     @Environment(ThemeManager.self) private var theme
+    @Environment(AppState.self) private var appState
     @State private var isConnecting = false
     @State private var showError = false
     @State private var errorMessage = ""
@@ -374,12 +375,10 @@ struct IntegrationRowView: View {
 
     private var canConnect: Bool {
         switch integration.type {
-        case .googleCalendar, .googleTasks:
-            return true
-        case .appleCalendar, .appleReminders:
+        case .googleCalendar, .googleTasks, .appleCalendar, .appleReminders:
             return true
         case .todoist:
-            return false // Not implemented yet
+            return false
         }
     }
 
@@ -389,9 +388,18 @@ struct IntegrationRowView: View {
         switch integration.type {
         case .googleCalendar, .googleTasks:
             connectGoogle()
-        case .appleCalendar, .appleReminders:
-            // Apple integrations are handled via system permissions
-            break
+        case .appleCalendar:
+            connectApple(
+                requestAccess: appState.requestAppleCalendarAccess,
+                loadData: appState.loadAppleCalendarEvents,
+                errorMessage: "Calendar access denied. Please enable in Settings."
+            )
+        case .appleReminders:
+            connectApple(
+                requestAccess: appState.requestAppleRemindersAccess,
+                loadData: appState.loadAppleReminders,
+                errorMessage: "Reminders access denied. Please enable in Settings."
+            )
         case .todoist:
             break
         }
@@ -399,12 +407,29 @@ struct IntegrationRowView: View {
 
     private func connectGoogle() {
         isConnecting = true
-
         Task {
             do {
                 try await AuthManager.shared.signInWithGoogle()
             } catch {
                 errorMessage = error.localizedDescription
+                showError = true
+            }
+            isConnecting = false
+        }
+    }
+
+    private func connectApple(
+        requestAccess: @escaping () async -> Bool,
+        loadData: @escaping () async -> Void,
+        errorMessage deniedMessage: String
+    ) {
+        isConnecting = true
+        Task {
+            let granted = await requestAccess()
+            if granted {
+                await loadData()
+            } else {
+                errorMessage = deniedMessage
                 showError = true
             }
             isConnecting = false

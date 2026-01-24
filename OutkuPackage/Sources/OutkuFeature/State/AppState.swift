@@ -44,6 +44,7 @@ public final class AppState: @unchecked Sendable {
     private let haikuService = HaikuService.shared
     private let googleCalendarAPI = GoogleCalendarAPI.shared
     private let googleTasksAPI = GoogleTasksAPI.shared
+    private let eventKitService = EventKitService.shared
 
     private init() {
         Task { @MainActor in
@@ -223,6 +224,56 @@ public final class AppState: @unchecked Sendable {
         await updatePetState()
     }
 
+    // MARK: - Apple EventKit Integration
+
+    @MainActor
+    public func loadAppleCalendarEvents() async {
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            let appleEvents = try await eventKitService.fetchTodayEvents()
+            let otherEvents = events.filter { $0.source != .apple }
+            events = otherEvents + appleEvents
+            try? await localStorage.saveEvents(events)
+        } catch {
+            lastError = "Failed to load Apple Calendar: \(error.localizedDescription)"
+        }
+    }
+
+    @MainActor
+    public func loadAppleReminders() async {
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            let appleReminders = try await eventKitService.fetchIncompleteReminders()
+            let otherTasks = tasks.filter { $0.source != .apple }
+            tasks = otherTasks + appleReminders
+            try? await localStorage.saveTasks(tasks)
+            updateStatistics()
+        } catch {
+            lastError = "Failed to load Apple Reminders: \(error.localizedDescription)"
+        }
+    }
+
+    @MainActor
+    public func syncAppleData() async {
+        await loadAppleCalendarEvents()
+        await loadAppleReminders()
+        await updatePetState()
+    }
+
+    @MainActor
+    public func requestAppleCalendarAccess() async -> Bool {
+        await eventKitService.requestCalendarAccess()
+    }
+
+    @MainActor
+    public func requestAppleRemindersAccess() async -> Bool {
+        await eventKitService.requestRemindersAccess()
+    }
+
     // MARK: - Actions
 
     @MainActor
@@ -250,8 +301,17 @@ public final class AppState: @unchecked Sendable {
             try? await localStorage.savePet(pet)
             try? await localStorage.saveStreak(streak)
 
-            if updatedTask.source == .google {
+            // Sync to external services
+            switch updatedTask.source {
+            case .google:
                 try? await googleTasksAPI.syncTaskCompletion(updatedTask)
+            case .apple:
+                try? await eventKitService.updateReminderCompletion(
+                    identifier: updatedTask.id,
+                    isCompleted: updatedTask.isCompleted
+                )
+            default:
+                break
             }
         }
 
