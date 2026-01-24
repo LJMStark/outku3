@@ -9,225 +9,39 @@ struct HomeView: View {
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: 0) {
-                // Header
-                HomeHeaderView()
+                // Header - Brown background with date, time, weather, nav icons
+                AppHeaderView()
 
-                // Timeline
-                TimelineView()
+                // Timeline content
+                TimelineContentView()
 
-                // Bottom spacing for tab bar
+                // Bottom spacing
                 Spacer()
-                    .frame(height: 100)
+                    .frame(height: 40)
             }
         }
         .background(theme.colors.background)
+        .ignoresSafeArea(edges: .top)
     }
 }
 
-// MARK: - Home Header
+// MARK: - App Header (Shared across all main pages)
 
-struct HomeHeaderView: View {
+struct AppHeaderView: View {
     @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
+
+    // Header background - warm brown
+    private let headerColor = Color(hex: "#C4944A")
+
+    // Bottom border color - darker brown
+    private let borderColor = Color(hex: "#8B6914")
 
     private var dateFormatter: DateFormatter {
         let formatter = DateFormatter()
-        formatter.dateFormat = "EEEE, MMM d"
+        formatter.dateFormat = "EEE, MMM dd"
         return formatter
     }
-
-    private var timeFormatter: DateFormatter {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "h:mm"
-        return formatter
-    }
-
-    var body: some View {
-        VStack(spacing: AppSpacing.md) {
-            // Top row: Date and Weather
-            HStack {
-                // Date
-                Text(dateFormatter.string(from: appState.selectedDate))
-                    .font(AppTypography.title2)
-                    .foregroundStyle(theme.colors.primaryText)
-
-                Spacer()
-
-                // Weather
-                HStack(spacing: AppSpacing.xs) {
-                    Image(systemName: appState.weather.condition.rawValue)
-                        .font(.system(size: 16))
-                        .foregroundStyle(theme.colors.accent)
-
-                    Text("\(appState.weather.temperature)°")
-                        .font(AppTypography.subheadline)
-                        .foregroundStyle(theme.colors.primaryText)
-                }
-                .padding(.horizontal, AppSpacing.md)
-                .padding(.vertical, AppSpacing.sm)
-                .background {
-                    Capsule()
-                        .fill(theme.colors.cardBackground)
-                }
-            }
-
-            // Time and timezone
-            HStack {
-                Text(timeFormatter.string(from: Date()))
-                    .font(AppTypography.timeDisplay)
-                    .foregroundStyle(theme.colors.secondaryText)
-
-                Text("GMT")
-                    .font(AppTypography.caption)
-                    .foregroundStyle(theme.colors.secondaryText.opacity(0.7))
-
-                Spacer()
-            }
-        }
-        .padding(.horizontal, AppSpacing.xl)
-        .padding(.top, AppSpacing.lg)
-        .padding(.bottom, AppSpacing.md)
-    }
-}
-
-// MARK: - Timeline View
-
-struct TimelineView: View {
-    @Environment(AppState.self) private var appState
-    @Environment(ThemeManager.self) private var theme
-
-    private let hourHeight: CGFloat = 60
-    private let startHour: Int = 6
-    private let endHour: Int = 22
-
-    var body: some View {
-        VStack(spacing: 0) {
-            // Timeline content
-            HStack(alignment: .top, spacing: AppSpacing.md) {
-                // Time labels column
-                VStack(spacing: 0) {
-                    ForEach(startHour...endHour, id: \.self) { hour in
-                        Text(formatHour(hour))
-                            .font(AppTypography.caption)
-                            .foregroundStyle(theme.colors.secondaryText)
-                            .frame(height: hourHeight, alignment: .top)
-                            .frame(width: 50, alignment: .trailing)
-                    }
-                }
-
-                // Timeline and events
-                ZStack(alignment: .topLeading) {
-                    // Timeline line
-                    TimelineLineView(
-                        hourHeight: hourHeight,
-                        totalHours: endHour - startHour,
-                        sunTimes: appState.sunTimes,
-                        startHour: startHour
-                    )
-
-                    // Events
-                    ForEach(appState.events) { event in
-                        EventCardView(event: event)
-                            .offset(y: offsetForTime(event.startTime))
-                            .frame(height: heightForDuration(event.duration))
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .padding(.horizontal, AppSpacing.lg)
-
-            // Haiku section at bottom
-            HaikuSectionView()
-                .padding(.top, AppSpacing.xxl)
-        }
-    }
-
-    private func formatHour(_ hour: Int) -> String {
-        let period = hour >= 12 ? "PM" : "AM"
-        let displayHour = hour > 12 ? hour - 12 : (hour == 0 ? 12 : hour)
-        return "\(displayHour) \(period)"
-    }
-
-    private func offsetForTime(_ time: Date) -> CGFloat {
-        let calendar = Calendar.current
-        let hour = calendar.component(.hour, from: time)
-        let minute = calendar.component(.minute, from: time)
-        let totalMinutes = (hour - startHour) * 60 + minute
-        return CGFloat(totalMinutes) / 60.0 * hourHeight
-    }
-
-    private func heightForDuration(_ duration: TimeInterval) -> CGFloat {
-        let minutes = duration / 60
-        return CGFloat(minutes) / 60.0 * hourHeight
-    }
-}
-
-// MARK: - Timeline Line
-
-struct TimelineLineView: View {
-    let hourHeight: CGFloat
-    let totalHours: Int
-    let sunTimes: SunTimes
-    let startHour: Int
-    @Environment(ThemeManager.self) private var theme
-
-    var body: some View {
-        ZStack(alignment: .topLeading) {
-            // Main timeline line
-            Rectangle()
-                .fill(theme.colors.timeline)
-                .frame(width: 2)
-                .frame(height: CGFloat(totalHours) * hourHeight)
-                .padding(.leading, 10)
-
-            // Sunrise marker
-            SunMarkerView(type: .sunrise, time: sunTimes.sunrise)
-                .offset(y: offsetForTime(sunTimes.sunrise))
-
-            // Sunset marker
-            SunMarkerView(type: .sunset, time: sunTimes.sunset)
-                .offset(y: offsetForTime(sunTimes.sunset))
-
-            // Current time indicator
-            CurrentTimeIndicator()
-                .offset(y: offsetForTime(Date()))
-        }
-    }
-
-    private func offsetForTime(_ time: Date) -> CGFloat {
-        let calendar = Calendar.current
-        let hour = calendar.component(.hour, from: time)
-        let minute = calendar.component(.minute, from: time)
-        let totalMinutes = (hour - startHour) * 60 + minute
-        return CGFloat(totalMinutes) / 60.0 * hourHeight
-    }
-}
-
-// MARK: - Sun Marker
-
-enum SunMarkerType {
-    case sunrise
-    case sunset
-
-    var iconName: String {
-        switch self {
-        case .sunrise: return "sunrise.fill"
-        case .sunset: return "sunset.fill"
-        }
-    }
-
-    var label: String {
-        switch self {
-        case .sunrise: return "Sunrise"
-        case .sunset: return "Sunset"
-        }
-    }
-}
-
-struct SunMarkerView: View {
-    let type: SunMarkerType
-    let time: Date
-    @Environment(ThemeManager.self) private var theme
 
     private var timeFormatter: DateFormatter {
         let formatter = DateFormatter()
@@ -236,114 +50,555 @@ struct SunMarkerView: View {
     }
 
     var body: some View {
-        HStack(spacing: AppSpacing.sm) {
-            // Icon
-            ZStack {
-                Circle()
-                    .fill(type == .sunrise ? theme.colors.sunrise : theme.colors.sunset)
-                    .frame(width: 24, height: 24)
+        VStack(spacing: 0) {
+            // Content area
+            HStack(alignment: .bottom) {
+                // Left side: Date, Time, Weather
+                VStack(alignment: .leading, spacing: 8) {
+                    // Large date - extrabold style
+                    Text(dateFormatter.string(from: appState.selectedDate))
+                        .font(.system(size: 34, weight: .heavy))
+                        .tracking(-0.5)
+                        .foregroundStyle(.white)
+                        .shadow(color: .black.opacity(0.1), radius: 1, x: 0, y: 1)
 
-                Image(systemName: type.iconName)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.white)
+                    // Time and weather row with dot separator
+                    HStack(spacing: 12) {
+                        Text(timeFormatter.string(from: Date()))
+                            .font(.system(size: 13, weight: .semibold))
+                            .tracking(0.5)
+                            .foregroundStyle(.white.opacity(0.9))
+
+                        // Dot separator
+                        Circle()
+                            .fill(.white.opacity(0.4))
+                            .frame(width: 4, height: 4)
+
+                        // Weather
+                        HStack(spacing: 6) {
+                            Image(systemName: "sun.max.fill")
+                                .font(.system(size: 14))
+                                .foregroundStyle(.white.opacity(0.9))
+                            Text("\(appState.weather.highTemp)° / \(appState.weather.lowTemp)°")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(.white)
+                        }
+                    }
+                }
+                .padding(.bottom, 2)
+
+                Spacer()
+
+                // Right side: Navigation buttons
+                HStack(spacing: 14) {
+                    HeaderIconButton(
+                        icon: "house.fill",
+                        label: "HOME",
+                        iconColor: Color(hex: "#C4944A"),
+                        isSelected: appState.selectedTab == .home
+                    ) {
+                        appState.selectedTab = .home
+                    }
+
+                    HeaderIconButton(
+                        icon: "pawprint.fill",
+                        label: "TIKO",
+                        iconColor: Color(hex: "#C4944A"),
+                        isSelected: appState.selectedTab == .pet,
+                        usePetImage: true
+                    ) {
+                        appState.selectedTab = .pet
+                    }
+
+                    HeaderIconButton(
+                        icon: "gearshape.fill",
+                        label: "MENU",
+                        iconColor: Color(hex: "#D69E2E"),
+                        isSelected: appState.selectedTab == .settings
+                    ) {
+                        appState.selectedTab = .settings
+                    }
+                }
+                .padding(.bottom, 2)
             }
+            .padding(.horizontal, 20)
+            .padding(.top, 56)
+            .padding(.bottom, 20)
 
-            // Label and time
-            VStack(alignment: .leading, spacing: 0) {
-                Text(type.label)
-                    .font(AppTypography.caption)
-                    .foregroundStyle(theme.colors.secondaryText)
-
-                Text(timeFormatter.string(from: time))
-                    .font(AppTypography.caption2)
-                    .foregroundStyle(theme.colors.secondaryText.opacity(0.7))
-            }
+            // Bottom border - 8px dark brown
+            Rectangle()
+                .fill(borderColor)
+                .frame(height: 8)
         }
+        .background(headerColor)
+        .background(
+            headerColor
+                .ignoresSafeArea(edges: .top)
+        )
     }
 }
 
-// MARK: - Current Time Indicator
+// MARK: - Header Icon Button
 
-struct CurrentTimeIndicator: View {
+struct HeaderIconButton: View {
+    let icon: String
+    let label: String
+    let iconColor: Color
+    let isSelected: Bool
+    var usePetImage: Bool = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                // Button container with gradient overlay
+                ZStack {
+                    // White background
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(.white)
+                        .frame(width: 52, height: 52)
+
+                    // Gradient overlay
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    .white,
+                                    .white.opacity(0),
+                                    Color(hex: "#FDF4EB")
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                        .frame(width: 52, height: 52)
+                        .opacity(0.6)
+
+                    // Icon or Pet image
+                    if usePetImage {
+                        PetAvatarView()
+                            .frame(width: 36, height: 36)
+                    } else {
+                        Image(systemName: icon)
+                            .font(.system(size: 22, weight: .medium))
+                            .foregroundStyle(iconColor)
+                            .shadow(color: .black.opacity(0.15), radius: 2, x: 0, y: 1)
+                    }
+                }
+
+                // Label
+                Text(label)
+                    .font(.system(size: 9, weight: .semibold))
+                    .tracking(0.5)
+                    .foregroundStyle(.white.opacity(0.85))
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Pet Avatar View
+
+struct PetAvatarView: View {
+    var body: some View {
+        // Cute pet character
+        ZStack {
+            // Background
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color(hex: "#E8F4E8"))
+
+            // Simple cute pet face
+            VStack(spacing: 2) {
+                // Ears
+                HStack(spacing: 16) {
+                    Ellipse()
+                        .fill(Color(hex: "#FFE0BD"))
+                        .frame(width: 10, height: 14)
+                        .rotationEffect(.degrees(-15))
+                    Ellipse()
+                        .fill(Color(hex: "#FFE0BD"))
+                        .frame(width: 10, height: 14)
+                        .rotationEffect(.degrees(15))
+                }
+                .offset(y: 6)
+
+                // Face
+                ZStack {
+                    // Head
+                    Circle()
+                        .fill(Color(hex: "#FFE0BD"))
+                        .frame(width: 28, height: 28)
+
+                    // Eyes
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(Color(hex: "#2D2D2D"))
+                            .frame(width: 4, height: 4)
+                        Circle()
+                            .fill(Color(hex: "#2D2D2D"))
+                            .frame(width: 4, height: 4)
+                    }
+                    .offset(y: -2)
+
+                    // Nose
+                    Ellipse()
+                        .fill(Color(hex: "#FFB6C1"))
+                        .frame(width: 5, height: 3)
+                        .offset(y: 4)
+
+                    // Blush
+                    HStack(spacing: 14) {
+                        Circle()
+                            .fill(Color(hex: "#FFB6C1").opacity(0.4))
+                            .frame(width: 6, height: 6)
+                        Circle()
+                            .fill(Color(hex: "#FFB6C1").opacity(0.4))
+                            .frame(width: 6, height: 6)
+                    }
+                    .offset(y: 3)
+                }
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
+    }
+}
+
+
+// MARK: - Timeline Content View
+
+struct TimelineContentView: View {
+    @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
 
     var body: some View {
-        HStack(spacing: 0) {
-            Circle()
-                .fill(theme.colors.streakActive)
-                .frame(width: 10, height: 10)
-                .offset(x: 6)
+        VStack(spacing: 0) {
+            // Date separator
+            DateSeparatorView(date: appState.selectedDate)
+                .padding(.top, 20)
+
+            // Timeline items
+            VStack(spacing: 0) {
+                // Sunrise
+                TimelineMarkerRow(
+                    time: appState.sunTimes.sunrise,
+                    icon: "sunrise",
+                    label: "Sunrise",
+                    iconColor: Color(hex: "#FFB347")
+                )
+
+                // Day Start
+                TimelineMarkerRow(
+                    time: createTime(hour: 9, minute: 0),
+                    icon: "calendar.badge.clock",
+                    label: "Day Start",
+                    iconColor: Color(hex: "#4285F4"),
+                    showGoogleIcon: true
+                )
+
+                // Events
+                ForEach(appState.events) { event in
+                    TimelineEventRow(event: event)
+                }
+
+                // Sunset
+                TimelineMarkerRow(
+                    time: appState.sunTimes.sunset,
+                    icon: "sunset",
+                    label: "Sunset",
+                    iconColor: Color(hex: "#FFB347")
+                )
+            }
+            .padding(.horizontal, 20)
+
+            // Next day separator (if scrolling)
+            DateSeparatorView(date: Calendar.current.date(byAdding: .day, value: 1, to: appState.selectedDate) ?? appState.selectedDate)
+                .padding(.top, 24)
+
+            // Sunrise for next day
+            TimelineMarkerRow(
+                time: appState.sunTimes.sunrise,
+                icon: "sunrise",
+                label: "Sunrise",
+                iconColor: Color(hex: "#FFB347")
+            )
+            .padding(.horizontal, 20)
+
+            // Haiku section
+            HaikuSectionView()
+                .padding(.top, 20)
+                .padding(.horizontal, 20)
+
+            // Sunset for next day
+            TimelineMarkerRow(
+                time: appState.sunTimes.sunset,
+                icon: "sunset",
+                label: "Sunset",
+                iconColor: Color(hex: "#FFB347")
+            )
+            .padding(.horizontal, 20)
+        }
+    }
+
+    private func createTime(hour: Int, minute: Int) -> Date {
+        var components = Calendar.current.dateComponents([.year, .month, .day], from: appState.selectedDate)
+        components.hour = hour
+        components.minute = minute
+        return Calendar.current.date(from: components) ?? Date()
+    }
+}
+
+// MARK: - Date Separator
+
+struct DateSeparatorView: View {
+    let date: Date
+    @Environment(ThemeManager.self) private var theme
+
+    private var dateFormatter: DateFormatter {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEE, MMM d"
+        return formatter
+    }
+
+    // Dark green color for the separator
+    private let separatorColor = Color(hex: "#2D5016")
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Rectangle()
+                .fill(separatorColor)
+                .frame(height: 2)
+
+            Text(dateFormatter.string(from: date))
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(theme.colors.primaryText)
 
             Rectangle()
-                .fill(theme.colors.streakActive)
+                .fill(separatorColor)
                 .frame(height: 2)
+        }
+        .padding(.horizontal, 20)
+    }
+}
+
+// MARK: - Timeline Marker Row (Sunrise/Sunset/Day Start)
+
+struct TimelineMarkerRow: View {
+    let time: Date
+    let icon: String
+    let label: String
+    let iconColor: Color
+    var showGoogleIcon: Bool = false
+
+    @Environment(ThemeManager.self) private var theme
+
+    private var timeFormatter: DateFormatter {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "h:mm a"
+        return formatter
+    }
+
+    // Timeline line color - dark green
+    private let lineColor = Color(hex: "#2D5016")
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 0) {
+            // Time label
+            Text(timeFormatter.string(from: time).uppercased())
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(theme.colors.primaryText)
+                .frame(width: 70, alignment: .leading)
+
+            // Vertical line segment
+            Rectangle()
+                .fill(lineColor)
+                .frame(width: 2, height: 40)
+
+            // Icon and label
+            HStack(spacing: 8) {
+                if showGoogleIcon {
+                    // Google Calendar icon placeholder
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color(hex: "#4285F4"))
+                        .frame(width: 24, height: 24)
+                        .overlay {
+                            Image(systemName: "calendar")
+                                .font(.system(size: 12))
+                                .foregroundStyle(.white)
+                        }
+                } else {
+                    // Sun icon with emoji style
+                    Image(systemName: icon + ".fill")
+                        .font(.system(size: 24))
+                        .foregroundStyle(iconColor)
+                }
+
+                Text(label)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(theme.colors.secondaryText)
+            }
+            .padding(.leading, 16)
+
+            Spacer()
+        }
+        .frame(height: 44)
+    }
+}
+
+// MARK: - Timeline Event Row
+
+struct TimelineEventRow: View {
+    let event: CalendarEvent
+    @Environment(AppState.self) private var appState
+    @Environment(ThemeManager.self) private var theme
+
+    private var timeFormatter: DateFormatter {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "h:mm a"
+        return formatter
+    }
+
+    // Timeline line color - dark green
+    private let lineColor = Color(hex: "#2D5016")
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 0) {
+            // Time label
+            Text(timeFormatter.string(from: event.startTime).uppercased())
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(theme.colors.primaryText)
+                .frame(width: 70, alignment: .leading)
+                .padding(.top, 12)
+
+            // Vertical line
+            VStack(spacing: 0) {
+                Rectangle()
+                    .fill(lineColor)
+                    .frame(width: 2)
+            }
+
+            // Event card
+            Button {
+                appState.selectEvent(event)
+            } label: {
+                EventCard(event: event)
+            }
+            .buttonStyle(.plain)
+            .padding(.leading, 16)
+            .padding(.vertical, 8)
         }
     }
 }
 
 // MARK: - Event Card
 
-struct EventCardView: View {
+struct EventCard: View {
     let event: CalendarEvent
+    @Environment(ThemeManager.self) private var theme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Title
+            Text(event.title)
+                .font(.system(size: 17, weight: .bold))
+                .foregroundStyle(theme.colors.primaryText)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+
+            // Duration, source, participants
+            HStack(spacing: 8) {
+                Text(event.durationText)
+                    .font(.system(size: 14))
+                    .foregroundStyle(theme.colors.secondaryText)
+
+                // Source icon (Google Calendar)
+                Image(systemName: "g.circle.fill")
+                    .font(.system(size: 14))
+                    .foregroundStyle(Color(hex: "#4285F4"))
+
+                // Participants
+                if !event.participants.isEmpty {
+                    HStack(spacing: 4) {
+                        Image(systemName: "person.2.fill")
+                            .font(.system(size: 12))
+                        Text("\(event.participants.count)")
+                            .font(.system(size: 14))
+                    }
+                    .foregroundStyle(theme.colors.secondaryText)
+                }
+            }
+
+            // Description
+            if let description = event.description, !description.isEmpty {
+                Text(description)
+                    .font(.system(size: 15))
+                    .foregroundStyle(theme.colors.primaryText)
+                    .lineLimit(3)
+                    .multilineTextAlignment(.leading)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            RoundedRectangle(cornerRadius: 12)
+                .fill(theme.colors.cardBackground)
+                .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(theme.colors.accent.opacity(0.3), lineWidth: 1)
+        }
+    }
+}
+
+// MARK: - Haiku Section
+
+struct HaikuSectionView: View {
     @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
 
     var body: some View {
-        Button {
-            appState.selectEvent(event)
-        } label: {
-            HStack(alignment: .top, spacing: AppSpacing.md) {
-                // Color indicator
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(theme.colors.accent)
-                    .frame(width: 4)
-
-                VStack(alignment: .leading, spacing: AppSpacing.xs) {
-                    // Title
-                    Text(event.title)
-                        .font(AppTypography.headline)
+        VStack(spacing: 24) {
+            // Haiku text - centered, poetic style
+            VStack(spacing: 8) {
+                ForEach(appState.currentHaiku.lines, id: \.self) { line in
+                    Text(line)
+                        .font(.system(size: 18, weight: .medium, design: .serif))
                         .foregroundStyle(theme.colors.primaryText)
-                        .lineLimit(1)
-
-                    // Duration and source
-                    HStack(spacing: AppSpacing.sm) {
-                        Text(event.durationText)
-                            .font(AppTypography.caption)
-                            .foregroundStyle(theme.colors.secondaryText)
-
-                        // Source icon
-                        Image(systemName: event.source.iconName)
-                            .font(.system(size: 10))
-                            .foregroundStyle(theme.colors.secondaryText)
-                    }
-
-                    // Participants
-                    if !event.participants.isEmpty {
-                        HStack(spacing: -8) {
-                            ForEach(event.participants.prefix(3)) { participant in
-                                ParticipantAvatarView(participant: participant)
-                            }
-
-                            if event.participants.count > 3 {
-                                Text("+\(event.participants.count - 3)")
-                                    .font(AppTypography.caption2)
-                                    .foregroundStyle(theme.colors.secondaryText)
-                                    .padding(.leading, AppSpacing.sm)
-                            }
-                        }
-                    }
                 }
+            }
+            .multilineTextAlignment(.center)
 
-                Spacer()
+            // Pet illustration - large, centered
+            ZStack {
+                // Background grass/field illustration would go here
+                // For now, using the pixel pet
+                PixelPetView(size: .large, animated: true)
+                    .frame(height: 200)
             }
-            .padding(AppSpacing.md)
-            .background {
-                RoundedRectangle(cornerRadius: AppCornerRadius.medium)
+        }
+        .padding(.vertical, 24)
+    }
+}
+
+// MARK: - Scroll to Top Button
+
+struct ScrollToTopButton: View {
+    let action: () -> Void
+    @Environment(ThemeManager.self) private var theme
+
+    var body: some View {
+        Button(action: action) {
+            ZStack {
+                Circle()
                     .fill(theme.colors.cardBackground)
-                    .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
+                    .frame(width: 48, height: 48)
+                    .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
+
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(theme.colors.primaryText)
             }
-            .padding(.leading, 30)
-            .padding(.trailing, AppSpacing.md)
         }
         .buttonStyle(.plain)
     }
@@ -362,46 +617,13 @@ struct ParticipantAvatarView: View {
                 .frame(width: 28, height: 28)
 
             Text(participant.initials)
-                .font(AppTypography.caption2)
+                .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(theme.colors.accent)
         }
         .overlay {
             Circle()
                 .stroke(theme.colors.cardBackground, lineWidth: 2)
         }
-    }
-}
-
-// MARK: - Haiku Section
-
-struct HaikuSectionView: View {
-    @Environment(AppState.self) private var appState
-    @Environment(ThemeManager.self) private var theme
-
-    var body: some View {
-        VStack(spacing: AppSpacing.lg) {
-            // Haiku text
-            VStack(spacing: AppSpacing.sm) {
-                ForEach(appState.currentHaiku.lines, id: \.self) { line in
-                    Text(line)
-                        .font(AppTypography.haiku)
-                        .foregroundStyle(theme.colors.primaryText)
-                        .italic()
-                }
-            }
-            .padding(.horizontal, AppSpacing.xxl)
-
-            // Pet illustration
-            PixelPetView(size: .medium, animated: true)
-                .frame(height: 120)
-        }
-        .padding(.vertical, AppSpacing.xl)
-        .frame(maxWidth: .infinity)
-        .background {
-            RoundedRectangle(cornerRadius: AppCornerRadius.large)
-                .fill(theme.colors.cardBackground.opacity(0.5))
-        }
-        .padding(.horizontal, AppSpacing.lg)
     }
 }
 

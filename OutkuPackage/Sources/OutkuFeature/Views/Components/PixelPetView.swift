@@ -38,6 +38,7 @@ enum PetAnimationState {
 struct PixelPetView: View {
     let size: PixelPetSize
     let animated: Bool
+    var scene: PetScene? = nil
     var onTap: (() -> Void)? = nil
 
     @Environment(AppState.self) private var appState
@@ -53,12 +54,21 @@ struct PixelPetView: View {
 
     private let timer = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
 
+    // 当前场景（优先使用传入的，否则使用 appState 中的）
+    private var currentScene: PetScene {
+        scene ?? appState.pet.scene
+    }
+
     var body: some View {
         GeometryReader { geometry in
             let centerX = geometry.size.width / 2
             let centerY = geometry.size.height / 2
 
             ZStack {
+                // Scene background
+                sceneBackground
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+
                 // Celebration stars
                 if showStars {
                     ForEach(0..<5, id: \.self) { index in
@@ -72,7 +82,7 @@ struct PixelPetView: View {
 
                 // Shadow
                 Ellipse()
-                    .fill(theme.colors.primaryText.opacity(0.1))
+                    .fill(shadowColor.opacity(0.15))
                     .frame(width: 60 * size.scale, height: 20 * size.scale)
                     .offset(y: 40 * size.scale + bounceOffset * 0.3)
                     .scaleEffect(x: celebrationScale, y: 1.0 - (celebrationScale - 1.0) * 0.5)
@@ -84,7 +94,8 @@ struct PixelPetView: View {
                     secondaryColor: petSecondaryColor,
                     accentColor: theme.colors.accent,
                     animationPhase: animationPhase,
-                    petForm: appState.pet.currentForm
+                    petForm: appState.pet.currentForm,
+                    mood: appState.pet.mood
                 )
                 .offset(y: bounceOffset)
                 .scaleEffect(celebrationScale)
@@ -115,6 +126,165 @@ struct PixelPetView: View {
             if newValue > oldValue {
                 triggerCelebrationAnimation()
             }
+        }
+    }
+
+    // MARK: - Scene Background
+
+    @ViewBuilder
+    private var sceneBackground: some View {
+        switch currentScene {
+        case .indoor:
+            // 室内：温暖的渐变背景
+            LinearGradient(
+                colors: [
+                    theme.colors.cardBackground,
+                    theme.colors.background
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .overlay(
+                // 窗户光线效果
+                Ellipse()
+                    .fill(
+                        RadialGradient(
+                            colors: [
+                                Color.yellow.opacity(0.1),
+                                Color.clear
+                            ],
+                            center: .center,
+                            startRadius: 0,
+                            endRadius: 100
+                        )
+                    )
+                    .frame(width: 200, height: 150)
+                    .offset(x: -50, y: -80)
+            )
+
+        case .outdoor:
+            // 户外：蓝天白云
+            LinearGradient(
+                colors: [
+                    Color(hex: "#87CEEB"),
+                    Color(hex: "#E0F7FA")
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .overlay(
+                // 云朵
+                HStack(spacing: 30) {
+                    cloudShape
+                        .offset(y: -60)
+                    cloudShape
+                        .scaleEffect(0.7)
+                        .offset(y: -40)
+                }
+                .offset(y: -20)
+            )
+            .overlay(
+                // 草地
+                Rectangle()
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color(hex: "#90EE90"),
+                                Color(hex: "#228B22")
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .frame(height: 40)
+                    .offset(y: 80)
+                , alignment: .bottom
+            )
+
+        case .night:
+            // 夜晚：深蓝色星空
+            LinearGradient(
+                colors: [
+                    Color(hex: "#0D1B2A"),
+                    Color(hex: "#1B263B")
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .overlay(
+                // 星星
+                ZStack {
+                    ForEach(0..<8, id: \.self) { index in
+                        Circle()
+                            .fill(Color.white)
+                            .frame(width: CGFloat.random(in: 2...4), height: CGFloat.random(in: 2...4))
+                            .offset(
+                                x: CGFloat.random(in: -80...80),
+                                y: CGFloat.random(in: -80...(-20))
+                            )
+                            .opacity(Double.random(in: 0.5...1.0))
+                    }
+                    // 月亮
+                    Circle()
+                        .fill(Color(hex: "#F5F5DC"))
+                        .frame(width: 30, height: 30)
+                        .offset(x: 60, y: -70)
+                        .shadow(color: Color(hex: "#F5F5DC").opacity(0.5), radius: 10)
+                }
+            )
+
+        case .work:
+            // 工作模式：专注的简洁背景
+            LinearGradient(
+                colors: [
+                    theme.colors.background,
+                    theme.colors.cardBackground.opacity(0.8)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .overlay(
+                // 专注光环
+                Circle()
+                    .stroke(theme.colors.accent.opacity(0.2), lineWidth: 2)
+                    .frame(width: 120, height: 120)
+            )
+            .overlay(
+                // 小装饰点
+                HStack(spacing: 8) {
+                    ForEach(0..<3, id: \.self) { _ in
+                        Circle()
+                            .fill(theme.colors.accent.opacity(0.3))
+                            .frame(width: 6, height: 6)
+                    }
+                }
+                .offset(y: 70)
+            )
+        }
+    }
+
+    private var cloudShape: some View {
+        ZStack {
+            Circle()
+                .fill(Color.white.opacity(0.9))
+                .frame(width: 30, height: 30)
+            Circle()
+                .fill(Color.white.opacity(0.9))
+                .frame(width: 25, height: 25)
+                .offset(x: 15, y: 5)
+            Circle()
+                .fill(Color.white.opacity(0.9))
+                .frame(width: 20, height: 20)
+                .offset(x: -12, y: 3)
+        }
+    }
+
+    private var shadowColor: Color {
+        switch currentScene {
+        case .night:
+            return Color.white
+        default:
+            return theme.colors.primaryText
         }
     }
 
@@ -235,17 +405,118 @@ struct PixelArtBody: View {
     let accentColor: Color
     let animationPhase: Int
     let petForm: PetForm
+    var mood: PetMood = .happy
 
-    // 0 = transparent, 1 = primary, 2 = secondary, 3 = accent, 4 = white, 5 = black, 6 = highlight
+    // 0 = transparent, 1 = primary, 2 = secondary, 3 = accent, 4 = white, 5 = black, 6 = highlight, 7 = sleepy eyes
     private var pixelPattern: [[Int]] {
         var pattern = basePatternForForm(petForm)
 
-        // Apply blink animation every 4th phase
-        if animationPhase == 3 {
+        // Apply mood-based eye modifications
+        pattern = applyMoodToPattern(pattern, mood: mood, form: petForm)
+
+        // Apply blink animation every 4th phase (only if not sleepy)
+        if animationPhase == 3 && mood != .sleepy {
             pattern = applyBlinkAnimation(to: pattern, form: petForm)
         }
 
         return pattern
+    }
+
+    // MARK: - Mood Pattern Modifications
+
+    private func applyMoodToPattern(_ pattern: [[Int]], mood: PetMood, form: PetForm) -> [[Int]] {
+        var result = pattern
+
+        switch mood {
+        case .sleepy:
+            // 半闭眼效果
+            result = applySleepyEyes(to: result, form: form)
+        case .excited:
+            // 眼睛更大/更亮（使用 accent 色）
+            result = applyExcitedEyes(to: result, form: form)
+        case .missing:
+            // 悲伤的眼睛（向下看）
+            result = applyMissingEyes(to: result, form: form)
+        case .focused, .happy:
+            // 保持默认
+            break
+        }
+
+        return result
+    }
+
+    private func applySleepyEyes(to pattern: [[Int]], form: PetForm) -> [[Int]] {
+        var result = pattern
+
+        switch form {
+        case .cat:
+            result[4] = [0, 0, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 0, 0]
+            result[5] = [0, 0, 2, 1, 5, 5, 1, 1, 1, 1, 5, 5, 1, 2, 0, 0]
+        case .dog:
+            result[4] = [0, 0, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 0, 0]
+            result[5] = [0, 0, 2, 1, 5, 5, 1, 1, 1, 1, 5, 5, 1, 2, 0, 0]
+        case .bunny:
+            result[5] = [0, 0, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 0, 0]
+            result[6] = [0, 2, 6, 1, 1, 5, 5, 1, 1, 5, 5, 1, 1, 6, 2, 0]
+        case .bird:
+            result[4] = [0, 0, 0, 2, 1, 1, 1, 1, 1, 1, 1, 2, 0, 0, 0, 0]
+            result[5] = [0, 0, 0, 2, 1, 5, 5, 1, 5, 5, 1, 2, 2, 2, 0, 0]
+        case .dragon:
+            result[4] = [0, 0, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 0, 0]
+            result[5] = [0, 0, 2, 1, 5, 5, 1, 1, 1, 1, 5, 5, 1, 2, 0, 0]
+        }
+
+        return result
+    }
+
+    private func applyExcitedEyes(to pattern: [[Int]], form: PetForm) -> [[Int]] {
+        var result = pattern
+
+        // 使用 accent 色（3）替代白色（4）让眼睛更亮
+        switch form {
+        case .cat:
+            result[4] = [0, 0, 2, 1, 5, 3, 1, 1, 1, 1, 5, 3, 1, 2, 0, 0]
+            result[5] = [0, 0, 2, 1, 5, 3, 1, 1, 1, 1, 5, 3, 1, 2, 0, 0]
+        case .dog:
+            result[4] = [0, 0, 2, 1, 5, 3, 1, 1, 1, 1, 5, 3, 1, 2, 0, 0]
+            result[5] = [0, 0, 2, 1, 5, 3, 1, 1, 1, 1, 5, 3, 1, 2, 0, 0]
+        case .bunny:
+            result[5] = [0, 0, 2, 1, 1, 5, 3, 1, 1, 5, 3, 1, 1, 2, 0, 0]
+            result[6] = [0, 2, 6, 1, 1, 5, 3, 1, 1, 5, 3, 1, 1, 6, 2, 0]
+        case .bird:
+            result[4] = [0, 0, 0, 2, 1, 5, 3, 1, 5, 3, 1, 2, 0, 0, 0, 0]
+            result[5] = [0, 0, 0, 2, 1, 5, 3, 1, 5, 3, 1, 2, 2, 2, 0, 0]
+        case .dragon:
+            // Dragon already has glowing eyes
+            break
+        }
+
+        return result
+    }
+
+    private func applyMissingEyes(to pattern: [[Int]], form: PetForm) -> [[Int]] {
+        var result = pattern
+
+        // 眼睛向下看的效果
+        switch form {
+        case .cat:
+            result[4] = [0, 0, 2, 1, 4, 4, 1, 1, 1, 1, 4, 4, 1, 2, 0, 0]
+            result[5] = [0, 0, 2, 1, 5, 5, 1, 1, 1, 1, 5, 5, 1, 2, 0, 0]
+        case .dog:
+            result[4] = [0, 0, 2, 1, 4, 4, 1, 1, 1, 1, 4, 4, 1, 2, 0, 0]
+            result[5] = [0, 0, 2, 1, 5, 5, 1, 1, 1, 1, 5, 5, 1, 2, 0, 0]
+        case .bunny:
+            result[5] = [0, 0, 2, 1, 1, 4, 4, 1, 1, 4, 4, 1, 1, 2, 0, 0]
+            result[6] = [0, 2, 6, 1, 1, 5, 5, 1, 1, 5, 5, 1, 1, 6, 2, 0]
+        case .bird:
+            result[4] = [0, 0, 0, 2, 1, 4, 4, 1, 4, 4, 1, 2, 0, 0, 0, 0]
+            result[5] = [0, 0, 0, 2, 1, 5, 5, 1, 5, 5, 1, 2, 2, 2, 0, 0]
+        case .dragon:
+            result[4] = [0, 0, 2, 1, 4, 4, 1, 1, 1, 1, 4, 4, 1, 2, 0, 0]
+            result[5] = [0, 0, 2, 1, 5, 5, 1, 1, 1, 1, 5, 5, 1, 2, 0, 0]
+        }
+
+        return result
     }
 
     // MARK: - Pet Form Patterns

@@ -121,11 +121,14 @@ public final class AppState: @unchecked Sendable {
             adventuresCount: 143,
             age: 23,
             status: .happy,
+            mood: .happy,
+            scene: .indoor,
             stage: .child,
             progress: 0.65,
             weight: 85,
             height: 8.5,
-            tailLength: 4.2
+            tailLength: 4.2,
+            lastInteraction: Date()
         )
     }
 

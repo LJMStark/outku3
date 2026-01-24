@@ -20,8 +20,10 @@ public enum AppTab: String, CaseIterable, Identifiable {
 
 // MARK: - Event Model
 
-public struct CalendarEvent: Identifiable, Sendable {
-    public let id: UUID
+public struct CalendarEvent: Identifiable, Sendable, Codable {
+    public let id: String
+    public var localId: UUID
+    public var googleEventId: String?
     public var title: String
     public var startTime: Date
     public var endTime: Date
@@ -30,9 +32,13 @@ public struct CalendarEvent: Identifiable, Sendable {
     public var description: String?
     public var location: String?
     public var isAllDay: Bool
+    public var syncStatus: SyncStatus
+    public var lastModified: Date
 
     public init(
-        id: UUID = UUID(),
+        id: String = UUID().uuidString,
+        localId: UUID = UUID(),
+        googleEventId: String? = nil,
         title: String,
         startTime: Date,
         endTime: Date,
@@ -40,9 +46,13 @@ public struct CalendarEvent: Identifiable, Sendable {
         participants: [Participant] = [],
         description: String? = nil,
         location: String? = nil,
-        isAllDay: Bool = false
+        isAllDay: Bool = false,
+        syncStatus: SyncStatus = .synced,
+        lastModified: Date = Date()
     ) {
         self.id = id
+        self.localId = localId
+        self.googleEventId = googleEventId
         self.title = title
         self.startTime = startTime
         self.endTime = endTime
@@ -51,6 +61,8 @@ public struct CalendarEvent: Identifiable, Sendable {
         self.description = description
         self.location = location
         self.isAllDay = isAllDay
+        self.syncStatus = syncStatus
+        self.lastModified = lastModified
     }
 
     public var duration: TimeInterval {
@@ -68,9 +80,37 @@ public struct CalendarEvent: Identifiable, Sendable {
             return "\(minutes)m"
         }
     }
+
+    // 从 Google API 响应创建
+    public static func from(googleEvent: GoogleCalendarEvent, source: EventSource = .google) -> CalendarEvent? {
+        guard let startDate = googleEvent.start.asDate,
+              let endDate = googleEvent.end.asDate else {
+            return nil
+        }
+
+        let participants = googleEvent.attendees?.compactMap { attendee -> Participant? in
+            guard let name = attendee.displayName ?? attendee.email else { return nil }
+            return Participant(name: name)
+        } ?? []
+
+        return CalendarEvent(
+            id: googleEvent.id,
+            googleEventId: googleEvent.id,
+            title: googleEvent.summary ?? "Untitled Event",
+            startTime: startDate,
+            endTime: endDate,
+            source: source,
+            participants: participants,
+            description: googleEvent.description,
+            location: googleEvent.location,
+            isAllDay: googleEvent.start.date != nil,
+            syncStatus: .synced,
+            lastModified: Date()
+        )
+    }
 }
 
-public enum EventSource: String, Sendable {
+public enum EventSource: String, Sendable, Codable {
     case apple = "Apple Calendar"
     case google = "Google Calendar"
     case todoist = "Todoist"
@@ -84,7 +124,7 @@ public enum EventSource: String, Sendable {
     }
 }
 
-public struct Participant: Identifiable, Sendable {
+public struct Participant: Identifiable, Sendable, Codable {
     public let id: UUID
     public var name: String
     public var avatarURL: URL?
@@ -105,32 +145,63 @@ public struct Participant: Identifiable, Sendable {
 
 // MARK: - Task Model
 
-public struct TaskItem: Identifiable, Sendable {
-    public let id: UUID
+public struct TaskItem: Identifiable, Sendable, Codable {
+    public let id: String
+    public var localId: UUID
+    public var googleTaskId: String?
+    public var googleTaskListId: String?
     public var title: String
     public var isCompleted: Bool
     public var dueDate: Date?
     public var source: EventSource
     public var priority: TaskPriority
+    public var syncStatus: SyncStatus
+    public var lastModified: Date
 
     public init(
-        id: UUID = UUID(),
+        id: String = UUID().uuidString,
+        localId: UUID = UUID(),
+        googleTaskId: String? = nil,
+        googleTaskListId: String? = nil,
         title: String,
         isCompleted: Bool = false,
         dueDate: Date? = nil,
         source: EventSource = .apple,
-        priority: TaskPriority = .medium
+        priority: TaskPriority = .medium,
+        syncStatus: SyncStatus = .synced,
+        lastModified: Date = Date()
     ) {
         self.id = id
+        self.localId = localId
+        self.googleTaskId = googleTaskId
+        self.googleTaskListId = googleTaskListId
         self.title = title
         self.isCompleted = isCompleted
         self.dueDate = dueDate
         self.source = source
         self.priority = priority
+        self.syncStatus = syncStatus
+        self.lastModified = lastModified
+    }
+
+    // 从 Google API 响应创建
+    public static func from(googleTask: GoogleTask, taskListId: String) -> TaskItem {
+        TaskItem(
+            id: googleTask.id,
+            googleTaskId: googleTask.id,
+            googleTaskListId: taskListId,
+            title: googleTask.title ?? "Untitled Task",
+            isCompleted: googleTask.isCompleted,
+            dueDate: googleTask.dueDate,
+            source: .google,
+            priority: .medium,
+            syncStatus: .synced,
+            lastModified: Date()
+        )
     }
 }
 
-public enum TaskPriority: Int, Sendable, CaseIterable {
+public enum TaskPriority: Int, Sendable, CaseIterable, Codable {
     case low = 0
     case medium = 1
     case high = 2
@@ -154,18 +225,21 @@ public enum TaskCategory: String, CaseIterable, Identifiable {
 
 // MARK: - Pet Model
 
-public struct Pet: Sendable {
+public struct Pet: Sendable, Codable {
     public var name: String
     public var pronouns: PetPronouns
     public var adventuresCount: Int
     public var age: Int // in days
     public var status: PetStatus
+    public var mood: PetMood
+    public var scene: PetScene
     public var stage: PetStage
     public var progress: Double // 0.0 to 1.0
     public var weight: Double // in grams
     public var height: Double // in cm
     public var tailLength: Double // in cm
     public var currentForm: PetForm
+    public var lastInteraction: Date
 
     public init(
         name: String = "Baby Waffle",
@@ -173,34 +247,59 @@ public struct Pet: Sendable {
         adventuresCount: Int = 0,
         age: Int = 1,
         status: PetStatus = .happy,
+        mood: PetMood = .happy,
+        scene: PetScene = .indoor,
         stage: PetStage = .baby,
         progress: Double = 0.0,
         weight: Double = 50,
         height: Double = 5,
         tailLength: Double = 2,
-        currentForm: PetForm = .cat
+        currentForm: PetForm = .cat,
+        lastInteraction: Date = Date()
     ) {
         self.name = name
         self.pronouns = pronouns
         self.adventuresCount = adventuresCount
         self.age = age
         self.status = status
+        self.mood = mood
+        self.scene = scene
         self.stage = stage
         self.progress = progress
         self.weight = weight
         self.height = height
         self.tailLength = tailLength
         self.currentForm = currentForm
+        self.lastInteraction = lastInteraction
     }
 }
 
-public enum PetPronouns: String, CaseIterable, Sendable {
+// MARK: - Pet Mood
+
+public enum PetMood: String, Codable, Sendable, CaseIterable {
+    case happy = "Happy"
+    case excited = "Excited"
+    case focused = "Focused"
+    case sleepy = "Sleepy"
+    case missing = "Missing You"
+}
+
+// MARK: - Pet Scene
+
+public enum PetScene: String, Codable, Sendable, CaseIterable {
+    case indoor = "Indoor"
+    case outdoor = "Outdoor"
+    case night = "Night"
+    case work = "Work"
+}
+
+public enum PetPronouns: String, CaseIterable, Sendable, Codable {
     case heHim = "He/Him"
     case sheHer = "She/Her"
     case theyThem = "They/Them"
 }
 
-public enum PetStatus: String, Sendable {
+public enum PetStatus: String, Sendable, Codable {
     case happy = "Happy"
     case content = "Content"
     case sleepy = "Sleepy"
@@ -208,7 +307,7 @@ public enum PetStatus: String, Sendable {
     case excited = "Excited"
 }
 
-public enum PetStage: String, Sendable {
+public enum PetStage: String, Sendable, Codable {
     case baby = "Baby"
     case child = "Child"
     case teen = "Teen"
@@ -226,7 +325,7 @@ public enum PetStage: String, Sendable {
     }
 }
 
-public enum PetForm: String, CaseIterable, Sendable {
+public enum PetForm: String, CaseIterable, Sendable, Codable {
     case cat = "Cat"
     case dog = "Dog"
     case bunny = "Bunny"
@@ -236,7 +335,7 @@ public enum PetForm: String, CaseIterable, Sendable {
 
 // MARK: - Streak Model
 
-public struct Streak: Sendable {
+public struct Streak: Sendable, Codable {
     public var currentStreak: Int
     public var longestStreak: Int
     public var lastActiveDate: Date?
@@ -250,7 +349,7 @@ public struct Streak: Sendable {
 
 // MARK: - Statistics Model
 
-public struct TaskStatistics: Sendable {
+public struct TaskStatistics: Sendable, Codable {
     public var todayCompleted: Int
     public var todayTotal: Int
     public var pastWeekCompleted: Int
@@ -292,19 +391,29 @@ public struct TaskStatistics: Sendable {
 
 // MARK: - Weather Model
 
-public struct Weather: Sendable {
+public struct Weather: Sendable, Codable {
     public var temperature: Int
+    public var highTemp: Int
+    public var lowTemp: Int
     public var condition: WeatherCondition
     public var location: String
 
-    public init(temperature: Int = 22, condition: WeatherCondition = .sunny, location: String = "San Francisco") {
+    public init(
+        temperature: Int = 22,
+        highTemp: Int = 85,
+        lowTemp: Int = 64,
+        condition: WeatherCondition = .sunny,
+        location: String = "San Francisco"
+    ) {
         self.temperature = temperature
+        self.highTemp = highTemp
+        self.lowTemp = lowTemp
         self.condition = condition
         self.location = location
     }
 }
 
-public enum WeatherCondition: String, Sendable {
+public enum WeatherCondition: String, Sendable, Codable {
     case sunny = "sun.max.fill"
     case cloudy = "cloud.fill"
     case partlyCloudy = "cloud.sun.fill"
@@ -315,7 +424,7 @@ public enum WeatherCondition: String, Sendable {
 
 // MARK: - Sun Times
 
-public struct SunTimes: Sendable {
+public struct SunTimes: Sendable, Codable {
     public var sunrise: Date
     public var sunset: Date
 
@@ -338,7 +447,7 @@ public struct SunTimes: Sendable {
 
 // MARK: - Haiku Model
 
-public struct Haiku: Identifiable, Sendable {
+public struct Haiku: Identifiable, Sendable, Codable {
     public let id: UUID
     public var lines: [String]
 
@@ -358,7 +467,7 @@ public struct Haiku: Identifiable, Sendable {
 
 // MARK: - Integration Model
 
-public struct Integration: Identifiable, Sendable {
+public struct Integration: Identifiable, Sendable, Codable {
     public let id: UUID
     public var name: String
     public var iconName: String
@@ -374,7 +483,7 @@ public struct Integration: Identifiable, Sendable {
     }
 }
 
-public enum IntegrationType: String, Sendable {
+public enum IntegrationType: String, Sendable, Codable {
     case appleCalendar = "Apple Calendar"
     case appleReminders = "Apple Reminders"
     case googleCalendar = "Google Calendar"

@@ -10,23 +10,29 @@ struct PetPageView: View {
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(spacing: AppSpacing.xl) {
+            VStack(spacing: 0) {
+                // Header - shared across all main pages
+                AppHeaderView()
+
                 // Pet display area
                 PetDisplaySection(showPetStatus: $showPetStatus)
+                    .padding(.top, AppSpacing.xl)
 
                 // Task categories
                 TaskCategoryPicker(selectedCategory: $selectedCategory)
+                    .padding(.top, AppSpacing.xl)
 
                 // Task list
                 TaskListSection(category: selectedCategory)
+                    .padding(.top, AppSpacing.md)
 
                 // Bottom spacing for tab bar
                 Spacer()
-                    .frame(height: 100)
+                    .frame(height: 120)
             }
-            .padding(.top, AppSpacing.lg)
         }
         .background(theme.colors.background)
+        .ignoresSafeArea(edges: .top)
         .sheet(isPresented: $showPetStatus) {
             PetStatusView()
                 .environment(appState)

@@ -1,0 +1,228 @@
+import Foundation
+import GoogleSignIn
+import UIKit
+
+// MARK: - Google Sign In Service
+
+/// 处理 Google Sign In 认证流程，包含 Calendar 和 Tasks API 权限
+public final class GoogleSignInService: @unchecked Sendable {
+    public static let shared = GoogleSignInService()
+
+    private let keychainService = KeychainService.shared
+
+    // Google API Scopes
+    private let scopes = [
+        "https://www.googleapis.com/auth/calendar.readonly",
+        "https://www.googleapis.com/auth/tasks"
+    ]
+
+    private init() {}
+
+    // MARK: - Configuration
+
+    /// 配置 Google Sign In（在 App 启动时调用）
+    public func configure() {
+        // Google Sign In 会自动从 Info.plist 读取 Client ID
+        // 确保 Info.plist 包含 GIDClientID 和 URL Schemes
+    }
+
+    // MARK: - Sign In
+
+    /// 执行 Google Sign In
+    @MainActor
+    public func signIn() async throws -> GoogleSignInResult {
+        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let rootViewController = windowScene.windows.first?.rootViewController else {
+            throw GoogleSignInError.noRootViewController
+        }
+
+        // 请求额外的 scopes
+        let result = try await GIDSignIn.sharedInstance.signIn(
+            withPresenting: rootViewController,
+            hint: nil,
+            additionalScopes: scopes
+        )
+
+        let user = result.user
+
+        // 保存 tokens
+        if let accessToken = user.accessToken.tokenString as String?,
+           let refreshToken = user.refreshToken.tokenString as String? {
+            let expiresIn = user.accessToken.expirationDate?.timeIntervalSinceNow ?? 3600
+            try keychainService.saveGoogleTokens(
+                accessToken: accessToken,
+                refreshToken: refreshToken,
+                expiresIn: expiresIn
+            )
+        }
+
+        return GoogleSignInResult(
+            userID: user.userID ?? "",
+            email: user.profile?.email,
+            displayName: user.profile?.name,
+            avatarURL: user.profile?.imageURL(withDimension: 200),
+            accessToken: user.accessToken.tokenString,
+            refreshToken: user.refreshToken.tokenString,
+            grantedScopes: result.user.grantedScopes ?? []
+        )
+    }
+
+    // MARK: - Restore Previous Sign In
+
+    /// 恢复之前的登录状态
+    @MainActor
+    public func restorePreviousSignIn() async throws -> GoogleSignInResult? {
+        do {
+            let user = try await GIDSignIn.sharedInstance.restorePreviousSignIn()
+
+            return GoogleSignInResult(
+                userID: user.userID ?? "",
+                email: user.profile?.email,
+                displayName: user.profile?.name,
+                avatarURL: user.profile?.imageURL(withDimension: 200),
+                accessToken: user.accessToken.tokenString,
+                refreshToken: user.refreshToken.tokenString,
+                grantedScopes: user.grantedScopes ?? []
+            )
+        } catch {
+            // 没有之前的登录状态
+            return nil
+        }
+    }
+
+    // MARK: - Refresh Token
+
+    /// 刷新 access token
+    @MainActor
+    public func refreshTokenIfNeeded() async throws -> String {
+        guard let currentUser = GIDSignIn.sharedInstance.currentUser else {
+            throw GoogleSignInError.notSignedIn
+        }
+
+        // 检查 token 是否需要刷新
+        if keychainService.isGoogleTokenExpired() {
+            try await currentUser.refreshTokensIfNeeded()
+
+            // 保存新的 tokens
+            let accessToken = currentUser.accessToken.tokenString
+            let refreshToken = currentUser.refreshToken.tokenString
+            let expiresIn = currentUser.accessToken.expirationDate?.timeIntervalSinceNow ?? 3600
+
+            try keychainService.saveGoogleTokens(
+                accessToken: accessToken,
+                refreshToken: refreshToken,
+                expiresIn: expiresIn
+            )
+
+            return accessToken
+        }
+
+        return currentUser.accessToken.tokenString
+    }
+
+    // MARK: - Get Current Access Token
+
+    /// 获取当前有效的 access token（如需要会自动刷新）
+    @MainActor
+    public func getValidAccessToken() async throws -> String {
+        try await refreshTokenIfNeeded()
+    }
+
+    // MARK: - Check Scopes
+
+    /// 检查是否已授权所需的 scopes
+    public func hasRequiredScopes() -> Bool {
+        guard let currentUser = GIDSignIn.sharedInstance.currentUser,
+              let grantedScopes = currentUser.grantedScopes else {
+            return false
+        }
+
+        return scopes.allSatisfy { grantedScopes.contains($0) }
+    }
+
+    // MARK: - Request Additional Scopes
+
+    /// 请求额外的权限
+    @MainActor
+    public func requestAdditionalScopes() async throws {
+        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let rootViewController = windowScene.windows.first?.rootViewController,
+              let currentUser = GIDSignIn.sharedInstance.currentUser else {
+            throw GoogleSignInError.notSignedIn
+        }
+
+        _ = try await currentUser.addScopes(scopes, presenting: rootViewController)
+    }
+
+    // MARK: - Sign Out
+
+    /// 登出
+    public func signOut() {
+        GIDSignIn.sharedInstance.signOut()
+        keychainService.clearGoogleTokens()
+    }
+
+    // MARK: - Disconnect
+
+    /// 断开连接（撤销所有权限）
+    public func disconnect() async {
+        await withCheckedContinuation { continuation in
+            GIDSignIn.sharedInstance.disconnect { _ in
+                continuation.resume()
+            }
+        }
+        keychainService.clearGoogleTokens()
+    }
+
+    // MARK: - Handle URL
+
+    /// 处理 OAuth 回调 URL
+    public func handle(_ url: URL) -> Bool {
+        GIDSignIn.sharedInstance.handle(url)
+    }
+}
+
+// MARK: - Google Sign In Result
+
+public struct GoogleSignInResult: Sendable {
+    public let userID: String
+    public let email: String?
+    public let displayName: String?
+    public let avatarURL: URL?
+    public let accessToken: String
+    public let refreshToken: String
+    public let grantedScopes: [String]
+
+    public var hasCalendarAccess: Bool {
+        grantedScopes.contains("https://www.googleapis.com/auth/calendar.readonly")
+    }
+
+    public var hasTasksAccess: Bool {
+        grantedScopes.contains("https://www.googleapis.com/auth/tasks")
+    }
+}
+
+// MARK: - Google Sign In Error
+
+public enum GoogleSignInError: LocalizedError, Sendable {
+    case noRootViewController
+    case notSignedIn
+    case scopesDenied
+    case canceled
+    case failed(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .noRootViewController:
+            return "Unable to find root view controller"
+        case .notSignedIn:
+            return "Not signed in to Google"
+        case .scopesDenied:
+            return "Required permissions were denied"
+        case .canceled:
+            return "Sign in was canceled"
+        case .failed(let message):
+            return "Sign in failed: \(message)"
+        }
+    }
+}

@@ -8,49 +8,36 @@ struct SettingsView: View {
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(spacing: AppSpacing.xl) {
-                // Header
-                SettingsHeaderView()
+            VStack(spacing: 0) {
+                // Header - shared across all main pages
+                AppHeaderView()
 
-                // Widget Preview
-                WidgetPreviewSection()
+                // Settings content
+                VStack(spacing: AppSpacing.xl) {
+                    // Widget Preview
+                    WidgetPreviewSection()
 
-                // Pet Form Selection
-                PetFormSelectionSection()
+                    // Pet Form Selection
+                    PetFormSelectionSection()
 
-                // Theme Selection
-                ThemeSelectionSection()
+                    // Theme Selection
+                    ThemeSelectionSection()
 
-                // Integrations
-                IntegrationsSection()
+                    // Integrations
+                    IntegrationsSection()
 
-                // About
-                AboutSection()
+                    // About
+                    AboutSection()
 
-                // Bottom spacing for tab bar
-                Spacer()
-                    .frame(height: 100)
+                    // Bottom spacing for tab bar
+                    Spacer()
+                        .frame(height: 120)
+                }
+                .padding(.top, AppSpacing.xl)
             }
-            .padding(.top, AppSpacing.lg)
         }
         .background(theme.colors.background)
-    }
-}
-
-// MARK: - Settings Header
-
-struct SettingsHeaderView: View {
-    @Environment(ThemeManager.self) private var theme
-
-    var body: some View {
-        HStack {
-            Text("Settings")
-                .font(AppTypography.title)
-                .foregroundStyle(theme.colors.primaryText)
-
-            Spacer()
-        }
-        .padding(.horizontal, AppSpacing.xl)
+        .ignoresSafeArea(edges: .top)
     }
 }
 
@@ -302,42 +289,132 @@ struct IntegrationsSection: View {
 struct IntegrationRowView: View {
     let integration: Integration
     @Environment(ThemeManager.self) private var theme
+    @State private var isConnecting = false
+    @State private var showError = false
+    @State private var errorMessage = ""
 
     var body: some View {
-        HStack(spacing: AppSpacing.md) {
-            // Icon
-            ZStack {
-                Circle()
-                    .fill(theme.colors.accent.opacity(0.15))
-                    .frame(width: 40, height: 40)
+        Button {
+            handleIntegrationTap()
+        } label: {
+            HStack(spacing: AppSpacing.md) {
+                // Icon
+                ZStack {
+                    Circle()
+                        .fill(theme.colors.accent.opacity(0.15))
+                        .frame(width: 40, height: 40)
 
-                Image(systemName: integration.iconName)
-                    .font(.system(size: 18))
-                    .foregroundStyle(theme.colors.accent)
+                    if isConnecting {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                    } else {
+                        Image(systemName: integration.iconName)
+                            .font(.system(size: 18))
+                            .foregroundStyle(theme.colors.accent)
+                    }
+                }
+
+                // Info
+                VStack(alignment: .leading, spacing: AppSpacing.xs) {
+                    Text(integration.name)
+                        .font(AppTypography.body)
+                        .foregroundStyle(theme.colors.primaryText)
+
+                    Text(statusText)
+                        .font(AppTypography.caption)
+                        .foregroundStyle(statusColor)
+                }
+
+                Spacer()
+
+                // Action indicator
+                if integration.isConnected {
+                    Circle()
+                        .fill(theme.colors.taskComplete)
+                        .frame(width: 10, height: 10)
+                } else if canConnect {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 20))
+                        .foregroundStyle(theme.colors.accent)
+                } else {
+                    Circle()
+                        .fill(theme.colors.timeline)
+                        .frame(width: 10, height: 10)
+                }
             }
-
-            // Info
-            VStack(alignment: .leading, spacing: AppSpacing.xs) {
-                Text(integration.name)
-                    .font(AppTypography.body)
-                    .foregroundStyle(theme.colors.primaryText)
-
-                Text(integration.isConnected ? "Connected" : "Not connected")
-                    .font(AppTypography.caption)
-                    .foregroundStyle(integration.isConnected ? theme.colors.taskComplete : theme.colors.secondaryText)
+            .padding(AppSpacing.lg)
+            .background {
+                RoundedRectangle(cornerRadius: AppCornerRadius.medium)
+                    .fill(theme.colors.cardBackground)
             }
-
-            Spacer()
-
-            // Status indicator
-            Circle()
-                .fill(integration.isConnected ? theme.colors.taskComplete : theme.colors.timeline)
-                .frame(width: 10, height: 10)
         }
-        .padding(AppSpacing.lg)
-        .background {
-            RoundedRectangle(cornerRadius: AppCornerRadius.medium)
-                .fill(theme.colors.cardBackground)
+        .buttonStyle(.plain)
+        .disabled(isConnecting || !canConnect)
+        .alert("Connection Error", isPresented: $showError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(errorMessage)
+        }
+    }
+
+    private var statusText: String {
+        if isConnecting {
+            return "Connecting..."
+        } else if integration.isConnected {
+            return "Connected"
+        } else if canConnect {
+            return "Tap to connect"
+        } else {
+            return "Not connected"
+        }
+    }
+
+    private var statusColor: Color {
+        if integration.isConnected {
+            return theme.colors.taskComplete
+        } else if canConnect {
+            return theme.colors.accent
+        } else {
+            return theme.colors.secondaryText
+        }
+    }
+
+    private var canConnect: Bool {
+        switch integration.type {
+        case .googleCalendar, .googleTasks:
+            return true
+        case .appleCalendar, .appleReminders:
+            return true
+        case .todoist:
+            return false // Not implemented yet
+        }
+    }
+
+    private func handleIntegrationTap() {
+        guard !integration.isConnected else { return }
+
+        switch integration.type {
+        case .googleCalendar, .googleTasks:
+            connectGoogle()
+        case .appleCalendar, .appleReminders:
+            // Apple integrations are handled via system permissions
+            break
+        case .todoist:
+            break
+        }
+    }
+
+    private func connectGoogle() {
+        isConnecting = true
+
+        Task {
+            do {
+                try await AuthManager.shared.signInWithGoogle()
+            } catch {
+                errorMessage = error.localizedDescription
+                showError = true
+            }
+            isConnecting = false
         }
     }
 }
