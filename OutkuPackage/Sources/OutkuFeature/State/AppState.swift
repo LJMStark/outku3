@@ -310,11 +310,14 @@ public final class AppState: @unchecked Sendable {
         let isCompleted = tasks[index].isCompleted
         let updatedTask = tasks[index]
 
+        // Play sound and haptic feedback
         if isCompleted {
+            SoundService.shared.playWithHaptic(.taskComplete, haptic: .success)
             pet.adventuresCount += 1
             pet.progress = min(1.0, pet.progress + 0.02)
             updateStreak()
         } else {
+            SoundService.shared.playWithHaptic(.taskUncomplete, haptic: .light)
             pet.adventuresCount = max(0, pet.adventuresCount - 1)
             pet.progress = max(0, pet.progress - 0.02)
         }

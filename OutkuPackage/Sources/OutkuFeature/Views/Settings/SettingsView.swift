@@ -26,6 +26,9 @@ struct SettingsView: View {
                     // Theme Selection
                     ThemeSelectionSection()
 
+                    // Sound Settings
+                    SoundSettingsSection()
+
                     // Integrations
                     IntegrationsSection()
 
@@ -253,6 +256,93 @@ struct ThemeOptionView: View {
             }
         }
         .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Sound Settings Section
+
+struct SoundSettingsSection: View {
+    @Environment(ThemeManager.self) private var theme
+    @State private var soundService = SoundService.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.md) {
+            Text("Sound & Haptics")
+                .font(AppTypography.headline)
+                .foregroundStyle(theme.colors.primaryText)
+                .padding(.horizontal, AppSpacing.xl)
+
+            VStack(spacing: AppSpacing.sm) {
+                soundToggleRow
+                if soundService.isSoundEnabled {
+                    volumeControlCard
+                }
+            }
+            .padding(.horizontal, AppSpacing.xl)
+        }
+    }
+
+    // MARK: - Subviews
+
+    private var soundToggleRow: some View {
+        HStack {
+            Image(systemName: "speaker.wave.2.fill")
+                .font(.system(size: 18))
+                .foregroundStyle(theme.colors.accent)
+                .frame(width: 24)
+
+            Text("Sound Effects")
+                .font(AppTypography.body)
+                .foregroundStyle(theme.colors.primaryText)
+
+            Spacer()
+
+            Toggle("", isOn: $soundService.isSoundEnabled)
+                .labelsHidden()
+                .tint(theme.colors.accent)
+        }
+        .padding(AppSpacing.lg)
+        .background {
+            RoundedRectangle(cornerRadius: AppCornerRadius.medium)
+                .fill(theme.colors.cardBackground)
+        }
+    }
+
+    private var volumeControlCard: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.sm) {
+            // Volume slider
+            HStack {
+                Image(systemName: "speaker.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(theme.colors.secondaryText)
+
+                Slider(value: $soundService.volume, in: 0...1)
+                    .tint(theme.colors.accent)
+
+                Image(systemName: "speaker.wave.3.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(theme.colors.secondaryText)
+            }
+
+            // Test sound button
+            Button {
+                soundService.playWithHaptic(.taskComplete, haptic: .success)
+            } label: {
+                HStack {
+                    Image(systemName: "play.circle.fill")
+                        .font(.system(size: 16))
+                    Text("Test Sound")
+                        .font(AppTypography.subheadline)
+                }
+                .foregroundStyle(theme.colors.accent)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(AppSpacing.lg)
+        .background {
+            RoundedRectangle(cornerRadius: AppCornerRadius.medium)
+                .fill(theme.colors.cardBackground)
+        }
     }
 }
 
