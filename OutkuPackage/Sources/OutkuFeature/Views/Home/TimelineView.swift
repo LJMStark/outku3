@@ -176,6 +176,7 @@ struct TimelineCardRow: View {
     @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
     @State private var appeared = false
+    @State private var showEventDetail = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -199,7 +200,10 @@ struct TimelineCardRow: View {
                     title: "New Product Factory Tour!",
                     duration: "1h",
                     participants: 2,
-                    description: "Join your coworkers for a factory tour in Shenzhen to see how the new product is made. Exciting!"
+                    description: "Join your coworkers for a factory tour in Shenzhen to see how the new product is made. Exciting!",
+                    onTap: {
+                        showEventDetail = true
+                    }
                 )
             }
             .padding(.vertical, 8)
@@ -209,6 +213,12 @@ struct TimelineCardRow: View {
         .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(delay), value: appeared)
         .onAppear {
             appeared = true
+        }
+        .sheet(isPresented: $showEventDetail) {
+            EventDetailModal()
+                .environment(theme)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
         }
     }
 }

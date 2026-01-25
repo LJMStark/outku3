@@ -7,13 +7,14 @@ struct EventCardView: View {
     let duration: String
     let participants: Int
     let description: String
+    var onTap: (() -> Void)? = nil
 
     @Environment(ThemeManager.self) private var theme
     @State private var isPressed = false
 
     var body: some View {
         Button {
-            // Open event detail
+            onTap?()
         } label: {
             VStack(alignment: .leading, spacing: 8) {
                 // Title
