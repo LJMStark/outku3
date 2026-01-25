@@ -10,7 +10,6 @@ struct EventCardView: View {
     var onTap: (() -> Void)? = nil
 
     @Environment(ThemeManager.self) private var theme
-    @State private var isPressed = false
 
     var body: some View {
         Button {

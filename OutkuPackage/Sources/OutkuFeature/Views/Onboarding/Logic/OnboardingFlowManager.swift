@@ -18,17 +18,21 @@ class OnboardingFlowManager {
     var petName: String = ""
     var selectedForm: PetForm = .cat
     var selectedPronouns: PetPronouns = .theyThem
-    
+
     // Animation State
     var isShadowMode: Bool = true
     var isRevealed: Bool = false
     var showFlash: Bool = false
-    
+
     // Dialog State
     var dialogText: String = ""
     var isTyping: Bool = false
     var showChoices: Bool = false
-    
+
+    // Task Management
+    private var revealTask: Task<Void, Never>?
+    private var dialogTask: Task<Void, Never>?
+
     // Dependencies
     private var appState: AppState?
     
@@ -54,47 +58,47 @@ class OnboardingFlowManager {
     
     func confirmName() {
         guard !petName.isEmpty else { return }
-        
+
         withAnimation(.easeInOut(duration: 0.5)) {
             currentStep = .reveal
         }
-        
-        // Sequence the reveal
-        // Sequence the reveal
-        Task { @MainActor [weak self] in
-            guard let self = self else { return }
-            
-            // 1. Brief pause
-            try? await Task.sleep(for: .seconds(0.5))
-            
-            // 2. Flash
-            withAnimation(.easeIn(duration: 0.1)) {
-                self.showFlash = true
-            }
-            
-            // 3. Switch to revealed state behind the flash
-            try? await Task.sleep(for: .seconds(0.1))
-            self.isShadowMode = false
-            self.isRevealed = true
-            self.appState?.pet.name = self.petName
-            self.appState?.pet.currentForm = self.selectedForm
-            self.appState?.pet.pronouns = self.selectedPronouns
-            
-            // 4. Fade out flash
-            withAnimation(.easeOut(duration: 1.0)) {
-                self.showFlash = false
-            }
-            
-            // 5. Success Dialog
-            try? await Task.sleep(for: .seconds(1.0))
-            self.startDialog(text: "I am \(self.petName)! I'm so happy to meet you!")
-            
-            // 6. Transition to Sanctuary after delay
-            try? await Task.sleep(for: .seconds(3.0))
-            withAnimation {
-                self.currentStep = .sanctuary
-            }
+
+        revealTask?.cancel()
+        revealTask = Task { @MainActor in
+            try? await performRevealSequence()
         }
+    }
+
+    private func performRevealSequence() async throws {
+        try await delay(0.5)
+
+        withAnimation(.easeIn(duration: 0.1)) {
+            showFlash = true
+        }
+
+        try await delay(0.1)
+        isShadowMode = false
+        isRevealed = true
+        appState?.pet.name = petName
+        appState?.pet.currentForm = selectedForm
+        appState?.pet.pronouns = selectedPronouns
+
+        withAnimation(.easeOut(duration: 1.0)) {
+            showFlash = false
+        }
+
+        try await delay(1.0)
+        startDialog(text: "I am \(petName)! I'm so happy to meet you!")
+
+        try await delay(3.0)
+        withAnimation {
+            currentStep = .sanctuary
+        }
+    }
+
+    private func delay(_ seconds: Double) async throws {
+        try Task.checkCancellation()
+        try await Task.sleep(for: .seconds(seconds))
     }
     
     func completeOnboarding() {
@@ -103,23 +107,25 @@ class OnboardingFlowManager {
         }
     }
     
-    // Helper to simulate typing
     public func startDialog(text: String) {
         dialogText = ""
         isTyping = true
         showChoices = false
-        
-        Task { @MainActor [weak self] in
-            guard let self = self else { return }
-            
+
+        dialogTask?.cancel()
+        dialogTask = Task { @MainActor in
             for char in text {
-                self.dialogText.append(char)
-                // Haptic feedback could go here
-                try? await Task.sleep(for: .seconds(0.03))
+                try? await delay(0.03)
+                dialogText.append(char)
             }
-            
-            self.isTyping = false
-            self.showChoices = true
+            isTyping = false
+            showChoices = true
         }
+    }
+
+    /// Cancel all running tasks
+    func cancelAllTasks() {
+        revealTask?.cancel()
+        dialogTask?.cancel()
     }
 }

@@ -108,8 +108,6 @@ private struct TabButton: View {
     let primaryColor: Color
     let action: () -> Void
 
-    @State private var isPressed = false
-
     var body: some View {
         Button(action: action) {
             ZStack {

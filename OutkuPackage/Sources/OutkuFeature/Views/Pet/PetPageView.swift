@@ -177,7 +177,6 @@ private struct TaskItemRow: View {
     let task: TaskItem
     @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
-    @State private var isPressed = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -242,21 +241,15 @@ private struct TaskItemRow: View {
             RoundedRectangle(cornerRadius: 16)
                 .stroke(Color(hex: "F3F4F6"), lineWidth: 1)
         )
-        .scaleEffect(isPressed ? 0.98 : 1.0)
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isPressed)
     }
 
     private func formatDueDate(_ date: Date) -> String {
         let calendar = Calendar.current
-        if calendar.isDateInToday(date) {
-            return "today"
-        } else if calendar.isDateInTomorrow(date) {
-            return "tomorrow"
-        } else {
-            let formatter = DateFormatter()
-            formatter.dateFormat = "MMM d"
-            return formatter.string(from: date)
-        }
+        if calendar.isDateInToday(date) { return "today" }
+        if calendar.isDateInTomorrow(date) { return "tomorrow" }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d"
+        return formatter.string(from: date)
     }
 }
 

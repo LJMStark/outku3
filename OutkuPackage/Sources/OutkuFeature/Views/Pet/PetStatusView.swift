@@ -254,7 +254,6 @@ private struct AchievementCard: View {
 
     var body: some View {
         HStack(spacing: 16) {
-            // Achievement icon
             ZStack {
                 Circle()
                     .fill(
@@ -272,18 +271,11 @@ private struct AchievementCard: View {
                     .foregroundStyle(.white)
                     .rotationEffect(.degrees(iconRotated ? 10 : -10))
             }
-            .onAppear {
-                withAnimation(
-                    .easeInOut(duration: 0.5)
-                    .delay(1.2)
-                ) {
-                    iconRotated = true
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.7) {
-                    withAnimation(.easeInOut(duration: 0.5)) {
-                        iconRotated = false
-                    }
-                }
+            .task {
+                try? await Task.sleep(for: .seconds(1.2))
+                withAnimation(.easeInOut(duration: 0.5)) { iconRotated = true }
+                try? await Task.sleep(for: .seconds(0.5))
+                withAnimation(.easeInOut(duration: 0.5)) { iconRotated = false }
             }
 
             VStack(alignment: .leading, spacing: 4) {

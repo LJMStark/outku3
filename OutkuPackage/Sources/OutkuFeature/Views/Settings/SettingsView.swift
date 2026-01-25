@@ -166,7 +166,7 @@ private struct ThemeOptionRow: View {
                 ToggleSwitch(isOn: isSelected)
             }
             .padding(16)
-            .background(Color(hex: isSelected ? "F9FAFB" : "F9FAFB"))
+            .background(Color(hex: "F9FAFB"))
             .clipShape(RoundedRectangle(cornerRadius: 16))
             .overlay(
                 RoundedRectangle(cornerRadius: 16)
@@ -500,13 +500,11 @@ private struct AppInfo {
 private struct AppRow: View {
     let app: AppInfo
     @Environment(ThemeManager.self) private var theme
-    @State private var isHovered = false
 
     var body: some View {
         Button {
         } label: {
             HStack(spacing: 12) {
-                // App Icon
                 ZStack {
                     RoundedRectangle(cornerRadius: 8)
                         .fill(Color(hex: app.color))
@@ -533,7 +531,6 @@ private struct AppRow: View {
                     .foregroundStyle(Color(hex: "9CA3AF"))
             }
             .padding(12)
-            .background(isHovered ? Color(hex: "F9FAFB") : Color.clear)
             .clipShape(RoundedRectangle(cornerRadius: 12))
         }
         .buttonStyle(.plain)

@@ -54,27 +54,17 @@ struct CinematicBackground: View {
     
     private var backgroundColor: Color {
         switch step {
-        case .awakening:
-            return .black
-        case .conversation, .naming:
-            return Color(hex: "1A1A2E") // Dark Blue/Purple
-        case .reveal:
-            return theme.colors.background // Transition to app theme
-        case .sanctuary, .complete:
-            return theme.colors.background
+        case .awakening: .black
+        case .conversation, .naming: Color(hex: "1A1A2E")
+        case .reveal, .sanctuary, .complete: theme.colors.background
         }
     }
-    
+
     private var accentColor: Color {
         switch step {
-        case .awakening:
-            return .white
-        case .conversation, .naming:
-            return Color(hex: "E94560") // Mystery Red/Pink
-        case .reveal, .sanctuary, .complete:
-            return theme.colors.accent
+        case .awakening: .white
+        case .conversation, .naming: Color(hex: "E94560")
+        case .reveal, .sanctuary, .complete: theme.colors.accent
         }
     }
 }
-
-

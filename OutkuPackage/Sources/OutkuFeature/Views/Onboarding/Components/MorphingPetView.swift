@@ -39,12 +39,6 @@ struct MorphingPetView: View {
     }
     
     private var formIcon: String {
-        switch form {
-        case .cat: return "cat.fill"
-        case .dog: return "dog.fill"
-        case .bunny: return "hare.fill"
-        case .bird: return "bird.fill"
-        case .dragon: return "flame.fill"
-        }
+        [.cat: "cat.fill", .dog: "dog.fill", .bunny: "hare.fill", .bird: "bird.fill", .dragon: "flame.fill"][form]!
     }
 }

@@ -6,8 +6,9 @@ struct OnboardingView: View {
     @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
     @Binding var isOnboardingComplete: Bool
-    
+
     @State private var manager = OnboardingFlowManager()
+    @State private var pulseAnimation = false
     @FocusState private var isNameFocused: Bool
     
     var body: some View {
@@ -46,8 +47,9 @@ struct OnboardingView: View {
                             .font(AppTypography.body)
                             .foregroundStyle(.white.opacity(0.5))
                             .padding(.top, 100)
-                            .opacity(0.6)
-                            .animation(.easeInOut(duration: 1.5).repeatForever(), value: true)
+                            .opacity(pulseAnimation ? 0.3 : 0.8)
+                            .animation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true), value: pulseAnimation)
+                            .onAppear { pulseAnimation = true }
                         
                     case .conversation:
                         if manager.showChoices {
@@ -186,16 +188,13 @@ struct OnboardingView: View {
         .onAppear {
             manager.setAppState(appState)
         }
+        .onDisappear {
+            manager.cancelAllTasks()
+        }
     }
     
     private func formIcon(for form: PetForm) -> String {
-        switch form {
-        case .cat: return "cat.fill"
-        case .dog: return "dog.fill"
-        case .bunny: return "hare.fill"
-        case .bird: return "bird.fill"
-        case .dragon: return "flame.fill"
-        }
+        [.cat: "cat.fill", .dog: "dog.fill", .bunny: "hare.fill", .bird: "bird.fill", .dragon: "flame.fill"][form]!
     }
 }
 

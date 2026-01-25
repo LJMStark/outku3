@@ -17,15 +17,11 @@ struct DialogBubble: View {
             
             if isTyping {
                 HStack(spacing: 4) {
-                    Circle()
-                        .fill(Color.white.opacity(0.5))
-                        .frame(width: 6, height: 6)
-                    Circle()
-                        .fill(Color.white.opacity(0.5))
-                        .frame(width: 6, height: 6)
-                    Circle()
-                        .fill(Color.white.opacity(0.5))
-                        .frame(width: 6, height: 6)
+                    ForEach(0..<3, id: \.self) { _ in
+                        Circle()
+                            .fill(Color.white.opacity(0.5))
+                            .frame(width: 6, height: 6)
+                    }
                 }
                 .frame(maxWidth: .infinity)
             }
