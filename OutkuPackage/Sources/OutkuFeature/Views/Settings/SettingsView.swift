@@ -103,12 +103,12 @@ struct SettingsView: View {
     @Environment(ThemeManager.self) private var theme
 
     var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            VStack(spacing: 0) {
-                // Header - shared across all main pages
-                AppHeaderView()
+        VStack(spacing: 0) {
+            // Header - fixed at top
+            AppHeaderView()
 
-                // Settings content
+            // Scrollable content
+            ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: AppSpacing.xl) {
                     // Account Section (Sign In)
                     AccountSection()

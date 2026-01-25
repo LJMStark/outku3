@@ -9,26 +9,29 @@ struct PetPageView: View {
     @State private var showPetStatus = false
 
     var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            VStack(spacing: 0) {
-                // Header - shared across all main pages
-                AppHeaderView()
+        VStack(spacing: 0) {
+            // Header - fixed at top
+            AppHeaderView()
 
-                // Pet display area
-                PetDisplaySection(showPetStatus: $showPetStatus)
-                    .padding(.top, AppSpacing.xl)
+            // Scrollable content
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 0) {
+                    // Pet display area
+                    PetDisplaySection(showPetStatus: $showPetStatus)
+                        .padding(.top, AppSpacing.xl)
 
-                // Task categories
-                TaskCategoryPicker(selectedCategory: $selectedCategory)
-                    .padding(.top, AppSpacing.xl)
+                    // Task categories
+                    TaskCategoryPicker(selectedCategory: $selectedCategory)
+                        .padding(.top, AppSpacing.xl)
 
-                // Task list
-                TaskListSection(category: selectedCategory)
-                    .padding(.top, AppSpacing.md)
+                    // Task list
+                    TaskListSection(category: selectedCategory)
+                        .padding(.top, AppSpacing.md)
 
-                // Bottom spacing for tab bar
-                Spacer()
-                    .frame(height: 120)
+                    // Bottom spacing for tab bar
+                    Spacer()
+                        .frame(height: 120)
+                }
             }
         }
         .background(theme.colors.background)

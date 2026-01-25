@@ -7,17 +7,20 @@ struct HomeView: View {
     @Environment(ThemeManager.self) private var theme
 
     var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            VStack(spacing: 0) {
-                // Header - Brown background with date, time, weather, nav icons
-                AppHeaderView()
+        VStack(spacing: 0) {
+            // Header - fixed at top
+            AppHeaderView()
 
-                // Timeline content
-                TimelineContentView()
+            // Scrollable content
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 0) {
+                    // Timeline content
+                    TimelineContentView()
 
-                // Bottom spacing
-                Spacer()
-                    .frame(height: 40)
+                    // Bottom spacing
+                    Spacer()
+                        .frame(height: 40)
+                }
             }
         }
         .background(theme.colors.background)
