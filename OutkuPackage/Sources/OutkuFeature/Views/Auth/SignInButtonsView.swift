@@ -108,14 +108,23 @@ public struct SignInButtonsView: View {
         do {
             try await authManager.signInWithGoogle()
             onSignInComplete?()
-        } catch let error as GoogleSignInError {
-            if case .canceled = error {
-                // User canceled, don't show error
+        } catch {
+            // Platform specific error handling within the block
+            #if canImport(UIKit)
+            if let error = error as? GoogleSignInError {
+                if case .canceled = error {
+                    // User canceled, don't show error
+                    isLoading = false
+                    return
+                } else {
+                    errorMessage = error.localizedDescription
+                }
             } else {
                 errorMessage = error.localizedDescription
             }
-        } catch {
+            #else
             errorMessage = error.localizedDescription
+            #endif
         }
 
         isLoading = false

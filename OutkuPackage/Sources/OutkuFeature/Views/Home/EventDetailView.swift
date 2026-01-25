@@ -167,9 +167,11 @@ struct EventDetailView: View {
                 .padding(.top, AppSpacing.lg)
             }
             .background(theme.colors.cardBackground)
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .automatic) {
                     Button {
                         dismiss()
                     } label: {

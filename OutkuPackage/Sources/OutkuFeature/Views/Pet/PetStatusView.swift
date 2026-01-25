@@ -37,9 +37,11 @@ struct PetStatusView: View {
                 .padding(.top, 24)
             }
             .background(theme.colors.background)
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .automatic) {
                     Button {
                         dismiss()
                     } label: {

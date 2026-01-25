@@ -1,8 +1,10 @@
+
+#if canImport(UIKit)
 import Foundation
 import GoogleSignIn
 import UIKit
 
-// MARK: - Google Sign In Service
+// MARK: - Google Sign In Service (iOS)
 
 /// 处理 Google Sign In 认证流程，包含 Calendar 和 Tasks API 权限
 public final class GoogleSignInService: @unchecked Sendable {
@@ -182,7 +184,7 @@ public final class GoogleSignInService: @unchecked Sendable {
     }
 }
 
-// MARK: - Google Sign In Result
+// MARK: - Google Sign In Result (iOS)
 
 public struct GoogleSignInResult: Sendable {
     public let userID: String
@@ -202,7 +204,7 @@ public struct GoogleSignInResult: Sendable {
     }
 }
 
-// MARK: - Google Sign In Error
+// MARK: - Google Sign In Error (iOS)
 
 public enum GoogleSignInError: LocalizedError, Sendable {
     case noRootViewController
@@ -226,3 +228,47 @@ public enum GoogleSignInError: LocalizedError, Sendable {
         }
     }
 }
+
+#else
+import Foundation
+
+// MARK: - Google Sign In Service (macOS Stub)
+
+public final class GoogleSignInService: @unchecked Sendable {
+    public static let shared = GoogleSignInService()
+    private init() {}
+    public func configure() {}
+    
+    @MainActor
+    public func signIn() async throws -> GoogleSignInResult { throw GoogleSignInError.notSupported }
+    
+    @MainActor
+    public func restorePreviousSignIn() async throws -> GoogleSignInResult? { return nil }
+    
+    public func signOut() {}
+    public func disconnect() async {}
+    
+    @MainActor
+    public func refreshTokenIfNeeded() async throws -> String { throw GoogleSignInError.notSupported }
+    
+    @MainActor
+    public func getValidAccessToken() async throws -> String { throw GoogleSignInError.notSupported }
+    
+    public func handle(_ url: URL) -> Bool { return false }
+}
+
+public struct GoogleSignInResult: Sendable {
+    public let userID: String = ""
+    public let email: String? = nil
+    public let displayName: String? = nil
+    public let avatarURL: URL? = nil
+    public var hasCalendarAccess: Bool = false
+    public var hasTasksAccess: Bool = false
+}
+
+public enum GoogleSignInError: LocalizedError, Sendable {
+    case notSupported
+    public var errorDescription: String? { "Google Sign In not supported on macOS" }
+}
+
+#endif

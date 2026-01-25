@@ -83,8 +83,10 @@ public final class SoundService {
     }
 
     private func setupAudioSession() {
+        #if canImport(UIKit)
         try? AVAudioSession.sharedInstance().setCategory(.ambient, mode: .default)
         try? AVAudioSession.sharedInstance().setActive(true)
+        #endif
     }
 
     // MARK: - Play Sounds
@@ -123,6 +125,7 @@ public final class SoundService {
 
     /// 触发触觉反馈
     public func haptic(_ type: HapticType) {
+        #if canImport(UIKit)
         switch type {
         case .light:   UIImpactFeedbackGenerator(style: .light).impactOccurred()
         case .medium:  UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -132,6 +135,7 @@ public final class SoundService {
         case .error:   UINotificationFeedbackGenerator().notificationOccurred(.error)
         case .selection: UISelectionFeedbackGenerator().selectionChanged()
         }
+        #endif
     }
 
     /// 播放音效并触发触觉反馈
