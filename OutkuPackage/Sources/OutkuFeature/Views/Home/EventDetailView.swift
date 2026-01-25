@@ -183,6 +183,29 @@ struct EventDetailView: View {
     }
 }
 
+// MARK: - Participant Avatar View
+
+struct ParticipantAvatarView: View {
+    let participant: Participant
+    @Environment(ThemeManager.self) private var theme
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(theme.colors.accent.opacity(0.2))
+                .frame(width: 28, height: 28)
+
+            Text(participant.initials)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(theme.colors.accent)
+        }
+        .overlay {
+            Circle()
+                .stroke(theme.colors.cardBackground, lineWidth: 2)
+        }
+    }
+}
+
 #Preview {
     EventDetailView(
         event: CalendarEvent(

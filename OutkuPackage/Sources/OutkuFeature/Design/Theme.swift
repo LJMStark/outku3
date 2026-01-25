@@ -3,100 +3,108 @@ import SwiftUI
 // MARK: - Theme System
 
 public enum AppTheme: String, CaseIterable, Identifiable {
-    case cream = "Cream"
-    case sage = "Sage"
-    case lavender = "Lavender"
-    case peach = "Peach"
-    case sky = "Sky"
+    case classicWarm = "Classic Warm"
+    case elegantPurple = "Elegant Purple"
+    case modernTeal = "Modern Teal"
 
     public var id: String { rawValue }
 
     public var colors: ThemeColors {
         switch self {
-        case .cream:
+        case .classicWarm:
             return ThemeColors(
-                background: Color(hex: "FDF6E3"),
-                cardBackground: Color(hex: "FFFEF9"),
-                primaryText: Color(hex: "2D2D2D"),
-                secondaryText: Color(hex: "8B8B8B"),
-                accent: Color(hex: "E8B86D"),
-                timeline: Color(hex: "E5DED3"),
+                primary: Color(hex: "a67c52"),
+                primaryDark: Color(hex: "8b6f47"),
+                primaryLight: Color(hex: "d4a574"),
+                accent: Color(hex: "4a5f4f"),
+                accentLight: Color(hex: "d4e8e0"),
+                accentDark: Color(hex: "3a4f3f"),
+                background: Color(hex: "f5f1e8"),
+                cardBackground: Color.white,
+                primaryText: Color(hex: "1f2937"),
+                secondaryText: Color(hex: "6b7280"),
+                taskComplete: Color(hex: "4CAF50"),
+                streakActive: Color(hex: "e8c17f"),
+                timeline: Color(hex: "D1D5DB"),
                 sunrise: Color(hex: "FFD93D"),
-                sunset: Color(hex: "FF8C42"),
-                taskComplete: Color(hex: "7CB342"),
-                streakActive: Color(hex: "FF6B6B")
+                sunset: Color(hex: "FF8C42")
             )
-        case .sage:
+        case .elegantPurple:
             return ThemeColors(
-                background: Color(hex: "E8F0E8"),
-                cardBackground: Color(hex: "F5FAF5"),
-                primaryText: Color(hex: "2D3B2D"),
-                secondaryText: Color(hex: "6B7B6B"),
-                accent: Color(hex: "7CB342"),
-                timeline: Color(hex: "C5D5C5"),
+                primary: Color(hex: "9b7bb5"),
+                primaryDark: Color(hex: "7a5d8f"),
+                primaryLight: Color(hex: "c4a7d9"),
+                accent: Color(hex: "5f4a6f"),
+                accentLight: Color(hex: "e8d4f0"),
+                accentDark: Color(hex: "4a3555"),
+                background: Color(hex: "f5f1f8"),
+                cardBackground: Color.white,
+                primaryText: Color(hex: "1f2937"),
+                secondaryText: Color(hex: "6b7280"),
+                taskComplete: Color(hex: "4CAF50"),
+                streakActive: Color(hex: "c4a7d9"),
+                timeline: Color(hex: "D1D5DB"),
                 sunrise: Color(hex: "FFD93D"),
-                sunset: Color(hex: "FF8C42"),
-                taskComplete: Color(hex: "7CB342"),
-                streakActive: Color(hex: "FF6B6B")
+                sunset: Color(hex: "FF8C42")
             )
-        case .lavender:
+        case .modernTeal:
             return ThemeColors(
-                background: Color(hex: "F0E8F5"),
-                cardBackground: Color(hex: "FAF5FF"),
-                primaryText: Color(hex: "3B2D4B"),
-                secondaryText: Color(hex: "7B6B8B"),
-                accent: Color(hex: "9B7BB8"),
-                timeline: Color(hex: "D5C5E5"),
+                primary: Color(hex: "5a9aa8"),
+                primaryDark: Color(hex: "457a85"),
+                primaryLight: Color(hex: "7ec4d4"),
+                accent: Color(hex: "4a6f6f"),
+                accentLight: Color(hex: "d4e8e8"),
+                accentDark: Color(hex: "3a5555"),
+                background: Color(hex: "f1f5f5"),
+                cardBackground: Color.white,
+                primaryText: Color(hex: "1f2937"),
+                secondaryText: Color(hex: "6b7280"),
+                taskComplete: Color(hex: "4CAF50"),
+                streakActive: Color(hex: "7ec4d4"),
+                timeline: Color(hex: "D1D5DB"),
                 sunrise: Color(hex: "FFD93D"),
-                sunset: Color(hex: "FF8C42"),
-                taskComplete: Color(hex: "7CB342"),
-                streakActive: Color(hex: "FF6B6B")
-            )
-        case .peach:
-            return ThemeColors(
-                background: Color(hex: "FFF0E8"),
-                cardBackground: Color(hex: "FFFAF5"),
-                primaryText: Color(hex: "4B3B2D"),
-                secondaryText: Color(hex: "8B7B6B"),
-                accent: Color(hex: "FF8C42"),
-                timeline: Color(hex: "E5D5C5"),
-                sunrise: Color(hex: "FFD93D"),
-                sunset: Color(hex: "FF8C42"),
-                taskComplete: Color(hex: "7CB342"),
-                streakActive: Color(hex: "FF6B6B")
-            )
-        case .sky:
-            return ThemeColors(
-                background: Color(hex: "E8F4FA"),
-                cardBackground: Color(hex: "F5FAFF"),
-                primaryText: Color(hex: "2D3B4B"),
-                secondaryText: Color(hex: "6B7B8B"),
-                accent: Color(hex: "4A90D9"),
-                timeline: Color(hex: "C5D5E5"),
-                sunrise: Color(hex: "FFD93D"),
-                sunset: Color(hex: "FF8C42"),
-                taskComplete: Color(hex: "7CB342"),
-                streakActive: Color(hex: "FF6B6B")
+                sunset: Color(hex: "FF8C42")
             )
         }
     }
 
-    public var previewColor: Color {
-        colors.accent
+    public var headerGradient: LinearGradient {
+        LinearGradient(
+            colors: [colors.primary, colors.primaryDark],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+    }
+
+    public var cardGradient: LinearGradient {
+        LinearGradient(
+            colors: [colors.accentLight, colors.accentLight.opacity(0.8)],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
+    public var previewColors: [Color] {
+        [colors.primaryLight, colors.primaryDark, colors.accent]
     }
 }
 
 public struct ThemeColors: Sendable {
+    public let primary: Color
+    public let primaryDark: Color
+    public let primaryLight: Color
+    public let accent: Color
+    public let accentLight: Color
+    public let accentDark: Color
     public let background: Color
     public let cardBackground: Color
     public let primaryText: Color
     public let secondaryText: Color
-    public let accent: Color
+    public let taskComplete: Color
+    public let streakActive: Color
     public let timeline: Color
     public let sunrise: Color
     public let sunset: Color
-    public let taskComplete: Color
-    public let streakActive: Color
 }
 
 // MARK: - Theme Environment
@@ -105,7 +113,7 @@ public struct ThemeColors: Sendable {
 public final class ThemeManager: @unchecked Sendable {
     public static let shared = ThemeManager()
 
-    public var currentTheme: AppTheme = .cream
+    public var currentTheme: AppTheme = .classicWarm
 
     public var colors: ThemeColors {
         currentTheme.colors
@@ -115,6 +123,15 @@ public final class ThemeManager: @unchecked Sendable {
 
     public func setTheme(_ theme: AppTheme) {
         currentTheme = theme
+    }
+
+    public func setTheme(index: Int) {
+        guard index >= 0 && index < AppTheme.allCases.count else { return }
+        currentTheme = AppTheme.allCases[index]
+    }
+
+    public var currentThemeIndex: Int {
+        AppTheme.allCases.firstIndex(of: currentTheme) ?? 0
     }
 }
 
@@ -161,14 +178,16 @@ public enum AppTypography {
     public static let caption = Font.system(size: 12, weight: .regular, design: .rounded)
     public static let caption2 = Font.system(size: 11, weight: .regular, design: .rounded)
 
-    // Haiku specific
     public static let haiku = Font.system(size: 16, weight: .light, design: .serif)
-
-    // Time display
     public static let timeDisplay = Font.system(size: 14, weight: .medium, design: .monospaced)
+
+    // Reference code typography
+    public static let sectionHeader = Font.system(size: 12, weight: .bold)
+    public static let statLabel = Font.system(size: 12, weight: .bold)
+    public static let statValue = Font.system(size: 15, weight: .semibold)
 }
 
-// MARK: - Spacing
+// MARK: - Spacing (matching Tailwind)
 
 public enum AppSpacing {
     public static let xxs: CGFloat = 2
@@ -177,17 +196,17 @@ public enum AppSpacing {
     public static let md: CGFloat = 12
     public static let lg: CGFloat = 16
     public static let xl: CGFloat = 20
-    public static let xxl: CGFloat = 24
+    public static let xxl: CGFloat = 24  // p-6
     public static let xxxl: CGFloat = 32
 }
 
-// MARK: - Corner Radius
+// MARK: - Corner Radius (matching Tailwind)
 
 public enum AppCornerRadius {
-    public static let small: CGFloat = 8
-    public static let medium: CGFloat = 12
-    public static let large: CGFloat = 16
-    public static let extraLarge: CGFloat = 20
+    public static let small: CGFloat = 8      // rounded-lg
+    public static let medium: CGFloat = 12    // rounded-xl
+    public static let large: CGFloat = 16     // rounded-2xl
+    public static let extraLarge: CGFloat = 24 // rounded-3xl
     public static let pill: CGFloat = 100
 }
 
@@ -219,22 +238,6 @@ public enum AppDateFormatters {
     }()
 }
 
-// MARK: - Header Colors
-
-public enum AppHeaderColors {
-    public static let background = Color(hex: "#C4944A")
-    public static let border = Color(hex: "#8B6914")
-    public static let iconAccent = Color(hex: "#D69E2E")
-}
-
-// MARK: - Timeline Colors
-
-public enum AppTimelineColors {
-    public static let line = Color(hex: "#2D5016")
-    public static let google = Color(hex: "#4285F4")
-    public static let sun = Color(hex: "#FFB347")
-}
-
 // MARK: - Card Style Modifier
 
 public struct CardStyle: ViewModifier {
@@ -253,7 +256,32 @@ public struct CardStyle: ViewModifier {
 }
 
 public extension View {
-    func cardStyle(cornerRadius: CGFloat = AppCornerRadius.large, shadowOpacity: Double = 0.05) -> some View {
+    func cardStyle(cornerRadius: CGFloat = AppCornerRadius.extraLarge, shadowOpacity: Double = 0.08) -> some View {
         modifier(CardStyle(cornerRadius: cornerRadius, shadowOpacity: shadowOpacity))
+    }
+}
+
+// MARK: - Toggle Switch Style
+
+public struct CustomToggleStyle: ToggleStyle {
+    public func makeBody(configuration: Configuration) -> some View {
+        HStack {
+            configuration.label
+            Spacer()
+            RoundedRectangle(cornerRadius: 14)
+                .fill(configuration.isOn ? Color(hex: "4CAF50") : Color(hex: "E0E0E0"))
+                .frame(width: 48, height: 28)
+                .overlay(
+                    Circle()
+                        .fill(Color.white)
+                        .shadow(radius: 1)
+                        .frame(width: 20, height: 20)
+                        .offset(x: configuration.isOn ? 10 : -10)
+                        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: configuration.isOn)
+                )
+                .onTapGesture {
+                    configuration.isOn.toggle()
+                }
+        }
     }
 }

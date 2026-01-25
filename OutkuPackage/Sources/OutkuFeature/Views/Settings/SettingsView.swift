@@ -104,9 +104,6 @@ struct SettingsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Header - fixed at top
-            AppHeaderView()
-
             // Scrollable content
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: AppSpacing.xl) {
@@ -142,7 +139,6 @@ struct SettingsView: View {
             }
         }
         .background(theme.colors.background)
-        .ignoresSafeArea(edges: .top)
     }
 }
 

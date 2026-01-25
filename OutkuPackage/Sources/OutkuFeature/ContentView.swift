@@ -8,17 +8,13 @@ public struct ContentView: View {
     @State private var authManager = AuthManager.shared
     @State private var isOnboardingComplete: Bool = false
 
-    // For demo purposes, set to false to show onboarding
-    // In production, this would be persisted in UserDefaults or AppStorage
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding: Bool = false
 
     public var body: some View {
         ZStack {
             if hasCompletedOnboarding || isOnboardingComplete {
-                // Show main app
                 mainAppView
             } else {
-                // Show onboarding for new users
                 OnboardingView(isOnboardingComplete: $isOnboardingComplete)
                     .environment(appState)
                     .environment(themeManager)
@@ -31,28 +27,37 @@ public struct ContentView: View {
             }
         }
         .task {
-            // Initialize auth in background (for restoring previous session)
             await authManager.initialize()
         }
     }
 
+    @ViewBuilder
     private var mainAppView: some View {
-        ZStack {
-            themeManager.colors.background
-                .ignoresSafeArea()
+        VStack(spacing: 0) {
+            // Unified Header
+            AppHeaderView(selectedTab: Binding(
+                get: { appState.selectedTab },
+                set: { appState.selectedTab = $0 }
+            ))
 
-            // Content based on selected tab (navigation via header buttons)
-            Group {
-                switch appState.selectedTab {
-                case .home:
-                    HomeView()
-                case .pet:
-                    PetPageView()
-                case .settings:
-                    SettingsView()
+            // Content based on selected tab
+            ZStack {
+                themeManager.colors.background
+                    .ignoresSafeArea(edges: .bottom)
+
+                Group {
+                    switch appState.selectedTab {
+                    case .home:
+                        HomeView()
+                    case .pet:
+                        PetPageView()
+                    case .settings:
+                        SettingsView()
+                    }
                 }
             }
         }
+        .background(themeManager.currentTheme.headerGradient.ignoresSafeArea(edges: .top))
         .environment(appState)
         .environment(themeManager)
         .environment(authManager)

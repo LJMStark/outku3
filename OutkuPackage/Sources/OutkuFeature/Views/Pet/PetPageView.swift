@@ -5,299 +5,290 @@ import SwiftUI
 struct PetPageView: View {
     @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
-    @State private var selectedCategory: TaskCategory = .today
     @State private var showPetStatus = false
+    @State private var appeared = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Header - fixed at top
-            AppHeaderView()
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(spacing: 0) {
+                // Pet Illustration Section
+                PetIllustrationSection(onTap: { showPetStatus = true })
+                    .opacity(appeared ? 1 : 0)
+                    .offset(y: appeared ? 0 : 20)
+                    .animation(.easeOut(duration: 0.6), value: appeared)
 
-            // Scrollable content
-            ScrollView(.vertical, showsIndicators: false) {
+                // Tasks Section
                 VStack(spacing: 0) {
-                    // Pet display area
-                    PetDisplaySection(showPetStatus: $showPetStatus)
-                        .padding(.top, AppSpacing.xl)
+                    // Tasks Today
+                    TaskSectionView(
+                        title: "Tasks Today",
+                        tasks: todayTasks,
+                        delay: 0.4
+                    )
 
-                    // Task categories
-                    TaskCategoryPicker(selectedCategory: $selectedCategory)
-                        .padding(.top, AppSpacing.xl)
+                    // Upcoming
+                    TaskSectionView(
+                        title: "Upcoming",
+                        tasks: upcomingTasks,
+                        delay: 0.6
+                    )
+                    .padding(.top, 24)
 
-                    // Task list
-                    TaskListSection(category: selectedCategory)
-                        .padding(.top, AppSpacing.md)
-
-                    // Bottom spacing for tab bar
-                    Spacer()
-                        .frame(height: 120)
+                    // No Due Dates
+                    TaskSectionView(
+                        title: "No Due Dates",
+                        tasks: noDueDateTasks,
+                        delay: 0.8
+                    )
+                    .padding(.top, 24)
                 }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 80)
             }
         }
         .background(theme.colors.background)
-        .ignoresSafeArea(edges: .top)
+        .onAppear { appeared = true }
         .sheet(isPresented: $showPetStatus) {
             PetStatusView()
                 .environment(appState)
                 .environment(theme)
         }
     }
-}
 
-// MARK: - Pet Display Section
-
-struct PetDisplaySection: View {
-    @Binding var showPetStatus: Bool
-    @Environment(AppState.self) private var appState
-    @Environment(ThemeManager.self) private var theme
-
-    var body: some View {
-        VStack(spacing: AppSpacing.lg) {
-            // Pet name and info button
-            HStack {
-                VStack(alignment: .leading, spacing: AppSpacing.xs) {
-                    Text(appState.pet.name)
-                        .font(AppTypography.title2)
-                        .foregroundStyle(theme.colors.primaryText)
-
-                    Text("\(appState.pet.adventuresCount) adventures")
-                        .font(AppTypography.subheadline)
-                        .foregroundStyle(theme.colors.secondaryText)
-                }
-
-                Spacer()
-
-                Button {
-                    showPetStatus = true
-                } label: {
-                    Image(systemName: "info.circle")
-                        .font(.system(size: 22))
-                        .foregroundStyle(theme.colors.accent)
-                }
-            }
-            .padding(.horizontal, AppSpacing.xl)
-
-            // Pet illustration
-            Button {
-                showPetStatus = true
-            } label: {
-                PixelPetView(size: .large, animated: true)
-                    .frame(height: 200)
-                    .frame(maxWidth: .infinity)
-                    .background {
-                        RoundedRectangle(cornerRadius: AppCornerRadius.large)
-                            .fill(theme.colors.cardBackground)
-                            .shadow(color: .black.opacity(0.05), radius: 10, x: 0, y: 4)
-                    }
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, AppSpacing.xl)
-
-            // Streak indicator
-            HStack(spacing: AppSpacing.sm) {
-                Image(systemName: "flame.fill")
-                    .font(.system(size: 16))
-                    .foregroundStyle(theme.colors.streakActive)
-
-                Text("\(appState.streak.currentStreak) day streak")
-                    .font(AppTypography.subheadline)
-                    .foregroundStyle(theme.colors.primaryText)
-            }
-            .padding(.horizontal, AppSpacing.lg)
-            .padding(.vertical, AppSpacing.sm)
-            .background {
-                Capsule()
-                    .fill(theme.colors.streakActive.opacity(0.15))
-            }
-        }
-    }
-}
-
-// MARK: - Task Category Picker
-
-struct TaskCategoryPicker: View {
-    @Binding var selectedCategory: TaskCategory
-    @Environment(ThemeManager.self) private var theme
-
-    var body: some View {
-        HStack(spacing: AppSpacing.sm) {
-            ForEach(TaskCategory.allCases) { category in
-                CategoryButton(
-                    category: category,
-                    isSelected: selectedCategory == category,
-                    action: { selectedCategory = category }
-                )
-            }
-        }
-        .padding(.horizontal, AppSpacing.xl)
-    }
-}
-
-struct CategoryButton: View {
-    let category: TaskCategory
-    let isSelected: Bool
-    let action: () -> Void
-    @Environment(ThemeManager.self) private var theme
-
-    var body: some View {
-        Button(action: action) {
-            Text(category.rawValue)
-                .font(AppTypography.subheadline)
-                .foregroundStyle(isSelected ? .white : theme.colors.primaryText)
-                .padding(.horizontal, AppSpacing.lg)
-                .padding(.vertical, AppSpacing.sm)
-                .background {
-                    Capsule()
-                        .fill(isSelected ? theme.colors.accent : theme.colors.cardBackground)
-                }
-        }
-        .buttonStyle(.plain)
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
-    }
-}
-
-// MARK: - Task List Section
-
-struct TaskListSection: View {
-    let category: TaskCategory
-    @Environment(AppState.self) private var appState
-    @Environment(ThemeManager.self) private var theme
-
-    private var filteredTasks: [TaskItem] {
+    private var todayTasks: [TaskItem] {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
-
-        switch category {
-        case .today:
-            return appState.tasks.filter { task in
-                guard let dueDate = task.dueDate else { return false }
-                return calendar.isDate(dueDate, inSameDayAs: today)
-            }
-        case .upcoming:
-            return appState.tasks.filter { task in
-                guard let dueDate = task.dueDate else { return false }
-                return dueDate > today && !calendar.isDate(dueDate, inSameDayAs: today)
-            }
-        case .noDueDate:
-            return appState.tasks.filter { $0.dueDate == nil }
+        return appState.tasks.filter { task in
+            guard let dueDate = task.dueDate else { return false }
+            return calendar.isDate(dueDate, inSameDayAs: today)
         }
     }
 
-    var body: some View {
-        VStack(spacing: AppSpacing.md) {
-            if filteredTasks.isEmpty {
-                EmptyTasksView(category: category)
-            } else {
-                ForEach(filteredTasks) { task in
-                    TaskRowView(task: task)
-                }
-            }
+    private var upcomingTasks: [TaskItem] {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        return appState.tasks.filter { task in
+            guard let dueDate = task.dueDate else { return false }
+            return dueDate > today && !calendar.isDate(dueDate, inSameDayAs: today)
         }
-        .padding(.horizontal, AppSpacing.xl)
+    }
+
+    private var noDueDateTasks: [TaskItem] {
+        appState.tasks.filter { $0.dueDate == nil }
     }
 }
 
-// MARK: - Task Row
+// MARK: - Pet Illustration Section
 
-struct TaskRowView: View {
+private struct PetIllustrationSection: View {
+    let onTap: () -> Void
+    @Environment(ThemeManager.self) private var theme
+    @State private var breathingOffset: CGFloat = 0
+
+    var body: some View {
+        Button(action: onTap) {
+            ZStack {
+                // Background gradient
+                LinearGradient(
+                    colors: [
+                        theme.colors.background,
+                        theme.colors.accentLight.opacity(0.5),
+                        Color.white
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+
+                // Pet image placeholder
+                VStack {
+                    Spacer()
+
+                    ZStack {
+                        // Ground shadow
+                        Ellipse()
+                            .fill(Color.black.opacity(0.1))
+                            .frame(width: 120, height: 30)
+                            .offset(y: 60)
+
+                        // Pet placeholder
+                        RoundedRectangle(cornerRadius: 24)
+                            .fill(theme.colors.accentLight)
+                            .frame(width: 160, height: 160)
+                            .overlay {
+                                VStack(spacing: 8) {
+                                    Text("🦝")
+                                        .font(.system(size: 80))
+                                    Text("Pet Image")
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(theme.colors.secondaryText)
+                                }
+                            }
+                            .offset(y: breathingOffset)
+                    }
+
+                    Spacer()
+                        .frame(height: 40)
+                }
+            }
+            .frame(height: 340)
+        }
+        .buttonStyle(.plain)
+        .onAppear {
+            withAnimation(
+                .easeInOut(duration: 3)
+                .repeatForever(autoreverses: true)
+            ) {
+                breathingOffset = -8
+            }
+        }
+    }
+}
+
+// MARK: - Task Section View
+
+private struct TaskSectionView: View {
+    let title: String
+    let tasks: [TaskItem]
+    let delay: Double
+
+    @Environment(ThemeManager.self) private var theme
+    @State private var appeared = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(title)
+                .font(.system(size: 20, weight: .bold))
+                .foregroundStyle(theme.colors.primaryText)
+
+            if tasks.isEmpty {
+                EmptyTaskPlaceholder()
+            } else {
+                ForEach(Array(tasks.enumerated()), id: \.element.id) { index, task in
+                    TaskItemRow(task: task)
+                        .opacity(appeared ? 1 : 0)
+                        .offset(x: appeared ? 0 : -20)
+                        .animation(
+                            .spring(response: 0.5, dampingFraction: 0.8)
+                            .delay(delay + Double(index) * 0.1),
+                            value: appeared
+                        )
+                }
+            }
+        }
+        .onAppear { appeared = true }
+    }
+}
+
+// MARK: - Task Item Row
+
+private struct TaskItemRow: View {
     let task: TaskItem
     @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
+    @State private var isPressed = false
 
     var body: some View {
-        HStack(spacing: AppSpacing.md) {
+        HStack(spacing: 12) {
             // Checkbox
             Button {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
                     appState.toggleTaskCompletion(task)
                 }
             } label: {
-                ZStack {
-                    Circle()
-                        .stroke(task.isCompleted ? theme.colors.taskComplete : theme.colors.secondaryText.opacity(0.3), lineWidth: 2)
-                        .frame(width: 24, height: 24)
-
-                    if task.isCompleted {
-                        Circle()
-                            .fill(theme.colors.taskComplete)
-                            .frame(width: 24, height: 24)
-
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundStyle(.white)
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(task.isCompleted ? theme.colors.taskComplete : Color(hex: "D1D5DB"), lineWidth: 2)
+                    .frame(width: 24, height: 24)
+                    .overlay {
+                        if task.isCompleted {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundStyle(Color(hex: "3B82F6"))
+                        }
                     }
-                }
             }
             .buttonStyle(.plain)
 
-            // Task info
-            VStack(alignment: .leading, spacing: AppSpacing.xs) {
-                Text(task.title)
-                    .font(AppTypography.body)
-                    .foregroundStyle(task.isCompleted ? theme.colors.secondaryText : theme.colors.primaryText)
-                    .strikethrough(task.isCompleted)
-
-                HStack(spacing: AppSpacing.sm) {
-                    // Source
-                    Image(systemName: task.source.iconName)
-                        .font(.system(size: 10))
-                        .foregroundStyle(theme.colors.secondaryText)
-
-                    // Priority indicator
-                    Circle()
-                        .fill(Color(hex: task.priority.color))
-                        .frame(width: 6, height: 6)
-
-                    if let dueDate = task.dueDate {
-                        Text(dueDate.formatRelativeDay())
-                            .font(AppTypography.caption)
-                            .foregroundStyle(theme.colors.secondaryText)
-                    }
-                }
-            }
+            // Task title
+            Text(task.title)
+                .font(.system(size: 15))
+                .foregroundStyle(task.isCompleted ? theme.colors.secondaryText : theme.colors.primaryText)
+                .strikethrough(task.isCompleted, color: theme.colors.secondaryText)
 
             Spacer()
+
+            // Tag
+            Text("#My Tasks")
+                .font(.system(size: 12))
+                .foregroundStyle(theme.colors.secondaryText)
+
+            // Due date label
+            if let dueDate = task.dueDate {
+                Text(formatDueDate(dueDate))
+                    .font(.system(size: 12))
+                    .foregroundStyle(theme.colors.primaryText)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color(hex: "E5E7EB"))
+                    .clipShape(Capsule())
+            }
+
+            // More button
+            Button {
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 16))
+                    .foregroundStyle(Color(hex: "3B82F6"))
+                    .rotationEffect(.degrees(90))
+            }
+            .buttonStyle(.plain)
         }
-        .padding(AppSpacing.lg)
-        .background {
-            RoundedRectangle(cornerRadius: AppCornerRadius.medium)
-                .fill(theme.colors.cardBackground)
-                .shadow(color: .black.opacity(0.03), radius: 4, x: 0, y: 2)
+        .padding(16)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color(hex: "F3F4F6"), lineWidth: 1)
+        )
+        .scaleEffect(isPressed ? 0.98 : 1.0)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isPressed)
+    }
+
+    private func formatDueDate(_ date: Date) -> String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(date) {
+            return "today"
+        } else if calendar.isDateInTomorrow(date) {
+            return "tomorrow"
+        } else {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "MMM d"
+            return formatter.string(from: date)
         }
-        .opacity(task.isCompleted ? 0.7 : 1)
     }
 }
 
-// MARK: - Empty Tasks View
+// MARK: - Empty Task Placeholder
 
-struct EmptyTasksView: View {
-    let category: TaskCategory
+private struct EmptyTaskPlaceholder: View {
     @Environment(ThemeManager.self) private var theme
 
     var body: some View {
-        VStack(spacing: AppSpacing.md) {
-            Image(systemName: "checkmark.circle")
-                .font(.system(size: 40))
-                .foregroundStyle(theme.colors.secondaryText.opacity(0.5))
+        HStack(spacing: 12) {
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(Color(hex: "D1D5DB"), lineWidth: 2)
+                .frame(width: 24, height: 24)
 
-            Text(emptyMessage)
-                .font(AppTypography.subheadline)
+            Text("No tasks")
+                .font(.system(size: 15))
                 .foregroundStyle(theme.colors.secondaryText)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, AppSpacing.xxxl)
-    }
 
-    private var emptyMessage: String {
-        switch category {
-        case .today:
-            return "No tasks for today.\nEnjoy your free time!"
-        case .upcoming:
-            return "No upcoming tasks.\nYou're all caught up!"
-        case .noDueDate:
-            return "No tasks without due dates."
+            Spacer()
         }
+        .padding(16)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
     }
 }
 
