@@ -1,1058 +1,537 @@
 import SwiftUI
 
-// MARK: - Reusable Components
-
-/// 通用卡片背景修饰符
-private struct CardBackgroundModifier: ViewModifier {
-    @Environment(ThemeManager.self) private var theme
-
-    func body(content: Content) -> some View {
-        content
-            .padding(AppSpacing.lg)
-            .background {
-                RoundedRectangle(cornerRadius: AppCornerRadius.medium)
-                    .fill(theme.colors.cardBackground)
-            }
-    }
-}
-
-private extension View {
-    func cardBackground() -> some View {
-        modifier(CardBackgroundModifier())
-    }
-}
-
-/// 通用 Section 标题
-private struct SectionHeader: View {
-    let title: String
-    @Environment(ThemeManager.self) private var theme
-
-    var body: some View {
-        Text(title)
-            .font(AppTypography.headline)
-            .foregroundStyle(theme.colors.primaryText)
-            .padding(.horizontal, AppSpacing.xl)
-    }
-}
-
-/// 通用设置行（带图标、标题和 Toggle）
-private struct SettingsToggleRow: View {
-    let icon: String
-    let title: String
-    @Binding var isOn: Bool
-    @Environment(ThemeManager.self) private var theme
-
-    var body: some View {
-        HStack {
-            Image(systemName: icon)
-                .font(.system(size: 18))
-                .foregroundStyle(theme.colors.accent)
-                .frame(width: 24)
-
-            Text(title)
-                .font(AppTypography.body)
-                .foregroundStyle(theme.colors.primaryText)
-
-            Spacer()
-
-            Toggle("", isOn: $isOn)
-                .labelsHidden()
-                .tint(theme.colors.accent)
-        }
-        .cardBackground()
-    }
-}
-
-/// 通用登录按钮
-private struct SignInButton: View {
-    let icon: String
-    let title: String
-    let isLoading: Bool
-    let action: () -> Void
-    @Environment(ThemeManager.self) private var theme
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: AppSpacing.md) {
-                Image(systemName: icon)
-                    .font(.system(size: 18))
-
-                Text(title)
-                    .font(AppTypography.body)
-
-                Spacer()
-
-                if isLoading {
-                    ProgressView()
-                        .scaleEffect(0.8)
-                }
-            }
-            .foregroundStyle(theme.colors.primaryText)
-            .cardBackground()
-        }
-        .buttonStyle(.plain)
-        .disabled(isLoading)
-        .padding(.horizontal, AppSpacing.xl)
-    }
-}
-
 // MARK: - Settings View
 
 struct SettingsView: View {
     @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
+    @State private var appeared = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Scrollable content
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: AppSpacing.xl) {
-                    // Account Section (Sign In)
-                    AccountSection()
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(spacing: 24) {
+                // Device Section
+                DeviceSection()
+                    .opacity(appeared ? 1 : 0)
+                    .offset(y: appeared ? 0 : 20)
+                    .animation(.easeOut(duration: 0.4), value: appeared)
 
-                    // Widget Preview
-                    WidgetPreviewSection()
+                // Theme Section
+                ThemeSection()
+                    .opacity(appeared ? 1 : 0)
+                    .offset(y: appeared ? 0 : 20)
+                    .animation(.easeOut(duration: 0.4).delay(0.1), value: appeared)
 
-                    // Pet Form Selection
-                    PetFormSelectionSection()
+                // Avatar Section
+                AvatarSection()
+                    .opacity(appeared ? 1 : 0)
+                    .offset(y: appeared ? 0 : 20)
+                    .animation(.easeOut(duration: 0.4).delay(0.2), value: appeared)
 
-                    // Theme Selection
-                    ThemeSelectionSection()
+                // Integrations Section
+                IntegrationsSection()
+                    .opacity(appeared ? 1 : 0)
+                    .offset(y: appeared ? 0 : 20)
+                    .animation(.easeOut(duration: 0.4).delay(0.3), value: appeared)
 
-                    // Sound Settings
-                    SoundSettingsSection()
+                // Connect New App Section
+                ConnectNewAppSection()
+                    .opacity(appeared ? 1 : 0)
+                    .offset(y: appeared ? 0 : 20)
+                    .animation(.easeOut(duration: 0.4).delay(0.4), value: appeared)
 
-                    // Hardware Device
-                    HardwareDeviceSection()
-
-                    // Integrations
-                    IntegrationsSection()
-
-                    // About
-                    AboutSection()
-
-                    // Bottom spacing for tab bar
-                    Spacer()
-                        .frame(height: 120)
-                }
-                .padding(.top, AppSpacing.xl)
+                Spacer()
+                    .frame(height: 80)
             }
+            .padding(.horizontal, 24)
+            .padding(.top, 24)
         }
         .background(theme.colors.background)
+        .onAppear { appeared = true }
     }
 }
 
-// MARK: - Widget Preview Section
+// MARK: - Section Header
 
-struct WidgetPreviewSection: View {
-    @Environment(AppState.self) private var appState
+private struct SettingsSectionHeader: View {
+    let title: String
     @Environment(ThemeManager.self) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: AppSpacing.md) {
-            SectionHeader(title: "Widget Preview")
-
-            VStack(spacing: AppSpacing.lg) {
-                PixelPetView(size: .small, animated: false)
-                    .frame(height: 80)
-
-                VStack(spacing: AppSpacing.sm) {
-                    HStack {
-                        Text("Today")
-                            .font(AppTypography.subheadline)
-                            .foregroundStyle(theme.colors.secondaryText)
-
-                        Spacer()
-
-                        Text("\(appState.statistics.todayCompleted)/\(appState.statistics.todayTotal)")
-                            .font(AppTypography.subheadline)
-                            .foregroundStyle(theme.colors.primaryText)
-                    }
-
-                    GeometryReader { geometry in
-                        ZStack(alignment: .leading) {
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(theme.colors.timeline)
-                                .frame(height: 6)
-
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(theme.colors.taskComplete)
-                                .frame(width: geometry.size.width * appState.statistics.todayPercentage, height: 6)
-                        }
-                    }
-                    .frame(height: 6)
-                }
-
-                HStack(spacing: AppSpacing.sm) {
-                    Image(systemName: "flame.fill")
-                        .font(.system(size: 14))
-                        .foregroundStyle(theme.colors.streakActive)
-
-                    Text("\(appState.streak.currentStreak) day streak")
-                        .font(AppTypography.caption)
-                        .foregroundStyle(theme.colors.primaryText)
-                }
-            }
-            .padding(AppSpacing.xl)
-            .background {
-                RoundedRectangle(cornerRadius: AppCornerRadius.large)
-                    .fill(theme.colors.cardBackground)
-                    .shadow(color: .black.opacity(0.05), radius: 10, x: 0, y: 4)
-            }
-            .padding(.horizontal, AppSpacing.xl)
-
-            Text("Add this widget to your home screen")
-                .font(AppTypography.caption)
-                .foregroundStyle(theme.colors.secondaryText)
-                .padding(.horizontal, AppSpacing.xl)
-        }
+        Text(title)
+            .font(.system(size: 12, weight: .bold))
+            .foregroundStyle(theme.colors.secondaryText)
+            .textCase(.uppercase)
+            .tracking(0.5)
     }
 }
 
-// MARK: - Theme Selection Section
+// MARK: - Device Section
 
-struct PetFormSelectionSection: View {
-    @Environment(AppState.self) private var appState
+private struct DeviceSection: View {
+    @Environment(ThemeManager.self) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: AppSpacing.md) {
-            SectionHeader(title: "Pet Form")
+        VStack(alignment: .leading, spacing: 12) {
+            SettingsSectionHeader(title: "Device")
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: AppSpacing.md) {
-                    ForEach(PetForm.allCases, id: \.self) { form in
-                        PetFormOptionView(
-                            form: form,
-                            isSelected: appState.pet.currentForm == form,
-                            action: {
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                    appState.setPetForm(form)
+            // Device preview placeholder
+            RoundedRectangle(cornerRadius: 24)
+                .fill(Color.white)
+                .frame(height: 200)
+                .overlay {
+                    VStack(spacing: 12) {
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(theme.colors.accentLight)
+                            .frame(width: 120, height: 160)
+                            .overlay {
+                                VStack(spacing: 8) {
+                                    Image(systemName: "display")
+                                        .font(.system(size: 40))
+                                        .foregroundStyle(theme.colors.secondaryText.opacity(0.5))
+                                    Text("E-ink Device")
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(theme.colors.secondaryText.opacity(0.5))
                                 }
                             }
-                        )
                     }
                 }
-                .padding(.horizontal, AppSpacing.xl)
-            }
+                .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
         }
     }
 }
 
-struct PetFormOptionView: View {
-    let form: PetForm
-    let isSelected: Bool
-    let action: () -> Void
-    @Environment(ThemeManager.self) private var theme
+// MARK: - Theme Section
 
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: AppSpacing.sm) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: AppCornerRadius.medium)
-                        .fill(theme.colors.cardBackground)
-                        .frame(width: 60, height: 60)
-
-                    Image(systemName: form.iconName)
-                        .font(.system(size: 24))
-                        .foregroundStyle(isSelected ? theme.colors.accent : theme.colors.secondaryText)
-                }
-                .overlay {
-                    RoundedRectangle(cornerRadius: AppCornerRadius.medium)
-                        .stroke(isSelected ? theme.colors.accent : .clear, lineWidth: 3)
-                }
-
-                Text(form.rawValue)
-                    .font(AppTypography.caption)
-                    .foregroundStyle(isSelected ? theme.colors.accent : theme.colors.secondaryText)
-            }
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-// MARK: - Theme Selection Section
-
-struct ThemeSelectionSection: View {
+private struct ThemeSection: View {
     @Environment(ThemeManager.self) private var themeManager
 
     var body: some View {
-        VStack(alignment: .leading, spacing: AppSpacing.md) {
-            SectionHeader(title: "Theme")
+        VStack(alignment: .leading, spacing: 12) {
+            SettingsSectionHeader(title: "Theme")
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: AppSpacing.md) {
-                    ForEach(AppTheme.allCases) { theme in
-                        ThemeOptionView(
-                            theme: theme,
-                            isSelected: themeManager.currentTheme == theme,
-                            action: {
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                    themeManager.setTheme(theme)
-                                }
-                            }
-                        )
+            VStack(spacing: 12) {
+                ForEach(Array(AppTheme.allCases.enumerated()), id: \.element.id) { index, themeOption in
+                    ThemeOptionRow(
+                        theme: themeOption,
+                        isSelected: themeManager.currentTheme == themeOption
+                    ) {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            themeManager.setTheme(themeOption)
+                        }
                     }
                 }
-                .padding(.horizontal, AppSpacing.xl)
             }
+            .padding(16)
+            .background(Color.white)
+            .clipShape(RoundedRectangle(cornerRadius: 24))
+            .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
         }
     }
 }
 
-struct ThemeOptionView: View {
+// MARK: - Theme Option Row
+
+private struct ThemeOptionRow: View {
     let theme: AppTheme
     let isSelected: Bool
     let action: () -> Void
+
     @Environment(ThemeManager.self) private var themeManager
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: AppSpacing.sm) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: AppCornerRadius.medium)
-                        .fill(theme.colors.background)
-                        .frame(width: 60, height: 60)
-
-                    RoundedRectangle(cornerRadius: AppCornerRadius.small)
-                        .fill(theme.colors.cardBackground)
-                        .frame(width: 40, height: 40)
-
-                    Circle()
-                        .fill(theme.colors.accent)
-                        .frame(width: 16, height: 16)
-                }
-                .overlay {
-                    RoundedRectangle(cornerRadius: AppCornerRadius.medium)
-                        .stroke(isSelected ? themeManager.colors.accent : .clear, lineWidth: 3)
-                }
-
-                Text(theme.rawValue)
-                    .font(AppTypography.caption)
-                    .foregroundStyle(isSelected ? themeManager.colors.accent : themeManager.colors.secondaryText)
-            }
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-// MARK: - Sound Settings Section
-
-struct SoundSettingsSection: View {
-    @Environment(ThemeManager.self) private var theme
-    @State private var soundService = SoundService.shared
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: AppSpacing.md) {
-            SectionHeader(title: "Sound & Haptics")
-
-            VStack(spacing: AppSpacing.sm) {
-                SettingsToggleRow(
-                    icon: "speaker.wave.2.fill",
-                    title: "Sound Effects",
-                    isOn: $soundService.isSoundEnabled
-                )
-                if soundService.isSoundEnabled {
-                    volumeControlCard
-                }
-            }
-            .padding(.horizontal, AppSpacing.xl)
-        }
-    }
-
-    private var volumeControlCard: some View {
-        VStack(alignment: .leading, spacing: AppSpacing.sm) {
             HStack {
-                Image(systemName: "speaker.fill")
-                    .font(.system(size: 12))
-                    .foregroundStyle(theme.colors.secondaryText)
+                Text(theme.rawValue)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(Color(hex: "374151"))
 
-                Slider(value: $soundService.volume, in: 0...1)
-                    .tint(theme.colors.accent)
+                Spacer()
 
-                Image(systemName: "speaker.wave.3.fill")
-                    .font(.system(size: 12))
-                    .foregroundStyle(theme.colors.secondaryText)
-            }
-
-            Button {
-                soundService.playWithHaptic(.taskComplete, haptic: .success)
-            } label: {
-                HStack {
-                    Image(systemName: "play.circle.fill")
-                        .font(.system(size: 16))
-                    Text("Test Sound")
-                        .font(AppTypography.subheadline)
-                }
-                .foregroundStyle(theme.colors.accent)
-            }
-            .buttonStyle(.plain)
-        }
-        .cardBackground()
-    }
-}
-
-// MARK: - Hardware Device Section
-
-struct HardwareDeviceSection: View {
-    @Environment(ThemeManager.self) private var theme
-    @State private var bleService = BLEService.shared
-    @State private var showDeviceList = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: AppSpacing.md) {
-            SectionHeader(title: "E-ink Device")
-
-            VStack(spacing: AppSpacing.sm) {
-                connectionStatusCard
-
-                SettingsToggleRow(
-                    icon: "arrow.triangle.2.circlepath",
-                    title: "Auto Reconnect",
-                    isOn: $bleService.autoReconnect
-                )
-
-                if bleService.connectionState.isConnected {
-                    syncButton
-                }
-            }
-            .padding(.horizontal, AppSpacing.xl)
-        }
-        .sheet(isPresented: $showDeviceList) {
-            DeviceListSheet(bleService: bleService, isPresented: $showDeviceList)
-        }
-    }
-
-    private var connectionStatusCard: some View {
-        Button {
-            if bleService.connectionState == .connected {
-                bleService.disconnect()
-            } else {
-                showDeviceList = true
-            }
-        } label: {
-            HStack(spacing: AppSpacing.md) {
-                ZStack {
-                    Circle()
-                        .fill(connectionColor.opacity(0.15))
-                        .frame(width: 40, height: 40)
-
-                    if bleService.connectionState == .scanning {
-                        ProgressView()
-                            .scaleEffect(0.8)
-                    } else {
-                        Image(systemName: connectionIcon)
-                            .font(.system(size: 18))
-                            .foregroundStyle(connectionColor)
+                // Color preview dots
+                HStack(spacing: 6) {
+                    ForEach(theme.previewColors, id: \.self) { color in
+                        Circle()
+                            .fill(color)
+                            .frame(width: 20, height: 20)
+                            .overlay(
+                                Circle()
+                                    .stroke(Color.white, lineWidth: 2)
+                            )
+                            .shadow(color: .black.opacity(0.1), radius: 1, y: 1)
                     }
                 }
 
-                VStack(alignment: .leading, spacing: AppSpacing.xs) {
-                    Text(connectionTitle)
-                        .font(AppTypography.body)
-                        .foregroundStyle(theme.colors.primaryText)
-
-                    Text(connectionSubtitle)
-                        .font(AppTypography.caption)
-                        .foregroundStyle(theme.colors.secondaryText)
-                }
-
-                Spacer()
-
-                if bleService.connectionState.isConnected {
-                    Circle()
-                        .fill(theme.colors.taskComplete)
-                        .frame(width: 10, height: 10)
-                } else {
-                    Image(systemName: "plus.circle.fill")
-                        .font(.system(size: 20))
-                        .foregroundStyle(theme.colors.accent)
-                }
+                // Toggle
+                ToggleSwitch(isOn: isSelected)
             }
-            .cardBackground()
-        }
-        .buttonStyle(.plain)
-    }
-
-    private var syncButton: some View {
-        Button {
-            syncToDevice()
-        } label: {
-            HStack {
-                Image(systemName: "arrow.triangle.2.circlepath")
-                    .font(.system(size: 16))
-
-                Text("Sync to Device")
-                    .font(AppTypography.body)
-
-                Spacer()
-
-                if let lastSync = bleService.lastSyncTime {
-                    Text(lastSync, style: .relative)
-                        .font(AppTypography.caption)
-                        .foregroundStyle(theme.colors.secondaryText)
-                }
-            }
-            .foregroundStyle(theme.colors.accent)
-            .cardBackground()
-        }
-        .buttonStyle(.plain)
-    }
-
-    private var connectionIcon: String {
-        switch bleService.connectionState {
-        case .connected, .connecting: return "antenna.radiowaves.left.and.right"
-        case .scanning: return "magnifyingglass"
-        case .disconnected: return "antenna.radiowaves.left.and.right.slash"
-        case .error: return "exclamationmark.triangle"
-        }
-    }
-
-    private var connectionColor: Color {
-        switch bleService.connectionState {
-        case .connected: return theme.colors.taskComplete
-        case .connecting, .scanning: return theme.colors.accent
-        case .disconnected: return theme.colors.secondaryText
-        case .error: return .red
-        }
-    }
-
-    private var connectionTitle: String {
-        switch bleService.connectionState {
-        case .connected:
-            return bleService.connectedDevice?.name ?? "Connected"
-        case .connecting:
-            return "Connecting..."
-        case .scanning:
-            return "Scanning..."
-        case .disconnected:
-            return "No Device Connected"
-        case .error(let message):
-            return "Error: \(message)"
-        }
-    }
-
-    private var connectionSubtitle: String {
-        switch bleService.connectionState {
-        case .connected: return "Tap to disconnect"
-        case .connecting, .scanning: return "Please wait..."
-        case .disconnected, .error: return "Tap to connect"
-        }
-    }
-
-    private func syncToDevice() {
-        Task {
-            let appState = AppState.shared
-            try? await bleService.syncAllData(
-                pet: appState.pet,
-                tasks: appState.tasks,
-                events: appState.events,
-                weather: appState.weather
+            .padding(16)
+            .background(Color(hex: isSelected ? "F9FAFB" : "F9FAFB"))
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(isSelected ? Color(hex: "D1D5DB") : Color.clear, lineWidth: 2)
             )
         }
+        .buttonStyle(.plain)
     }
 }
 
-// MARK: - Device List Sheet
+// MARK: - Toggle Switch
 
-struct DeviceListSheet: View {
-    let bleService: BLEService
-    @Binding var isPresented: Bool
-    @Environment(ThemeManager.self) private var theme
-    @State private var isScanning = false
-    @State private var devices: [BLEDevice] = []
-    @State private var errorMessage: String?
+private struct ToggleSwitch: View {
+    let isOn: Bool
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: AppSpacing.lg) {
-                if isScanning {
-                    VStack(spacing: AppSpacing.md) {
-                        ProgressView()
-                            .scaleEffect(1.5)
-                        Text("Scanning for devices...")
-                            .font(AppTypography.body)
-                            .foregroundStyle(theme.colors.secondaryText)
-                    }
-                    .frame(maxHeight: .infinity)
-                } else if devices.isEmpty {
-                    VStack(spacing: AppSpacing.md) {
-                        Image(systemName: "antenna.radiowaves.left.and.right.slash")
+        ZStack(alignment: isOn ? .trailing : .leading) {
+            RoundedRectangle(cornerRadius: 12)
+                .fill(isOn ? Color(hex: "4CAF50") : Color(hex: "E0E0E0"))
+                .frame(width: 40, height: 24)
+
+            Circle()
+                .fill(Color.white)
+                .frame(width: 16, height: 16)
+                .shadow(color: .black.opacity(0.1), radius: 1, y: 1)
+                .padding(4)
+        }
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isOn)
+    }
+}
+
+// MARK: - Avatar Section
+
+private struct AvatarSection: View {
+    @Environment(ThemeManager.self) private var theme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SettingsSectionHeader(title: "Avatar")
+
+            HStack(spacing: 16) {
+                // Current Avatar
+                VStack(spacing: 8) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 24)
+                            .fill(theme.currentTheme.cardGradient)
+                            .frame(width: 96, height: 96)
+
+                        Text("🦝")
                             .font(.system(size: 48))
-                            .foregroundStyle(theme.colors.secondaryText)
-
-                        Text("No devices found")
-                            .font(AppTypography.headline)
-                            .foregroundStyle(theme.colors.primaryText)
-
-                        Text("Make sure your E-ink device is powered on and nearby")
-                            .font(AppTypography.subheadline)
-                            .foregroundStyle(theme.colors.secondaryText)
-                            .multilineTextAlignment(.center)
-
-                        Button("Scan Again") {
-                            startScanning()
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(theme.colors.accent)
                     }
-                    .padding(AppSpacing.xl)
-                    .frame(maxHeight: .infinity)
-                } else {
-                    List(devices) { device in
-                        Button {
-                            connectToDevice(device)
-                        } label: {
-                            HStack {
-                                VStack(alignment: .leading, spacing: AppSpacing.xs) {
-                                    Text(device.name)
-                                        .font(AppTypography.body)
-                                        .foregroundStyle(theme.colors.primaryText)
 
-                                    Text("Signal: \(device.rssi) dBm")
-                                        .font(AppTypography.caption)
-                                        .foregroundStyle(theme.colors.secondaryText)
-                                }
+                    Text("Avatar")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(theme.colors.secondaryText)
+                }
+                .frame(maxWidth: .infinity)
 
-                                Spacer()
+                // Upload Option
+                VStack(spacing: 8) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 24)
+                            .fill(Color(hex: "F3F4F6"))
+                            .frame(width: 96, height: 96)
 
-                                Image(systemName: "chevron.right")
-                                    .font(.system(size: 14))
-                                    .foregroundStyle(theme.colors.secondaryText)
-                            }
-                        }
+                        Image(systemName: "arrow.up.doc")
+                            .font(.system(size: 40))
+                            .foregroundStyle(Color(hex: "9CA3AF"))
                     }
-                    .listStyle(.plain)
+
+                    Text("Upload")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(theme.colors.secondaryText)
                 }
-
-                if let error = errorMessage {
-                    Text(error)
-                        .font(AppTypography.caption)
-                        .foregroundStyle(.red)
-                        .padding(.horizontal, AppSpacing.xl)
-                }
+                .frame(maxWidth: .infinity)
             }
-            .background(theme.colors.background)
-            .navigationTitle("Connect Device")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        isPresented = false
-                    }
-                }
-            }
-        }
-        .task {
-            startScanning()
-        }
-    }
-
-    private func startScanning() {
-        isScanning = true
-        errorMessage = nil
-        devices = []
-
-        Task {
-            do {
-                devices = try await bleService.scanForDevices(timeout: 10)
-            } catch {
-                errorMessage = error.localizedDescription
-            }
-            isScanning = false
-        }
-    }
-
-    private func connectToDevice(_ device: BLEDevice) {
-        Task {
-            do {
-                try await bleService.connect(to: device)
-                isPresented = false
-            } catch {
-                errorMessage = error.localizedDescription
-            }
+            .padding(20)
+            .background(Color.white)
+            .clipShape(RoundedRectangle(cornerRadius: 24))
+            .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
         }
     }
 }
 
 // MARK: - Integrations Section
 
-struct IntegrationsSection: View {
-    @Environment(AppState.self) private var appState
+private struct IntegrationsSection: View {
+    @Environment(ThemeManager.self) private var theme
+    @State private var appleRemindersEnabled = true
+    @State private var googleCalendarEnabled = true
 
     var body: some View {
-        VStack(alignment: .leading, spacing: AppSpacing.md) {
-            SectionHeader(title: "Integrations")
+        VStack(alignment: .leading, spacing: 12) {
+            SettingsSectionHeader(title: "Integrations")
 
-            VStack(spacing: AppSpacing.sm) {
-                ForEach(appState.integrations) { integration in
-                    IntegrationRowView(integration: integration)
-                }
+            VStack(spacing: 0) {
+                Text("Integrations adds 1s incremental to any time 1-2 of the lists supported by your account to apps")
+                    .font(.system(size: 12))
+                    .foregroundStyle(theme.colors.secondaryText)
+                    .padding(.bottom, 16)
+
+                // Apple Reminders
+                IntegrationRow(
+                    icon: "checkmark",
+                    iconBackground: LinearGradient(
+                        colors: [Color(hex: "60A5FA"), Color(hex: "3B82F6")],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    title: "Apple Reminders",
+                    description: "didn't change of use\nany action to Apple reminders",
+                    isEnabled: $appleRemindersEnabled
+                )
+
+                Rectangle()
+                    .fill(Color(hex: "F3F4F6"))
+                    .frame(height: 1)
+                    .padding(.vertical, 16)
+
+                // Google Calendar
+                IntegrationRow(
+                    icon: "g.circle.fill",
+                    iconBackground: LinearGradient(
+                        colors: [Color.white, Color.white],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    title: "Google Calendar",
+                    description: "No connected\nany action to Apple reminders",
+                    isEnabled: $googleCalendarEnabled,
+                    isGoogle: true
+                )
             }
-            .padding(.horizontal, AppSpacing.xl)
+            .padding(16)
+            .background(Color.white)
+            .clipShape(RoundedRectangle(cornerRadius: 24))
+            .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
         }
     }
 }
 
-struct IntegrationRowView: View {
-    let integration: Integration
+// MARK: - Integration Row
+
+private struct IntegrationRow: View {
+    let icon: String
+    let iconBackground: LinearGradient
+    let title: String
+    let description: String
+    @Binding var isEnabled: Bool
+    var isGoogle: Bool = false
+
     @Environment(ThemeManager.self) private var theme
-    @Environment(AppState.self) private var appState
-    @State private var isConnecting = false
-    @State private var showError = false
-    @State private var errorMessage = ""
 
     var body: some View {
-        Button {
-            handleIntegrationTap()
-        } label: {
-            HStack(spacing: AppSpacing.md) {
-                ZStack {
-                    Circle()
-                        .fill(theme.colors.accent.opacity(0.15))
-                        .frame(width: 40, height: 40)
+        HStack(alignment: .top, spacing: 12) {
+            // Icon
+            ZStack {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(iconBackground)
+                    .frame(width: 40, height: 40)
+                    .shadow(color: .black.opacity(isGoogle ? 0.1 : 0), radius: 2, y: 1)
 
-                    if isConnecting {
-                        ProgressView()
-                            .scaleEffect(0.8)
-                    } else {
-                        Image(systemName: integration.iconName)
-                            .font(.system(size: 18))
-                            .foregroundStyle(theme.colors.accent)
-                    }
-                }
-
-                VStack(alignment: .leading, spacing: AppSpacing.xs) {
-                    Text(integration.name)
-                        .font(AppTypography.body)
-                        .foregroundStyle(theme.colors.primaryText)
-
-                    Text(statusText)
-                        .font(AppTypography.caption)
-                        .foregroundStyle(statusColor)
-                }
-
-                Spacer()
-
-                if integration.isConnected {
-                    Circle()
-                        .fill(theme.colors.taskComplete)
-                        .frame(width: 10, height: 10)
-                } else if canConnect {
-                    Image(systemName: "plus.circle.fill")
-                        .font(.system(size: 20))
-                        .foregroundStyle(theme.colors.accent)
+                if isGoogle {
+                    GoogleIcon()
+                        .frame(width: 24, height: 24)
                 } else {
-                    Circle()
-                        .fill(theme.colors.timeline)
-                        .frame(width: 10, height: 10)
+                    Image(systemName: icon)
+                        .font(.system(size: 20, weight: .medium))
+                        .foregroundStyle(.white)
                 }
             }
-            .cardBackground()
-        }
-        .buttonStyle(.plain)
-        .disabled(isConnecting || !canConnect)
-        .alert("Connection Error", isPresented: $showError) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(errorMessage)
-        }
-    }
 
-    private var statusText: String {
-        if isConnecting { return "Connecting..." }
-        if integration.isConnected { return "Connected" }
-        return canConnect ? "Tap to connect" : "Not connected"
-    }
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(title)
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(theme.colors.primaryText)
 
-    private var statusColor: Color {
-        if integration.isConnected { return theme.colors.taskComplete }
-        return canConnect ? theme.colors.accent : theme.colors.secondaryText
-    }
+                    Spacer()
 
-    private var canConnect: Bool {
-        integration.type != .todoist
-    }
+                    Button {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            isEnabled.toggle()
+                        }
+                    } label: {
+                        ToggleSwitch(isOn: isEnabled)
+                    }
+                    .buttonStyle(.plain)
+                }
 
-    private func handleIntegrationTap() {
-        guard !integration.isConnected else { return }
+                Text(description)
+                    .font(.system(size: 12))
+                    .foregroundStyle(theme.colors.secondaryText)
+                    .lineSpacing(2)
 
-        switch integration.type {
-        case .googleCalendar, .googleTasks:
-            connectGoogle()
-        case .appleCalendar:
-            connectApple(
-                requestAccess: appState.requestAppleCalendarAccess,
-                loadData: appState.loadAppleCalendarEvents,
-                errorMessage: "Calendar access denied. Please enable in Settings."
-            )
-        case .appleReminders:
-            connectApple(
-                requestAccess: appState.requestAppleRemindersAccess,
-                loadData: appState.loadAppleReminders,
-                errorMessage: "Reminders access denied. Please enable in Settings."
-            )
-        case .todoist:
-            break
-        }
-    }
-
-    private func connectGoogle() {
-        isConnecting = true
-        Task {
-            do {
-                try await AuthManager.shared.signInWithGoogle()
-            } catch {
-                errorMessage = error.localizedDescription
-                showError = true
+                Button {
+                } label: {
+                    Text("Manage")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(theme.colors.primaryText)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 6)
+                        .background(Color(hex: "F3F4F6"))
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 4)
             }
-            isConnecting = false
-        }
-    }
-
-    private func connectApple(
-        requestAccess: @escaping () async -> Bool,
-        loadData: @escaping () async -> Void,
-        errorMessage deniedMessage: String
-    ) {
-        isConnecting = true
-        Task {
-            let granted = await requestAccess()
-            if granted {
-                await loadData()
-            } else {
-                errorMessage = deniedMessage
-                showError = true
-            }
-            isConnecting = false
         }
     }
 }
 
-// MARK: - Account Section
+// MARK: - Google Icon
 
-struct AccountSection: View {
-    @Environment(ThemeManager.self) private var theme
-    @Environment(AuthManager.self) private var authManager
-    @State private var isSigningIn = false
-    @State private var showError = false
-    @State private var errorMessage = ""
-
+private struct GoogleIcon: View {
     var body: some View {
-        VStack(alignment: .leading, spacing: AppSpacing.md) {
-            SectionHeader(title: "Account")
-
-            if authManager.authState.isAuthenticated, let user = authManager.currentUser {
-                signedInView(user: user)
-            } else {
-                signInOptionsView
-            }
-        }
-    }
-
-    private func signedInView(user: User) -> some View {
-        VStack(spacing: AppSpacing.sm) {
-            HStack(spacing: AppSpacing.md) {
-                userAvatar(user)
-
-                VStack(alignment: .leading, spacing: AppSpacing.xs) {
-                    Text(user.displayName ?? "User")
-                        .font(AppTypography.body)
-                        .foregroundStyle(theme.colors.primaryText)
-
-                    if let email = user.email {
-                        Text(email)
-                            .font(AppTypography.caption)
-                            .foregroundStyle(theme.colors.secondaryText)
-                    }
-                }
-
-                Spacer()
-
-                providerBadge(for: user.authProvider)
-            }
-            .cardBackground()
-
-            signOutButton
-        }
-        .padding(.horizontal, AppSpacing.xl)
-    }
-
-    @ViewBuilder
-    private func userAvatar(_ user: User) -> some View {
         ZStack {
             Circle()
-                .fill(theme.colors.accent.opacity(0.15))
-                .frame(width: 50, height: 50)
+                .fill(Color.white)
 
-            if let avatarURL = user.avatarURL {
-                AsyncImage(url: avatarURL) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: {
-                    personIcon
+            GeometryReader { geo in
+                Path { path in
+                    let center = CGPoint(x: geo.size.width / 2, y: geo.size.height / 2)
+                    let radius = min(geo.size.width, geo.size.height) / 2 - 3
+
+                    path.addArc(
+                        center: center,
+                        radius: radius,
+                        startAngle: .degrees(-45),
+                        endAngle: .degrees(270),
+                        clockwise: false
+                    )
                 }
-                .frame(width: 50, height: 50)
-                .clipShape(Circle())
-            } else {
-                personIcon
+                .stroke(
+                    AngularGradient(
+                        colors: [
+                            Color(hex: "4285F4"),
+                            Color(hex: "34A853"),
+                            Color(hex: "FBBC05"),
+                            Color(hex: "EA4335"),
+                            Color(hex: "4285F4")
+                        ],
+                        center: .center
+                    ),
+                    lineWidth: 3
+                )
             }
-        }
-    }
-
-    private var personIcon: some View {
-        Image(systemName: "person.fill")
-            .font(.system(size: 20))
-            .foregroundStyle(theme.colors.accent)
-    }
-
-    private func providerBadge(for provider: AuthProvider) -> some View {
-        let isApple = provider == .apple
-        return HStack(spacing: 4) {
-            Image(systemName: isApple ? "apple.logo" : "g.circle.fill")
-                .font(.system(size: 12))
-            Text(isApple ? "Apple" : "Google")
-                .font(AppTypography.caption)
-        }
-        .foregroundStyle(theme.colors.secondaryText)
-    }
-
-    private var signOutButton: some View {
-        Button {
-            Task { await authManager.signOut() }
-        } label: {
-            HStack {
-                Image(systemName: "rectangle.portrait.and.arrow.right")
-                    .font(.system(size: 16))
-                Text("Sign Out")
-                    .font(AppTypography.body)
-                Spacer()
-            }
-            .foregroundStyle(.red)
-            .cardBackground()
-        }
-        .buttonStyle(.plain)
-    }
-
-    private var signInOptionsView: some View {
-        VStack(spacing: AppSpacing.sm) {
-            Text("Sign in to sync your data across devices")
-                .font(AppTypography.subheadline)
-                .foregroundStyle(theme.colors.secondaryText)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, AppSpacing.xl)
-
-            SignInButton(
-                icon: "apple.logo",
-                title: "Sign in with Apple",
-                isLoading: isSigningIn,
-                action: signInWithApple
-            )
-
-            SignInButton(
-                icon: "g.circle.fill",
-                title: "Sign in with Google",
-                isLoading: isSigningIn,
-                action: signInWithGoogle
-            )
-        }
-        .alert("Sign In Error", isPresented: $showError) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(errorMessage)
-        }
-    }
-
-    private func signInWithApple() {
-        performSignIn { try await authManager.signInWithApple() }
-    }
-
-    private func signInWithGoogle() {
-        performSignIn { try await authManager.signInWithGoogle() }
-    }
-
-    private func performSignIn(_ action: @escaping () async throws -> Void) {
-        isSigningIn = true
-        Task {
-            do {
-                try await action()
-            } catch {
-                errorMessage = error.localizedDescription
-                showError = true
-            }
-            isSigningIn = false
         }
     }
 }
 
-// MARK: - About Section
+// MARK: - Connect New App Section
 
-struct AboutSection: View {
-    var body: some View {
-        VStack(alignment: .leading, spacing: AppSpacing.md) {
-            SectionHeader(title: "About")
-
-            VStack(spacing: AppSpacing.sm) {
-                AboutRowView(label: "Version", value: "1.0.0")
-                AboutRowView(label: "Build", value: "1")
-            }
-            .padding(.horizontal, AppSpacing.xl)
-
-            VStack(spacing: AppSpacing.sm) {
-                LinkRowView(label: "Privacy Policy", icon: "lock.shield")
-                LinkRowView(label: "Terms of Service", icon: "doc.text")
-                LinkRowView(label: "Send Feedback", icon: "envelope")
-            }
-            .padding(.horizontal, AppSpacing.xl)
-        }
-    }
-}
-
-struct AboutRowView: View {
-    let label: String
-    let value: String
+private struct ConnectNewAppSection: View {
     @Environment(ThemeManager.self) private var theme
+    @State private var searchText = ""
+    @State private var appeared = false
+
+    private let apps = [
+        AppInfo(name: "Outlook Calendar", icon: "📅", color: "#0078D4"),
+        AppInfo(name: "Apple Calendar", icon: "", color: "#000"),
+        AppInfo(name: "Google Tasks", icon: "", color: "#4285F4"),
+        AppInfo(name: "Microsoft To Do", icon: "✓", color: "#2564CF"),
+        AppInfo(name: "Todoist", icon: "", color: "#E44332"),
+        AppInfo(name: "TickTick", icon: "", color: "#4CAF50"),
+        AppInfo(name: "Notion (Experimental)", icon: "", color: "#000"),
+        AppInfo(name: "CalDAV", icon: "📅", color: "#666"),
+        AppInfo(name: "iCal/WebCal", icon: "📅", color: "#666")
+    ]
 
     var body: some View {
-        HStack {
-            Text(label)
-                .font(AppTypography.body)
-                .foregroundStyle(theme.colors.primaryText)
+        VStack(alignment: .leading, spacing: 12) {
+            SettingsSectionHeader(title: "Connect New App")
 
-            Spacer()
+            VStack(spacing: 16) {
+                // Search Box
+                HStack(spacing: 12) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 16))
+                        .foregroundStyle(Color(hex: "9CA3AF"))
 
-            Text(value)
-                .font(AppTypography.subheadline)
-                .foregroundStyle(theme.colors.secondaryText)
+                    TextField("Search of apps", text: $searchText)
+                        .font(.system(size: 14))
+                        .foregroundStyle(theme.colors.primaryText)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(Color(hex: "F9FAFB"))
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+
+                Text("Commonly connected apps")
+                    .font(.system(size: 12))
+                    .foregroundStyle(theme.colors.secondaryText)
+
+                // App List
+                VStack(spacing: 8) {
+                    ForEach(Array(apps.enumerated()), id: \.element.name) { index, app in
+                        AppRow(app: app)
+                            .opacity(appeared ? 1 : 0)
+                            .offset(x: appeared ? 0 : -20)
+                            .animation(
+                                .spring(response: 0.5, dampingFraction: 0.8)
+                                .delay(0.5 + Double(index) * 0.05),
+                                value: appeared
+                            )
+                    }
+                }
+            }
+            .padding(16)
+            .background(Color.white)
+            .clipShape(RoundedRectangle(cornerRadius: 24))
+            .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
         }
-        .cardBackground()
+        .onAppear { appeared = true }
     }
 }
 
-struct LinkRowView: View {
-    let label: String
+// MARK: - App Info
+
+private struct AppInfo {
+    let name: String
     let icon: String
+    let color: String
+}
+
+// MARK: - App Row
+
+private struct AppRow: View {
+    let app: AppInfo
     @Environment(ThemeManager.self) private var theme
+    @State private var isHovered = false
 
     var body: some View {
         Button {
-            // Handle link tap
         } label: {
-            HStack {
-                Image(systemName: icon)
-                    .font(.system(size: 16))
-                    .foregroundStyle(theme.colors.accent)
-                    .frame(width: 24)
+            HStack(spacing: 12) {
+                // App Icon
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color(hex: app.color))
+                        .frame(width: 32, height: 32)
 
-                Text(label)
-                    .font(AppTypography.body)
+                    if app.icon.isEmpty {
+                        Text(String(app.name.prefix(1)))
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(.white)
+                    } else {
+                        Text(app.icon)
+                            .font(.system(size: 14))
+                    }
+                }
+
+                Text(app.name)
+                    .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(theme.colors.primaryText)
 
                 Spacer()
 
                 Image(systemName: "chevron.right")
                     .font(.system(size: 14))
-                    .foregroundStyle(theme.colors.secondaryText)
+                    .foregroundStyle(Color(hex: "9CA3AF"))
             }
-            .cardBackground()
+            .padding(12)
+            .background(isHovered ? Color(hex: "F9FAFB") : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
         }
         .buttonStyle(.plain)
     }

@@ -6,37 +6,37 @@ struct PetStatusView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
+    @State private var appeared = false
 
     var body: some View {
         NavigationStack {
             ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: AppSpacing.xxl) {
-                    // Pet display
-                    PetStatusHeaderView()
+                VStack(spacing: 24) {
+                    // Pet Status Card
+                    PetStatusCard()
+                        .opacity(appeared ? 1 : 0)
+                        .scaleEffect(appeared ? 1 : 0.9)
+                        .animation(.spring(response: 0.5, dampingFraction: 0.8), value: appeared)
 
-                    // Progress section
-                    PetStatsSection()
+                    // Achievement Card
+                    AchievementCard()
+                        .opacity(appeared ? 1 : 0)
+                        .offset(y: appeared ? 0 : 30)
+                        .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(0.3), value: appeared)
 
-                    // Physical stats
-                    PhysicalStatsSection()
-
-                    // Streak section
-                    StreakSection()
-
-                    // Task statistics
-                    TaskStatisticsSection()
-
-                    // Feed button
-                    FeedPetButton()
-                        .padding(.horizontal, AppSpacing.xl)
+                    // Tasks Statistics
+                    TasksStatisticsCard()
+                        .opacity(appeared ? 1 : 0)
+                        .offset(y: appeared ? 0 : 30)
+                        .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(0.5), value: appeared)
 
                     Spacer()
-                        .frame(height: AppSpacing.xxl)
+                        .frame(height: 80)
                 }
-                .padding(.top, AppSpacing.lg)
+                .padding(.horizontal, 24)
+                .padding(.top, 24)
             }
             .background(theme.colors.background)
-            .navigationTitle("Pet Status")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -50,436 +50,342 @@ struct PetStatusView: View {
                 }
             }
         }
+        .onAppear { appeared = true }
     }
 }
 
-// MARK: - Feed Pet Button
+// MARK: - Pet Status Card
 
-struct FeedPetButton: View {
+private struct PetStatusCard: View {
     @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
-    @State private var isFeeding = false
+    @State private var progressAppeared = false
 
     var body: some View {
-        Button {
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
-                isFeeding = true
-            }
-            // 模拟喂食效果
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                isFeeding = false
-            }
-        } label: {
-            HStack(spacing: AppSpacing.sm) {
-                Image(systemName: isFeeding ? "heart.fill" : "leaf.fill")
-                    .font(.system(size: 18))
+        VStack(spacing: 0) {
+            // Green status indicator
+            RoundedRectangle(cornerRadius: 6)
+                .fill(theme.colors.accent)
+                .frame(width: 48, height: 12)
+                .padding(.top, 16)
 
-                Text("Feed \(appState.pet.name)")
-                    .font(AppTypography.headline)
-            }
-            .foregroundStyle(.white)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, AppSpacing.lg)
-            .background {
-                RoundedRectangle(cornerRadius: AppCornerRadius.large)
-                    .fill(theme.colors.accent)
-            }
-        }
-        .buttonStyle(.plain)
-        .scaleEffect(isFeeding ? 0.95 : 1.0)
-    }
-}
-
-// MARK: - Pet Status Header
-
-struct PetStatusHeaderView: View {
-    @Environment(AppState.self) private var appState
-    @Environment(ThemeManager.self) private var theme
-
-    var body: some View {
-        VStack(spacing: AppSpacing.lg) {
-            // Pet illustration
-            PixelPetView(size: .large, animated: true)
-                .frame(height: 180)
-                .frame(maxWidth: .infinity)
-                .background {
-                    RoundedRectangle(cornerRadius: AppCornerRadius.large)
-                        .fill(theme.colors.cardBackground)
-                }
-                .padding(.horizontal, AppSpacing.xl)
-
-            // Name and pronouns
-            VStack(spacing: AppSpacing.xs) {
-                HStack(spacing: AppSpacing.sm) {
-                    Text(appState.pet.name)
-                        .font(AppTypography.title)
-                        .foregroundStyle(theme.colors.primaryText)
-
-                    Text("(\(appState.pet.pronouns.rawValue.lowercased()))")
-                        .font(AppTypography.subheadline)
-                        .foregroundStyle(theme.colors.secondaryText)
-                }
-
-                // Adventures and age
-                HStack(spacing: AppSpacing.lg) {
-                    Label("\(appState.pet.adventuresCount) adventures", systemImage: "star.fill")
-                        .font(AppTypography.caption)
-                        .foregroundStyle(theme.colors.secondaryText)
-
-                    Label("\(appState.pet.age) days old", systemImage: "calendar")
-                        .font(AppTypography.caption)
-                        .foregroundStyle(theme.colors.secondaryText)
-                }
-            }
-
-            // Status and Mood badges
-            HStack(spacing: AppSpacing.md) {
-                StatusBadge(
-                    icon: "face.smiling.fill",
-                    label: "Status",
-                    value: appState.pet.status.rawValue
-                )
-
-                StatusBadge(
-                    icon: "heart.fill",
-                    label: "Mood",
-                    value: appState.pet.mood.rawValue
-                )
-            }
-            .padding(.horizontal, AppSpacing.xl)
-        }
-    }
-}
-
-// MARK: - Status Badge
-
-struct StatusBadge: View {
-    let icon: String
-    let label: String
-    let value: String
-    @Environment(ThemeManager.self) private var theme
-
-    var body: some View {
-        HStack(spacing: AppSpacing.sm) {
-            Image(systemName: icon)
-                .font(.system(size: 14))
-                .foregroundStyle(theme.colors.accent)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(label)
-                    .font(AppTypography.caption)
-                    .foregroundStyle(theme.colors.secondaryText)
-
-                Text(value)
-                    .font(AppTypography.subheadline)
-                    .fontWeight(.medium)
-                    .foregroundStyle(theme.colors.primaryText)
-            }
-        }
-        .padding(.horizontal, AppSpacing.lg)
-        .padding(.vertical, AppSpacing.sm)
-        .background {
-            RoundedRectangle(cornerRadius: AppCornerRadius.medium)
-                .fill(theme.colors.cardBackground)
-        }
-    }
-}
-
-// MARK: - Pet Stats Section
-
-struct PetStatsSection: View {
-    @Environment(AppState.self) private var appState
-    @Environment(ThemeManager.self) private var theme
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: AppSpacing.md) {
-            Text("Progress to Next Stage")
-                .font(AppTypography.headline)
-                .foregroundStyle(theme.colors.primaryText)
-                .padding(.horizontal, AppSpacing.xl)
-
-            // Progress card
-            VStack(spacing: AppSpacing.md) {
-                HStack {
-                    VStack(alignment: .leading, spacing: AppSpacing.xs) {
-                        Text("Current: \(appState.pet.stage.rawValue)")
-                            .font(AppTypography.subheadline)
-                            .foregroundStyle(theme.colors.secondaryText)
-
-                        if let nextStage = appState.pet.stage.nextStage {
-                            Text("Next: \(nextStage.rawValue)")
-                                .font(AppTypography.subheadline)
-                                .foregroundStyle(theme.colors.accent)
-                        }
-                    }
-
-                    Spacer()
-
-                    Text("\(Int(appState.pet.progress * 100))%")
-                        .font(AppTypography.title2)
-                        .fontWeight(.bold)
-                        .foregroundStyle(theme.colors.accent)
-                }
-
-                // Progress bar
-                GeometryReader { geometry in
-                    ZStack(alignment: .leading) {
-                        RoundedRectangle(cornerRadius: 6)
-                            .fill(theme.colors.timeline)
-                            .frame(height: 12)
-
-                        RoundedRectangle(cornerRadius: 6)
-                            .fill(theme.colors.accent)
-                            .frame(width: geometry.size.width * appState.pet.progress, height: 12)
-                    }
-                }
-                .frame(height: 12)
-            }
-            .padding(AppSpacing.xl)
-            .background {
-                RoundedRectangle(cornerRadius: AppCornerRadius.large)
-                    .fill(theme.colors.cardBackground)
-            }
-            .padding(.horizontal, AppSpacing.xl)
-        }
-    }
-}
-
-// MARK: - Physical Stats Section
-
-struct PhysicalStatsSection: View {
-    @Environment(AppState.self) private var appState
-    @Environment(ThemeManager.self) private var theme
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: AppSpacing.md) {
-            Text("Physical Stats")
-                .font(AppTypography.headline)
-                .foregroundStyle(theme.colors.primaryText)
-                .padding(.horizontal, AppSpacing.xl)
-
-            HStack(spacing: AppSpacing.md) {
-                PhysicalStatCard(
-                    icon: "scalemass.fill",
-                    label: "Weight",
-                    value: String(format: "%.1fg", appState.pet.weight)
-                )
-
-                PhysicalStatCard(
-                    icon: "ruler.fill",
-                    label: "Height",
-                    value: String(format: "%.1fcm", appState.pet.height)
-                )
-
-                PhysicalStatCard(
-                    icon: "wind",
-                    label: "Tail",
-                    value: String(format: "%.1fcm", appState.pet.tailLength)
-                )
-            }
-            .padding(.horizontal, AppSpacing.xl)
-        }
-    }
-}
-
-struct PhysicalStatCard: View {
-    let icon: String
-    let label: String
-    let value: String
-    @Environment(ThemeManager.self) private var theme
-
-    var body: some View {
-        VStack(spacing: AppSpacing.sm) {
-            Image(systemName: icon)
-                .font(.system(size: 20))
-                .foregroundStyle(theme.colors.accent)
-
-            Text(label)
-                .font(AppTypography.caption)
-                .foregroundStyle(theme.colors.secondaryText)
-
-            Text(value)
-                .font(AppTypography.headline)
-                .foregroundStyle(theme.colors.primaryText)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, AppSpacing.lg)
-        .background {
-            RoundedRectangle(cornerRadius: AppCornerRadius.medium)
-                .fill(theme.colors.cardBackground)
-        }
-    }
-}
-
-// MARK: - Streak Section
-
-struct StreakSection: View {
-    @Environment(AppState.self) private var appState
-    @Environment(ThemeManager.self) private var theme
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: AppSpacing.md) {
-            Text("Streak")
-                .font(AppTypography.headline)
-                .foregroundStyle(theme.colors.primaryText)
-                .padding(.horizontal, AppSpacing.xl)
-
-            HStack(spacing: AppSpacing.lg) {
-                // Flame icon
+            // Pet info row
+            HStack(alignment: .top, spacing: 20) {
+                // Pet Avatar
                 ZStack {
-                    Circle()
-                        .fill(theme.colors.streakActive.opacity(0.2))
-                        .frame(width: 60, height: 60)
+                    RoundedRectangle(cornerRadius: 24)
+                        .fill(theme.currentTheme.cardGradient)
+                        .frame(width: 128, height: 128)
 
-                    Image(systemName: "flame.fill")
-                        .font(.system(size: 28))
-                        .foregroundStyle(theme.colors.streakActive)
+                    Text("🦝")
+                        .font(.system(size: 64))
                 }
+                .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
 
-                VStack(alignment: .leading, spacing: AppSpacing.xs) {
-                    Text("\(appState.streak.currentStreak)")
-                        .font(AppTypography.largeTitle)
+                // Pet Info
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Baby Waffle")
+                        .font(.system(size: 24, weight: .bold))
                         .foregroundStyle(theme.colors.primaryText)
 
-                    Text("day streak")
-                        .font(AppTypography.subheadline)
+                    Text("He/Him • 3 Adventures")
+                        .font(.system(size: 14))
                         .foregroundStyle(theme.colors.secondaryText)
                 }
 
                 Spacer()
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 16)
 
-                // Streak days visualization
-                HStack(spacing: AppSpacing.xs) {
-                    ForEach(0..<7, id: \.self) { index in
-                        Circle()
-                            .fill(index < appState.streak.currentStreak ? theme.colors.streakActive : theme.colors.timeline)
-                            .frame(width: 12, height: 12)
-                    }
-                }
+            // Decorative circle
+            Circle()
+                .stroke(theme.colors.background, lineWidth: 8)
+                .frame(width: 96, height: 96)
+                .opacity(0.5)
+                .offset(x: 100, y: -80)
+
+            // Divider
+            Rectangle()
+                .fill(Color(hex: "E5E7EB"))
+                .frame(height: 1)
+                .padding(.horizontal, 24)
+                .padding(.top, -40)
+
+            // Stats Grid
+            VStack(spacing: 12) {
+                StatRow(label: "Age", value: "29 days")
+                StatRow(label: "Status", value: "Exploring", emoji: "🧭")
+                StatRow(label: "Stage", value: "Newborn")
+                ProgressRow(progress: 0.3)
             }
-            .padding(AppSpacing.xl)
-            .background {
-                RoundedRectangle(cornerRadius: AppCornerRadius.large)
-                    .fill(theme.colors.cardBackground)
+            .padding(.horizontal, 24)
+            .padding(.top, 16)
+
+            // Divider
+            Rectangle()
+                .fill(Color(hex: "E5E7EB"))
+                .frame(height: 1)
+                .padding(.horizontal, 24)
+                .padding(.top, 16)
+
+            // Pet Measurements
+            HStack(spacing: 24) {
+                MeasurementItem(emoji: "⚖️", value: "4.9g")
+                MeasurementItem(emoji: "📏", value: "1.6cm")
+                MeasurementItem(emoji: "🦋", value: "4.1cm")
             }
-            .padding(.horizontal, AppSpacing.xl)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 16)
         }
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 24))
+        .shadow(color: .black.opacity(0.1), radius: 12, y: 4)
     }
 }
 
-// MARK: - Task Statistics Section
+// MARK: - Stat Row
 
-struct TaskStatisticsSection: View {
-    @Environment(AppState.self) private var appState
-    @Environment(ThemeManager.self) private var theme
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: AppSpacing.md) {
-            Text("Task Statistics")
-                .font(AppTypography.headline)
-                .foregroundStyle(theme.colors.primaryText)
-                .padding(.horizontal, AppSpacing.xl)
-
-            VStack(spacing: AppSpacing.md) {
-                TaskStatRow(
-                    label: "Today",
-                    completed: appState.statistics.todayCompleted,
-                    total: appState.statistics.todayTotal,
-                    percentage: appState.statistics.todayPercentage
-                )
-
-                TaskStatRow(
-                    label: "Past Week",
-                    completed: appState.statistics.pastWeekCompleted,
-                    total: appState.statistics.pastWeekTotal,
-                    percentage: appState.statistics.pastWeekPercentage
-                )
-
-                TaskStatRow(
-                    label: "Last 30 Days",
-                    completed: appState.statistics.last30DaysCompleted,
-                    total: appState.statistics.last30DaysTotal,
-                    percentage: appState.statistics.last30DaysPercentage
-                )
-            }
-            .padding(.horizontal, AppSpacing.xl)
-        }
-    }
-}
-
-struct TaskStatRow: View {
-    let label: String
-    let completed: Int
-    let total: Int
-    let percentage: Double
-    @Environment(ThemeManager.self) private var theme
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: AppSpacing.sm) {
-            HStack {
-                Text(label)
-                    .font(AppTypography.body)
-                    .foregroundStyle(theme.colors.primaryText)
-
-                Spacer()
-
-                Text("\(completed)/\(total)")
-                    .font(AppTypography.subheadline)
-                    .foregroundStyle(theme.colors.secondaryText)
-            }
-
-            // Progress bar
-            GeometryReader { geometry in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(theme.colors.timeline)
-                        .frame(height: 8)
-
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(theme.colors.taskComplete)
-                        .frame(width: geometry.size.width * percentage, height: 8)
-                }
-            }
-            .frame(height: 8)
-        }
-        .padding(AppSpacing.lg)
-        .background {
-            RoundedRectangle(cornerRadius: AppCornerRadius.medium)
-                .fill(theme.colors.cardBackground)
-        }
-    }
-}
-
-// MARK: - Stat Row View
-
-struct StatRowView: View {
-    let icon: String
+private struct StatRow: View {
     let label: String
     let value: String
+    var emoji: String? = nil
     @Environment(ThemeManager.self) private var theme
 
     var body: some View {
         HStack {
-            Image(systemName: icon)
-                .font(.system(size: 16))
-                .foregroundStyle(theme.colors.accent)
-                .frame(width: 24)
-
             Text(label)
-                .font(AppTypography.body)
-                .foregroundStyle(theme.colors.primaryText)
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(theme.colors.secondaryText)
+                .textCase(.uppercase)
+                .tracking(0.5)
 
             Spacer()
 
-            Text(value)
-                .font(AppTypography.subheadline)
+            HStack(spacing: 8) {
+                Text(value)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(theme.colors.primaryText)
+
+                if let emoji = emoji {
+                    Text(emoji)
+                        .font(.system(size: 18))
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Progress Row
+
+private struct ProgressRow: View {
+    let progress: Double
+    @Environment(ThemeManager.self) private var theme
+    @State private var animatedProgress = false
+
+    var body: some View {
+        HStack {
+            Text("Progress Bar")
+                .font(.system(size: 12, weight: .bold))
                 .foregroundStyle(theme.colors.secondaryText)
+                .textCase(.uppercase)
+                .tracking(0.5)
+
+            Spacer()
+
+            HStack(spacing: 4) {
+                ForEach(0..<10, id: \.self) { index in
+                    Circle()
+                        .fill(Double(index) / 10.0 < progress ? theme.colors.primaryText : Color(hex: "E5E7EB"))
+                        .frame(width: 12, height: 12)
+                        .scaleEffect(animatedProgress ? 1 : 0)
+                        .animation(
+                            .spring(response: 0.3, dampingFraction: 0.6)
+                            .delay(0.6 + Double(index) * 0.05),
+                            value: animatedProgress
+                        )
+                }
+
+                Text("\(Int(progress * 100))%")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(theme.colors.primaryText)
+                    .padding(.leading, 8)
+            }
         }
-        .padding(AppSpacing.lg)
-        .background {
-            RoundedRectangle(cornerRadius: AppCornerRadius.medium)
-                .fill(theme.colors.cardBackground)
+        .onAppear { animatedProgress = true }
+    }
+}
+
+// MARK: - Measurement Item
+
+private struct MeasurementItem: View {
+    let emoji: String
+    let value: String
+    @Environment(ThemeManager.self) private var theme
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color(hex: "F3F4F6"))
+                    .frame(width: 24, height: 24)
+
+                Text(emoji)
+                    .font(.system(size: 14))
+            }
+
+            Text(value)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(theme.colors.primaryText)
         }
+    }
+}
+
+// MARK: - Achievement Card
+
+private struct AchievementCard: View {
+    @Environment(ThemeManager.self) private var theme
+    @State private var iconRotated = false
+
+    var body: some View {
+        HStack(spacing: 16) {
+            // Achievement icon
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [Color(hex: "e8c17f"), Color(hex: "d4a660")],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 64, height: 64)
+                    .shadow(color: .black.opacity(0.1), radius: 4, y: 2)
+
+                Text("✓")
+                    .font(.system(size: 30, weight: .bold))
+                    .foregroundStyle(.white)
+                    .rotationEffect(.degrees(iconRotated ? 10 : -10))
+            }
+            .onAppear {
+                withAnimation(
+                    .easeInOut(duration: 0.5)
+                    .delay(1.2)
+                ) {
+                    iconRotated = true
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.7) {
+                    withAnimation(.easeInOut(duration: 0.5)) {
+                        iconRotated = false
+                    }
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("7 day streak")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(theme.colors.primaryText)
+
+                Text("Longest self-care streak ever!")
+                    .font(.system(size: 14))
+                    .foregroundStyle(theme.colors.secondaryText)
+            }
+
+            Spacer()
+        }
+        .padding(20)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 24))
+        .overlay(
+            RoundedRectangle(cornerRadius: 24)
+                .stroke(theme.colors.primary.opacity(0.2), lineWidth: 2)
+        )
+        .shadow(color: .black.opacity(0.1), radius: 12, y: 4)
+    }
+}
+
+// MARK: - Tasks Statistics Card
+
+private struct TasksStatisticsCard: View {
+    @Environment(ThemeManager.self) private var theme
+    @State private var appeared = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Tasks Today")
+                .font(.system(size: 20, weight: .bold))
+                .foregroundStyle(theme.colors.primaryText)
+
+            VStack(spacing: 24) {
+                TaskStatSection(title: "Today", tasks: 5, focusTime: "7h 11m", delay: 0.1)
+                TaskStatSection(title: "Past Week", tasks: 5, focusTime: "7h 11m", delay: 0.2)
+                TaskStatSection(title: "Last 30 Days", tasks: 5, focusTime: "7h 11m", delay: 0.3)
+            }
+            .padding(24)
+            .background(Color.white)
+            .clipShape(RoundedRectangle(cornerRadius: 24))
+            .shadow(color: .black.opacity(0.1), radius: 12, y: 4)
+        }
+    }
+}
+
+// MARK: - Task Stat Section
+
+private struct TaskStatSection: View {
+    let title: String
+    let tasks: Int
+    let focusTime: String
+    let delay: Double
+
+    @Environment(ThemeManager.self) private var theme
+    @State private var appeared = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title)
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(theme.colors.secondaryText)
+                .textCase(.uppercase)
+                .tracking(0.5)
+
+            HStack {
+                // Tasks
+                HStack(spacing: 8) {
+                    Image(systemName: "doc.text")
+                        .font(.system(size: 16))
+                        .foregroundStyle(theme.colors.secondaryText)
+
+                    Text("Tasks")
+                        .font(.system(size: 14))
+                        .foregroundStyle(theme.colors.primaryText)
+
+                    Text("\(tasks)")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(theme.colors.primaryText)
+                }
+
+                Spacer()
+
+                // Focus Time
+                HStack(spacing: 8) {
+                    Image(systemName: "clock")
+                        .font(.system(size: 16))
+                        .foregroundStyle(theme.colors.secondaryText)
+
+                    Text("Focus Time")
+                        .font(.system(size: 14))
+                        .foregroundStyle(theme.colors.primaryText)
+
+                    Text(focusTime)
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(theme.colors.primaryText)
+                }
+            }
+        }
+        .opacity(appeared ? 1 : 0)
+        .offset(x: appeared ? 0 : -20)
+        .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(delay), value: appeared)
+        .onAppear { appeared = true }
     }
 }
 
