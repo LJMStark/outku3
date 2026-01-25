@@ -215,8 +215,11 @@ private struct AvatarSection: View {
                             .fill(theme.currentTheme.cardGradient)
                             .frame(width: 96, height: 96)
 
-                        Text("🦝")
-                            .font(.system(size: 48))
+                        Image("tiko_avatar", bundle: .module)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 80, height: 80)
+                            .clipShape(Circle())
                     }
 
                     Text("Avatar")

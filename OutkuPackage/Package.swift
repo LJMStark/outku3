@@ -25,6 +25,9 @@ let package = Package(
                 .product(name: "GoogleSignInSwift", package: "GoogleSignIn-iOS"),
                 .product(name: "Supabase", package: "supabase-swift"),
                 .product(name: "KeychainAccess", package: "KeychainAccess"),
+            ],
+            resources: [
+                .process("Resources")
             ]
         ),
         .testTarget(

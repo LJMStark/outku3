@@ -77,8 +77,11 @@ private struct PetStatusCard: View {
                         .fill(theme.currentTheme.cardGradient)
                         .frame(width: 128, height: 128)
 
-                    Text("🦝")
-                        .font(.system(size: 64))
+                    Image("tiko_avatar", bundle: .module)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 100, height: 100)
+                        .clipShape(Circle())
                 }
                 .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
 

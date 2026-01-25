@@ -162,8 +162,11 @@ private struct PetTabButton: View {
                             .padding(-4)
                     )
 
-                Text("🦝")
-                    .font(.system(size: 22))
+                Image("tiko_avatar", bundle: .module)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 28, height: 28)
+                    .clipShape(Circle())
             }
         }
         .buttonStyle(ScaleButtonStyle())

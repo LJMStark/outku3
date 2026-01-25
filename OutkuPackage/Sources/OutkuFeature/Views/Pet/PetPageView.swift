@@ -110,19 +110,11 @@ private struct PetIllustrationSection: View {
                             .frame(width: 120, height: 30)
                             .offset(y: 60)
 
-                        // Pet placeholder
-                        RoundedRectangle(cornerRadius: 24)
-                            .fill(theme.colors.accentLight)
-                            .frame(width: 160, height: 160)
-                            .overlay {
-                                VStack(spacing: 8) {
-                                    Text("🦝")
-                                        .font(.system(size: 80))
-                                    Text("Pet Image")
-                                        .font(.system(size: 12))
-                                        .foregroundStyle(theme.colors.secondaryText)
-                                }
-                            }
+                        // Pet image
+                        Image("tiko_mushroom", bundle: .module)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 320, height: 320)
                             .offset(y: breathingOffset)
                     }
 

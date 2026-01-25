@@ -298,20 +298,12 @@ struct HaikuSectionView: View {
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
 
-                // Pet image placeholder
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(theme.colors.accentLight)
+                // Pet image
+                Image("tiko_reading", bundle: .module)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
                     .frame(height: 200)
-                    .overlay {
-                        VStack(spacing: 8) {
-                            Image(systemName: "photo")
-                                .font(.system(size: 40))
-                                .foregroundStyle(theme.colors.secondaryText.opacity(0.5))
-                            Text("Pet Image")
-                                .font(.system(size: 14))
-                                .foregroundStyle(theme.colors.secondaryText.opacity(0.5))
-                        }
-                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
                     .shadow(color: .black.opacity(0.1), radius: 8, y: 4)
             }
             .padding(.vertical, 24)
