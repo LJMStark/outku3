@@ -217,7 +217,7 @@ struct TimelineCardRow: View {
         .sheet(isPresented: $showEventDetail) {
             EventDetailModal()
                 .environment(theme)
-                .presentationDetents([.large])
+                .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
     }
