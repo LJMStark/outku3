@@ -73,4 +73,7 @@ Carthage/Build/
 fastlane/report.xml
 fastlane/Preview.html
 fastlane/screenshots/**/*.png
-fastlane/test_output页面一比一还原 (Copy)/
+fastlane/test_output
+
+# Reference files
+页面一比一还原*/
