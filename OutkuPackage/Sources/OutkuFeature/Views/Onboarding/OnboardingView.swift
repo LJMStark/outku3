@@ -772,4 +772,5 @@ struct StatPreview: View {
     OnboardingView(isOnboardingComplete: .constant(false))
         .environment(AppState.shared)
         .environment(ThemeManager.shared)
+        .environment(AuthManager.shared)
 }

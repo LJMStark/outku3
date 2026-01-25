@@ -22,6 +22,7 @@ public struct ContentView: View {
                 OnboardingView(isOnboardingComplete: $isOnboardingComplete)
                     .environment(appState)
                     .environment(themeManager)
+                    .environment(authManager)
                     .onChange(of: isOnboardingComplete) { _, newValue in
                         if newValue {
                             hasCompletedOnboarding = true
