@@ -268,7 +268,15 @@ public struct GoogleSignInResult: Sendable {
 
 public enum GoogleSignInError: LocalizedError, Sendable {
     case notSupported
-    public var errorDescription: String? { "Google Sign In not supported on macOS" }
+    case canceled
+    public var errorDescription: String? {
+        switch self {
+        case .notSupported:
+            return "Google Sign In not supported on macOS"
+        case .canceled:
+            return "Sign in was canceled"
+        }
+    }
 }
 
 #endif

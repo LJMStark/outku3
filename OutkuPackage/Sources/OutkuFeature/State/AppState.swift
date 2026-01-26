@@ -1,5 +1,17 @@
 import SwiftUI
 
+// MARK: - Constants
+
+private enum ProgressConstants {
+    static let taskCompletionIncrement: Double = 0.02  // 2% progress per task
+}
+
+private enum EvolutionMultipliers {
+    static let weight: Double = 1.2       // 20% increase per evolution
+    static let height: Double = 1.15      // 15% increase per evolution
+    static let tailLength: Double = 1.1   // 10% increase per evolution
+}
+
 // MARK: - App State
 
 @Observable
@@ -32,6 +44,9 @@ public final class AppState: @unchecked Sendable {
     // UI State
     public var selectedEvent: CalendarEvent?
     public var isEventDetailPresented: Bool = false
+    public var showEvolutionAnimation: Bool = false
+    public var evolutionFromStage: PetStage?
+    public var evolutionToStage: PetStage?
 
     // Loading State
     public var isLoading: Bool = false
@@ -314,16 +329,23 @@ public final class AppState: @unchecked Sendable {
         if isCompleted {
             SoundService.shared.playWithHaptic(.taskComplete, haptic: .success)
             pet.adventuresCount += 1
-            pet.progress = min(1.0, pet.progress + 0.02)
+            pet.progress = min(1.0, pet.progress + ProgressConstants.taskCompletionIncrement)
             updateStreak()
         } else {
             SoundService.shared.playWithHaptic(.taskUncomplete, haptic: .light)
             pet.adventuresCount = max(0, pet.adventuresCount - 1)
-            pet.progress = max(0, pet.progress - 0.02)
+            pet.progress = max(0, pet.progress - ProgressConstants.taskCompletionIncrement)
         }
 
         pet.lastInteraction = Date()
         updateStatistics()
+
+        // Check for evolution
+        if isCompleted {
+            Task { @MainActor in
+                await checkAndTriggerEvolution()
+            }
+        }
 
         Task {
             try? await localStorage.saveTasks(tasks)
@@ -432,6 +454,60 @@ public final class AppState: @unchecked Sendable {
         updateStatistics()
         Task {
             try? await localStorage.saveTasks(tasks)
+        }
+    }
+
+    // MARK: - Evolution
+
+    @MainActor
+    private func checkAndTriggerEvolution() async {
+        let canEvolve = await petStateService.canEvolve(pet: pet)
+        guard canEvolve, let nextStage = pet.stage.nextStage else { return }
+
+        evolutionFromStage = pet.stage
+        evolutionToStage = nextStage
+        showEvolutionAnimation = true
+    }
+
+    @MainActor
+    public func completeEvolution() {
+        guard let toStage = evolutionToStage else { return }
+
+        pet.stage = toStage
+        pet.progress = 0.0
+        pet.weight *= EvolutionMultipliers.weight
+        pet.height *= EvolutionMultipliers.height
+        pet.tailLength *= EvolutionMultipliers.tailLength
+
+        showEvolutionAnimation = false
+        evolutionFromStage = nil
+        evolutionToStage = nil
+
+        Task {
+            try? await localStorage.savePet(pet)
+        }
+    }
+
+    @MainActor
+    public func dismissEvolution() {
+        showEvolutionAnimation = false
+        evolutionFromStage = nil
+        evolutionToStage = nil
+    }
+
+    // MARK: - Integration Management
+
+    @MainActor
+    public func updateIntegrationStatus(_ type: IntegrationType, isConnected: Bool) {
+        if let index = integrations.firstIndex(where: { $0.type == type }) {
+            integrations[index].isConnected = isConnected
+        } else if isConnected {
+            integrations.append(Integration(
+                name: type.rawValue,
+                iconName: type.iconName,
+                isConnected: true,
+                type: type
+            ))
         }
     }
 }

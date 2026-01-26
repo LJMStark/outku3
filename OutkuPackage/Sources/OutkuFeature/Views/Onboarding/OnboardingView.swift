@@ -139,28 +139,35 @@ struct OnboardingView: View {
                         EmptyView()
                         
                     case .sanctuary:
-                        // Setup List
                         if manager.showChoices {
-                            VStack(spacing: 16) {
-                                Text("Let's set up our home.")
+                            VStack(spacing: 20) {
+                                Text("Connect Your Apps")
                                     .font(AppTypography.headline)
-                                    .foregroundStyle(theme.colors.secondaryText)
-                                
-                                Button("Finish & Explore") {
+                                    .foregroundStyle(.white)
+
+                                Text("Sync your calendar and tasks to help \(appState.pet.name) grow")
+                                    .font(AppTypography.body)
+                                    .foregroundStyle(.white.opacity(0.8))
+                                    .multilineTextAlignment(.center)
+
+                                OnboardingSignInSection(onComplete: {
+                                    manager.completeOnboarding()
+                                    isOnboardingComplete = true
+                                })
+
+                                Button("Skip for now") {
                                     manager.completeOnboarding()
                                     isOnboardingComplete = true
                                 }
-                                .buttonStyle(.borderedProminent)
-                                .tint(theme.colors.accent)
-                                .padding(.top, 20)
+                                .font(AppTypography.body)
+                                .foregroundStyle(.white.opacity(0.6))
                             }
-                            .padding()
+                            .padding(24)
                             .background(
-                                RoundedRectangle(cornerRadius: 20)
-                                    .fill(theme.colors.cardBackground)
-                                    .shadow(radius: 10)
+                                RoundedRectangle(cornerRadius: 24)
+                                    .fill(.ultraThinMaterial)
                             )
-                            .padding(.horizontal)
+                            .padding(.horizontal, 24)
                             .transition(.scale.combined(with: .opacity))
                         }
                         
@@ -203,4 +210,5 @@ struct OnboardingView: View {
     OnboardingView(isOnboardingComplete: .constant(false))
         .environment(AppState.shared)
         .environment(ThemeManager.shared)
+        .environment(AuthManager.shared)
 }
