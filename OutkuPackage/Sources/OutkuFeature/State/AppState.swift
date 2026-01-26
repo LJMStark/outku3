@@ -41,6 +41,9 @@ public final class AppState: @unchecked Sendable {
     // Integrations
     public var integrations: [Integration] = Integration.defaultIntegrations
 
+    // User Profile
+    public var userProfile: UserProfile = .default
+
     // UI State
     public var selectedEvent: CalendarEvent?
     public var isEventDetailPresented: Bool = false
@@ -113,6 +116,10 @@ public final class AppState: @unchecked Sendable {
 
         if let savedEvents = try? await localStorage.loadEvents() {
             events = savedEvents
+        }
+
+        if let savedProfile = try? await localStorage.loadUserProfile() {
+            userProfile = savedProfile
         }
 
         await updatePetState()
@@ -225,17 +232,23 @@ public final class AppState: @unchecked Sendable {
 
     @MainActor
     public func loadGoogleCalendarEvents() async {
-        guard AuthManager.shared.hasCalendarAccess else { return }
+        guard AuthManager.shared.hasCalendarAccess else {
+            print("[GoogleCalendar] No calendar access - hasCalendarAccess: \(AuthManager.shared.hasCalendarAccess), isGoogleConnected: \(AuthManager.shared.isGoogleConnected)")
+            return
+        }
 
         isLoading = true
         defer { isLoading = false }
 
         do {
+            print("[GoogleCalendar] Fetching today's events...")
             let googleEvents = try await googleCalendarAPI.getTodayEvents()
+            print("[GoogleCalendar] Fetched \(googleEvents.count) events")
             let localEvents = events.filter { $0.source != .google }
             events = localEvents + googleEvents
             try? await localStorage.saveEvents(events)
         } catch {
+            print("[GoogleCalendar] Error: \(error)")
             lastError = "Failed to load calendar events: \(error.localizedDescription)"
         }
     }
@@ -509,6 +522,27 @@ public final class AppState: @unchecked Sendable {
                 type: type
             ))
         }
+    }
+
+    // MARK: - User Profile Management
+
+    @MainActor
+    public func updateUserProfile(_ profile: UserProfile) {
+        userProfile = profile
+        Task {
+            try? await localStorage.saveUserProfile(profile)
+        }
+    }
+
+    @MainActor
+    public func completeOnboarding() {
+        var updatedProfile = userProfile
+        updatedProfile.onboardingCompletedAt = Date()
+        updateUserProfile(updatedProfile)
+    }
+
+    public var isOnboardingCompleted: Bool {
+        userProfile.onboardingCompletedAt != nil
     }
 }
 

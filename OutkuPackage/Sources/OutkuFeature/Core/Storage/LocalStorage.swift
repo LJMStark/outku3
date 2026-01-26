@@ -96,6 +96,25 @@ public actor LocalStorage {
         return try decoder.decode([CalendarEvent].self, from: data)
     }
 
+    // MARK: - User Profile
+
+    /// 保存用户偏好
+    public func saveUserProfile(_ profile: UserProfile) throws {
+        let data = try encoder.encode(profile)
+        let url = documentsDirectory.appendingPathComponent("user_profile.json")
+        try data.write(to: url)
+    }
+
+    /// 加载用户偏好
+    public func loadUserProfile() throws -> UserProfile? {
+        let url = documentsDirectory.appendingPathComponent("user_profile.json")
+        guard fileManager.fileExists(atPath: url.path) else {
+            return nil
+        }
+        let data = try Data(contentsOf: url)
+        return try decoder.decode(UserProfile.self, from: data)
+    }
+
     // MARK: - Sync State
 
     /// 保存同步状态
@@ -152,7 +171,7 @@ public actor LocalStorage {
 
     /// 清除所有本地数据
     public func clearAll() throws {
-        let files = ["pet.json", "streak.json", "tasks.json", "events.json", "sync_state.json", "haiku_cache.json"]
+        let files = ["pet.json", "streak.json", "tasks.json", "events.json", "sync_state.json", "haiku_cache.json", "user_profile.json"]
         for file in files {
             let url = documentsDirectory.appendingPathComponent(file)
             if fileManager.fileExists(atPath: url.path) {
