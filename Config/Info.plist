@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- App Display Name -->
+	<key>CFBundleDisplayName</key>
+	<string>Outku</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+
+	<!-- Launch Screen -->
+	<key>UILaunchScreen</key>
+	<dict/>
+
+	<!-- Device Orientation -->
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+
+	<!-- Requires Full Screen -->
+	<key>UIRequiresFullScreen</key>
+	<true/>
+
+	<!-- ==========================================
+	     Privacy Descriptions (Required for iOS 17+)
+	     ========================================== -->
+
+	<!-- Calendar Access -->
+	<key>NSCalendarsUsageDescription</key>
+	<string>Outku needs calendar access to sync your events and help you stay organized with your pet companion.</string>
+
+	<!-- Full Calendar Access (iOS 17+) -->
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Outku needs full calendar access to sync your events and help you stay organized with your pet companion.</string>
+
+	<!-- Write-Only Calendar Access (iOS 17+) -->
+	<key>NSCalendarsWriteOnlyAccessUsageDescription</key>
+	<string>Outku needs calendar write access to create events for your tasks and habits.</string>
+
+	<!-- Reminders Access -->
+	<key>NSRemindersUsageDescription</key>
+	<string>Outku needs reminders access to sync your tasks and help track your habits.</string>
+
+	<!-- Full Reminders Access (iOS 17+) -->
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>Outku needs full reminders access to sync your tasks and help track your habits.</string>
+
+	<!-- Bluetooth Access (E-ink Device) -->
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Outku uses Bluetooth to connect with your E-ink companion device and display your pet.</string>
+
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>Outku uses Bluetooth to communicate with your E-ink companion device.</string>
+
+	<!-- ==========================================
+	     Google Sign In Configuration
+	     ========================================== -->
+
+	<!-- Google Client ID - Replace with your actual Client ID -->
+	<key>GIDClientID</key>
+	<string>$(GOOGLE_CLIENT_ID)</string>
+
+	<!-- URL Schemes for OAuth callbacks -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<!-- Google Sign In URL Scheme -->
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>Google Sign In</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>$(GOOGLE_REVERSED_CLIENT_ID)</string>
+			</array>
+		</dict>
+		<!-- App URL Scheme for deep linking -->
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>Outku</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>outku</string>
+			</array>
+		</dict>
+	</array>
+
+	<!-- ==========================================
+	     Background Modes (if needed)
+	     ========================================== -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>bluetooth-central</string>
+	</array>
+
+	<!-- ==========================================
+	     Supabase Configuration
+	     ========================================== -->
+	<key>SUPABASE_URL</key>
+	<string>$(SUPABASE_URL)</string>
+	<key>SUPABASE_ANON_KEY</key>
+	<string>$(SUPABASE_ANON_KEY)</string>
+
+	<!-- ==========================================
+	     App Transport Security
+	     ========================================== -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<false/>
+	</dict>
+
+	<!-- ==========================================
+	     Scene Configuration
+	     ========================================== -->
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+	</dict>
+</dict>
+</plist>

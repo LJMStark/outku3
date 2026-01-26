@@ -5,8 +5,10 @@ import SwiftUI
 public struct HomeView: View {
     @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
+    @Environment(AuthManager.self) private var authManager
     @State private var showScrollToTop = false
     @State private var scrollOffset: CGFloat = 0
+    @State private var isInitialLoading = true
 
     public init() {}
 
@@ -21,6 +23,12 @@ public struct HomeView: View {
                             Color.clear
                                 .frame(height: 1)
                                 .id("top")
+
+                            // Loading indicator
+                            if appState.isLoading && isInitialLoading {
+                                LoadingIndicatorView()
+                                    .padding(.top, 40)
+                            }
 
                             // Timeline content
                             TimelineContentView()
@@ -46,6 +54,9 @@ public struct HomeView: View {
                         }
                         scrollOffset = value
                     }
+                    .refreshable {
+                        await refreshData()
+                    }
                     .overlay(alignment: .bottomTrailing) {
                         if showScrollToTop {
                             ScrollToTopButton {
@@ -62,6 +73,64 @@ public struct HomeView: View {
             }
         }
         .background(theme.colors.background)
+        .task {
+            await loadInitialData()
+        }
+    }
+
+    private func loadInitialData() async {
+        isInitialLoading = true
+
+        // Load haiku first (fast)
+        await appState.loadTodayHaiku()
+
+        // Sync data based on connected integrations
+        if authManager.isGoogleConnected {
+            await appState.syncGoogleData()
+        }
+
+        // Always try to sync Apple data (uses EventKit permissions)
+        await appState.syncAppleData()
+
+        isInitialLoading = false
+    }
+
+    private func refreshData() async {
+        // Haptic feedback at start
+        SoundService.shared.haptic(.medium)
+
+        // Sync all data
+        if authManager.isGoogleConnected {
+            await appState.syncGoogleData()
+        }
+
+        await appState.syncAppleData()
+        await appState.loadTodayHaiku()
+
+        // Success haptic
+        SoundService.shared.haptic(.success)
+    }
+}
+
+// MARK: - Loading Indicator View
+
+private struct LoadingIndicatorView: View {
+    @Environment(ThemeManager.self) private var theme
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ProgressView()
+                .tint(theme.colors.accent)
+
+            Text("Loading your day...")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(theme.colors.secondaryText)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+        .background(theme.colors.cardBackground)
+        .clipShape(Capsule())
+        .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
     }
 }
 

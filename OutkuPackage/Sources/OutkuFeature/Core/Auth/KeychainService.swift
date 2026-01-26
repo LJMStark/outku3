@@ -13,9 +13,11 @@ public final class KeychainService: @unchecked Sendable {
         static let googleAccessToken = "google_access_token"
         static let googleRefreshToken = "google_refresh_token"
         static let googleTokenExpiry = "google_token_expiry"
+        static let googleGrantedScopes = "google_granted_scopes"
         static let appleUserIdentifier = "apple_user_identifier"
         static let supabaseAccessToken = "supabase_access_token"
         static let supabaseRefreshToken = "supabase_refresh_token"
+        static let openAIAPIKey = "openai_api_key"
     }
 
     private init() {
@@ -69,6 +71,29 @@ public final class KeychainService: @unchecked Sendable {
         try? keychain.remove(Keys.googleAccessToken)
         try? keychain.remove(Keys.googleRefreshToken)
         try? keychain.remove(Keys.googleTokenExpiry)
+        try? keychain.remove(Keys.googleGrantedScopes)
+    }
+
+    // MARK: - Google Scopes
+
+    /// 保存 Google 授权的 scopes
+    public func saveGoogleScopes(_ scopes: [String]) throws {
+        let scopesString = scopes.joined(separator: ",")
+        try keychain.set(scopesString, key: Keys.googleGrantedScopes)
+    }
+
+    /// 获取保存的 Google scopes
+    public func getGoogleScopes() -> [String]? {
+        guard let scopesString = try? keychain.get(Keys.googleGrantedScopes),
+              !scopesString.isEmpty else {
+            return nil
+        }
+        return scopesString.components(separatedBy: ",")
+    }
+
+    /// 清除 Google scopes
+    public func clearGoogleScopes() {
+        try? keychain.remove(Keys.googleGrantedScopes)
     }
 
     // MARK: - Apple Sign In
@@ -105,11 +130,30 @@ public final class KeychainService: @unchecked Sendable {
         try? keychain.remove(Keys.supabaseRefreshToken)
     }
 
+    // MARK: - OpenAI API Key
+
+    public func saveOpenAIAPIKey(_ apiKey: String) throws {
+        try keychain.set(apiKey, key: Keys.openAIAPIKey)
+    }
+
+    public func getOpenAIAPIKey() -> String? {
+        try? keychain.get(Keys.openAIAPIKey)
+    }
+
+    public func clearOpenAIAPIKey() {
+        try? keychain.remove(Keys.openAIAPIKey)
+    }
+
+    public func hasOpenAIAPIKey() -> Bool {
+        getOpenAIAPIKey() != nil
+    }
+
     // MARK: - Clear All
 
     public func clearAll() {
         clearGoogleTokens()
         clearAppleUserIdentifier()
         clearSupabaseTokens()
+        clearOpenAIAPIKey()
     }
 }

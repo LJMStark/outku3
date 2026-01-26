@@ -58,6 +58,12 @@ public final class GoogleSignInService: @unchecked Sendable {
             )
         }
 
+        // 保存授权的 scopes
+        let grantedScopes = result.user.grantedScopes ?? []
+        if !grantedScopes.isEmpty {
+            try? keychainService.saveGoogleScopes(grantedScopes)
+        }
+
         return GoogleSignInResult(
             userID: user.userID ?? "",
             email: user.profile?.email,

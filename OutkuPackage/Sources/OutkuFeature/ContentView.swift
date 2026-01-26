@@ -28,6 +28,13 @@ public struct ContentView: View {
         }
         .task {
             await authManager.initialize()
+            await configureOpenAI()
+        }
+    }
+
+    private func configureOpenAI() async {
+        if let apiKey = KeychainService.shared.getOpenAIAPIKey() {
+            await OpenAIService.shared.configure(apiKey: apiKey)
         }
     }
 

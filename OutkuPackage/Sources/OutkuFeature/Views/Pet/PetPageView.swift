@@ -53,7 +53,43 @@ struct PetPageView: View {
                 .environment(appState)
                 .environment(theme)
         }
+        #if os(iOS)
+        .fullScreenCover(isPresented: evolutionBinding) {
+            evolutionContent
+        }
+        #else
+        .sheet(isPresented: evolutionBinding) {
+            evolutionContent
+        }
+        #endif
     }
+
+    // MARK: - Evolution Helpers
+
+    private var evolutionBinding: Binding<Bool> {
+        Binding(
+            get: { appState.showEvolutionAnimation },
+            set: { _ in }
+        )
+    }
+
+    @ViewBuilder
+    private var evolutionContent: some View {
+        if let fromStage = appState.evolutionFromStage,
+           let toStage = appState.evolutionToStage {
+            EvolutionAnimationView(
+                fromStage: fromStage,
+                toStage: toStage,
+                onComplete: {
+                    appState.completeEvolution()
+                }
+            )
+            .environment(appState)
+            .environment(theme)
+        }
+    }
+
+    // MARK: - Task Filters
 
     private var todayTasks: [TaskItem] {
         let calendar = Calendar.current

@@ -77,3 +77,7 @@ fastlane/test_output
 
 # Reference files
 页面一比一还原*/
+
+# Secrets (API keys, credentials)
+Config/Secrets.xcconfig
+*.xcconfig.local

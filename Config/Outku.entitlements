@@ -2,33 +2,24 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- Base entitlements - add your app's entitlements here -->
-	<!-- AI agents can safely modify this file to add capabilities -->
-	
-	<!-- Example entitlements (commented out by default):
-	
-	<key>com.apple.developer.healthkit</key>
-	<true/>
-	
-	<key>com.apple.developer.networking.wifi-info</key>
-	<true/>
-	
-	<key>com.apple.developer.contacts.notes</key>
-	<true/>
-	
-	<key>com.apple.developer.usernotifications.time-sensitive</key>
-	<true/>
-	
+	<!-- App Groups for Widget data sharing -->
 	<key>com.apple.security.application-groups</key>
 	<array>
-		<string>group.com.mycompany.Outku</string>
+		<string>group.com.outku.app</string>
 	</array>
-	
+
+	<!-- Keychain access for secure storage -->
 	<key>keychain-access-groups</key>
 	<array>
-		<string>$(AppIdentifierPrefix)com.mycompany.Outku</string>
+		<string>$(AppIdentifierPrefix)com.outku.app</string>
 	</array>
-    
+
+	<!-- Sign in with Apple (requires paid Apple Developer Program) -->
+	<!-- Uncomment when you have a paid developer account:
+	<key>com.apple.developer.applesignin</key>
+	<array>
+		<string>Default</string>
+	</array>
 	-->
 </dict>
 </plist>

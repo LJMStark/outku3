@@ -65,9 +65,7 @@ struct DateDividerView: View {
     }
 
     private var formattedDate: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEE, MMM d"
-        return formatter.string(from: date)
+        AppDateFormatters.separatorDate.string(from: date)
     }
 }
 
@@ -78,33 +76,49 @@ struct TimelineView: View {
     @Environment(ThemeManager.self) private var theme
     @State private var appeared = false
 
+    private var filteredEvents: [CalendarEvent] {
+        let calendar = Calendar.current
+        return appState.events
+            .filter { calendar.isDate($0.startTime, inSameDayAs: appState.selectedDate) }
+            .sorted { $0.startTime < $1.startTime }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             // Sunrise
             TimelineEventRow(
-                time: "6:17 AM",
-                icon: "🦝",
+                time: AppDateFormatters.time.string(from: appState.sunTimes.sunrise),
+                icon: "sunrise.fill",
                 title: "Sunrise",
-                delay: 0.3
+                delay: 0.3,
+                isSystemIcon: true
             )
 
             // Day Start
             TimelineEventRow(
                 time: "9:00 AM",
-                icon: "🎁",
+                icon: "sun.max.fill",
                 title: "Day Start",
-                delay: 0.4
+                delay: 0.4,
+                isSystemIcon: true
             )
 
-            // Event Card
-            TimelineCardRow(delay: 0.5)
+            // Dynamic Events
+            if filteredEvents.isEmpty {
+                TimelineEmptyStateRow(delay: 0.5)
+            } else {
+                ForEach(Array(filteredEvents.enumerated()), id: \.element.id) { index, event in
+                    TimelineEventCardRow(event: event, delay: 0.5 + Double(index) * 0.1)
+                }
+            }
 
             // Sunset
             TimelineEventRow(
-                time: "7:17 PM",
-                icon: "🌅",
+                time: AppDateFormatters.time.string(from: appState.sunTimes.sunset),
+                icon: "sunset.fill",
                 title: "Sunset",
-                delay: 0.6
+                delay: 0.6 + Double(max(filteredEvents.count, 1)) * 0.1,
+                isSystemIcon: true
             )
         }
         .background(
@@ -121,6 +135,93 @@ struct TimelineView: View {
     }
 }
 
+// MARK: - Timeline Empty State Row
+
+struct TimelineEmptyStateRow: View {
+    let delay: Double
+
+    @Environment(ThemeManager.self) private var theme
+    @State private var appeared = false
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Spacer()
+                .frame(width: 80)
+
+            VStack(spacing: 8) {
+                Image(systemName: "calendar.badge.plus")
+                    .font(.system(size: 32))
+                    .foregroundStyle(theme.colors.secondaryText.opacity(0.5))
+
+                Text("No events today")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(theme.colors.secondaryText)
+
+                Text("Connect your calendar to see events")
+                    .font(.system(size: 12))
+                    .foregroundStyle(theme.colors.secondaryText.opacity(0.7))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 24)
+        }
+        .opacity(appeared ? 1 : 0)
+        .offset(y: appeared ? 0 : 10)
+        .animation(.easeOut(duration: 0.5).delay(delay), value: appeared)
+        .onAppear {
+            appeared = true
+        }
+    }
+}
+
+// MARK: - Timeline Event Card Row
+
+struct TimelineEventCardRow: View {
+    let event: CalendarEvent
+    let delay: Double
+
+    @Environment(AppState.self) private var appState
+    @Environment(ThemeManager.self) private var theme
+    @State private var appeared = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Time header
+            HStack {
+                Text(AppDateFormatters.time.string(from: event.startTime))
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(theme.colors.secondaryText)
+                    .frame(width: 64, alignment: .leading)
+
+                Spacer()
+            }
+            .padding(.top, 8)
+
+            // Event card
+            HStack(spacing: 0) {
+                Spacer()
+                    .frame(width: 80)
+
+                EventCardView(
+                    title: event.title,
+                    duration: event.durationText,
+                    participants: event.participants.count,
+                    description: event.description ?? "",
+                    onTap: {
+                        appState.selectEvent(event)
+                    }
+                )
+            }
+            .padding(.vertical, 8)
+        }
+        .opacity(appeared ? 1 : 0)
+        .offset(x: appeared ? 0 : -30)
+        .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(delay), value: appeared)
+        .onAppear {
+            appeared = true
+        }
+    }
+}
+
 // MARK: - Timeline Event Row
 
 struct TimelineEventRow: View {
@@ -128,6 +229,7 @@ struct TimelineEventRow: View {
     let icon: String
     let title: String
     let delay: Double
+    var isSystemIcon: Bool = false
 
     @Environment(ThemeManager.self) private var theme
     @State private var appeared = false
@@ -147,8 +249,14 @@ struct TimelineEventRow: View {
                     .frame(width: 32, height: 32)
                     .shadow(color: .black.opacity(0.1), radius: 4, y: 2)
 
-                Text(icon)
-                    .font(.system(size: 18))
+                if isSystemIcon {
+                    Image(systemName: icon)
+                        .font(.system(size: 16))
+                        .foregroundStyle(theme.colors.accent)
+                } else {
+                    Text(icon)
+                        .font(.system(size: 18))
+                }
             }
 
             // Title
@@ -168,75 +276,26 @@ struct TimelineEventRow: View {
     }
 }
 
-// MARK: - Timeline Card Row
-
-struct TimelineCardRow: View {
-    let delay: Double
-
-    @Environment(AppState.self) private var appState
-    @Environment(ThemeManager.self) private var theme
-    @State private var appeared = false
-    @State private var showEventDetail = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Time header
-            HStack {
-                Text("5:17 PM")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(theme.colors.secondaryText)
-                    .frame(width: 64, alignment: .leading)
-
-                Spacer()
-            }
-            .padding(.top, 8)
-
-            // Event card
-            HStack(spacing: 0) {
-                Spacer()
-                    .frame(width: 80)
-
-                EventCardView(
-                    title: "New Product Factory Tour!",
-                    duration: "1h",
-                    participants: 2,
-                    description: "Join your coworkers for a factory tour in Shenzhen to see how the new product is made. Exciting!",
-                    onTap: {
-                        showEventDetail = true
-                    }
-                )
-            }
-            .padding(.vertical, 8)
-        }
-        .opacity(appeared ? 1 : 0)
-        .offset(x: appeared ? 0 : -30)
-        .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(delay), value: appeared)
-        .onAppear {
-            appeared = true
-        }
-        .sheet(isPresented: $showEventDetail) {
-            EventDetailModal()
-                .environment(theme)
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
-        }
-    }
-}
-
 // MARK: - Timeline With Haiku View
 
 struct TimelineWithHaikuView: View {
+    @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
     @State private var appeared = false
+
+    private var tomorrowSunTimes: SunTimes {
+        .default
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             // Sunrise
             TimelineEventRow(
-                time: "6:17 AM",
-                icon: "🦝",
+                time: AppDateFormatters.time.string(from: tomorrowSunTimes.sunrise),
+                icon: "sunrise.fill",
                 title: "Sunrise",
-                delay: 0.9
+                delay: 0.9,
+                isSystemIcon: true
             )
 
             // Haiku and Image
@@ -244,10 +303,11 @@ struct TimelineWithHaikuView: View {
 
             // Sunset
             TimelineEventRow(
-                time: "7:17 PM",
-                icon: "🌅",
+                time: AppDateFormatters.time.string(from: tomorrowSunTimes.sunset),
+                icon: "sunset.fill",
                 title: "Sunset",
-                delay: 1.1
+                delay: 1.1,
+                isSystemIcon: true
             )
         }
         .background(
@@ -269,8 +329,10 @@ struct TimelineWithHaikuView: View {
 struct HaikuSectionView: View {
     let delay: Double
 
+    @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
     @State private var appeared = false
+    @State private var isRefreshing = false
 
     var body: some View {
         HStack(spacing: 0) {
@@ -278,25 +340,41 @@ struct HaikuSectionView: View {
                 .frame(width: 80)
 
             VStack(spacing: 24) {
-                // Haiku text
+                // Haiku text from AppState
                 VStack(spacing: 4) {
-                    Text("library hush hums")
-                        .font(.system(size: 15, weight: .regular, design: .serif))
-                        .italic()
-                        .foregroundStyle(theme.colors.primaryText)
-
-                    Text("pages turn like gentle wings")
-                        .font(.system(size: 15, weight: .regular, design: .serif))
-                        .italic()
-                        .foregroundStyle(theme.colors.primaryText)
-
-                    Text("thoughts land, unafraid")
-                        .font(.system(size: 15, weight: .regular, design: .serif))
-                        .italic()
-                        .foregroundStyle(theme.colors.primaryText)
+                    ForEach(Array(appState.currentHaiku.lines.enumerated()), id: \.offset) { index, line in
+                        Text(line)
+                            .font(.system(size: 15, weight: .regular, design: .serif))
+                            .italic()
+                            .foregroundStyle(theme.colors.primaryText)
+                            .opacity(isRefreshing ? 0.5 : 1.0)
+                            .animation(.easeInOut(duration: 0.3), value: isRefreshing)
+                    }
                 }
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
+
+                // Refresh button
+                Button {
+                    refreshHaiku()
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 12, weight: .medium))
+                            .rotationEffect(.degrees(isRefreshing ? 360 : 0))
+                            .animation(isRefreshing ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: isRefreshing)
+
+                        Text("New Haiku")
+                            .font(.system(size: 12, weight: .medium))
+                    }
+                    .foregroundStyle(theme.colors.secondaryText)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(theme.colors.cardBackground)
+                    .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(isRefreshing)
 
                 // Pet image
                 Image("tiko_reading", bundle: .module)
@@ -313,6 +391,14 @@ struct HaikuSectionView: View {
         .animation(.easeOut(duration: 0.6).delay(delay), value: appeared)
         .onAppear {
             appeared = true
+        }
+    }
+
+    private func refreshHaiku() {
+        isRefreshing = true
+        Task { @MainActor in
+            await appState.loadTodayHaiku()
+            isRefreshing = false
         }
     }
 }

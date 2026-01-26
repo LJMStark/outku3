@@ -19,18 +19,25 @@ When XcodeBuildMCP tools are available, prefer them over raw xcodebuild:
 # Using XcodeBuildMCP (preferred)
 # Set session defaults first, then use build_sim, test_sim, etc.
 
-# Using xcodebuild directly
+# Using xcodebuild directly - Simulator
 xcodebuild -workspace Outku.xcworkspace -scheme Outku \
   -destination 'platform=iOS Simulator,name=iPhone 16 Pro' build
 
 xcodebuild -workspace Outku.xcworkspace -scheme Outku \
   -destination 'platform=iOS Simulator,name=iPhone 16 Pro' test
 
+# Real device build & deploy
+xcodebuild -workspace Outku.xcworkspace -scheme Outku \
+  -destination 'platform=iOS,id=<DEVICE_ID>' -allowProvisioningUpdates build
+
+xcrun devicectl device install app --device <DEVICE_ID> \
+  ~/Library/Developer/Xcode/DerivedData/Outku-*/Build/Products/Debug-iphoneos/Outku.app
+
+# List devices
+xcrun xctrace list devices
+
 # Swift Package only
 cd OutkuPackage && swift test
-
-# List available simulators
-xcrun simctl list devices available
 ```
 
 ## Architecture
@@ -53,7 +60,9 @@ outku3/
 │       └── Views/              # Home, Pet, Settings, Onboarding, Components
 └── Config/
     ├── Shared.xcconfig         # Bundle ID, version, deployment target
-    └── Outku.entitlements      # App capabilities
+    ├── Secrets.xcconfig        # API keys (git-ignored)
+    ├── Outku.entitlements      # App capabilities
+    └── supabase-schema.sql     # Database schema for Supabase
 ```
 
 ### State Management
@@ -193,4 +202,54 @@ import Testing
 
 ## Configuration
 
-See `docs/SETUP.md` for detailed service configuration (Google, Supabase, OpenAI, etc.).
+### Backend Services Status
+
+| Service | Status | Config Location |
+|---------|--------|-----------------|
+| Google Sign In | ✅ Configured | `Config/Secrets.xcconfig` |
+| Supabase | ✅ Configured | `Config/Secrets.xcconfig` |
+| OpenAI | ⏳ Optional | User enters in Settings |
+| Sign in with Apple | ⏳ Pending | Requires paid Apple Developer ($99/yr) |
+
+### Secrets Configuration
+
+Create `Config/Secrets.xcconfig` (git-ignored) with:
+```
+DEVELOPMENT_TEAM = YOUR_TEAM_ID
+GOOGLE_CLIENT_ID = xxx.apps.googleusercontent.com
+GOOGLE_REVERSED_CLIENT_ID = com.googleusercontent.apps.xxx
+SUPABASE_URL = https://xxx.supabase.co
+SUPABASE_ANON_KEY = eyJxxx
+```
+
+### Database Schema
+
+Run `Config/supabase-schema.sql` in Supabase SQL Editor to create tables:
+- `pets` - Pet data (name, stage, mood, progress, etc.)
+- `streaks` - User streak tracking
+- `sync_state` - Sync tokens and status
+
+## TODO / Pending Tasks
+
+### Sign in with Apple (待配置)
+
+需要付费版 Apple Developer Program ($99/年) 才能使用。配置步骤：
+
+1. **Apple Developer Portal**:
+   - Certificates, Identifiers & Profiles → Identifiers
+   - 选择 App ID (`com.outku.app`)
+   - 启用 "Sign in with Apple" capability
+
+2. **Xcode**:
+   - Signing & Capabilities → 添加 "Sign in with Apple"
+
+3. **Config/Outku.entitlements** - 取消注释：
+   ```xml
+   <key>com.apple.developer.applesignin</key>
+   <array>
+       <string>Default</string>
+   </array>
+   ```
+
+4. **Supabase Dashboard**:
+   - Authentication → Providers → Apple → 启用

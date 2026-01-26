@@ -7,31 +7,62 @@ import Supabase
 public actor SupabaseService {
     public static let shared = SupabaseService()
 
-    // TODO: 从环境变量或配置文件读取
-    private let supabaseURL = "https://your-project.supabase.co"
-    private let supabaseKey = "your-anon-key"
+    private var client: SupabaseClient?
+    private var isConfigured = false
 
-    private lazy var client: SupabaseClient = {
-        SupabaseClient(
-            supabaseURL: URL(string: supabaseURL)!,
-            supabaseKey: supabaseKey
-        )
-    }()
-
-    private init() {}
+    private init() {
+        // Configuration happens lazily on first use
+    }
 
     // MARK: - Configuration
 
+    /// 从 Bundle 配置读取 Supabase 凭证（懒加载）
+    private func ensureConfigured() {
+        guard !isConfigured else { return }
+
+        guard let url = Bundle.main.infoDictionary?["SUPABASE_URL"] as? String,
+              let key = Bundle.main.infoDictionary?["SUPABASE_ANON_KEY"] as? String,
+              !url.contains("YOUR_PROJECT"),
+              !key.contains("YOUR_SUPABASE"),
+              let supabaseURL = URL(string: url) else {
+            print("[SupabaseService] Not configured - set SUPABASE_URL and SUPABASE_ANON_KEY in Secrets.xcconfig")
+            return
+        }
+
+        client = SupabaseClient(supabaseURL: supabaseURL, supabaseKey: key)
+        isConfigured = true
+        print("[SupabaseService] Configured successfully")
+    }
+
     /// 配置 Supabase（使用自定义 URL 和 Key）
     public func configure(url: String, key: String) {
-        // 重新创建 client 需要特殊处理
-        // 在生产环境中，应该在 App 启动时配置一次
+        guard let supabaseURL = URL(string: url) else {
+            print("[SupabaseService] Invalid URL: \(url)")
+            return
+        }
+        client = SupabaseClient(supabaseURL: supabaseURL, supabaseKey: key)
+        isConfigured = true
+    }
+
+    /// 检查是否已配置
+    public var configured: Bool {
+        ensureConfigured()
+        return client != nil
+    }
+
+    private func requireClient() throws -> SupabaseClient {
+        ensureConfigured()
+        guard let client = client else {
+            throw SupabaseError.notConfigured
+        }
+        return client
     }
 
     // MARK: - Auth
 
     /// 使用 Apple ID Token 登录 Supabase
     public func signInWithApple(idToken: String) async throws -> SupabaseUser {
+        let client = try requireClient()
         let response = try await client.auth.signInWithIdToken(
             credentials: .init(
                 provider: .apple,
@@ -48,6 +79,7 @@ public actor SupabaseService {
 
     /// 使用 Google ID Token 登录 Supabase
     public func signInWithGoogle(idToken: String, accessToken: String) async throws -> SupabaseUser {
+        let client = try requireClient()
         let response = try await client.auth.signInWithIdToken(
             credentials: .init(
                 provider: .google,
@@ -65,12 +97,14 @@ public actor SupabaseService {
 
     /// 登出
     public func signOut() async throws {
+        let client = try requireClient()
         try await client.auth.signOut()
     }
 
     /// 获取当前用户
     public func getCurrentUser() async -> SupabaseUser? {
-        guard let user = try? await client.auth.user() else {
+        guard let client = client,
+              let user = try? await client.auth.user() else {
             return nil
         }
 
@@ -85,6 +119,7 @@ public actor SupabaseService {
 
     /// 保存宠物数据
     public func savePet(_ pet: Pet, userId: String) async throws {
+        let client = try requireClient()
         let petRecord = PetRecord(
             userId: userId,
             name: pet.name,
@@ -111,6 +146,7 @@ public actor SupabaseService {
 
     /// 获取宠物数据
     public func getPet(userId: String) async throws -> Pet? {
+        let client = try requireClient()
         let response: [PetRecord] = try await client
             .from("pets")
             .select()
@@ -145,6 +181,7 @@ public actor SupabaseService {
 
     /// 保存连续打卡数据
     public func saveStreak(_ streak: Streak, userId: String) async throws {
+        let client = try requireClient()
         let streakRecord = StreakRecord(
             userId: userId,
             currentStreak: streak.currentStreak,
@@ -160,6 +197,7 @@ public actor SupabaseService {
 
     /// 获取连续打卡数据
     public func getStreak(userId: String) async throws -> Streak? {
+        let client = try requireClient()
         let response: [StreakRecord] = try await client
             .from("streaks")
             .select()
@@ -183,6 +221,7 @@ public actor SupabaseService {
 
     /// 保存同步状态
     public func saveSyncState(_ state: SyncState, userId: String) async throws {
+        let client = try requireClient()
         let syncRecord = SyncStateRecord(
             userId: userId,
             lastSyncTime: state.lastSyncTime,
@@ -200,6 +239,7 @@ public actor SupabaseService {
 
     /// 获取同步状态
     public func getSyncState(userId: String) async throws -> SyncState? {
+        let client = try requireClient()
         let response: [SyncStateRecord] = try await client
             .from("sync_state")
             .select()
@@ -219,6 +259,19 @@ public actor SupabaseService {
             pendingChanges: record.pendingChanges,
             status: SyncStatus(rawValue: record.status) ?? .synced
         )
+    }
+}
+
+// MARK: - Supabase Error
+
+public enum SupabaseError: Error, LocalizedError {
+    case notConfigured
+
+    public var errorDescription: String? {
+        switch self {
+        case .notConfigured:
+            return "Supabase is not configured. Please set SUPABASE_URL and SUPABASE_ANON_KEY in Config/Secrets.xcconfig"
+        }
     }
 }
 

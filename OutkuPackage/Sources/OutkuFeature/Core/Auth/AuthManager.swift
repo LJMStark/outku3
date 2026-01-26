@@ -49,6 +49,7 @@ public final class AuthManager: @unchecked Sendable {
 
         // 检查 Google 连接状态
         if let googleResult = try? await googleSignInService.restorePreviousSignIn() {
+            // Google SDK 恢复成功
             isGoogleConnected = true
             hasCalendarAccess = googleResult.hasCalendarAccess
             hasTasksAccess = googleResult.hasTasksAccess
@@ -65,7 +66,25 @@ public final class AuthManager: @unchecked Sendable {
                 currentUser = user
                 authState = .authenticated(user)
             }
+        } else {
+            // Google SDK 恢复失败，尝试从 Keychain 恢复状态
+            restoreGoogleStateFromKeychain()
         }
+    }
+
+    /// 从 Keychain 恢复 Google 连接状态
+    private func restoreGoogleStateFromKeychain() {
+        // 检查是否有有效的 tokens 和 scopes
+        guard keychainService.getGoogleAccessToken() != nil,
+              keychainService.getGoogleRefreshToken() != nil,
+              let savedScopes = keychainService.getGoogleScopes() else {
+            return
+        }
+
+        // 从保存的 scopes 恢复权限状态
+        isGoogleConnected = true
+        hasCalendarAccess = savedScopes.contains("https://www.googleapis.com/auth/calendar.readonly")
+        hasTasksAccess = savedScopes.contains("https://www.googleapis.com/auth/tasks")
     }
 
     // MARK: - Apple Sign In

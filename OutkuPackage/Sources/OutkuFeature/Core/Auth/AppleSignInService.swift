@@ -141,6 +141,14 @@ private final class AppleSignInDelegate: NSObject, ASAuthorizationControllerDele
                 continuation.resume(throwing: AppleSignInError.notInteractive)
             case .matchedExcludedCredential:
                 continuation.resume(throwing: AppleSignInError.matchedExcludedCredential)
+            case .credentialImport:
+                continuation.resume(throwing: AppleSignInError.failed("Credential import error"))
+            case .credentialExport:
+                continuation.resume(throwing: AppleSignInError.failed("Credential export error"))
+            case .preferSignInWithApple:
+                continuation.resume(throwing: AppleSignInError.failed("Prefer Sign in with Apple"))
+            case .deviceNotConfiguredForPasskeyCreation:
+                continuation.resume(throwing: AppleSignInError.failed("Device not configured for passkey"))
             @unknown default:
                 continuation.resume(throwing: AppleSignInError.unknown)
             }

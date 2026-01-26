@@ -21,14 +21,34 @@ IPHONEOS_DEPLOYMENT_TARGET = 17.0
 TARGETED_DEVICE_FAMILY = 1,2
 
 // ==========================================
-// Info PLIST
+// Info PLIST (Build Settings)
 // ==========================================
-GENERATE_INFOPLIST_FILE = YES
 INFOPLIST_KEY_UISupportedInterfaceOrientations = portrait
 INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = UIInterfaceOrientationLandscapeRight UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown
+
+// ==========================================
+// Code Signing
+// ==========================================
+// Set your Development Team ID here (required for device deployment)
+// Find your Team ID at: https://developer.apple.com/account -> Membership
+// DEVELOPMENT_TEAM = YOUR_TEAM_ID
 
 // ==========================================
 // Entitlements
 // ==========================================
 // AI agents can modify Config/Outku.entitlements to add capabilities
 CODE_SIGN_ENTITLEMENTS = Config/Outku.entitlements
+
+// ==========================================
+// Info.plist
+// ==========================================
+// Custom Info.plist with privacy descriptions and URL schemes
+INFOPLIST_FILE = Config/Info.plist
+GENERATE_INFOPLIST_FILE = NO
+
+// ==========================================
+// Secrets (Optional)
+// ==========================================
+// Include secrets config if it exists (not committed to git)
+// Create Config/Secrets.xcconfig with your API keys
+#include? "Secrets.xcconfig"

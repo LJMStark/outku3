@@ -46,6 +46,12 @@ struct SettingsView: View {
                     .offset(y: appeared ? 0 : 20)
                     .animation(.easeOut(duration: 0.4).delay(0.35), value: appeared)
 
+                // Debug Section
+                DebugSection()
+                    .opacity(appeared ? 1 : 0)
+                    .offset(y: appeared ? 0 : 20)
+                    .animation(.easeOut(duration: 0.4).delay(0.4), value: appeared)
+
                 Spacer()
                     .frame(height: 80)
             }
@@ -585,6 +591,21 @@ private struct IntegrationsSection: View {
         } message: {
             Text("This integration will be available in a future update.")
         }
+        .task {
+            syncGoogleConnectionStatus()
+        }
+    }
+
+    /// Sync AuthManager's Google connection status to AppState integrations
+    private func syncGoogleConnectionStatus() {
+        if authManager.isGoogleConnected {
+            if authManager.hasCalendarAccess {
+                appState.updateIntegrationStatus(.googleCalendar, isConnected: true)
+            }
+            if authManager.hasTasksAccess {
+                appState.updateIntegrationStatus(.googleTasks, isConnected: true)
+            }
+        }
     }
 
     private var emptyStateView: some View {
@@ -808,6 +829,119 @@ private struct IntegrationIcon: View {
             return Color.black
         default:
             return Color.gray
+        }
+    }
+}
+
+// MARK: - Debug Section
+
+private struct DebugSection: View {
+    @Environment(AppState.self) private var appState
+    @Environment(AuthManager.self) private var authManager
+    @Environment(ThemeManager.self) private var theme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SettingsSectionHeader(title: "Debug Info")
+
+            VStack(alignment: .leading, spacing: 12) {
+                // Google Connection Status
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Google Auth Status")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(theme.colors.primaryText)
+
+                    DebugRow(label: "isGoogleConnected", value: authManager.isGoogleConnected)
+                    DebugRow(label: "hasCalendarAccess", value: authManager.hasCalendarAccess)
+                    DebugRow(label: "hasTasksAccess", value: authManager.hasTasksAccess)
+                }
+
+                Divider()
+
+                // Data Counts
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Data Counts")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(theme.colors.primaryText)
+
+                    DebugCountRow(label: "Total Events", count: appState.events.count)
+                    DebugCountRow(label: "Google Events", count: appState.events.filter { $0.source == .google }.count)
+                    DebugCountRow(label: "Apple Events", count: appState.events.filter { $0.source == .apple }.count)
+                    DebugCountRow(label: "Total Tasks", count: appState.tasks.count)
+                }
+
+                Divider()
+
+                // Manual Sync Button
+                Button {
+                    Task {
+                        await appState.syncGoogleData()
+                    }
+                } label: {
+                    HStack {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                        Text("Force Sync Google Data")
+                    }
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(theme.colors.accent)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(16)
+            .background(Color(hex: "FFF3CD"))
+            .clipShape(RoundedRectangle(cornerRadius: 24))
+            .overlay(
+                RoundedRectangle(cornerRadius: 24)
+                    .stroke(Color(hex: "FFE69C"), lineWidth: 1)
+            )
+        }
+    }
+}
+
+private struct DebugRow: View {
+    let label: String
+    let value: Bool
+
+    var body: some View {
+        HStack {
+            Text(label)
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(Color(hex: "6B7280"))
+
+            Spacer()
+
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(value ? Color.green : Color.red)
+                    .frame(width: 8, height: 8)
+
+                Text(value ? "true" : "false")
+                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .foregroundStyle(value ? Color.green : Color.red)
+            }
+        }
+    }
+}
+
+private struct DebugCountRow: View {
+    let label: String
+    let count: Int
+
+    var body: some View {
+        HStack {
+            Text(label)
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(Color(hex: "6B7280"))
+
+            Spacer()
+
+            Text("\(count)")
+                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                .foregroundStyle(Color(hex: "374151"))
         }
     }
 }
