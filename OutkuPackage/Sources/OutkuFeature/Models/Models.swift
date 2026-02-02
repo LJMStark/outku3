@@ -279,6 +279,7 @@ public struct Pet: Sendable, Codable {
     public var tailLength: Double // in cm
     public var currentForm: PetForm
     public var lastInteraction: Date
+    public var points: Int // accumulated points from completing tasks
 
     public init(
         name: String = "Baby Waffle",
@@ -294,7 +295,8 @@ public struct Pet: Sendable, Codable {
         height: Double = 5,
         tailLength: Double = 2,
         currentForm: PetForm = .cat,
-        lastInteraction: Date = Date()
+        lastInteraction: Date = Date(),
+        points: Int = 0
     ) {
         self.name = name
         self.pronouns = pronouns
@@ -310,6 +312,7 @@ public struct Pet: Sendable, Codable {
         self.tailLength = tailLength
         self.currentForm = currentForm
         self.lastInteraction = lastInteraction
+        self.points = points
     }
 }
 

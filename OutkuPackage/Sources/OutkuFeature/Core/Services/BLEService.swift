@@ -53,6 +53,9 @@ public enum BLEDataType: UInt8, Sendable {
     case schedule = 0x03
     case weather = 0x04
     case time = 0x05
+    case dayPack = 0x10
+    case taskInPage = 0x11
+    case deviceMode = 0x12
 }
 
 // MARK: - BLE Service UUIDs
@@ -78,6 +81,9 @@ public final class BLEService: NSObject {
     public private(set) var discoveredDevices: [BLEDevice] = []
     public private(set) var connectedDevice: BLEDevice?
     public private(set) var lastSyncTime: Date?
+
+    /// Callback for handling received event logs from device
+    public var onEventLogReceived: ((EventLog) -> Void)?
 
     // MARK: - Private Properties
 
@@ -276,6 +282,27 @@ public final class BLEService: NSObject {
         lastSyncTime = Date()
     }
 
+    // MARK: - Day Pack Transfer
+
+    /// 发送 Day Pack 到 E-ink 设备
+    public func sendDayPack(_ dayPack: DayPack) async throws {
+        let data = encodeDayPack(dayPack)
+        try await writeData(type: .dayPack, data: data)
+    }
+
+    /// 发送 Task In 页面数据到 E-ink 设备
+    public func sendTaskInPage(_ taskInPage: TaskInPageData) async throws {
+        let data = encodeTaskInPage(taskInPage)
+        try await writeData(type: .taskInPage, data: data)
+    }
+
+    /// 发送设备模式到 E-ink 设备
+    public func sendDeviceMode(_ mode: DeviceMode) async throws {
+        var data = Data()
+        data.append(mode == .interactive ? 0x00 : 0x01)
+        try await writeData(type: .deviceMode, data: data)
+    }
+
     // MARK: - Private Methods
 
     private func writeData(type: BLEDataType, data: Data) async throws {
@@ -373,6 +400,86 @@ public final class BLEService: NSObject {
         data.append(UInt8(components.second ?? 0))
         return data
     }
+
+    private func encodeDayPack(_ dayPack: DayPack) -> Data {
+        var data = Data()
+
+        // Header
+        let dateComponents = Calendar.current.dateComponents([.year, .month, .day], from: dayPack.date)
+        data.append(UInt8((dateComponents.year ?? 2024) - 2000))
+        data.append(UInt8(dateComponents.month ?? 1))
+        data.append(UInt8(dateComponents.day ?? 1))
+
+        // Device mode
+        data.append(dayPack.deviceMode == .interactive ? 0x00 : 0x01)
+
+        // Focus challenge flag
+        data.append(dayPack.focusChallengeEnabled ? 0x01 : 0x00)
+
+        // Page 1: Start of Day
+        data.appendString(dayPack.morningGreeting, maxLength: 50)
+        data.appendString(dayPack.dailySummary, maxLength: 60)
+        data.appendString(dayPack.firstItem, maxLength: 40)
+
+        // Page 2: Overview
+        data.appendString(dayPack.currentScheduleSummary ?? "", maxLength: 30)
+        data.appendString(dayPack.companionPhrase, maxLength: 40)
+
+        // Top tasks (max 3)
+        data.append(UInt8(min(dayPack.topTasks.count, 3)))
+        for task in dayPack.topTasks.prefix(3) {
+            data.appendString(task.id, maxLength: 36)
+            data.appendString(task.title, maxLength: 30)
+            data.append(task.isCompleted ? 0x01 : 0x00)
+            data.append(UInt8(task.priority))
+        }
+
+        // Page 4: Settlement
+        data.append(UInt8(dayPack.settlementData.tasksCompleted))
+        data.append(UInt8(dayPack.settlementData.tasksTotal))
+        let points = UInt16(min(dayPack.settlementData.pointsEarned, 65535))
+        data.append(contentsOf: withUnsafeBytes(of: points.bigEndian) { Array($0) })
+        data.append(UInt8(dayPack.settlementData.streakDays))
+        data.appendString(dayPack.settlementData.summaryMessage, maxLength: 50)
+        data.appendString(dayPack.settlementData.encouragementMessage, maxLength: 50)
+
+        return data
+    }
+
+    private func encodeTaskInPage(_ taskInPage: TaskInPageData) -> Data {
+        var data = Data()
+        data.appendString(taskInPage.taskId, maxLength: 36)
+        data.appendString(taskInPage.taskTitle, maxLength: 40)
+        data.appendString(taskInPage.taskDescription ?? "", maxLength: 100)
+        data.appendString(taskInPage.estimatedDuration ?? "", maxLength: 10)
+        data.appendString(taskInPage.encouragement, maxLength: 50)
+        data.append(taskInPage.focusChallengeActive ? 0x01 : 0x00)
+        return data
+    }
+
+    // MARK: - Event Log Parsing
+
+    private func parseEventLog(from data: Data) -> EventLog? {
+        guard data.count >= 2 else { return nil }
+
+        let eventTypeByte = data[0]
+        guard let eventType = EventLogType(rawByte: eventTypeByte) else { return nil }
+
+        var taskId: String?
+        if data.count > 2 {
+            let taskIdLength = Int(data[1])
+            if data.count >= 2 + taskIdLength {
+                let taskIdData = data.subdata(in: 2..<(2 + taskIdLength))
+                taskId = String(data: taskIdData, encoding: .utf8)
+            }
+        }
+
+        return EventLog(
+            eventType: eventType,
+            taskId: taskId,
+            timestamp: Date()
+        )
+    }
 }
 
 // MARK: - CBCentralManagerDelegate
@@ -448,6 +555,9 @@ extension BLEService: CBCentralManagerDelegate {
         error: Error?
     ) {
         Task { @MainActor in
+            // 设备断开时结束活跃的专注会话
+            FocusSessionService.shared.handleDeviceDisconnected()
+
             cleanup()
             if autoReconnect {
                 await attemptAutoReconnect()
@@ -551,7 +661,45 @@ extension BLEService: CBPeripheralDelegate {
     @MainActor
     private func handleReceivedData(_ data: Data) {
         // 处理从 E-ink 设备接收的数据
-        // 可以扩展为处理设备状态、按钮事件等
+        // 解析 Event Log 并通知回调
+        if let eventLog = parseEventLog(from: data) {
+            // 处理专注会话相关事件
+            handleFocusSessionEvent(eventLog)
+
+            // 通知外部回调
+            onEventLogReceived?(eventLog)
+        }
+    }
+
+    /// 处理专注会话相关事件
+    @MainActor
+    private func handleFocusSessionEvent(_ eventLog: EventLog) {
+        let focusService = FocusSessionService.shared
+
+        switch eventLog.eventType {
+        case .enterTaskIn:
+            // 进入任务 - 开始专注会话
+            if let taskId = eventLog.taskId {
+                // 从 AppState 获取任务标题
+                let taskTitle = AppState.shared.tasks.first { $0.id == taskId }?.title ?? "Unknown Task"
+                focusService.startSession(taskId: taskId, taskTitle: taskTitle)
+            }
+
+        case .completeTask:
+            // 完成任务 - 结束专注会话
+            if let taskId = eventLog.taskId {
+                focusService.completeTask(taskId: taskId)
+            }
+
+        case .skipTask:
+            // 跳过任务 - 结束专注会话
+            if let taskId = eventLog.taskId {
+                focusService.skipTask(taskId: taskId)
+            }
+
+        default:
+            break
+        }
     }
 }
 

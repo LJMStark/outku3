@@ -171,13 +171,32 @@ public actor LocalStorage {
 
     /// 清除所有本地数据
     public func clearAll() throws {
-        let files = ["pet.json", "streak.json", "tasks.json", "events.json", "sync_state.json", "haiku_cache.json", "user_profile.json"]
+        let files = ["pet.json", "streak.json", "tasks.json", "events.json", "sync_state.json", "haiku_cache.json", "user_profile.json", "focus_sessions.json"]
         for file in files {
             let url = documentsDirectory.appendingPathComponent(file)
             if fileManager.fileExists(atPath: url.path) {
                 try fileManager.removeItem(at: url)
             }
         }
+    }
+
+    // MARK: - Focus Sessions
+
+    /// 保存专注会话
+    public func saveFocusSessions(_ sessions: [FocusSession]) throws {
+        let data = try encoder.encode(sessions)
+        let url = documentsDirectory.appendingPathComponent("focus_sessions.json")
+        try data.write(to: url)
+    }
+
+    /// 加载专注会话
+    public func loadFocusSessions() throws -> [FocusSession]? {
+        let url = documentsDirectory.appendingPathComponent("focus_sessions.json")
+        guard fileManager.fileExists(atPath: url.path) else {
+            return nil
+        }
+        let data = try Data(contentsOf: url)
+        return try decoder.decode([FocusSession].self, from: data)
     }
 }
 

@@ -19,10 +19,15 @@ When XcodeBuildMCP tools are available, prefer them over raw xcodebuild:
 # Using XcodeBuildMCP (preferred)
 # Set session defaults first, then use build_sim, test_sim, etc.
 
-# Using xcodebuild directly - Simulator
+# Swift Package only (fast iteration)
+cd OutkuPackage && swift build
+cd OutkuPackage && swift test
+
+# Full app build - Simulator
 xcodebuild -workspace Outku.xcworkspace -scheme Outku \
   -destination 'platform=iOS Simulator,name=iPhone 16 Pro' build
 
+# Full app test
 xcodebuild -workspace Outku.xcworkspace -scheme Outku \
   -destination 'platform=iOS Simulator,name=iPhone 16 Pro' test
 
@@ -33,11 +38,8 @@ xcodebuild -workspace Outku.xcworkspace -scheme Outku \
 xcrun devicectl device install app --device <DEVICE_ID> \
   ~/Library/Developer/Xcode/DerivedData/Outku-*/Build/Products/Debug-iphoneos/Outku.app
 
-# List devices
+# List available devices
 xcrun xctrace list devices
-
-# Swift Package only
-cd OutkuPackage && swift test
 ```
 
 ## Architecture
@@ -54,15 +56,15 @@ outku3/
 │   └── Sources/OutkuFeature/
 │       ├── ContentView.swift   # Root view with environment injection
 │       ├── State/AppState.swift
-│       ├── Models/Models.swift
+│       ├── Models/             # Pet, Task, Event, DayPack, EventLog
 │       ├── Design/Theme.swift
 │       ├── Core/               # Services (Auth, API, Storage, BLE)
 │       └── Views/              # Home, Pet, Settings, Onboarding, Components
-└── Config/
-    ├── Shared.xcconfig         # Bundle ID, version, deployment target
-    ├── Secrets.xcconfig        # API keys (git-ignored)
-    ├── Outku.entitlements      # App capabilities
-    └── supabase-schema.sql     # Database schema for Supabase
+├── Config/
+│   ├── Shared.xcconfig         # Bundle ID, version, deployment target
+│   ├── Secrets.xcconfig        # API keys (git-ignored)
+│   └── Outku.entitlements      # App capabilities
+└── docs/                       # Hardware specs, BLE protocol
 ```
 
 ### State Management
@@ -84,7 +86,6 @@ Views access via `@Environment(AppState.self)`, `@Environment(ThemeManager.self)
 - Tab-based navigation via `AppState.selectedTab` (`.home`, `.pet`, `.settings`)
 - Custom header (`AppHeaderView`) with tab buttons - no TabView
 - **Header is fixed at top** - placed outside ScrollView in each main page
-- Content scrolls independently below the fixed header
 
 ### Key Services
 
@@ -98,6 +99,7 @@ Views access via `@Environment(AppState.self)`, `@Environment(ThemeManager.self)
 | `SupabaseService` | Cloud data persistence |
 | `CloudKitService` | iCloud sync (lazy-loaded) |
 | `BLEService` | E-ink device communication |
+| `DayPackGenerator` | Generate daily data for E-ink device |
 
 ## Code Patterns
 
@@ -109,7 +111,6 @@ struct MyView: View {
     @Environment(ThemeManager.self) private var theme
 
     var body: some View {
-        // Direct property access
         Text(appState.pet.name)
             .foregroundStyle(theme.colors.primaryText)
     }
@@ -187,6 +188,17 @@ Access colors via `theme.colors.propertyName`:
 - 5 moods: Happy, Excited, Focused, Sleepy, Missing You
 - 4 scenes: Indoor, Outdoor, Night, Work
 
+## E-ink Hardware Integration
+
+### BLE Protocol
+- Service UUID: `0000FFE0-0000-1000-8000-00805F9B34FB`
+- See `docs/BLE-Protocol-Spec.md` for full protocol
+
+### Key Models
+- `DayPack`: Daily data package sent to device
+- `EventLog`: Events received from device (task completion, etc.)
+- `DeviceMode`: Interactive vs Focus mode
+
 ## Testing
 
 ```swift
@@ -202,15 +214,6 @@ import Testing
 
 ## Configuration
 
-### Backend Services Status
-
-| Service | Status | Config Location |
-|---------|--------|-----------------|
-| Google Sign In | ✅ Configured | `Config/Secrets.xcconfig` |
-| Supabase | ✅ Configured | `Config/Secrets.xcconfig` |
-| OpenAI | ⏳ Optional | User enters in Settings |
-| Sign in with Apple | ⏳ Pending | Requires paid Apple Developer ($99/yr) |
-
 ### Secrets Configuration
 
 Create `Config/Secrets.xcconfig` (git-ignored) with:
@@ -222,34 +225,11 @@ SUPABASE_URL = https://xxx.supabase.co
 SUPABASE_ANON_KEY = eyJxxx
 ```
 
-### Database Schema
+### Backend Services Status
 
-Run `Config/supabase-schema.sql` in Supabase SQL Editor to create tables:
-- `pets` - Pet data (name, stage, mood, progress, etc.)
-- `streaks` - User streak tracking
-- `sync_state` - Sync tokens and status
-
-## TODO / Pending Tasks
-
-### Sign in with Apple (待配置)
-
-需要付费版 Apple Developer Program ($99/年) 才能使用。配置步骤：
-
-1. **Apple Developer Portal**:
-   - Certificates, Identifiers & Profiles → Identifiers
-   - 选择 App ID (`com.outku.app`)
-   - 启用 "Sign in with Apple" capability
-
-2. **Xcode**:
-   - Signing & Capabilities → 添加 "Sign in with Apple"
-
-3. **Config/Outku.entitlements** - 取消注释：
-   ```xml
-   <key>com.apple.developer.applesignin</key>
-   <array>
-       <string>Default</string>
-   </array>
-   ```
-
-4. **Supabase Dashboard**:
-   - Authentication → Providers → Apple → 启用
+| Service | Status | Config Location |
+|---------|--------|-----------------|
+| Google Sign In | Configured | `Config/Secrets.xcconfig` |
+| Supabase | Configured | `Config/Secrets.xcconfig` |
+| OpenAI | Optional | User enters in Settings |
+| Sign in with Apple | Pending | Requires paid Apple Developer ($99/yr) |

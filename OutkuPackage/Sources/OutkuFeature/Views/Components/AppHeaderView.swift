@@ -12,16 +12,14 @@ public struct AppHeaderView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            // Safe area spacer for Dynamic Island
-            Color.clear
-                .frame(height: 12)
+            // Header content
+            headerContent
                 .background(theme.currentTheme.headerGradient)
 
-            // Header content
-            VStack(spacing: 0) {
-                headerContent
-            }
-            .background(theme.currentTheme.headerGradient)
+            // Bottom decorative line
+            Rectangle()
+                .fill(Color.white.opacity(0.2))
+                .frame(height: 1)
         }
     }
 

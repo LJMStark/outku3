@@ -4,6 +4,7 @@ import SwiftUI
 
 private enum ProgressConstants {
     static let taskCompletionIncrement: Double = 0.02  // 2% progress per task
+    static let pointsPerTask: Int = 10  // Base points per task completion
 }
 
 private enum EvolutionMultipliers {
@@ -43,6 +44,10 @@ public final class AppState: @unchecked Sendable {
 
     // User Profile
     public var userProfile: UserProfile = .default
+
+    // Device Mode
+    public var deviceMode: DeviceMode = .interactive
+    public var isDemoMode: Bool = false
 
     // UI State
     public var selectedEvent: CalendarEvent?
@@ -102,7 +107,8 @@ public final class AppState: @unchecked Sendable {
                 weight: 50,
                 height: 5.0,
                 tailLength: 2.0,
-                lastInteraction: Date()
+                lastInteraction: Date(),
+                points: 0
             )
         }
 
@@ -343,11 +349,13 @@ public final class AppState: @unchecked Sendable {
             SoundService.shared.playWithHaptic(.taskComplete, haptic: .success)
             pet.adventuresCount += 1
             pet.progress = min(1.0, pet.progress + ProgressConstants.taskCompletionIncrement)
+            pet.points += ProgressConstants.pointsPerTask
             updateStreak()
         } else {
             SoundService.shared.playWithHaptic(.taskUncomplete, haptic: .light)
             pet.adventuresCount = max(0, pet.adventuresCount - 1)
             pet.progress = max(0, pet.progress - ProgressConstants.taskCompletionIncrement)
+            pet.points = max(0, pet.points - ProgressConstants.pointsPerTask)
         }
 
         pet.lastInteraction = Date()

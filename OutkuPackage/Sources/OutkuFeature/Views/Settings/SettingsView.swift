@@ -16,6 +16,12 @@ struct SettingsView: View {
                     .offset(y: appeared ? 0 : 20)
                     .animation(.easeOut(duration: 0.4), value: appeared)
 
+                // Device Mode Section
+                DeviceModeSection()
+                    .opacity(appeared ? 1 : 0)
+                    .offset(y: appeared ? 0 : 20)
+                    .animation(.easeOut(duration: 0.4).delay(0.05), value: appeared)
+
                 // Theme Section
                 ThemeSection()
                     .opacity(appeared ? 1 : 0)

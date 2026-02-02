@@ -40,18 +40,20 @@ public struct ContentView: View {
 
     @ViewBuilder
     private var mainAppView: some View {
-        VStack(spacing: 0) {
-            // Unified Header
-            AppHeaderView(selectedTab: Binding(
-                get: { appState.selectedTab },
-                set: { appState.selectedTab = $0 }
-            ))
+        ZStack(alignment: .top) {
+            // Background that extends to edges
+            themeManager.colors.background
+                .ignoresSafeArea()
 
-            // Content based on selected tab
-            ZStack {
-                themeManager.colors.background
-                    .ignoresSafeArea(edges: .bottom)
+            VStack(spacing: 0) {
+                // Unified Header
+                AppHeaderView(selectedTab: Binding(
+                    get: { appState.selectedTab },
+                    set: { appState.selectedTab = $0 }
+                ))
+                .background(themeManager.currentTheme.headerGradient.ignoresSafeArea(edges: .top))
 
+                // Content based on selected tab
                 Group {
                     switch appState.selectedTab {
                     case .home:
@@ -64,7 +66,6 @@ public struct ContentView: View {
                 }
             }
         }
-        .background(themeManager.currentTheme.headerGradient.ignoresSafeArea(edges: .top))
         .environment(appState)
         .environment(themeManager)
         .environment(authManager)
