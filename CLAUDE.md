@@ -15,10 +15,25 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 When XcodeBuildMCP tools are available, prefer them over raw xcodebuild:
 
-```bash
-# Using XcodeBuildMCP (preferred)
-# Set session defaults first, then use build_sim, test_sim, etc.
+```javascript
+// Build and run on simulator (preferred)
+build_run_sim_name_ws({
+    workspacePath: "/path/to/Outku.xcworkspace",
+    scheme: "Outku",
+    simulatorName: "iPhone 16 Pro"
+})
 
+// Run tests on simulator
+test_sim_name_ws({
+    workspacePath: "/path/to/Outku.xcworkspace",
+    scheme: "Outku",
+    simulatorName: "iPhone 16 Pro"
+})
+```
+
+Fallback to raw commands when XcodeBuildMCP is unavailable:
+
+```bash
 # Swift Package only (fast iteration)
 cd OutkuPackage && swift build
 cd OutkuPackage && swift test
@@ -56,7 +71,7 @@ outku3/
 │   └── Sources/OutkuFeature/
 │       ├── ContentView.swift   # Root view with environment injection
 │       ├── State/AppState.swift
-│       ├── Models/             # Pet, Task, Event, DayPack, EventLog
+│       ├── Models/             # Pet, Task, Event, DayPack, EventLog, FocusSession
 │       ├── Design/Theme.swift
 │       ├── Core/               # Services (Auth, API, Storage, BLE)
 │       └── Views/              # Home, Pet, Settings, Onboarding, Components
@@ -100,6 +115,7 @@ Views access via `@Environment(AppState.self)`, `@Environment(ThemeManager.self)
 | `CloudKitService` | iCloud sync (lazy-loaded) |
 | `BLEService` | E-ink device communication |
 | `DayPackGenerator` | Generate daily data for E-ink device |
+| `FocusSessionService` | Track task focus time with screen activity |
 
 ## Code Patterns
 
@@ -167,10 +183,11 @@ var body: some View {
 ## Swift 6 Concurrency
 
 - Use `@MainActor` for all UI-related code
-- Use `actor` for shared mutable state
+- Use `actor` for shared mutable state (e.g., `LocalStorage`)
 - Use `.task` modifier in views (auto-cancels on disappear)
 - Never use `Task {}` in `onAppear`
 - Ensure `Sendable` conformance for types crossing concurrency boundaries
+- Use `@unchecked Sendable` for thread-safe types that can't prove it to compiler
 
 ## Theme System
 
@@ -198,6 +215,7 @@ Access colors via `theme.colors.propertyName`:
 - `DayPack`: Daily data package sent to device
 - `EventLog`: Events received from device (task completion, etc.)
 - `DeviceMode`: Interactive vs Focus mode
+- `FocusSession`: Track focus time per task (30-min threshold for phone inactivity)
 
 ## Testing
 

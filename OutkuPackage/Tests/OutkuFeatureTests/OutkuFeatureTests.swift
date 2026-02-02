@@ -440,7 +440,7 @@ struct ThemeTests {
 
     @Test("All themes have required colors")
     func allThemesHaveRequiredColors() {
-        let themes: [AppTheme] = [.cream, .sage, .lavender, .peach, .sky]
+        let themes: [AppTheme] = [.classicWarm, .elegantPurple, .modernTeal]
 
         for theme in themes {
             let colors = theme.colors
@@ -462,6 +462,7 @@ struct ThemeTests {
     @Test("ThemeManager singleton exists")
     func themeManagerSingletonExists() {
         let manager = ThemeManager.shared
-        #expect(manager.currentTheme != nil)
+        // currentTheme is non-optional, just verify it exists
+        _ = manager.currentTheme
     }
 }
