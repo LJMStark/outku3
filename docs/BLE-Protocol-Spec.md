@@ -359,13 +359,14 @@ User entered the task detail page (focus mode started).
 |--------|--------|-------------|--------------------------|
 | 0      | Length | 1 byte      | TaskId length            |
 | 1      | TaskId | N bytes     | UUID string (UTF-8)      |
+| 1+N    | Timestamp | 4 bytes  | Unix Timestamp (Big Endian) (UInt32) |
 
 **App Response:**
 - Send TaskInPage (0x11) with task details
 - Record focus session start timestamp for this task
 
 **Focus Time Tracking:**
-This event marks the START of a focus session. App should record the timestamp to calculate focus duration when CompleteTask or SkipTask is received.
+This event marks the START of a focus session. App records the provided timestamp to calculate focus duration when CompleteTask or SkipTask is received.
 
 ---
 
@@ -379,6 +380,7 @@ User marked a task as complete on the device (short press wheel).
 |--------|--------|-------------|--------------------------|
 | 0      | Length | 1 byte      | TaskId length            |
 | 1      | TaskId | N bytes     | UUID string (UTF-8)      |
+| 1+N    | Timestamp | 4 bytes  | Unix Timestamp (Big Endian) (UInt32) |
 
 **App Response:**
 - Update task status in AppState, recalculate points
@@ -398,6 +400,27 @@ User skipped a task (long press wheel >1s).
 |--------|--------|-------------|--------------------------|
 | 0      | Length | 1 byte      | TaskId length            |
 | 1      | TaskId | N bytes     | UUID string (UTF-8)      |
+| 1+N    | Timestamp | 4 bytes  | Unix Timestamp (Big Endian) (UInt32) |
+
+**App Response:**
+- Mark task as skipped, move to next task
+- Record focus session end timestamp
+- Calculate focus duration (end - start)
+- Cross-reference with Screen Time data to determine actual focus time
+
+---
+
+### 5.5 SkipTask (0x12)
+
+User skipped a task (long press wheel >1s).
+
+**Payload:**
+
+| Offset | Field     | Size    | Description                          |
+|--------|-----------|---------|--------------------------------------|
+| 0      | Length    | 1 byte  | TaskId length                        |
+| 1      | TaskId    | N bytes | UUID string (UTF-8)                  |
+| 1+N    | Timestamp | 4 bytes | Unix Timestamp (Big Endian) (UInt32) |
 
 **App Response:**
 - Mark task as skipped, move to next task

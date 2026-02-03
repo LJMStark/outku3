@@ -466,18 +466,27 @@ public final class BLEService: NSObject {
         guard let eventType = EventLogType(rawByte: eventTypeByte) else { return nil }
 
         var taskId: String?
+        var timestamp: Date = Date()
+
         if data.count > 2 {
             let taskIdLength = Int(data[1])
             if data.count >= 2 + taskIdLength {
                 let taskIdData = data.subdata(in: 2..<(2 + taskIdLength))
                 taskId = String(data: taskIdData, encoding: .utf8)
+
+                let timestampOffset = 2 + taskIdLength
+                if data.count >= timestampOffset + 4 {
+                    let timestampData = data.subdata(in: timestampOffset..<(timestampOffset + 4))
+                    let timestampInt = timestampData.withUnsafeBytes { $0.load(as: UInt32.self).bigEndian }
+                    timestamp = Date(timeIntervalSince1970: TimeInterval(timestampInt))
+                }
             }
         }
 
         return EventLog(
             eventType: eventType,
             taskId: taskId,
-            timestamp: Date()
+            timestamp: timestamp
         )
     }
 }
