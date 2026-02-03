@@ -1,0 +1,12 @@
+{
+  "/Users/demon/vibecoding/outku3/build/SourcePackages/checkouts/swift-concurrency-extras/Sources/ConcurrencyExtras/ActorIsolated.swift" : {
+    "abi-baseline-json" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/swift-concurrency-extras.build/Release-iphonesimulator/ConcurrencyExtras.build/Objects-normal/arm64/ConcurrencyExtras.abi.json",
+    "const-values" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/swift-concurrency-extras.build/Release-iphonesimulator/ConcurrencyExtras.build/Objects-normal/arm64/ConcurrencyExtras-primary.swiftconstvalues",
+    "dependencies" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/swift-concurrency-extras.build/Release-iphonesimulator/ConcurrencyExtras.build/Objects-normal/arm64/ConcurrencyExtras-primary.d",
+    "diagnostics" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/swift-concurrency-extras.build/Release-iphonesimulator/ConcurrencyExtras.build/Objects-normal/arm64/ConcurrencyExtras-primary.dia",
+    "objc-header" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/swift-concurrency-extras.build/Release-iphonesimulator/ConcurrencyExtras.build/Objects-normal/arm64/ConcurrencyExtras-Swift.h",
+    "swiftdoc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/swift-concurrency-extras.build/Release-iphonesimulator/ConcurrencyExtras.build/Objects-normal/arm64/ConcurrencyExtras.swiftdoc",
+    "swiftmodule" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/swift-concurrency-extras.build/Release-iphonesimulator/ConcurrencyExtras.build/Objects-normal/arm64/ConcurrencyExtras.swiftmodule",
+    "swiftsourceinfo" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/swift-concurrency-extras.build/Release-iphonesimulator/ConcurrencyExtras.build/Objects-normal/arm64/ConcurrencyExtras.swiftsourceinfo"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/DerivedSources/resource_bundle_accessor.swift" : {
+    "abi-baseline-json" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/KiroFeature.abi.json",
+    "const-values" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/KiroFeature-primary.swiftconstvalues",
+    "dependencies" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/KiroFeature-primary.d",
+    "diagnostics" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/KiroFeature-primary.dia",
+    "objc-header" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/KiroFeature-Swift.h",
+    "swiftdoc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/KiroFeature.swiftdoc",
+    "swiftmodule" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/KiroFeature.swiftmodule",
+    "swiftsourceinfo" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/KiroFeature.swiftsourceinfo"
+  }
+}

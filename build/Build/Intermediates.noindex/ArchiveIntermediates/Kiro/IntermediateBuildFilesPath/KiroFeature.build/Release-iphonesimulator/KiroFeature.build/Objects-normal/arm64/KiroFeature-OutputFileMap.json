@@ -1,0 +1,316 @@
+{
+  "" : {
+    "const-values" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/KiroFeature-primary.swiftconstvalues",
+    "dependencies" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/KiroFeature-primary.d",
+    "diagnostics" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/KiroFeature-primary.dia",
+    "emit-module-dependencies" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/KiroFeature-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/KiroFeature-primary-emit-module.dia",
+    "pch" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/KiroFeature-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/KiroFeature-primary.swiftdeps"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/ContentView.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/ContentView.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/ContentView.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/ContentView.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Core/Auth/AppleSignInService.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/AppleSignInService.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/AppleSignInService.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/AppleSignInService.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Core/Auth/AuthManager.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/AuthManager.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/AuthManager.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/AuthManager.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Core/Auth/GoogleSignInService.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/GoogleSignInService.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/GoogleSignInService.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/GoogleSignInService.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Core/Auth/KeychainService.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/KeychainService.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/KeychainService.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/KeychainService.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Core/Network/CompanionTextService.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/CompanionTextService.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/CompanionTextService.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/CompanionTextService.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Core/Network/GoogleCalendarAPI.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/GoogleCalendarAPI.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/GoogleCalendarAPI.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/GoogleCalendarAPI.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Core/Network/GoogleTasksAPI.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/GoogleTasksAPI.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/GoogleTasksAPI.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/GoogleTasksAPI.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Core/Network/NetworkClient.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/NetworkClient.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/NetworkClient.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/NetworkClient.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Core/Network/OpenAIService.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/OpenAIService.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/OpenAIService.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/OpenAIService.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Core/Services/BLEService.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/BLEService.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/BLEService.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/BLEService.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Core/Services/DayPackGenerator.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/DayPackGenerator.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/DayPackGenerator.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/DayPackGenerator.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Core/Services/DemoModeService.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/DemoModeService.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/DemoModeService.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/DemoModeService.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Core/Services/EventKitService.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/EventKitService.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/EventKitService.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/EventKitService.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Core/Services/FocusSessionService.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/FocusSessionService.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/FocusSessionService.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/FocusSessionService.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Core/Services/HaikuService.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/HaikuService.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/HaikuService.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/HaikuService.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Core/Services/PetStateService.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/PetStateService.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/PetStateService.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/PetStateService.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Core/Services/SoundService.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/SoundService.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/SoundService.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/SoundService.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Core/Services/WidgetDataService.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/WidgetDataService.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/WidgetDataService.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/WidgetDataService.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Core/Storage/CloudKitService.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/CloudKitService.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/CloudKitService.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/CloudKitService.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Core/Storage/LocalStorage.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/LocalStorage.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/LocalStorage.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/LocalStorage.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Core/Storage/SupabaseClient.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/SupabaseClient.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/SupabaseClient.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/SupabaseClient.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Core/Storage/SyncManager.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/SyncManager.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/SyncManager.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/SyncManager.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Design/Theme.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/Theme.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/Theme.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/Theme.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Models/DayPack.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/DayPack.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/DayPack.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/DayPack.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Models/DeviceMode.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/DeviceMode.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/DeviceMode.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/DeviceMode.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Models/EventLog.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/EventLog.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/EventLog.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/EventLog.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Models/FocusSession.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/FocusSession.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/FocusSession.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/FocusSession.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Models/GoogleAPIModels.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/GoogleAPIModels.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/GoogleAPIModels.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/GoogleAPIModels.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Models/Models.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/Models.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/Models.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/Models.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Models/SyncModels.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/SyncModels.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/SyncModels.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/SyncModels.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Models/User.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/User.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/User.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/User.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Models/UserProfile.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/UserProfile.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/UserProfile.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/UserProfile.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/State/AppState.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/AppState.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/AppState.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/AppState.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Views/Auth/LoginView.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/LoginView.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/LoginView.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/LoginView.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Views/Auth/SignInButtonsView.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/SignInButtonsView.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/SignInButtonsView.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/SignInButtonsView.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Views/Components/AppHeaderView.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/AppHeaderView.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/AppHeaderView.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/AppHeaderView.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Views/Components/GoogleIcon.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/GoogleIcon.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/GoogleIcon.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/GoogleIcon.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Views/Components/PixelPetView.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/PixelPetView.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/PixelPetView.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/PixelPetView.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Views/Home/EventCardView.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/EventCardView.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/EventCardView.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/EventCardView.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Views/Home/EventDetailView.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/EventDetailView.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/EventDetailView.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/EventDetailView.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Views/Home/HomeView.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/HomeView.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/HomeView.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/HomeView.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Views/Home/TimelineView.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/TimelineView.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/TimelineView.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/TimelineView.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Views/Onboarding/Components/ChoicePill.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/ChoicePill.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/ChoicePill.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/ChoicePill.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Views/Onboarding/Components/CinematicBackground.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/CinematicBackground.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/CinematicBackground.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/CinematicBackground.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Views/Onboarding/Components/DialogBubble.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/DialogBubble.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/DialogBubble.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/DialogBubble.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Views/Onboarding/Components/MorphingPetView.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/MorphingPetView.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/MorphingPetView.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/MorphingPetView.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Views/Onboarding/Components/OnboardingGoalsStep.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/OnboardingGoalsStep.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/OnboardingGoalsStep.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/OnboardingGoalsStep.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Views/Onboarding/Components/OnboardingIdentityStep.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/OnboardingIdentityStep.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/OnboardingIdentityStep.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/OnboardingIdentityStep.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Views/Onboarding/Components/OnboardingSignInSection.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/OnboardingSignInSection.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/OnboardingSignInSection.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/OnboardingSignInSection.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Views/Onboarding/Components/OnboardingStyleStep.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/OnboardingStyleStep.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/OnboardingStyleStep.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/OnboardingStyleStep.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Views/Onboarding/Components/OnboardingWelcomeStep.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/OnboardingWelcomeStep.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/OnboardingWelcomeStep.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/OnboardingWelcomeStep.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Views/Onboarding/Logic/OnboardingFlowManager.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/OnboardingFlowManager.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/OnboardingFlowManager.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/OnboardingFlowManager.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Views/Onboarding/OnboardingView.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/OnboardingView.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/OnboardingView.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/OnboardingView.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Views/Pet/EvolutionAnimationView.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/EvolutionAnimationView.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/EvolutionAnimationView.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/EvolutionAnimationView.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Views/Pet/PetPageView.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/PetPageView.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/PetPageView.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/PetPageView.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Views/Pet/PetStatusView.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/PetStatusView.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/PetStatusView.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/PetStatusView.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Views/Settings/DeviceModeSection.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/DeviceModeSection.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/DeviceModeSection.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/DeviceModeSection.o"
+  },
+  "/Users/demon/vibecoding/outku3/KiroPackage/Sources/KiroFeature/Views/Settings/SettingsView.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/SettingsView.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/SettingsView.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/SettingsView.o"
+  },
+  "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/DerivedSources/GeneratedAssetSymbols.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/GeneratedAssetSymbols.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/GeneratedAssetSymbols.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/GeneratedAssetSymbols.o"
+  },
+  "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/DerivedSources/resource_bundle_accessor.swift" : {
+    "index-unit-output-path" : "/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/resource_bundle_accessor.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/resource_bundle_accessor.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KiroFeature.build/Release-iphonesimulator/KiroFeature.build/Objects-normal/arm64/resource_bundle_accessor.o"
+  }
+}

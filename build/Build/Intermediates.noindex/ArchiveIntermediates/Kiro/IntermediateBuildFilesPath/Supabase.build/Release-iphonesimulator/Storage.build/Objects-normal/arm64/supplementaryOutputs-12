@@ -1,0 +1,12 @@
+{
+  "/Users/demon/vibecoding/outku3/build/SourcePackages/checkouts/supabase-swift/Sources/Storage/BucketOptions.swift" : {
+    "abi-baseline-json" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/Supabase.build/Release-iphonesimulator/Storage.build/Objects-normal/arm64/Storage.abi.json",
+    "const-values" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/Supabase.build/Release-iphonesimulator/Storage.build/Objects-normal/arm64/Storage-primary.swiftconstvalues",
+    "dependencies" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/Supabase.build/Release-iphonesimulator/Storage.build/Objects-normal/arm64/Storage-primary.d",
+    "diagnostics" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/Supabase.build/Release-iphonesimulator/Storage.build/Objects-normal/arm64/Storage-primary.dia",
+    "objc-header" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/Supabase.build/Release-iphonesimulator/Storage.build/Objects-normal/arm64/Storage-Swift.h",
+    "swiftdoc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/Supabase.build/Release-iphonesimulator/Storage.build/Objects-normal/arm64/Storage.swiftdoc",
+    "swiftmodule" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/Supabase.build/Release-iphonesimulator/Storage.build/Objects-normal/arm64/Storage.swiftmodule",
+    "swiftsourceinfo" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/Supabase.build/Release-iphonesimulator/Storage.build/Objects-normal/arm64/Storage.swiftsourceinfo"
+  }
+}

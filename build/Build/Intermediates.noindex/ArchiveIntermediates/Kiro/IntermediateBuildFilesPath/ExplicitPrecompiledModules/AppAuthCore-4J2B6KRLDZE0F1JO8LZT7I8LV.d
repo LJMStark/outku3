@@ -1,0 +1,33 @@
+moduledependenciestarget: \
+  /Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/GeneratedModuleMaps-iphonesimulator/AppAuthCore.modulemap \
+  /Users/demon/vibecoding/outku3/build/SourcePackages/checkouts/AppAuth-iOS/Sources/AppAuthCore/OIDAuthState.h \
+  /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.2.sdk/System/Library/Frameworks/Foundation.framework/Modules/module.modulemap \
+  /Users/demon/vibecoding/outku3/build/SourcePackages/checkouts/AppAuth-iOS/Sources/AppAuthCore/OIDAuthStateChangeDelegate.h \
+  /Users/demon/vibecoding/outku3/build/SourcePackages/checkouts/AppAuth-iOS/Sources/AppAuthCore/OIDAuthStateErrorDelegate.h \
+  /Users/demon/vibecoding/outku3/build/SourcePackages/checkouts/AppAuth-iOS/Sources/AppAuthCore/OIDAuthorizationRequest.h \
+  /Users/demon/vibecoding/outku3/build/SourcePackages/checkouts/AppAuth-iOS/Sources/AppAuthCore/OIDExternalUserAgentRequest.h \
+  /Users/demon/vibecoding/outku3/build/SourcePackages/checkouts/AppAuth-iOS/Sources/AppAuthCore/OIDResponseTypes.h \
+  /Users/demon/vibecoding/outku3/build/SourcePackages/checkouts/AppAuth-iOS/Sources/AppAuthCore/OIDScopes.h \
+  /Users/demon/vibecoding/outku3/build/SourcePackages/checkouts/AppAuth-iOS/Sources/AppAuthCore/OIDAuthorizationResponse.h \
+  /Users/demon/vibecoding/outku3/build/SourcePackages/checkouts/AppAuth-iOS/Sources/AppAuthCore/OIDAuthorizationService.h \
+  /Users/demon/vibecoding/outku3/build/SourcePackages/checkouts/AppAuth-iOS/Sources/AppAuthCore/OIDClientMetadataParameters.h \
+  /Users/demon/vibecoding/outku3/build/SourcePackages/checkouts/AppAuth-iOS/Sources/AppAuthCore/OIDDefines.h \
+  /Users/demon/vibecoding/outku3/build/SourcePackages/checkouts/AppAuth-iOS/Sources/AppAuthCore/OIDEndSessionRequest.h \
+  /Users/demon/vibecoding/outku3/build/SourcePackages/checkouts/AppAuth-iOS/Sources/AppAuthCore/OIDEndSessionResponse.h \
+  /Users/demon/vibecoding/outku3/build/SourcePackages/checkouts/AppAuth-iOS/Sources/AppAuthCore/OIDError.h \
+  /Users/demon/vibecoding/outku3/build/SourcePackages/checkouts/AppAuth-iOS/Sources/AppAuthCore/OIDErrorUtilities.h \
+  /Users/demon/vibecoding/outku3/build/SourcePackages/checkouts/AppAuth-iOS/Sources/AppAuthCore/OIDExternalUserAgent.h \
+  /Users/demon/vibecoding/outku3/build/SourcePackages/checkouts/AppAuth-iOS/Sources/AppAuthCore/OIDExternalUserAgentSession.h \
+  /Users/demon/vibecoding/outku3/build/SourcePackages/checkouts/AppAuth-iOS/Sources/AppAuthCore/OIDFieldMapping.h \
+  /Users/demon/vibecoding/outku3/build/SourcePackages/checkouts/AppAuth-iOS/Sources/AppAuthCore/OIDGrantTypes.h \
+  /Users/demon/vibecoding/outku3/build/SourcePackages/checkouts/AppAuth-iOS/Sources/AppAuthCore/OIDIDToken.h \
+  /Users/demon/vibecoding/outku3/build/SourcePackages/checkouts/AppAuth-iOS/Sources/AppAuthCore/OIDRegistrationRequest.h \
+  /Users/demon/vibecoding/outku3/build/SourcePackages/checkouts/AppAuth-iOS/Sources/AppAuthCore/OIDRegistrationResponse.h \
+  /Users/demon/vibecoding/outku3/build/SourcePackages/checkouts/AppAuth-iOS/Sources/AppAuthCore/OIDScopeUtilities.h \
+  /Users/demon/vibecoding/outku3/build/SourcePackages/checkouts/AppAuth-iOS/Sources/AppAuthCore/OIDServiceConfiguration.h \
+  /Users/demon/vibecoding/outku3/build/SourcePackages/checkouts/AppAuth-iOS/Sources/AppAuthCore/OIDServiceDiscovery.h \
+  /Users/demon/vibecoding/outku3/build/SourcePackages/checkouts/AppAuth-iOS/Sources/AppAuthCore/OIDTokenRequest.h \
+  /Users/demon/vibecoding/outku3/build/SourcePackages/checkouts/AppAuth-iOS/Sources/AppAuthCore/OIDTokenResponse.h \
+  /Users/demon/vibecoding/outku3/build/SourcePackages/checkouts/AppAuth-iOS/Sources/AppAuthCore/OIDTokenUtilities.h \
+  /Users/demon/vibecoding/outku3/build/SourcePackages/checkouts/AppAuth-iOS/Sources/AppAuthCore/OIDURLQueryComponent.h \
+  /Users/demon/vibecoding/outku3/build/SourcePackages/checkouts/AppAuth-iOS/Sources/AppAuthCore/OIDURLSessionProvider.h

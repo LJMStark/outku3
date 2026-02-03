@@ -1,4 +1,4 @@
-# Outku BLE Communication Protocol Specification
+# Kiro BLE Communication Protocol Specification
 
 **Version:** v1.1.0
 **Last Updated:** 2026-01-31
@@ -23,7 +23,7 @@
 
 ### 1.1 Purpose
 
-This document defines the BLE communication protocol between the Outku iOS app and the E-ink hardware device. The protocol enables:
+This document defines the BLE communication protocol between the Kiro iOS app and the E-ink hardware device. The protocol enables:
 
 - Sending daily data (Day Pack) from app to device
 - Receiving user interaction events from device to app
@@ -819,4 +819,4 @@ Proposed format for v1.1.0:
 
 ## Contact
 
-For protocol questions or clarifications, contact the Outku development team.
+For protocol questions or clarifications, contact the Kiro development team.

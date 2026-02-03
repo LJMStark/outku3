@@ -1,0 +1,12 @@
+{
+  "/Users/demon/vibecoding/outku3/build/SourcePackages/checkouts/supabase-swift/Sources/Realtime/CallbackManager.swift" : {
+    "abi-baseline-json" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/Supabase.build/Release-iphonesimulator/Realtime.build/Objects-normal/arm64/Realtime.abi.json",
+    "const-values" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/Supabase.build/Release-iphonesimulator/Realtime.build/Objects-normal/arm64/Realtime-primary.swiftconstvalues",
+    "dependencies" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/Supabase.build/Release-iphonesimulator/Realtime.build/Objects-normal/arm64/Realtime-primary.d",
+    "diagnostics" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/Supabase.build/Release-iphonesimulator/Realtime.build/Objects-normal/arm64/Realtime-primary.dia",
+    "objc-header" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/Supabase.build/Release-iphonesimulator/Realtime.build/Objects-normal/arm64/Realtime-Swift.h",
+    "swiftdoc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/Supabase.build/Release-iphonesimulator/Realtime.build/Objects-normal/arm64/Realtime.swiftdoc",
+    "swiftmodule" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/Supabase.build/Release-iphonesimulator/Realtime.build/Objects-normal/arm64/Realtime.swiftmodule",
+    "swiftsourceinfo" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/Supabase.build/Release-iphonesimulator/Realtime.build/Objects-normal/arm64/Realtime.swiftsourceinfo"
+  }
+}

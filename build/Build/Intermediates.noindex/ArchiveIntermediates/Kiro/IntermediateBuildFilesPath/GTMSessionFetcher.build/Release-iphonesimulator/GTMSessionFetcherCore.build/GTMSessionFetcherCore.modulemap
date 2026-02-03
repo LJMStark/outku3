@@ -1,0 +1,4 @@
+module GTMSessionFetcherCore {
+umbrella "/Users/demon/vibecoding/outku3/build/SourcePackages/checkouts/gtm-session-fetcher/Sources/Core/Public"
+export *
+}

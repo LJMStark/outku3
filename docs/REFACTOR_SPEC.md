@@ -2,12 +2,12 @@
 
 ## 概述
 
-本文档定义了 Outku iOS 应用主要页面的重构规范，目标是实现与参考代码（React/TypeScript）的**像素级精确**还原。
+本文档定义了 Kiro iOS 应用主要页面的重构规范，目标是实现与参考代码（React/TypeScript）的**像素级精确**还原。
 
 ## 参考代码位置
 
 ```
-/Users/demon/vibecoding/outku3/页面一比一还原 (Copy)/src/
+/Users/demon/vibecoding/kiro3/页面一比一还原 (Copy)/src/
 ├── App.tsx              # 主应用框架、Header、页面导航
 ├── components/
 │   ├── PetPage.tsx      # 宠物页面
@@ -94,7 +94,7 @@ gradients:
 ### 文件结构
 
 ```
-OutkuPackage/Sources/OutkuFeature/
+KiroPackage/Sources/KiroFeature/
 ├── Design/
 │   └── Theme.swift              # 重写：3个主题
 ├── Views/

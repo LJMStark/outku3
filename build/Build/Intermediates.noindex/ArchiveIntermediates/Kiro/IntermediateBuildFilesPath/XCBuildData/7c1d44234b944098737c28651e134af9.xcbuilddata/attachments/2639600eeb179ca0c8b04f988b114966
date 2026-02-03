@@ -1,0 +1,4 @@
+module GoogleUtilities_Environment {
+umbrella "/Users/demon/vibecoding/outku3/build/SourcePackages/checkouts/GoogleUtilities/GoogleUtilities/Environment/Public"
+export *
+}

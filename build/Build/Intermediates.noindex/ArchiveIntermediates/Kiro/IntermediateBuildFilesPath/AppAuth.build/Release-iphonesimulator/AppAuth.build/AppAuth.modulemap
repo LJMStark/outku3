@@ -1,0 +1,4 @@
+module AppAuth {
+umbrella "/Users/demon/vibecoding/outku3/build/SourcePackages/checkouts/AppAuth-iOS/Sources/AppAuth"
+export *
+}

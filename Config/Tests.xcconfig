@@ -7,8 +7,8 @@
 // ==========================================
 // Test Target Settings (Customizable by scaffold tool)
 // ==========================================
-PRODUCT_BUNDLE_IDENTIFIER = com.outku.app
-TEST_TARGET_NAME = Outku
+PRODUCT_BUNDLE_IDENTIFIER = com.kiro.app
+TEST_TARGET_NAME = Kiro
 
 // Fix duplicate module name issue
 PRODUCT_MODULE_NAME = $(PRODUCT_NAME)UITests

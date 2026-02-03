@@ -1,8 +1,8 @@
-# Outku - Product Specification
+# Kiro - Product Specification
 
 ## Overview
 
-**Outku** is an iOS companion app for an E-ink hardware device, designed to help remote workers build better habits through AI-powered pet companionship and gamified task management.
+**Kiro** is an iOS companion app for an E-ink hardware device, designed to help remote workers build better habits through AI-powered pet companionship and gamified task management.
 
 ### Vision
 Transform mundane task completion into a delightful journey of nurturing a virtual pet companion, creating emotional connections that motivate users to maintain productive habits.
@@ -364,9 +364,9 @@ E-ink daily schedule display (similar to Inku)
 ## File Structure (Proposed)
 
 ```
-Outku/
+Kiro/
 ├── App/
-│   ├── OutkuApp.swift
+│   ├── KiroApp.swift
 │   └── AppDelegate.swift
 ├── Features/
 │   ├── Home/
@@ -408,7 +408,7 @@ Outku/
 │   ├── Sounds/
 │   └── Localizable.strings
 └── Widget/
-    └── OutkuWidget/
+    └── KiroWidget/
 ```
 
 ---

@@ -1,0 +1,12 @@
+{
+  "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/GTMAppAuth.build/Release-iphonesimulator/GTMAppAuth.build/DerivedSources/resource_bundle_accessor.swift" : {
+    "abi-baseline-json" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/GTMAppAuth.build/Release-iphonesimulator/GTMAppAuth.build/Objects-normal/arm64/GTMAppAuth.abi.json",
+    "const-values" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/GTMAppAuth.build/Release-iphonesimulator/GTMAppAuth.build/Objects-normal/arm64/GTMAppAuth-primary.swiftconstvalues",
+    "dependencies" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/GTMAppAuth.build/Release-iphonesimulator/GTMAppAuth.build/Objects-normal/arm64/GTMAppAuth-primary.d",
+    "diagnostics" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/GTMAppAuth.build/Release-iphonesimulator/GTMAppAuth.build/Objects-normal/arm64/GTMAppAuth-primary.dia",
+    "objc-header" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/GTMAppAuth.build/Release-iphonesimulator/GTMAppAuth.build/Objects-normal/arm64/GTMAppAuth-Swift.h",
+    "swiftdoc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/GTMAppAuth.build/Release-iphonesimulator/GTMAppAuth.build/Objects-normal/arm64/GTMAppAuth.swiftdoc",
+    "swiftmodule" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/GTMAppAuth.build/Release-iphonesimulator/GTMAppAuth.build/Objects-normal/arm64/GTMAppAuth.swiftmodule",
+    "swiftsourceinfo" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/GTMAppAuth.build/Release-iphonesimulator/GTMAppAuth.build/Objects-normal/arm64/GTMAppAuth.swiftsourceinfo"
+  }
+}

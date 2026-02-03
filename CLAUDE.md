@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Outku** is an iOS companion app for an E-ink hardware device. It helps remote workers build habits through AI-powered pixel pet companionship and gamified task management.
+**Kiro** is an iOS companion app for an E-ink hardware device. It helps remote workers build habits through AI-powered pixel pet companionship and gamified task management.
 
 - **Platform**: iOS 17.0+ (iPhone only)
 - **Language**: Swift 6.1+ with strict concurrency
@@ -18,15 +18,15 @@ When XcodeBuildMCP tools are available, prefer them over raw xcodebuild:
 ```javascript
 // Build and run on simulator (preferred)
 build_run_sim_name_ws({
-    workspacePath: "/path/to/Outku.xcworkspace",
-    scheme: "Outku",
+    workspacePath: "/path/to/Kiro.xcworkspace",
+    scheme: "Kiro",
     simulatorName: "iPhone 16 Pro"
 })
 
 // Run tests on simulator
 test_sim_name_ws({
-    workspacePath: "/path/to/Outku.xcworkspace",
-    scheme: "Outku",
+    workspacePath: "/path/to/Kiro.xcworkspace",
+    scheme: "Kiro",
     simulatorName: "iPhone 16 Pro"
 })
 ```
@@ -35,23 +35,23 @@ Fallback to raw commands when XcodeBuildMCP is unavailable:
 
 ```bash
 # Swift Package only (fast iteration)
-cd OutkuPackage && swift build
-cd OutkuPackage && swift test
+cd KiroPackage && swift build
+cd KiroPackage && swift test
 
 # Full app build - Simulator
-xcodebuild -workspace Outku.xcworkspace -scheme Outku \
+xcodebuild -workspace Kiro.xcworkspace -scheme Kiro \
   -destination 'platform=iOS Simulator,name=iPhone 16 Pro' build
 
 # Full app test
-xcodebuild -workspace Outku.xcworkspace -scheme Outku \
+xcodebuild -workspace Kiro.xcworkspace -scheme Kiro \
   -destination 'platform=iOS Simulator,name=iPhone 16 Pro' test
 
 # Real device build & deploy
-xcodebuild -workspace Outku.xcworkspace -scheme Outku \
+xcodebuild -workspace Kiro.xcworkspace -scheme Kiro \
   -destination 'platform=iOS,id=<DEVICE_ID>' -allowProvisioningUpdates build
 
 xcrun devicectl device install app --device <DEVICE_ID> \
-  ~/Library/Developer/Xcode/DerivedData/Outku-*/Build/Products/Debug-iphoneos/Outku.app
+  ~/Library/Developer/Xcode/DerivedData/Kiro-*/Build/Products/Debug-iphoneos/Kiro.app
 
 # List available devices
 xcrun xctrace list devices
@@ -62,13 +62,13 @@ xcrun xctrace list devices
 ### Workspace + SPM Package Structure
 
 ```
-outku3/
-├── Outku.xcworkspace/          # Open this in Xcode
-├── Outku/                      # App shell (minimal - just entry point)
-│   └── OutkuApp.swift
-├── OutkuPackage/               # ALL development happens here
+kiro3/
+├── Kiro.xcworkspace/          # Open this in Xcode
+├── Kiro/                      # App shell (minimal - just entry point)
+│   └── KiroApp.swift
+├── KiroPackage/               # ALL development happens here
 │   ├── Package.swift
-│   └── Sources/OutkuFeature/
+│   └── Sources/KiroFeature/
 │       ├── ContentView.swift   # Root view with environment injection
 │       ├── State/AppState.swift
 │       ├── Models/             # Pet, Task, Event, DayPack, EventLog, FocusSession
@@ -78,7 +78,7 @@ outku3/
 ├── Config/
 │   ├── Shared.xcconfig         # Bundle ID, version, deployment target
 │   ├── Secrets.xcconfig        # API keys (git-ignored)
-│   └── Outku.entitlements      # App capabilities
+│   └── Kiro.entitlements      # App capabilities
 └── docs/                       # Hardware specs, BLE protocol
 ```
 

@@ -1,0 +1,12 @@
+{
+  "/Users/demon/vibecoding/outku3/build/SourcePackages/checkouts/supabase-swift/Sources/Helpers/AnyJSON/AnyJSON+Codable.swift" : {
+    "abi-baseline-json" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/Supabase.build/Release-iphonesimulator/Helpers.build/Objects-normal/arm64/Helpers.abi.json",
+    "const-values" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/Supabase.build/Release-iphonesimulator/Helpers.build/Objects-normal/arm64/Helpers-primary.swiftconstvalues",
+    "dependencies" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/Supabase.build/Release-iphonesimulator/Helpers.build/Objects-normal/arm64/Helpers-primary.d",
+    "diagnostics" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/Supabase.build/Release-iphonesimulator/Helpers.build/Objects-normal/arm64/Helpers-primary.dia",
+    "objc-header" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/Supabase.build/Release-iphonesimulator/Helpers.build/Objects-normal/arm64/Helpers-Swift.h",
+    "swiftdoc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/Supabase.build/Release-iphonesimulator/Helpers.build/Objects-normal/arm64/Helpers.swiftdoc",
+    "swiftmodule" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/Supabase.build/Release-iphonesimulator/Helpers.build/Objects-normal/arm64/Helpers.swiftmodule",
+    "swiftsourceinfo" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/Supabase.build/Release-iphonesimulator/Helpers.build/Objects-normal/arm64/Helpers.swiftsourceinfo"
+  }
+}

@@ -7,7 +7,7 @@
 ## 1. 项目概述
 
 ### 1.1 产品定位
-- **产品名称**: Outku (智能 E-Paper 桌面伴侣)
+- **产品名称**: Kiro (智能 E-Paper 桌面伴侣)
 - **目标用户**: 美国/国际市场远程工作者 (Kickstarter 众筹)
 - **核心价值**: 通过 AI 驱动的像素宠物陪伴，帮助用户建立健康的工作习惯
 
@@ -304,11 +304,11 @@ App 状态 ──────同步──> Supabase (双向)
 ## 13. 附录
 
 ### 13.1 原型图参考
-- `/Users/demon/vibecoding/outku3/1.jpg` - Home 页面
-- `/Users/demon/vibecoding/outku3/2.jpg` - Haiku 区域
-- `/Users/demon/vibecoding/outku3/3.jpg` - Pet 页面
-- `/Users/demon/vibecoding/outku3/4.jpg` - Pet 状态详情
-- `/Users/demon/vibecoding/outku3/5.jpg` - Settings 页面
+- `/Users/demon/vibecoding/kiro3/1.jpg` - Home 页面
+- `/Users/demon/vibecoding/kiro3/2.jpg` - Haiku 区域
+- `/Users/demon/vibecoding/kiro3/3.jpg` - Pet 页面
+- `/Users/demon/vibecoding/kiro3/4.jpg` - Pet 状态详情
+- `/Users/demon/vibecoding/kiro3/5.jpg` - Settings 页面
 
 ### 13.2 参考资源
 - [Inku App](https://inku.app) - 设计参考

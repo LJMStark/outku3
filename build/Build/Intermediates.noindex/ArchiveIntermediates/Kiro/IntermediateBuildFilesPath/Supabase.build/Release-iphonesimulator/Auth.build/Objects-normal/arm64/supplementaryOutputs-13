@@ -1,0 +1,12 @@
+{
+  "/Users/demon/vibecoding/outku3/build/SourcePackages/checkouts/supabase-swift/Sources/Auth/AuthAdmin.swift" : {
+    "abi-baseline-json" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/Supabase.build/Release-iphonesimulator/Auth.build/Objects-normal/arm64/Auth.abi.json",
+    "const-values" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/Supabase.build/Release-iphonesimulator/Auth.build/Objects-normal/arm64/Auth-primary.swiftconstvalues",
+    "dependencies" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/Supabase.build/Release-iphonesimulator/Auth.build/Objects-normal/arm64/Auth-primary.d",
+    "diagnostics" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/Supabase.build/Release-iphonesimulator/Auth.build/Objects-normal/arm64/Auth-primary.dia",
+    "objc-header" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/Supabase.build/Release-iphonesimulator/Auth.build/Objects-normal/arm64/Auth-Swift.h",
+    "swiftdoc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/Supabase.build/Release-iphonesimulator/Auth.build/Objects-normal/arm64/Auth.swiftdoc",
+    "swiftmodule" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/Supabase.build/Release-iphonesimulator/Auth.build/Objects-normal/arm64/Auth.swiftmodule",
+    "swiftsourceinfo" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/Supabase.build/Release-iphonesimulator/Auth.build/Objects-normal/arm64/Auth.swiftsourceinfo"
+  }
+}

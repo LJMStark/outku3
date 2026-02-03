@@ -1,0 +1,16 @@
+{
+  "" : {
+    "const-values" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KeychainAccess.build/Release-iphonesimulator/KeychainAccess.build/Objects-normal/arm64/KeychainAccess-primary.swiftconstvalues",
+    "dependencies" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KeychainAccess.build/Release-iphonesimulator/KeychainAccess.build/Objects-normal/arm64/KeychainAccess-primary.d",
+    "diagnostics" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KeychainAccess.build/Release-iphonesimulator/KeychainAccess.build/Objects-normal/arm64/KeychainAccess-primary.dia",
+    "emit-module-dependencies" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KeychainAccess.build/Release-iphonesimulator/KeychainAccess.build/Objects-normal/arm64/KeychainAccess-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KeychainAccess.build/Release-iphonesimulator/KeychainAccess.build/Objects-normal/arm64/KeychainAccess-primary-emit-module.dia",
+    "pch" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KeychainAccess.build/Release-iphonesimulator/KeychainAccess.build/Objects-normal/arm64/KeychainAccess-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KeychainAccess.build/Release-iphonesimulator/KeychainAccess.build/Objects-normal/arm64/KeychainAccess-primary.swiftdeps"
+  },
+  "/Users/demon/vibecoding/outku3/build/SourcePackages/checkouts/KeychainAccess/Lib/KeychainAccess/Keychain.swift" : {
+    "index-unit-output-path" : "/KeychainAccess.build/Release-iphonesimulator/KeychainAccess.build/Objects-normal/arm64/Keychain.o",
+    "llvm-bc" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KeychainAccess.build/Release-iphonesimulator/KeychainAccess.build/Objects-normal/arm64/Keychain.bc",
+    "object" : "/Users/demon/vibecoding/outku3/build/Build/Intermediates.noindex/ArchiveIntermediates/Kiro/IntermediateBuildFilesPath/KeychainAccess.build/Release-iphonesimulator/KeychainAccess.build/Objects-normal/arm64/Keychain.o"
+  }
+}

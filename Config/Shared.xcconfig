@@ -6,9 +6,9 @@
 // ==========================================
 // Project Identity
 // ==========================================
-PRODUCT_NAME = Outku
-PRODUCT_DISPLAY_NAME = Outku
-PRODUCT_BUNDLE_IDENTIFIER = com.outku.app
+PRODUCT_NAME = Kiro
+PRODUCT_DISPLAY_NAME = Kiro
+PRODUCT_BUNDLE_IDENTIFIER = com.kiro.app
 MARKETING_VERSION = 1.0
 CURRENT_PROJECT_VERSION = 1
 
@@ -36,8 +36,8 @@ INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = UIInterfaceOrientationLand
 // ==========================================
 // Entitlements
 // ==========================================
-// AI agents can modify Config/Outku.entitlements to add capabilities
-CODE_SIGN_ENTITLEMENTS = Config/Outku.entitlements
+// AI agents can modify Config/Kiro.entitlements to add capabilities
+CODE_SIGN_ENTITLEMENTS = Config/Kiro.entitlements
 
 // ==========================================
 // Info.plist
