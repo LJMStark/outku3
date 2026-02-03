@@ -96,7 +96,7 @@ Outku is a habit-building companion device designed for remote workers. Through 
 |-----------|---------------|
 | Button Count | 1 scroll wheel button |
 | Button Type | Stepless scroll wheel + press confirm |
-| Button Position | Hardware team decides |
+| Button Position | Bottom of screen |
 | Scroll Function | Scroll to select list items |
 | Press Function | Confirm selection / Complete task |
 | Sensitivity | Dynamic adjustment (based on scroll speed) |
