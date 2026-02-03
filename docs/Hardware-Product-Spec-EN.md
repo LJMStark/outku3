@@ -655,6 +655,7 @@ void on_ble_data_received(uint8_t* data, size_t len) {
 |---------|------|---------|
 | v1.0.0 | 2026-01-30 | Initial version |
 | v1.1.0 | 2026-01-31 | Updated button config (power + scroll wheel), interaction flow, state machine, BLE events |
+| v1.1.1 | 2026-02-03 | Specified scroll wheel button position at bottom of screen |
 
 ---
 
