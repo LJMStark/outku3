@@ -1,4 +1,0 @@
-module third_party_IsAppEncrypted {
-umbrella "/Users/demon/vibecoding/outku3/build/SourcePackages/checkouts/GoogleUtilities/third_party/IsAppEncrypted/Public"
-export *
-}

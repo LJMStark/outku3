@@ -1,4 +1,0 @@
-module KiroFeature {
-header "KiroFeature-Swift.h"
-export *
-}

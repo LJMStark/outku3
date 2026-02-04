@@ -1,4 +1,0 @@
-module GoogleUtilities_UserDefaults {
-umbrella "/Users/demon/vibecoding/outku3/build/SourcePackages/checkouts/GoogleUtilities/GoogleUtilities/UserDefaults/Public"
-export *
-}
