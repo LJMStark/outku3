@@ -116,6 +116,10 @@
 	<array>
 		<string>bluetooth-central</string>
 	</array>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.kiro.app.ble.sync</string>
+	</array>
 
 	<!-- ==========================================
 	     Supabase Configuration

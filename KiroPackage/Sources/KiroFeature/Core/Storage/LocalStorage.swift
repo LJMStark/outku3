@@ -11,6 +11,12 @@ public actor LocalStorage {
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
 
+    private enum Keys {
+        static let lastEventLogTimestamp = "lastEventLogTimestamp"
+        static let lastDayPackHash = "lastDayPackHash"
+        static let lastBleSyncTime = "lastBleSyncTime"
+    }
+
     private var documentsDirectory: URL {
         fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
     }
@@ -171,13 +177,17 @@ public actor LocalStorage {
 
     /// 清除所有本地数据
     public func clearAll() throws {
-        let files = ["pet.json", "streak.json", "tasks.json", "events.json", "sync_state.json", "haiku_cache.json", "user_profile.json", "focus_sessions.json"]
+        let files = ["pet.json", "streak.json", "tasks.json", "events.json", "sync_state.json", "haiku_cache.json", "user_profile.json", "focus_sessions.json", "event_logs.json"]
         for file in files {
             let url = documentsDirectory.appendingPathComponent(file)
             if fileManager.fileExists(atPath: url.path) {
                 try fileManager.removeItem(at: url)
             }
         }
+
+        userDefaults.removeObject(forKey: Keys.lastEventLogTimestamp)
+        userDefaults.removeObject(forKey: Keys.lastDayPackHash)
+        userDefaults.removeObject(forKey: Keys.lastBleSyncTime)
     }
 
     // MARK: - Focus Sessions
@@ -197,6 +207,49 @@ public actor LocalStorage {
         }
         let data = try Data(contentsOf: url)
         return try decoder.decode([FocusSession].self, from: data)
+    }
+
+    // MARK: - Event Logs
+
+    public func saveEventLogs(_ logs: [EventLog]) throws {
+        let cappedLogs = Array(logs.suffix(1000))
+        let data = try encoder.encode(cappedLogs)
+        let url = documentsDirectory.appendingPathComponent("event_logs.json")
+        try data.write(to: url)
+    }
+
+    public func loadEventLogs() throws -> [EventLog]? {
+        let url = documentsDirectory.appendingPathComponent("event_logs.json")
+        guard fileManager.fileExists(atPath: url.path) else {
+            return nil
+        }
+        let data = try Data(contentsOf: url)
+        return try decoder.decode([EventLog].self, from: data)
+    }
+
+    public func saveLastEventLogTimestamp(_ timestamp: UInt32) {
+        userDefaults.set(Int(timestamp), forKey: Keys.lastEventLogTimestamp)
+    }
+
+    public func loadLastEventLogTimestamp() -> UInt32? {
+        let value = userDefaults.object(forKey: Keys.lastEventLogTimestamp) as? Int
+        return value.map { UInt32($0) }
+    }
+
+    public func saveLastDayPackHash(_ hash: String) {
+        userDefaults.set(hash, forKey: Keys.lastDayPackHash)
+    }
+
+    public func loadLastDayPackHash() -> String? {
+        userDefaults.string(forKey: Keys.lastDayPackHash)
+    }
+
+    public func saveLastBleSyncTime(_ date: Date) {
+        userDefaults.set(date, forKey: Keys.lastBleSyncTime)
+    }
+
+    public func loadLastBleSyncTime() -> Date? {
+        userDefaults.object(forKey: Keys.lastBleSyncTime) as? Date
     }
 }
 

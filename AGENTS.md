@@ -94,6 +94,12 @@ xcodebuild -workspace Kiro.xcworkspace -scheme Kiro \
   }
   ```
 
+### BLE Protocol & Sync (Hardware)
+- Always send BLE payloads through `BLEPacketizer` and assemble via `BLEPacketAssembler` (9-byte header + CRC16-CCITT-FALSE).
+- Use `BLESyncCoordinator` for scheduled sync (08:00–23:00 hourly; 23:00–08:00 every 4 hours; 30s window).
+- Gate DayPack refresh with `DayPack.stableFingerprint()` and `LocalStorage.lastDayPackHash`.
+- Background sync uses `BLEBackgroundSyncScheduler` and BGTask id `com.kiro.app.ble.sync`.
+
 ## 5. Code Style & Formatting
 
 ### Imports

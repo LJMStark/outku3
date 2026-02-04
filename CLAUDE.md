@@ -115,6 +115,11 @@ Views access via `@Environment(AppState.self)`, `@Environment(ThemeManager.self)
 | `SupabaseService` | Cloud data persistence |
 | `CloudKitService` | iCloud sync (lazy-loaded) |
 | `BLEService` | E-ink device communication |
+| `BLESyncCoordinator` | Scheduled BLE sync flow (connect, send, log fetch, disconnect) |
+| `BLESyncPolicy` | Time-window sync scheduling logic |
+| `BLEBackgroundSyncScheduler` | BGTask scheduling for BLE sync |
+| `BLEPacketizer` | BLE payload chunking + CRC header |
+| `BLEPacketAssembler` | Reassemble incoming chunks into payloads |
 | `DayPackGenerator` | Generate daily data for E-ink device |
 | `FocusSessionService` | Track task focus time with screen activity |
 
@@ -189,6 +194,18 @@ var body: some View {
 - Never use `Task {}` in `onAppear`
 - Ensure `Sendable` conformance for types crossing concurrency boundaries
 - Use `@unchecked Sendable` for thread-safe types that can't prove it to compiler
+
+## BLE Protocol & Sync (Hardware Requirements)
+
+- Packet header (9 bytes, big-endian): `type (UInt8)`, `messageId (UInt16)`, `seq (UInt8)`, `total (UInt8)`, `payloadLen (UInt16)`, `crc16 (UInt16)`
+- CRC16-CCITT-FALSE (poly `0x1021`, init `0xFFFF`, xorout `0x0000`, refin/refout `false`)
+- Always send via `BLEPacketizer` and assemble via `BLEPacketAssembler` before parsing payloads.
+- Event Log record format: `eventType (UInt8)`, `timestamp (UInt32, epoch seconds)`, `value (Int16, big-endian)`
+- BLE data types include `eventLogRequest` and `eventLogBatch` for incremental log sync.
+- Sync policy: 08:00–23:00 hourly; 23:00–08:00 every 4 hours; 30s connection window.
+  - Computed by `BLESyncPolicy`, executed by `BLESyncCoordinator`.
+- DayPack refresh must be gated by `DayPack.stableFingerprint()` and `LocalStorage.lastDayPackHash`.
+- BGTask identifier: `com.kiro.app.ble.sync` (requires `bluetooth-central` background mode).
 
 ## Theme System
 

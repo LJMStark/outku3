@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 // MARK: - Day Pack
@@ -52,6 +53,54 @@ public struct DayPack: Codable, Sendable {
         self.topTasks = topTasks
         self.companionPhrase = companionPhrase
         self.settlementData = settlementData
+    }
+
+    public func stableFingerprint() -> String {
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        let dateString = dateFormatter.string(from: date)
+
+        var parts: [String] = []
+        parts.append("date=\(dateString)")
+        parts.append("deviceMode=\(deviceMode.rawValue)")
+        parts.append("focusChallenge=\(focusChallengeEnabled)")
+
+        if let weatherInfo = weather {
+            parts.append("weather.temp=\(weatherInfo.temperature)")
+            parts.append("weather.high=\(weatherInfo.highTemp)")
+            parts.append("weather.low=\(weatherInfo.lowTemp)")
+            parts.append("weather.cond=\(weatherInfo.condition)")
+            parts.append("weather.icon=\(weatherInfo.iconName)")
+        } else {
+            parts.append("weather=none")
+        }
+
+        parts.append("morningGreeting=\(morningGreeting)")
+        parts.append("dailySummary=\(dailySummary)")
+        parts.append("firstItem=\(firstItem)")
+        parts.append("currentScheduleSummary=\(currentScheduleSummary ?? "")")
+        parts.append("companionPhrase=\(companionPhrase)")
+
+        parts.append("topTasks.count=\(topTasks.count)")
+        for task in topTasks {
+            parts.append("task.id=\(task.id)")
+            parts.append("task.title=\(task.title)")
+            parts.append("task.completed=\(task.isCompleted ? 1 : 0)")
+            parts.append("task.priority=\(task.priority)")
+            parts.append("task.due=\(task.dueTime ?? "")")
+        }
+
+        parts.append("settlement.completed=\(settlementData.tasksCompleted)")
+        parts.append("settlement.total=\(settlementData.tasksTotal)")
+        parts.append("settlement.points=\(settlementData.pointsEarned)")
+        parts.append("settlement.streak=\(settlementData.streakDays)")
+        parts.append("settlement.mood=\(settlementData.petMood)")
+        parts.append("settlement.summary=\(settlementData.summaryMessage)")
+        parts.append("settlement.encouragement=\(settlementData.encouragementMessage)")
+
+        let combined = parts.joined(separator: "|")
+        let digest = SHA256.hash(data: Data(combined.utf8))
+        return digest.map { String(format: "%02x", $0) }.joined()
     }
 }
 

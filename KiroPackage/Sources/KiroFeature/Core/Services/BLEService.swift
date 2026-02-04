@@ -56,6 +56,8 @@ public enum BLEDataType: UInt8, Sendable {
     case dayPack = 0x10
     case taskInPage = 0x11
     case deviceMode = 0x12
+    case eventLogRequest = 0x20
+    case eventLogBatch = 0x21
 }
 
 // MARK: - BLE Service UUIDs
@@ -92,6 +94,10 @@ public final class BLEService: NSObject {
     private var peripheralCache: [UUID: CBPeripheral] = [:]
     private var writeCharacteristic: CBCharacteristic?
     private var notifyCharacteristic: CBCharacteristic?
+    private var packetAssembler = BLEPacketAssembler()
+    private var nextMessageId: UInt16 = 1
+
+    private let localStorage = LocalStorage.shared
 
     private var scanCompletion: (([BLEDevice]) -> Void)?
     private var connectCompletion: ((Result<Void, BLEError>) -> Void)?
@@ -226,17 +232,30 @@ public final class BLEService: NSObject {
         cleanup()
     }
 
-    /// 尝试重新连接上次连接的设备
-    public func attemptAutoReconnect() async {
-        guard autoReconnect, let deviceID = lastConnectedDeviceID else { return }
+    /// 扫描并连接上次连接的设备，若不可用则连接第一个设备
+    public func connectToPreferredDevice(timeout: TimeInterval = 10) async throws {
+        let devices = try await scanForDevices(timeout: timeout)
+        guard !devices.isEmpty else {
+            throw BLEError.deviceNotFound
+        }
+
+        if let deviceID = lastConnectedDeviceID,
+           let device = devices.first(where: { $0.id == deviceID }) {
+            try await connect(to: device)
+        } else if let device = devices.first {
+            try await connect(to: device)
+        }
+    }
+
+    /// 尝试自动重连，返回是否成功
+    public func attemptAutoReconnect() async -> Bool {
+        guard autoReconnect else { return false }
 
         do {
-            let devices = try await scanForDevices(timeout: 5)
-            if let device = devices.first(where: { $0.id == deviceID }) {
-                try await connect(to: device)
-            }
+            try await connectToPreferredDevice(timeout: 5)
+            return true
         } catch {
-            // 自动重连失败，静默处理
+            return false
         }
     }
 
@@ -282,6 +301,10 @@ public final class BLEService: NSObject {
         lastSyncTime = Date()
     }
 
+    public func updateLastSyncTime(_ date: Date) {
+        lastSyncTime = date
+    }
+
     // MARK: - Day Pack Transfer
 
     /// 发送 Day Pack 到 E-ink 设备
@@ -303,6 +326,18 @@ public final class BLEService: NSObject {
         try await writeData(type: .deviceMode, data: data)
     }
 
+    /// 请求设备回传 Event Log（增量）
+    public func requestEventLogs(since timestamp: UInt32) async throws {
+        var data = Data()
+        data.append(contentsOf: withUnsafeBytes(of: timestamp.bigEndian) { Array($0) })
+        try await writeData(type: .eventLogRequest, data: data)
+    }
+
+    public func requestEventLogsIfNeeded() async {
+        let since = await localStorage.loadLastEventLogTimestamp() ?? 0
+        try? await requestEventLogs(since: since)
+    }
+
     // MARK: - Private Methods
 
     private func writeData(type: BLEDataType, data: Data) async throws {
@@ -312,13 +347,26 @@ public final class BLEService: NSObject {
             throw BLEError.notConnected
         }
 
-        // 构建数据包：[类型(1字节)] + [长度(2字节)] + [数据]
-        var packet = Data()
-        packet.append(type.rawValue)
-        let length = UInt16(data.count)
-        packet.append(contentsOf: withUnsafeBytes(of: length.bigEndian) { Array($0) })
-        packet.append(data)
+        let maxLength = peripheral.maximumWriteValueLength(for: .withResponse)
+        let maxChunk = max(1, maxLength - BLEPacketizer.headerSize)
+        let messageId = nextMessageIdentifier()
+        let packets = try BLEPacketizer.packetize(
+            type: type.rawValue,
+            messageId: messageId,
+            payload: data,
+            maxChunkSize: maxChunk
+        )
 
+        for packet in packets {
+            try await writePacket(packet, peripheral: peripheral, characteristic: characteristic)
+        }
+    }
+
+    private func writePacket(
+        _ packet: Data,
+        peripheral: CBPeripheral,
+        characteristic: CBCharacteristic
+    ) async throws {
         return try await withCheckedThrowingContinuation { continuation in
             writeCompletion = { result in
                 switch result {
@@ -330,6 +378,12 @@ public final class BLEService: NSObject {
             }
             peripheral.writeValue(packet, for: characteristic, type: .withResponse)
         }
+    }
+
+    private func nextMessageIdentifier() -> UInt16 {
+        let current = nextMessageId
+        nextMessageId = nextMessageId == UInt16.max ? 1 : nextMessageId + 1
+        return current
     }
 
     private func cleanup() {
@@ -459,7 +513,14 @@ public final class BLEService: NSObject {
 
     // MARK: - Event Log Parsing
 
-    private func parseEventLog(from data: Data) -> EventLog? {
+    private func parseEventLogRecord(from data: Data) -> EventLog? {
+        if let record = EventLog.parseRecord(from: data) {
+            return record
+        }
+        return parseLegacyEventLog(from: data)
+    }
+
+    private func parseLegacyEventLog(from data: Data) -> EventLog? {
         guard data.count >= 2 else { return nil }
 
         let eventTypeByte = data[0]
@@ -468,25 +529,24 @@ public final class BLEService: NSObject {
         var taskId: String?
         var timestamp: Date = Date()
 
-        if data.count > 2 {
-            let taskIdLength = Int(data[1])
-            if data.count >= 2 + taskIdLength {
-                let taskIdData = data.subdata(in: 2..<(2 + taskIdLength))
-                taskId = String(data: taskIdData, encoding: .utf8)
+        let taskIdLength = Int(data[1])
+        if data.count >= 2 + taskIdLength {
+            let taskIdData = data.subdata(in: 2..<(2 + taskIdLength))
+            taskId = String(data: taskIdData, encoding: .utf8)
 
-                let timestampOffset = 2 + taskIdLength
-                if data.count >= timestampOffset + 4 {
-                    let timestampData = data.subdata(in: timestampOffset..<(timestampOffset + 4))
-                    let timestampInt = timestampData.withUnsafeBytes { $0.load(as: UInt32.self).bigEndian }
-                    timestamp = Date(timeIntervalSince1970: TimeInterval(timestampInt))
-                }
+            let timestampOffset = 2 + taskIdLength
+            if data.count >= timestampOffset + 4 {
+                let timestampData = data.subdata(in: timestampOffset..<(timestampOffset + 4))
+                let timestampInt = timestampData.withUnsafeBytes { $0.load(as: UInt32.self).bigEndian }
+                timestamp = Date(timeIntervalSince1970: TimeInterval(timestampInt))
             }
         }
 
         return EventLog(
             eventType: eventType,
             taskId: taskId,
-            timestamp: timestamp
+            timestamp: timestamp,
+            value: 0
         )
     }
 }
@@ -499,7 +559,7 @@ extension BLEService: CBCentralManagerDelegate {
             switch central.state {
             case .poweredOn:
                 if autoReconnect {
-                    await attemptAutoReconnect()
+                    _ = await attemptAutoReconnect()
                 }
             case .poweredOff:
                 connectionState = .error("Bluetooth is turned off")
@@ -569,7 +629,7 @@ extension BLEService: CBCentralManagerDelegate {
 
             cleanup()
             if autoReconnect {
-                await attemptAutoReconnect()
+                _ = await attemptAutoReconnect()
             }
         }
     }
@@ -632,6 +692,10 @@ extension BLEService: CBPeripheralDelegate {
                 lastConnectedDeviceID = peripheralID
                 connectCompletion?(.success(()))
                 connectCompletion = nil
+
+                Task { @MainActor in
+                    await self.requestEventLogsIfNeeded()
+                }
             } else {
                 connectCompletion?(.failure(.characteristicNotFound))
                 connectCompletion = nil
@@ -663,20 +727,72 @@ extension BLEService: CBPeripheralDelegate {
 
         Task { @MainActor in
             guard error == nil, let receivedData = data else { return }
-            handleReceivedData(receivedData)
+            if let message = packetAssembler.append(packetData: receivedData) {
+                handleReceivedPayload(message)
+            } else if let eventLog = parseEventLogRecord(from: receivedData) {
+                handleEventLogs([eventLog])
+            }
         }
     }
 
     @MainActor
-    private func handleReceivedData(_ data: Data) {
-        // 处理从 E-ink 设备接收的数据
-        // 解析 Event Log 并通知回调
-        if let eventLog = parseEventLog(from: data) {
-            // 处理专注会话相关事件
-            handleFocusSessionEvent(eventLog)
+    private func handleReceivedPayload(_ message: BLEReceivedMessage) {
+        guard let dataType = BLEDataType(rawValue: message.type) else { return }
 
-            // 通知外部回调
-            onEventLogReceived?(eventLog)
+        switch dataType {
+        case .eventLogBatch:
+            handleEventLogBatch(message.payload)
+        default:
+            break
+        }
+    }
+
+    @MainActor
+    private func handleEventLogBatch(_ payload: Data) {
+        guard payload.count >= 1 else { return }
+        let count = Int(payload[0])
+        var offset = 1
+        var logs: [EventLog] = []
+
+        for _ in 0..<count {
+            guard payload.count >= offset + 7 else { break }
+            let record = payload.subdata(in: offset..<(offset + 7))
+            if let eventLog = parseEventLogRecord(from: record) {
+                logs.append(eventLog)
+            }
+            offset += 7
+        }
+
+        guard !logs.isEmpty else { return }
+
+        handleEventLogs(logs)
+    }
+
+    @MainActor
+    private func persistEventLogs(_ logs: [EventLog]) async {
+        let lastTimestamp = await localStorage.loadLastEventLogTimestamp() ?? 0
+        let filtered = logs.filter { UInt32($0.timestamp.timeIntervalSince1970) > lastTimestamp }
+        guard !filtered.isEmpty else { return }
+
+        let existing = (try? await localStorage.loadEventLogs()) ?? []
+        let merged = Array((existing + filtered).suffix(1000))
+        try? await localStorage.saveEventLogs(merged)
+
+        let maxTimestamp = filtered
+            .map { UInt32($0.timestamp.timeIntervalSince1970) }
+            .max() ?? lastTimestamp
+        await localStorage.saveLastEventLogTimestamp(maxTimestamp)
+    }
+
+    @MainActor
+    private func handleEventLogs(_ logs: [EventLog]) {
+        Task { @MainActor in
+            await persistEventLogs(logs)
+        }
+
+        for log in logs {
+            handleFocusSessionEvent(log)
+            onEventLogReceived?(log)
         }
     }
 
