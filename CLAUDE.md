@@ -1,6 +1,7 @@
 # CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+For agent workflow and interaction rules, see `AGENTS.md`.
 
 ## Project Overview
 
@@ -18,16 +19,16 @@ When XcodeBuildMCP tools are available, prefer them over raw xcodebuild:
 ```javascript
 // Build and run on simulator (preferred)
 build_run_sim_name_ws({
-    workspacePath: "/path/to/Kiro.xcworkspace",
+    workspacePath: "/Users/demon/vibecoding/outku3/Kiro.xcworkspace",
     scheme: "Kiro",
-    simulatorName: "iPhone 16 Pro"
+    simulatorName: "iPhone 17 Pro"
 })
 
 // Run tests on simulator
 test_sim_name_ws({
-    workspacePath: "/path/to/Kiro.xcworkspace",
+    workspacePath: "/Users/demon/vibecoding/outku3/Kiro.xcworkspace",
     scheme: "Kiro",
-    simulatorName: "iPhone 16 Pro"
+    simulatorName: "iPhone 17 Pro"
 })
 ```
 
@@ -40,11 +41,11 @@ cd KiroPackage && swift test
 
 # Full app build - Simulator
 xcodebuild -workspace Kiro.xcworkspace -scheme Kiro \
-  -destination 'platform=iOS Simulator,name=iPhone 16 Pro' build
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
 
 # Full app test
 xcodebuild -workspace Kiro.xcworkspace -scheme Kiro \
-  -destination 'platform=iOS Simulator,name=iPhone 16 Pro' test
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test
 
 # Real device build & deploy
 xcodebuild -workspace Kiro.xcworkspace -scheme Kiro \
@@ -62,7 +63,7 @@ xcrun xctrace list devices
 ### Workspace + SPM Package Structure
 
 ```
-kiro3/
+outku3/
 ├── Kiro.xcworkspace/          # Open this in Xcode
 ├── Kiro/                      # App shell (minimal - just entry point)
 │   └── KiroApp.swift

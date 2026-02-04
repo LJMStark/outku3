@@ -2,7 +2,22 @@
 
 This file provides essential context, commands, and rules for AI agents working on the Kiro iOS codebase.
 
-## 1. Project Context
+## 1. Core Philosophy
+- **Agent-First**: Delegate complex work to specialized agents.
+- **Parallel Execution**: Use multi-agent tasks when possible.
+- **Plan Before Execute**: Make a plan for complex operations.
+- **Test-Driven**: Write tests before implementation; target 80%+ coverage; include unit + integration + E2E for critical flows.
+- **Security-First**: Never compromise on security.
+
+### Personal Preferences
+- No emojis in code, comments, or documentation.
+- Prefer immutability; avoid mutating objects or arrays where practical.
+- Many small files over few large files (200–400 lines typical, 800 max).
+- Conventional commits: `feat:`, `fix:`, `refactor:`, `docs:`, `test:`.
+- Always run tests locally before committing.
+- Small, focused commits.
+
+## 2. Project Context
 - **Name**: Kiro (iOS Companion App for E-ink Device)
 - **Architecture**: Workspace + SPM Package (`Kiro.xcworkspace` + `KiroPackage`)
   - **App Shell**: `Kiro/` (Minimal entry point)
@@ -13,7 +28,7 @@ This file provides essential context, commands, and rules for AI agents working 
   - **State**: `@Observable` singletons (`AppState`, `ThemeManager`, `AuthManager`) injected via `.environment()`
   - **Testing**: Swift Testing Framework (`@Test`, `#expect`) - **NO XCTest**
 
-## 2. Tools & Commands
+## 3. Tools & Commands
 
 ### Build & Run
 Prefer `XcodeBuildMCP` tools when available. Fallback to CLI otherwise.
@@ -54,7 +69,7 @@ xcodebuild -workspace Kiro.xcworkspace -scheme Kiro \
   test -only-testing:KiroFeatureTests/MyTestSuite/testMethod
 ```
 
-## 3. Critical Architecture Rules
+## 4. Critical Architecture Rules
 
 ### ❌ Forbidden Patterns
 - **NO ViewModels**: Use `@Observable` models directly in Views.
@@ -79,7 +94,7 @@ xcodebuild -workspace Kiro.xcworkspace -scheme Kiro \
   }
   ```
 
-## 4. Code Style & Formatting
+## 5. Code Style & Formatting
 
 ### Imports
 ```swift
@@ -98,7 +113,7 @@ import Testing // For test files
 - Propagate errors using `throws`.
 - **Never** suppress errors with `try?` or `try!` in critical logic without comments.
 
-## 5. Development Workflow
+## 6. Development Workflow
 
 1.  **Check Rules**: Read `.cursor/rules/` for specific domain rules (Concurrency, SwiftUI, Testing).
 2.  **Implementation**:
@@ -111,12 +126,11 @@ import Testing // For test files
     -   Secrets go in `Config/Secrets.xcconfig`.
     -   Capabilities go in `Config/Kiro.entitlements`.
 
-## 6. Reference Files
+## 7. Reference Files
 - **Primary Guide**: `CLAUDE.md` (Read this first)
 - **Cursor Rules**: `.cursor/rules/*.mdc`
 - **Copilot Rules**: `.github/copilot-instructions.md`
 
-## 7. Interaction Rules (CRITICAL)
+## 8. Interaction Rules (CRITICAL)
 - **Addressing**: Always address the user as **B哥** at the start of every response.
 - **Language**: All responses must be in **Chinese** (Simplified).
-
