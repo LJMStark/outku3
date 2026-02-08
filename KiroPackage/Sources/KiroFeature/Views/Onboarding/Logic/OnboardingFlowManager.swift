@@ -1,5 +1,4 @@
 import SwiftUI
-import Observation
 
 // MARK: - Onboarding Step
 
@@ -50,6 +49,7 @@ public class OnboardingFlowManager {
     // Task Management
     private var revealTask: Task<Void, Never>?
     private var dialogTask: Task<Void, Never>?
+    private var pendingTask: Task<Void, Never>?
 
     // Dependencies
     private var appState: AppState?
@@ -99,7 +99,7 @@ public class OnboardingFlowManager {
             selectedWorkType = type
         }
         // Auto-advance after selection
-        Task { @MainActor in
+        pendingTask = Task { @MainActor in
             try? await delay(0.3)
             goToNextStep()
         }
@@ -120,7 +120,7 @@ public class OnboardingFlowManager {
             selectedCompanionStyle = style
         }
         // Auto-advance after selection
-        Task { @MainActor in
+        pendingTask = Task { @MainActor in
             try? await delay(0.3)
             goToNextStep()
         }
@@ -155,6 +155,14 @@ public class OnboardingFlowManager {
         showNextAwakeningDialog()
     }
 
+    public func skipAwakening() {
+        dialogTask?.cancel()
+        dialogText = ""
+        isTyping = false
+        showChoices = false
+        goToNextStep()
+    }
+
     // MARK: - Naming & Reveal
 
     public func confirmName() {
@@ -177,9 +185,6 @@ public class OnboardingFlowManager {
         isShadowMode = false
         isRevealed = true
 
-        // Update pet name
-        appState?.pet.name = petName
-
         withAnimation(.easeOut(duration: 1.0)) {
             showFlash = false
         }
@@ -196,8 +201,11 @@ public class OnboardingFlowManager {
     // MARK: - Complete Onboarding
 
     public func completeOnboarding() {
-        // Save user profile to AppState
+        // Save all user data to AppState
         guard let appState = appState else { return }
+
+        // Save pet name
+        appState.pet.name = petName
 
         let profile = UserProfile(
             workType: selectedWorkType ?? .other,
@@ -245,6 +253,7 @@ public class OnboardingFlowManager {
     public func cancelAllTasks() {
         revealTask?.cancel()
         dialogTask?.cancel()
+        pendingTask?.cancel()
     }
 
     // MARK: - Validation

@@ -3,6 +3,14 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 For agent workflow and interaction rules, see `AGENTS.md`.
 
+## Forbidden Patterns
+
+- **NO ViewModels**: Use `@Observable` models directly in Views
+- **NO `Task { }` in `onAppear`**: Use `.task` modifier
+- **NO CoreData**: Use SwiftData or raw persistence
+- **NO XCTest**: Use Swift Testing (`import Testing`)
+- **NO Combine**: Unless strictly necessary
+
 ## Project Overview
 
 **Kiro** is an iOS companion app for an E-ink hardware device. It helps remote workers build habits through AI-powered pixel pet companionship and gamified task management.
@@ -46,6 +54,14 @@ xcodebuild -workspace Kiro.xcworkspace -scheme Kiro \
 # Full app test
 xcodebuild -workspace Kiro.xcworkspace -scheme Kiro \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test
+
+# Run single test (package - fast)
+cd KiroPackage && swift test --filter "AppStateTests/testToggleTaskCompletion"
+
+# Run single test (simulator - thorough)
+xcodebuild -workspace Kiro.xcworkspace -scheme Kiro \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  test -only-testing:KiroFeatureTests/AppStateTests/testToggleTaskCompletion
 
 # Real device build & deploy
 xcodebuild -workspace Kiro.xcworkspace -scheme Kiro \
@@ -115,7 +131,9 @@ Views access via `@Environment(AppState.self)`, `@Environment(ThemeManager.self)
 | `SupabaseService` | Cloud data persistence |
 | `CloudKitService` | iCloud sync (lazy-loaded) |
 | `BLEService` | E-ink device communication |
-| `BLESyncCoordinator` | Scheduled BLE sync flow (connect, send, log fetch, disconnect) |
+| `BLEDataEncoder` | Data encoding (Pet, Task, DayPack) |
+| `BLEEventHandler` | Event parsing, Focus Session events |
+| `BLESyncCoordinator` | Scheduled BLE sync flow with retry |
 | `BLESyncPolicy` | Time-window sync scheduling logic |
 | `BLEBackgroundSyncScheduler` | BGTask scheduling for BLE sync |
 | `BLEPacketizer` | BLE payload chunking + CRC header |

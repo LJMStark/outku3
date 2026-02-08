@@ -2,17 +2,22 @@ import Foundation
 
 // MARK: - BLE Packet
 
-struct BLEReceivedMessage: Sendable {
-    let type: UInt8
-    let payload: Data
+public struct BLEReceivedMessage: Sendable {
+    public let type: UInt8
+    public let payload: Data
+
+    public init(type: UInt8, payload: Data) {
+        self.type = type
+        self.payload = payload
+    }
 }
 
 // MARK: - BLE Packetizer
 
-enum BLEPacketizer {
-    static let headerSize: Int = 9
+public enum BLEPacketizer {
+    public static let headerSize: Int = 9
 
-    static func packetize(
+    public static func packetize(
         type: UInt8,
         messageId: UInt16,
         payload: Data,
@@ -59,7 +64,7 @@ enum BLEPacketizer {
 
 // MARK: - BLE Packet Assembler
 
-final class BLEPacketAssembler {
+public final class BLEPacketAssembler {
     private struct Assembly {
         let type: UInt8
         let total: UInt8
@@ -78,7 +83,9 @@ final class BLEPacketAssembler {
 
     private var messages: [UInt16: Assembly] = [:]
 
-    func append(packetData: Data) -> BLEReceivedMessage? {
+    public init() {}
+
+    public func append(packetData: Data) -> BLEReceivedMessage? {
         guard packetData.count >= BLEPacketizer.headerSize else { return nil }
 
         let type = packetData[0]
@@ -128,7 +135,7 @@ final class BLEPacketAssembler {
 
 // MARK: - BLE Packet Error
 
-enum BLEPacketError: Error {
+public enum BLEPacketError: Error {
     case invalidChunkSize
     case payloadTooLarge
 }

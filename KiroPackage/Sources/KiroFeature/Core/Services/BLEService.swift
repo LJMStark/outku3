@@ -1,17 +1,6 @@
 @preconcurrency import CoreBluetooth
 import Foundation
 
-// MARK: - Data Extension for BLE Encoding
-
-private extension Data {
-    /// 追加带长度前缀的字符串数据（截断到指定最大长度）
-    mutating func appendString(_ string: String, maxLength: Int) {
-        let stringData = string.data(using: .utf8) ?? Data()
-        append(UInt8(Swift.min(stringData.count, maxLength)))
-        append(stringData.prefix(maxLength))
-    }
-}
-
 // MARK: - BLE Device
 
 /// E-ink 设备信息
@@ -263,31 +252,31 @@ public final class BLEService: NSObject {
 
     /// 发送宠物状态到 E-ink 设备
     public func sendPetStatus(_ pet: Pet) async throws {
-        let data = encodePetStatus(pet)
+        let data = BLEDataEncoder.encodePetStatus(pet)
         try await writeData(type: .petStatus, data: data)
     }
 
     /// 发送任务列表到 E-ink 设备
     public func sendTaskList(_ tasks: [TaskItem]) async throws {
-        let data = encodeTaskList(tasks)
+        let data = BLEDataEncoder.encodeTaskList(tasks)
         try await writeData(type: .taskList, data: data)
     }
 
     /// 发送日程到 E-ink 设备
     public func sendSchedule(_ events: [CalendarEvent]) async throws {
-        let data = encodeSchedule(events)
+        let data = BLEDataEncoder.encodeSchedule(events)
         try await writeData(type: .schedule, data: data)
     }
 
     /// 发送天气信息到 E-ink 设备
     public func sendWeather(_ weather: Weather) async throws {
-        let data = encodeWeather(weather)
+        let data = BLEDataEncoder.encodeWeather(weather)
         try await writeData(type: .weather, data: data)
     }
 
     /// 同步当前时间到 E-ink 设备
     public func syncTime() async throws {
-        let data = encodeCurrentTime()
+        let data = BLEDataEncoder.encodeCurrentTime()
         try await writeData(type: .time, data: data)
     }
 
@@ -309,27 +298,25 @@ public final class BLEService: NSObject {
 
     /// 发送 Day Pack 到 E-ink 设备
     public func sendDayPack(_ dayPack: DayPack) async throws {
-        let data = encodeDayPack(dayPack)
+        let data = BLEDataEncoder.encodeDayPack(dayPack)
         try await writeData(type: .dayPack, data: data)
     }
 
     /// 发送 Task In 页面数据到 E-ink 设备
     public func sendTaskInPage(_ taskInPage: TaskInPageData) async throws {
-        let data = encodeTaskInPage(taskInPage)
+        let data = BLEDataEncoder.encodeTaskInPage(taskInPage)
         try await writeData(type: .taskInPage, data: data)
     }
 
     /// 发送设备模式到 E-ink 设备
     public func sendDeviceMode(_ mode: DeviceMode) async throws {
-        var data = Data()
-        data.append(mode == .interactive ? 0x00 : 0x01)
+        let data = BLEDataEncoder.encodeDeviceMode(mode)
         try await writeData(type: .deviceMode, data: data)
     }
 
     /// 请求设备回传 Event Log（增量）
     public func requestEventLogs(since timestamp: UInt32) async throws {
-        var data = Data()
-        data.append(contentsOf: withUnsafeBytes(of: timestamp.bigEndian) { Array($0) })
+        let data = BLEDataEncoder.encodeEventLogRequest(since: timestamp)
         try await writeData(type: .eventLogRequest, data: data)
     }
 
@@ -392,162 +379,6 @@ public final class BLEService: NSObject {
         notifyCharacteristic = nil
         connectedDevice = nil
         connectionState = .disconnected
-    }
-
-    // MARK: - Data Encoding
-
-    private func encodePetStatus(_ pet: Pet) -> Data {
-        var data = Data()
-        data.appendString(pet.name, maxLength: 20)
-        data.append(pet.mood.rawValue.first?.asciiValue ?? 0)
-        data.append(pet.stage.rawValue.first?.asciiValue ?? 0)
-        data.append(UInt8(min(Int(pet.progress * 100), 255)))
-        return data
-    }
-
-    private func encodeTaskList(_ tasks: [TaskItem]) -> Data {
-        var data = Data()
-        let todayTasks = tasks.filter { $0.dueDate.map { Calendar.current.isDateInToday($0) } ?? false }
-        data.append(UInt8(min(todayTasks.count, 10)))
-
-        for task in todayTasks.prefix(10) {
-            data.appendString(task.title, maxLength: 30)
-            data.append(task.isCompleted ? 1 : 0)
-        }
-        return data
-    }
-
-    private func encodeSchedule(_ events: [CalendarEvent]) -> Data {
-        var data = Data()
-        let todayEvents = events.filter { Calendar.current.isDateInToday($0.startTime) }
-        data.append(UInt8(min(todayEvents.count, 8)))
-
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm"
-
-        for event in todayEvents.prefix(8) {
-            data.appendString(event.title, maxLength: 25)
-            data.append(formatter.string(from: event.startTime).data(using: .utf8) ?? Data())
-        }
-        return data
-    }
-
-    private func encodeWeather(_ weather: Weather) -> Data {
-        var data = Data()
-        let temp = Int8(clamping: weather.temperature)
-        data.append(contentsOf: withUnsafeBytes(of: temp) { Array($0) })
-        data.appendString(weather.condition.rawValue, maxLength: 15)
-        return data
-    }
-
-    private func encodeCurrentTime() -> Data {
-        var data = Data()
-        let components = Calendar.current.dateComponents(
-            [.year, .month, .day, .hour, .minute, .second],
-            from: Date()
-        )
-        data.append(UInt8((components.year ?? 2024) - 2000))
-        data.append(UInt8(components.month ?? 1))
-        data.append(UInt8(components.day ?? 1))
-        data.append(UInt8(components.hour ?? 0))
-        data.append(UInt8(components.minute ?? 0))
-        data.append(UInt8(components.second ?? 0))
-        return data
-    }
-
-    private func encodeDayPack(_ dayPack: DayPack) -> Data {
-        var data = Data()
-
-        // Header
-        let dateComponents = Calendar.current.dateComponents([.year, .month, .day], from: dayPack.date)
-        data.append(UInt8((dateComponents.year ?? 2024) - 2000))
-        data.append(UInt8(dateComponents.month ?? 1))
-        data.append(UInt8(dateComponents.day ?? 1))
-
-        // Device mode
-        data.append(dayPack.deviceMode == .interactive ? 0x00 : 0x01)
-
-        // Focus challenge flag
-        data.append(dayPack.focusChallengeEnabled ? 0x01 : 0x00)
-
-        // Page 1: Start of Day
-        data.appendString(dayPack.morningGreeting, maxLength: 50)
-        data.appendString(dayPack.dailySummary, maxLength: 60)
-        data.appendString(dayPack.firstItem, maxLength: 40)
-
-        // Page 2: Overview
-        data.appendString(dayPack.currentScheduleSummary ?? "", maxLength: 30)
-        data.appendString(dayPack.companionPhrase, maxLength: 40)
-
-        // Top tasks (max 3)
-        data.append(UInt8(min(dayPack.topTasks.count, 3)))
-        for task in dayPack.topTasks.prefix(3) {
-            data.appendString(task.id, maxLength: 36)
-            data.appendString(task.title, maxLength: 30)
-            data.append(task.isCompleted ? 0x01 : 0x00)
-            data.append(UInt8(task.priority))
-        }
-
-        // Page 4: Settlement
-        data.append(UInt8(dayPack.settlementData.tasksCompleted))
-        data.append(UInt8(dayPack.settlementData.tasksTotal))
-        let points = UInt16(min(dayPack.settlementData.pointsEarned, 65535))
-        data.append(contentsOf: withUnsafeBytes(of: points.bigEndian) { Array($0) })
-        data.append(UInt8(dayPack.settlementData.streakDays))
-        data.appendString(dayPack.settlementData.summaryMessage, maxLength: 50)
-        data.appendString(dayPack.settlementData.encouragementMessage, maxLength: 50)
-
-        return data
-    }
-
-    private func encodeTaskInPage(_ taskInPage: TaskInPageData) -> Data {
-        var data = Data()
-        data.appendString(taskInPage.taskId, maxLength: 36)
-        data.appendString(taskInPage.taskTitle, maxLength: 40)
-        data.appendString(taskInPage.taskDescription ?? "", maxLength: 100)
-        data.appendString(taskInPage.estimatedDuration ?? "", maxLength: 10)
-        data.appendString(taskInPage.encouragement, maxLength: 50)
-        data.append(taskInPage.focusChallengeActive ? 0x01 : 0x00)
-        return data
-    }
-
-    // MARK: - Event Log Parsing
-
-    private func parseEventLogRecord(from data: Data) -> EventLog? {
-        if let record = EventLog.parseRecord(from: data) {
-            return record
-        }
-        return parseLegacyEventLog(from: data)
-    }
-
-    private func parseLegacyEventLog(from data: Data) -> EventLog? {
-        guard data.count >= 2 else { return nil }
-
-        let eventTypeByte = data[0]
-        guard let eventType = EventLogType(rawByte: eventTypeByte) else { return nil }
-
-        var taskId: String?
-        var timestamp: Date = Date()
-
-        let taskIdLength = Int(data[1])
-        if data.count >= 2 + taskIdLength {
-            let taskIdData = data.subdata(in: 2..<(2 + taskIdLength))
-            taskId = String(data: taskIdData, encoding: .utf8)
-
-            let timestampOffset = 2 + taskIdLength
-            if data.count >= timestampOffset + 4 {
-                let timestampData = data.subdata(in: timestampOffset..<(timestampOffset + 4))
-                let timestampInt = timestampData.withUnsafeBytes { $0.load(as: UInt32.self).bigEndian }
-                timestamp = Date(timeIntervalSince1970: TimeInterval(timestampInt))
-            }
-        }
-
-        return EventLog(
-            eventType: eventType,
-            taskId: taskId,
-            timestamp: timestamp,
-            value: 0
-        )
     }
 }
 
@@ -728,102 +559,10 @@ extension BLEService: CBPeripheralDelegate {
         Task { @MainActor in
             guard error == nil, let receivedData = data else { return }
             if let message = packetAssembler.append(packetData: receivedData) {
-                handleReceivedPayload(message)
-            } else if let eventLog = parseEventLogRecord(from: receivedData) {
-                handleEventLogs([eventLog])
+                BLEEventHandler.handleReceivedPayload(message, service: self)
+            } else if let eventLog = BLEEventHandler.parseEventLogRecord(from: receivedData) {
+                BLEEventHandler.handleEventLogs([eventLog], service: self)
             }
-        }
-    }
-
-    @MainActor
-    private func handleReceivedPayload(_ message: BLEReceivedMessage) {
-        guard let dataType = BLEDataType(rawValue: message.type) else { return }
-
-        switch dataType {
-        case .eventLogBatch:
-            handleEventLogBatch(message.payload)
-        default:
-            break
-        }
-    }
-
-    @MainActor
-    private func handleEventLogBatch(_ payload: Data) {
-        guard payload.count >= 1 else { return }
-        let count = Int(payload[0])
-        var offset = 1
-        var logs: [EventLog] = []
-
-        for _ in 0..<count {
-            guard payload.count >= offset + 7 else { break }
-            let record = payload.subdata(in: offset..<(offset + 7))
-            if let eventLog = parseEventLogRecord(from: record) {
-                logs.append(eventLog)
-            }
-            offset += 7
-        }
-
-        guard !logs.isEmpty else { return }
-
-        handleEventLogs(logs)
-    }
-
-    @MainActor
-    private func persistEventLogs(_ logs: [EventLog]) async {
-        let lastTimestamp = await localStorage.loadLastEventLogTimestamp() ?? 0
-        let filtered = logs.filter { UInt32($0.timestamp.timeIntervalSince1970) > lastTimestamp }
-        guard !filtered.isEmpty else { return }
-
-        let existing = (try? await localStorage.loadEventLogs()) ?? []
-        let merged = Array((existing + filtered).suffix(1000))
-        try? await localStorage.saveEventLogs(merged)
-
-        let maxTimestamp = filtered
-            .map { UInt32($0.timestamp.timeIntervalSince1970) }
-            .max() ?? lastTimestamp
-        await localStorage.saveLastEventLogTimestamp(maxTimestamp)
-    }
-
-    @MainActor
-    private func handleEventLogs(_ logs: [EventLog]) {
-        Task { @MainActor in
-            await persistEventLogs(logs)
-        }
-
-        for log in logs {
-            handleFocusSessionEvent(log)
-            onEventLogReceived?(log)
-        }
-    }
-
-    /// 处理专注会话相关事件
-    @MainActor
-    private func handleFocusSessionEvent(_ eventLog: EventLog) {
-        let focusService = FocusSessionService.shared
-
-        switch eventLog.eventType {
-        case .enterTaskIn:
-            // 进入任务 - 开始专注会话
-            if let taskId = eventLog.taskId {
-                // 从 AppState 获取任务标题
-                let taskTitle = AppState.shared.tasks.first { $0.id == taskId }?.title ?? "Unknown Task"
-                focusService.startSession(taskId: taskId, taskTitle: taskTitle)
-            }
-
-        case .completeTask:
-            // 完成任务 - 结束专注会话
-            if let taskId = eventLog.taskId {
-                focusService.completeTask(taskId: taskId)
-            }
-
-        case .skipTask:
-            // 跳过任务 - 结束专注会话
-            if let taskId = eventLog.taskId {
-                focusService.skipTask(taskId: taskId)
-            }
-
-        default:
-            break
         }
     }
 }

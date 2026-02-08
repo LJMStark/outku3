@@ -96,7 +96,7 @@ struct OnboardingView: View {
 
             // Shadow Pet
             MorphingPetView(
-                form: .cat,
+                form: appState.pet.currentForm,
                 isShadowMode: manager.isShadowMode,
                 isRevealed: manager.isRevealed
             )
@@ -111,17 +111,30 @@ struct OnboardingView: View {
 
             Spacer()
 
-            // Tap to continue
-            if manager.showChoices {
+            // Tap to continue or Skip
+            HStack {
                 Button {
-                    manager.advanceAwakeningDialog()
+                    manager.skipAwakening()
                 } label: {
-                    Text("Tap to continue")
+                    Text("Skip")
                         .font(AppTypography.body)
-                        .foregroundStyle(.white.opacity(0.5))
+                        .foregroundStyle(.white.opacity(0.4))
                 }
-                .padding(.bottom, 60)
+
+                Spacer()
+
+                if manager.showChoices {
+                    Button {
+                        manager.advanceAwakeningDialog()
+                    } label: {
+                        Text("Tap to continue")
+                            .font(AppTypography.body)
+                            .foregroundStyle(.white.opacity(0.5))
+                    }
+                }
             }
+            .padding(.horizontal, 40)
+            .padding(.bottom, 60)
         }
         .contentShape(Rectangle())
         .onTapGesture {
@@ -139,7 +152,7 @@ struct OnboardingView: View {
 
             // Pet (revealed or shadow)
             MorphingPetView(
-                form: .cat,
+                form: appState.pet.currentForm,
                 isShadowMode: manager.isShadowMode,
                 isRevealed: manager.isRevealed
             )
@@ -204,6 +217,9 @@ struct OnboardingView: View {
 
             Spacer()
         }
+        .onAppear {
+            isNameFocused = true
+        }
     }
 
     // MARK: - Connect Content
@@ -214,7 +230,7 @@ struct OnboardingView: View {
 
             // Revealed Pet
             MorphingPetView(
-                form: .cat,
+                form: appState.pet.currentForm,
                 isShadowMode: false,
                 isRevealed: true
             )

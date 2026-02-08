@@ -11,6 +11,8 @@ public final class BLESyncCoordinator {
     private let localStorage = LocalStorage.shared
     private let policy = BLESyncPolicy()
 
+    private var lastSyncSucceeded = true
+
     private init() {}
 
     public func nextSyncDate() async -> Date {
@@ -49,20 +51,58 @@ public final class BLESyncCoordinator {
         defer { timeoutTask.cancel() }
 
         do {
-            try await bleService.connectToPreferredDevice(timeout: 10)
+            // Connect with retry: 3 attempts, 1s/2s/4s backoff
+            var connected = false
+            for attempt in 0..<3 {
+                do {
+                    try await bleService.connectToPreferredDevice(timeout: 10)
+                    connected = true
+                    break
+                } catch {
+                    #if DEBUG
+                    print("[BLESyncCoordinator] Connect attempt \(attempt + 1)/3 failed")
+                    #endif
+                    if attempt < 2 {
+                        try? await Task.sleep(for: .seconds(Double(1 << attempt)))
+                    }
+                }
+            }
+            guard connected else { throw BLEError.connectionFailed(nil) }
+
             try await bleService.syncTime()
 
             if contentChanged {
-                try await bleService.sendDayPack(dayPack)
-                await localStorage.saveLastDayPackHash(fingerprint)
+                // Send DayPack with retry: 2 attempts, 500ms/1s backoff
+                var sent = false
+                for attempt in 0..<2 {
+                    do {
+                        try await bleService.sendDayPack(dayPack)
+                        sent = true
+                        break
+                    } catch {
+                        #if DEBUG
+                        print("[BLESyncCoordinator] Write attempt \(attempt + 1)/2 failed")
+                        #endif
+                        if attempt < 1 {
+                            try? await Task.sleep(for: .milliseconds(500 * (attempt + 1)))
+                        }
+                    }
+                }
+                if sent {
+                    await localStorage.saveLastDayPackHash(fingerprint)
+                }
             }
 
             await bleService.requestEventLogsIfNeeded()
             let completedAt = Date()
             await localStorage.saveLastBleSyncTime(completedAt)
             bleService.updateLastSyncTime(completedAt)
+            lastSyncSucceeded = true
         } catch {
-            // 静默处理 BLE 同步失败
+            lastSyncSucceeded = false
+            #if DEBUG
+            print("[BLESyncCoordinator] Sync failed: \(error.localizedDescription)")
+            #endif
         }
 
         if bleService.connectionState.isConnected {
@@ -85,7 +125,7 @@ public extension BLESyncCoordinator {
 
         await performSync()
         BLEBackgroundSyncScheduler.shared.schedule()
-        task.setTaskCompleted(success: true)
+        task.setTaskCompleted(success: lastSyncSucceeded)
     }
 }
 #endif
