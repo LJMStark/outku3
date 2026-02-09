@@ -4,6 +4,16 @@ import Foundation
 
 public enum TimeOfDay: String, Sendable {
     case morning, afternoon, evening, night
+
+    /// Determine time of day from a given date (defaults to now)
+    public static func current(at date: Date = Date()) -> TimeOfDay {
+        switch Calendar.current.component(.hour, from: date) {
+        case 5..<12: return .morning
+        case 12..<17: return .afternoon
+        case 17..<21: return .evening
+        default: return .night
+        }
+    }
 }
 
 // MARK: - Day Pack Generator
@@ -18,14 +28,15 @@ public final class DayPackGenerator {
 
     public func generateDayPack(
         pet: Pet, tasks: [TaskItem], events: [CalendarEvent],
-        weather: Weather, streak: Streak, deviceMode: DeviceMode
+        weather: Weather, streak: Streak, deviceMode: DeviceMode,
+        userProfile: UserProfile = .default
     ) async -> DayPack {
         let todayTasks = tasks.filter { $0.dueDate.map { Calendar.current.isDateInToday($0) } ?? false }
         let todayEvents = events.filter { Calendar.current.isDateInToday($0.startTime) }
 
-        async let greeting = textService.generateMorningGreeting(petName: pet.name, petMood: pet.mood, weather: weather)
-        async let summary = textService.generateDailySummary(tasksCount: todayTasks.count, eventsCount: todayEvents.count, petName: pet.name)
-        async let phrase = textService.generateCompanionPhrase(petMood: pet.mood, timeOfDay: currentTimeOfDay())
+        async let greeting = textService.generateMorningGreeting(petName: pet.name, petMood: pet.mood, weather: weather, userProfile: userProfile)
+        async let summary = textService.generateDailySummary(tasksCount: todayTasks.count, eventsCount: todayEvents.count, petName: pet.name, userProfile: userProfile)
+        async let phrase = textService.generateCompanionPhrase(petMood: pet.mood, timeOfDay: TimeOfDay.current(), userProfile: userProfile)
 
         let topTasks = todayTasks
             .filter { !$0.isCompleted }
@@ -48,8 +59,8 @@ public final class DayPackGenerator {
         )
     }
 
-    public func generateTaskInPage(task: TaskItem, pet: Pet) async -> TaskInPageData {
-        let encouragement = await textService.generateTaskEncouragement(taskTitle: task.title, petName: pet.name, petMood: pet.mood)
+    public func generateTaskInPage(task: TaskItem, pet: Pet, userProfile: UserProfile = .default) async -> TaskInPageData {
+        let encouragement = await textService.generateTaskEncouragement(taskTitle: task.title, petName: pet.name, petMood: pet.mood, userProfile: userProfile)
         return TaskInPageData(taskId: task.id, taskTitle: task.title, encouragement: encouragement)
     }
 
@@ -101,12 +112,4 @@ public final class DayPackGenerator {
         )
     }
 
-    private func currentTimeOfDay() -> TimeOfDay {
-        switch Calendar.current.component(.hour, from: Date()) {
-        case 5..<12: return .morning
-        case 12..<17: return .afternoon
-        case 17..<21: return .evening
-        default: return .night
-        }
-    }
 }

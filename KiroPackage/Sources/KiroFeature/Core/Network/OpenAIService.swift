@@ -2,46 +2,74 @@ import Foundation
 
 // MARK: - OpenAI Service
 
-/// OpenAI API 客户端，用于生成 Haiku
+/// OpenAI API client for generating haikus and companion text
 public actor OpenAIService {
     public static let shared = OpenAIService()
 
     private let networkClient = NetworkClient.shared
     private let baseURL = "https://api.openai.com/v1"
 
-    // TODO: 从环境变量或安全存储读取
+    // TODO: Read from environment variable or secure storage
     private var apiKey: String = ""
 
     private init() {}
 
     // MARK: - Configuration
 
-    /// 配置 API Key
+    public var isConfigured: Bool { !apiKey.isEmpty }
+
+    /// Configure the API key
     public func configure(apiKey: String) {
         self.apiKey = apiKey
     }
 
     // MARK: - Generate Haiku
 
-    /// 生成 Haiku
-    /// - Parameters:
-    ///   - context: 上下文信息（任务完成情况、时间等）
-    /// - Returns: 生成的 Haiku
+    /// Generate a haiku based on the current context
     public func generateHaiku(context: HaikuContext) async throws -> Haiku {
+        let content = try await chatCompletion(
+            systemPrompt: haikuSystemPrompt,
+            userPrompt: buildHaikuPrompt(context: context),
+            temperature: 0.8,
+            maxTokens: 100
+        )
+        return parseHaiku(content)
+    }
+
+    // MARK: - Generate Companion Text
+
+    /// Generate AI companion text based on type and context
+    public func generateCompanionText(type: AITextType, context: AIContext) async throws -> String {
+        let content = try await chatCompletion(
+            systemPrompt: buildCompanionSystemPrompt(context: context),
+            userPrompt: buildCompanionUserPrompt(type: type, context: context),
+            temperature: 0.9,
+            maxTokens: 150
+        )
+        return content.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    // MARK: - Chat Completion
+
+    /// Shared helper that sends a chat completion request and returns the response content
+    private func chatCompletion(
+        systemPrompt: String,
+        userPrompt: String,
+        temperature: Double,
+        maxTokens: Int
+    ) async throws -> String {
         guard !apiKey.isEmpty else {
             throw OpenAIError.notConfigured
         }
-
-        let prompt = buildPrompt(context: context)
 
         let request = ChatCompletionRequest(
             model: "gpt-4o-mini",
             messages: [
                 ChatMessage(role: "system", content: systemPrompt),
-                ChatMessage(role: "user", content: prompt)
+                ChatMessage(role: "user", content: userPrompt)
             ],
-            temperature: 0.8,
-            maxTokens: 100
+            temperature: temperature,
+            maxTokens: maxTokens
         )
 
         let url = URL(string: "\(baseURL)/chat/completions")!
@@ -60,12 +88,69 @@ public actor OpenAIService {
             throw OpenAIError.emptyResponse
         }
 
-        return parseHaiku(content)
+        return content
     }
 
-    // MARK: - Prompt Building
+    // MARK: - Companion Prompt Building
 
-    private var systemPrompt: String {
+    private func buildCompanionSystemPrompt(context: AIContext) -> String {
+        let styleDescription: String
+        switch context.companionStyle {
+        case .encouraging:
+            styleDescription = "warm and supportive. You celebrate small wins, offer gentle encouragement, and always remind the user they're doing great. Use a caring, nurturing tone."
+        case .strict:
+            styleDescription = "direct and accountability-focused. You give honest feedback, set clear expectations, and push the user to do better. Be constructive but firm."
+        case .playful:
+            styleDescription = "fun and challenge-oriented. You turn tasks into adventures, use playful language, create mini-challenges, and keep things light and exciting."
+        case .calm:
+            styleDescription = "peaceful and mindful. You encourage balance, use serene language, remind the user to breathe, and focus on well-being over hustle."
+        }
+
+        let goalsText = context.primaryGoals.map { $0.rawValue }.joined(separator: ", ")
+        let completionPercent = Int(context.recentCompletionRate * 100)
+
+        var prompt = """
+            You are \(context.petName), a \(styleDescription)
+            The user is a \(context.workType.rawValue)\(goalsText.isEmpty ? "" : ", with goals: \(goalsText)").
+            Recent behavior: \(completionPercent)% completion rate this week, \(context.currentStreak)-day streak.
+            """
+
+        if let behavior = context.behaviorSummary {
+            prompt += "\nAverage \(behavior.averageDailyTasks) tasks/day. Streak record: \(behavior.streakRecord) days."
+        }
+
+        if !context.recentTexts.isEmpty {
+            let recent = context.recentTexts.prefix(3).joined(separator: " | ")
+            prompt += "\nAvoid repeating these recent messages: \(recent)"
+        }
+
+        prompt += "\nRespond with ONLY the message text, 1-2 sentences max. Be natural and personal. No quotes."
+
+        return prompt
+    }
+
+    private func buildCompanionUserPrompt(type: AITextType, context: AIContext) -> String {
+        let timeOfDay = TimeOfDay.current(at: context.currentTime).rawValue
+        let moodText = context.petMood.rawValue.lowercased()
+
+        switch type {
+        case .morningGreeting:
+            return "Generate a morning greeting. It's \(timeOfDay). You're feeling \(moodText). Today has \(context.totalTasksToday) tasks and \(context.eventsToday) events."
+        case .dailySummary:
+            return "Summarize today's schedule: \(context.totalTasksToday) tasks, \(context.eventsToday) events. Time: \(timeOfDay)."
+        case .companionPhrase:
+            return "Generate an encouraging companion phrase for the \(timeOfDay). \(context.tasksCompletedToday)/\(context.totalTasksToday) tasks done. You're feeling \(moodText)."
+        case .taskEncouragement:
+            return "Encourage the user who is about to work on a task. Time: \(timeOfDay). Mood: \(moodText)."
+        case .settlementSummary:
+            let rate = context.totalTasksToday > 0 ? Int(Double(context.tasksCompletedToday) / Double(context.totalTasksToday) * 100) : 0
+            return "Summarize the day: \(context.tasksCompletedToday)/\(context.totalTasksToday) tasks completed (\(rate)%). Streak: \(context.currentStreak) days."
+        }
+    }
+
+    // MARK: - Haiku Prompt Building
+
+    private var haikuSystemPrompt: String {
         """
         You are a haiku poet who creates gentle, encouraging haikus for a productivity app.
         Your haikus should:
@@ -79,10 +164,10 @@ public actor OpenAIService {
         """
     }
 
-    private func buildPrompt(context: HaikuContext) -> String {
+    private func buildHaikuPrompt(context: HaikuContext) -> String {
         var prompt = "Create a haiku for someone"
 
-        // 时间上下文
+        // Time context
         let hour = Calendar.current.component(.hour, from: context.currentTime)
         if hour < 6 {
             prompt += " in the early morning hours"
@@ -96,7 +181,7 @@ public actor OpenAIService {
             prompt += " winding down for the night"
         }
 
-        // 任务完成情况
+        // Task completion status
         if context.tasksCompletedToday > 0 {
             prompt += " who has completed \(context.tasksCompletedToday) task(s) today"
         }
@@ -110,12 +195,12 @@ public actor OpenAIService {
             }
         }
 
-        // 宠物状态
+        // Pet mood
         if let petMood = context.petMood {
             prompt += ". Their pet companion is feeling \(petMood.rawValue.lowercased())"
         }
 
-        // 连续打卡
+        // Streak
         if context.currentStreak > 0 {
             prompt += ". They're on a \(context.currentStreak)-day streak"
         }
@@ -134,18 +219,18 @@ public actor OpenAIService {
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
 
-        // 确保有 3 行
+        // Ensure we have 3 lines
         if lines.count >= 3 {
             return Haiku(lines: Array(lines.prefix(3)))
         } else if lines.count == 1 {
-            // 尝试按标点分割
+            // Try splitting by punctuation
             let parts = lines[0].components(separatedBy: CharacterSet(charactersIn: "/|"))
             if parts.count >= 3 {
                 return Haiku(lines: Array(parts.prefix(3).map { $0.trimmingCharacters(in: .whitespaces) }))
             }
         }
 
-        // 返回默认 haiku
+        // Return default haiku
         return .placeholder
     }
 }

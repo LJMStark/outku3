@@ -88,7 +88,7 @@ outku3/
 │   └── Sources/KiroFeature/
 │       ├── ContentView.swift   # Root view with environment injection
 │       ├── State/AppState.swift
-│       ├── Models/             # Pet, Task, Event, DayPack, EventLog, FocusSession
+│       ├── Models/             # Pet, Task, Event, DayPack, EventLog, FocusSession, AIMemory, UserProfile
 │       ├── Design/Theme.swift
 │       ├── Core/               # Services (Auth, API, Storage, BLE)
 │       └── Views/              # Home, Pet, Settings, Onboarding, Components
@@ -127,7 +127,9 @@ Views access via `@Environment(AppState.self)`, `@Environment(ThemeManager.self)
 | `EventKitService` | Apple Calendar & Reminders |
 | `GoogleCalendarAPI` | Google Calendar sync |
 | `GoogleTasksAPI` | Google Tasks sync |
-| `OpenAIService` | Haiku generation (GPT-4o-mini) |
+| `OpenAIService` | Haiku + AI companion text generation (GPT-4o-mini) |
+| `CompanionTextService` | Personalized text with OpenAI fallback to local templates |
+| `BehaviorAnalyzer` | User behavior summary from task/focus data |
 | `SupabaseService` | Cloud data persistence |
 | `CloudKitService` | iCloud sync (lazy-loaded) |
 | `BLEService` | E-ink device communication |
@@ -240,6 +242,20 @@ Access colors via `theme.colors.propertyName`:
 - 5 stages: Baby → Child → Teen → Adult → Elder
 - 5 moods: Happy, Excited, Focused, Sleepy, Missing You
 - 4 scenes: Indoor, Outdoor, Night, Work
+
+## AI Companion Text System
+
+`CompanionTextService` generates personalized text (greetings, summaries, encouragement, etc.) using a two-tier approach:
+
+1. **OpenAI path** (when API key configured): Builds `AIContext` from `UserProfile` (companionStyle, workType, goals) + app state, calls `OpenAIService.generateCompanionText()` with style-aware prompts (4 personalities: encouraging/strict/playful/calm), saves `AIInteraction` to `LocalStorage` for memory
+2. **Local fallback** (no key or API failure): Returns from hardcoded template arrays (original behavior)
+
+Key flow: `DayPackGenerator` -> `CompanionTextService` -> `OpenAIService` (optional) -> `LocalStorage` (AI interactions)
+
+- `BehaviorAnalyzer` is a pure `struct` that computes `UserBehaviorSummary` from tasks/streak data for prompt injection
+- `TimeOfDay.current(at:)` is the shared time-of-day utility (defined on the `TimeOfDay` enum in `DayPackGenerator.swift`) - use this instead of manual hour switches
+- `LocalStorage` uses generic `save<T>`/`load<T>` helpers for all JSON persistence - follow this pattern for new data types
+- All `CompanionTextService` methods accept `userProfile: UserProfile = .default` to maintain backward compatibility
 
 ## E-ink Hardware Integration
 
