@@ -12,6 +12,37 @@ public struct BLEReceivedMessage: Sendable {
     }
 }
 
+// MARK: - BLE Simple Packet Encoder (Hardware Spec v1.1.0)
+
+/// Encodes packets using the hardware spec format: type(1) | length(2 BE) | payload(N)
+public enum BLESimpleEncoder {
+    /// Encode a payload with 3-byte header for App->Device communication
+    public static func encode(type: UInt8, payload: Data) -> Data {
+        var packet = Data()
+        packet.append(type)
+        let length = UInt16(payload.count)
+        packet.append(contentsOf: withUnsafeBytes(of: length.bigEndian) { Array($0) })
+        packet.append(payload)
+        return packet
+    }
+}
+
+// MARK: - BLE Simple Packet Decoder (Hardware Spec v1.1.0)
+
+/// Decodes packets from device using format: type(1) | length(1) | payload(N)
+public enum BLESimpleDecoder {
+    /// Decode a Device->App packet with 2-byte header
+    public static func decode(_ data: Data) -> BLEReceivedMessage? {
+        guard data.count >= 2 else { return nil }
+        let type = data[0]
+        let length = Int(data[1])
+        let expectedTotal = 2 + length
+        guard data.count >= expectedTotal else { return nil }
+        let payload = length > 0 ? data.subdata(in: 2..<expectedTotal) : Data()
+        return BLEReceivedMessage(type: type, payload: payload)
+    }
+}
+
 // MARK: - BLE Packetizer
 
 public enum BLEPacketizer {
@@ -95,7 +126,7 @@ public final class BLEPacketAssembler {
         let payloadLength = UInt16(packetData[5]) << 8 | UInt16(packetData[6])
         let crc = UInt16(packetData[7]) << 8 | UInt16(packetData[8])
 
-        guard total > 0, seq >= 0, seq < Int(total) else { return nil }
+        guard total > 0, seq < Int(total) else { return nil }
 
         let chunk = packetData.subdata(in: BLEPacketizer.headerSize..<packetData.count)
 

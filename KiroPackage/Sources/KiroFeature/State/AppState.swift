@@ -239,7 +239,9 @@ public final class AppState: @unchecked Sendable {
     @MainActor
     public func loadGoogleCalendarEvents() async {
         guard AuthManager.shared.hasCalendarAccess else {
+            #if DEBUG
             print("[GoogleCalendar] No calendar access - hasCalendarAccess: \(AuthManager.shared.hasCalendarAccess), isGoogleConnected: \(AuthManager.shared.isGoogleConnected)")
+            #endif
             return
         }
 
@@ -247,14 +249,20 @@ public final class AppState: @unchecked Sendable {
         defer { isLoading = false }
 
         do {
+            #if DEBUG
             print("[GoogleCalendar] Fetching today's events...")
+            #endif
             let googleEvents = try await googleCalendarAPI.getTodayEvents()
+            #if DEBUG
             print("[GoogleCalendar] Fetched \(googleEvents.count) events")
+            #endif
             let localEvents = events.filter { $0.source != .google }
             events = localEvents + googleEvents
             try? await localStorage.saveEvents(events)
         } catch {
+            #if DEBUG
             print("[GoogleCalendar] Error: \(error)")
+            #endif
             lastError = "Failed to load calendar events: \(error.localizedDescription)"
         }
     }
@@ -340,9 +348,22 @@ public final class AppState: @unchecked Sendable {
     public func toggleTaskCompletion(_ task: TaskItem) {
         guard let index = tasks.firstIndex(where: { $0.id == task.id }) else { return }
 
-        tasks[index].isCompleted.toggle()
-        let isCompleted = tasks[index].isCompleted
-        let updatedTask = tasks[index]
+        let original = tasks[index]
+        let updatedTask = TaskItem(
+            id: original.id,
+            localId: original.localId,
+            googleTaskId: original.googleTaskId,
+            googleTaskListId: original.googleTaskListId,
+            title: original.title,
+            isCompleted: !original.isCompleted,
+            dueDate: original.dueDate,
+            source: original.source,
+            priority: original.priority,
+            syncStatus: original.syncStatus,
+            lastModified: Date()
+        )
+        tasks[index] = updatedTask
+        let isCompleted = updatedTask.isCompleted
 
         // Play sound and haptic feedback
         if isCompleted {

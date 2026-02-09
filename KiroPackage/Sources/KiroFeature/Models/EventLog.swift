@@ -106,11 +106,82 @@ public enum EventLogType: String, Codable, Sendable {
     }
 }
 
-// MARK: - Event Log Parsing
+// MARK: - Battery Level
 
 public extension EventLog {
-    /// 解析硬件 Event Log 记录（eventType + timestamp + value）
-    static func parseRecord(from data: Data) -> EventLog? {
+    /// Battery level for LowBattery events (0-100)
+    var batteryLevel: Int? {
+        guard eventType == .lowBattery else { return nil }
+        return value
+    }
+}
+
+// MARK: - BLE Payload Parsing
+
+public extension EventLog {
+    /// Parse event payload from BLE message (after outer type+length header is stripped)
+    static func fromBLEPayload(type: UInt8, payload: Data) -> EventLog? {
+        guard let eventType = EventLogType(rawByte: type) else { return nil }
+
+        switch eventType {
+        case .enterTaskIn, .completeTask, .skipTask:
+            return parseTaskEvent(eventType: eventType, payload: payload)
+
+        case .selectedTaskChanged, .wheelSelect, .viewEventDetail:
+            return parseIdOnlyEvent(eventType: eventType, payload: payload)
+
+        case .lowBattery:
+            let level = payload.isEmpty ? 0 : Int(payload[0])
+            return EventLog(eventType: eventType, value: level)
+
+        default:
+            return EventLog(eventType: eventType)
+        }
+    }
+
+    private static func parseTaskEvent(eventType: EventLogType, payload: Data) -> EventLog? {
+        guard payload.count >= 1 else { return nil }
+        let taskIdLength = Int(payload[0])
+        guard payload.count >= 1 + taskIdLength else { return nil }
+
+        let taskIdData = payload.subdata(in: 1..<(1 + taskIdLength))
+        let taskId = String(data: taskIdData, encoding: .utf8)
+
+        var timestamp = Date()
+        let timestampOffset = 1 + taskIdLength
+        if payload.count >= timestampOffset + 4 {
+            let ts = UInt32(payload[timestampOffset]) << 24
+                | UInt32(payload[timestampOffset + 1]) << 16
+                | UInt32(payload[timestampOffset + 2]) << 8
+                | UInt32(payload[timestampOffset + 3])
+            timestamp = Date(timeIntervalSince1970: TimeInterval(ts))
+        }
+
+        return EventLog(eventType: eventType, taskId: taskId, timestamp: timestamp)
+    }
+
+    private static func parseIdOnlyEvent(eventType: EventLogType, payload: Data) -> EventLog? {
+        guard payload.count >= 1 else {
+            return EventLog(eventType: eventType)
+        }
+        let idLength = Int(payload[0])
+        guard payload.count >= 1 + idLength else {
+            return EventLog(eventType: eventType)
+        }
+
+        let idData = payload.subdata(in: 1..<(1 + idLength))
+        let id = String(data: idData, encoding: .utf8)
+
+        return EventLog(eventType: eventType, taskId: id)
+    }
+}
+
+// MARK: - Legacy Parsing
+
+public extension EventLog {
+    /// Legacy 7-byte fixed format parser (deprecated, kept for backward compatibility)
+    @available(*, deprecated, message: "Use fromBLEPayload(type:payload:) instead")
+    static func parseLegacyFixedRecord(from data: Data) -> EventLog? {
         guard data.count >= 7 else { return nil }
         let typeByte = data[0]
         guard let type = EventLogType(rawByte: typeByte) else { return nil }

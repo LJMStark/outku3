@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(UserNotifications)
+import UserNotifications
+#endif
 
 // MARK: - BLE Event Handler
 
@@ -12,52 +15,133 @@ public enum BLEEventHandler {
 
     /// 处理接收到的 BLE 消息
     static func handleReceivedPayload(_ message: BLEReceivedMessage, service: BLEService) {
-        guard let dataType = BLEDataType(rawValue: message.type) else { return }
-
-        switch dataType {
-        case .eventLogBatch:
+        // Handle event log batch (0x21) separately -- keep existing batch logic
+        if message.type == BLEDataType.eventLogBatch.rawValue {
             handleEventLogBatch(message.payload, service: service)
+            return
+        }
+
+        // Try to parse as an individual device event
+        guard let eventLog = EventLog.fromBLEPayload(type: message.type, payload: message.payload) else {
+            return
+        }
+
+        handleSingleEvent(eventLog, service: service)
+    }
+
+    // MARK: - Single Event Routing
+
+    /// 处理单个设备事件，路由到对应的处理逻辑
+    private static func handleSingleEvent(_ eventLog: EventLog, service: BLEService) {
+        // Persist the event and handle focus session (existing logic)
+        handleEventLogs([eventLog], service: service)
+
+        // Route to type-specific handlers
+        switch eventLog.eventType {
+        case .enterTaskIn:
+            handleEnterTaskIn(eventLog, service: service)
+
+        case .completeTask:
+            handleCompleteTask(eventLog)
+
+        case .skipTask:
+            // Focus session already ended via handleFocusSessionEvent; no extra action needed
+            break
+
+        case .selectedTaskChanged:
+            #if DEBUG
+            print("[BLEEventHandler] Selected task changed: \(eventLog.taskId ?? "unknown")")
+            #endif
+
+        case .wheelSelect:
+            #if DEBUG
+            print("[BLEEventHandler] Wheel select: \(eventLog.taskId ?? "unknown")")
+            #endif
+
+        case .viewEventDetail:
+            #if DEBUG
+            print("[BLEEventHandler] View event detail: \(eventLog.taskId ?? "unknown")")
+            #endif
+
+        case .requestRefresh:
+            Task { @MainActor in
+                await BLESyncCoordinator.shared.performSync(force: true)
+            }
+
+        case .deviceWake:
+            Task { @MainActor in
+                try? await service.syncTime()
+                await BLESyncCoordinator.shared.performSync(force: false)
+            }
+
+        case .deviceSleep:
+            #if DEBUG
+            print("[BLEEventHandler] Device entering sleep mode")
+            #endif
+
+        case .lowBattery:
+            if let level = eventLog.batteryLevel {
+                postLowBatteryNotification(level: level)
+            }
+
         default:
             break
         }
     }
 
-    // MARK: - Event Log Parsing
+    // MARK: - Event-Specific Handlers
 
-    /// 解析 Event Log 记录
-    public static func parseEventLogRecord(from data: Data) -> EventLog? {
-        EventLog.parseRecord(from: data) ?? parseLegacyEventLog(from: data)
-    }
-
-    /// 解析旧版 Event Log 格式
-    private static func parseLegacyEventLog(from data: Data) -> EventLog? {
-        guard data.count >= 2 else { return nil }
-
-        let eventTypeByte = data[0]
-        guard let eventType = EventLogType(rawByte: eventTypeByte) else { return nil }
-
-        var taskId: String?
-        var timestamp: Date = Date()
-
-        let taskIdLength = Int(data[1])
-        if data.count >= 2 + taskIdLength {
-            let taskIdData = data.subdata(in: 2..<(2 + taskIdLength))
-            taskId = String(data: taskIdData, encoding: .utf8)
-
-            let timestampOffset = 2 + taskIdLength
-            if data.count >= timestampOffset + 4 {
-                let timestampData = data.subdata(in: timestampOffset..<(timestampOffset + 4))
-                let timestampInt = timestampData.withUnsafeBytes { $0.load(as: UInt32.self).bigEndian }
-                timestamp = Date(timeIntervalSince1970: TimeInterval(timestampInt))
-            }
+    /// EnterTaskIn: 生成 TaskInPage 并发送到设备
+    private static func handleEnterTaskIn(_ eventLog: EventLog, service: BLEService) {
+        guard let taskId = eventLog.taskId,
+              let task = AppState.shared.tasks.first(where: { $0.id == taskId }) else {
+            return
         }
 
-        return EventLog(
-            eventType: eventType,
-            taskId: taskId,
-            timestamp: timestamp,
-            value: 0
+        Task { @MainActor in
+            let taskInPage = await DayPackGenerator.shared.generateTaskInPage(
+                task: task, pet: AppState.shared.pet
+            )
+            try? await service.sendTaskInPage(taskInPage)
+        }
+    }
+
+    /// CompleteTask: 标记任务为已完成
+    private static func handleCompleteTask(_ eventLog: EventLog) {
+        guard let taskId = eventLog.taskId,
+              let task = AppState.shared.tasks.first(where: { $0.id == taskId }),
+              !task.isCompleted else {
+            return
+        }
+
+        AppState.shared.toggleTaskCompletion(task)
+    }
+
+    /// 低电量本地通知
+    private static func postLowBatteryNotification(level: Int) {
+        #if canImport(UserNotifications)
+        let content = UNMutableNotificationContent()
+        content.title = "Kiro Device Low Battery"
+        content.body = "Your Kiro device battery is at \(level)%. Please charge it soon."
+        content.sound = .default
+        let request = UNNotificationRequest(
+            identifier: "kiro-low-battery",
+            content: content,
+            trigger: nil
         )
+        UNUserNotificationCenter.current().add(request)
+        #endif
+    }
+
+    // MARK: - Event Log Parsing
+
+    /// 解析 Event Log 记录 (使用新的 BLE payload 格式)
+    /// data 的第一个字节为 event type，其余为 payload
+    public static func parseEventLogRecord(from data: Data) -> EventLog? {
+        guard !data.isEmpty else { return nil }
+        let typeByte = data[0]
+        let payload = data.count > 1 ? data.subdata(in: 1..<data.count) : Data()
+        return EventLog.fromBLEPayload(type: typeByte, payload: payload)
     }
 
     // MARK: - Event Log Batch Processing
@@ -87,7 +171,7 @@ public enum BLEEventHandler {
 
     /// 处理接收到的事件日志
     static func handleEventLogs(_ logs: [EventLog], service: BLEService) {
-        Task { @MainActor in
+        Task {
             await persistEventLogs(logs)
         }
 

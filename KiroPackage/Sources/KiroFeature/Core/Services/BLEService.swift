@@ -84,7 +84,6 @@ public final class BLEService: NSObject {
     private var writeCharacteristic: CBCharacteristic?
     private var notifyCharacteristic: CBCharacteristic?
     private var packetAssembler = BLEPacketAssembler()
-    private var nextMessageId: UInt16 = 1
 
     private let localStorage = LocalStorage.shared
 
@@ -189,7 +188,7 @@ public final class BLEService: NSObject {
 
         connectionState = .connecting
 
-        return try await withCheckedThrowingContinuation { continuation in
+        try await withCheckedThrowingContinuation { continuation in
             connectCompletion = { result in
                 switch result {
                 case .success:
@@ -228,10 +227,8 @@ public final class BLEService: NSObject {
             throw BLEError.deviceNotFound
         }
 
-        if let deviceID = lastConnectedDeviceID,
-           let device = devices.first(where: { $0.id == deviceID }) {
-            try await connect(to: device)
-        } else if let device = devices.first {
+        let device = devices.first(where: { $0.id == lastConnectedDeviceID }) ?? devices.first
+        if let device {
             try await connect(to: device)
         }
     }
@@ -334,18 +331,15 @@ public final class BLEService: NSObject {
             throw BLEError.notConnected
         }
 
+        let packet = BLESimpleEncoder.encode(type: type.rawValue, payload: data)
         let maxLength = peripheral.maximumWriteValueLength(for: .withResponse)
-        let maxChunk = max(1, maxLength - BLEPacketizer.headerSize)
-        let messageId = nextMessageIdentifier()
-        let packets = try BLEPacketizer.packetize(
-            type: type.rawValue,
-            messageId: messageId,
-            payload: data,
-            maxChunkSize: maxChunk
-        )
 
-        for packet in packets {
-            try await writePacket(packet, peripheral: peripheral, characteristic: characteristic)
+        var offset = 0
+        while offset < packet.count {
+            let end = min(offset + maxLength, packet.count)
+            let chunk = packet.subdata(in: offset..<end)
+            try await writePacket(chunk, peripheral: peripheral, characteristic: characteristic)
+            offset = end
         }
     }
 
@@ -354,7 +348,7 @@ public final class BLEService: NSObject {
         peripheral: CBPeripheral,
         characteristic: CBCharacteristic
     ) async throws {
-        return try await withCheckedThrowingContinuation { continuation in
+        try await withCheckedThrowingContinuation { continuation in
             writeCompletion = { result in
                 switch result {
                 case .success:
@@ -365,12 +359,6 @@ public final class BLEService: NSObject {
             }
             peripheral.writeValue(packet, for: characteristic, type: .withResponse)
         }
-    }
-
-    private func nextMessageIdentifier() -> UInt16 {
-        let current = nextMessageId
-        nextMessageId = nextMessageId == UInt16.max ? 1 : nextMessageId + 1
-        return current
     }
 
     private func cleanup() {
@@ -558,9 +546,17 @@ extension BLEService: CBPeripheralDelegate {
 
         Task { @MainActor in
             guard error == nil, let receivedData = data else { return }
-            if let message = packetAssembler.append(packetData: receivedData) {
+
+            // Try simple 2-byte header decoder first (hardware spec v1.1.0)
+            if let message = BLESimpleDecoder.decode(receivedData) {
                 BLEEventHandler.handleReceivedPayload(message, service: self)
-            } else if let eventLog = BLEEventHandler.parseEventLogRecord(from: receivedData) {
+            }
+            // Fall back to chunked packet assembler for multi-packet messages
+            else if let message = packetAssembler.append(packetData: receivedData) {
+                BLEEventHandler.handleReceivedPayload(message, service: self)
+            }
+            // Fall back to raw event log record parsing
+            else if let eventLog = BLEEventHandler.parseEventLogRecord(from: receivedData) {
                 BLEEventHandler.handleEventLogs([eventLog], service: self)
             }
         }

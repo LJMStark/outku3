@@ -25,19 +25,25 @@ public actor SupabaseService {
               !url.contains("YOUR_PROJECT"),
               !key.contains("YOUR_SUPABASE"),
               let supabaseURL = URL(string: url) else {
+            #if DEBUG
             print("[SupabaseService] Not configured - set SUPABASE_URL and SUPABASE_ANON_KEY in Secrets.xcconfig")
+            #endif
             return
         }
 
         client = SupabaseClient(supabaseURL: supabaseURL, supabaseKey: key)
         isConfigured = true
+        #if DEBUG
         print("[SupabaseService] Configured successfully")
+        #endif
     }
 
     /// 配置 Supabase（使用自定义 URL 和 Key）
     public func configure(url: String, key: String) {
         guard let supabaseURL = URL(string: url) else {
+            #if DEBUG
             print("[SupabaseService] Invalid URL: \(url)")
+            #endif
             return
         }
         client = SupabaseClient(supabaseURL: supabaseURL, supabaseKey: key)
