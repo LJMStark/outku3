@@ -72,7 +72,9 @@ public actor OpenAIService {
             maxTokens: maxTokens
         )
 
-        let url = URL(string: "\(baseURL)/chat/completions")!
+        guard let url = URL(string: "\(baseURL)/chat/completions") else {
+            throw OpenAIError.invalidURL
+        }
 
         let response: ChatCompletionResponse = try await networkClient.post(
             url: url,
@@ -266,6 +268,7 @@ public enum OpenAIError: LocalizedError, Sendable {
     case emptyResponse
     case rateLimited
     case invalidAPIKey
+    case invalidURL
 
     public var errorDescription: String? {
         switch self {
@@ -277,6 +280,8 @@ public enum OpenAIError: LocalizedError, Sendable {
             return "Rate limited - please try again later"
         case .invalidAPIKey:
             return "Invalid API key"
+        case .invalidURL:
+            return "Invalid API URL"
         }
     }
 }

@@ -173,6 +173,9 @@ public final class CompanionTextService {
             await saveInteraction(type: type, text: text, petName: petName, petMood: petMood, completionRate: weeklyRate)
             return text
         } catch {
+            #if DEBUG
+            print("[CompanionText] AI generation failed for \(type.rawValue): \(error.localizedDescription)")
+            #endif
             return nil
         }
     }
@@ -201,8 +204,7 @@ public final class CompanionTextService {
             petName: petName
         )
 
-        var existing = (try? await localStorage.loadAIInteractions()) ?? []
-        existing.append(interaction)
-        try? await localStorage.saveAIInteractions(existing)
+        let existing = (try? await localStorage.loadAIInteractions()) ?? []
+        try? await localStorage.saveAIInteractions(existing + [interaction])
     }
 }
