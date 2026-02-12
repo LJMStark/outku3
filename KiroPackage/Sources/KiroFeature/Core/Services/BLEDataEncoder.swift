@@ -93,7 +93,7 @@ public enum BLEDataEncoder {
     // MARK: - Day Pack
 
     /// 编码 DayPack 数据
-    public static func encodeDayPack(_ dayPack: DayPack) -> Data {
+    public static func encodeDayPack(_ dayPack: DayPack, screenSize: ScreenSize = .fourInch) -> Data {
         var data = Data()
 
         // Header
@@ -117,9 +117,10 @@ public enum BLEDataEncoder {
         data.appendString(dayPack.currentScheduleSummary ?? "", maxLength: 30)
         data.appendString(dayPack.companionPhrase, maxLength: 40)
 
-        // Top tasks (max 3)
-        data.append(UInt8(min(dayPack.topTasks.count, 3)))
-        for task in dayPack.topTasks.prefix(3) {
+        // Top tasks (dynamic limit based on screen size)
+        let maxTasks = screenSize.maxTasks
+        data.append(UInt8(min(dayPack.topTasks.count, maxTasks)))
+        for task in dayPack.topTasks.prefix(maxTasks) {
             data.appendString(task.id, maxLength: 36)
             data.appendString(task.title, maxLength: 30)
             data.append(task.isCompleted ? 0x01 : 0x00)
@@ -167,6 +168,35 @@ public enum BLEDataEncoder {
     public static func encodeEventLogRequest(since timestamp: UInt32) -> Data {
         var data = Data()
         data.append(contentsOf: withUnsafeBytes(of: timestamp.bigEndian) { Array($0) })
+        return data
+    }
+
+    // MARK: - Screen Config
+
+    /// 编码屏幕配置信息
+    public static func encodeScreenConfig(_ screenSize: ScreenSize) -> Data {
+        var data = Data()
+        let widthBE = UInt16(screenSize.width).bigEndian
+        let heightBE = UInt16(screenSize.height).bigEndian
+        data.append(contentsOf: withUnsafeBytes(of: widthBE) { Array($0) })
+        data.append(contentsOf: withUnsafeBytes(of: heightBE) { Array($0) })
+        data.append(UInt8(screenSize.maxTasks))
+        return data
+    }
+
+    // MARK: - Pixel Data (Spectra 6, 4bpp)
+
+    /// 将 EInkColor 像素数组打包为 4bpp 数据（每字节 2 像素）
+    /// 如果像素数为奇数，最后一个字节的低 nibble 填充白色
+    public static func encodePixelData(_ pixels: [EInkColor], width: Int) -> Data {
+        let count = pixels.count
+        let byteCount = (count + 1) / 2
+        var data = Data(count: byteCount)
+        for i in stride(from: 0, to: count, by: 2) {
+            let even = pixels[i]
+            let odd = (i + 1 < count) ? pixels[i + 1] : .white
+            data[i / 2] = EInkColor.packPixelPair(even: even, odd: odd)
+        }
         return data
     }
 }

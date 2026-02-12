@@ -13,6 +13,10 @@ public final class BLESyncCoordinator {
 
     private var lastSyncSucceeded = true
 
+    /// Connection timeout in seconds. Configurable for larger screen sizes
+    /// that require longer refresh times (e.g., 7.3寸 full refresh ~12s).
+    public var connectionTimeoutSeconds: TimeInterval = 30
+
     private init() {}
 
     public func nextSyncDate() async -> Date {
@@ -43,7 +47,7 @@ public final class BLESyncCoordinator {
         }
 
         let timeoutTask = Task { @MainActor in
-            try? await Task.sleep(for: .seconds(30))
+            try? await Task.sleep(for: .seconds(self.connectionTimeoutSeconds))
             if self.bleService.connectionState.isConnected {
                 self.bleService.disconnect()
             }

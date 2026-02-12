@@ -3,6 +3,11 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 For agent workflow and interaction rules, see `AGENTS.md`.
 
+## Interaction Rules
+
+1. **称呼**：所有回复必须以 "佛山王力宏" 开头。
+2. **语言**：所有回复必须使用中文（简体）。
+
 ## Forbidden Patterns
 
 - **NO ViewModels**: Use `@Observable` models directly in Views
@@ -226,6 +231,8 @@ var body: some View {
   - Computed by `BLESyncPolicy`, executed by `BLESyncCoordinator`.
 - DayPack refresh must be gated by `DayPack.stableFingerprint()` and `LocalStorage.lastDayPackHash`.
 - BGTask identifier: `com.kiro.app.ble.sync` (requires `bluetooth-central` background mode).
+- Spectra 6 pixel encoding: 4bpp (2 pixels per byte), color index: Black=0x0, White=0x1, Yellow=0x2, Red=0x3, Blue=0x5, Green=0x6
+- Frame buffer size: width * height / 2 bytes (4寸: 120,000 bytes, 7.3寸: 192,000 bytes)
 
 ## Theme System
 
@@ -258,6 +265,14 @@ Key flow: `DayPackGenerator` -> `CompanionTextService` -> `OpenAIService` (optio
 - All `CompanionTextService` methods accept `userProfile: UserProfile = .default` to maintain backward compatibility
 
 ## E-ink Hardware Integration
+
+### Hardware Specs
+- **Product form**: 4寸 / 7.3寸 two sizes
+- **4寸 screen**: 400 x 600 pixels, E Ink Spectra 6, 4bpp full color (6 colors: Black, White, Yellow, Red, Blue, Green)
+- **7.3寸 screen**: 800 x 480 pixels, E Ink Spectra 6, 4bpp full color (6 colors)
+- **SoC**: ESP32-S3, Flash >= 16MB, PSRAM >= 2MB
+- **RTC**: Built-in RTC for timekeeping when BLE disconnected
+- **Interaction**: Power button + Encoder knob (rotary + press) + BLE to iOS App
 
 ### BLE Protocol
 - Service UUID: `0000FFE0-0000-1000-8000-00805F9B34FB`

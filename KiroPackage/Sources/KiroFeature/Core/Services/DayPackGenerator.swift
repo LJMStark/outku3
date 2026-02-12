@@ -29,7 +29,8 @@ public final class DayPackGenerator {
     public func generateDayPack(
         pet: Pet, tasks: [TaskItem], events: [CalendarEvent],
         weather: Weather, streak: Streak, deviceMode: DeviceMode,
-        userProfile: UserProfile = .default
+        userProfile: UserProfile = .default,
+        screenSize: ScreenSize = .fourInch
     ) async -> DayPack {
         let todayTasks = tasks.filter { $0.dueDate.map { Calendar.current.isDateInToday($0) } ?? false }
         let todayEvents = events.filter { Calendar.current.isDateInToday($0.startTime) }
@@ -41,7 +42,7 @@ public final class DayPackGenerator {
         let topTasks = todayTasks
             .filter { !$0.isCompleted }
             .sorted { $0.priority.rawValue > $1.priority.rawValue }
-            .prefix(3)
+            .prefix(screenSize.maxTasks)
             .map { TaskSummary(from: $0) }
 
         return DayPack(

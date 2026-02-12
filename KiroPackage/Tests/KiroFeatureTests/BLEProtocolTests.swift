@@ -640,4 +640,148 @@ struct BLEProtocolTests {
         #expect(EventLogType(rawByte: 0x08) == .deviceSleep)
         #expect(EventLogType(rawByte: 0x09) == .lowBattery)
     }
+
+    // MARK: - EInkColor Tests
+
+    @Test("EInkColor raw values match Spectra 6 index table")
+    func einkColorRawValues() {
+        #expect(EInkColor.black.rawValue == 0x0)
+        #expect(EInkColor.white.rawValue == 0x1)
+        #expect(EInkColor.yellow.rawValue == 0x2)
+        #expect(EInkColor.red.rawValue == 0x3)
+        #expect(EInkColor.blue.rawValue == 0x5)
+        #expect(EInkColor.green.rawValue == 0x6)
+    }
+
+    @Test("EInkColor has exactly 6 cases")
+    func einkColorCaseCount() {
+        #expect(EInkColor.allCases.count == 6)
+    }
+
+    @Test("EInkColor packPixelPair packs two pixels into one byte")
+    func einkColorPackPixelPair() {
+        let byte = EInkColor.packPixelPair(even: .black, odd: .white)
+        #expect(byte == 0x01)
+
+        let byte2 = EInkColor.packPixelPair(even: .red, odd: .blue)
+        #expect(byte2 == 0x35)
+    }
+
+    @Test("EInkColor unpackPixelPair round-trips correctly")
+    func einkColorUnpackPixelPair() {
+        let byte = EInkColor.packPixelPair(even: .yellow, odd: .green)
+        let result = EInkColor.unpackPixelPair(byte)
+        #expect(result?.even == .yellow)
+        #expect(result?.odd == .green)
+    }
+
+    @Test("EInkColor unpackPixelPair returns nil for reserved index")
+    func einkColorUnpackReservedIndex() {
+        let byte: UInt8 = 0x40 // high nibble = 0x4 (reserved)
+        #expect(EInkColor.unpackPixelPair(byte) == nil)
+    }
+
+    // MARK: - ScreenConfig Tests
+
+    @Test("ScreenSize fourInch dimensions")
+    func screenSizeFourInch() {
+        let screen = ScreenSize.fourInch
+        #expect(screen.width == 400)
+        #expect(screen.height == 600)
+        #expect(screen.pixelCount == 240_000)
+        #expect(screen.frameBufferSize == 120_000)
+        #expect(screen.maxTasks == 3)
+    }
+
+    @Test("ScreenSize sevenInch dimensions")
+    func screenSizeSevenInch() {
+        let screen = ScreenSize.sevenInch
+        #expect(screen.width == 800)
+        #expect(screen.height == 480)
+        #expect(screen.pixelCount == 384_000)
+        #expect(screen.frameBufferSize == 192_000)
+        #expect(screen.maxTasks == 5)
+    }
+
+    // MARK: - BLEDataEncoder Pixel Data Tests
+
+    @Test("BLEDataEncoder encodePixelData packs 4bpp correctly")
+    func encodePixelDataPacking() {
+        let pixels: [EInkColor] = [.black, .white, .red, .blue]
+        let data = BLEDataEncoder.encodePixelData(pixels, width: 2)
+        #expect(data.count == 2)
+        #expect(data[0] == 0x01) // black(0) | white(1)
+        #expect(data[1] == 0x35) // red(3) | blue(5)
+    }
+
+    @Test("BLEDataEncoder encodePixelData pads odd pixel count with white")
+    func encodePixelDataOddCount() {
+        let pixels: [EInkColor] = [.green, .yellow, .red]
+        let data = BLEDataEncoder.encodePixelData(pixels, width: 3)
+        #expect(data.count == 2)
+        #expect(data[0] == 0x62) // green(6) | yellow(2)
+        #expect(data[1] == 0x31) // red(3) | white(1) padding
+    }
+
+    @Test("BLEDataEncoder encodeScreenConfig format")
+    func encodeScreenConfigFormat() {
+        let data = BLEDataEncoder.encodeScreenConfig(.fourInch)
+        #expect(data.count == 5)
+        // width 400 = 0x0190 big-endian
+        #expect(data[0] == 0x01)
+        #expect(data[1] == 0x90)
+        // height 600 = 0x0258 big-endian
+        #expect(data[2] == 0x02)
+        #expect(data[3] == 0x58)
+        // maxTasks = 3
+        #expect(data[4] == 3)
+    }
+
+    @Test("BLEDataEncoder encodeScreenConfig sevenInch")
+    func encodeScreenConfigSevenInch() {
+        let data = BLEDataEncoder.encodeScreenConfig(.sevenInch)
+        #expect(data.count == 5)
+        // width 800 = 0x0320 big-endian
+        #expect(data[0] == 0x03)
+        #expect(data[1] == 0x20)
+        // height 480 = 0x01E0 big-endian
+        #expect(data[2] == 0x01)
+        #expect(data[3] == 0xE0)
+        // maxTasks = 5
+        #expect(data[4] == 5)
+    }
+
+    @Test("BLEDataEncoder encodeDayPack with sevenInch allows 5 tasks")
+    func encodeDayPackSevenInchTaskLimit() {
+        let settlement = SettlementData(
+            tasksCompleted: 0, tasksTotal: 5, pointsEarned: 0,
+            streakDays: 0, petMood: "happy",
+            summaryMessage: "s", encouragementMessage: "e"
+        )
+        let tasks = (0..<5).map { i in
+            TaskSummary(id: "t\(i)", title: "Task \(i)", isCompleted: false, priority: 1)
+        }
+        let pack = DayPack(
+            date: Date(),
+            deviceMode: .interactive,
+            morningGreeting: "hi",
+            dailySummary: "sum",
+            firstItem: "first",
+            topTasks: tasks,
+            companionPhrase: "go",
+            settlementData: settlement
+        )
+        let data = BLEDataEncoder.encodeDayPack(pack, screenSize: .sevenInch)
+
+        // Find task count byte: after header(5) + morningGreeting + dailySummary + firstItem + scheduleSummary + companionPhrase
+        // The task count should be 5
+        let headerSize = 5
+        let greetingSize = 1 + "hi".utf8.count
+        let summarySize = 1 + "sum".utf8.count
+        let firstItemSize = 1 + "first".utf8.count
+        let scheduleSize = 1 + 0 // empty string
+        let phraseSize = 1 + "go".utf8.count
+        let taskCountOffset = headerSize + greetingSize + summarySize + firstItemSize + scheduleSize + phraseSize
+        #expect(data[taskCountOffset] == 5)
+    }
 }

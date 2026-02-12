@@ -49,7 +49,7 @@ public enum EventLogType: String, Codable, Sendable {
     case skipTask = "skip_task"
     /// 切换选中的任务
     case selectedTaskChanged = "selected_task_changed"
-    /// 滚轮选择确认 (发送选中项 ID)
+    /// 旋钮选择确认 (发送选中项 ID)
     case wheelSelect = "wheel_select"
     /// 查看日程详情
     case viewEventDetail = "view_event_detail"

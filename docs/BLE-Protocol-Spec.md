@@ -1,7 +1,7 @@
 # Kiro BLE Communication Protocol Specification
 
-**Version:** v1.1.0
-**Last Updated:** 2026-01-31
+**Version:** v1.2.0
+**Last Updated:** 2026-02-12
 **Status:** Draft
 
 ---
@@ -35,6 +35,7 @@ This document defines the BLE communication protocol between the Kiro iOS app an
 |---------|------------|----------------------------------|
 | v1.0.0  | 2026-01-30 | Initial protocol specification   |
 | v1.1.0  | 2026-01-31 | Added WheelSelect, ViewEventDetail, LowBattery events |
+| v1.2.0  | 2026-02-12 | Added Spectra 6 pixel format, encoder/power button event docs |
 
 ### 1.3 Terminology
 
@@ -45,6 +46,7 @@ This document defines the BLE communication protocol between the Kiro iOS app an
 | Task In       | Task detail page on E-ink display                    |
 | Settlement    | End-of-day summary page                              |
 | Focus Mode    | Simplified display mode with fewer distractions      |
+| Encoder Knob  | Rotary encoder with push button for navigation |
 
 ---
 
@@ -336,11 +338,17 @@ Events are sent from device to app via the Notify characteristic.
 
 | Type   | Name                | Description                        |
 |--------|---------------------|------------------------------------|
+| `0x01` | EncoderRotateUp   | Encoder knob rotated up (clockwise)    |
+| `0x02` | EncoderRotateDown  | Encoder knob rotated down (counter-clockwise) |
+| `0x03` | EncoderShortPress  | Encoder knob short press (confirm)     |
+| `0x04` | EncoderLongPress   | Encoder knob long press                |
+| `0x05` | PowerShortPress    | Power button short press               |
+| `0x06` | PowerLongPress     | Power button long press                |
 | `0x10` | EnterTaskIn         | User entered task detail page      |
 | `0x11` | CompleteTask        | User marked task as complete       |
 | `0x12` | SkipTask            | User skipped a task                |
 | `0x13` | SelectedTaskChanged | User changed selected task         |
-| `0x14` | WheelSelect         | Wheel button pressed (confirm selection) |
+| `0x14` | WheelSelect         | Encoder knob pressed (旋钮选择确认) |
 | `0x15` | ViewEventDetail     | User viewing calendar event detail |
 | `0x20` | RequestRefresh      | Device requests data refresh       |
 | `0x30` | DeviceWake          | Device woke from sleep             |
@@ -477,7 +485,7 @@ Device is entering sleep mode.
 
 ### 5.10 WheelSelect (0x14)
 
-User confirmed selection via wheel button press.
+User confirmed selection via encoder knob press.
 
 **Payload:**
 
@@ -754,6 +762,51 @@ Total Focus Time: 68 minutes
 - Requires user authorization for Screen Time access
 - Store focus sessions locally for offline calculation
 - Sync focus data to cloud when connected
+
+---
+
+## 10. Spectra 6 Pixel Data Format
+
+### 10.1 Overview
+
+The E-ink display uses E Ink Spectra 6 technology supporting 6 colors. Pixel data is encoded in 4bpp (4 bits per pixel) format, with 2 pixels packed per byte.
+
+### 10.2 Color Index Table
+
+| Index | Color  | Hex  |
+|-------|--------|------|
+| 0x0   | Black  | 0x0  |
+| 0x1   | White  | 0x1  |
+| 0x2   | Yellow | 0x2  |
+| 0x3   | Red    | 0x3  |
+| 0x5   | Blue   | 0x5  |
+| 0x6   | Green  | 0x6  |
+
+Note: Index values 0x4, 0x7-0xF are reserved.
+
+### 10.3 Pixel Packing
+
+Each byte contains 2 pixels:
+
+```
+Byte layout: [pixel_even (high nibble)] [pixel_odd (low nibble)]
+```
+
+| Bits  | Content          |
+|-------|------------------|
+| 7-4   | Even pixel index |
+| 3-0   | Odd pixel index  |
+
+Example: Black pixel followed by White pixel = `0x01`
+
+### 10.4 Frame Buffer Size
+
+| Screen  | Resolution | Pixels  | Buffer Size |
+|---------|-----------|---------|-------------|
+| 4 inch  | 400 x 600 | 240,000 | 120,000 bytes (117.2 KB) |
+| 7.3 inch| 800 x 480 | 384,000 | 192,000 bytes (187.5 KB) |
+
+Formula: `bufferSize = width * height / 2`
 
 ---
 

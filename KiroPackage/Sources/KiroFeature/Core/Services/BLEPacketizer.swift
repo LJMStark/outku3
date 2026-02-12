@@ -48,6 +48,15 @@ public enum BLESimpleDecoder {
 public enum BLEPacketizer {
     public static let headerSize: Int = 9
 
+    /// Default MTU payload size for BLE 4.2 (20 bytes ATT payload - 3 bytes ATT header = 17 usable)
+    /// BLE 5.0 supports negotiated MTU up to 512 bytes; use negotiated value when available.
+    public static let defaultMTUPayload: Int = 17
+
+    /// Estimated chunk counts for Spectra 6 frame buffers at default MTU:
+    /// - 4寸 (120,000 bytes): ~7,059 packets
+    /// - 7.3寸 (192,000 bytes): ~11,294 packets
+    /// With negotiated BLE 5.0 MTU (e.g., 512 - 3 = 509 bytes): ~236 / ~377 packets
+
     public static func packetize(
         type: UInt8,
         messageId: UInt16,
