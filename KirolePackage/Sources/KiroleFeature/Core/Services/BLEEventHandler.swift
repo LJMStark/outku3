@@ -84,6 +84,16 @@ public enum BLEEventHandler {
                 postLowBatteryNotification(level: level)
             }
 
+        case .reminderAcknowledged:
+            #if DEBUG
+            print("[BLEEventHandler] Reminder acknowledged at \(eventLog.timestamp)")
+            #endif
+
+        case .reminderDismissed:
+            #if DEBUG
+            print("[BLEEventHandler] Reminder dismissed at \(eventLog.timestamp)")
+            #endif
+
         default:
             break
         }

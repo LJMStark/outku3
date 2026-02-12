@@ -281,13 +281,13 @@ Key flow: `DayPackGenerator` -> `CompanionTextService` -> `OpenAIService` (optio
 - **Interaction**: Power button + Encoder knob (rotary + press) + BLE to iOS App
 
 ### Hardware Docs
-- `docs/硬件需求文档-Hardware-Requirements-Document.md` (v0.2): Hardware electrical requirements (SoC, display, power, battery)
-- `docs/Hardware-Product-Spec-CN.md` (v1.2.0): Product-level spec (page design, interaction, pet system)
-- `docs/BLE-Protocol-Spec.md` (v1.3.0): BLE communication protocol (commands, data structures, events)
+- `docs/硬件需求文档-Hardware-Requirements-Document.md` (v0.3): 硬件电气需求（SoC、显示、电源、电池）
+- `docs/固件功能规格文档.md` (v1.3.0): 固件功能规格（页面设计、交互流程、宠物系统）
+- `docs/BLE通信协议规格文档.md` (v1.3.1): BLE 通信协议（命令格式、数据结构、事件定义）
 
 ### BLE Protocol
 - Service UUID: `0000FFE0-0000-1000-8000-00805F9B34FB`
-- See `docs/BLE-Protocol-Spec.md` for full protocol
+- See `docs/BLE通信协议规格文档.md` for full protocol
 
 ### Key Models
 - `DayPack`: Daily data package sent to device (includes micro-action and focus metrics in fingerprint)

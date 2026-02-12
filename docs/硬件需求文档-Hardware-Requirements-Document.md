@@ -2,10 +2,10 @@
 
 **Hardware Requirements Document**
 
-**版本:** v0.2
+**版本:** v0.3
 **更新日期:** 2026-02-12
 **状态:** Draft
-**前序版本:** v0.1 (2026-01-31)
+**前序版本:** v0.2 (2026-02-12)
 
 ---
 
@@ -248,7 +248,7 @@ Kirole 是一款面向深度知识工具用户的专注力伴侣设备，通过 
 - 大数据分包与 CRC16 校验（CRC16-CCITT-FALSE，poly `0x1021`，init `0xFFFF`）
 - 包头格式：type (1B) + messageId (2B BE) + seq (1B) + total (1B) + payloadLen (2B BE) + crc16 (2B BE) = 9 字节
 
-详细协议参考 `BLE-Protocol-Spec.md` (v1.3.0)。
+详细协议参考 `BLE通信协议规格文档.md` (v1.3.1)。
 
 ---
 
@@ -327,24 +327,30 @@ RTC 用于：
 |------|------|
 | 存储位置 | SPI Flash |
 | 存储方式 | 环形缓冲 |
-| 记录格式 | eventType (1B) + timestamp (4B, epoch seconds) + value (2B, big-endian) |
+| 传输格式 | 可变长度：eventType (1B) + payload (N bytes)，详见 BLE通信协议规格文档 Section 5 |
+| 批量传输 | eventLogBatch (0x21)：count (1B) + N 条记录 |
 
-记录内容：
+事件类型汇总：
 
-| 事件类型 | 描述 |
-|----------|------|
-| 按键事件 | 编码器旋转/按压、电源键 |
-| 任务完成 | CompleteTask (0x11) |
-| 任务跳过 | SkipTask |
-| 进入任务 | EnterTaskIn |
-| 提醒确认 | ReminderAcknowledged (0x16) |
-| 提醒关闭 | ReminderDismissed (0x17) |
+| 字节码 | 事件类型 | Payload | 描述 |
+|--------|----------|---------|------|
+| 0x01-0x06 | 按键事件 | 无 | 编码器旋转/按压 (0x01-0x04)、电源键 (0x05-0x06) |
+| 0x10 | EnterTaskIn | Length(1B) + TaskId(NB) + Timestamp(4B) | 进入任务详情页 |
+| 0x11 | CompleteTask | Length(1B) + TaskId(NB) + Timestamp(4B) | 完成任务 |
+| 0x12 | SkipTask | Length(1B) + TaskId(NB) + Timestamp(4B) | 跳过任务 |
+| 0x13-0x15 | 交互事件 | Length(1B) + Id(NB) | 选中变更/滚轮选择/查看日程 |
+| 0x16 | ReminderAcknowledged | Timestamp(4B) | 用户确认智能提醒 |
+| 0x17 | ReminderDismissed | Timestamp(4B) | 提醒超时自动关闭 |
+| 0x20 | RequestRefresh | 无 | 请求刷新数据 |
+| 0x30-0x31 | 设备状态 | 无 | 设备唤醒/休眠 |
+| 0x40 | LowBattery | BatteryLevel(1B) | 低电量通知 |
 
 要求：
 
 - 掉电不丢失
 - BLE 重连后可增量回传（基于 lastEventLogTimestamp）
 - App 通过 EventLogRequest 命令请求指定时间戳之后的日志
+- 详细 payload 格式参见 `BLE通信协议规格文档.md` Section 5
 
 ---
 
@@ -362,14 +368,15 @@ RTC 用于：
 | 版本 | 日期 | 变更内容 |
 |------|------|----------|
 | v0.1 | 2026-01-31 | 初始版本 |
-| v0.2 | 2026-02-12 | 转为 Markdown 格式；补充 Spectra 6 4bpp 颜色索引和帧缓冲大小；补充 BLE 包头格式和 CRC16 规格；补充 Event Log 记录格式和事件类型；补充 RTC 用途说明；新增产品定位和核心功能模块描述；与 Hardware-Product-Spec v1.2.0 和 BLE-Protocol-Spec v1.3.0 对齐 |
+| v0.2 | 2026-02-12 | 转为 Markdown 格式；补充 Spectra 6 4bpp 颜色索引和帧缓冲大小；补充 BLE 包头格式和 CRC16 规格；补充 Event Log 记录格式和事件类型；补充 RTC 用途说明；新增产品定位和核心功能模块描述；与固件功能规格文档 v1.2.0 和 BLE通信协议规格文档 v1.3.0 对齐 |
+| v0.3 | 2026-02-12 | Event Log 格式修正为可变长度 payload（与代码和 BLE通信协议规格文档对齐）；补充完整事件类型表含字节码和 payload 格式 |
 
 ### 关联文档
 
 | 文档 | 版本 | 描述 |
 |------|------|------|
-| Hardware-Product-Spec-CN.md | v1.2.0 | 产品功能规格（页面设计、交互流程、宠物系统） |
-| BLE-Protocol-Spec.md | v1.3.0 | BLE 通信协议（命令格式、数据结构、事件定义） |
+| 固件功能规格文档.md | v1.3.0 | 产品功能规格（页面设计、交互流程、宠物系统） |
+| BLE通信协议规格文档.md | v1.3.1 | BLE 通信协议（命令格式、数据结构、事件定义） |
 
 ---
 

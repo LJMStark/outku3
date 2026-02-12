@@ -61,6 +61,10 @@ public enum EventLogType: String, Codable, Sendable {
     case deviceSleep = "device_sleep"
     /// 低电量通知
     case lowBattery = "low_battery"
+    /// 用户确认智能提醒（按键）
+    case reminderAcknowledged = "reminder_acknowledged"
+    /// 智能提醒超时自动关闭
+    case reminderDismissed = "reminder_dismissed"
 
     public var rawByte: UInt8 {
         switch self {
@@ -80,6 +84,8 @@ public enum EventLogType: String, Codable, Sendable {
         case .deviceWake: return 0x30
         case .deviceSleep: return 0x31
         case .lowBattery: return 0x40
+        case .reminderAcknowledged: return 0x16
+        case .reminderDismissed: return 0x17
         }
     }
 
@@ -101,6 +107,8 @@ public enum EventLogType: String, Codable, Sendable {
         case 0x07, 0x30: self = .deviceWake
         case 0x08, 0x31: self = .deviceSleep
         case 0x09, 0x40: self = .lowBattery
+        case 0x16: self = .reminderAcknowledged
+        case 0x17: self = .reminderDismissed
         default: return nil
         }
     }
@@ -134,6 +142,9 @@ public extension EventLog {
             let level = payload.isEmpty ? 0 : Int(payload[0])
             return EventLog(eventType: eventType, value: level)
 
+        case .reminderAcknowledged, .reminderDismissed:
+            return parseTimestampOnlyEvent(eventType: eventType, payload: payload)
+
         default:
             return EventLog(eventType: eventType)
         }
@@ -158,6 +169,17 @@ public extension EventLog {
         }
 
         return EventLog(eventType: eventType, taskId: taskId, timestamp: timestamp)
+    }
+
+    private static func parseTimestampOnlyEvent(eventType: EventLogType, payload: Data) -> EventLog {
+        guard payload.count >= 4 else {
+            return EventLog(eventType: eventType)
+        }
+        let ts = UInt32(payload[0]) << 24
+            | UInt32(payload[1]) << 16
+            | UInt32(payload[2]) << 8
+            | UInt32(payload[3])
+        return EventLog(eventType: eventType, timestamp: Date(timeIntervalSince1970: TimeInterval(ts)))
     }
 
     private static func parseIdOnlyEvent(eventType: EventLogType, payload: Data) -> EventLog? {
