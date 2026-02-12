@@ -34,6 +34,9 @@ public enum WorkType: String, CaseIterable, Sendable, Codable {
     case officeWorker = "Office Worker"
     case entrepreneur = "Entrepreneur"
     case creative = "Creative Professional"
+    case knowledgeWorker = "Knowledge Worker"
+    case productManager = "Product Manager"
+    case researcher = "Researcher"
     case other = "Other"
 
     public var displayName: String { rawValue }
@@ -46,6 +49,9 @@ public enum WorkType: String, CaseIterable, Sendable, Codable {
         case .officeWorker: return "building.2.fill"
         case .entrepreneur: return "lightbulb.fill"
         case .creative: return "paintbrush.fill"
+        case .knowledgeWorker: return "brain.fill"
+        case .productManager: return "chart.bar.fill"
+        case .researcher: return "magnifyingglass"
         case .other: return "person.fill"
         }
     }

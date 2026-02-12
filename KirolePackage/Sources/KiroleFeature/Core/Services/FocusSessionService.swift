@@ -129,17 +129,91 @@ public final class FocusSessionService: @unchecked Sendable {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
 
-        // 今日统计
         let todayCompletedSessions = todaySessions.filter { session in
             guard let endTime = session.endTime else { return false }
             return calendar.isDate(endTime, inSameDayAs: today)
         }
 
-        let todayFocusTime = todayCompletedSessions.compactMap { $0.calculatedFocusTime }.reduce(0, +)
+        let focusTimes = todayCompletedSessions.compactMap { $0.calculatedFocusTime }
+        let todayFocusTime = focusTimes.reduce(0, +)
+
+        let averageMinutes: Int = focusTimes.isEmpty ? 0 : Int(focusTimes.reduce(0, +) / Double(focusTimes.count) / 60)
+        let longestMinutes: Int = Int((focusTimes.max() ?? 0) / 60)
+        let interruptions = todayCompletedSessions.reduce(0) { $0 + $1.screenUnlockEvents.count }
+        let peakHour = computePeakFocusHour(sessions: todayCompletedSessions, calendar: calendar)
 
         statistics = FocusStatistics(
             todayFocusTime: todayFocusTime,
-            todaySessions: todayCompletedSessions.count
+            todaySessions: todayCompletedSessions.count,
+            averageSessionMinutes: averageMinutes,
+            longestSessionMinutes: longestMinutes,
+            interruptionCount: interruptions,
+            peakFocusHour: peakHour,
+            focusTrendDirection: .stable
+        )
+
+        // Compute trend asynchronously and update
+        Task {
+            let trend = await computeTrendDirection()
+            statistics = FocusStatistics(
+                todayFocusTime: statistics.todayFocusTime,
+                todaySessions: statistics.todaySessions,
+                averageSessionMinutes: statistics.averageSessionMinutes,
+                longestSessionMinutes: statistics.longestSessionMinutes,
+                interruptionCount: statistics.interruptionCount,
+                peakFocusHour: statistics.peakFocusHour,
+                focusTrendDirection: trend
+            )
+        }
+    }
+
+    private func computePeakFocusHour(sessions: [FocusSession], calendar: Calendar) -> Int? {
+        guard !sessions.isEmpty else { return nil }
+
+        var hourBuckets: [Int: TimeInterval] = [:]
+        for session in sessions {
+            guard let focusTime = session.calculatedFocusTime, focusTime > 0 else { continue }
+            let hour = calendar.component(.hour, from: session.startTime)
+            hourBuckets[hour, default: 0] += focusTime
+        }
+
+        return hourBuckets.max(by: { $0.value < $1.value })?.key
+    }
+
+    private func computeTrendDirection() async -> TrendDirection {
+        let calendar = Calendar.current
+        guard let yesterday = calendar.date(byAdding: .day, value: -1, to: calendar.startOfDay(for: Date())) else {
+            return .stable
+        }
+
+        do {
+            let yesterdaySessions = try await localStorage.loadFocusSessionsForDate(yesterday) ?? []
+            let yesterdayFocusTime = yesterdaySessions.compactMap { $0.calculatedFocusTime }.reduce(0, +)
+
+            guard yesterdayFocusTime > 0 else {
+                return statistics.todayFocusTime > 0 ? .up : .stable
+            }
+
+            let ratio = statistics.todayFocusTime / yesterdayFocusTime
+            if ratio > 1.1 { return .up }
+            if ratio < 0.9 { return .down }
+            return .stable
+        } catch {
+            return .stable
+        }
+    }
+
+    // MARK: - Attention Summary
+
+    /// 生成注意力镜像摘要
+    public func generateAttentionSummary() -> AttentionSummary {
+        AttentionSummary(
+            totalFocusMinutes: Int(statistics.todayFocusTime / 60),
+            sessionCount: statistics.todaySessions,
+            longestSessionMinutes: statistics.longestSessionMinutes,
+            interruptionCount: statistics.interruptionCount,
+            peakHour: statistics.peakFocusHour,
+            trend: statistics.focusTrendDirection
         )
     }
 
@@ -162,6 +236,7 @@ public final class FocusSessionService: @unchecked Sendable {
 
     private func saveSessions() async {
         try? await localStorage.saveFocusSessions(todaySessions)
+        try? await localStorage.saveFocusSessionsForDate(todaySessions, date: Date())
     }
 
     // MARK: - Focus Time Calculation

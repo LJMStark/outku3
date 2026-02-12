@@ -49,6 +49,44 @@ public actor OpenAIService {
         return content.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    // MARK: - Task Dehydration
+
+    /// Decompose a task into micro-actions using Implementation Intentions theory
+    public func dehydrateTask(
+        taskTitle: String,
+        availableSlots: [String],
+        userProfile: UserProfile
+    ) async throws -> String {
+        let slotsText = availableSlots.isEmpty
+            ? "No specific time slots available"
+            : availableSlots.joined(separator: ", ")
+
+        let goalsText = userProfile.primaryGoals.map(\.rawValue).joined(separator: ", ")
+
+        let systemPrompt = """
+            You are an execution coach using Implementation Intentions theory. \
+            Break down tasks into concrete micro-actions with What (specific action, max 40 chars), \
+            When (suggested time slot based on schedule), and Why (motivation anchor, max 60 chars). \
+            Return 1-3 micro-actions as a JSON array. Each object has keys: \
+            "what" (string), "when" (string or null), "why" (string or null), "estimatedMinutes" (int or null). \
+            Respond with ONLY the JSON array, no markdown fences or extra text.
+            """
+
+        let userPrompt = """
+            Task: \(taskTitle)
+            User work type: \(userProfile.workType.rawValue)
+            User goals: \(goalsText.isEmpty ? "none specified" : goalsText)
+            Available time slots: \(slotsText)
+            """
+
+        return try await chatCompletion(
+            systemPrompt: systemPrompt,
+            userPrompt: userPrompt,
+            temperature: 0.7,
+            maxTokens: 300
+        )
+    }
+
     // MARK: - Chat Completion
 
     /// Shared helper that sends a chat completion request and returns the response content
@@ -147,6 +185,8 @@ public actor OpenAIService {
         case .settlementSummary:
             let rate = context.totalTasksToday > 0 ? Int(Double(context.tasksCompletedToday) / Double(context.totalTasksToday) * 100) : 0
             return "Summarize the day: \(context.tasksCompletedToday)/\(context.totalTasksToday) tasks completed (\(rate)%). Streak: \(context.currentStreak) days."
+        case .smartReminder:
+            return "Generate a brief, context-aware reminder. Time: \(timeOfDay). Mood: \(moodText). \(context.tasksCompletedToday)/\(context.totalTasksToday) tasks done. Streak: \(context.currentStreak) days. Keep it under 60 characters."
         }
     }
 

@@ -123,6 +123,7 @@ public enum BLEDataEncoder {
         for task in dayPack.topTasks.prefix(maxTasks) {
             data.appendString(task.id, maxLength: 36)
             data.appendString(task.title, maxLength: 30)
+            data.appendString(task.microActionWhat ?? "", maxLength: 40)
             data.append(task.isCompleted ? 0x01 : 0x00)
             data.append(UInt8(task.priority))
         }
@@ -133,6 +134,12 @@ public enum BLEDataEncoder {
         let points = UInt16(min(dayPack.settlementData.pointsEarned, 65535))
         data.append(contentsOf: withUnsafeBytes(of: points.bigEndian) { Array($0) })
         data.append(UInt8(dayPack.settlementData.streakDays))
+        let focusMinutes = UInt16(min(dayPack.settlementData.totalFocusMinutes, 65535))
+        data.append(contentsOf: withUnsafeBytes(of: focusMinutes.bigEndian) { Array($0) })
+        data.append(UInt8(dayPack.settlementData.focusSessionCount))
+        let longestFocus = UInt16(min(dayPack.settlementData.longestFocusMinutes, 65535))
+        data.append(contentsOf: withUnsafeBytes(of: longestFocus.bigEndian) { Array($0) })
+        data.append(UInt8(dayPack.settlementData.interruptionCount))
         data.appendString(dayPack.settlementData.summaryMessage, maxLength: 50)
         data.appendString(dayPack.settlementData.encouragementMessage, maxLength: 50)
 
@@ -146,6 +153,8 @@ public enum BLEDataEncoder {
         var data = Data()
         data.appendString(taskInPage.taskId, maxLength: 36)
         data.appendString(taskInPage.taskTitle, maxLength: 40)
+        data.appendString(taskInPage.microActionWhat ?? "", maxLength: 40)
+        data.appendString(taskInPage.microActionWhy ?? "", maxLength: 60)
         data.appendString(taskInPage.taskDescription ?? "", maxLength: 100)
         data.appendString(taskInPage.estimatedDuration ?? "", maxLength: 10)
         data.appendString(taskInPage.encouragement, maxLength: 50)
@@ -159,6 +168,17 @@ public enum BLEDataEncoder {
     public static func encodeDeviceMode(_ mode: DeviceMode) -> Data {
         var data = Data()
         data.append(mode == .interactive ? 0x00 : 0x01)
+        return data
+    }
+
+    // MARK: - Smart Reminder (0x13)
+
+    /// 编码智能提醒数据
+    public static func encodeSmartReminder(text: String, urgency: ReminderUrgency, petMood: PetMood) -> Data {
+        var data = Data()
+        data.appendString(text, maxLength: 60)
+        data.append(urgency.rawValue)
+        data.append(petMood.rawValue.first?.asciiValue ?? 0x48) // default 'H' for Happy
         return data
     }
 

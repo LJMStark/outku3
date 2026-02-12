@@ -1,6 +1,6 @@
 # Kirole BLE Communication Protocol Specification
 
-**Version:** v1.2.0
+**Version:** v1.3.0
 **Last Updated:** 2026-02-12
 **Status:** Draft
 
@@ -36,6 +36,7 @@ This document defines the BLE communication protocol between the Kirole iOS app 
 | v1.0.0  | 2026-01-30 | Initial protocol specification   |
 | v1.1.0  | 2026-01-31 | Added WheelSelect, ViewEventDetail, LowBattery events |
 | v1.2.0  | 2026-02-12 | Added Spectra 6 pixel format, encoder/power button event docs |
+| v1.3.0  | 2026-02-12 | Message House: Added SmartReminder (0x13) command, microAction fields in DayPack/TaskInPage, focus metrics in SettlementData, ReminderAcknowledged/Dismissed events |
 
 ### 1.3 Terminology
 
@@ -130,6 +131,7 @@ Strings are encoded with a length prefix:
 | `0x10` | DayPack      | Complete daily data package       |
 | `0x11` | TaskInPage   | Task detail page data             |
 | `0x12` | DeviceMode   | Device operation mode             |
+| `0x13` | SmartReminder| AI smart reminder push            |
 
 ---
 
@@ -272,12 +274,13 @@ Complete daily data package containing all 4 pages.
 
 **TopTask Entry:**
 
-| Offset | Field       | Size        | Max Length | Description              |
-|--------|-------------|-------------|------------|--------------------------|
-| 0      | TaskId      | 1 + N bytes | 36 chars   | UUID string              |
-| N+1    | Title       | 1 + N bytes | 30 chars   | Task title               |
-| ...    | IsCompleted | 1 byte      | -          | 0x00=incomplete, 0x01=complete |
-| ...    | Priority    | 1 byte      | -          | Priority level (1-3)     |
+| Offset | Field          | Size        | Max Length | Description              |
+|--------|----------------|-------------|------------|--------------------------|
+| 0      | TaskId         | 1 + N bytes | 36 chars   | UUID string              |
+| N+1    | Title          | 1 + N bytes | 30 chars   | Task title               |
+| ...    | MicroActionWhat| 1 + N bytes | 40 chars   | Micro-action text (empty string if none) |
+| ...    | IsCompleted    | 1 byte      | -          | 0x00=incomplete, 0x01=complete |
+| ...    | Priority       | 1 byte      | -          | Priority level (1-3)     |
 
 **SettlementData:**
 
@@ -287,8 +290,12 @@ Complete daily data package containing all 4 pages.
 | 1      | TasksTotal          | 1 byte      | -          | Total task count         |
 | 2      | PointsEarned        | 2 bytes     | -          | Points (Big Endian)      |
 | 4      | StreakDays          | 1 byte      | -          | Current streak days      |
-| 5      | SummaryMessage      | 1 + N bytes | 50 chars   | Summary text             |
-| N+6    | EncouragementMessage| 1 + N bytes | 50 chars   | Encouragement text       |
+| 5      | TotalFocusMinutes   | 2 bytes     | -          | Total focus time in minutes (Big Endian) |
+| 7      | FocusSessionCount   | 1 byte      | -          | Number of focus sessions |
+| 8      | LongestFocusMinutes | 2 bytes     | -          | Longest single focus session in minutes (BE) |
+| 10     | InterruptionCount   | 1 byte      | -          | Phone unlock count during focus |
+| 11     | SummaryMessage      | 1 + N bytes | 50 chars   | Summary text             |
+| N+12   | EncouragementMessage| 1 + N bytes | 50 chars   | Encouragement text       |
 
 ---
 
@@ -302,6 +309,8 @@ Task detail page data (Page 3).
 |--------|----------------------|-------------|------------|--------------------------|
 | 0      | TaskId               | 1 + N bytes | 36 chars   | UUID string              |
 | N+1    | TaskTitle            | 1 + N bytes | 40 chars   | Task title               |
+| ...    | MicroActionWhat      | 1 + N bytes | 40 chars   | Micro-action: what to do (empty if none) |
+| ...    | MicroActionWhy       | 1 + N bytes | 60 chars   | Motivation anchor: why do it (empty if none) |
 | ...    | TaskDescription      | 1 + N bytes | 100 chars  | Task description         |
 | ...    | EstimatedDuration    | 1 + N bytes | 10 chars   | Duration (e.g., "30min") |
 | ...    | Encouragement        | 1 + N bytes | 50 chars   | Encouragement message    |
@@ -318,6 +327,34 @@ Set device operation mode.
 | Offset | Field | Size   | Description                    |
 |--------|-------|--------|--------------------------------|
 | 0      | Mode  | 1 byte | 0x00=Interactive, 0x01=Focus   |
+
+---
+
+### 4.10 SmartReminder (0x13)
+
+AI-powered smart reminder push from app to device.
+
+**Payload Structure:**
+
+| Offset | Field        | Size        | Max Length | Description                          |
+|--------|--------------|-------------|------------|--------------------------------------|
+| 0      | ReminderText | 1 + N bytes | 60 chars   | Reminder message text                |
+| N+1    | ReminderType | 1 byte      | -          | 0x00=gentle, 0x01=urgent, 0x02=streak_protect |
+| N+2    | PetMoodByte  | 1 byte      | -          | Pet mood for display (ASCII: H/E/F/S/M) |
+
+**ReminderType Values:**
+
+| Value  | Name          | Description                              |
+|--------|---------------|------------------------------------------|
+| `0x00` | Gentle        | Normal reminder, standard display        |
+| `0x01` | Urgent        | Urgent reminder, bold border display     |
+| `0x02` | StreakProtect  | Streak protection, pet shows worried mood|
+
+**Device Behavior:**
+- Display banner overlay on current page
+- Auto-dismiss after 10 seconds if no user interaction
+- Any button press dismisses immediately
+- Send ReminderAcknowledged (0x16) or ReminderDismissed (0x17) event back to app
 
 ---
 
@@ -350,6 +387,8 @@ Events are sent from device to app via the Notify characteristic.
 | `0x13` | SelectedTaskChanged | User changed selected task         |
 | `0x14` | WheelSelect         | Encoder knob pressed (旋钮选择确认) |
 | `0x15` | ViewEventDetail     | User viewing calendar event detail |
+| `0x16` | ReminderAcknowledged| User acknowledged smart reminder   |
+| `0x17` | ReminderDismissed   | Smart reminder auto-dismissed (timeout) |
 | `0x20` | RequestRefresh      | Device requests data refresh       |
 | `0x30` | DeviceWake          | Device woke from sleep             |
 | `0x31` | DeviceSleep         | Device entering sleep mode         |
@@ -515,7 +554,35 @@ User viewing calendar event detail.
 
 ---
 
-### 5.12 LowBattery (0x40)
+### 5.12 ReminderAcknowledged (0x16)
+
+User acknowledged a smart reminder by pressing any button.
+
+**Payload:**
+
+| Offset | Field     | Size    | Description                          |
+|--------|-----------|---------|--------------------------------------|
+| 0      | Timestamp | 4 bytes | Unix Timestamp (Big Endian) (UInt32) |
+
+**App Response:** Log reminder acknowledgment, update reminder analytics.
+
+---
+
+### 5.13 ReminderDismissed (0x17)
+
+Smart reminder was auto-dismissed after 10-second timeout.
+
+**Payload:**
+
+| Offset | Field     | Size    | Description                          |
+|--------|-----------|---------|--------------------------------------|
+| 0      | Timestamp | 4 bytes | Unix Timestamp (Big Endian) (UInt32) |
+
+**App Response:** Log reminder dismissal, adjust future reminder timing.
+
+---
+
+### 5.14 LowBattery (0x40)
 
 Device battery is low.
 
@@ -678,6 +745,33 @@ Payload:
 00                                    // Second: 0
 ```
 
+### 7.4 SmartReminder Example (Hex)
+
+```
+Command: 0x13 (SmartReminder)
+
+Full Packet:
+13 00 22                              // Type=0x13, Length=34
+
+Payload:
+// ReminderText: "Time to review that proposal!" (30 bytes)
+1E 54 69 6D 65 20 74 6F 20 72 65 76
+69 65 77 20 74 68 61 74 20 70 72 6F
+70 6F 73 61 6C 21
+
+00                                    // ReminderType: 0x00 (Gentle)
+48                                    // PetMoodByte: 'H' (Happy)
+```
+
+### 7.5 ReminderAcknowledged Event Example (Hex)
+
+```
+Event: 0x16 (ReminderAcknowledged)
+
+16 04                                 // Type=0x16, Length=4
+67 A1 B2 C3                          // Timestamp: 1738670787 (Big Endian)
+```
+
 ---
 
 ## 8. Error Handling
@@ -824,6 +918,7 @@ public enum BLEDataType: UInt8, Sendable {
     case dayPack = 0x10
     case taskInPage = 0x11
     case deviceMode = 0x12
+    case smartReminder = 0x13
 }
 ```
 
@@ -837,6 +932,8 @@ public enum EventLogType: String, Codable, Sendable {
     case selectedTaskChanged = "selected_task_changed"  // 0x13
     case wheelSelect = "wheel_select"        // 0x14
     case viewEventDetail = "view_event_detail"  // 0x15
+    case reminderAcknowledged = "reminder_acknowledged"  // 0x16
+    case reminderDismissed = "reminder_dismissed"  // 0x17
     case requestRefresh = "request_refresh"  // 0x20
     case deviceWake = "device_wake"          // 0x30
     case deviceSleep = "device_sleep"        // 0x31

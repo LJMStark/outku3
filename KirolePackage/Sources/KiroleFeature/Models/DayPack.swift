@@ -88,6 +88,7 @@ public struct DayPack: Codable, Sendable {
             parts.append("task.completed=\(task.isCompleted ? 1 : 0)")
             parts.append("task.priority=\(task.priority)")
             parts.append("task.due=\(task.dueTime ?? "")")
+            parts.append("task.microAction=\(task.microActionWhat ?? "")")
         }
 
         parts.append("settlement.completed=\(settlementData.tasksCompleted)")
@@ -97,6 +98,10 @@ public struct DayPack: Codable, Sendable {
         parts.append("settlement.mood=\(settlementData.petMood)")
         parts.append("settlement.summary=\(settlementData.summaryMessage)")
         parts.append("settlement.encouragement=\(settlementData.encouragementMessage)")
+        parts.append("settlement.focusMinutes=\(settlementData.totalFocusMinutes)")
+        parts.append("settlement.focusSessions=\(settlementData.focusSessionCount)")
+        parts.append("settlement.longestFocus=\(settlementData.longestFocusMinutes)")
+        parts.append("settlement.interruptions=\(settlementData.interruptionCount)")
 
         let combined = parts.joined(separator: "|")
         let digest = SHA256.hash(data: Data(combined.utf8))
@@ -146,19 +151,22 @@ public struct TaskSummary: Codable, Sendable, Identifiable {
     public let isCompleted: Bool
     public let priority: Int
     public let dueTime: String?
+    public let microActionWhat: String?
 
     public init(
         id: String,
         title: String,
         isCompleted: Bool,
         priority: Int = 1,
-        dueTime: String? = nil
+        dueTime: String? = nil,
+        microActionWhat: String? = nil
     ) {
         self.id = id
         self.title = title
         self.isCompleted = isCompleted
         self.priority = priority
         self.dueTime = dueTime
+        self.microActionWhat = microActionWhat
     }
 
     public init(from task: TaskItem) {
@@ -173,6 +181,7 @@ public struct TaskSummary: Codable, Sendable, Identifiable {
         } else {
             self.dueTime = nil
         }
+        self.microActionWhat = task.microActions?.first?.what
     }
 }
 
@@ -187,6 +196,10 @@ public struct SettlementData: Codable, Sendable {
     public let petMood: String
     public let summaryMessage: String
     public let encouragementMessage: String
+    public let totalFocusMinutes: Int
+    public let focusSessionCount: Int
+    public let longestFocusMinutes: Int
+    public let interruptionCount: Int
 
     public init(
         tasksCompleted: Int,
@@ -195,7 +208,11 @@ public struct SettlementData: Codable, Sendable {
         streakDays: Int,
         petMood: String,
         summaryMessage: String,
-        encouragementMessage: String
+        encouragementMessage: String,
+        totalFocusMinutes: Int = 0,
+        focusSessionCount: Int = 0,
+        longestFocusMinutes: Int = 0,
+        interruptionCount: Int = 0
     ) {
         self.tasksCompleted = tasksCompleted
         self.tasksTotal = tasksTotal
@@ -204,6 +221,10 @@ public struct SettlementData: Codable, Sendable {
         self.petMood = petMood
         self.summaryMessage = summaryMessage
         self.encouragementMessage = encouragementMessage
+        self.totalFocusMinutes = totalFocusMinutes
+        self.focusSessionCount = focusSessionCount
+        self.longestFocusMinutes = longestFocusMinutes
+        self.interruptionCount = interruptionCount
     }
 
     public var completionRate: Double {
@@ -218,6 +239,8 @@ public struct SettlementData: Codable, Sendable {
 public struct TaskInPageData: Codable, Sendable {
     public let taskId: String
     public let taskTitle: String
+    public let microActionWhat: String?
+    public let microActionWhy: String?
     public let taskDescription: String?
     public let estimatedDuration: String?
     public let encouragement: String
@@ -226,6 +249,8 @@ public struct TaskInPageData: Codable, Sendable {
     public init(
         taskId: String,
         taskTitle: String,
+        microActionWhat: String? = nil,
+        microActionWhy: String? = nil,
         taskDescription: String? = nil,
         estimatedDuration: String? = nil,
         encouragement: String,
@@ -233,6 +258,8 @@ public struct TaskInPageData: Codable, Sendable {
     ) {
         self.taskId = taskId
         self.taskTitle = taskTitle
+        self.microActionWhat = microActionWhat
+        self.microActionWhy = microActionWhy
         self.taskDescription = taskDescription
         self.estimatedDuration = estimatedDuration
         self.encouragement = encouragement

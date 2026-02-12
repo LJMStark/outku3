@@ -1,6 +1,6 @@
 # Kirole 硬件产品规格文档
 
-**版本:** v1.1.2
+**版本:** v1.2.0
 **更新日期:** 2026-02-12
 **状态:** 草稿
 **参考产品:** Inku Daily Schedule Planner
@@ -24,16 +24,21 @@
 
 ### 1.1 产品定位
 
-Kirole 是一款面向远程工作者的习惯养成伴侣设备。通过 AI 驱动的像素宠物陪伴和游戏化任务管理，帮助用户建立健康的工作习惯。
+**Unlock the Flow, Make it Happen.**
+
+Kirole 是一款面向深度知识工具用户的专注力伴侣设备。目标用户是那些使用大量生产力工具、却在执行层面挣扎的人。通过 AI 驱动的任务脱水、注意力镜像和智能提醒，配合像素宠物陪伴，帮助用户将复杂意图转化为可执行的微行动，并在 E-ink 屏幕上呈现一个无干扰的专注界面。
 
 ### 1.2 核心功能
 
 | 功能 | 描述 |
 |------|------|
-| 任务展示 | 显示今日任务列表，支持完成标记 |
+| AI 任务脱水 | AI 将复杂任务分解为 What/When/Why 微行动，降低启动阻力 |
+| 注意力镜像 | 反映用户专注模式和注意力数据，量化专注时间与中断次数 |
+| 智能提醒 | 基于行为模式的上下文感知提醒，在合适时机推送到设备 |
+| 任务展示 | 显示今日任务列表（含微行动），支持完成标记 |
 | 宠物陪伴 | 像素风格虚拟宠物，随任务完成成长 |
 | 日程提醒 | 展示日历事件和时间安排 |
-| 每日结算 | 统计当日完成情况，积分奖励 |
+| 每日结算 | 统计当日完成情况，含专注指标和积分奖励 |
 
 ### 1.3 产品形态
 
@@ -44,9 +49,10 @@ Kirole 是一款面向远程工作者的习惯养成伴侣设备。通过 AI 驱
 
 ### 1.4 目标用户
 
+- 深度知识工具用户（使用多种生产力工具但执行力不足）
 - 远程工作者
 - 自由职业者
-- 需要习惯养成的用户
+- 需要专注力管理的用户
 - 喜欢像素风格/电子宠物的用户
 
 ---
@@ -240,6 +246,7 @@ PSRAM 用途：屏幕帧缓冲、BLE 分包缓存、UI 临时数据
 **排序规则:**
 - 日程: 按时间排序，仅显示不可交互
 - 任务: 按优先级排序，可选择进入 Task In
+- **微行动显示:** 如果任务有微行动 (microAction)，在任务列表中显示微行动文本 (microActionWhat) 替代原始标题，帮助用户直接看到下一步具体行动
 
 **显示数量:** 根据屏幕尺寸调整 (4寸/7寸不同)
 **空状态:** 显示"今日无任务"提示
@@ -274,6 +281,12 @@ PSRAM 用途：屏幕帧缓冲、BLE 分包缓存、UI 临时数据
 │                                 │
 │  "Review project proposal"      │
 │                                 │
+│  What: Read section 3 and       │
+│  leave inline comments          │
+│                                 │
+│  Why: Unblock design team       │
+│  before sprint planning         │
+│                                 │
 │  Description: Check all items   │
 │  and provide feedback           │
 │                                 │
@@ -303,6 +316,8 @@ PSRAM 用途：屏幕帧缓冲、BLE 分包缓存、UI 临时数据
 | 字段 | 最大长度 | 描述 |
 |------|----------|------|
 | taskTitle | 40 字符 | 任务标题 |
+| microActionWhat | 40 字符 | 微行动内容 - AI 脱水后的具体下一步 (可选) |
+| microActionWhy | 60 字符 | 动机锚点 - 为什么做这件事 (可选) |
 | taskDescription | 100 字符 | 任务描述 (可选) |
 | estimatedDuration | 10 字符 | 预估时长 (可选) |
 | encouragement | 50 字符 | 鼓励语 |
@@ -326,6 +341,10 @@ PSRAM 用途：屏幕帧缓冲、BLE 分包缓存、UI 临时数据
 │  Points: +50                    │
 │  Streak: 7 days                 │
 │                                 │
+│  Focus: 2h 15m (3 sessions)    │
+│  Longest focus: 45 min          │
+│  Interruptions: 5               │
+│                                 │
 │  ─────────────────────────────  │
 │                                 │
 │  "Great progress today!"        │
@@ -346,12 +365,63 @@ PSRAM 用途：屏幕帧缓冲、BLE 分包缓存、UI 临时数据
 | tasksTotal | 总任务数 |
 | pointsEarned | 获得积分 |
 | streakDays | 连续天数 |
+| totalFocusMinutes | 总专注时长 (分钟) |
+| focusSessionCount | 专注会话次数 |
+| longestFocusMinutes | 最长单次专注时长 (分钟) |
+| interruptionCount | 中断次数 (手机解锁) |
 | summaryMessage | 总结语 (50 字符) |
 | encouragementMessage | 鼓励语 (50 字符) |
 
 ---
 
-### 3.5 屏保模式
+### 3.5 智能提醒显示
+
+**触发:** App 通过 BLE 推送 SmartReminder (0x13) 命令
+
+**显示方式:** Banner 覆盖层，叠加在当前页面上方
+
+**页面内容:**
+
+```
+┌─────────────────────────────────┐
+│  ┌───────────────────────────┐  │
+│  │ [宠物小图标]               │  │
+│  │                           │  │
+│  │ "Time to start that       │  │
+│  │  proposal review!"        │  │
+│  │                           │  │
+│  │ [任意按键关闭]             │  │
+│  └───────────────────────────┘  │
+│                                 │
+│     (当前页面内容模糊显示)       │
+│                                 │
+└─────────────────────────────────┘
+```
+
+**提醒类型:**
+
+| 类型 | 值 | 描述 |
+|------|-----|------|
+| Gentle | 0x00 | 温和提醒，普通显示 |
+| Urgent | 0x01 | 紧急提醒，加粗边框 |
+| StreakProtect | 0x02 | 连续天数保护提醒，带宠物担忧表情 |
+
+**交互:**
+- 任意按键: 关闭提醒 banner，发送 ReminderAcknowledged (0x16) 事件
+- 自动超时 (10 秒): 自动关闭，发送 ReminderDismissed (0x17) 事件
+- 提醒关闭后恢复显示当前页面
+
+**数据字段:**
+
+| 字段 | 最大长度 | 描述 |
+|------|----------|------|
+| reminderText | 60 字符 | 提醒文案 |
+| reminderType | 1 字节 | 提醒类型 (0x00/0x01/0x02) |
+| petMood | 1 字节 | 宠物心情 (用于显示对应表情) |
+
+---
+
+### 3.6 屏保模式
 
 **触发:** 按电源键
 **内容:** 静态宠物图片 (桌面装饰)
@@ -393,7 +463,15 @@ PSRAM 用途：屏幕帧缓冲、BLE 分包缓存、UI 临时数据
 |------|------|
 | 任意按键 | 返回 Overview |
 
-### 4.3 电源键交互
+### 4.3 智能提醒交互
+
+| 操作 | 响应 |
+|------|------|
+| App 推送 SmartReminder | 设备显示 banner 覆盖层 |
+| 任意按键 | 关闭 banner，发送 ReminderAcknowledged 事件 |
+| 10 秒无操作 | 自动关闭 banner，发送 ReminderDismissed 事件 |
+
+### 4.4 电源键交互
 
 | 当前状态 | 操作 | 响应 |
 |----------|------|------|
@@ -401,7 +479,7 @@ PSRAM 用途：屏幕帧缓冲、BLE 分包缓存、UI 临时数据
 | 屏保模式 | 按电源键 | 返回 Start of Day |
 | 关机状态 | 按电源键 | 开机，显示 Start of Day |
 
-### 4.4 状态机
+### 4.5 状态机
 
 ```
 ┌─────────────┐
@@ -510,9 +588,12 @@ PSRAM 用途：屏幕帧缓冲、BLE 分包缓存、UI 临时数据
 | DayPack | 0x10 | App → Device | 发送每日数据包 |
 | TaskInPage | 0x11 | App → Device | 发送任务详情 |
 | DeviceMode | 0x12 | App → Device | 设置设备模式 |
+| SmartReminder | 0x13 | App → Device | AI 智能提醒推送 |
 | CompleteTask | 0x11 | Device → App | 任务完成事件 |
 | WheelSelect | 0x14 | Device → App | 滚轮选择确认 (发送选中项 ID) |
 | ViewEventDetail | 0x15 | Device → App | 查看日程详情 |
+| ReminderAcknowledged | 0x16 | Device → App | 用户确认收到提醒 |
+| ReminderDismissed | 0x17 | Device → App | 提醒超时自动关闭 |
 | RequestRefresh | 0x20 | Device → App | 请求刷新数据 |
 | LowBattery | 0x40 | Device → App | 低电量通知 |
 
@@ -687,6 +768,7 @@ void on_ble_data_received(uint8_t* data, size_t len) {
 | v1.1.0 | 2026-01-31 | 更新按键配置 (电源键 + 滚轮)、交互流程、状态机、BLE 事件 |
 | v1.1.1 | 2026-02-03 | 明确滚轮按键位置为屏幕下方 |
 | v1.1.2 | 2026-02-12 | 屏幕规格更新为 Spectra 6 全彩色，7寸改为 7.3寸，4寸分辨率修正，滚轮改为旋钮，新增 SoC 规格 |
+| v1.2.0 | 2026-02-12 | Message House 更新: 产品定位调整为 Unlock the Flow，新增 AI 任务脱水/注意力镜像/智能提醒核心功能，Task In 增加微行动字段，Settlement 增加专注指标，新增智能提醒显示模式，BLE 命令表增加 SmartReminder |
 
 ---
 

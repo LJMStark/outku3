@@ -196,6 +196,7 @@ public struct TaskItem: Identifiable, Sendable, Codable {
     public var priority: TaskPriority
     public var syncStatus: SyncStatus
     public var lastModified: Date
+    public var microActions: [MicroAction]?
 
     public init(
         id: String = UUID().uuidString,
@@ -208,7 +209,8 @@ public struct TaskItem: Identifiable, Sendable, Codable {
         source: EventSource = .apple,
         priority: TaskPriority = .medium,
         syncStatus: SyncStatus = .synced,
-        lastModified: Date = Date()
+        lastModified: Date = Date(),
+        microActions: [MicroAction]? = nil
     ) {
         self.id = id
         self.localId = localId
@@ -221,6 +223,7 @@ public struct TaskItem: Identifiable, Sendable, Codable {
         self.priority = priority
         self.syncStatus = syncStatus
         self.lastModified = lastModified
+        self.microActions = microActions
     }
 
     // 从 Google API 响应创建

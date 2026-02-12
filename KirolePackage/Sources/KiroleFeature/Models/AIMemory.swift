@@ -8,6 +8,7 @@ public enum AITextType: String, Codable, Sendable {
     case companionPhrase
     case taskEncouragement
     case settlementSummary
+    case smartReminder
 }
 
 // MARK: - AI Context

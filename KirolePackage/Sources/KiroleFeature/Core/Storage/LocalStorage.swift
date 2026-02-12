@@ -167,6 +167,25 @@ public actor LocalStorage {
         try load([FocusSession].self, from: "focus_sessions.json")
     }
 
+    /// Save focus sessions for a specific date (YYYY-MM-DD key)
+    public func saveFocusSessionsForDate(_ sessions: [FocusSession], date: Date) throws {
+        let dateKey = Self.dateKey(from: date)
+        try save(sessions, to: "focus_sessions_\(dateKey).json")
+    }
+
+    /// Load focus sessions for a specific date
+    public func loadFocusSessionsForDate(_ date: Date) throws -> [FocusSession]? {
+        let dateKey = Self.dateKey(from: date)
+        return try load([FocusSession].self, from: "focus_sessions_\(dateKey).json")
+    }
+
+    private static func dateKey(from date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        return formatter.string(from: date)
+    }
+
     // MARK: - Event Logs
 
     public func saveEventLogs(_ logs: [EventLog]) throws {
@@ -203,6 +222,18 @@ public actor LocalStorage {
 
     public func loadLastBleSyncTime() -> Date? {
         userDefaults.object(forKey: Keys.lastBleSyncTime) as? Date
+    }
+
+    // MARK: - Dehydration Cache
+
+    public func saveDehydrationCache(_ cache: DehydrationCache, taskId: String) throws {
+        let safeId = taskId.filter { $0.isLetter || $0.isNumber || $0 == "-" }
+        try save(cache, to: "dehydration_\(safeId).json")
+    }
+
+    public func loadDehydrationCache(taskId: String) throws -> DehydrationCache? {
+        let safeId = taskId.filter { $0.isLetter || $0.isNumber || $0 == "-" }
+        return try load(DehydrationCache.self, from: "dehydration_\(safeId).json")
     }
 
     // MARK: - Clear All

@@ -23,6 +23,7 @@ public enum TimeOfDay: String, Sendable {
 public final class DayPackGenerator {
     public static let shared = DayPackGenerator()
     private let textService = CompanionTextService.shared
+    private let dehydrationService = TaskDehydrationService.shared
 
     private init() {}
 
@@ -62,7 +63,13 @@ public final class DayPackGenerator {
 
     public func generateTaskInPage(task: TaskItem, pet: Pet, userProfile: UserProfile = .default) async -> TaskInPageData {
         let encouragement = await textService.generateTaskEncouragement(taskTitle: task.title, petName: pet.name, petMood: pet.mood, userProfile: userProfile)
-        return TaskInPageData(taskId: task.id, taskTitle: task.title, encouragement: encouragement)
+        let microAction = task.microActions?.first
+        return TaskInPageData(
+            taskId: task.id, taskTitle: task.title,
+            microActionWhat: microAction?.what,
+            microActionWhy: microAction?.why,
+            encouragement: encouragement
+        )
     }
 
     // MARK: - Private Helpers
@@ -95,6 +102,7 @@ public final class DayPackGenerator {
         let completed = tasks.filter { $0.isCompleted }.count
         let total = tasks.count
         let rate = total > 0 ? Double(completed) / Double(total) : 0
+        let focusStats = FocusSessionService.shared.statistics
 
         let (summary, encouragement): (String, String) = {
             switch rate {
@@ -109,7 +117,11 @@ public final class DayPackGenerator {
         return SettlementData(
             tasksCompleted: completed, tasksTotal: total, pointsEarned: completed * 10,
             streakDays: streak.currentStreak, petMood: pet.mood.rawValue,
-            summaryMessage: summary, encouragementMessage: encouragement
+            summaryMessage: summary, encouragementMessage: encouragement,
+            totalFocusMinutes: Int(focusStats.todayFocusTime / 60),
+            focusSessionCount: focusStats.todaySessions,
+            longestFocusMinutes: focusStats.longestSessionMinutes,
+            interruptionCount: focusStats.interruptionCount
         )
     }
 

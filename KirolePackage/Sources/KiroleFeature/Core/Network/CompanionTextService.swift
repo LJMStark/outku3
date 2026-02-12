@@ -132,6 +132,43 @@ public final class CompanionTextService {
         }
     }
 
+    // MARK: - Smart Reminder
+
+    public func generateSmartReminder(
+        reason: ReminderReason,
+        petName: String, petMood: PetMood,
+        taskTitle: String?,
+        streakDays: Int,
+        userProfile: UserProfile = .default
+    ) async -> String {
+        if let aiText = await generateAIText(
+            type: .smartReminder,
+            petName: petName, petMood: petMood,
+            userProfile: userProfile,
+            streak: streakDays
+        ) {
+            return String(aiText.prefix(60))
+        }
+
+        return smartReminderFallback(reason: reason, petName: petName, taskTitle: taskTitle, streakDays: streakDays)
+    }
+
+    private func smartReminderFallback(reason: ReminderReason, petName: String, taskTitle: String?, streakDays: Int) -> String {
+        switch reason {
+        case .idle:
+            return "\(petName) misses you! Time to get back on track."
+        case .deadline:
+            if let title = taskTitle {
+                return "\(title) is due soon. Let's finish it!"
+            }
+            return "You have a task due soon!"
+        case .streakProtect:
+            return "Your \(streakDays)-day streak is at risk! Do one task."
+        case .gentleNudge:
+            return "Ready for the next task? \(petName) believes in you."
+        }
+    }
+
     // MARK: - AI Text Generation
 
     private func generateAIText(

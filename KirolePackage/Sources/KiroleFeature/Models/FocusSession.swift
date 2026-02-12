@@ -72,18 +72,70 @@ public struct ScreenUnlockEvent: Codable, Sendable {
     }
 }
 
+// MARK: - Trend Direction
+
+/// 专注趋势方向
+public enum TrendDirection: String, Codable, Sendable {
+    case up
+    case down
+    case stable
+}
+
+// MARK: - Attention Summary
+
+/// 注意力镜像摘要，用于 Attention Mirror 反馈
+public struct AttentionSummary: Codable, Sendable {
+    public let totalFocusMinutes: Int
+    public let sessionCount: Int
+    public let longestSessionMinutes: Int
+    public let interruptionCount: Int
+    public let peakHour: Int?
+    public let trend: TrendDirection
+
+    public init(
+        totalFocusMinutes: Int,
+        sessionCount: Int,
+        longestSessionMinutes: Int,
+        interruptionCount: Int,
+        peakHour: Int?,
+        trend: TrendDirection
+    ) {
+        self.totalFocusMinutes = totalFocusMinutes
+        self.sessionCount = sessionCount
+        self.longestSessionMinutes = longestSessionMinutes
+        self.interruptionCount = interruptionCount
+        self.peakHour = peakHour
+        self.trend = trend
+    }
+}
+
 // MARK: - Focus Statistics
 
 /// 专注时间统计
 public struct FocusStatistics: Codable, Sendable {
     public var todayFocusTime: TimeInterval
     public var todaySessions: Int
+    public var averageSessionMinutes: Int
+    public var longestSessionMinutes: Int
+    public var interruptionCount: Int
+    public var peakFocusHour: Int?
+    public var focusTrendDirection: TrendDirection
 
     public init(
         todayFocusTime: TimeInterval = 0,
-        todaySessions: Int = 0
+        todaySessions: Int = 0,
+        averageSessionMinutes: Int = 0,
+        longestSessionMinutes: Int = 0,
+        interruptionCount: Int = 0,
+        peakFocusHour: Int? = nil,
+        focusTrendDirection: TrendDirection = .stable
     ) {
         self.todayFocusTime = todayFocusTime
         self.todaySessions = todaySessions
+        self.averageSessionMinutes = averageSessionMinutes
+        self.longestSessionMinutes = longestSessionMinutes
+        self.interruptionCount = interruptionCount
+        self.peakFocusHour = peakFocusHour
+        self.focusTrendDirection = focusTrendDirection
     }
 }
