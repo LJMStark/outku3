@@ -345,6 +345,8 @@ RTC 用于：
 | 0x30-0x31 | 设备状态 | 无 | 设备唤醒/休眠 |
 | 0x40 | LowBattery | BatteryLevel(1B) | 低电量通知 |
 
+> 方向说明：`0x20` 在 App→Device 方向用于 `EventLogRequest(sinceTimestamp)`，在 Device→App 方向用于 `RequestRefresh`，需按方向区分。
+
 要求：
 
 - 掉电不丢失

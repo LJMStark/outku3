@@ -97,6 +97,18 @@ public final class BLESyncCoordinator {
                 }
             }
 
+            if let reminder = await SmartReminderService.shared.evaluateAndPushReminder(
+                tasks: appState.tasks,
+                streak: appState.streak,
+                pet: appState.pet
+            ) {
+                try? await bleService.sendSmartReminder(
+                    text: reminder.text,
+                    urgency: reminder.urgency,
+                    petMood: appState.pet.mood
+                )
+            }
+
             await bleService.requestEventLogsIfNeeded()
             let completedAt = Date()
             await localStorage.saveLastBleSyncTime(completedAt)

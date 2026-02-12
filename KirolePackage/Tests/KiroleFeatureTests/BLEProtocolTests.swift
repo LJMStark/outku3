@@ -38,6 +38,40 @@ struct BLEProtocolTests {
         #expect(result?.payload == payload)
     }
 
+    @Test("BLEPacketizer uses per-chunk payload length and CRC16")
+    func packetizerChunkHeaderFields() throws {
+        let payload = Data((0..<10).map { UInt8($0) })
+        let packets = try BLEPacketizer.packetize(
+            type: 0x10,
+            messageId: 0x1234,
+            payload: payload,
+            maxChunkSize: 4
+        )
+
+        #expect(packets.count == 3)
+
+        let first = packets[0]
+        #expect(first[0] == 0x10)
+        #expect(first[1] == 0x12)
+        #expect(first[2] == 0x34)
+        #expect(first[3] == 0x00)
+        #expect(first[4] == 0x03)
+        #expect(first[5] == 0x00)
+        #expect(first[6] == 0x04)
+        let firstPayload = first.subdata(in: BLEPacketizer.headerSize..<first.count)
+        let firstCRC = UInt16(first[7]) << 8 | UInt16(first[8])
+        #expect(firstCRC == CRC16.ccittFalse(firstPayload))
+
+        let third = packets[2]
+        #expect(third[3] == 0x02)
+        #expect(third[4] == 0x03)
+        #expect(third[5] == 0x00)
+        #expect(third[6] == 0x02)
+        let thirdPayload = third.subdata(in: BLEPacketizer.headerSize..<third.count)
+        let thirdCRC = UInt16(third[7]) << 8 | UInt16(third[8])
+        #expect(thirdCRC == CRC16.ccittFalse(thirdPayload))
+    }
+
     @Test("BLEPacketAssembler rejects packet shorter than header")
     func assemblerRejectsTooShort() {
         let assembler = BLEPacketAssembler()
@@ -56,6 +90,24 @@ struct BLEProtocolTests {
                 maxChunkSize: 0
             )
         }
+    }
+
+    @Test("BLEPacketAssembler rejects packet with invalid per-chunk CRC")
+    func assemblerRejectsInvalidChunkCRC() throws {
+        let payload = Data([0x01, 0x02, 0x03, 0x04])
+        var packet = try #require(
+            BLEPacketizer.packetize(
+                type: 0x10,
+                messageId: 0x0101,
+                payload: payload,
+                maxChunkSize: 4
+            ).first
+        )
+        packet[8] ^= 0xFF // corrupt CRC low byte
+
+        let assembler = BLEPacketAssembler()
+        let result = assembler.append(packetData: packet)
+        #expect(result == nil)
     }
 
     // MARK: - BLE Sync Policy Tests
@@ -338,6 +390,11 @@ struct BLEProtocolTests {
         #expect(data[0] == 0x01)
     }
 
+    @Test("BLEDataType includes SmartReminder command")
+    func bleDataTypeHasSmartReminder() {
+        #expect(BLEDataType.smartReminder.rawValue == 0x13)
+    }
+
     @Test("BLEDataEncoder encodeEventLogRequest encodes timestamp big-endian")
     func encodeEventLogRequestFormat() {
         let timestamp: UInt32 = 1_700_000_000
@@ -457,6 +514,32 @@ struct BLEProtocolTests {
         let log = EventLog.fromBLEPayload(type: EventLogType.selectedTaskChanged.rawByte, payload: payload)
         #expect(log?.eventType == .selectedTaskChanged)
         #expect(log?.taskId == idString)
+    }
+
+    @Test("BLEEventHandler parses variable-length EventLog batch payload")
+    @MainActor
+    func parseEventLogBatchPayloadVariableLength() {
+        let taskId = Data("abc".utf8)
+        let timestamp: UInt32 = 1_700_000_000
+
+        var payload = Data()
+        payload.append(3) // count
+        payload.append(0x01) // encoderRotateUp
+        payload.append(0x40) // lowBattery
+        payload.append(15)
+        payload.append(0x10) // enterTaskIn
+        payload.append(UInt8(taskId.count))
+        payload.append(taskId)
+        payload.append(contentsOf: withUnsafeBytes(of: timestamp.bigEndian) { Array($0) })
+
+        let logs = BLEEventHandler.parseEventLogBatchPayload(payload)
+        #expect(logs.count == 3)
+        #expect(logs[0].eventType == .encoderRotateUp)
+        #expect(logs[1].eventType == .lowBattery)
+        #expect(logs[1].batteryLevel == 15)
+        #expect(logs[2].eventType == .enterTaskIn)
+        #expect(logs[2].taskId == "abc")
+        #expect(Int(logs[2].timestamp.timeIntervalSince1970) == Int(timestamp))
     }
 
     // MARK: - EventLog fromBLEPayload Extended Tests

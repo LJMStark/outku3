@@ -45,6 +45,7 @@ public enum BLEDataType: UInt8, Sendable {
     case dayPack = 0x10
     case taskInPage = 0x11
     case deviceMode = 0x12
+    case smartReminder = 0x13
     case eventLogRequest = 0x20
     case eventLogBatch = 0x21
 }
@@ -90,6 +91,7 @@ public final class BLEService: NSObject {
     private var scanCompletion: (([BLEDevice]) -> Void)?
     private var connectCompletion: ((Result<Void, BLEError>) -> Void)?
     private var writeCompletion: ((Result<Void, BLEError>) -> Void)?
+    private var nextMessageId: UInt16 = 1
 
     // MARK: - UserDefaults Keys
 
@@ -311,6 +313,16 @@ public final class BLEService: NSObject {
         try await writeData(type: .deviceMode, data: data)
     }
 
+    /// 发送智能提醒到 E-ink 设备
+    public func sendSmartReminder(
+        text: String,
+        urgency: ReminderUrgency,
+        petMood: PetMood
+    ) async throws {
+        let data = BLEDataEncoder.encodeSmartReminder(text: text, urgency: urgency, petMood: petMood)
+        try await writeData(type: .smartReminder, data: data)
+    }
+
     /// 请求设备回传 Event Log（增量）
     public func requestEventLogs(since timestamp: UInt32) async throws {
         let data = BLEDataEncoder.encodeEventLogRequest(since: timestamp)
@@ -330,17 +342,40 @@ public final class BLEService: NSObject {
               let peripheral = connectedPeripheral else {
             throw BLEError.notConnected
         }
-
-        let packet = BLESimpleEncoder.encode(type: type.rawValue, payload: data)
         let maxLength = peripheral.maximumWriteValueLength(for: .withResponse)
 
-        var offset = 0
-        while offset < packet.count {
-            let end = min(offset + maxLength, packet.count)
-            let chunk = packet.subdata(in: offset..<end)
-            try await writePacket(chunk, peripheral: peripheral, characteristic: characteristic)
-            offset = end
+        if shouldUseChunkedPacket(type: type, payloadSize: data.count, maxWriteLength: maxLength) {
+            let maxChunkPayloadSize = maxLength - BLEPacketizer.headerSize
+            let packets = try BLEPacketizer.packetize(
+                type: type.rawValue,
+                messageId: allocateMessageID(),
+                payload: data,
+                maxChunkSize: maxChunkPayloadSize
+            )
+            for packet in packets {
+                try await writePacket(packet, peripheral: peripheral, characteristic: characteristic)
+            }
+            return
         }
+
+        let packet = BLESimpleEncoder.encode(type: type.rawValue, payload: data)
+        try await writePacket(packet, peripheral: peripheral, characteristic: characteristic)
+    }
+
+    private func shouldUseChunkedPacket(type: BLEDataType, payloadSize: Int, maxWriteLength: Int) -> Bool {
+        if payloadSize + 3 > maxWriteLength { return true }
+        switch type {
+        case .dayPack, .taskInPage:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func allocateMessageID() -> UInt16 {
+        let current = nextMessageId
+        nextMessageId = (nextMessageId == UInt16.max) ? 1 : (nextMessageId + 1)
+        return current
     }
 
     private func writePacket(

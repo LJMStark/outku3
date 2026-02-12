@@ -167,6 +167,7 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 | `0x11` | TaskInPage   | 任务详情页数据 |
 | `0x12` | DeviceMode   | 设备运行模式 |
 | `0x13` | SmartReminder| AI 智能提醒推送 |
+| `0x20` | EventLogRequest | 请求指定时间戳之后的事件日志 |
 
 ---
 
@@ -303,8 +304,8 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 | ...    | FirstItem              | 1 + N bytes | 40 chars   | 页面 1：首个任务/事件 |
 | ...    | CurrentScheduleSummary | 1 + N bytes | 30 chars   | 页面 2：日程摘要 |
 | ...    | CompanionPhrase        | 1 + N bytes | 40 chars   | 页面 2：伴侣消息 |
-| ...    | TaskCount              | 1 byte      | -          | 置顶任务数量（0-3） |
-| ...    | TopTasks[]             | Variable    | -          | 页面 2：前 3 个任务 |
+| ...    | TaskCount              | 1 byte      | -          | 置顶任务数量（0-5，取决于屏幕尺寸） |
+| ...    | TopTasks[]             | Variable    | -          | 页面 2：4寸最多 3 条，7.3寸最多 5 条 |
 | ...    | SettlementData         | Variable    | -          | 页面 4：结算数据 |
 
 **TopTask 条目：**
@@ -393,6 +394,22 @@ AI 智能提醒，从 App 推送至设备。
 
 ---
 
+### 4.11 EventLogRequest (0x20)
+
+App 请求设备回传增量 Event Log（用于断线重连后补齐事件）。
+
+**Payload 结构：**
+
+| Offset | Field | Size    | 描述 |
+|--------|-------|---------|-------------------------------------------|
+| 0      | Since | 4 bytes | Unix Timestamp（Big Endian，UInt32） |
+
+**设备行为：**
+- 查询本地环形缓冲中 `timestamp > Since` 的事件
+- 按批次通过 EventLogBatch (0x21) 回传
+
+---
+
 ## 5. Device → App 事件
 
 事件通过 Notify characteristic 从设备发送至 App。
@@ -425,6 +442,7 @@ AI 智能提醒，从 App 推送至设备。
 | `0x16` | ReminderAcknowledged| 用户确认了智能提醒 |
 | `0x17` | ReminderDismissed   | 智能提醒自动消失（超时） |
 | `0x20` | RequestRefresh      | 设备请求数据刷新 |
+| `0x21` | EventLogBatch       | 批量回传事件日志 |
 | `0x30` | DeviceWake          | 设备从睡眠中唤醒 |
 | `0x31` | DeviceSleep         | 设备进入睡眠模式 |
 | `0x40` | LowBattery          | 设备电量低通知 |
@@ -611,6 +629,28 @@ AI 智能提醒，从 App 推送至设备。
 
 ---
 
+### 5.15 EventLogBatch (0x21)
+
+设备批量回传事件日志（通常响应 EventLogRequest）。
+
+**Payload 结构：**
+
+| Offset | Field | Size | 描述 |
+|--------|-------|------|---------------------------------------------|
+| 0      | Count | 1 byte | 本批次记录条数 |
+| 1+     | Records | Variable | 顺序拼接的记录流 |
+
+**Record 编码：** `eventType (1B) + eventPayload (NB)`，`eventPayload` 按各事件类型定义（见 5.3 ~ 5.14）。
+
+**解析规则：**
+- `0x01~0x06`, `0x20`, `0x30`, `0x31`：无 payload（记录总长 1B）
+- `0x40`：`BatteryLevel`（记录总长 2B）
+- `0x16`, `0x17`：`Timestamp(4B)`（记录总长 5B）
+- `0x10~0x12`：`Length(1B)+TaskId(NB)+Timestamp(4B)`（记录总长 `2+N+4`）
+- `0x13~0x15`：`Length(1B)+Id(NB)`（记录总长 `2+N`）
+
+---
+
 ## 6. 页面数据结构
 
 ### 6.1 页面 1：每日开始
@@ -635,7 +675,7 @@ AI 智能提醒，从 App 推送至设备。
 
 **内容：**
 - 当前/下一个日程项
-- 前 3 个任务及完成状态
+- 前 N 个任务及完成状态（4寸 3 条，7.3寸 5 条）
 - 伴侣短语（鼓励语）
 
 **数据来源：** DayPack 字段：
@@ -730,10 +770,12 @@ Payload:
 
 ```
 11                                    // Type: CompleteTask
-24                                    // Length: 36 bytes
+29                                    // Length: 41 bytes
+24                                    // TaskId Length: 36 bytes
 61 62 63 64 65 66 67 68 2D 31 32 33 34 2D 35 36  // TaskId UUID
 37 38 2D 39 30 61 62 2D 63 64 65 66 67 68 69 6A
 6B 6C 6D
+67 A1 B2 C3                          // Timestamp (Unix, BE)
 ```
 
 **RequestRefresh 事件：**
@@ -936,6 +978,8 @@ public enum BLEDataType: UInt8, Sendable {
     case taskInPage = 0x11
     case deviceMode = 0x12
     case smartReminder = 0x13
+    case eventLogRequest = 0x20
+    case eventLogBatch = 0x21
 }
 ```
 

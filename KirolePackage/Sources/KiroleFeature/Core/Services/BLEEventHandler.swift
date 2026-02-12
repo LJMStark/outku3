@@ -158,23 +158,56 @@ public enum BLEEventHandler {
 
     /// 处理 Event Log 批次数据
     private static func handleEventLogBatch(_ payload: Data, service: BLEService) {
-        guard payload.count >= 1 else { return }
+        let logs = parseEventLogBatchPayload(payload)
+        guard !logs.isEmpty else { return }
+        handleEventLogs(logs, service: service)
+    }
+
+    /// 解析 Event Log 批次 payload:
+    /// count(1B) + N 条记录，每条记录格式为 eventType(1B) + eventPayload(NB)
+    static func parseEventLogBatchPayload(_ payload: Data) -> [EventLog] {
+        guard !payload.isEmpty else { return [] }
         let count = Int(payload[0])
         var offset = 1
         var logs: [EventLog] = []
 
         for _ in 0..<count {
-            guard payload.count >= offset + 7 else { break }
-            let record = payload.subdata(in: offset..<(offset + 7))
+            guard offset < payload.count else { break }
+            guard let recordLength = recordLength(in: payload, offset: offset) else { break }
+            guard payload.count >= offset + recordLength else { break }
+
+            let record = payload.subdata(in: offset..<(offset + recordLength))
             if let eventLog = parseEventLogRecord(from: record) {
                 logs.append(eventLog)
             }
-            offset += 7
+            offset += recordLength
         }
 
-        guard !logs.isEmpty else { return }
+        return logs
+    }
 
-        handleEventLogs(logs, service: service)
+    private static func recordLength(in payload: Data, offset: Int) -> Int? {
+        guard offset < payload.count else { return nil }
+        let type = payload[offset]
+
+        switch type {
+        case 0x01...0x06, 0x20, 0x30, 0x31:
+            return 1
+        case 0x40:
+            return 2
+        case 0x16, 0x17:
+            return 5
+        case 0x10...0x12:
+            guard offset + 1 < payload.count else { return nil }
+            let idLength = Int(payload[offset + 1])
+            return 2 + idLength + 4
+        case 0x13...0x15:
+            guard offset + 1 < payload.count else { return nil }
+            let idLength = Int(payload[offset + 1])
+            return 2 + idLength
+        default:
+            return nil
+        }
     }
 
     // MARK: - Event Log Handling

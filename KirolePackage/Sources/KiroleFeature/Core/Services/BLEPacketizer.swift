@@ -67,12 +67,6 @@ public enum BLEPacketizer {
             throw BLEPacketError.invalidChunkSize
         }
 
-        guard payload.count <= Int(UInt16.max) else {
-            throw BLEPacketError.payloadTooLarge
-        }
-        let payloadLength = UInt16(payload.count)
-        let crc = CRC16.ccittFalse(payload)
-
         let totalChunks = Int(ceil(Double(payload.count) / Double(maxChunkSize)))
         guard totalChunks > 0, totalChunks <= 255 else {
             throw BLEPacketError.payloadTooLarge
@@ -85,14 +79,16 @@ public enum BLEPacketizer {
             let start = index * maxChunkSize
             let end = min(start + maxChunkSize, payload.count)
             let chunk = payload.subdata(in: start..<end)
+            let chunkLength = UInt16(chunk.count)
+            let chunkCRC = CRC16.ccittFalse(chunk)
 
             var packet = Data()
             packet.append(type)
             packet.append(contentsOf: withUnsafeBytes(of: messageId.bigEndian) { Array($0) })
             packet.append(UInt8(index))
             packet.append(UInt8(totalChunks))
-            packet.append(contentsOf: withUnsafeBytes(of: payloadLength.bigEndian) { Array($0) })
-            packet.append(contentsOf: withUnsafeBytes(of: crc.bigEndian) { Array($0) })
+            packet.append(contentsOf: withUnsafeBytes(of: chunkLength.bigEndian) { Array($0) })
+            packet.append(contentsOf: withUnsafeBytes(of: chunkCRC.bigEndian) { Array($0) })
             packet.append(chunk)
 
             packets.append(packet)
@@ -108,15 +104,11 @@ public final class BLEPacketAssembler {
     private struct Assembly {
         let type: UInt8
         let total: UInt8
-        let payloadLength: UInt16
-        let crc: UInt16
         var chunks: [Int: Data]
 
-        init(type: UInt8, total: UInt8, payloadLength: UInt16, crc: UInt16) {
+        init(type: UInt8, total: UInt8) {
             self.type = type
             self.total = total
-            self.payloadLength = payloadLength
-            self.crc = crc
             self.chunks = [:]
         }
     }
@@ -132,18 +124,22 @@ public final class BLEPacketAssembler {
         let messageId = UInt16(packetData[1]) << 8 | UInt16(packetData[2])
         let seq = Int(packetData[3])
         let total = packetData[4]
-        let payloadLength = UInt16(packetData[5]) << 8 | UInt16(packetData[6])
-        let crc = UInt16(packetData[7]) << 8 | UInt16(packetData[8])
+        let chunkLength = UInt16(packetData[5]) << 8 | UInt16(packetData[6])
+        let chunkCRC = UInt16(packetData[7]) << 8 | UInt16(packetData[8])
 
         guard total > 0, seq < Int(total) else { return nil }
 
         let chunk = packetData.subdata(in: BLEPacketizer.headerSize..<packetData.count)
+        guard chunk.count == Int(chunkLength) else { return nil }
+
+        let computedChunkCRC = CRC16.ccittFalse(chunk)
+        guard computedChunkCRC == chunkCRC else { return nil }
 
         if messages[messageId] == nil {
-            messages[messageId] = Assembly(type: type, total: total, payloadLength: payloadLength, crc: crc)
+            messages[messageId] = Assembly(type: type, total: total)
         }
 
-        guard var assembly = messages[messageId], assembly.total == total else { return nil }
+        guard var assembly = messages[messageId], assembly.total == total, assembly.type == type else { return nil }
 
         assembly.chunks[seq] = chunk
         messages[messageId] = assembly
@@ -151,21 +147,9 @@ public final class BLEPacketAssembler {
         guard assembly.chunks.count == Int(total) else { return nil }
 
         var payload = Data()
-        payload.reserveCapacity(Int(payloadLength))
         for index in 0..<Int(total) {
             guard let part = assembly.chunks[index] else { return nil }
             payload.append(part)
-        }
-
-        guard payload.count == Int(payloadLength) else {
-            messages.removeValue(forKey: messageId)
-            return nil
-        }
-
-        let computedCrc = CRC16.ccittFalse(payload)
-        guard computedCrc == crc else {
-            messages.removeValue(forKey: messageId)
-            return nil
         }
 
         messages.removeValue(forKey: messageId)
