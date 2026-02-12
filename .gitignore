@@ -78,6 +78,10 @@ fastlane/test_output
 
 # Reference files
 页面一比一还原*/
+docs/*.pdf
+docs/*.docx
+docs/Outku 硬件产品规格文档*.md
+硬件需求文档-Hardware Requirements Document v0-1_*.pdf
 
 # Secrets (API keys, credentials)
 Config/Secrets.xcconfig
