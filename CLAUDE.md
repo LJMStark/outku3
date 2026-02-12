@@ -93,7 +93,7 @@ outku3/
 │   └── Sources/KiroleFeature/
 │       ├── ContentView.swift   # Root view with environment injection
 │       ├── State/AppState.swift
-│       ├── Models/             # Pet, Task, Event, DayPack, EventLog, FocusSession, AIMemory, UserProfile
+│       ├── Models/             # Pet, Task, Event, DayPack, EventLog, FocusSession, AIMemory, UserProfile, MicroAction
 │       ├── Design/Theme.swift
 │       ├── Core/               # Services (Auth, API, Storage, BLE)
 │       └── Views/              # Home, Pet, Settings, Onboarding, Components
@@ -147,6 +147,8 @@ Views access via `@Environment(AppState.self)`, `@Environment(ThemeManager.self)
 | `BLEPacketAssembler` | Reassemble incoming chunks into payloads |
 | `DayPackGenerator` | Generate daily data for E-ink device |
 | `FocusSessionService` | Track task focus time with screen activity |
+| `TaskDehydrationService` | AI task decomposition into What/When/Why micro-actions |
+| `SmartReminderService` | Context-aware reminders (deadline/streak/idle/nudge) |
 
 ## Code Patterns
 
@@ -259,6 +261,10 @@ Access colors via `theme.colors.propertyName`:
 
 Key flow: `DayPackGenerator` -> `CompanionTextService` -> `OpenAIService` (optional) -> `LocalStorage` (AI interactions)
 
+- `TaskDehydrationService` decomposes tasks into `MicroAction` (What/When/Why) via `OpenAIService.dehydrateTask()`, with 24h cache in `LocalStorage` and fallback to task title
+- `SmartReminderService` evaluates 4 trigger conditions in priority order: deadline → streakProtect → idle → gentleNudge, rate-limited to 30min intervals, sends via `BLEDataEncoder.encodeSmartReminder()` (0x13 command)
+- `FocusSessionService.statistics` provides expanded metrics: `averageSessionMinutes`, `longestSessionMinutes`, `interruptionCount`, `peakFocusHour`, `focusTrendDirection` (compared to yesterday via date-keyed session storage)
+
 - `BehaviorAnalyzer` is a pure `struct` that computes `UserBehaviorSummary` from tasks/streak data for prompt injection
 - `TimeOfDay.current(at:)` is the shared time-of-day utility (defined on the `TimeOfDay` enum in `DayPackGenerator.swift`) - use this instead of manual hour switches
 - `LocalStorage` uses generic `save<T>`/`load<T>` helpers for all JSON persistence - follow this pattern for new data types
@@ -274,12 +280,18 @@ Key flow: `DayPackGenerator` -> `CompanionTextService` -> `OpenAIService` (optio
 - **RTC**: Built-in RTC for timekeeping when BLE disconnected
 - **Interaction**: Power button + Encoder knob (rotary + press) + BLE to iOS App
 
+### Hardware Docs
+- `docs/硬件需求文档-Hardware-Requirements-Document.md` (v0.2): Hardware electrical requirements (SoC, display, power, battery)
+- `docs/Hardware-Product-Spec-CN.md` (v1.2.0): Product-level spec (page design, interaction, pet system)
+- `docs/BLE-Protocol-Spec.md` (v1.3.0): BLE communication protocol (commands, data structures, events)
+
 ### BLE Protocol
 - Service UUID: `0000FFE0-0000-1000-8000-00805F9B34FB`
 - See `docs/BLE-Protocol-Spec.md` for full protocol
 
 ### Key Models
-- `DayPack`: Daily data package sent to device
+- `DayPack`: Daily data package sent to device (includes micro-action and focus metrics in fingerprint)
+- `MicroAction`: AI-decomposed task step with What (40 chars), When, Why (60 chars), estimatedMinutes
 - `EventLog`: Events received from device (task completion, etc.)
 - `DeviceMode`: Interactive vs Focus mode
 - `FocusSession`: Track focus time per task (30-min threshold for phone inactivity)
