@@ -4,7 +4,7 @@
 <dict>
 	<!-- App Display Name -->
 	<key>CFBundleDisplayName</key>
-	<string>Kiro</string>
+	<string>Kirole</string>
 	<key>CFBundleName</key>
 	<string>$(PRODUCT_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -49,30 +49,30 @@
 
 	<!-- Calendar Access -->
 	<key>NSCalendarsUsageDescription</key>
-	<string>Kiro needs calendar access to sync your events and help you stay organized with your pet companion.</string>
+	<string>Kirole needs calendar access to sync your events and help you stay organized with your pet companion.</string>
 
 	<!-- Full Calendar Access (iOS 17+) -->
 	<key>NSCalendarsFullAccessUsageDescription</key>
-	<string>Kiro needs full calendar access to sync your events and help you stay organized with your pet companion.</string>
+	<string>Kirole needs full calendar access to sync your events and help you stay organized with your pet companion.</string>
 
 	<!-- Write-Only Calendar Access (iOS 17+) -->
 	<key>NSCalendarsWriteOnlyAccessUsageDescription</key>
-	<string>Kiro needs calendar write access to create events for your tasks and habits.</string>
+	<string>Kirole needs calendar write access to create events for your tasks and habits.</string>
 
 	<!-- Reminders Access -->
 	<key>NSRemindersUsageDescription</key>
-	<string>Kiro needs reminders access to sync your tasks and help track your habits.</string>
+	<string>Kirole needs reminders access to sync your tasks and help track your habits.</string>
 
 	<!-- Full Reminders Access (iOS 17+) -->
 	<key>NSRemindersFullAccessUsageDescription</key>
-	<string>Kiro needs full reminders access to sync your tasks and help track your habits.</string>
+	<string>Kirole needs full reminders access to sync your tasks and help track your habits.</string>
 
 	<!-- Bluetooth Access (E-ink Device) -->
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>Kiro uses Bluetooth to connect with your E-ink companion device and display your pet.</string>
+	<string>Kirole uses Bluetooth to connect with your E-ink companion device and display your pet.</string>
 
 	<key>NSBluetoothPeripheralUsageDescription</key>
-	<string>Kiro uses Bluetooth to communicate with your E-ink companion device.</string>
+	<string>Kirole uses Bluetooth to communicate with your E-ink companion device.</string>
 
 	<!-- ==========================================
 	     Google Sign In Configuration
@@ -101,10 +101,10 @@
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>CFBundleURLName</key>
-			<string>Kiro</string>
+			<string>Kirole</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>kiro</string>
+				<string>kirole</string>
 			</array>
 		</dict>
 	</array>
@@ -118,7 +118,7 @@
 	</array>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
-		<string>com.kiro.app.ble.sync</string>
+		<string>com.kirole.app.ble.sync</string>
 	</array>
 
 	<!-- ==========================================

@@ -1,4 +1,4 @@
--- Kiro Supabase Database Schema
+-- Kirole Supabase Database Schema
 -- Run this SQL in your Supabase SQL Editor to create the required tables
 
 -- ==========================================

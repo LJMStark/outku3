@@ -1,6 +1,6 @@
-# AGENTS.md - Kiro Project Guidelines
+# AGENTS.md - Kirole Project Guidelines
 
-This file provides essential context, commands, and rules for AI agents working on the Kiro iOS codebase.
+This file provides essential context, commands, and rules for AI agents working on the Kirole iOS codebase.
 
 ## 1. Core Philosophy
 - **Agent-First**: Delegate complex work to specialized agents.
@@ -18,10 +18,10 @@ This file provides essential context, commands, and rules for AI agents working 
 - Small, focused commits.
 
 ## 2. Project Context
-- **Name**: Kiro (iOS Companion App for E-ink Device)
-- **Architecture**: Workspace + SPM Package (`Kiro.xcworkspace` + `KiroPackage`)
-  - **App Shell**: `Kiro/` (Minimal entry point)
-  - **Feature Logic**: `KiroPackage/Sources/KiroFeature/` (Development happens here)
+- **Name**: Kirole (iOS Companion App for E-ink Device)
+- **Architecture**: Workspace + SPM Package (`Kirole.xcworkspace` + `KirolePackage`)
+  - **App Shell**: `Kirole/` (Minimal entry point)
+  - **Feature Logic**: `KirolePackage/Sources/KiroleFeature/` (Development happens here)
 - **Tech Stack**:
   - **Language**: Swift 6.1+ (Strict Concurrency)
   - **UI**: SwiftUI (Model-View Pattern - **NO ViewModels**)
@@ -36,37 +36,37 @@ Prefer `XcodeBuildMCP` tools when available. Fallback to CLI otherwise.
 **Simulator Build (Preferred):**
 ```javascript
 build_run_sim_name_ws({
-    workspacePath: "/Users/demon/vibecoding/outku3/Kiro.xcworkspace",
-    scheme: "Kiro",
+    workspacePath: "/Users/demon/vibecoding/outku3/Kirole.xcworkspace",
+    scheme: "Kirole",
     simulatorName: "iPhone 17 Pro"
 })
 ```
 
 **CLI Build (Fallback):**
 ```bash
-xcodebuild -workspace Kiro.xcworkspace -scheme Kiro -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
+xcodebuild -workspace Kirole.xcworkspace -scheme Kirole -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
 ```
 
 ### Testing
 **Run All Tests (Simulator):**
 ```javascript
 test_sim_name_ws({
-    workspacePath: "/Users/demon/vibecoding/outku3/Kiro.xcworkspace",
-    scheme: "Kiro",
+    workspacePath: "/Users/demon/vibecoding/outku3/Kirole.xcworkspace",
+    scheme: "Kirole",
     simulatorName: "iPhone 17 Pro"
 })
 ```
 
 **Run Single Test (Package - Fast):**
 ```bash
-cd KiroPackage && swift test --filter "MyTestSuite/testMethod"
+cd KirolePackage && swift test --filter "MyTestSuite/testMethod"
 ```
 
 **Run Single Test (Simulator - Full):**
 ```bash
-xcodebuild -workspace Kiro.xcworkspace -scheme Kiro \
+xcodebuild -workspace Kirole.xcworkspace -scheme Kirole \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
-  test -only-testing:KiroFeatureTests/MyTestSuite/testMethod
+  test -only-testing:KiroleFeatureTests/MyTestSuite/testMethod
 ```
 
 ## 4. Critical Architecture Rules
@@ -76,7 +76,7 @@ xcodebuild -workspace Kiro.xcworkspace -scheme Kiro \
 - **NO `Task { }` in `onAppear`**: Use `.task` modifier.
 - **NO CoreData**: Use SwiftData or raw persistence.
 - **NO XCTest**: Use Swift Testing (`import Testing`).
-- **NO Manual File Adding**: `KiroPackage` handles file references automatically.
+- **NO Manual File Adding**: `KirolePackage` handles file references automatically.
 
 ### ✅ Required Patterns
 - **Concurrency**: Use `@MainActor` for UI. Use `actor` for shared state.
@@ -86,7 +86,7 @@ xcodebuild -workspace Kiro.xcworkspace -scheme Kiro \
   @Environment(AppState.self) private var appState
   @Environment(ThemeManager.self) private var theme
   ```
-- **Public Access**: View types in `KiroPackage` must be `public` to be visible to App Shell.
+- **Public Access**: View types in `KirolePackage` must be `public` to be visible to App Shell.
   ```swift
   public struct MyView: View {
       public init() {} // Required public init
@@ -98,7 +98,7 @@ xcodebuild -workspace Kiro.xcworkspace -scheme Kiro \
 - Always send BLE payloads through `BLEPacketizer` and assemble via `BLEPacketAssembler` (9-byte header + CRC16-CCITT-FALSE).
 - Use `BLESyncCoordinator` for scheduled sync (08:00–23:00 hourly; 23:00–08:00 every 4 hours; 30s window).
 - Gate DayPack refresh with `DayPack.stableFingerprint()` and `LocalStorage.lastDayPackHash`.
-- Background sync uses `BLEBackgroundSyncScheduler` and BGTask id `com.kiro.app.ble.sync`.
+- Background sync uses `BLEBackgroundSyncScheduler` and BGTask id `com.kirole.app.ble.sync`.
 
 ## 5. Code Style & Formatting
 
@@ -123,14 +123,14 @@ import Testing // For test files
 
 1.  **Check Rules**: Read `.cursor/rules/` for specific domain rules (Concurrency, SwiftUI, Testing).
 2.  **Implementation**:
-    -   Modify/Create files in `KiroPackage/Sources/KiroFeature/`.
+    -   Modify/Create files in `KirolePackage/Sources/KiroleFeature/`.
     -   Ensure `public` modifiers if file is referenced by App Shell.
 3.  **Verification**:
     -   Run tests via `swift test` (fast) or `xcodebuild` (thorough).
     -   Fix concurrency warnings (Strict Concurrency is ENABLED).
 4.  **Configuration**:
     -   Secrets go in `Config/Secrets.xcconfig`.
-    -   Capabilities go in `Config/Kiro.entitlements`.
+    -   Capabilities go in `Config/Kirole.entitlements`.
 
 ## 7. Reference Files
 - **Primary Guide**: `CLAUDE.md` (Read this first)

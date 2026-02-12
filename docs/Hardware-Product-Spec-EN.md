@@ -1,4 +1,4 @@
-# Kiro Hardware Product Specification
+# Kirole Hardware Product Specification
 
 **Version:** v1.1.0
 **Last Updated:** 2026-01-31
@@ -24,7 +24,7 @@
 
 ### 1.1 Product Positioning
 
-Kiro is a habit-building companion device designed for remote workers. Through AI-powered pixel pet companionship and gamified task management, it helps users establish healthy work habits.
+Kirole is a habit-building companion device designed for remote workers. Through AI-powered pixel pet companionship and gamified task management, it helps users establish healthy work habits.
 
 ### 1.2 Core Features
 
@@ -661,4 +661,4 @@ void on_ble_data_received(uint8_t* data, size_t len) {
 
 ## Contact
 
-For protocol questions or clarifications, contact the Kiro development team.
+For protocol questions or clarifications, contact the Kirole development team.

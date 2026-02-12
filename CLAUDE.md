@@ -18,7 +18,7 @@ For agent workflow and interaction rules, see `AGENTS.md`.
 
 ## Project Overview
 
-**Kiro** is an iOS companion app for an E-ink hardware device. It helps remote workers build habits through AI-powered pixel pet companionship and gamified task management.
+**Kirole** is an iOS companion app for an E-ink hardware device. It helps remote workers build habits through AI-powered pixel pet companionship and gamified task management.
 
 - **Platform**: iOS 17.0+ (iPhone only)
 - **Language**: Swift 6.1+ with strict concurrency
@@ -32,15 +32,15 @@ When XcodeBuildMCP tools are available, prefer them over raw xcodebuild:
 ```javascript
 // Build and run on simulator (preferred)
 build_run_sim_name_ws({
-    workspacePath: "/Users/demon/vibecoding/outku3/Kiro.xcworkspace",
-    scheme: "Kiro",
+    workspacePath: "/Users/demon/vibecoding/outku3/Kirole.xcworkspace",
+    scheme: "Kirole",
     simulatorName: "iPhone 17 Pro"
 })
 
 // Run tests on simulator
 test_sim_name_ws({
-    workspacePath: "/Users/demon/vibecoding/outku3/Kiro.xcworkspace",
-    scheme: "Kiro",
+    workspacePath: "/Users/demon/vibecoding/outku3/Kirole.xcworkspace",
+    scheme: "Kirole",
     simulatorName: "iPhone 17 Pro"
 })
 ```
@@ -49,31 +49,31 @@ Fallback to raw commands when XcodeBuildMCP is unavailable:
 
 ```bash
 # Swift Package only (fast iteration)
-cd KiroPackage && swift build
-cd KiroPackage && swift test
+cd KirolePackage && swift build
+cd KirolePackage && swift test
 
 # Full app build - Simulator
-xcodebuild -workspace Kiro.xcworkspace -scheme Kiro \
+xcodebuild -workspace Kirole.xcworkspace -scheme Kirole \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
 
 # Full app test
-xcodebuild -workspace Kiro.xcworkspace -scheme Kiro \
+xcodebuild -workspace Kirole.xcworkspace -scheme Kirole \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test
 
 # Run single test (package - fast)
-cd KiroPackage && swift test --filter "AppStateTests/testToggleTaskCompletion"
+cd KirolePackage && swift test --filter "AppStateTests/testToggleTaskCompletion"
 
 # Run single test (simulator - thorough)
-xcodebuild -workspace Kiro.xcworkspace -scheme Kiro \
+xcodebuild -workspace Kirole.xcworkspace -scheme Kirole \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
-  test -only-testing:KiroFeatureTests/AppStateTests/testToggleTaskCompletion
+  test -only-testing:KiroleFeatureTests/AppStateTests/testToggleTaskCompletion
 
 # Real device build & deploy
-xcodebuild -workspace Kiro.xcworkspace -scheme Kiro \
+xcodebuild -workspace Kirole.xcworkspace -scheme Kirole \
   -destination 'platform=iOS,id=<DEVICE_ID>' -allowProvisioningUpdates build
 
 xcrun devicectl device install app --device <DEVICE_ID> \
-  ~/Library/Developer/Xcode/DerivedData/Kiro-*/Build/Products/Debug-iphoneos/Kiro.app
+  ~/Library/Developer/Xcode/DerivedData/Kirole-*/Build/Products/Debug-iphoneos/Kirole.app
 
 # List available devices
 xcrun xctrace list devices
@@ -85,12 +85,12 @@ xcrun xctrace list devices
 
 ```
 outku3/
-├── Kiro.xcworkspace/          # Open this in Xcode
-├── Kiro/                      # App shell (minimal - just entry point)
-│   └── KiroApp.swift
-├── KiroPackage/               # ALL development happens here
+├── Kirole.xcworkspace/          # Open this in Xcode
+├── Kirole/                      # App shell (minimal - just entry point)
+│   └── KiroleApp.swift
+├── KirolePackage/               # ALL development happens here
 │   ├── Package.swift
-│   └── Sources/KiroFeature/
+│   └── Sources/KiroleFeature/
 │       ├── ContentView.swift   # Root view with environment injection
 │       ├── State/AppState.swift
 │       ├── Models/             # Pet, Task, Event, DayPack, EventLog, FocusSession, AIMemory, UserProfile
@@ -100,7 +100,7 @@ outku3/
 ├── Config/
 │   ├── Shared.xcconfig         # Bundle ID, version, deployment target
 │   ├── Secrets.xcconfig        # API keys (git-ignored)
-│   └── Kiro.entitlements      # App capabilities
+│   └── Kirole.entitlements      # App capabilities
 └── docs/                       # Hardware specs, BLE protocol
 ```
 
@@ -230,7 +230,7 @@ var body: some View {
 - Sync policy: 08:00–23:00 hourly; 23:00–08:00 every 4 hours; 30s connection window.
   - Computed by `BLESyncPolicy`, executed by `BLESyncCoordinator`.
 - DayPack refresh must be gated by `DayPack.stableFingerprint()` and `LocalStorage.lastDayPackHash`.
-- BGTask identifier: `com.kiro.app.ble.sync` (requires `bluetooth-central` background mode).
+- BGTask identifier: `com.kirole.app.ble.sync` (requires `bluetooth-central` background mode).
 - Spectra 6 pixel encoding: 4bpp (2 pixels per byte), color index: Black=0x0, White=0x1, Yellow=0x2, Red=0x3, Blue=0x5, Green=0x6
 - Frame buffer size: width * height / 2 bytes (4寸: 120,000 bytes, 7.3寸: 192,000 bytes)
 

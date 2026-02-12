@@ -1,4 +1,4 @@
-# Kiro - iOS App
+# Kirole - iOS App
 
 A modern iOS application using a **workspace + SPM package** architecture for clean separation between app shell and feature code.
 
@@ -30,25 +30,25 @@ These rules files are **starting points** - feel free to:
 ## Project Architecture
 
 ```
-Kiro/
-├── Kiro.xcworkspace/              # Open this file in Xcode
-├── Kiro.xcodeproj/                # App shell project
-├── Kiro/                          # App target (minimal)
+Kirole/
+├── Kirole.xcworkspace/              # Open this file in Xcode
+├── Kirole.xcodeproj/                # App shell project
+├── Kirole/                          # App target (minimal)
 │   ├── Assets.xcassets/                # App-level assets (icons, colors)
-│   ├── KiroApp.swift              # App entry point
-│   └── Kiro.xctestplan            # Test configuration
-├── KiroPackage/                   # 🚀 Primary development area
+│   ├── KiroleApp.swift              # App entry point
+│   └── Kirole.xctestplan            # Test configuration
+├── KirolePackage/                   # 🚀 Primary development area
 │   ├── Package.swift                   # Package configuration
-│   ├── Sources/KiroFeature/       # Your feature code
-│   └── Tests/KiroFeatureTests/    # Unit tests
-└── KiroUITests/                   # UI automation tests
+│   ├── Sources/KiroleFeature/       # Your feature code
+│   └── Tests/KiroleFeatureTests/    # Unit tests
+└── KiroleUITests/                   # UI automation tests
 ```
 
 ## Key Architecture Points
 
 ### Workspace + SPM Structure
-- **App Shell**: `Kiro/` contains minimal app lifecycle code
-- **Feature Code**: `KiroPackage/Sources/KiroFeature/` is where most development happens
+- **App Shell**: `Kirole/` contains minimal app lifecycle code
+- **Feature Code**: `KirolePackage/Sources/KiroleFeature/` is where most development happens
 - **Separation**: Business logic lives in the SPM package, app target just imports and displays it
 
 ### Buildable Folders (Xcode 16)
@@ -59,7 +59,7 @@ Kiro/
 ## Development Notes
 
 ### Code Organization
-Most development happens in `KiroPackage/Sources/KiroFeature/` - organize your code as you prefer.
+Most development happens in `KirolePackage/Sources/KiroleFeature/` - organize your code as you prefer.
 
 ### Public API Requirements
 Types exposed to the app target need `public` access:
@@ -74,23 +74,23 @@ public struct NewView: View {
 ```
 
 ### Adding Dependencies
-Edit `KiroPackage/Package.swift` to add SPM dependencies:
+Edit `KirolePackage/Package.swift` to add SPM dependencies:
 ```swift
 dependencies: [
     .package(url: "https://github.com/example/SomePackage", from: "1.0.0")
 ],
 targets: [
     .target(
-        name: "KiroFeature",
+        name: "KiroleFeature",
         dependencies: ["SomePackage"]
     ),
 ]
 ```
 
 ### Test Structure
-- **Unit Tests**: `KiroPackage/Tests/KiroFeatureTests/` (Swift Testing framework)
-- **UI Tests**: `KiroUITests/` (XCUITest framework)
-- **Test Plan**: `Kiro.xctestplan` coordinates all tests
+- **Unit Tests**: `KirolePackage/Tests/KiroleFeatureTests/` (Swift Testing framework)
+- **UI Tests**: `KiroleUITests/` (XCUITest framework)
+- **Test Plan**: `Kirole.xctestplan` coordinates all tests
 
 ## Configuration
 
@@ -103,19 +103,19 @@ Build settings are managed through **XCConfig files** in `Config/`:
 
 ### Entitlements Management
 App capabilities are managed through a **declarative entitlements file**:
-- `Config/Kiro.entitlements` - All app entitlements and capabilities
+- `Config/Kirole.entitlements` - All app entitlements and capabilities
 - AI agents can safely edit this XML file to add HealthKit, CloudKit, Push Notifications, etc.
 - No need to modify complex Xcode project files
 
 ### Asset Management
-- **App-Level Assets**: `Kiro/Assets.xcassets/` (app icon, accent color)
+- **App-Level Assets**: `Kirole/Assets.xcassets/` (app icon, accent color)
 - **Feature Assets**: Add `Resources/` folder to SPM package if needed
 
 ### SPM Package Resources
 To include assets in your feature package:
 ```swift
 .target(
-    name: "KiroFeature",
+    name: "KiroleFeature",
     dependencies: [],
     resources: [.process("Resources")]
 )

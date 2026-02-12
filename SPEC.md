@@ -1,8 +1,8 @@
-# Kiro - Product Specification
+# Kirole - Product Specification
 
 ## Overview
 
-**Kiro** is an iOS companion app for an E-ink hardware device, designed to help remote workers build better habits through AI-powered pet companionship and gamified task management.
+**Kirole** is an iOS companion app for an E-ink hardware device, designed to help remote workers build better habits through AI-powered pet companionship and gamified task management.
 
 ### Vision
 Transform mundane task completion into a delightful journey of nurturing a virtual pet companion, creating emotional connections that motivate users to maintain productive habits.
@@ -364,9 +364,9 @@ E-ink daily schedule display (similar to Inku)
 ## File Structure (Proposed)
 
 ```
-Kiro/
+Kirole/
 ├── App/
-│   ├── KiroApp.swift
+│   ├── KiroleApp.swift
 │   └── AppDelegate.swift
 ├── Features/
 │   ├── Home/
@@ -408,7 +408,7 @@ Kiro/
 │   ├── Sounds/
 │   └── Localizable.strings
 └── Widget/
-    └── KiroWidget/
+    └── KiroleWidget/
 ```
 
 ---

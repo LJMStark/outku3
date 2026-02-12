@@ -6,9 +6,9 @@
 // ==========================================
 // Project Identity
 // ==========================================
-PRODUCT_NAME = Kiro
-PRODUCT_DISPLAY_NAME = Kiro
-PRODUCT_BUNDLE_IDENTIFIER = com.kiro.app
+PRODUCT_NAME = Kirole
+PRODUCT_DISPLAY_NAME = Kirole
+PRODUCT_BUNDLE_IDENTIFIER = com.kirole.app
 MARKETING_VERSION = 1.0
 CURRENT_PROJECT_VERSION = 1
 
@@ -36,8 +36,8 @@ INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = UIInterfaceOrientationLand
 // ==========================================
 // Entitlements
 // ==========================================
-// AI agents can modify Config/Kiro.entitlements to add capabilities
-CODE_SIGN_ENTITLEMENTS = Config/Kiro.entitlements
+// AI agents can modify Config/Kirole.entitlements to add capabilities
+CODE_SIGN_ENTITLEMENTS = Config/Kirole.entitlements
 
 // ==========================================
 // Info.plist

@@ -1,6 +1,6 @@
-# Kiro Setup Guide
+# Kirole Setup Guide
 
-This document contains detailed configuration instructions for setting up the Kiro app with all required services.
+This document contains detailed configuration instructions for setting up the Kirole app with all required services.
 
 ## Prerequisites
 
@@ -16,9 +16,9 @@ Create a project in [Google Cloud Console](https://console.cloud.google.com/):
 
 1. Enable Google Calendar API and Google Tasks API
 2. Create OAuth 2.0 credentials (iOS app type)
-3. Add your Bundle ID: `com.kiro.app` (or your custom ID)
+3. Add your Bundle ID: `com.kirole.app` (or your custom ID)
 
-Add to `Kiro/Info.plist`:
+Add to `Kirole/Info.plist`:
 ```xml
 <key>GIDClientID</key>
 <string>YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com</string>
@@ -37,7 +37,7 @@ Add to `Kiro/Info.plist`:
 
 Create a project at [Supabase](https://supabase.com/):
 
-Edit `KiroPackage/Sources/KiroFeature/Core/Storage/SupabaseClient.swift`:
+Edit `KirolePackage/Sources/KiroleFeature/Core/Storage/SupabaseClient.swift`:
 ```swift
 private let supabaseURL = "https://YOUR_PROJECT.supabase.co"
 private let supabaseKey = "YOUR_ANON_KEY"
@@ -114,7 +114,7 @@ CREATE POLICY "Users can manage their own sync state"
 
 Get an API key from [OpenAI Platform](https://platform.openai.com/):
 
-Edit `KiroPackage/Sources/KiroFeature/Core/Network/OpenAIService.swift`:
+Edit `KirolePackage/Sources/KiroleFeature/Core/Network/OpenAIService.swift`:
 ```swift
 private var apiKey: String = "sk-YOUR_OPENAI_API_KEY"
 ```
@@ -129,10 +129,10 @@ await OpenAIService.shared.configure(apiKey: "sk-YOUR_OPENAI_API_KEY")
 ### 4. Sign in with Apple
 
 Add capability in Xcode:
-1. Select Kiro target → Signing & Capabilities
+1. Select Kirole target → Signing & Capabilities
 2. Click "+ Capability" → Add "Sign in with Apple"
 
-Or edit `Config/Kiro.entitlements`:
+Or edit `Config/Kirole.entitlements`:
 ```xml
 <key>com.apple.developer.applesignin</key>
 <array>
@@ -142,29 +142,29 @@ Or edit `Config/Kiro.entitlements`:
 
 ### 5. EventKit (Calendar & Reminders)
 
-Add to `Kiro/Info.plist`:
+Add to `Kirole/Info.plist`:
 ```xml
 <key>NSCalendarsUsageDescription</key>
-<string>Kiro needs access to your calendar to display events and help your pet track your schedule.</string>
+<string>Kirole needs access to your calendar to display events and help your pet track your schedule.</string>
 <key>NSRemindersUsageDescription</key>
-<string>Kiro needs access to your reminders to sync tasks with your pet companion.</string>
+<string>Kirole needs access to your reminders to sync tasks with your pet companion.</string>
 ```
 
 ### 6. CloudKit (Optional)
 
 For iCloud sync, add capability in Xcode:
-1. Select Kiro target → Signing & Capabilities
+1. Select Kirole target → Signing & Capabilities
 2. Click "+ Capability" → Add "iCloud"
 3. Enable "CloudKit" and create a container
 
 ### 7. Bluetooth (E-ink Device)
 
-Add to `Kiro/Info.plist`:
+Add to `Kirole/Info.plist`:
 ```xml
 <key>NSBluetoothAlwaysUsageDescription</key>
-<string>Kiro needs Bluetooth to connect to your E-ink companion device.</string>
+<string>Kirole needs Bluetooth to connect to your E-ink companion device.</string>
 <key>NSBluetoothPeripheralUsageDescription</key>
-<string>Kiro needs Bluetooth to communicate with your E-ink device.</string>
+<string>Kirole needs Bluetooth to communicate with your E-ink device.</string>
 ```
 
 ## Environment Configuration
