@@ -44,108 +44,105 @@ public struct OnboardingQuestion: Sendable, Identifiable {
 public enum OnboardingQuestions {
     public static let allQuestions: [OnboardingQuestion] = [
         OnboardingQuestion(
-            id: "discovery",
-            title: "How did you discover Inku?",
+            id: "companionStyle",
+            title: "How should Kirole talk to you?",
+            subtitle: "This shapes how your companion communicates",
             type: .single,
-            category: "Profile",
+            category: "Companion Personality",
             options: [
-                QuestionOption(id: "chatgpt", label: "ChatGPT (or other AI)", sfSymbol: "message.fill"),
-                QuestionOption(id: "facebook", label: "Facebook", sfSymbol: "person.2.fill"),
-                QuestionOption(id: "tiktok", label: "TikTok", sfSymbol: "music.note"),
-                QuestionOption(id: "twitter", label: "X (Twitter)", sfSymbol: "at"),
-                QuestionOption(id: "instagram", label: "Instagram", sfSymbol: "camera.fill"),
-                QuestionOption(id: "kickstarter", label: "Kickstarter", sfSymbol: "rocket.fill"),
-                QuestionOption(id: "appstore", label: "App Store", sfSymbol: "iphone"),
-                QuestionOption(id: "friends", label: "Friends or Family", sfSymbol: "person.2.fill"),
-                QuestionOption(id: "other", label: "Other", sfSymbol: "magnifyingglass"),
+                QuestionOption(id: "Encouraging", label: "Like a supportive friend", sfSymbol: "heart.fill"),
+                QuestionOption(id: "Strict", label: "Like a no-nonsense coach", sfSymbol: "scope"),
+                QuestionOption(id: "Playful", label: "Like a playful buddy", sfSymbol: "star.fill"),
+                QuestionOption(id: "Calm", label: "Like a calm mentor", sfSymbol: "leaf.fill"),
             ]
         ),
         OnboardingQuestion(
-            id: "userType",
-            title: "Which of these sound like you?",
-            subtitle: "Pick all that fit -- Inku's taking notes!",
-            type: .multiple,
-            category: "Profile",
-            options: [
-                QuestionOption(id: "multiple-calendars", label: "I manage multiple calendars", emoji: "calendar"),
-                QuestionOption(id: "juggle-work-home", label: "I juggle work & home", emoji: "house"),
-                QuestionOption(id: "brain-cluttered", label: "My brain feels cluttered", emoji: "brain.fill"),
-                QuestionOption(id: "fun-planner", label: "I need a fun/engaging planner", emoji: "paintpalette.fill"),
-            ]
-        ),
-        OnboardingQuestion(
-            id: "struggles",
-            title: "What do you struggle with?",
-            subtitle: "This will help us personalize Inku for you",
+            id: "motivationStyle",
+            title: "When you're falling behind, what helps most?",
+            subtitle: "Kirole will adjust its encouragement to match",
             type: .single,
-            category: "Habits & Goals",
+            category: "Companion Personality",
             options: [
-                QuestionOption(id: "context-switching", label: "Constant context switching", emoji: "arrow.triangle.2.circlepath"),
-                QuestionOption(id: "too-many-apps", label: "Too many apps to keep track of things", emoji: "iphone.gen3"),
-                QuestionOption(id: "lose-focus", label: "I lose focus easily", emoji: "cloud.fog.fill"),
-                QuestionOption(id: "nothing", label: "Nothing in particular", emoji: "face.smiling"),
-            ]
-        ),
-        OnboardingQuestion(
-            id: "scheduleFullness",
-            title: "How full is your plate right now?",
-            subtitle: "Events, tasks, chores, side projects -- everything counts",
-            type: .single,
-            category: "Habits & Goals",
-            options: [
-                QuestionOption(id: "multiple-daily", label: "Multiple things daily", emoji: "calendar"),
-                QuestionOption(id: "absolutely-packed", label: "Absolutely packed", emoji: "flame.fill"),
-                QuestionOption(id: "few-weekly", label: "A few things a week", emoji: "calendar"),
-                QuestionOption(id: "pretty-light", label: "Pretty light", emoji: "sun.min.fill"),
-            ]
-        ),
-        OnboardingQuestion(
-            id: "schedulePredictability",
-            title: "How does your schedule feel predictable or chaotic?",
-            subtitle: "No judgment -- we meet you where you are",
-            type: .single,
-            category: "Habits & Goals",
-            options: [
-                QuestionOption(id: "unpredictable", label: "Totally unpredictable", emoji: "calendar.badge.exclamationmark"),
-                QuestionOption(id: "depends", label: "Depends on the week", emoji: "flame.fill"),
-                QuestionOption(id: "predictable", label: "Mostly predictable", emoji: "calendar"),
+                QuestionOption(id: "encouragement", label: "Gentle encouragement and patience", sfSymbol: "heart.fill"),
+                QuestionOption(id: "reality-check", label: "A direct reality check", sfSymbol: "exclamationmark.triangle.fill"),
+                QuestionOption(id: "gamify", label: "Making it feel like a game", sfSymbol: "gamecontroller.fill"),
+                QuestionOption(id: "space", label: "Quiet space to figure it out", sfSymbol: "leaf.fill"),
             ]
         ),
         OnboardingQuestion(
             id: "calendarUsage",
             title: "How do you use your calendar today?",
-            subtitle: "No judgment -- we meet you where you are",
+            subtitle: "Helps Kirole understand your scheduling style",
             type: .single,
-            category: "Personalization",
+            category: "Calendar & Task Habits",
             options: [
-                QuestionOption(id: "work-only", label: "Only for work meetings", emoji: "briefcase.fill"),
-                QuestionOption(id: "dont-use", label: "I don't really use one", emoji: "person.fill.questionmark"),
-                QuestionOption(id: "everything", label: "Everything goes in my calendar", emoji: "tray.full.fill"),
+                QuestionOption(id: "work-only", label: "Only for work meetings", sfSymbol: "briefcase.fill"),
+                QuestionOption(id: "dont-use", label: "I don't really use one", sfSymbol: "person.fill.questionmark"),
+                QuestionOption(id: "everything", label: "Everything goes in my calendar", sfSymbol: "tray.full.fill"),
             ]
         ),
         OnboardingQuestion(
             id: "taskTracking",
             title: "What about tracking tasks and to-dos?",
-            subtitle: "Again, no wrong answer here",
+            subtitle: "No wrong answer here",
             type: .single,
-            category: "Personalization",
+            category: "Calendar & Task Habits",
             options: [
-                QuestionOption(id: "wing-it", label: "Nope, I wing it", emoji: "person.fill.questionmark"),
-                QuestionOption(id: "work-only", label: "Only work stuff", emoji: "briefcase.fill"),
-                QuestionOption(id: "cant-live", label: "Can't live without my task list", emoji: "checkmark.circle.fill"),
+                QuestionOption(id: "wing-it", label: "Nope, I wing it", sfSymbol: "person.fill.questionmark"),
+                QuestionOption(id: "work-only", label: "Only work stuff", sfSymbol: "briefcase.fill"),
+                QuestionOption(id: "cant-live", label: "Can't live without my task list", sfSymbol: "checkmark.circle.fill"),
+            ]
+        ),
+        OnboardingQuestion(
+            id: "distractionSources",
+            title: "What pulls you away from deep work?",
+            subtitle: "This helps Kirole know when to step in",
+            type: .multiple,
+            category: "Distraction & Reminders",
+            options: [
+                QuestionOption(id: "notifications", label: "Phone notifications", sfSymbol: "bell.fill"),
+                QuestionOption(id: "app-switching", label: "Switching between apps", sfSymbol: "arrow.triangle.2.circlepath"),
+                QuestionOption(id: "meetings", label: "Meetings and interruptions", sfSymbol: "person.2.fill"),
+                QuestionOption(id: "wandering-mind", label: "My own wandering mind", sfSymbol: "cloud.fill"),
+            ]
+        ),
+        OnboardingQuestion(
+            id: "reminderPreference",
+            title: "How would you like to be reminded?",
+            subtitle: "Kirole can nudge you in different ways",
+            type: .single,
+            category: "Distraction & Reminders",
+            options: [
+                QuestionOption(id: "gentleNudge", label: "Gentle nudges throughout the day", sfSymbol: "bell.fill"),
+                QuestionOption(id: "deadline", label: "Only when deadlines are close", sfSymbol: "clock.fill"),
+                QuestionOption(id: "streakProtect", label: "Protect my streaks at all costs", sfSymbol: "flame.fill"),
+                QuestionOption(id: "minimal", label: "I'll check on my own", sfSymbol: "hand.raised.fill"),
+            ]
+        ),
+        OnboardingQuestion(
+            id: "taskApproach",
+            title: "How do you handle complex tasks?",
+            subtitle: "Kirole can help break things down for you",
+            type: .single,
+            category: "Focus & Tasks",
+            options: [
+                QuestionOption(id: "self-break", label: "I break them down myself", sfSymbol: "list.bullet"),
+                QuestionOption(id: "jump-in", label: "I jump in and figure it out", sfSymbol: "bolt.fill"),
+                QuestionOption(id: "procrastinate", label: "I procrastinate until pressure hits", sfSymbol: "clock.arrow.circlepath"),
+                QuestionOption(id: "need-help", label: "I need help getting started", sfSymbol: "questionmark.circle.fill"),
             ]
         ),
         OnboardingQuestion(
             id: "timeControl",
-            title: "How much control do you feel over your time right now?",
-            subtitle: "Answer honestly, no wrong answers",
+            title: "How much control do you feel over your time?",
+            subtitle: "Be honest -- no judgment here",
             type: .single,
-            category: "Personalization",
+            category: "Focus & Tasks",
             options: [
-                QuestionOption(id: "barely", label: "Barely keeping up", emoji: "face.dashed"),
-                QuestionOption(id: "overwhelmed", label: "Completely overwhelmed", emoji: "exclamationmark.triangle.fill"),
-                QuestionOption(id: "in-control", label: "I'm in control", emoji: "checkmark.circle.fill"),
-                QuestionOption(id: "some-control", label: "Some control, some chaos", emoji: "sun.min.fill"),
+                QuestionOption(id: "barely", label: "Barely keeping up", sfSymbol: "face.dashed"),
+                QuestionOption(id: "overwhelmed", label: "Completely overwhelmed", sfSymbol: "exclamationmark.triangle.fill"),
+                QuestionOption(id: "in-control", label: "I'm in control", sfSymbol: "checkmark.circle.fill"),
+                QuestionOption(id: "some-control", label: "Some control, some chaos", sfSymbol: "sun.min.fill"),
             ]
         ),
     ]

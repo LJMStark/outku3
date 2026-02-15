@@ -82,12 +82,13 @@ public struct QuestionnairePage: View {
 
                         // Character + dialog
                         HStack(alignment: .bottom, spacing: 12) {
+                            // TODO: Replace with Kirole pet asset
                             CharacterView(imageName: "inku-main", size: 64)
 
                             OnboardingDialogBubble(
                                 text: localSelections.isEmpty
-                                    ? "I'll wait for your choice!"
-                                    : "Perfect -- I'll make sure to keep that in mind.",
+                                    ? "Take your time, I'll wait!"
+                                    : "Got it -- I'll remember that.",
                                 style: .light,
                                 showPointer: true
                             )

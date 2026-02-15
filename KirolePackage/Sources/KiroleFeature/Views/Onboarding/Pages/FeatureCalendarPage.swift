@@ -6,9 +6,9 @@ public struct FeatureCalendarPage: View {
     @State private var visibleBoxes: Int = 0
 
     private let dialogBoxes: [(text: String, style: DialogBubbleStyle)] = [
-        ("You have a coffee chat with someone named Anna at 1:30 PM - enjoy!", .light),
-        ("Coffee with Anna! Maybe meet at the new spot we tried yesterday?", .accent),
-        ("Been a while since you hung out with Anna - schedule a hang?", .dark),
+        ("You have 'Write project proposal' -- let's start with: Read section 3 and leave inline comments", .light),
+        ("Your standup is in 30 min -- want to review yesterday's notes first?", .accent),
+        ("You've been crushing it today -- 3 tasks done, 2 to go!", .dark),
     ]
 
     public init(onboardingState: OnboardingState) {
@@ -38,7 +38,7 @@ public struct FeatureCalendarPage: View {
                         .font(.system(size: 28, weight: .bold, design: .rounded))
                         .foregroundStyle(.white)
 
-                    Text("Inku learns and grows with you")
+                    Text("Kirole breaks down your tasks so you know exactly what to do next")
                         .font(.system(size: 16, design: .rounded))
                         .foregroundStyle(.white.opacity(0.8))
                 }
@@ -65,6 +65,7 @@ public struct FeatureCalendarPage: View {
                 .frame(maxHeight: .infinity)
 
                 HStack {
+                    // TODO: Replace with Kirole pet asset
                     CharacterView(imageName: "inku-main", size: 80)
                     Spacer()
                 }

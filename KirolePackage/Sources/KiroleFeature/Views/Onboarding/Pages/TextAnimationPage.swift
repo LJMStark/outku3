@@ -9,24 +9,23 @@ public struct TextAnimationPage: View {
     @State private var canTap = false
 
     private let textLines: [(text: String, alignment: TextAlignment)] = [
-        ("Time is all that matters.", .leading),
-        ("But it never feels enough.", .leading),
-        ("And somehow,", .trailing),
-        ("still...it wastes away.", .trailing),
-        ("Distractions everywhere", .leading),
-        ("Control nowhere.", .leading),
-        ("More tools = More noise", .center),
+        ("You use ten tools to stay organized.", .leading),
+        ("But somehow, nothing gets done.", .leading),
+        ("Tasks pile up.", .trailing),
+        ("Focus slips away.", .trailing),
+        ("And the tools meant to help...", .leading),
+        ("...just add more noise.", .leading),
+        ("Kirole is different.", .center),
     ]
 
     private let finalLines = [
-        "Inku is different.",
-        "Giving you back what's yours.",
+        "Turning complexity into action.",
     ]
 
     private let features: [(emoji: String, text: String)] = [
-        ("\u{1F4A1}", "Clarity"),
-        ("\u{1F39B}\u{FE0F}", "Control"),
-        ("\u{2764}\u{FE0F}", "Joy"),
+        ("\u{1F3AF}", "Focus"),
+        ("\u{1F30A}", "Flow"),
+        ("\u{2705}", "Done"),
     ]
 
     public init(onboardingState: OnboardingState) {

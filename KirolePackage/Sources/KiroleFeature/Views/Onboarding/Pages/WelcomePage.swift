@@ -38,9 +38,10 @@ public struct WelcomePage: View {
                 VStack(spacing: 24) {
                     if showDialog {
                         HStack(alignment: .bottom, spacing: 12) {
+                            // TODO: Replace with Kirole pet asset
                             CharacterView(imageName: "inku-main", size: 96)
                             OnboardingDialogBubble(
-                                text: "Inku here! I'm so excited to bring focus, clarity and joy to your day!",
+                                text: "Hey there! I'm Kirole, your focus companion. Ready to unlock your flow?",
                                 style: .light
                             )
                         }
@@ -50,7 +51,7 @@ public struct WelcomePage: View {
                         ))
                     }
 
-                    OnboardingCTAButton(title: "I'm Ready!", emoji: "\u{2764}\u{FE0F}\u{200D}\u{1F525}") {
+                    OnboardingCTAButton(title: "Let's Go!", emoji: "\u{2764}\u{FE0F}\u{200D}\u{1F525}") {
                         onboardingState.goNext()
                     }
 

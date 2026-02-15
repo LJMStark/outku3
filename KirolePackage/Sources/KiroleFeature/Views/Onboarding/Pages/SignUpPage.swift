@@ -57,6 +57,7 @@ public struct SignUpPage: View {
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 0) {
                         // Logo
+                        // TODO: Replace with Kirole pet asset
                         Image("inku-head", bundle: .module)
                             .resizable()
                             .aspectRatio(contentMode: .fit)
@@ -69,7 +70,7 @@ public struct SignUpPage: View {
                             .foregroundStyle(Color(hex: "1A1A2E"))
                             .padding(.top, 24)
 
-                        Text("One more step to clarity, control and joy.")
+                        Text("One more step to unlock your flow.")
                             .font(.system(size: 16, design: .rounded))
                             .foregroundStyle(Color(hex: "6B7280"))
                             .padding(.top, 8)
@@ -177,6 +178,17 @@ public struct SignUpPage: View {
                                     .shadow(color: .black.opacity(isValidEmail ? 0.08 : 0), radius: 4, y: 2)
                             }
                             .disabled(!isValidEmail)
+                        }
+
+                        // Skip for now
+                        Button {
+                            appState.completeOnboarding(with: onboardingState.profile)
+                        } label: {
+                            Text("Skip for now")
+                                .font(.system(size: 16, weight: .medium, design: .rounded))
+                                .foregroundStyle(Color(hex: "6B7280"))
+                                .padding(.top, 16)
+                                .padding(.bottom, 8)
                         }
                     }
                     .padding(.horizontal, 24)

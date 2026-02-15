@@ -40,7 +40,7 @@ public struct FeatureFocusPage: View {
                         .font(.system(size: 28, weight: .bold, design: .rounded))
                         .foregroundStyle(.white)
 
-                    Text("Widget updates quietly -- no dings, no FOMO.")
+                    Text("Kirole tracks your focus time quietly -- no dings, no FOMO.")
                         .font(.system(size: 16, design: .rounded))
                         .foregroundStyle(.white.opacity(0.8))
                 }

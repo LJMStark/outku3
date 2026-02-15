@@ -36,14 +36,12 @@ public struct OnboardingContainerView: View {
         case 2:
             FeatureFocusPage(onboardingState: onboardingState)
         case 3:
-            PersonalizationPage(onboardingState: onboardingState)
-        case 4:
-            KickstarterPage(onboardingState: onboardingState)
-        case 5:
             TextAnimationPage(onboardingState: onboardingState)
-        case 6, 7, 8, 9, 10, 11, 12, 13:
-            QuestionnairePage(onboardingState: onboardingState, questionIndex: page - 6)
-        case 14:
+        case 4:
+            PersonalizationPage(onboardingState: onboardingState)
+        case 5, 6, 7, 8, 9, 10, 11, 12:
+            QuestionnairePage(onboardingState: onboardingState, questionIndex: page - 5)
+        case 13:
             SignUpPage(onboardingState: onboardingState)
         default:
             WelcomePage(onboardingState: onboardingState)

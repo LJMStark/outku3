@@ -73,13 +73,13 @@ public struct BeforeAfterCard: View {
                     Circle()
                         .fill(Color(hex: "0D8A6A"))
                         .frame(width: 40, height: 40)
-                    Text("factory")
+                    Text("focus")
                         .font(.system(size: 10))
                         .foregroundStyle(.white)
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("2:30 Inku Factory Sync")
+                    Text("2:30 Kirole Focus Session")
                         .font(.system(size: 16, weight: .bold, design: .rounded))
                         .foregroundStyle(Color(hex: "1A1A2E"))
 
@@ -87,7 +87,7 @@ public struct BeforeAfterCard: View {
                         .font(.system(size: 14, weight: .medium, design: .rounded))
                         .foregroundStyle(Color(hex: "4B5563"))
 
-                    Text("Meeting with Raymond at the factory. Call to discuss next steps in production.")
+                    Text("45 min focused, 0 interruptions. Your best session this week.")
                         .font(.system(size: 14, design: .rounded))
                         .foregroundStyle(Color(hex: "6B7280"))
                         .lineLimit(3)

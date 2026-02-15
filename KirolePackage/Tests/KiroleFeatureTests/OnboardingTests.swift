@@ -27,9 +27,9 @@ struct OnboardingStateNavigationTests {
 
     @Test func goNextAtMaxStaysAtMax() {
         let state = OnboardingState()
-        state.currentPage = 14
+        state.currentPage = 13
         state.goNext()
-        #expect(state.currentPage == 14)
+        #expect(state.currentPage == 13)
     }
 
     @Test func directionIsPositiveOnNext() {
@@ -51,16 +51,15 @@ struct OnboardingStateNavigationTests {
 struct OnboardingProfileCodableTests {
     @Test func profileEncodeDecode() throws {
         let profile = OnboardingProfile(
-            discoverySource: .chatgpt,
-            userTypes: [.multipleCalendars, .brainCluttered],
-            struggle: .loseFocus,
-            scheduleFullness: .absolutelyPacked,
-            schedulePredictability: .depends,
+            companionStyle: .encouraging,
+            motivationStyle: .encouragement,
             calendarUsage: .everything,
             taskTracking: .cantLive,
+            distractionSources: [.notifications, .appSwitching],
+            reminderPreference: .gentleNudge,
+            taskApproach: .selfBreak,
             timeControl: .someControl,
             selectedTheme: "Classic Warm",
-            selectedAvatar: .inku,
             onboardingCompletedAt: Date(timeIntervalSince1970: 1700000000)
         )
 
@@ -78,7 +77,7 @@ struct OnboardingProfileCodableTests {
     @Test func defaultProfileHasNilCompletedAt() {
         let profile = OnboardingProfile()
         #expect(profile.onboardingCompletedAt == nil)
-        #expect(profile.userTypes.isEmpty)
+        #expect(profile.distractionSources.isEmpty)
     }
 }
 
@@ -116,34 +115,34 @@ struct OnboardingQuestionDataTests {
 struct OnboardingStateAnswerTests {
     @Test func setSingleAnswer() {
         let state = OnboardingState()
-        state.setAnswer(questionId: "discovery", value: "chatgpt")
-        #expect(state.profile.discoverySource == .chatgpt)
+        state.setAnswer(questionId: "companionStyle", value: "Encouraging")
+        #expect(state.profile.companionStyle == .encouraging)
     }
 
     @Test func toggleMultiAnswer() {
         let state = OnboardingState()
-        state.toggleMultiAnswer(questionId: "userType", optionId: "multiple-calendars")
-        #expect(state.profile.userTypes.contains(.multipleCalendars))
+        state.toggleMultiAnswer(questionId: "distractionSources", optionId: "notifications")
+        #expect(state.profile.distractionSources.contains(.notifications))
 
-        state.toggleMultiAnswer(questionId: "userType", optionId: "brain-cluttered")
-        #expect(state.profile.userTypes.count == 2)
+        state.toggleMultiAnswer(questionId: "distractionSources", optionId: "app-switching")
+        #expect(state.profile.distractionSources.count == 2)
 
         // Toggle off
-        state.toggleMultiAnswer(questionId: "userType", optionId: "multiple-calendars")
-        #expect(!state.profile.userTypes.contains(.multipleCalendars))
-        #expect(state.profile.userTypes.count == 1)
+        state.toggleMultiAnswer(questionId: "distractionSources", optionId: "notifications")
+        #expect(!state.profile.distractionSources.contains(.notifications))
+        #expect(state.profile.distractionSources.count == 1)
     }
 
     @Test func selectedOptionsReturnsCorrectValues() {
         let state = OnboardingState()
-        state.setAnswer(questionId: "struggles", value: "lose-focus")
-        let selected = state.selectedOptions(for: "struggles")
-        #expect(selected == ["lose-focus"])
+        state.setAnswer(questionId: "calendarUsage", value: "everything")
+        let selected = state.selectedOptions(for: "calendarUsage")
+        #expect(selected == ["everything"])
     }
 
     @Test func selectedOptionsEmptyByDefault() {
         let state = OnboardingState()
-        let selected = state.selectedOptions(for: "discovery")
+        let selected = state.selectedOptions(for: "companionStyle")
         #expect(selected.isEmpty)
     }
 }
