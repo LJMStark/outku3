@@ -45,6 +45,9 @@ public final class AppState: @unchecked Sendable {
     // User Profile
     public var userProfile: UserProfile = .default
 
+    // Onboarding Profile
+    public var onboardingProfile: OnboardingProfile?
+
     // Device Mode
     public var deviceMode: DeviceMode = .interactive
     public var isDemoMode: Bool = false
@@ -126,6 +129,10 @@ public final class AppState: @unchecked Sendable {
 
         if let savedProfile = try? await localStorage.loadUserProfile() {
             userProfile = savedProfile
+        }
+
+        if let savedOnboardingProfile = try? await localStorage.loadOnboardingProfile() {
+            onboardingProfile = savedOnboardingProfile
         }
 
         await updatePetState()
@@ -564,14 +571,17 @@ public final class AppState: @unchecked Sendable {
     }
 
     @MainActor
-    public func completeOnboarding() {
-        var updatedProfile = userProfile
-        updatedProfile.onboardingCompletedAt = Date()
-        updateUserProfile(updatedProfile)
+    public func completeOnboarding(with profile: OnboardingProfile) {
+        var completedProfile = profile
+        completedProfile.onboardingCompletedAt = Date()
+        onboardingProfile = completedProfile
+        Task {
+            try? await localStorage.saveOnboardingProfile(completedProfile)
+        }
     }
 
     public var isOnboardingCompleted: Bool {
-        userProfile.onboardingCompletedAt != nil
+        onboardingProfile?.onboardingCompletedAt != nil || userProfile.onboardingCompletedAt != nil
     }
 }
 

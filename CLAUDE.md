@@ -93,10 +93,17 @@ outku3/
 │   └── Sources/KiroleFeature/
 │       ├── ContentView.swift   # Root view with environment injection
 │       ├── State/AppState.swift
-│       ├── Models/             # Pet, Task, Event, DayPack, EventLog, FocusSession, AIMemory, UserProfile, MicroAction
+│       ├── Models/             # Pet, Task, Event, DayPack, EventLog, FocusSession, AIMemory, UserProfile, MicroAction, OnboardingProfile
 │       ├── Design/Theme.swift
 │       ├── Core/               # Services (Auth, API, Storage, BLE)
-│       └── Views/              # Home, Pet, Settings, Onboarding, Components
+│       └── Views/
+│           ├── Home/, Pet/, Settings/, Components/
+│           └── Onboarding/
+│               ├── OnboardingContainerView.swift  # Page router (15 screens)
+│               ├── Logic/OnboardingState.swift     # @Observable navigation + profile state
+│               ├── Data/OnboardingQuestions.swift   # 8 questionnaire definitions
+│               ├── Components/                     # 11 shared components
+│               └── Pages/                          # 8 page views (Screen 0-14)
 ├── Config/
 │   ├── Shared.xcconfig         # Bundle ID, version, deployment target
 │   ├── Secrets.xcconfig        # API keys (git-ignored)
@@ -236,9 +243,32 @@ var body: some View {
 - Spectra 6 pixel encoding: 4bpp (2 pixels per byte), color index: Black=0x0, White=0x1, Yellow=0x2, Red=0x3, Blue=0x5, Green=0x6
 - Frame buffer size: width * height / 2 bytes (4寸: 120,000 bytes, 7.3寸: 192,000 bytes)
 
+## Onboarding Flow (15 Screens)
+
+15-screen onboarding ported from React + Framer Motion (`temp/app/`), fully native SwiftUI.
+
+| Screen | View | Description |
+|--------|------|-------------|
+| 0 | `WelcomePage` | Teal bg, FloatingIconRing, CharacterView + dialog, CTA "I'm Ready!" |
+| 1 | `FeatureCalendarPage` | 3 staggered DialogBubbles, bouncing arrows |
+| 2 | `FeatureFocusPage` | BeforeAfterCard (tap-to-flip), blue-monster |
+| 3 | `PersonalizationPage` | Theme picker (ThemePreviewCard) + Avatar selector |
+| 4 | `KickstarterPage` | Kickstarter stats card + funded badge |
+| 5 | `TextAnimationPage` | Dark bg, 7-line sequential text animation, tap to continue |
+| 6-13 | `QuestionnairePage(questionIndex:)` | Data-driven from OnboardingQuestions (8 questions) |
+| 14 | `SignUpPage` | Google Sign In + Apple/Email placeholders |
+
+Key types:
+- `OnboardingState` (`@Observable @MainActor`): manages `currentPage` (0-14), `direction`, `profile`, `soundEnabled`
+- `OnboardingProfile`: 9 enums + all questionnaire fields, persisted via `LocalStorage`
+- `OnboardingContainerView`: routes pages via `switch`, transitions with `.id()` + `.transition(.asymmetric)` + `.animation(.spring)`
+- `OnboardingQuestions.allQuestions`: 8 questions with categories (Profile / Habits & Goals / Personalization)
+
+Image assets in `Resources/Media.xcassets/`: inku-main, inku-head, blue-monster, avatar-boy/dog/girl/robot/toaster, kickstarter-card. Access via `Image("name", bundle: .module)`.
+
 ## Theme System
 
-5 themes: Cream (default), Sage, Lavender, Peach, Sky.
+3 themes: Classic Warm (default), Elegant Purple, Modern Teal.
 
 Access colors via `theme.colors.propertyName`:
 - `background`, `cardBackground`, `primaryText`, `secondaryText`

@@ -95,6 +95,16 @@ public actor LocalStorage {
         try load(UserProfile.self, from: "user_profile.json")
     }
 
+    // MARK: - Onboarding Profile
+
+    public func saveOnboardingProfile(_ profile: OnboardingProfile) throws {
+        try save(profile, to: "onboarding_profile.json")
+    }
+
+    public func loadOnboardingProfile() throws -> OnboardingProfile? {
+        try load(OnboardingProfile.self, from: "onboarding_profile.json")
+    }
+
     // MARK: - Sync State
 
     public func saveSyncState(_ state: SyncState) throws {
@@ -244,7 +254,7 @@ public actor LocalStorage {
             "pet.json", "streak.json", "tasks.json", "events.json",
             "sync_state.json", "haiku_cache.json", "user_profile.json",
             "focus_sessions.json", "event_logs.json", "ai_interactions.json",
-            "behavior_summary.json"
+            "behavior_summary.json", "onboarding_profile.json"
         ]
         for file in files {
             let url = documentsDirectory.appendingPathComponent(file)

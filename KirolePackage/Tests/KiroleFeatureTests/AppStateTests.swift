@@ -690,20 +690,22 @@ struct AppStateTests {
 
             #expect(state.isOnboardingCompleted == false)
 
-            state.completeOnboarding()
+            state.completeOnboarding(with: OnboardingProfile())
 
             #expect(state.isOnboardingCompleted == true)
-            #expect(state.userProfile.onboardingCompletedAt != nil)
+            #expect(state.onboardingProfile?.onboardingCompletedAt != nil)
 
             // Reset
             profile.onboardingCompletedAt = nil
             state.updateUserProfile(profile)
+            state.onboardingProfile = nil
         }
 
         @Test("isOnboardingCompleted reflects profile state")
         @MainActor
         func isOnboardingCompletedReflectsState() {
             let state = AppState.shared
+            state.onboardingProfile = nil
 
             var profile = state.userProfile
             profile.onboardingCompletedAt = nil

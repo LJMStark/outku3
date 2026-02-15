@@ -12,10 +12,7 @@ public struct ContentView: View {
             if appState.isOnboardingCompleted {
                 mainAppView
             } else {
-                OnboardingView(isOnboardingComplete: Binding(
-                    get: { appState.isOnboardingCompleted },
-                    set: { _ in }
-                ))
+                OnboardingContainerView()
                     .environment(appState)
                     .environment(themeManager)
                     .environment(authManager)
