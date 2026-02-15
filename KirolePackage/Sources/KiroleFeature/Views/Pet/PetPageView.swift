@@ -123,39 +123,26 @@ private struct PetIllustrationSection: View {
 
     var body: some View {
         Button(action: onTap) {
-            ZStack {
-                // Background gradient
-                LinearGradient(
-                    colors: [
-                        theme.colors.background,
-                        theme.colors.accentLight.opacity(0.5),
-                        Color.white
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
+            VStack {
+                Spacer()
 
-                VStack {
-                    Spacer()
+                ZStack {
+                    // Ground shadow
+                    Ellipse()
+                        .fill(Color.black.opacity(0.1))
+                        .frame(width: 120, height: 30)
+                        .offset(y: 60)
 
-                    ZStack {
-                        // Ground shadow
-                        Ellipse()
-                            .fill(Color.black.opacity(0.1))
-                            .frame(width: 120, height: 30)
-                            .offset(y: 60)
-
-                        // Pet image
-                        Image("tiko_mushroom", bundle: .module)
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(width: 320, height: 320)
-                            .offset(y: breathingOffset)
-                    }
-
-                    Spacer()
-                        .frame(height: 40)
+                    // Pet image
+                    Image("tiko_mushroom", bundle: .module)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 320, height: 320)
+                        .offset(y: breathingOffset)
                 }
+
+                Spacer()
+                    .frame(height: 40)
             }
             .frame(height: 340)
         }
