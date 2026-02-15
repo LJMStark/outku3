@@ -2,13 +2,16 @@
 
 ## Overview
 
-**Kirole** is an iOS companion app for an E-ink hardware device, designed to help remote workers build better habits through AI-powered pet companionship and gamified task management.
+**Kirole** is an iOS companion app for an E-ink hardware device — a focus companion for deep knowledge workers. Through AI-driven task dehydration, attention mirroring, and smart reminders, paired with a pixel pet companion, Kirole helps users transform complex intentions into executable micro-actions.
 
 ### Vision
-Transform mundane task completion into a delightful journey of nurturing a virtual pet companion, creating emotional connections that motivate users to maintain productive habits.
+**Unlock the Flow, Make it Happen.** Help users who rely on many productivity tools but struggle with execution — by breaking tasks into clear next steps, reflecting focus patterns, and providing context-aware nudges through both the app and an E-ink companion device.
 
 ### Target Users
-Remote workers seeking to establish healthy routines through AI pet companionship and habit gamification.
+- Deep knowledge workers who use multiple productivity tools but struggle with execution
+- Remote workers and freelancers needing focus management
+- Users who want a low-distraction companion device on their desk
+- Two user paths: **App + Hardware** (E-ink device) and **App-only**
 
 ---
 
@@ -20,7 +23,7 @@ Remote workers seeking to establish healthy routines through AI pet companionshi
 - Current date display
 - Time with timezone indicator (e.g., "GMT")
 - Weather information (atmosphere feature, not core functionality)
-- Navigation icons: Home, Pet (Tiko), Settings
+- Navigation icons: Home, Pet (Kirole), Settings
 
 #### 1.2 Timeline
 - **Default View**: Today's tasks and events
@@ -66,15 +69,14 @@ Remote workers seeking to establish healthy routines through AI pet companionshi
 #### 2.3 Pet Illustration
 - Large pet display with animations
 - Responds to user interactions (light nurturing)
-- Shows current evolutionary form
+- Shows current mood/state visually
 
 ---
 
 ### 3. Pet Status Page
 
 #### 3.1 Pet Identity
-- Name (user-customizable, e.g., "Baby Waffle")
-- Pronouns selection
+- Name: Kirole (same as product)
 - Adventures count (completed tasks)
 
 #### 3.2 Growth Metrics
@@ -114,10 +116,10 @@ Remote workers seeking to establish healthy routines through AI pet companionshi
   - UI element styling
   - Consistent visual language
 
-#### 4.3 Avatar/Pet Customization
-- Preset pet designs (pixel art style)
-- User can upload custom images
-- Hybrid mode: presets + custom uploads
+#### 4.3 Pet Customization
+- Unified pet form (Kirole) — single design, not multiple presets
+- User can upload a custom photo
+- Pet displays 5 mood states visually
 
 #### 4.4 Third-Party Integrations
 - **Apple Ecosystem**:
@@ -134,14 +136,13 @@ Remote workers seeking to establish healthy routines through AI pet companionshi
 
 ## Pet System Design
 
-### Evolution System
-**Branch Evolution** (Pokémon-style):
-- Multiple evolution paths based on user behavior
-- Different forms unlock based on:
-  - Task completion patterns
-  - Streak consistency
-  - Focus time distribution
-  - Activity types
+### Unified Form
+**Single pet form** named Kirole with 5 mood states:
+- Happy (default)
+- Excited (consecutive task completions)
+- Focused (during Task In / focus sessions)
+- Sleepy (nighttime)
+- Missing You (prolonged absence)
 
 ### Growth Logic
 **Comprehensive Scoring System**:
@@ -172,24 +173,31 @@ Remote workers seeking to establish healthy routines through AI pet companionshi
 ## Hardware Integration
 
 ### Device Type
-E-ink daily schedule display (similar to Inku)
+Kirole E-ink companion device — a desk-mounted focus display.
+- **Sizes:** 4-inch (400x600) and 7.3-inch (800x480)
+- **Display:** E Ink Spectra 6, 4bpp, 6 colors (Black, White, Yellow, Red, Blue, Green)
+- **SoC:** ESP32-S3, BLE 5.0
+- **Interaction:** Power button + Encoder knob (rotary + press)
+- **Battery:** 30+ days standby
 
 ### Communication
 **Hybrid Mode**:
 - Primary: Bluetooth Low Energy (BLE) direct connection
 - Secondary: Cloud sync via Supabase
-- Ensures reliability across scenarios
+- BLE sync policy: hourly 08:00–23:00, every 4h overnight
+- Protocol details: see `docs/BLE通信协议规格文档.md`
 
-### Hardware Display Content
-- Task list and schedule
-- Pet display (static or simplified animation for E-ink)
-- Time and date
-- Weather information
+### Hardware Display Pages
+4 pages on E-ink device (via DayPack):
+1. **Start of Day** — Morning greeting, daily summary, first item, weather
+2. **Overview** — Mixed timeline (tasks + events), companion phrase, micro-actions
+3. **Task In** — Task detail with What/Why micro-actions, encouragement, focus challenge
+4. **Settlement** — Daily stats, focus metrics, streak, points
 
-### Development Approach
-**Synchronized Development**:
-- App and hardware integration developed in parallel
-- Ensures seamless experience from launch
+### Smart Reminders on Device
+- AI-driven context-aware reminders pushed via BLE (0x13 command)
+- 3 types: Gentle, Urgent, Streak Protect
+- Banner overlay on current page, auto-dismiss after 10s
 
 ---
 
@@ -203,7 +211,7 @@ E-ink daily schedule display (similar to Inku)
 ### Data Layer
 
 #### Local Storage
-- Core Data or SwiftData for local persistence
+- SwiftData or raw JSON persistence (NO CoreData)
 - Offline-first architecture
 
 #### Cloud Sync
@@ -222,8 +230,12 @@ E-ink daily schedule display (similar to Inku)
 - OAuth 2.0 authentication flow
 
 #### AI Services
-- OpenAI API for haiku generation
-- Context-aware content generation
+- **CompanionTextService**: Personalized greetings, summaries, encouragement (4 styles: encouraging/strict/playful/calm)
+- **TaskDehydrationService**: AI task decomposition into What/When/Why micro-actions
+- **SmartReminderService**: Context-aware reminders (deadline/streakProtect/idle/gentleNudge)
+- **BehaviorAnalyzer**: User behavior summary for prompt injection
+- **OpenAI API** (GPT-4o-mini): Backend for companion text and task dehydration
+- Haiku generation (part of CompanionTextService)
 
 #### Location Services
 - Sunrise/sunset calculation
@@ -248,8 +260,8 @@ E-ink daily schedule display (similar to Inku)
 
 ### Notifications
 - Hardware-focused push strategy
-- Notifications primarily sent to E-ink device
-- Reference: Inku implementation approach
+- Notifications primarily sent to E-ink device via BLE SmartReminder
+- App-side notifications for App-only users
 
 ### Audio
 **Subtle Sound Effects**:
@@ -323,9 +335,9 @@ E-ink daily schedule display (similar to Inku)
 
 ### Pet Assets
 **Pixel Art Style**:
-- Initial assets created during development
+- Unified pet form (Kirole)
+- 5 mood state variations
 - Placeholder-ready for future replacement
-- Multiple evolution forms needed
 
 ### Themes
 - 3-5 fixed, carefully designed themes
@@ -344,13 +356,16 @@ E-ink daily schedule display (similar to Inku)
 5. Apple Calendar/Reminders sync
 6. Google Calendar/Tasks sync
 7. CloudKit data sync
-8. Pet growth and evolution system
-9. AI haiku generation
-10. iOS widgets (multiple styles)
-11. BLE hardware communication
-12. Supabase backend integration
-13. Story-driven onboarding
-14. Full animations and sound effects
+8. Pet mood states and growth system
+9. AI companion text (CompanionTextService)
+10. AI task dehydration (TaskDehydrationService)
+11. Smart reminders (SmartReminderService)
+12. Focus session tracking (FocusSessionService)
+13. iOS widgets (multiple styles)
+14. BLE hardware communication (DayPack, TaskInPage, SmartReminder)
+15. Supabase backend integration
+16. Story-driven onboarding (see ONBOARDING-SPEC.md)
+17. Full animations and sound effects
 
 ### Excluded from MVP
 - Subscription/payment features
@@ -361,54 +376,28 @@ E-ink daily schedule display (similar to Inku)
 
 ---
 
-## File Structure (Proposed)
+## File Structure
+
+See `CLAUDE.md` for the actual workspace + SPM package structure. Key layout:
 
 ```
-Kirole/
-├── App/
-│   ├── KiroleApp.swift
-│   └── AppDelegate.swift
-├── Features/
-│   ├── Home/
-│   │   ├── HomeView.swift
-│   │   ├── TimelineView.swift
-│   │   ├── EventCardView.swift
-│   │   └── HaikuView.swift
-│   ├── Pet/
-│   │   ├── PetPageView.swift
-│   │   ├── TaskListView.swift
-│   │   └── PetDisplayView.swift
-│   ├── PetStatus/
-│   │   ├── PetStatusView.swift
-│   │   ├── StatsView.swift
-│   │   └── StreakView.swift
-│   ├── Settings/
-│   │   ├── SettingsView.swift
-│   │   ├── ThemePickerView.swift
-│   │   └── IntegrationsView.swift
-│   └── Onboarding/
-│       ├── OnboardingView.swift
-│       └── StoryView.swift
-├── Core/
-│   ├── Models/
-│   ├── Services/
-│   │   ├── CalendarService.swift
-│   │   ├── CloudKitService.swift
-│   │   ├── SupabaseService.swift
-│   │   ├── BluetoothService.swift
-│   │   └── OpenAIService.swift
-│   ├── Utilities/
-│   └── Extensions/
-├── Design/
-│   ├── Theme/
-│   ├── Components/
-│   └── Animations/
-├── Resources/
-│   ├── Assets.xcassets
-│   ├── Sounds/
-│   └── Localizable.strings
-└── Widget/
-    └── KiroleWidget/
+outku3/
+├── Kirole.xcworkspace/          # Open this in Xcode
+├── Kirole/                      # App shell (entry point only)
+│   └── KiroleApp.swift
+├── KirolePackage/               # ALL development happens here
+│   ├── Package.swift
+│   └── Sources/KiroleFeature/
+│       ├── ContentView.swift
+│       ├── State/AppState.swift
+│       ├── Models/
+│       ├── Design/Theme.swift
+│       ├── Core/               # Services
+│       └── Views/
+│           ├── Home/, Pet/, Settings/, Components/
+│           └── Onboarding/
+├── Config/                      # xcconfig + entitlements
+└── docs/                        # Hardware specs, BLE protocol
 ```
 
 ---
@@ -421,8 +410,10 @@ Kirole/
 3. **Image 4**: Pet status - Stats, streak, task statistics
 4. **Image 5**: Settings - Widget preview, themes, integrations
 
-### Functional Reference
-- Inku: Daily Schedule Planner (hardware integration approach)
+### Hardware Documentation
+- `docs/硬件需求文档-Hardware-Requirements-Document.md` (v0.3) — Hardware electrical requirements
+- `docs/固件功能规格文档.md` (v1.3.0) — Firmware feature spec (pages, interaction, pet system)
+- `docs/BLE通信协议规格文档.md` (v1.3.1) — BLE protocol (commands, data structures, events)
 
 ---
 
@@ -443,13 +434,11 @@ Kirole/
 
 ## Open Questions
 
-1. Specific BLE protocol details (pending hardware team documentation)
-2. Final pet evolution tree design
-3. Exact theme color palettes
-4. Haiku generation prompt engineering
-5. E-ink display resolution and constraints
+1. Final pet pixel art assets (unified form, 5 mood states)
+2. Custom photo upload implementation details (crop, format, size limits)
+3. App-only user experience without hardware (which features are gated?)
 
 ---
 
-*Document Version: 1.0*
-*Last Updated: 2026-01-24*
+*Document Version: 2.0*
+*Last Updated: 2026-02-15*
