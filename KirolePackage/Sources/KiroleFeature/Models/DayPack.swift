@@ -242,7 +242,6 @@ public struct TaskInPageData: Codable, Sendable {
     public let microActionWhat: String?
     public let microActionWhy: String?
     public let taskDescription: String?
-    public let estimatedDuration: String?
     public let encouragement: String
     public let focusChallengeActive: Bool
 
@@ -252,7 +251,6 @@ public struct TaskInPageData: Codable, Sendable {
         microActionWhat: String? = nil,
         microActionWhy: String? = nil,
         taskDescription: String? = nil,
-        estimatedDuration: String? = nil,
         encouragement: String,
         focusChallengeActive: Bool = false
     ) {
@@ -261,7 +259,6 @@ public struct TaskInPageData: Codable, Sendable {
         self.microActionWhat = microActionWhat
         self.microActionWhy = microActionWhy
         self.taskDescription = taskDescription
-        self.estimatedDuration = estimatedDuration
         self.encouragement = encouragement
         self.focusChallengeActive = focusChallengeActive
     }

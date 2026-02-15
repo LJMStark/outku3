@@ -348,7 +348,6 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 | ...    | MicroActionWhat      | 1 + N bytes | 40 chars   | 微行动：做什么（无则为空） |
 | ...    | MicroActionWhy       | 1 + N bytes | 60 chars   | 动机锚点：为什么做（无则为空） |
 | ...    | TaskDescription      | 1 + N bytes | 100 chars  | 任务描述 |
-| ...    | EstimatedDuration    | 1 + N bytes | 10 chars   | 预估时长（例如 "30min"） |
 | ...    | Encouragement        | 1 + N bytes | 50 chars   | 鼓励消息 |
 | ...    | FocusChallengeActive | 1 byte      | -          | 0x00=未激活, 0x01=已激活 |
 
@@ -503,7 +502,7 @@ App 请求设备回传增量 Event Log（用于断线重连后补齐事件）。
 | 1+N    | Timestamp | 4 bytes  | Unix Timestamp（Big Endian）（UInt32） |
 
 **App 响应：**
-- 标记任务为已跳过，切换到下一个任务
+- 标记任务为已跳过，返回 Overview（概览页）
 - 记录专注会话结束时间戳
 - 计算专注时长（结束 - 开始）
 - 与 Screen Time 数据交叉比对以确定实际专注时间
@@ -691,7 +690,6 @@ App 请求设备回传增量 Event Log（用于断线重连后补齐事件）。
 
 **内容：**
 - 任务标题和描述
-- 预估时长
 - 鼓励消息
 - 专注挑战指示器
 

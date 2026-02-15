@@ -439,7 +439,6 @@ struct BLEProtocolTests {
             taskId: "task-1",
             taskTitle: "Write BLE tests",
             taskDescription: "Add comprehensive tests",
-            estimatedDuration: "30m",
             encouragement: "Go for it!",
             focusChallengeActive: true
         )

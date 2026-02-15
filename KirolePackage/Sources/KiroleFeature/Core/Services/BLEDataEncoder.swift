@@ -156,7 +156,6 @@ public enum BLEDataEncoder {
         data.appendString(taskInPage.microActionWhat ?? "", maxLength: 40)
         data.appendString(taskInPage.microActionWhy ?? "", maxLength: 60)
         data.appendString(taskInPage.taskDescription ?? "", maxLength: 100)
-        data.appendString(taskInPage.estimatedDuration ?? "", maxLength: 10)
         data.appendString(taskInPage.encouragement, maxLength: 50)
         data.append(taskInPage.focusChallengeActive ? 0x01 : 0x00)
         return data
