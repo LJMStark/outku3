@@ -118,57 +118,26 @@ struct PetPageView: View {
 
 private struct PetIllustrationSection: View {
     let onTap: () -> Void
+    @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
-    @State private var breathingOffset: CGFloat = 0
 
     var body: some View {
-        Button(action: onTap) {
-            ZStack {
-                // Background gradient
-                LinearGradient(
-                    colors: [
-                        theme.colors.background,
-                        theme.colors.accentLight.opacity(0.5),
-                        Color.white
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
+        ZStack {
+            // Background gradient
+            LinearGradient(
+                colors: [
+                    theme.colors.background,
+                    theme.colors.accentLight.opacity(0.5),
+                    Color.white
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
 
-                // Pet image placeholder
-                VStack {
-                    Spacer()
-
-                    ZStack {
-                        // Ground shadow
-                        Ellipse()
-                            .fill(Color.black.opacity(0.1))
-                            .frame(width: 120, height: 30)
-                            .offset(y: 60)
-
-                        // Pet image
-                        Image("tiko_mushroom", bundle: .module)
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(width: 320, height: 320)
-                            .offset(y: breathingOffset)
-                    }
-
-                    Spacer()
-                        .frame(height: 40)
-                }
-            }
-            .frame(height: 340)
+            // Pixel pet with full animation system
+            PixelPetView(size: .large, animated: true, onTap: onTap)
         }
-        .buttonStyle(.plain)
-        .onAppear {
-            withAnimation(
-                .easeInOut(duration: 3)
-                .repeatForever(autoreverses: true)
-            ) {
-                breathingOffset = -8
-            }
-        }
+        .frame(height: 340)
     }
 }
 

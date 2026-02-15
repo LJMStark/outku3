@@ -52,18 +52,44 @@ struct PixelPetView: View {
     @State private var starOpacities: [Double] = []
     @State private var isPressed: Bool = false
 
+    // Idle micro-animation states
+    @State private var idleBreathScale: CGFloat = 1.0
+    @State private var idleSwayX: CGFloat = 0
+    @State private var isBlinking: Bool = false
+
     // Mood-specific animation states
     @State private var sleepyBreathScale: CGFloat = 1.0
     @State private var sleepyZOffset: CGFloat = 0
     @State private var showZzz: Bool = false
     @State private var excitedSparkles: Bool = false
+    @State private var excitedTremor: CGFloat = 0
     @State private var sparkleOffsets: [CGSize] = []
     @State private var sparkleOpacities: [Double] = []
     @State private var missingLookDirection: CGFloat = 0
     @State private var focusedPulse: CGFloat = 1.0
+    @State private var focusedLean: Double = 0
+    @State private var happyTailWag: Double = 0
+    @State private var sleepySink: CGFloat = 0
+
+    // Interaction feedback states
+    @State private var showHearts: Bool = false
+    @State private var heartOffsets: [CGSize] = []
+    @State private var heartOpacities: [Double] = []
+    @State private var showNotes: Bool = false
+    @State private var noteOffsets: [CGSize] = []
+    @State private var noteOpacities: [Double] = []
+    @State private var longPressSquash: CGFloat = 1.0
+    @State private var showLoveBubble: Bool = false
+    @State private var loveBubbleOpacity: Double = 0
+
+    // Scene animation states
+    @State private var cloudDriftX: CGFloat = 0
+    @State private var starTwinkle: [Double] = Array(repeating: 1.0, count: 8)
+    @State private var windowLightX: CGFloat = -50
 
     private let timer = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
     private let moodTimer = Timer.publish(every: 2.0, on: .main, in: .common).autoconnect()
+    private let blinkTimer = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
 
     // 当前场景（优先使用传入的，否则使用 appState 中的）
     private var currentScene: PetScene {
@@ -83,6 +109,9 @@ struct PixelPetView: View {
                 // Mood-specific effects
                 moodEffects
 
+                // Interaction particles
+                interactionParticles
+
                 // Celebration stars
                 if showStars {
                     ForEach(0..<5, id: \.self) { index in
@@ -94,14 +123,18 @@ struct PixelPetView: View {
                     }
                 }
 
-                // Shadow
+                // Shadow with bounce/breath linkage
                 Ellipse()
                     .fill(shadowColor.opacity(0.15))
                     .frame(width: 60 * size.scale, height: 20 * size.scale)
                     .offset(y: 40 * size.scale + bounceOffset * 0.3)
-                    .scaleEffect(x: celebrationScale, y: 1.0 - (celebrationScale - 1.0) * 0.5)
+                    .scaleEffect(
+                        x: (celebrationScale * idleBreathScale) * (1.0 - abs(bounceOffset) * 0.003),
+                        y: 1.0 - (celebrationScale - 1.0) * 0.5
+                    )
+                    .opacity(1.0 - abs(bounceOffset) * 0.008)
 
-                // Pet body with mood-specific transforms
+                // Pet body with idle + mood transforms
                 PixelArtBody(
                     pixelSize: size.pixelSize,
                     primaryColor: petPrimaryColor,
@@ -109,11 +142,12 @@ struct PixelPetView: View {
                     accentColor: theme.colors.accent,
                     animationPhase: animationPhase,
                     petForm: appState.pet.currentForm,
-                    mood: appState.pet.mood
+                    mood: appState.pet.mood,
+                    isBlinking: isBlinking
                 )
-                .offset(x: missingLookDirection, y: bounceOffset)
-                .scaleEffect(celebrationScale * sleepyBreathScale * focusedPulse)
-                .rotationEffect(.degrees(celebrationRotation))
+                .offset(x: missingLookDirection + idleSwayX + excitedTremor, y: bounceOffset + sleepySink)
+                .scaleEffect(celebrationScale * sleepyBreathScale * focusedPulse * idleBreathScale * longPressSquash)
+                .rotationEffect(.degrees(celebrationRotation + focusedLean + happyTailWag))
                 .scaleEffect(isPressed ? 0.95 : 1.0)
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
@@ -121,13 +155,17 @@ struct PixelPetView: View {
             .contentShape(Rectangle())
             .onTapGesture {
                 triggerHappyAnimation()
+                triggerTapParticles()
                 onTap?()
             }
-            .onLongPressGesture(minimumDuration: 0.1, pressing: { pressing in
-                withAnimation(.easeInOut(duration: 0.1)) {
+            .onLongPressGesture(minimumDuration: 0.5, pressing: { pressing in
+                withAnimation(.easeInOut(duration: 0.15)) {
                     isPressed = pressing
+                    longPressSquash = pressing ? 0.92 : 1.0
                 }
-            }, perform: {})
+            }, perform: {
+                triggerLoveBubble()
+            })
         }
         .onReceive(timer) { _ in
             guard animated else { return }
@@ -139,6 +177,16 @@ struct PixelPetView: View {
         .onReceive(moodTimer) { _ in
             guard animated else { return }
             triggerMoodAnimation()
+        }
+        .onReceive(blinkTimer) { _ in
+            guard animated else { return }
+            // Random blink every 3-5 seconds (timer fires every 1s)
+            if Int.random(in: 0...3) == 0 && !isBlinking {
+                isBlinking = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                    isBlinking = false
+                }
+            }
         }
         .onChange(of: appState.pet.adventuresCount) { oldValue, newValue in
             if newValue > oldValue {
@@ -154,6 +202,8 @@ struct PixelPetView: View {
         .onAppear {
             if animated {
                 triggerMoodAnimation()
+                startIdleAnimations()
+                startSceneAnimations()
             }
         }
     }
@@ -164,7 +214,7 @@ struct PixelPetView: View {
     private var sceneBackground: some View {
         switch currentScene {
         case .indoor:
-            // 室内：温暖的渐变背景
+            // Indoor: warm gradient
             LinearGradient(
                 colors: [
                     theme.colors.cardBackground,
@@ -174,7 +224,6 @@ struct PixelPetView: View {
                 endPoint: .bottom
             )
             .overlay(
-                // 窗户光线效果
                 Ellipse()
                     .fill(
                         RadialGradient(
@@ -188,11 +237,11 @@ struct PixelPetView: View {
                         )
                     )
                     .frame(width: 200, height: 150)
-                    .offset(x: -50, y: -80)
+                    .offset(x: windowLightX, y: -80)
             )
 
         case .outdoor:
-            // 户外：蓝天白云
+            // Outdoor: blue sky with drifting clouds
             LinearGradient(
                 colors: [
                     Color(hex: "#87CEEB"),
@@ -202,7 +251,6 @@ struct PixelPetView: View {
                 endPoint: .bottom
             )
             .overlay(
-                // 云朵
                 HStack(spacing: 30) {
                     cloudShape
                         .offset(y: -60)
@@ -210,10 +258,9 @@ struct PixelPetView: View {
                         .scaleEffect(0.7)
                         .offset(y: -40)
                 }
-                .offset(y: -20)
+                .offset(x: cloudDriftX, y: -20)
             )
             .overlay(
-                // 草地
                 Rectangle()
                     .fill(
                         LinearGradient(
@@ -231,7 +278,7 @@ struct PixelPetView: View {
             )
 
         case .night:
-            // 夜晚：深蓝色星空
+            // Night: twinkling starfield
             LinearGradient(
                 colors: [
                     Color(hex: "#0D1B2A"),
@@ -241,19 +288,14 @@ struct PixelPetView: View {
                 endPoint: .bottom
             )
             .overlay(
-                // 星星
                 ZStack {
                     ForEach(0..<8, id: \.self) { index in
                         Circle()
                             .fill(Color.white)
-                            .frame(width: CGFloat.random(in: 2...4), height: CGFloat.random(in: 2...4))
-                            .offset(
-                                x: CGFloat.random(in: -80...80),
-                                y: CGFloat.random(in: -80...(-20))
-                            )
-                            .opacity(Double.random(in: 0.5...1.0))
+                            .frame(width: starSizes[index], height: starSizes[index])
+                            .offset(x: starPositions[index].width, y: starPositions[index].height)
+                            .opacity(starTwinkle.indices.contains(index) ? starTwinkle[index] : 0.7)
                     }
-                    // 月亮
                     Circle()
                         .fill(Color(hex: "#F5F5DC"))
                         .frame(width: 30, height: 30)
@@ -365,36 +407,59 @@ struct PixelPetView: View {
 
     // MARK: - Mood Animations
 
+    // Track whether continuous mood animation is already running
+    @State private var continuousMoodActive: Bool = false
+
     private func triggerMoodAnimation() {
         switch appState.pet.mood {
         case .sleepy:
+            guard !continuousMoodActive else { return }
+            continuousMoodActive = true
             triggerSleepyAnimation()
         case .excited:
             triggerExcitedAnimation()
         case .missing:
             triggerMissingAnimation()
         case .focused:
+            guard !continuousMoodActive else { return }
+            continuousMoodActive = true
             triggerFocusedAnimation()
         case .happy:
+            if !continuousMoodActive {
+                continuousMoodActive = true
+                withAnimation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true)) {
+                    happyTailWag = 3
+                }
+            }
             triggerHappyIdleAnimation()
         }
     }
 
     private func resetMoodAnimations() {
+        continuousMoodActive = false
         sleepyBreathScale = 1.0
         showZzz = false
         excitedSparkles = false
+        excitedTremor = 0
         missingLookDirection = 0
         focusedPulse = 1.0
+        focusedLean = 0
+        happyTailWag = 0
+        sleepySink = 0
     }
 
     private func triggerSleepyAnimation() {
-        // 呼吸效果
+        // Breathing effect
         withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
             sleepyBreathScale = 1.03
         }
 
-        // Zzz 浮动效果
+        // Body sinks slightly
+        withAnimation(.easeInOut(duration: 2.5).repeatForever(autoreverses: true)) {
+            sleepySink = 2
+        }
+
+        // Zzz floating
         showZzz = true
         withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
             sleepyZOffset = -10
@@ -402,7 +467,7 @@ struct PixelPetView: View {
     }
 
     private func triggerExcitedAnimation() {
-        // 跳跃动画
+        // Jump
         withAnimation(.spring(response: 0.3, dampingFraction: 0.5)) {
             bounceOffset = -15
         }
@@ -413,7 +478,15 @@ struct PixelPetView: View {
             }
         }
 
-        // 闪烁星星
+        // Quick tremor
+        withAnimation(.easeInOut(duration: 0.08).repeatCount(6, autoreverses: true)) {
+            excitedTremor = 1.5
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            excitedTremor = 0
+        }
+
+        // Sparkles
         excitedSparkles = true
         sparkleOffsets = [
             CGSize(width: -35, height: -30),
@@ -452,14 +525,18 @@ struct PixelPetView: View {
     }
 
     private func triggerFocusedAnimation() {
-        // 专注脉冲效果
+        // Focus pulse
         withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
             focusedPulse = 1.02
+        }
+        // Slight forward lean
+        withAnimation(.easeInOut(duration: 2.0)) {
+            focusedLean = -2
         }
     }
 
     private func triggerHappyIdleAnimation() {
-        // 偶尔的小跳跃
+        // Occasional small hop (tail wag started in triggerMoodAnimation)
         if Int.random(in: 0...2) == 0 {
             withAnimation(.spring(response: 0.2, dampingFraction: 0.5)) {
                 bounceOffset = -8
@@ -472,6 +549,12 @@ struct PixelPetView: View {
             }
         }
     }
+
+    // Stable star layout (computed once, not re-randomized per render)
+    private let starPositions: [CGSize] = (0..<8).map { _ in
+        CGSize(width: CGFloat.random(in: -80...80), height: CGFloat.random(in: -80...(-20)))
+    }
+    private let starSizes: [CGFloat] = (0..<8).map { _ in CGFloat.random(in: 2...4) }
 
     private var shadowColor: Color {
         switch currentScene {
@@ -559,6 +642,152 @@ struct PixelPetView: View {
         }
     }
 
+    // MARK: - Interaction Particles
+
+    @ViewBuilder
+    private var interactionParticles: some View {
+        // Heart particles (happy mood tap)
+        if showHearts {
+            ForEach(0..<3, id: \.self) { index in
+                Image(systemName: "heart.fill")
+                    .font(.system(size: 10 * size.scale))
+                    .foregroundStyle(Color.pink)
+                    .offset(heartOffsets.indices.contains(index) ? heartOffsets[index] : .zero)
+                    .opacity(heartOpacities.indices.contains(index) ? heartOpacities[index] : 0)
+            }
+        }
+
+        // Note particles (excited mood tap)
+        if showNotes {
+            ForEach(0..<3, id: \.self) { index in
+                Image(systemName: index % 2 == 0 ? "music.note" : "music.quarternote.3")
+                    .font(.system(size: 10 * size.scale))
+                    .foregroundStyle(theme.colors.accent)
+                    .offset(noteOffsets.indices.contains(index) ? noteOffsets[index] : .zero)
+                    .opacity(noteOpacities.indices.contains(index) ? noteOpacities[index] : 0)
+            }
+        }
+
+        // Love bubble (long press)
+        if showLoveBubble {
+            Image(systemName: "heart.circle.fill")
+                .font(.system(size: 24 * size.scale))
+                .foregroundStyle(Color.pink.opacity(0.8))
+                .offset(y: -50 * size.scale)
+                .opacity(loveBubbleOpacity)
+        }
+    }
+
+    // MARK: - Idle Animations
+
+    private func startIdleAnimations() {
+        // Breathing: subtle scale pulse
+        withAnimation(.easeInOut(duration: 3.0).repeatForever(autoreverses: true)) {
+            idleBreathScale = 1.02
+        }
+
+        // Weight shift: gentle horizontal sway
+        withAnimation(.easeInOut(duration: 4.0).repeatForever(autoreverses: true)) {
+            idleSwayX = 2
+        }
+    }
+
+    // MARK: - Scene Animations
+
+    private func startSceneAnimations() {
+        switch currentScene {
+        case .indoor:
+            withAnimation(.easeInOut(duration: 8.0).repeatForever(autoreverses: true)) {
+                windowLightX = 50
+            }
+        case .outdoor:
+            withAnimation(.linear(duration: 12.0).repeatForever(autoreverses: true)) {
+                cloudDriftX = 40
+            }
+        case .night:
+            for i in 0..<8 {
+                let delay = Double.random(in: 0...2)
+                let duration = Double.random(in: 1.5...3.0)
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                    withAnimation(.easeInOut(duration: duration).repeatForever(autoreverses: true)) {
+                        starTwinkle[i] = Double.random(in: 0.3...1.0)
+                    }
+                }
+            }
+        case .work:
+            break
+        }
+    }
+
+    // MARK: - Tap Particle Effects
+
+    private func triggerTapParticles() {
+        switch appState.pet.mood {
+        case .happy:
+            triggerHeartParticles()
+        case .excited:
+            triggerNoteParticles()
+        case .missing:
+            // Question mark becomes exclamation (handled in moodEffects)
+            break
+        default:
+            break
+        }
+    }
+
+    private func triggerHeartParticles() {
+        showHearts = true
+        heartOffsets = [
+            CGSize(width: -20, height: -35),
+            CGSize(width: 5, height: -45),
+            CGSize(width: 25, height: -30)
+        ]
+        heartOpacities = Array(repeating: 1.0, count: 3)
+
+        withAnimation(.easeOut(duration: 0.8)) {
+            heartOffsets = heartOffsets.map { CGSize(width: $0.width * 1.5, height: $0.height * 1.8) }
+            heartOpacities = Array(repeating: 0.0, count: 3)
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+            showHearts = false
+        }
+    }
+
+    private func triggerNoteParticles() {
+        showNotes = true
+        noteOffsets = [
+            CGSize(width: -25, height: -30),
+            CGSize(width: 10, height: -45),
+            CGSize(width: 30, height: -35)
+        ]
+        noteOpacities = Array(repeating: 1.0, count: 3)
+
+        withAnimation(.easeOut(duration: 0.8)) {
+            noteOffsets = noteOffsets.map { CGSize(width: $0.width * 1.5, height: $0.height * 1.5) }
+            noteOpacities = Array(repeating: 0.0, count: 3)
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+            showNotes = false
+        }
+    }
+
+    private func triggerLoveBubble() {
+        showLoveBubble = true
+        withAnimation(.easeOut(duration: 0.3)) {
+            loveBubbleOpacity = 1.0
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            withAnimation(.easeOut(duration: 0.5)) {
+                loveBubbleOpacity = 0
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            showLoveBubble = false
+        }
+    }
+
     private var petPrimaryColor: Color {
         switch appState.pet.currentForm {
         case .cat:
@@ -600,6 +829,7 @@ struct PixelArtBody: View {
     let animationPhase: Int
     let petForm: PetForm
     var mood: PetMood = .happy
+    var isBlinking: Bool = false
 
     // 0 = transparent, 1 = primary, 2 = secondary, 3 = accent, 4 = white, 5 = black, 6 = highlight, 7 = sleepy eyes
     private var pixelPattern: [[Int]] {
@@ -608,8 +838,8 @@ struct PixelArtBody: View {
         // Apply mood-based eye modifications
         pattern = applyMoodToPattern(pattern, mood: mood, form: petForm)
 
-        // Apply blink animation every 4th phase (only if not sleepy)
-        if animationPhase == 3 && mood != .sleepy {
+        // Apply blink: either from animation phase or explicit blink state
+        if (animationPhase == 3 && mood != .sleepy) || (isBlinking && mood != .sleepy) {
             pattern = applyBlinkAnimation(to: pattern, form: petForm)
         }
 
