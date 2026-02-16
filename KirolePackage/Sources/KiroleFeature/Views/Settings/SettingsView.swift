@@ -268,7 +268,9 @@ private struct DebugSection: View {
                 .alert("Reset Onboarding?", isPresented: $showResetConfirm) {
                     Button("Cancel", role: .cancel) {}
                     Button("Reset", role: .destructive) {
-                        appState.resetOnboarding()
+                        Task {
+                            await appState.resetOnboarding()
+                        }
                     }
                 } message: {
                     Text("App will return to the onboarding flow on next launch.")

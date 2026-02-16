@@ -38,6 +38,11 @@ public actor LocalStorage {
     /// Delete a specific file from the documents directory
     public func deleteFile(named filename: String) throws {
         let url = documentsDirectory.appendingPathComponent(filename)
+        let resolvedPath = url.standardizedFileURL.path
+        let documentsPath = documentsDirectory.standardizedFileURL.path
+        guard resolvedPath.hasPrefix(documentsPath) else {
+            return
+        }
         if fileManager.fileExists(atPath: url.path) {
             try fileManager.removeItem(at: url)
         }

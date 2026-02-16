@@ -585,12 +585,14 @@ public final class AppState: @unchecked Sendable {
     }
 
     @MainActor
-    public func resetOnboarding() {
+    public func resetOnboarding() async {
         onboardingProfile = nil
         userProfile.onboardingCompletedAt = nil
-        Task {
-            try? await localStorage.deleteFile(named: "onboarding_profile.json")
-            try? await localStorage.saveUserProfile(userProfile)
+        do {
+            try await localStorage.deleteFile(named: "onboarding_profile.json")
+            try await localStorage.saveUserProfile(userProfile)
+        } catch {
+            print("[AppState] Failed to reset onboarding: \(error)")
         }
     }
 }
