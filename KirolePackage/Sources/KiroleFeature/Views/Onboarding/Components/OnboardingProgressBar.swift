@@ -1,6 +1,8 @@
 import SwiftUI
 
 public struct OnboardingProgressBar: View {
+    @Environment(ThemeManager.self) private var theme
+
     let questionIndex: Int
 
     public init(questionIndex: Int) {
@@ -23,12 +25,12 @@ public struct OnboardingProgressBar: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(category)
                 .font(.system(size: 12, weight: .medium, design: .rounded))
-                .foregroundStyle(Color(hex: "0D8A6A"))
+                .foregroundStyle(theme.colors.primary)
 
             HStack(spacing: 4) {
                 ForEach(0..<3, id: \.self) { index in
                     Capsule()
-                        .fill(index < filledSegments ? Color(hex: "0D8A6A") : Color(hex: "E5E7EB"))
+                        .fill(index < filledSegments ? theme.colors.primary : theme.colors.timeline)
                         .frame(height: 4)
                 }
             }

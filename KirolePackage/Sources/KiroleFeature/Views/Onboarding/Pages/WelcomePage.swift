@@ -2,6 +2,7 @@ import SwiftUI
 
 public struct WelcomePage: View {
     let onboardingState: OnboardingState
+    @Environment(ThemeManager.self) private var theme
 
     @State private var showDialog = false
 
@@ -11,7 +12,7 @@ public struct WelcomePage: View {
 
     public var body: some View {
         ZStack {
-            Color(hex: "0D8A6A").ignoresSafeArea()
+            theme.colors.primary.ignoresSafeArea()
 
             VStack(spacing: 0) {
                 HStack {

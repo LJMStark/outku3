@@ -35,6 +35,14 @@ public actor LocalStorage {
         try data.write(to: url)
     }
 
+    /// Delete a specific file from the documents directory
+    public func deleteFile(named filename: String) throws {
+        let url = documentsDirectory.appendingPathComponent(filename)
+        if fileManager.fileExists(atPath: url.path) {
+            try fileManager.removeItem(at: url)
+        }
+    }
+
     /// Load a decodable value from a JSON file in the documents directory
     private func load<T: Decodable>(_ type: T.Type, from filename: String) throws -> T? {
         let url = documentsDirectory.appendingPathComponent(filename)

@@ -1,6 +1,8 @@
 import SwiftUI
 
 public struct OnboardingCTAButton: View {
+    @Environment(ThemeManager.self) private var theme
+
     let title: String
     let emoji: String?
     let isEnabled: Bool
@@ -24,12 +26,12 @@ public struct OnboardingCTAButton: View {
                     .font(.system(size: 14, weight: .semibold))
             }
             .font(.system(size: 18, weight: .semibold, design: .rounded))
-            .foregroundStyle(isEnabled ? .white : Color(hex: "9CA3AF"))
+            .foregroundStyle(isEnabled ? .white : theme.colors.secondaryText)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 18)
             .background {
                 Capsule()
-                    .fill(isEnabled ? Color(hex: "1A1A2E") : Color(hex: "E5E7EB"))
+                    .fill(isEnabled ? theme.colors.primaryText : theme.colors.timeline)
             }
             .shadow(color: .black.opacity(isEnabled ? 0.2 : 0), radius: 12, y: 6)
         }

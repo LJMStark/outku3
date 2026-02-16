@@ -3,6 +3,7 @@ import SwiftUI
 public struct QuestionnairePage: View {
     let onboardingState: OnboardingState
     let questionIndex: Int
+    @Environment(ThemeManager.self) private var theme
 
     @State private var localSelections: [String] = []
 
@@ -21,7 +22,7 @@ public struct QuestionnairePage: View {
 
     public var body: some View {
         ZStack {
-            Color.white.ignoresSafeArea()
+            theme.colors.cardBackground.ignoresSafeArea()
 
             VStack(spacing: 0) {
                 // Header: back button + progress bar
@@ -31,11 +32,11 @@ public struct QuestionnairePage: View {
                     } label: {
                         ZStack {
                             Circle()
-                                .fill(Color(hex: "F3F4F6"))
+                                .fill(theme.colors.background)
                                 .frame(width: 40, height: 40)
                             Image(systemName: "chevron.left")
                                 .font(.system(size: 16, weight: .semibold))
-                                .foregroundStyle(Color(hex: "6B7280"))
+                                .foregroundStyle(theme.colors.secondaryText)
                         }
                     }
 
@@ -50,13 +51,13 @@ public struct QuestionnairePage: View {
                         // Question title
                         Text(question.title)
                             .font(.system(size: 24, weight: .bold, design: .rounded))
-                            .foregroundStyle(Color(hex: "1A1A2E"))
+                            .foregroundStyle(theme.colors.primaryText)
                             .padding(.top, 16)
 
                         if let subtitle = question.subtitle {
                             Text(subtitle)
                                 .font(.system(size: 14, design: .rounded))
-                                .foregroundStyle(Color(hex: "6B7280"))
+                                .foregroundStyle(theme.colors.secondaryText)
                                 .padding(.top, 8)
                         }
 

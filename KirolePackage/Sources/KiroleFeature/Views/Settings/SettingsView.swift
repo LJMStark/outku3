@@ -194,6 +194,7 @@ private struct DebugSection: View {
     @Environment(AppState.self) private var appState
     @Environment(AuthManager.self) private var authManager
     @Environment(ThemeManager.self) private var theme
+    @State private var showResetConfirm = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -245,6 +246,33 @@ private struct DebugSection: View {
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
                 .buttonStyle(.plain)
+
+                Divider()
+
+                // Reset Onboarding
+                Button {
+                    showResetConfirm = true
+                } label: {
+                    HStack {
+                        Image(systemName: "arrow.counterclockwise")
+                        Text("Reset Onboarding")
+                    }
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Color.red.opacity(0.8))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                .buttonStyle(.plain)
+                .alert("Reset Onboarding?", isPresented: $showResetConfirm) {
+                    Button("Cancel", role: .cancel) {}
+                    Button("Reset", role: .destructive) {
+                        appState.resetOnboarding()
+                    }
+                } message: {
+                    Text("App will return to the onboarding flow on next launch.")
+                }
             }
             .padding(16)
             .background(Color(hex: "FFF3CD"))

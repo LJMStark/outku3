@@ -14,7 +14,7 @@ public struct PersonalizationPage: View {
 
     public var body: some View {
         ZStack {
-            Color(hex: "0D8A6A").ignoresSafeArea()
+            themeManager.colors.primary.ignoresSafeArea()
 
             VStack(spacing: 0) {
                 HStack {

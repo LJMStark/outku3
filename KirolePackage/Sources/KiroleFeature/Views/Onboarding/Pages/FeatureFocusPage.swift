@@ -2,6 +2,7 @@ import SwiftUI
 
 public struct FeatureFocusPage: View {
     let onboardingState: OnboardingState
+    @Environment(ThemeManager.self) private var theme
 
     public init(onboardingState: OnboardingState) {
         self.onboardingState = onboardingState
@@ -9,7 +10,7 @@ public struct FeatureFocusPage: View {
 
     public var body: some View {
         ZStack {
-            Color(hex: "0D8A6A").ignoresSafeArea()
+            theme.colors.primary.ignoresSafeArea()
 
             VStack {
                 HStack {

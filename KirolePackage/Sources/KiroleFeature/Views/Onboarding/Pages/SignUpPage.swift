@@ -4,6 +4,7 @@ public struct SignUpPage: View {
     let onboardingState: OnboardingState
     @Environment(AppState.self) private var appState
     @Environment(AuthManager.self) private var authManager
+    @Environment(ThemeManager.self) private var theme
 
     @State private var email: String = ""
     @State private var isSigningIn = false
@@ -19,7 +20,7 @@ public struct SignUpPage: View {
 
     public var body: some View {
         ZStack {
-            Color.white.ignoresSafeArea()
+            theme.colors.cardBackground.ignoresSafeArea()
 
             VStack(spacing: 0) {
                 // Header: back button + full progress bar
@@ -29,23 +30,23 @@ public struct SignUpPage: View {
                     } label: {
                         ZStack {
                             Circle()
-                                .fill(Color(hex: "F3F4F6"))
+                                .fill(theme.colors.background)
                                 .frame(width: 40, height: 40)
                             Image(systemName: "chevron.left")
                                 .font(.system(size: 16, weight: .semibold))
-                                .foregroundStyle(Color(hex: "6B7280"))
+                                .foregroundStyle(theme.colors.secondaryText)
                         }
                     }
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Personalization")
                             .font(.system(size: 12, weight: .medium, design: .rounded))
-                            .foregroundStyle(Color(hex: "0D8A6A"))
+                            .foregroundStyle(theme.colors.primary)
 
                         HStack(spacing: 4) {
                             ForEach(0..<3, id: \.self) { _ in
                                 Capsule()
-                                    .fill(Color(hex: "0D8A6A"))
+                                    .fill(theme.colors.primary)
                                     .frame(height: 4)
                             }
                         }
@@ -67,12 +68,12 @@ public struct SignUpPage: View {
                         // Title
                         Text("Sign up to Save Progress")
                             .font(.system(size: 24, weight: .bold, design: .rounded))
-                            .foregroundStyle(Color(hex: "1A1A2E"))
+                            .foregroundStyle(theme.colors.primaryText)
                             .padding(.top, 24)
 
                         Text("One more step to unlock your flow.")
                             .font(.system(size: 16, design: .rounded))
-                            .foregroundStyle(Color(hex: "6B7280"))
+                            .foregroundStyle(theme.colors.secondaryText)
                             .padding(.top, 8)
 
                         // Social sign in buttons
@@ -97,7 +98,7 @@ public struct SignUpPage: View {
                                 .foregroundStyle(.white)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 18)
-                                .background(Color(hex: "1A1A2E"))
+                                .background(theme.colors.primaryText)
                                 .clipShape(Capsule())
                                 .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
                             }
@@ -116,7 +117,7 @@ public struct SignUpPage: View {
                                 .foregroundStyle(.white)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 18)
-                                .background(Color(hex: "1A1A2E"))
+                                .background(theme.colors.primaryText)
                                 .clipShape(Capsule())
                                 .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
                             }
@@ -126,13 +127,13 @@ public struct SignUpPage: View {
                         // Divider
                         HStack(spacing: 16) {
                             Rectangle()
-                                .fill(Color(hex: "E5E7EB"))
+                                .fill(theme.colors.timeline)
                                 .frame(height: 1)
                             Text("or")
                                 .font(.system(size: 14, design: .rounded))
-                                .foregroundStyle(Color(hex: "9CA3AF"))
+                                .foregroundStyle(theme.colors.secondaryText)
                             Rectangle()
-                                .fill(Color(hex: "E5E7EB"))
+                                .fill(theme.colors.timeline)
                                 .frame(height: 1)
                         }
                         .padding(.vertical, 24)
@@ -146,7 +147,7 @@ public struct SignUpPage: View {
                                 .background {
                                     Capsule()
                                         .stroke(
-                                            isValidEmail ? Color(hex: "0D8A6A") : Color(hex: "E5E7EB"),
+                                            isValidEmail ? theme.colors.primary : theme.colors.timeline,
                                             lineWidth: 2
                                         )
                                 }
@@ -163,15 +164,15 @@ public struct SignUpPage: View {
                             } label: {
                                 Text("Send Magic Link")
                                     .font(.system(size: 16, weight: .semibold, design: .rounded))
-                                    .foregroundStyle(isValidEmail ? Color(hex: "1A1A2E") : Color(hex: "9CA3AF"))
+                                    .foregroundStyle(isValidEmail ? theme.colors.primaryText : theme.colors.secondaryText)
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 18)
                                     .background {
                                         Capsule()
-                                            .fill(isValidEmail ? Color.white : Color(hex: "F3F4F6"))
+                                            .fill(isValidEmail ? theme.colors.cardBackground : theme.colors.background)
                                             .overlay {
                                                 if isValidEmail {
-                                                    Capsule().stroke(Color(hex: "E5E7EB"), lineWidth: 2)
+                                                    Capsule().stroke(theme.colors.timeline, lineWidth: 2)
                                                 }
                                             }
                                     }
@@ -186,7 +187,7 @@ public struct SignUpPage: View {
                         } label: {
                             Text("Skip for now")
                                 .font(.system(size: 16, weight: .medium, design: .rounded))
-                                .foregroundStyle(Color(hex: "6B7280"))
+                                .foregroundStyle(theme.colors.secondaryText)
                                 .padding(.top, 16)
                                 .padding(.bottom, 8)
                         }

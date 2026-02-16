@@ -583,6 +583,16 @@ public final class AppState: @unchecked Sendable {
     public var isOnboardingCompleted: Bool {
         onboardingProfile?.onboardingCompletedAt != nil || userProfile.onboardingCompletedAt != nil
     }
+
+    @MainActor
+    public func resetOnboarding() {
+        onboardingProfile = nil
+        userProfile.onboardingCompletedAt = nil
+        Task {
+            try? await localStorage.deleteFile(named: "onboarding_profile.json")
+            try? await localStorage.saveUserProfile(userProfile)
+        }
+    }
 }
 
 // MARK: - Default Integrations

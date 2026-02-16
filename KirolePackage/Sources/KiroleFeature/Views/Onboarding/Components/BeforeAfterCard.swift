@@ -1,6 +1,7 @@
 import SwiftUI
 
 public struct BeforeAfterCard: View {
+    @Environment(ThemeManager.self) private var theme
     @State private var showAfter = false
 
     public init() {}
@@ -40,7 +41,7 @@ public struct BeforeAfterCard: View {
             VStack(spacing: 8) {
                 ForEach(0..<8, id: \.self) { _ in
                     RoundedRectangle(cornerRadius: 4)
-                        .fill(Color(hex: "E5E7EB"))
+                        .fill(theme.colors.timeline)
                         .frame(height: 12)
                         .frame(maxWidth: .infinity)
                         .blur(radius: 2)
@@ -71,7 +72,7 @@ public struct BeforeAfterCard: View {
             HStack(alignment: .top, spacing: 12) {
                 ZStack {
                     Circle()
-                        .fill(Color(hex: "0D8A6A"))
+                        .fill(theme.colors.primary)
                         .frame(width: 40, height: 40)
                     Text("focus")
                         .font(.system(size: 10))
@@ -81,15 +82,15 @@ public struct BeforeAfterCard: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("2:30 Kirole Focus Session")
                         .font(.system(size: 16, weight: .bold, design: .rounded))
-                        .foregroundStyle(Color(hex: "1A1A2E"))
+                        .foregroundStyle(theme.colors.primaryText)
 
                     Text("With: You, Britt and 3 others.")
                         .font(.system(size: 14, weight: .medium, design: .rounded))
-                        .foregroundStyle(Color(hex: "4B5563"))
+                        .foregroundStyle(theme.colors.secondaryText)
 
                     Text("45 min focused, 0 interruptions. Your best session this week.")
                         .font(.system(size: 14, design: .rounded))
-                        .foregroundStyle(Color(hex: "6B7280"))
+                        .foregroundStyle(theme.colors.secondaryText)
                         .lineLimit(3)
                 }
             }
@@ -102,7 +103,7 @@ public struct BeforeAfterCard: View {
                 .foregroundStyle(.white)
                 .padding(.horizontal, 24)
                 .padding(.vertical, 8)
-                .background(Color(hex: "0D8A6A"))
+                .background(theme.colors.primary)
                 .clipShape(Capsule())
         }
         .padding(24)

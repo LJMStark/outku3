@@ -1,6 +1,8 @@
 import SwiftUI
 
 public struct OptionCard: View {
+    @Environment(ThemeManager.self) private var theme
+
     let label: String
     let emoji: String?
     let sfSymbol: String?
@@ -15,38 +17,35 @@ public struct OptionCard: View {
         self.action = action
     }
 
-    private let tealColor = Color(hex: "0D8A6A")
-    private let selectedBg = Color(hex: "F0FDF9")
-
     public var body: some View {
         Button(action: action) {
             HStack(spacing: 16) {
                 if let sfSymbol = sfSymbol {
                     ZStack {
                         Circle()
-                            .fill(isSelected ? tealColor : Color(hex: "F3F4F6"))
+                            .fill(isSelected ? theme.colors.primary : theme.colors.background)
                             .frame(width: 40, height: 40)
 
                         Image(systemName: sfSymbol)
                             .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(isSelected ? .white : Color(hex: "6B7280"))
+                            .foregroundStyle(isSelected ? .white : theme.colors.secondaryText)
                     }
                 } else if let emoji = emoji {
                     Image(systemName: emoji)
                         .font(.system(size: 24))
-                        .foregroundStyle(isSelected ? tealColor : Color(hex: "6B7280"))
+                        .foregroundStyle(isSelected ? theme.colors.primary : theme.colors.secondaryText)
                         .frame(width: 40, height: 40)
                 }
 
                 Text(label)
                     .font(.system(size: 16, weight: .medium, design: .rounded))
-                    .foregroundStyle(isSelected ? tealColor : Color(hex: "1A1A2E"))
+                    .foregroundStyle(isSelected ? theme.colors.primary : theme.colors.primaryText)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                 if isSelected {
                     ZStack {
                         Circle()
-                            .fill(tealColor)
+                            .fill(theme.colors.primary)
                             .frame(width: 24, height: 24)
 
                         Image(systemName: "checkmark")
@@ -59,10 +58,10 @@ public struct OptionCard: View {
             .padding(16)
             .background {
                 RoundedRectangle(cornerRadius: 16)
-                    .fill(isSelected ? selectedBg : .white)
+                    .fill(isSelected ? theme.colors.accentLight : .white)
                     .overlay {
                         RoundedRectangle(cornerRadius: 16)
-                            .stroke(isSelected ? tealColor : Color(hex: "E5E7EB"), lineWidth: 2)
+                            .stroke(isSelected ? theme.colors.primary : theme.colors.timeline, lineWidth: 2)
                     }
             }
         }

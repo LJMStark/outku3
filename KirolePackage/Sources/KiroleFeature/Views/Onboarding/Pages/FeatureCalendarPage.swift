@@ -2,6 +2,7 @@ import SwiftUI
 
 public struct FeatureCalendarPage: View {
     let onboardingState: OnboardingState
+    @Environment(ThemeManager.self) private var theme
 
     @State private var visibleBoxes: Int = 0
 
@@ -17,7 +18,7 @@ public struct FeatureCalendarPage: View {
 
     public var body: some View {
         ZStack {
-            Color(hex: "0D8A6A").ignoresSafeArea()
+            theme.colors.primary.ignoresSafeArea()
 
             VStack(spacing: 0) {
                 HStack {
