@@ -7,6 +7,7 @@ public enum SyncStatus: String, Codable, Sendable {
     case pending = "pending"
     case conflict = "conflict"
     case error = "error"
+    case deleted = "deleted"
 }
 
 // MARK: - Sync State

@@ -70,6 +70,7 @@ public final class AppState: @unchecked Sendable {
     private let haikuService = HaikuService.shared
     private let googleCalendarAPI = GoogleCalendarAPI.shared
     private let googleTasksAPI = GoogleTasksAPI.shared
+    private let googleSyncEngine = GoogleSyncEngine.shared
     private let eventKitService = EventKitService.shared
     private let widgetDataService = WidgetDataService.shared
     private let cloudKitService = CloudKitService.shared
@@ -245,57 +246,42 @@ public final class AppState: @unchecked Sendable {
 
     @MainActor
     public func loadGoogleCalendarEvents() async {
-        guard AuthManager.shared.hasCalendarAccess else {
-            #if DEBUG
-            print("[GoogleCalendar] No calendar access - hasCalendarAccess: \(AuthManager.shared.hasCalendarAccess), isGoogleConnected: \(AuthManager.shared.isGoogleConnected)")
-            #endif
-            return
-        }
-
-        isLoading = true
-        defer { isLoading = false }
-
-        do {
-            #if DEBUG
-            print("[GoogleCalendar] Fetching today's events...")
-            #endif
-            let googleEvents = try await googleCalendarAPI.getTodayEvents()
-            #if DEBUG
-            print("[GoogleCalendar] Fetched \(googleEvents.count) events")
-            #endif
-            let localEvents = events.filter { $0.source != .google }
-            events = localEvents + googleEvents
-            try? await localStorage.saveEvents(events)
-        } catch {
-            #if DEBUG
-            print("[GoogleCalendar] Error: \(error)")
-            #endif
-            lastError = "Failed to load calendar events: \(error.localizedDescription)"
-        }
+        await syncGoogleData()
     }
 
     @MainActor
     public func loadGoogleTasks() async {
-        guard AuthManager.shared.hasTasksAccess else { return }
-
-        isLoading = true
-        defer { isLoading = false }
-
-        do {
-            let googleTasks = try await googleTasksAPI.getAllTasks()
-            let localTasks = tasks.filter { $0.source != .google }
-            tasks = localTasks + googleTasks
-            try? await localStorage.saveTasks(tasks)
-            updateStatistics()
-        } catch {
-            lastError = "Failed to load tasks: \(error.localizedDescription)"
-        }
+        await syncGoogleData()
     }
 
     @MainActor
     public func syncGoogleData() async {
-        await loadGoogleCalendarEvents()
-        await loadGoogleTasks()
+        guard AuthManager.shared.isGoogleConnected else { return }
+
+        do {
+            let googleEvents = events.filter { $0.source == .google }
+            let googleTasks = tasks.filter { $0.source == .google }
+
+            let (syncedEvents, syncedTasks) = try await googleSyncEngine.performFullSync(
+                currentEvents: googleEvents,
+                currentTasks: googleTasks
+            )
+
+            // Merge: keep non-google items, add synced google items
+            let nonGoogleEvents = events.filter { $0.source != .google }
+            events = nonGoogleEvents + syncedEvents
+
+            let nonGoogleTasks = tasks.filter { $0.source != .google }
+            tasks = nonGoogleTasks + syncedTasks
+
+            updateStatistics()
+            try await localStorage.saveEvents(events)
+            try await localStorage.saveTasks(tasks)
+        } catch {
+            print("Google sync error: \(error)")
+            lastError = error.localizedDescription
+        }
+
         await updatePetState()
     }
 
@@ -404,6 +390,7 @@ public final class AppState: @unchecked Sendable {
             // Sync to external services
             switch updatedTask.source {
             case .google:
+                await googleSyncEngine.enqueueChange(task: updatedTask, action: .updateStatus)
                 try? await googleTasksAPI.syncTaskCompletion(updatedTask)
             case .apple:
                 try? await eventKitService.updateReminderCompletion(

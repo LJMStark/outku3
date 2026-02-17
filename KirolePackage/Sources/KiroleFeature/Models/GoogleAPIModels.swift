@@ -1,5 +1,21 @@
 import Foundation
 
+// MARK: - Cached Formatters
+
+private enum CachedFormatters {
+    nonisolated(unsafe) static let iso8601: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+
+    nonisolated(unsafe) static let iso8601NoFractional: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
+}
+
 // MARK: - Google Calendar API Models
 
 public struct GoogleCalendarEvent: Codable, Sendable {
@@ -12,6 +28,7 @@ public struct GoogleCalendarEvent: Codable, Sendable {
     public let attendees: [GoogleAttendee]?
     public let status: String?
     public let updated: String?
+    public let etag: String?
 }
 
 public struct GoogleDateTime: Codable, Sendable {
@@ -21,11 +38,9 @@ public struct GoogleDateTime: Codable, Sendable {
 
     /// Parse to Date object
     public var asDate: Date? {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-
         if let dateTime = dateTime {
-            return formatter.date(from: dateTime) ?? ISO8601DateFormatter().date(from: dateTime)
+            return CachedFormatters.iso8601.date(from: dateTime)
+                ?? CachedFormatters.iso8601NoFractional.date(from: dateTime)
         }
 
         if let date = date {
@@ -48,6 +63,12 @@ public struct GoogleCalendarListResponse: Codable, Sendable {
     public let items: [GoogleCalendarEvent]?
     public let nextPageToken: String?
     public let nextSyncToken: String?
+
+    public init(items: [GoogleCalendarEvent]?, nextPageToken: String?, nextSyncToken: String?) {
+        self.items = items
+        self.nextPageToken = nextPageToken
+        self.nextSyncToken = nextSyncToken
+    }
 }
 
 // MARK: - Google Tasks API Models
@@ -61,6 +82,8 @@ public struct GoogleTask: Codable, Sendable {
     public let completed: String?
     public let updated: String?
     public let position: String?
+    public let etag: String?
+    public let deleted: Bool?
 
     public var isCompleted: Bool {
         status == "completed"
@@ -68,8 +91,8 @@ public struct GoogleTask: Codable, Sendable {
 
     public var dueDate: Date? {
         guard let due = due else { return nil }
-        let formatter = ISO8601DateFormatter()
-        return formatter.date(from: due)
+        return CachedFormatters.iso8601NoFractional.date(from: due)
+            ?? CachedFormatters.iso8601.date(from: due)
     }
 }
 
@@ -96,14 +119,29 @@ public struct GoogleTaskUpdateRequest: Codable, Sendable {
     public let completed: String?
 
     public static func markCompleted() -> GoogleTaskUpdateRequest {
-        let formatter = ISO8601DateFormatter()
-        return GoogleTaskUpdateRequest(
+        GoogleTaskUpdateRequest(
             status: "completed",
-            completed: formatter.string(from: Date())
+            completed: CachedFormatters.iso8601NoFractional.string(from: Date())
         )
     }
 
     public static func markIncomplete() -> GoogleTaskUpdateRequest {
         GoogleTaskUpdateRequest(status: "needsAction", completed: nil)
+    }
+}
+
+// MARK: - Google Task Create Request
+
+public struct GoogleTaskCreateRequest: Codable, Sendable {
+    public let title: String
+    public let notes: String?
+    public let due: String?
+    public let status: String?
+
+    public init(title: String, notes: String? = nil, due: String? = nil, status: String? = nil) {
+        self.title = title
+        self.notes = notes
+        self.due = due
+        self.status = status
     }
 }

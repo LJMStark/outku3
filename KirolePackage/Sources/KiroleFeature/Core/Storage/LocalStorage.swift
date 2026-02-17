@@ -259,6 +259,26 @@ public actor LocalStorage {
         return try load(DehydrationCache.self, from: "dehydration_\(safeId).json")
     }
 
+    // MARK: - Google Sync Outbox
+
+    public func saveOutbox(_ entries: [OutboxEntry]) throws {
+        try save(entries, to: "outbox.json")
+    }
+
+    public func loadOutbox() throws -> [OutboxEntry] {
+        try load([OutboxEntry].self, from: "outbox.json") ?? []
+    }
+
+    // MARK: - Google Sync Metadata
+
+    public func saveGoogleSyncMetadata(_ metadata: GoogleSyncMetadata) throws {
+        try save(metadata, to: "google_sync_metadata.json")
+    }
+
+    public func loadGoogleSyncMetadata() throws -> GoogleSyncMetadata? {
+        try load(GoogleSyncMetadata.self, from: "google_sync_metadata.json")
+    }
+
     // MARK: - Clear All
 
     /// Remove all persisted local data
@@ -267,7 +287,8 @@ public actor LocalStorage {
             "pet.json", "streak.json", "tasks.json", "events.json",
             "sync_state.json", "haiku_cache.json", "user_profile.json",
             "focus_sessions.json", "event_logs.json", "ai_interactions.json",
-            "behavior_summary.json", "onboarding_profile.json"
+            "behavior_summary.json", "onboarding_profile.json",
+            "outbox.json", "google_sync_metadata.json"
         ]
         for file in files {
             let url = documentsDirectory.appendingPathComponent(file)

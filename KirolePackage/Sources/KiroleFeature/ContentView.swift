@@ -6,6 +6,7 @@ public struct ContentView: View {
     @State private var appState = AppState.shared
     @State private var themeManager = ThemeManager.shared
     @State private var authManager = AuthManager.shared
+    @Environment(\.scenePhase) private var scenePhase
 
     public var body: some View {
         ZStack {
@@ -67,6 +68,22 @@ public struct ContentView: View {
                     .environment(themeManager)
                     .presentationDetents([.medium, .large])
                     .presentationDragIndicator(.visible)
+            }
+        }
+        .task {
+            GoogleSyncScheduler.shared.startForegroundSync()
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            switch newPhase {
+            case .active:
+                Task {
+                    await GoogleSyncScheduler.shared.syncOnResume()
+                }
+                GoogleSyncScheduler.shared.startForegroundSync()
+            case .background:
+                GoogleSyncScheduler.shared.stopForegroundSync()
+            default:
+                break
             }
         }
     }

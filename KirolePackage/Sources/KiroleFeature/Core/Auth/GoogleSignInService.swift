@@ -11,6 +11,7 @@ public final class GoogleSignInService: @unchecked Sendable {
     public static let shared = GoogleSignInService()
 
     private let keychainService = KeychainService.shared
+    private var refreshTask: Task<String, Error>?
 
     // Google API Scopes
     private let scopes = [
@@ -100,32 +101,42 @@ public final class GoogleSignInService: @unchecked Sendable {
 
     // MARK: - Refresh Token
 
-    /// 刷新 access token
+    /// 刷新 access token（去重：并发调用共享同一个刷新任务）
     @MainActor
     public func refreshTokenIfNeeded() async throws -> String {
-        guard let currentUser = GIDSignIn.sharedInstance.currentUser else {
-            throw GoogleSignInError.notSignedIn
+        // 如果已有正在进行的刷新任务，直接等待它
+        if let existingTask = refreshTask, !existingTask.isCancelled {
+            return try await existingTask.value
         }
 
-        // 检查 token 是否需要刷新
-        if keychainService.isGoogleTokenExpired() {
-            try await currentUser.refreshTokensIfNeeded()
+        let task = Task<String, Error> { @MainActor in
+            defer { self.refreshTask = nil }
 
-            // 保存新的 tokens
-            let accessToken = currentUser.accessToken.tokenString
-            let refreshToken = currentUser.refreshToken.tokenString
-            let expiresIn = currentUser.accessToken.expirationDate?.timeIntervalSinceNow ?? 3600
+            guard let currentUser = GIDSignIn.sharedInstance.currentUser else {
+                throw GoogleSignInError.notSignedIn
+            }
 
-            try keychainService.saveGoogleTokens(
-                accessToken: accessToken,
-                refreshToken: refreshToken,
-                expiresIn: expiresIn
-            )
+            if keychainService.isGoogleTokenExpired() {
+                try await currentUser.refreshTokensIfNeeded()
 
-            return accessToken
+                let accessToken = currentUser.accessToken.tokenString
+                let refreshToken = currentUser.refreshToken.tokenString
+                let expiresIn = currentUser.accessToken.expirationDate?.timeIntervalSinceNow ?? 3600
+
+                try keychainService.saveGoogleTokens(
+                    accessToken: accessToken,
+                    refreshToken: refreshToken,
+                    expiresIn: expiresIn
+                )
+
+                return accessToken
+            }
+
+            return currentUser.accessToken.tokenString
         }
 
-        return currentUser.accessToken.tokenString
+        refreshTask = task
+        return try await task.value
     }
 
     // MARK: - Get Current Access Token

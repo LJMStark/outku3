@@ -25,11 +25,15 @@ public actor GoogleCalendarAPI {
         timeMin: Date? = nil,
         timeMax: Date? = nil,
         syncToken: String? = nil,
-        maxResults: Int = 100
+        maxResults: Int = 100,
+        pageToken: String? = nil
     ) async throws -> GoogleCalendarListResponse {
         let accessToken = try await AuthManager.shared.getGoogleAccessToken()
 
-        var components = URLComponents(string: "\(baseURL)/calendars/\(calendarId)/events")!
+        let encodedCalendarId = calendarId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? calendarId
+        guard var components = URLComponents(string: "\(baseURL)/calendars/\(encodedCalendarId)/events") else {
+            throw GoogleCalendarError.invalidURL
+        }
         var queryItems: [URLQueryItem] = [
             URLQueryItem(name: "maxResults", value: String(maxResults)),
             URLQueryItem(name: "singleEvents", value: "true"),
@@ -39,11 +43,13 @@ public actor GoogleCalendarAPI {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
 
+        if let pageToken = pageToken {
+            queryItems.append(URLQueryItem(name: "pageToken", value: pageToken))
+        }
+
         if let syncToken = syncToken {
-            // 增量同步
             queryItems.append(URLQueryItem(name: "syncToken", value: syncToken))
         } else {
-            // 全量获取
             if let timeMin = timeMin {
                 queryItems.append(URLQueryItem(name: "timeMin", value: formatter.string(from: timeMin)))
             }
@@ -54,10 +60,58 @@ public actor GoogleCalendarAPI {
 
         components.queryItems = queryItems
 
+        guard let url = components.url else {
+            throw GoogleCalendarError.invalidURL
+        }
+
         return try await networkClient.get(
-            url: components.url!,
+            url: url,
             headers: ["Authorization": "Bearer \(accessToken)"],
             responseType: GoogleCalendarListResponse.self
+        )
+    }
+
+    // MARK: - Fetch All Pages
+
+    /// 自动分页获取所有事件
+    private func fetchAllPages(
+        calendarId: String = "primary",
+        timeMin: Date? = nil,
+        timeMax: Date? = nil,
+        syncToken: String? = nil,
+        maxResults: Int = 100
+    ) async throws -> GoogleCalendarListResponse {
+        var allItems: [GoogleCalendarEvent] = []
+        var currentPageToken: String? = nil
+        var lastSyncToken: String? = nil
+        let maxPages = 50
+
+        for _ in 0..<maxPages {
+            let response = try await getEvents(
+                calendarId: calendarId,
+                timeMin: timeMin,
+                timeMax: timeMax,
+                syncToken: syncToken,
+                maxResults: maxResults,
+                pageToken: currentPageToken
+            )
+
+            if let items = response.items {
+                allItems.append(contentsOf: items)
+            }
+
+            lastSyncToken = response.nextSyncToken
+            currentPageToken = response.nextPageToken
+
+            if currentPageToken == nil {
+                break
+            }
+        }
+
+        return GoogleCalendarListResponse(
+            items: allItems,
+            nextPageToken: nil,
+            nextSyncToken: lastSyncToken
         )
     }
 
@@ -68,7 +122,7 @@ public actor GoogleCalendarAPI {
         let startOfDay = calendar.startOfDay(for: now)
         let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
 
-        let response = try await getEvents(
+        let response = try await fetchAllPages(
             timeMin: startOfDay,
             timeMax: endOfDay
         )
@@ -83,7 +137,7 @@ public actor GoogleCalendarAPI {
         let startOfWeek = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now))!
         let endOfWeek = calendar.date(byAdding: .day, value: 7, to: startOfWeek)!
 
-        let response = try await getEvents(
+        let response = try await fetchAllPages(
             timeMin: startOfWeek,
             timeMax: endOfWeek
         )
@@ -96,7 +150,7 @@ public actor GoogleCalendarAPI {
     /// - Returns: 新的/更新的事件和新的 sync token
     public func syncEvents(syncToken: String) async throws -> (events: [CalendarEvent], newSyncToken: String?) {
         do {
-            let response = try await getEvents(syncToken: syncToken)
+            let response = try await fetchAllPages(syncToken: syncToken)
             let events = (response.items ?? []).compactMap { CalendarEvent.from(googleEvent: $0) }
             return (events, response.nextSyncToken)
         } catch NetworkError.httpError(410) {
@@ -111,7 +165,9 @@ public actor GoogleCalendarAPI {
     public func getCalendarList() async throws -> [GoogleCalendarInfo] {
         let accessToken = try await AuthManager.shared.getGoogleAccessToken()
 
-        let url = URL(string: "\(baseURL)/users/me/calendarList")!
+        guard let url = URL(string: "\(baseURL)/users/me/calendarList") else {
+            throw GoogleCalendarError.invalidURL
+        }
 
         let response: GoogleCalendarListInfoResponse = try await networkClient.get(
             url: url,
@@ -129,6 +185,7 @@ public enum GoogleCalendarError: LocalizedError, Sendable {
     case syncTokenExpired
     case calendarNotFound
     case accessDenied
+    case invalidURL
 
     public var errorDescription: String? {
         switch self {
@@ -138,6 +195,8 @@ public enum GoogleCalendarError: LocalizedError, Sendable {
             return "Calendar not found"
         case .accessDenied:
             return "Calendar access denied"
+        case .invalidURL:
+            return "Failed to construct calendar API URL"
         }
     }
 }

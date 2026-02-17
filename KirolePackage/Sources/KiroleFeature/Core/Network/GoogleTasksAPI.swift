@@ -13,68 +13,171 @@ public actor GoogleTasksAPI {
 
     // MARK: - Task Lists
 
-    /// 获取任务列表（Task Lists）
+    /// 获取任务列表（Task Lists），自动分页
     public func getTaskLists() async throws -> [GoogleTaskList] {
         let accessToken = try await AuthManager.shared.getGoogleAccessToken()
+        var allItems: [GoogleTaskList] = []
+        var currentPageToken: String? = nil
+        let maxPages = 50
 
-        let url = URL(string: "\(baseURL)/users/@me/lists")!
+        for _ in 0..<maxPages {
+            guard var components = URLComponents(string: "\(baseURL)/users/@me/lists") else {
+                throw GoogleTasksError.invalidURL
+            }
+            var queryItems: [URLQueryItem] = [
+                URLQueryItem(name: "maxResults", value: "100")
+            ]
+            if let pageToken = currentPageToken {
+                queryItems.append(URLQueryItem(name: "pageToken", value: pageToken))
+            }
+            components.queryItems = queryItems
 
-        let response: GoogleTaskListsResponse = try await networkClient.get(
-            url: url,
-            headers: ["Authorization": "Bearer \(accessToken)"],
-            responseType: GoogleTaskListsResponse.self
-        )
+            guard let url = components.url else {
+                throw GoogleTasksError.invalidURL
+            }
 
-        return response.items ?? []
+            let response: GoogleTaskListsResponse = try await networkClient.get(
+                url: url,
+                headers: ["Authorization": "Bearer \(accessToken)"],
+                responseType: GoogleTaskListsResponse.self
+            )
+
+            if let items = response.items {
+                allItems.append(contentsOf: items)
+            }
+
+            currentPageToken = response.nextPageToken
+            if currentPageToken == nil {
+                break
+            }
+        }
+
+        return allItems
     }
 
     // MARK: - Tasks
 
-    /// 获取指定列表中的任务
+    /// 获取指定列表中的任务（自动分页）
     /// - Parameters:
     ///   - taskListId: 任务列表 ID
     ///   - showCompleted: 是否显示已完成的任务
     ///   - showHidden: 是否显示隐藏的任务
+    ///   - showDeleted: 是否显示已删除的任务
     ///   - dueMin: 最早截止日期
     ///   - dueMax: 最晚截止日期
+    ///   - updatedMin: 仅返回此时间之后更新的任务
     public func getTasks(
         taskListId: String,
         showCompleted: Bool = true,
         showHidden: Bool = false,
+        showDeleted: Bool = false,
         dueMin: Date? = nil,
         dueMax: Date? = nil,
+        updatedMin: Date? = nil,
         maxResults: Int = 100
     ) async throws -> [GoogleTask] {
         let accessToken = try await AuthManager.shared.getGoogleAccessToken()
-
-        var components = URLComponents(string: "\(baseURL)/lists/\(taskListId)/tasks")!
-        var queryItems: [URLQueryItem] = [
-            URLQueryItem(name: "maxResults", value: String(maxResults)),
-            URLQueryItem(name: "showCompleted", value: String(showCompleted)),
-            URLQueryItem(name: "showHidden", value: String(showHidden))
-        ]
-
+        let encodedTaskListId = taskListId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? taskListId
+        var allItems: [GoogleTask] = []
+        var currentPageToken: String? = nil
+        let maxPages = 50
         let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
 
-        if let dueMin = dueMin {
-            queryItems.append(URLQueryItem(name: "dueMin", value: formatter.string(from: dueMin)))
+        for _ in 0..<maxPages {
+            guard var components = URLComponents(string: "\(baseURL)/lists/\(encodedTaskListId)/tasks") else {
+                throw GoogleTasksError.invalidURL
+            }
+            var queryItems: [URLQueryItem] = [
+                URLQueryItem(name: "maxResults", value: String(maxResults)),
+                URLQueryItem(name: "showCompleted", value: String(showCompleted)),
+                URLQueryItem(name: "showHidden", value: String(showHidden)),
+                URLQueryItem(name: "showDeleted", value: String(showDeleted))
+            ]
+
+            if let dueMin = dueMin {
+                queryItems.append(URLQueryItem(name: "dueMin", value: formatter.string(from: dueMin)))
+            }
+            if let dueMax = dueMax {
+                queryItems.append(URLQueryItem(name: "dueMax", value: formatter.string(from: dueMax)))
+            }
+            if let updatedMin = updatedMin {
+                queryItems.append(URLQueryItem(name: "updatedMin", value: formatter.string(from: updatedMin)))
+            }
+            if let pageToken = currentPageToken {
+                queryItems.append(URLQueryItem(name: "pageToken", value: pageToken))
+            }
+
+            components.queryItems = queryItems
+
+            guard let url = components.url else {
+                throw GoogleTasksError.invalidURL
+            }
+
+            let response: GoogleTaskListResponse = try await networkClient.get(
+                url: url,
+                headers: ["Authorization": "Bearer \(accessToken)"],
+                responseType: GoogleTaskListResponse.self
+            )
+
+            if let items = response.items {
+                allItems.append(contentsOf: items)
+            }
+
+            currentPageToken = response.nextPageToken
+            if currentPageToken == nil {
+                break
+            }
         }
-        if let dueMax = dueMax {
-            queryItems.append(URLQueryItem(name: "dueMax", value: formatter.string(from: dueMax)))
-        }
 
-        components.queryItems = queryItems
-
-        let response: GoogleTaskListResponse = try await networkClient.get(
-            url: components.url!,
-            headers: ["Authorization": "Bearer \(accessToken)"],
-            responseType: GoogleTaskListResponse.self
-        )
-
-        return response.items ?? []
+        return allItems
     }
 
-    /// 获取所有列表中的任务
+    // MARK: - Create Task
+
+    /// 创建新任务
+    public func createTask(
+        taskListId: String,
+        title: String,
+        notes: String? = nil,
+        due: String? = nil
+    ) async throws -> GoogleTask {
+        let accessToken = try await AuthManager.shared.getGoogleAccessToken()
+
+        let encodedListId = taskListId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? taskListId
+        guard let url = URL(string: "\(baseURL)/lists/\(encodedListId)/tasks") else {
+            throw GoogleTasksError.invalidURL
+        }
+
+        let createRequest = GoogleTaskCreateRequest(title: title, notes: notes, due: due)
+
+        return try await networkClient.post(
+            url: url,
+            headers: ["Authorization": "Bearer \(accessToken)"],
+            body: createRequest,
+            responseType: GoogleTask.self
+        )
+    }
+
+    // MARK: - Delete Task
+
+    /// 删除任务
+    public func deleteTask(taskListId: String, taskId: String) async throws {
+        let accessToken = try await AuthManager.shared.getGoogleAccessToken()
+
+        let encodedListId = taskListId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? taskListId
+        let encodedTaskId = taskId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? taskId
+        guard let url = URL(string: "\(baseURL)/lists/\(encodedListId)/tasks/\(encodedTaskId)") else {
+            throw GoogleTasksError.invalidURL
+        }
+
+        try await networkClient.delete(
+            url: url,
+            headers: ["Authorization": "Bearer \(accessToken)"]
+        )
+    }
+
+    /// 获取所有列表中的任务（并发获取）
     public func getAllTasks(
         showCompleted: Bool = true,
         dueMin: Date? = nil,
@@ -82,21 +185,25 @@ public actor GoogleTasksAPI {
     ) async throws -> [TaskItem] {
         let taskLists = try await getTaskLists()
 
-        var allTasks: [TaskItem] = []
+        return try await withThrowingTaskGroup(of: [TaskItem].self) { group in
+            for taskList in taskLists {
+                group.addTask {
+                    let tasks = try await self.getTasks(
+                        taskListId: taskList.id,
+                        showCompleted: showCompleted,
+                        dueMin: dueMin,
+                        dueMax: dueMax
+                    )
+                    return tasks.map { TaskItem.from(googleTask: $0, taskListId: taskList.id) }
+                }
+            }
 
-        for taskList in taskLists {
-            let tasks = try await getTasks(
-                taskListId: taskList.id,
-                showCompleted: showCompleted,
-                dueMin: dueMin,
-                dueMax: dueMax
-            )
-
-            let taskItems = tasks.map { TaskItem.from(googleTask: $0, taskListId: taskList.id) }
-            allTasks.append(contentsOf: taskItems)
+            var allTasks: [TaskItem] = []
+            for try await taskItems in group {
+                allTasks.append(contentsOf: taskItems)
+            }
+            return allTasks
         }
-
-        return allTasks
     }
 
     /// 获取今日任务
@@ -127,7 +234,11 @@ public actor GoogleTasksAPI {
     ) async throws -> GoogleTask {
         let accessToken = try await AuthManager.shared.getGoogleAccessToken()
 
-        let url = URL(string: "\(baseURL)/lists/\(taskListId)/tasks/\(taskId)")!
+        let encodedListId = taskListId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? taskListId
+        let encodedTaskId = taskId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? taskId
+        guard let url = URL(string: "\(baseURL)/lists/\(encodedListId)/tasks/\(encodedTaskId)") else {
+            throw GoogleTasksError.invalidURL
+        }
 
         let updateRequest = completed
             ? GoogleTaskUpdateRequest.markCompleted()
@@ -175,6 +286,7 @@ public enum GoogleTasksError: LocalizedError, Sendable {
     case taskNotFound
     case listNotFound
     case accessDenied
+    case invalidURL
 
     public var errorDescription: String? {
         switch self {
@@ -186,6 +298,8 @@ public enum GoogleTasksError: LocalizedError, Sendable {
             return "Task list not found"
         case .accessDenied:
             return "Tasks access denied"
+        case .invalidURL:
+            return "Failed to construct tasks API URL"
         }
     }
 }

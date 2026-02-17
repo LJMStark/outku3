@@ -132,6 +132,10 @@ public struct CalendarEvent: Identifiable, Sendable, Codable {
             return Participant(name: name)
         } ?? []
 
+        let remoteUpdated: Date? = googleEvent.updated.flatMap { dateString in
+            ISO8601DateFormatter().date(from: dateString)
+        }
+
         return CalendarEvent(
             id: googleEvent.id,
             googleEventId: googleEvent.id,
@@ -144,7 +148,7 @@ public struct CalendarEvent: Identifiable, Sendable, Codable {
             location: googleEvent.location,
             isAllDay: googleEvent.start.date != nil,
             syncStatus: .synced,
-            lastModified: Date()
+            lastModified: remoteUpdated ?? Date()
         )
     }
 }
@@ -197,6 +201,8 @@ public struct TaskItem: Identifiable, Sendable, Codable {
     public var syncStatus: SyncStatus
     public var lastModified: Date
     public var microActions: [MicroAction]?
+    public var remoteUpdatedAt: Date?
+    public var remoteEtag: String?
 
     public init(
         id: String = UUID().uuidString,
@@ -210,7 +216,9 @@ public struct TaskItem: Identifiable, Sendable, Codable {
         priority: TaskPriority = .medium,
         syncStatus: SyncStatus = .synced,
         lastModified: Date = Date(),
-        microActions: [MicroAction]? = nil
+        microActions: [MicroAction]? = nil,
+        remoteUpdatedAt: Date? = nil,
+        remoteEtag: String? = nil
     ) {
         self.id = id
         self.localId = localId
@@ -224,11 +232,17 @@ public struct TaskItem: Identifiable, Sendable, Codable {
         self.syncStatus = syncStatus
         self.lastModified = lastModified
         self.microActions = microActions
+        self.remoteUpdatedAt = remoteUpdatedAt
+        self.remoteEtag = remoteEtag
     }
 
     // 从 Google API 响应创建
     public static func from(googleTask: GoogleTask, taskListId: String) -> TaskItem {
-        TaskItem(
+        let remoteUpdated: Date? = googleTask.updated.flatMap { dateString in
+            ISO8601DateFormatter().date(from: dateString)
+        }
+
+        return TaskItem(
             id: googleTask.id,
             googleTaskId: googleTask.id,
             googleTaskListId: taskListId,
@@ -238,7 +252,9 @@ public struct TaskItem: Identifiable, Sendable, Codable {
             source: .google,
             priority: .medium,
             syncStatus: .synced,
-            lastModified: Date()
+            lastModified: remoteUpdated ?? Date(),
+            remoteUpdatedAt: remoteUpdated,
+            remoteEtag: googleTask.etag
         )
     }
 }

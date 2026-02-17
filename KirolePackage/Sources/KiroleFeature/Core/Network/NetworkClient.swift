@@ -113,6 +113,94 @@ public actor NetworkClient {
         try validateResponse(response)
     }
 
+    // MARK: - Authenticated Request with 401 Retry
+
+    /// 执行带认证的请求，401 时自动刷新 token 并重试一次
+    public func authenticatedRequest<T: Decodable & Sendable>(
+        url: String,
+        method: String = "GET",
+        headers: [String: String] = [:],
+        body: (any Encodable & Sendable)? = nil,
+        responseType: T.Type,
+        refreshToken: @Sendable () async throws -> String
+    ) async throws -> T {
+        // 第一次尝试
+        do {
+            return try await executeRequest(url: url, method: method, headers: headers, body: body, responseType: responseType)
+        } catch NetworkError.unauthorized {
+            // 刷新 token 并重试
+            let newToken = try await refreshToken()
+            var updatedHeaders = headers
+            updatedHeaders["Authorization"] = "Bearer \(newToken)"
+            return try await executeRequest(url: url, method: method, headers: updatedHeaders, body: body, responseType: responseType)
+        }
+    }
+
+    /// 执行带认证的无返回体请求（如 DELETE），401 时自动刷新 token 并重试一次
+    public func authenticatedRequestNoContent(
+        url: String,
+        method: String = "DELETE",
+        headers: [String: String] = [:],
+        refreshToken: @Sendable () async throws -> String
+    ) async throws {
+        do {
+            try await executeRequestNoContent(url: url, method: method, headers: headers)
+        } catch NetworkError.unauthorized {
+            let newToken = try await refreshToken()
+            var updatedHeaders = headers
+            updatedHeaders["Authorization"] = "Bearer \(newToken)"
+            try await executeRequestNoContent(url: url, method: method, headers: updatedHeaders)
+        }
+    }
+
+    private func executeRequest<T: Decodable>(
+        url urlString: String,
+        method: String,
+        headers: [String: String],
+        body: (any Encodable)?,
+        responseType: T.Type
+    ) async throws -> T {
+        guard let url = URL(string: urlString) else {
+            throw NetworkError.invalidResponse
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+
+        for (key, value) in headers {
+            request.setValue(value, forHTTPHeaderField: key)
+        }
+
+        if let body = body {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try encoder.encode(AnyEncodable(body))
+        }
+
+        let (data, response) = try await session.data(for: request)
+        try validateResponse(response)
+        return try decoder.decode(T.self, from: data)
+    }
+
+    private func executeRequestNoContent(
+        url urlString: String,
+        method: String,
+        headers: [String: String]
+    ) async throws {
+        guard let url = URL(string: urlString) else {
+            throw NetworkError.invalidResponse
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+
+        for (key, value) in headers {
+            request.setValue(value, forHTTPHeaderField: key)
+        }
+
+        let (_, response) = try await session.data(for: request)
+        try validateResponse(response)
+    }
+
     // MARK: - Validation
 
     private func validateResponse(_ response: URLResponse) throws {
@@ -136,6 +224,20 @@ public actor NetworkClient {
         default:
             throw NetworkError.httpError(httpResponse.statusCode)
         }
+    }
+}
+
+// MARK: - AnyEncodable
+
+private struct AnyEncodable: Encodable {
+    private let _encode: (Encoder) throws -> Void
+
+    init(_ wrapped: any Encodable) {
+        self._encode = wrapped.encode(to:)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        try _encode(encoder)
     }
 }
 
