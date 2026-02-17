@@ -71,17 +71,20 @@ public struct ContentView: View {
             }
         }
         .task {
-            GoogleSyncScheduler.shared.startForegroundSync()
+            SyncScheduler.shared.startForegroundSync()
+            if appState.isAnyAppleIntegrationConnected {
+                await appState.setupAppleChangeObserver()
+            }
         }
         .onChange(of: scenePhase) { _, newPhase in
             switch newPhase {
             case .active:
                 Task {
-                    await GoogleSyncScheduler.shared.syncOnResume()
+                    await SyncScheduler.shared.syncOnResume()
                 }
-                GoogleSyncScheduler.shared.startForegroundSync()
+                SyncScheduler.shared.startForegroundSync()
             case .background:
-                GoogleSyncScheduler.shared.stopForegroundSync()
+                SyncScheduler.shared.stopForegroundSync()
             default:
                 break
             }

@@ -47,7 +47,7 @@ public actor EventKitService {
         let startOfDay = calendar.startOfDay(for: Date())
         let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
 
-        return try fetchEvents(from: startOfDay, to: endOfDay)
+        return try queryEvents(from: startOfDay, to: endOfDay)
     }
 
     public func fetchWeekEvents() async throws -> [CalendarEvent] {
@@ -59,10 +59,10 @@ public actor EventKitService {
         let startOfWeek = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!
         let endOfWeek = calendar.date(byAdding: .day, value: 7, to: startOfWeek)!
 
-        return try fetchEvents(from: startOfWeek, to: endOfWeek)
+        return try queryEvents(from: startOfWeek, to: endOfWeek)
     }
 
-    private func fetchEvents(from startDate: Date, to endDate: Date) throws -> [CalendarEvent] {
+    private func queryEvents(from startDate: Date, to endDate: Date) throws -> [CalendarEvent] {
         let calendars = eventStore.calendars(for: .event)
         let predicate = eventStore.predicateForEvents(withStart: startDate, end: endDate, calendars: calendars)
         let ekEvents = eventStore.events(matching: predicate)
@@ -70,6 +70,8 @@ public actor EventKitService {
         return ekEvents.map { event in
             CalendarEvent(
                 id: event.eventIdentifier,
+                appleEventId: event.eventIdentifier,
+                appleCalendarId: event.calendar.calendarIdentifier,
                 title: event.title ?? "Untitled Event",
                 startTime: event.startDate,
                 endTime: event.endDate,
@@ -79,9 +81,19 @@ public actor EventKitService {
                     return Participant(name: name)
                 } ?? [],
                 description: event.notes,
-                location: event.location
+                location: event.location,
+                isAllDay: event.isAllDay,
+                lastModified: event.lastModifiedDate ?? Date()
             )
         }
+    }
+
+    /// Fetch events for a custom date range (used by AppleSyncEngine)
+    public func fetchEvents(from startDate: Date, to endDate: Date) async throws -> [CalendarEvent] {
+        guard calendarAuthorizationStatus == .fullAccess else {
+            throw EventKitError.notAuthorized
+        }
+        return try queryEvents(from: startDate, to: endDate)
     }
 
     // MARK: - Reminders
@@ -120,11 +132,17 @@ public actor EventKitService {
     private func mapReminderToTask(_ reminder: EKReminder) -> TaskItem {
         TaskItem(
             id: reminder.calendarItemIdentifier,
+            appleReminderId: reminder.calendarItemIdentifier,
+            appleExternalId: reminder.calendarItemExternalIdentifier,
+            appleListId: reminder.calendar.calendarIdentifier,
             title: reminder.title ?? "Untitled Reminder",
             isCompleted: reminder.isCompleted,
             dueDate: reminder.dueDateComponents?.date,
             source: .apple,
-            priority: mapPriority(reminder.priority)
+            priority: mapPriority(reminder.priority),
+            lastModified: reminder.lastModifiedDate ?? Date(),
+            remoteUpdatedAt: reminder.lastModifiedDate,
+            notes: reminder.notes
         )
     }
 
@@ -145,6 +163,123 @@ public actor EventKitService {
         try eventStore.save(reminder, commit: true)
     }
 
+    // MARK: - Create Reminder
+
+    public func createReminder(
+        title: String,
+        dueDate: Date?,
+        priority: TaskPriority,
+        notes: String?,
+        listId: String?
+    ) async throws -> (identifier: String, externalIdentifier: String) {
+        guard remindersAuthorizationStatus == .fullAccess else {
+            throw EventKitError.notAuthorized
+        }
+
+        let reminder = EKReminder(eventStore: eventStore)
+        reminder.title = title
+        reminder.notes = notes
+        reminder.priority = toEKPriority(priority)
+
+        if let dueDate {
+            reminder.dueDateComponents = Calendar.current.dateComponents(
+                [.year, .month, .day, .hour, .minute],
+                from: dueDate
+            )
+        }
+
+        if let listId,
+           let calendar = eventStore.calendars(for: .reminder).first(where: { $0.calendarIdentifier == listId }) {
+            reminder.calendar = calendar
+        } else {
+            reminder.calendar = eventStore.defaultCalendarForNewReminders()
+        }
+
+        try eventStore.save(reminder, commit: true)
+        return (reminder.calendarItemIdentifier, reminder.calendarItemExternalIdentifier ?? "")
+    }
+
+    // MARK: - Update Reminder Fields
+
+    public func updateReminder(
+        identifier: String,
+        title: String?,
+        dueDate: Date?,
+        priority: TaskPriority?,
+        notes: String?,
+        isCompleted: Bool?
+    ) async throws {
+        guard remindersAuthorizationStatus == .fullAccess else {
+            throw EventKitError.notAuthorized
+        }
+
+        guard let reminder = eventStore.calendarItem(withIdentifier: identifier) as? EKReminder else {
+            throw EventKitError.reminderNotFound
+        }
+
+        if let title { reminder.title = title }
+        if let notes { reminder.notes = notes }
+        if let priority { reminder.priority = toEKPriority(priority) }
+        if let isCompleted {
+            reminder.isCompleted = isCompleted
+            reminder.completionDate = isCompleted ? Date() : nil
+        }
+        if let dueDate {
+            reminder.dueDateComponents = Calendar.current.dateComponents(
+                [.year, .month, .day, .hour, .minute],
+                from: dueDate
+            )
+        }
+
+        try eventStore.save(reminder, commit: true)
+    }
+
+    // MARK: - Delete Reminder
+
+    public func deleteReminder(identifier: String) async throws {
+        guard remindersAuthorizationStatus == .fullAccess else {
+            throw EventKitError.notAuthorized
+        }
+
+        guard let reminder = eventStore.calendarItem(withIdentifier: identifier) as? EKReminder else {
+            throw EventKitError.reminderNotFound
+        }
+
+        try eventStore.remove(reminder, commit: true)
+    }
+
+    // MARK: - Fetch Completed Reminders
+
+    public func fetchCompletedReminders(from startDate: Date, to endDate: Date) async throws -> [TaskItem] {
+        guard remindersAuthorizationStatus == .fullAccess else {
+            throw EventKitError.notAuthorized
+        }
+
+        let calendars = eventStore.calendars(for: .reminder)
+        let predicate = eventStore.predicateForCompletedReminders(
+            withCompletionDateStarting: startDate,
+            ending: endDate,
+            calendars: calendars
+        )
+
+        return await withCheckedContinuation { continuation in
+            eventStore.fetchReminders(matching: predicate) { reminders in
+                let tasks = (reminders ?? []).map { self.mapReminderToTask($0) }
+                continuation.resume(returning: tasks)
+            }
+        }
+    }
+
+    // MARK: - Available Lists
+
+    public func getAvailableReminderLists() -> [(id: String, title: String)] {
+        eventStore.calendars(for: .reminder).map { ($0.calendarIdentifier, $0.title) }
+    }
+
+    public func getAvailableCalendars() -> [(id: String, title: String)] {
+        eventStore.calendars(for: .event).map { ($0.calendarIdentifier, $0.title) }
+    }
+
     // MARK: - Helpers
 
     private func mapPriority(_ ekPriority: Int) -> TaskPriority {
@@ -153,6 +288,14 @@ public actor EventKitService {
         case 5: return .medium
         case 6...9: return .low
         default: return .medium
+        }
+    }
+
+    private func toEKPriority(_ priority: TaskPriority) -> Int {
+        switch priority {
+        case .high: return 1
+        case .medium: return 5
+        case .low: return 9
         }
     }
 }

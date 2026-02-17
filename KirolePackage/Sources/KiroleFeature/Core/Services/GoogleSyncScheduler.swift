@@ -1,11 +1,12 @@
 import Foundation
 
 @MainActor
-public final class GoogleSyncScheduler: @unchecked Sendable {
-    public static let shared = GoogleSyncScheduler()
+public final class SyncScheduler: @unchecked Sendable {
+    public static let shared = SyncScheduler()
 
     private var timer: Timer?
-    private var lastSyncTime: Date?
+    private var lastGoogleSyncTime: Date?
+    private var lastAppleSyncTime: Date?
     private let syncInterval: TimeInterval = 300  // 5 minutes
     private let resumeThreshold: TimeInterval = 600  // 10 minutes
 
@@ -26,17 +27,33 @@ public final class GoogleSyncScheduler: @unchecked Sendable {
     }
 
     public func syncOnResume() async {
-        guard let lastSync = lastSyncTime else {
-            await performSync()
-            return
-        }
-        if Date().timeIntervalSince(lastSync) > resumeThreshold {
+        let now = Date()
+        let googleStale = lastGoogleSyncTime.map { now.timeIntervalSince($0) > resumeThreshold } ?? true
+        let appleStale = lastAppleSyncTime.map { now.timeIntervalSince($0) > resumeThreshold } ?? true
+
+        if googleStale || appleStale {
             await performSync()
         }
     }
 
     private func performSync() async {
-        lastSyncTime = Date()
-        await AppState.shared.syncGoogleData()
+        let now = Date()
+
+        if AuthManager.shared.isGoogleConnected {
+            lastGoogleSyncTime = now
+            await AppState.shared.syncGoogleData()
+        }
+
+        let appState = AppState.shared
+        let calendarConnected = appState.integrations.first(where: { $0.type == .appleCalendar })?.isConnected ?? false
+        let remindersConnected = appState.integrations.first(where: { $0.type == .appleReminders })?.isConnected ?? false
+
+        if calendarConnected || remindersConnected {
+            lastAppleSyncTime = now
+            await appState.syncAppleData()
+        }
     }
 }
+
+// Backward compatibility alias
+public typealias GoogleSyncScheduler = SyncScheduler

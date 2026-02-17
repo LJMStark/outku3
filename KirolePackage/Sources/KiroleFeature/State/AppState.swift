@@ -72,6 +72,7 @@ public final class AppState: @unchecked Sendable {
     private let googleTasksAPI = GoogleTasksAPI.shared
     private let googleSyncEngine = GoogleSyncEngine.shared
     private let eventKitService = EventKitService.shared
+    private let appleSyncEngine = AppleSyncEngine.shared
     private let widgetDataService = WidgetDataService.shared
     private let cloudKitService = CloudKitService.shared
 
@@ -288,12 +289,27 @@ public final class AppState: @unchecked Sendable {
     // MARK: - Apple EventKit Integration
 
     @MainActor
+    private func isIntegrationConnected(_ type: IntegrationType) -> Bool {
+        integrations.first(where: { $0.type == type })?.isConnected == true
+    }
+
+    @MainActor
+    public var isAnyAppleIntegrationConnected: Bool {
+        isIntegrationConnected(.appleCalendar) || isIntegrationConnected(.appleReminders)
+    }
+
+    @MainActor
     public func loadAppleCalendarEvents() async {
+        guard isIntegrationConnected(.appleCalendar) else { return }
+
         isLoading = true
         defer { isLoading = false }
 
         do {
-            let appleEvents = try await eventKitService.fetchTodayEvents()
+            let calendar = Calendar.current
+            let startOfDay = calendar.startOfDay(for: Date())
+            let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
+            let appleEvents = try await appleSyncEngine.fetchCalendarEvents(from: startOfDay, to: endOfDay)
             let otherEvents = events.filter { $0.source != .apple }
             events = otherEvents + appleEvents
             try? await localStorage.saveEvents(events)
@@ -304,13 +320,16 @@ public final class AppState: @unchecked Sendable {
 
     @MainActor
     public func loadAppleReminders() async {
+        guard isIntegrationConnected(.appleReminders) else { return }
+
         isLoading = true
         defer { isLoading = false }
 
         do {
-            let appleReminders = try await eventKitService.fetchIncompleteReminders()
+            let appleTasks = tasks.filter { $0.source == .apple }
+            let syncedTasks = try await appleSyncEngine.syncReminders(currentTasks: appleTasks)
             let otherTasks = tasks.filter { $0.source != .apple }
-            tasks = otherTasks + appleReminders
+            tasks = otherTasks + syncedTasks
             try? await localStorage.saveTasks(tasks)
             updateStatistics()
         } catch {
@@ -320,8 +339,17 @@ public final class AppState: @unchecked Sendable {
 
     @MainActor
     public func syncAppleData() async {
-        await loadAppleCalendarEvents()
-        await loadAppleReminders()
+        let shouldSyncCalendar = isIntegrationConnected(.appleCalendar)
+        let shouldSyncReminders = isIntegrationConnected(.appleReminders)
+
+        if shouldSyncCalendar {
+            await loadAppleCalendarEvents()
+        }
+
+        if shouldSyncReminders {
+            await loadAppleReminders()
+        }
+
         await updatePetState()
     }
 
@@ -335,6 +363,13 @@ public final class AppState: @unchecked Sendable {
         await eventKitService.requestRemindersAccess()
     }
 
+    @MainActor
+    public func setupAppleChangeObserver() async {
+        await appleSyncEngine.startObservingChanges { [weak self] in
+            await self?.syncAppleData()
+        }
+    }
+
     // MARK: - Actions
 
     @MainActor
@@ -342,19 +377,9 @@ public final class AppState: @unchecked Sendable {
         guard let index = tasks.firstIndex(where: { $0.id == task.id }) else { return }
 
         let original = tasks[index]
-        let updatedTask = TaskItem(
-            id: original.id,
-            localId: original.localId,
-            googleTaskId: original.googleTaskId,
-            googleTaskListId: original.googleTaskListId,
-            title: original.title,
-            isCompleted: !original.isCompleted,
-            dueDate: original.dueDate,
-            source: original.source,
-            priority: original.priority,
-            syncStatus: original.syncStatus,
-            lastModified: Date()
-        )
+        var updatedTask = original
+        updatedTask.isCompleted.toggle()
+        updatedTask.lastModified = Date()
         tasks[index] = updatedTask
         let isCompleted = updatedTask.isCompleted
 
@@ -393,10 +418,11 @@ public final class AppState: @unchecked Sendable {
                 await googleSyncEngine.enqueueChange(task: updatedTask, action: .updateStatus)
                 try? await googleTasksAPI.syncTaskCompletion(updatedTask)
             case .apple:
-                try? await eventKitService.updateReminderCompletion(
-                    identifier: updatedTask.id,
-                    isCompleted: updatedTask.isCompleted
-                )
+                do {
+                    try await appleSyncEngine.pushReminderUpdate(updatedTask)
+                } catch {
+                    print("Apple Reminders sync error: \(error)")
+                }
             default:
                 break
             }
@@ -544,6 +570,37 @@ public final class AppState: @unchecked Sendable {
                 isConnected: true,
                 type: type
             ))
+        }
+
+        // Clean up data when disconnecting Apple integrations
+        if !isConnected {
+            switch type {
+            case .appleCalendar:
+                events = events.filter { $0.source != .apple }
+                Task { try? await localStorage.saveEvents(events) }
+            case .appleReminders:
+                tasks = tasks.filter { $0.source != .apple }
+                updateStatistics()
+                Task {
+                    try? await localStorage.saveTasks(tasks)
+                }
+            default:
+                break
+            }
+        }
+
+        if type == .appleCalendar || type == .appleReminders {
+            if isAnyAppleIntegrationConnected {
+                if isConnected {
+                    Task { @MainActor in
+                        await setupAppleChangeObserver()
+                    }
+                }
+            } else {
+                Task {
+                    await appleSyncEngine.stopObservingChanges()
+                }
+            }
         }
     }
 
