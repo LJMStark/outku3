@@ -118,6 +118,7 @@ struct PetPageView: View {
 
 private struct PetIllustrationSection: View {
     let onTap: () -> Void
+    @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
     @State private var breathingOffset: CGFloat = 0
 
@@ -134,7 +135,7 @@ private struct PetIllustrationSection: View {
                         .offset(y: 60)
 
                     // Pet image
-                    Image("tiko_mushroom", bundle: .module)
+                    Image(petImageName, bundle: .module)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(width: 320, height: 320)
@@ -154,6 +155,16 @@ private struct PetIllustrationSection: View {
             ) {
                 breathingOffset = -8
             }
+        }
+    }
+
+    private var petImageName: String {
+        switch appState.pet.currentForm {
+        case .cat: return "tiko_mushroom"
+        case .dog: return "tiko_dog"
+        case .bunny: return "tiko_bunny"
+        case .bird: return "tiko_bird"
+        case .dragon: return "tiko_dragon"
         }
     }
 }

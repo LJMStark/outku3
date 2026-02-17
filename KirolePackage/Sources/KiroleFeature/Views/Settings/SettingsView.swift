@@ -228,6 +228,25 @@ private struct DebugSection: View {
 
                 Divider()
 
+                // Pet Transformation
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Pet Transformation")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(theme.colors.primaryText)
+
+                    Picker("Pet Form", selection: Binding(
+                        get: { appState.pet.currentForm },
+                        set: { appState.pet.currentForm = $0 }
+                    )) {
+                        ForEach(PetForm.allCases, id: \.self) { form in
+                            Text(form.rawValue).tag(form)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+
+                Divider()
+
                 // Manual Sync Button
                 Button {
                     Task {
