@@ -1,5 +1,25 @@
 import SwiftUI
 
+// MARK: - Appear Animation Modifier
+
+private struct AppearAnimation: ViewModifier {
+    let delay: Double
+    let appeared: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(appeared ? 1 : 0)
+            .offset(y: appeared ? 0 : 20)
+            .animation(.easeOut(duration: 0.4).delay(delay), value: appeared)
+    }
+}
+
+private extension View {
+    func appearAnimation(delay: Double = 0, appeared: Bool) -> some View {
+        modifier(AppearAnimation(delay: delay, appeared: appeared))
+    }
+}
+
 // MARK: - Settings View
 
 struct SettingsView: View {
@@ -10,47 +30,26 @@ struct SettingsView: View {
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: 24) {
-                // Device Section
                 SettingsBLESection()
-                    .opacity(appeared ? 1 : 0)
-                    .offset(y: appeared ? 0 : 20)
-                    .animation(.easeOut(duration: 0.4), value: appeared)
+                    .appearAnimation(appeared: appeared)
 
-                // Device Mode Section
                 DeviceModeSection()
-                    .opacity(appeared ? 1 : 0)
-                    .offset(y: appeared ? 0 : 20)
-                    .animation(.easeOut(duration: 0.4).delay(0.05), value: appeared)
+                    .appearAnimation(delay: 0.05, appeared: appeared)
 
-                // Theme Section
                 SettingsThemeSection()
-                    .opacity(appeared ? 1 : 0)
-                    .offset(y: appeared ? 0 : 20)
-                    .animation(.easeOut(duration: 0.4).delay(0.1), value: appeared)
+                    .appearAnimation(delay: 0.1, appeared: appeared)
 
-                // Avatar + AI Settings Section
                 SettingsAccountSection()
-                    .opacity(appeared ? 1 : 0)
-                    .offset(y: appeared ? 0 : 20)
-                    .animation(.easeOut(duration: 0.4).delay(0.2), value: appeared)
+                    .appearAnimation(delay: 0.2, appeared: appeared)
 
-                // Sound Settings Section
                 SoundSettingsSection()
-                    .opacity(appeared ? 1 : 0)
-                    .offset(y: appeared ? 0 : 20)
-                    .animation(.easeOut(duration: 0.4).delay(0.3), value: appeared)
+                    .appearAnimation(delay: 0.3, appeared: appeared)
 
-                // Integrations Section
                 SettingsIntegrationSection()
-                    .opacity(appeared ? 1 : 0)
-                    .offset(y: appeared ? 0 : 20)
-                    .animation(.easeOut(duration: 0.4).delay(0.35), value: appeared)
+                    .appearAnimation(delay: 0.35, appeared: appeared)
 
-                // Debug Section
                 DebugSection()
-                    .opacity(appeared ? 1 : 0)
-                    .offset(y: appeared ? 0 : 20)
-                    .animation(.easeOut(duration: 0.4).delay(0.4), value: appeared)
+                    .appearAnimation(delay: 0.4, appeared: appeared)
 
                 Spacer()
                     .frame(height: 80)

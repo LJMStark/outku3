@@ -28,18 +28,8 @@ public actor GoogleSyncEngine {
     // MARK: - Initialization
 
     private func loadPersistedState() async {
-        do {
-            if let saved = try await storage.loadGoogleSyncMetadata() {
-                metadata = saved
-            }
-        } catch {
-            // Use defaults on failure
-        }
-        do {
-            outbox = try await storage.loadOutbox()
-        } catch {
-            outbox = []
-        }
+        metadata = (try? await storage.loadGoogleSyncMetadata()) ?? GoogleSyncMetadata()
+        outbox = (try? await storage.loadOutbox()) ?? []
     }
 
     // MARK: - Main Entry Point

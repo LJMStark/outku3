@@ -20,102 +20,72 @@ public actor NetworkClient {
         self.encoder = JSONEncoder()
     }
 
-    // MARK: - GET Request
+    // MARK: - Public HTTP Methods
 
-    /// 执行 GET 请求
     public func get<T: Decodable>(
         url: URL,
         headers: [String: String] = [:],
         responseType: T.Type
     ) async throws -> T {
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-
-        for (key, value) in headers {
-            request.setValue(value, forHTTPHeaderField: key)
-        }
-
-        let (data, response) = try await session.data(for: request)
-
-        try validateResponse(response)
-
-        return try decoder.decode(T.self, from: data)
+        try await sendRequest(url: url, method: "GET", headers: headers)
     }
 
-    // MARK: - POST Request
-
-    /// 执行 POST 请求
     public func post<T: Decodable, B: Encodable>(
         url: URL,
         headers: [String: String] = [:],
         body: B,
         responseType: T.Type
     ) async throws -> T {
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-        for (key, value) in headers {
-            request.setValue(value, forHTTPHeaderField: key)
-        }
-
-        request.httpBody = try encoder.encode(body)
-
-        let (data, response) = try await session.data(for: request)
-
-        try validateResponse(response)
-
-        return try decoder.decode(T.self, from: data)
+        try await sendRequest(url: url, method: "POST", headers: headers, body: body)
     }
 
-    // MARK: - PATCH Request
-
-    /// 执行 PATCH 请求
     public func patch<T: Decodable, B: Encodable>(
         url: URL,
         headers: [String: String] = [:],
         body: B,
         responseType: T.Type
     ) async throws -> T {
-        var request = URLRequest(url: url)
-        request.httpMethod = "PATCH"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-        for (key, value) in headers {
-            request.setValue(value, forHTTPHeaderField: key)
-        }
-
-        request.httpBody = try encoder.encode(body)
-
-        let (data, response) = try await session.data(for: request)
-
-        try validateResponse(response)
-
-        return try decoder.decode(T.self, from: data)
+        try await sendRequest(url: url, method: "PATCH", headers: headers, body: body)
     }
 
-    // MARK: - DELETE Request
-
-    /// 执行 DELETE 请求
     public func delete(
         url: URL,
         headers: [String: String] = [:]
     ) async throws {
+        let _: EmptyResponse = try await sendRequest(url: url, method: "DELETE", headers: headers)
+    }
+
+    // MARK: - Core Request
+
+    private func sendRequest<T: Decodable>(
+        url: URL,
+        method: String,
+        headers: [String: String],
+        body: (any Encodable)? = nil
+    ) async throws -> T {
         var request = URLRequest(url: url)
-        request.httpMethod = "DELETE"
+        request.httpMethod = method
 
         for (key, value) in headers {
             request.setValue(value, forHTTPHeaderField: key)
         }
 
-        let (_, response) = try await session.data(for: request)
+        if let body {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try encoder.encode(AnyEncodable(body))
+        }
 
+        let (data, response) = try await session.data(for: request)
         try validateResponse(response)
+
+        if T.self == EmptyResponse.self {
+            return EmptyResponse() as! T
+        }
+        return try decoder.decode(T.self, from: data)
     }
 
     // MARK: - Authenticated Request with 401 Retry
 
-    /// 执行带认证的请求，401 时自动刷新 token 并重试一次
     public func authenticatedRequest<T: Decodable & Sendable>(
         url: String,
         method: String = "GET",
@@ -124,11 +94,9 @@ public actor NetworkClient {
         responseType: T.Type,
         refreshToken: @Sendable () async throws -> String
     ) async throws -> T {
-        // 第一次尝试
         do {
             return try await executeRequest(url: url, method: method, headers: headers, body: body, responseType: responseType)
         } catch NetworkError.unauthorized {
-            // 刷新 token 并重试
             let newToken = try await refreshToken()
             var updatedHeaders = headers
             updatedHeaders["Authorization"] = "Bearer \(newToken)"
@@ -136,69 +104,32 @@ public actor NetworkClient {
         }
     }
 
-    /// 执行带认证的无返回体请求（如 DELETE），401 时自动刷新 token 并重试一次
     public func authenticatedRequestNoContent(
         url: String,
         method: String = "DELETE",
         headers: [String: String] = [:],
         refreshToken: @Sendable () async throws -> String
     ) async throws {
-        do {
-            try await executeRequestNoContent(url: url, method: method, headers: headers)
-        } catch NetworkError.unauthorized {
-            let newToken = try await refreshToken()
-            var updatedHeaders = headers
-            updatedHeaders["Authorization"] = "Bearer \(newToken)"
-            try await executeRequestNoContent(url: url, method: method, headers: updatedHeaders)
-        }
+        let _: EmptyResponse = try await authenticatedRequest(
+            url: url,
+            method: method,
+            headers: headers,
+            responseType: EmptyResponse.self,
+            refreshToken: refreshToken
+        )
     }
 
     private func executeRequest<T: Decodable>(
         url urlString: String,
         method: String,
         headers: [String: String],
-        body: (any Encodable)?,
+        body: (any Encodable)? = nil,
         responseType: T.Type
     ) async throws -> T {
         guard let url = URL(string: urlString) else {
             throw NetworkError.invalidResponse
         }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = method
-
-        for (key, value) in headers {
-            request.setValue(value, forHTTPHeaderField: key)
-        }
-
-        if let body = body {
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = try encoder.encode(AnyEncodable(body))
-        }
-
-        let (data, response) = try await session.data(for: request)
-        try validateResponse(response)
-        return try decoder.decode(T.self, from: data)
-    }
-
-    private func executeRequestNoContent(
-        url urlString: String,
-        method: String,
-        headers: [String: String]
-    ) async throws {
-        guard let url = URL(string: urlString) else {
-            throw NetworkError.invalidResponse
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = method
-
-        for (key, value) in headers {
-            request.setValue(value, forHTTPHeaderField: key)
-        }
-
-        let (_, response) = try await session.data(for: request)
-        try validateResponse(response)
+        return try await sendRequest(url: url, method: method, headers: headers, body: body)
     }
 
     // MARK: - Validation
@@ -226,6 +157,10 @@ public actor NetworkClient {
         }
     }
 }
+
+// MARK: - EmptyResponse
+
+private struct EmptyResponse: Decodable {}
 
 // MARK: - AnyEncodable
 

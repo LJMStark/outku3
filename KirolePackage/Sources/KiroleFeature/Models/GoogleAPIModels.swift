@@ -14,6 +14,12 @@ private enum CachedFormatters {
         f.formatOptions = [.withInternetDateTime]
         return f
     }()
+
+    static let dateOnly: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
 }
 
 // MARK: - Google Calendar API Models
@@ -44,9 +50,7 @@ public struct GoogleDateTime: Codable, Sendable {
         }
 
         if let date = date {
-            let dateFormatter = DateFormatter()
-            dateFormatter.dateFormat = "yyyy-MM-dd"
-            return dateFormatter.date(from: date)
+            return CachedFormatters.dateOnly.date(from: date)
         }
 
         return nil

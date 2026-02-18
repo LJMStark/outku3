@@ -1,5 +1,9 @@
 import Foundation
 
+// MARK: - Private Helpers
+
+private nonisolated(unsafe) let iso8601Formatter = ISO8601DateFormatter()
+
 // MARK: - Calendar Helpers
 
 public extension Calendar {
@@ -117,13 +121,9 @@ public struct CalendarEvent: Identifiable, Sendable, Codable {
     public var durationText: String {
         let hours = Int(duration / 3600)
         let minutes = Int((duration.truncatingRemainder(dividingBy: 3600)) / 60)
-        if hours > 0 && minutes > 0 {
-            return "\(hours)h \(minutes)m"
-        } else if hours > 0 {
-            return "\(hours)h"
-        } else {
-            return "\(minutes)m"
-        }
+        if hours > 0 && minutes > 0 { return "\(hours)h \(minutes)m" }
+        if hours > 0 { return "\(hours)h" }
+        return "\(minutes)m"
     }
 
     // 从 Google API 响应创建
@@ -138,9 +138,7 @@ public struct CalendarEvent: Identifiable, Sendable, Codable {
             return Participant(name: name)
         } ?? []
 
-        let remoteUpdated: Date? = googleEvent.updated.flatMap { dateString in
-            ISO8601DateFormatter().date(from: dateString)
-        }
+        let remoteUpdated = googleEvent.updated.flatMap { iso8601Formatter.date(from: $0) }
 
         return CalendarEvent(
             id: googleEvent.id,
@@ -256,9 +254,7 @@ public struct TaskItem: Identifiable, Sendable, Codable {
 
     // 从 Google API 响应创建
     public static func from(googleTask: GoogleTask, taskListId: String) -> TaskItem {
-        let remoteUpdated: Date? = googleTask.updated.flatMap { dateString in
-            ISO8601DateFormatter().date(from: dateString)
-        }
+        let remoteUpdated = googleTask.updated.flatMap { iso8601Formatter.date(from: $0) }
 
         return TaskItem(
             id: googleTask.id,
@@ -525,12 +521,9 @@ public struct SunTimes: Sendable, Codable {
     public static var `default`: SunTimes {
         let calendar = Calendar.current
         let today = Date()
-        let sunriseComponents = DateComponents(hour: 6, minute: 45)
-        let sunsetComponents = DateComponents(hour: 17, minute: 30)
-        return SunTimes(
-            sunrise: calendar.date(bySettingHour: sunriseComponents.hour!, minute: sunriseComponents.minute!, second: 0, of: today)!,
-            sunset: calendar.date(bySettingHour: sunsetComponents.hour!, minute: sunsetComponents.minute!, second: 0, of: today)!
-        )
+        let sunrise = calendar.date(bySettingHour: 6, minute: 45, second: 0, of: today) ?? today
+        let sunset = calendar.date(bySettingHour: 17, minute: 30, second: 0, of: today) ?? today
+        return SunTimes(sunrise: sunrise, sunset: sunset)
     }
 }
 

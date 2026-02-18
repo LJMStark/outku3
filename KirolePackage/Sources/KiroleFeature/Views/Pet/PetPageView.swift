@@ -1,5 +1,13 @@
 import SwiftUI
 
+// MARK: - Private Helpers
+
+private let dueDateFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.dateFormat = "MMM d"
+    return f
+}()
+
 // MARK: - Pet Page View
 
 struct PetPageView: View {
@@ -67,10 +75,7 @@ struct PetPageView: View {
     // MARK: - Evolution Helpers
 
     private var evolutionBinding: Binding<Bool> {
-        Binding(
-            get: { appState.showEvolutionAnimation },
-            set: { _ in }
-        )
+        .constant(appState.showEvolutionAnimation)
     }
 
     @ViewBuilder
@@ -91,21 +96,21 @@ struct PetPageView: View {
 
     // MARK: - Task Filters
 
+    private var today: Date {
+        Calendar.current.startOfDay(for: Date())
+    }
+
     private var todayTasks: [TaskItem] {
-        let calendar = Calendar.current
-        let today = calendar.startOfDay(for: Date())
-        return appState.tasks.filter { task in
+        appState.tasks.filter { task in
             guard let dueDate = task.dueDate else { return false }
-            return calendar.isDate(dueDate, inSameDayAs: today)
+            return Calendar.current.isDate(dueDate, inSameDayAs: today)
         }
     }
 
     private var upcomingTasks: [TaskItem] {
-        let calendar = Calendar.current
-        let today = calendar.startOfDay(for: Date())
-        return appState.tasks.filter { task in
+        appState.tasks.filter { task in
             guard let dueDate = task.dueDate else { return false }
-            return dueDate > today && !calendar.isDate(dueDate, inSameDayAs: today)
+            return dueDate > today && !Calendar.current.isDate(dueDate, inSameDayAs: today)
         }
     }
 
@@ -280,9 +285,7 @@ private struct TaskItemRow: View {
         let calendar = Calendar.current
         if calendar.isDateInToday(date) { return "today" }
         if calendar.isDateInTomorrow(date) { return "tomorrow" }
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMM d"
-        return formatter.string(from: date)
+        return dueDateFormatter.string(from: date)
     }
 }
 

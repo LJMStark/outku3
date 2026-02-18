@@ -38,17 +38,18 @@ public final class SyncScheduler: @unchecked Sendable {
 
     private func performSync() async {
         let now = Date()
+        let appState = AppState.shared
 
         if AuthManager.shared.isGoogleConnected {
             lastGoogleSyncTime = now
-            await AppState.shared.syncGoogleData()
+            await appState.syncGoogleData()
         }
 
-        let appState = AppState.shared
-        let calendarConnected = appState.integrations.first(where: { $0.type == .appleCalendar })?.isConnected ?? false
-        let remindersConnected = appState.integrations.first(where: { $0.type == .appleReminders })?.isConnected ?? false
+        let hasAppleIntegration = appState.integrations.contains {
+            ($0.type == .appleCalendar || $0.type == .appleReminders) && $0.isConnected
+        }
 
-        if calendarConnected || remindersConnected {
+        if hasAppleIntegration {
             lastAppleSyncTime = now
             await appState.syncAppleData()
         }

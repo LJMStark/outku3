@@ -137,7 +137,7 @@ public final class TaskDehydrationService {
                     slots.append(TimeSlot(start: cursor, end: event.startTime))
                 }
             }
-            let eventEnd = event.endTime ?? event.startTime.addingTimeInterval(3600)
+            let eventEnd = event.endTime
             cursor = max(cursor, eventEnd)
         }
 

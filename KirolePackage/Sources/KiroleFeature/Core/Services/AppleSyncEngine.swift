@@ -26,69 +26,58 @@ public actor AppleSyncEngine {
         let completed = try await eventKitService.fetchCompletedReminders(from: thirtyDaysAgo, to: Date())
         let remoteAll = incomplete + completed
 
-        // Build lookup by appleExternalId (stable), fallback to appleReminderId
-        var remoteByExternalId: [String: TaskItem] = [:]
-        var remoteByReminderId: [String: TaskItem] = [:]
-        for remote in remoteAll {
-            if let extId = remote.appleExternalId, !extId.isEmpty {
-                remoteByExternalId[extId] = remote
-            }
-            if let remId = remote.appleReminderId, !remId.isEmpty {
-                remoteByReminderId[remId] = remote
-            }
-        }
+        let remoteByExternalId = Dictionary(
+            remoteAll.compactMap { r in r.appleExternalId.flatMap { id in id.isEmpty ? nil : (id, r) } },
+            uniquingKeysWith: { _, last in last }
+        )
+        let remoteByReminderId = Dictionary(
+            remoteAll.compactMap { r in r.appleReminderId.flatMap { id in id.isEmpty ? nil : (id, r) } },
+            uniquingKeysWith: { _, last in last }
+        )
 
-        // Merge logic: Apple is source of truth for Apple fields, keep local-only fields
-        var merged: [TaskItem] = []
         var matchedExternalIds: Set<String> = []
         var matchedReminderIds: Set<String> = []
 
-        for local in currentTasks {
-            // Try to match by externalId first, then reminderId
-            var remote: TaskItem?
-            if let extId = local.appleExternalId, !extId.isEmpty, let r = remoteByExternalId[extId] {
-                remote = r
+        let merged: [TaskItem] = currentTasks.compactMap { local in
+            if let extId = local.appleExternalId, !extId.isEmpty, let remote = remoteByExternalId[extId] {
                 matchedExternalIds.insert(extId)
-            } else if let remId = local.appleReminderId, !remId.isEmpty, let r = remoteByReminderId[remId] {
-                remote = r
+                return mergeLocalWithRemote(local: local, remote: remote)
+            }
+            if let remId = local.appleReminderId, !remId.isEmpty, let remote = remoteByReminderId[remId] {
                 matchedReminderIds.insert(remId)
+                return mergeLocalWithRemote(local: local, remote: remote)
             }
-
-            if let remote {
-                // Keep local fields: localId, microActions, syncStatus
-                var updated = local
-                updated.title = remote.title
-                updated.isCompleted = remote.isCompleted
-                updated.dueDate = remote.dueDate
-                updated.priority = remote.priority
-                updated.notes = remote.notes
-                updated.appleReminderId = remote.appleReminderId
-                updated.appleExternalId = remote.appleExternalId
-                updated.appleListId = remote.appleListId
-                updated.remoteUpdatedAt = remote.remoteUpdatedAt
-                updated.lastModified = remote.lastModified
-                merged.append(updated)
-            } else if let reminderId = local.appleReminderId, !reminderId.isEmpty {
-                // Only treat as deleted if it was previously synced to Apple
-                continue
-            } else {
-                // Keep unsynced local items (no Apple identifier yet)
-                merged.append(local)
+            // Previously synced but no longer in Apple -- treat as deleted
+            if local.appleReminderId != nil, !(local.appleReminderId ?? "").isEmpty {
+                return nil
             }
+            return local
         }
 
-        // Add new reminders from Apple that don't exist locally
-        for remote in remoteAll {
+        let newFromApple = remoteAll.filter { remote in
             let extId = remote.appleExternalId ?? ""
             let remId = remote.appleReminderId ?? ""
             let alreadyMatched = (!extId.isEmpty && matchedExternalIds.contains(extId))
                 || (!remId.isEmpty && matchedReminderIds.contains(remId))
-            if !alreadyMatched {
-                merged.append(remote)
-            }
+            return !alreadyMatched
         }
 
-        return merged
+        return merged + newFromApple
+    }
+
+    private func mergeLocalWithRemote(local: TaskItem, remote: TaskItem) -> TaskItem {
+        var updated = local
+        updated.title = remote.title
+        updated.isCompleted = remote.isCompleted
+        updated.dueDate = remote.dueDate
+        updated.priority = remote.priority
+        updated.notes = remote.notes
+        updated.appleReminderId = remote.appleReminderId
+        updated.appleExternalId = remote.appleExternalId
+        updated.appleListId = remote.appleListId
+        updated.remoteUpdatedAt = remote.remoteUpdatedAt
+        updated.lastModified = remote.lastModified
+        return updated
     }
 
     // MARK: - Reminder Write Operations
