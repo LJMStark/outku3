@@ -2,14 +2,14 @@ import Foundation
 
 // MARK: - OpenAI Service
 
-/// OpenAI API client for generating haikus and companion text
+/// AI API client (via OpenRouter) for generating haikus and companion text
 public actor OpenAIService {
     public static let shared = OpenAIService()
 
     private let networkClient = NetworkClient.shared
-    private let baseURL = "https://api.openai.com/v1"
+    private let baseURL = "https://openrouter.ai/api/v1"
+    private let model = "openai/gpt-5.1"
 
-    // TODO: Read from environment variable or secure storage
     private var apiKey: String = ""
 
     private init() {}
@@ -101,7 +101,7 @@ public actor OpenAIService {
         }
 
         let request = ChatCompletionRequest(
-            model: "gpt-4o-mini",
+            model: model,
             messages: [
                 ChatMessage(role: "system", content: systemPrompt),
                 ChatMessage(role: "user", content: userPrompt)
@@ -118,7 +118,9 @@ public actor OpenAIService {
             url: url,
             headers: [
                 "Authorization": "Bearer \(apiKey)",
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://kirole.app",
+                "X-Title": "Kirole"
             ],
             body: request,
             responseType: ChatCompletionResponse.self

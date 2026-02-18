@@ -94,7 +94,7 @@ private struct AISettingsContent: View {
                         .fill(isConfigured ? Color.green : Color.orange)
                         .frame(width: 8, height: 8)
 
-                    Text(isConfigured ? "OpenAI Connected" : "OpenAI Not Configured")
+                    Text(isConfigured ? "AI Connected (OpenRouter)" : "AI Not Configured")
                         .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(theme.colors.primaryText)
 
@@ -113,13 +113,13 @@ private struct AISettingsContent: View {
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("OpenAI API Key")
+                    Text("OpenRouter API Key")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(theme.colors.secondaryText)
 
                     HStack(spacing: 12) {
                         if showAPIKey {
-                            TextField("sk-...", text: $apiKey)
+                            TextField("sk-or-...", text: $apiKey)
                                 .font(.system(size: 14, design: .monospaced))
                                 .textContentType(.password)
                                 .autocorrectionDisabled()
@@ -127,7 +127,7 @@ private struct AISettingsContent: View {
                                 .textInputAutocapitalization(.never)
                                 #endif
                         } else {
-                            SecureField("sk-...", text: $apiKey)
+                            SecureField("sk-or-...", text: $apiKey)
                                 .font(.system(size: 14, design: .monospaced))
                                 .textContentType(.password)
                         }
@@ -180,7 +180,7 @@ private struct AISettingsContent: View {
                 .buttonStyle(.plain)
                 .disabled(apiKey.isEmpty || isValidating)
 
-                Text("Your API key is stored securely in the device keychain and used only for generating personalized haikus.")
+                Text("Your API key is stored securely in the device keychain. AI features use OpenRouter with GPT-5.1.")
                     .font(.system(size: 11))
                     .foregroundStyle(theme.colors.secondaryText)
                     .multilineTextAlignment(.center)
@@ -208,10 +208,10 @@ private struct AISettingsContent: View {
         isValidating = true
         validationMessage = nil
 
-        guard apiKey.hasPrefix("sk-") else {
+        guard apiKey.hasPrefix("sk-or-") || apiKey.hasPrefix("sk-") else {
             isValidating = false
             isValid = false
-            validationMessage = "Invalid API key format. Should start with 'sk-'"
+            validationMessage = "Invalid API key format. Should start with 'sk-or-' or 'sk-'"
             return
         }
 

@@ -130,6 +130,12 @@
 	<string>$(SUPABASE_ANON_KEY)</string>
 
 	<!-- ==========================================
+	     OpenRouter Configuration (AI Features)
+	     ========================================== -->
+	<key>OPENROUTER_API_KEY</key>
+	<string>$(OPENROUTER_API_KEY)</string>
+
+	<!-- ==========================================
 	     App Transport Security
 	     ========================================== -->
 	<key>NSAppTransportSecurity</key>
