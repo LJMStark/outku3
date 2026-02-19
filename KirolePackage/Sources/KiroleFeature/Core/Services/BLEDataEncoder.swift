@@ -77,11 +77,12 @@ public enum BLEDataEncoder {
     /// 编码当前时间
     public static func encodeCurrentTime() -> Data {
         var data = Data()
-        let components = Calendar.current.dateComponents(
+        let components = Calendar(identifier: .gregorian).dateComponents(
             [.year, .month, .day, .hour, .minute, .second],
             from: Date()
         )
-        data.append(UInt8((components.year ?? 2024) - 2000))
+        let yearOffset = max(0, min((components.year ?? 2024) - 2000, 255))
+        data.append(UInt8(yearOffset))
         data.append(UInt8(components.month ?? 1))
         data.append(UInt8(components.day ?? 1))
         data.append(UInt8(components.hour ?? 0))
@@ -97,8 +98,9 @@ public enum BLEDataEncoder {
         var data = Data()
 
         // Header
-        let dateComponents = Calendar.current.dateComponents([.year, .month, .day], from: dayPack.date)
-        data.append(UInt8((dateComponents.year ?? 2024) - 2000))
+        let dateComponents = Calendar(identifier: .gregorian).dateComponents([.year, .month, .day], from: dayPack.date)
+        let dayPackYearOffset = max(0, min((dateComponents.year ?? 2024) - 2000, 255))
+        data.append(UInt8(dayPackYearOffset))
         data.append(UInt8(dateComponents.month ?? 1))
         data.append(UInt8(dateComponents.day ?? 1))
 
@@ -125,21 +127,21 @@ public enum BLEDataEncoder {
             data.appendString(task.title, maxLength: 30)
             data.appendString(task.microActionWhat ?? "", maxLength: 40)
             data.append(task.isCompleted ? 0x01 : 0x00)
-            data.append(UInt8(task.priority))
+            data.append(UInt8(clamping: task.priority))
         }
 
         // Page 4: Settlement
-        data.append(UInt8(dayPack.settlementData.tasksCompleted))
-        data.append(UInt8(dayPack.settlementData.tasksTotal))
+        data.append(UInt8(clamping: dayPack.settlementData.tasksCompleted))
+        data.append(UInt8(clamping: dayPack.settlementData.tasksTotal))
         let points = UInt16(min(dayPack.settlementData.pointsEarned, 65535))
         data.append(contentsOf: withUnsafeBytes(of: points.bigEndian) { Array($0) })
-        data.append(UInt8(dayPack.settlementData.streakDays))
+        data.append(UInt8(clamping: dayPack.settlementData.streakDays))
         let focusMinutes = UInt16(min(dayPack.settlementData.totalFocusMinutes, 65535))
         data.append(contentsOf: withUnsafeBytes(of: focusMinutes.bigEndian) { Array($0) })
-        data.append(UInt8(dayPack.settlementData.focusSessionCount))
+        data.append(UInt8(clamping: dayPack.settlementData.focusSessionCount))
         let longestFocus = UInt16(min(dayPack.settlementData.longestFocusMinutes, 65535))
         data.append(contentsOf: withUnsafeBytes(of: longestFocus.bigEndian) { Array($0) })
-        data.append(UInt8(dayPack.settlementData.interruptionCount))
+        data.append(UInt8(clamping: dayPack.settlementData.interruptionCount))
         data.appendString(dayPack.settlementData.summaryMessage, maxLength: 50)
         data.appendString(dayPack.settlementData.encouragementMessage, maxLength: 50)
 

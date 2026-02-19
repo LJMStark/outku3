@@ -141,7 +141,8 @@ public actor SupabaseService {
             height: pet.height,
             tailLength: pet.tailLength,
             currentForm: pet.currentForm.rawValue,
-            lastInteraction: pet.lastInteraction
+            lastInteraction: pet.lastInteraction,
+            points: pet.points
         )
 
         try await client
@@ -179,7 +180,8 @@ public actor SupabaseService {
             height: record.height,
             tailLength: record.tailLength,
             currentForm: PetForm(rawValue: record.currentForm) ?? .cat,
-            lastInteraction: record.lastInteraction
+            lastInteraction: record.lastInteraction,
+            points: record.points
         )
     }
 
@@ -307,6 +309,7 @@ private struct PetRecord: Codable {
     let tailLength: Double
     let currentForm: String
     let lastInteraction: Date
+    let points: Int
 
     enum CodingKeys: String, CodingKey {
         case userId = "user_id"
@@ -316,6 +319,7 @@ private struct PetRecord: Codable {
         case tailLength = "tail_length"
         case currentForm = "current_form"
         case lastInteraction = "last_interaction"
+        case points
     }
 }
 

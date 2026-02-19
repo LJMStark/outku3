@@ -117,6 +117,8 @@ public struct SettingsIntegrationSection: View {
                     IntegrationAppRow(type: type) {
                         Task { await connectIntegration(type) }
                     }
+                    .disabled(isConnecting)
+                    .opacity(isConnecting ? 0.5 : 1.0)
 
                     if type != filteredTypes.last {
                         Divider().padding(.leading, 52)
@@ -127,6 +129,8 @@ public struct SettingsIntegrationSection: View {
     }
 
     private func connectIntegration(_ type: IntegrationType) async {
+        guard !isConnecting else { return }
+
         guard type.isSupported else {
             showComingSoon = true
             return

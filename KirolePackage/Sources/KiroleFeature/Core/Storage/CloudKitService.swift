@@ -71,6 +71,7 @@ public actor CloudKitService {
         record["tailLength"] = pet.tailLength
         record["currentForm"] = pet.currentForm.rawValue
         record["lastInteraction"] = pet.lastInteraction
+        record["points"] = pet.points
         _ = try await database.save(record)
     }
 
@@ -94,7 +95,8 @@ public actor CloudKitService {
             height: record["height"] as? Double ?? 5,
             tailLength: record["tailLength"] as? Double ?? 2,
             currentForm: (record["currentForm"] as? String).flatMap(PetForm.init) ?? .cat,
-            lastInteraction: record["lastInteraction"] as? Date ?? Date()
+            lastInteraction: record["lastInteraction"] as? Date ?? Date(),
+            points: record["points"] as? Int ?? 0
         )
     }
 

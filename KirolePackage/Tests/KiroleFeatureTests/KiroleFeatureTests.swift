@@ -354,7 +354,9 @@ struct ModelTests {
             due: nil,
             completed: nil,
             updated: nil,
-            position: nil
+            position: nil,
+            etag: nil,
+            deleted: nil
         )
 
         let taskItem = TaskItem.from(googleTask: googleTask, taskListId: "list123")

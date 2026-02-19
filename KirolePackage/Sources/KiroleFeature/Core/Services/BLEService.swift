@@ -397,6 +397,10 @@ public final class BLEService: NSObject {
     }
 
     private func cleanup() {
+        writeCompletion?(.failure(.disconnected))
+        writeCompletion = nil
+        connectCompletion?(.failure(.connectionFailed(nil)))
+        connectCompletion = nil
         connectedPeripheral = nil
         writeCharacteristic = nil
         notifyCharacteristic = nil
@@ -609,6 +613,7 @@ public enum BLEError: LocalizedError, Sendable {
     case serviceNotFound
     case characteristicNotFound
     case writeFailed(Error?)
+    case disconnected
 
     public var errorDescription: String? {
         switch self {
@@ -628,6 +633,8 @@ public enum BLEError: LocalizedError, Sendable {
             return "BLE characteristic not found"
         case .writeFailed(let error):
             return "Write failed: \(error?.localizedDescription ?? "Unknown error")"
+        case .disconnected:
+            return "Device disconnected"
         }
     }
 }

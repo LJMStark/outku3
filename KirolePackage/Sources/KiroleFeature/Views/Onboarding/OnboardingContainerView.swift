@@ -44,6 +44,9 @@ public struct OnboardingContainerView: View {
         case 13:
             SignUpPage(onboardingState: onboardingState)
         default:
+            let _ = {
+                assertionFailure("Unexpected onboarding page: \(page)")
+            }()
             WelcomePage(onboardingState: onboardingState)
         }
     }

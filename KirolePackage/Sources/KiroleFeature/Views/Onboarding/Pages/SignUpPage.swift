@@ -8,6 +8,7 @@ public struct SignUpPage: View {
 
     @State private var email: String = ""
     @State private var isSigningIn = false
+    @State private var showComingSoonAlert = false
 
     private var isValidEmail: Bool {
         let pattern = #"^[^\s@]+@[^\s@]+\.[^\s@]+$"#
@@ -104,9 +105,9 @@ public struct SignUpPage: View {
                             }
                             .disabled(isSigningIn)
 
-                            // Apple Sign In (placeholder)
+                            // Apple Sign In (coming soon)
                             Button {
-                                appState.completeOnboarding(with: onboardingState.profile)
+                                showComingSoonAlert = true
                             } label: {
                                 HStack(spacing: 12) {
                                     Image(systemName: "apple.logo")
@@ -159,7 +160,7 @@ public struct SignUpPage: View {
 
                             Button {
                                 if isValidEmail {
-                                    appState.completeOnboarding(with: onboardingState.profile)
+                                    showComingSoonAlert = true
                                 }
                             } label: {
                                 Text("Send Magic Link")
@@ -195,6 +196,11 @@ public struct SignUpPage: View {
                     .padding(.horizontal, 24)
                 }
             }
+        }
+        .alert("Coming Soon", isPresented: $showComingSoonAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("This sign-in method will be available in a future update.")
         }
     }
 }
