@@ -21,10 +21,15 @@ CREATE TABLE IF NOT EXISTS pets (
     tail_length DOUBLE PRECISION DEFAULT 2,
     current_form TEXT DEFAULT 'cat',
     last_interaction TIMESTAMPTZ DEFAULT NOW(),
+    points INTEGER DEFAULT 0,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(user_id)
 );
+
+-- Backward-compatible migration for existing databases
+ALTER TABLE pets
+    ADD COLUMN IF NOT EXISTS points INTEGER DEFAULT 0;
 
 -- ==========================================
 -- Streaks Table

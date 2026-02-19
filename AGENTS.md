@@ -100,6 +100,15 @@ xcodebuild -workspace Kirole.xcworkspace -scheme Kirole \
 - Gate DayPack refresh with `DayPack.stableFingerprint()` and `LocalStorage.lastDayPackHash`.
 - Background sync uses `BLEBackgroundSyncScheduler` and BGTask id `com.kirole.app.ble.sync`.
 
+### Supabase Data & Security
+- Client-side configuration may only include `SUPABASE_URL` and `SUPABASE_ANON_KEY`.
+- `Config/Secrets.xcconfig` must stay git-ignored and must never be committed.
+- Never use or expose `service_role` keys in iOS code, app bundles, repo files, or logs.
+- Keep RLS enabled on all business tables and scope policies to `auth.uid()`.
+- Any Supabase model field change in Swift code must update `Config/supabase-schema.sql` in the same patch.
+- Include backward-compatible SQL migration for existing databases (for example: `ALTER TABLE ... ADD COLUMN IF NOT EXISTS ...`).
+- Apply schema/migrations before releasing app code that writes new fields.
+
 ## 5. Code Style & Formatting
 
 ### Imports

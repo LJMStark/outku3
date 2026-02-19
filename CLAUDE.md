@@ -157,6 +157,15 @@ Views access via `@Environment(AppState.self)`, `@Environment(ThemeManager.self)
 | `TaskDehydrationService` | AI task decomposition into What/When/Why micro-actions |
 | `SmartReminderService` | Context-aware reminders (deadline/streak/idle/nudge) |
 
+## Supabase Rules
+
+- iOS 客户端只允许使用 `SUPABASE_URL` 和 `SUPABASE_ANON_KEY`；密钥放在 `Config/Secrets.xcconfig`，且该文件必须保持 git 忽略。
+- 严禁在客户端、仓库、日志、`Info.plist` 或任何前端可见配置中使用/暴露 `service_role` 高权限密钥。
+- 所有业务表必须启用 RLS，并按 `auth.uid()` 进行数据隔离。
+- 任何 `SupabaseClient` 数据模型字段变更（新增/重命名/删除）必须在同一个提交中同步更新 `Config/supabase-schema.sql`。
+- 对已存在数据库必须提供向后兼容迁移语句（例如 `ALTER TABLE ... ADD COLUMN IF NOT EXISTS ...`），避免线上/新环境 schema 漂移导致运行时失败。
+- 发版前先执行 schema/migration，再发布客户端，避免出现 “代码写入新字段但数据库无该列” 的同步故障。
+
 ## Code Patterns
 
 ### SwiftUI State (MV Pattern)
