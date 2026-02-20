@@ -1,4 +1,5 @@
 import Foundation
+import AuthenticationServices
 import SwiftUI
 
 // MARK: - Auth Manager
@@ -32,20 +33,8 @@ public final class AuthManager: @unchecked Sendable {
         // 配置 Google Sign In
         googleSignInService.configure()
 
-        // 检查 Apple Sign In 状态
-        let appleCredentialState = await appleSignInService.checkCredentialState()
-
-        if appleCredentialState == .authorized {
-            // 尝试恢复 Apple 用户
-            if let userIdentifier = keychainService.getAppleUserIdentifier() {
-                let user = User(
-                    id: userIdentifier,
-                    authProvider: .apple
-                )
-                currentUser = user
-                authState = .authenticated(user)
-            }
-        }
+        // 仅从 Keychain 恢复 Apple 登录态，避免启动时额外认证调用导致不稳定
+        restoreAppleStateFromKeychain()
 
         // 检查 Google 连接状态
         if let googleResult = try? await googleSignInService.restorePreviousSignIn() {
@@ -72,6 +61,20 @@ public final class AuthManager: @unchecked Sendable {
         }
     }
 
+    /// 从 Keychain 恢复 Apple 登录状态
+    private func restoreAppleStateFromKeychain() {
+        guard let userIdentifier = keychainService.getAppleUserIdentifier() else {
+            return
+        }
+
+        let user = User(
+            id: userIdentifier,
+            authProvider: .apple
+        )
+        currentUser = user
+        authState = .authenticated(user)
+    }
+
     /// 从 Keychain 恢复 Google 连接状态
     private func restoreGoogleStateFromKeychain() {
         // 检查是否有有效的 tokens 和 scopes
@@ -95,20 +98,40 @@ public final class AuthManager: @unchecked Sendable {
 
         do {
             let result = try await appleSignInService.signIn()
-
-            // 保存用户标识符
-            try appleSignInService.saveUserIdentifier(result.userIdentifier)
-
-            let user = User(
-                id: result.userIdentifier,
+            try completeAppleSignIn(
+                userIdentifier: result.userIdentifier,
                 email: result.email,
-                displayName: result.displayName,
-                authProvider: .apple
+                displayName: result.displayName
             )
+        } catch {
+            authState = .error(error.localizedDescription)
+            throw error
+        }
+    }
 
-            currentUser = user
-            authState = .authenticated(user)
+    /// 使用 SignInWithAppleButton 返回的授权结果完成登录（避免重复发起 Apple 登录流程）
+    public func signInWithAppleAuthorization(_ authorization: ASAuthorization) async throws {
+        authState = .authenticating
 
+        do {
+            guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential else {
+                throw AppleSignInError.invalidCredential
+            }
+
+            var nameParts: [String] = []
+            if let givenName = credential.fullName?.givenName {
+                nameParts.append(givenName)
+            }
+            if let familyName = credential.fullName?.familyName {
+                nameParts.append(familyName)
+            }
+            let displayName = nameParts.isEmpty ? nil : nameParts.joined(separator: " ")
+
+            try completeAppleSignIn(
+                userIdentifier: credential.user,
+                email: credential.email,
+                displayName: displayName
+            )
         } catch {
             authState = .error(error.localizedDescription)
             throw error
@@ -207,5 +230,23 @@ public final class AuthManager: @unchecked Sendable {
     /// 处理 OAuth 回调 URL
     public func handleURL(_ url: URL) -> Bool {
         googleSignInService.handle(url)
+    }
+
+    private func completeAppleSignIn(
+        userIdentifier: String,
+        email: String?,
+        displayName: String?
+    ) throws {
+        try appleSignInService.saveUserIdentifier(userIdentifier)
+
+        let user = User(
+            id: userIdentifier,
+            email: email,
+            displayName: displayName,
+            authProvider: .apple
+        )
+
+        currentUser = user
+        authState = .authenticated(user)
     }
 }

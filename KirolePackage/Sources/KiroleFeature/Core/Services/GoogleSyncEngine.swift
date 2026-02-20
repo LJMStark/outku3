@@ -37,7 +37,9 @@ public actor GoogleSyncEngine {
     /// Perform a full sync cycle: flush outbox, pull calendar events, pull tasks.
     public func performFullSync(
         currentEvents: [CalendarEvent],
-        currentTasks: [TaskItem]
+        currentTasks: [TaskItem],
+        includeCalendar: Bool = true,
+        includeTasks: Bool = true
     ) async throws -> (events: [CalendarEvent], tasks: [TaskItem]) {
         guard !isSyncing else { return (currentEvents, currentTasks) }
         isSyncing = true
@@ -45,8 +47,8 @@ public actor GoogleSyncEngine {
 
         await loadPersistedState()
 
-        let events = try await syncCalendar()
-        let tasks = try await syncTasks(currentTasks: currentTasks)
+        let events = includeCalendar ? try await syncCalendar() : currentEvents
+        let tasks = includeTasks ? try await syncTasks(currentTasks: currentTasks) : currentTasks
 
         metadata.lastFullSyncTime = Date()
         try await storage.saveGoogleSyncMetadata(metadata)

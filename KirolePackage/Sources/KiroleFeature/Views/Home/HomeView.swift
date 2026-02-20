@@ -25,7 +25,7 @@ public struct HomeView: View {
                                 .id("top")
 
                             // Loading indicator
-                            if appState.isLoading && isInitialLoading {
+                            if isInitialLoading {
                                 LoadingIndicatorView()
                                     .padding(.top, 40)
                             }
@@ -74,25 +74,36 @@ public struct HomeView: View {
         }
         .background(theme.colors.background)
         .task {
+            guard !appState.hasCompletedInitialHomeLoad else {
+                isInitialLoading = false
+                return
+            }
+            appState.hasCompletedInitialHomeLoad = true
             await loadInitialData()
         }
     }
 
     private func loadInitialData() async {
         isInitialLoading = true
+        defer { isInitialLoading = false }
 
-        // Load haiku first (fast)
-        await appState.loadTodayHaiku()
-
-        // Sync data based on connected integrations
-        if authManager.isGoogleConnected {
-            await appState.syncGoogleData()
+        // Initial screen should not be blocked by network / EventKit callbacks.
+        Task { @MainActor in
+            await appState.loadTodayHaiku()
         }
 
-        // Always try to sync Apple data (uses EventKit permissions)
-        await appState.syncAppleData()
+        if authManager.isGoogleConnected {
+            Task { @MainActor in
+                await appState.syncGoogleData()
+            }
+        }
 
-        isInitialLoading = false
+        Task { @MainActor in
+            await appState.syncAppleData()
+        }
+
+        // Keep loader briefly to avoid flicker and ensure first paint is stable.
+        try? await Task.sleep(for: .milliseconds(300))
     }
 
     private func refreshData() async {

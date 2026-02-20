@@ -142,13 +142,15 @@ public struct SettingsIntegrationSection: View {
         do {
             switch type {
             case .googleCalendar, .googleTasks:
-                try await authManager.signInWithGoogle()
-                appState.updateIntegrationStatus(type, isConnected: true)
-                if type == .googleCalendar {
-                    await appState.loadGoogleCalendarEvents()
-                } else {
-                    await appState.loadGoogleTasks()
+                let needsGoogleSignIn = !authManager.isGoogleConnected
+                    || (type == .googleCalendar && !authManager.hasCalendarAccess)
+                    || (type == .googleTasks && !authManager.hasTasksAccess)
+
+                if needsGoogleSignIn {
+                    try await authManager.signInWithGoogle()
                 }
+                appState.updateIntegrationStatus(type, isConnected: true)
+                await appState.syncGoogleData()
 
             case .appleCalendar:
                 let granted = await appState.requestAppleCalendarAccess()
@@ -176,15 +178,6 @@ public struct SettingsIntegrationSection: View {
 
     private func disconnectIntegration(_ type: IntegrationType) {
         appState.updateIntegrationStatus(type, isConnected: false)
-
-        if type == .googleCalendar || type == .googleTasks {
-            let googleConnected = appState.integrations.contains {
-                ($0.type == .googleCalendar || $0.type == .googleTasks) && $0.isConnected
-            }
-            if !googleConnected {
-                Task { await authManager.disconnectGoogle() }
-            }
-        }
     }
 }
 

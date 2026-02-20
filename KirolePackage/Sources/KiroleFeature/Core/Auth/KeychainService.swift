@@ -103,7 +103,12 @@ public final class KeychainService: @unchecked Sendable {
     }
 
     public func getAppleUserIdentifier() -> String? {
-        try? keychain.get(Keys.appleUserIdentifier)
+        guard let storedIdentifier = try? keychain.get(Keys.appleUserIdentifier) else {
+            return nil
+        }
+        let identifier = storedIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !identifier.isEmpty else { return nil }
+        return identifier
     }
 
     public func clearAppleUserIdentifier() {

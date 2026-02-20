@@ -62,6 +62,7 @@ public final class AppState: @unchecked Sendable {
     // Loading State
     public var isLoading: Bool = false
     public var lastError: String?
+    public var hasCompletedInitialHomeLoad: Bool = false
 
     // Services
     private let syncManager = SyncManager.shared
@@ -259,25 +260,35 @@ public final class AppState: @unchecked Sendable {
     public func syncGoogleData() async {
         guard AuthManager.shared.isGoogleConnected else { return }
 
+        let shouldSyncCalendar = isIntegrationConnected(.googleCalendar) && AuthManager.shared.hasCalendarAccess
+        let shouldSyncTasks = isIntegrationConnected(.googleTasks) && AuthManager.shared.hasTasksAccess
+        guard shouldSyncCalendar || shouldSyncTasks else { return }
+
         do {
             let googleEvents = events.filter { $0.source == .google }
             let googleTasks = tasks.filter { $0.source == .google }
 
             let (syncedEvents, syncedTasks) = try await googleSyncEngine.performFullSync(
                 currentEvents: googleEvents,
-                currentTasks: googleTasks
+                currentTasks: googleTasks,
+                includeCalendar: shouldSyncCalendar,
+                includeTasks: shouldSyncTasks
             )
 
-            // Merge: keep non-google items, add synced google items
-            let nonGoogleEvents = events.filter { $0.source != .google }
-            events = nonGoogleEvents + syncedEvents
+            if shouldSyncCalendar {
+                // Merge: keep non-google items, add synced google items
+                let nonGoogleEvents = events.filter { $0.source != .google }
+                events = nonGoogleEvents + syncedEvents
+                try await localStorage.saveEvents(events)
+            }
 
-            let nonGoogleTasks = tasks.filter { $0.source != .google }
-            tasks = nonGoogleTasks + syncedTasks
+            if shouldSyncTasks {
+                let nonGoogleTasks = tasks.filter { $0.source != .google }
+                tasks = nonGoogleTasks + syncedTasks
+                updateStatistics()
+                try await localStorage.saveTasks(tasks)
+            }
 
-            updateStatistics()
-            try await localStorage.saveEvents(events)
-            try await localStorage.saveTasks(tasks)
         } catch {
             print("Google sync error: \(error)")
             lastError = error.localizedDescription
@@ -561,45 +572,106 @@ public final class AppState: @unchecked Sendable {
 
     @MainActor
     public func updateIntegrationStatus(_ type: IntegrationType, isConnected: Bool) {
-        if let index = integrations.firstIndex(where: { $0.type == type }) {
-            integrations[index].isConnected = isConnected
-        } else if isConnected {
-            integrations.append(Integration(
-                name: type.rawValue,
-                iconName: type.iconName,
-                isConnected: true,
-                type: type
-            ))
+        let hadGoogleIntegration = hasAnyGoogleIntegrationConnected
+
+        if isConnected {
+            disconnectConflictingIntegration(for: type)
         }
 
-        // Clean up data when disconnecting Apple integrations
+        setIntegrationStatus(type, isConnected: isConnected)
+
         if !isConnected {
-            switch type {
-            case .appleCalendar:
-                events = events.filter { $0.source != .apple }
-                Task { try? await localStorage.saveEvents(events) }
-            case .appleReminders:
-                tasks = tasks.filter { $0.source != .apple }
-                updateStatistics()
-                Task {
-                    try? await localStorage.saveTasks(tasks)
-                }
-            default:
-                break
+            cleanupDisconnectedIntegrationData(for: type)
+        }
+
+        reconcileAppleChangeObserver()
+        let hasGoogleIntegration = hasAnyGoogleIntegrationConnected
+        if hadGoogleIntegration && !hasGoogleIntegration {
+            Task { @MainActor in
+                await AuthManager.shared.disconnectGoogle()
             }
         }
+    }
 
-        if type == .appleCalendar || type == .appleReminders {
-            if isAnyAppleIntegrationConnected {
-                if isConnected {
-                    Task { @MainActor in
-                        await setupAppleChangeObserver()
-                    }
-                }
-            } else {
-                Task {
-                    await appleSyncEngine.stopObservingChanges()
-                }
+    @MainActor
+    private var hasAnyGoogleIntegrationConnected: Bool {
+        isIntegrationConnected(.googleCalendar) || isIntegrationConnected(.googleTasks)
+    }
+
+    @MainActor
+    private func setIntegrationStatus(_ type: IntegrationType, isConnected: Bool) {
+        if let index = integrations.firstIndex(where: { $0.type == type }) {
+            integrations[index].isConnected = isConnected
+            return
+        }
+
+        guard isConnected else { return }
+        integrations.append(Integration(
+            name: type.rawValue,
+            iconName: type.iconName,
+            isConnected: true,
+            type: type
+        ))
+    }
+
+    @MainActor
+    private func disconnectConflictingIntegration(for type: IntegrationType) {
+        guard let conflictingType = conflictingIntegration(for: type),
+              isIntegrationConnected(conflictingType) else {
+            return
+        }
+
+        setIntegrationStatus(conflictingType, isConnected: false)
+        cleanupDisconnectedIntegrationData(for: conflictingType)
+    }
+
+    @MainActor
+    private func conflictingIntegration(for type: IntegrationType) -> IntegrationType? {
+        switch type {
+        case .googleCalendar:
+            return .appleCalendar
+        case .appleCalendar:
+            return .googleCalendar
+        case .googleTasks:
+            return .appleReminders
+        case .appleReminders:
+            return .googleTasks
+        default:
+            return nil
+        }
+    }
+
+    @MainActor
+    private func cleanupDisconnectedIntegrationData(for type: IntegrationType) {
+        switch type {
+        case .appleCalendar:
+            events = events.filter { $0.source != .apple }
+            Task { try? await localStorage.saveEvents(events) }
+        case .googleCalendar:
+            events = events.filter { $0.source != .google }
+            Task { try? await localStorage.saveEvents(events) }
+        case .appleReminders:
+            tasks = tasks.filter { $0.source != .apple }
+            updateStatistics()
+            Task { try? await localStorage.saveTasks(tasks) }
+        case .googleTasks:
+            tasks = tasks.filter { $0.source != .google }
+            updateStatistics()
+            Task { try? await localStorage.saveTasks(tasks) }
+        default:
+            break
+        }
+    }
+
+    @MainActor
+    private func reconcileAppleChangeObserver() {
+        if isAnyAppleIntegrationConnected {
+            Task { @MainActor in
+                await setupAppleChangeObserver()
+            }
+        } else {
+            Task {
+                await appleSyncEngine.stopObservingChanges()
             }
         }
     }

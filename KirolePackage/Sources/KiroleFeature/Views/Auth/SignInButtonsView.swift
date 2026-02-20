@@ -74,13 +74,13 @@ public struct SignInButtonsView: View {
 
     private func handleAppleSignIn(_ result: Result<ASAuthorization, Error>) {
         switch result {
-        case .success:
+        case .success(let authorization):
             Task {
                 isLoading = true
                 errorMessage = nil
 
                 do {
-                    try await authManager.signInWithApple()
+                    try await authManager.signInWithAppleAuthorization(authorization)
                     onSignInComplete?()
                 } catch {
                     errorMessage = error.localizedDescription

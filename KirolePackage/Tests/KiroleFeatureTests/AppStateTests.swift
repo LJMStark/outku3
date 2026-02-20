@@ -649,6 +649,82 @@ struct AppStateTests {
 
             #expect(state.integrations.count == initialCount)
         }
+
+        @Test("Connecting Google Calendar disconnects Apple Calendar and clears Apple events")
+        @MainActor
+        func connectingGoogleCalendarDisconnectsAppleCalendar() {
+            let state = AppState.shared
+            let originalIntegrations = state.integrations
+            let originalEvents = state.events
+
+            defer {
+                state.integrations = originalIntegrations
+                state.events = originalEvents
+            }
+
+            state.events = [
+                CalendarEvent(
+                    id: "apple-event-\(UUID().uuidString)",
+                    title: "Apple Event",
+                    startTime: Date(),
+                    endTime: Date().addingTimeInterval(1800),
+                    source: .apple
+                ),
+                CalendarEvent(
+                    id: "google-event-\(UUID().uuidString)",
+                    title: "Google Event",
+                    startTime: Date(),
+                    endTime: Date().addingTimeInterval(1800),
+                    source: .google
+                )
+            ]
+
+            state.updateIntegrationStatus(.appleCalendar, isConnected: true)
+            state.updateIntegrationStatus(.googleCalendar, isConnected: true)
+
+            let appleCalendar = state.integrations.first { $0.type == .appleCalendar }
+            let googleCalendar = state.integrations.first { $0.type == .googleCalendar }
+
+            #expect(appleCalendar?.isConnected == false)
+            #expect(googleCalendar?.isConnected == true)
+            #expect(state.events.contains { $0.source == .apple } == false)
+        }
+
+        @Test("Connecting Apple Reminders disconnects Google Tasks and clears Google tasks")
+        @MainActor
+        func connectingAppleRemindersDisconnectsGoogleTasks() {
+            let state = AppState.shared
+            let originalIntegrations = state.integrations
+            let originalTasks = state.tasks
+
+            defer {
+                state.integrations = originalIntegrations
+                state.tasks = originalTasks
+            }
+
+            state.tasks = [
+                TaskItem(
+                    id: "apple-task-\(UUID().uuidString)",
+                    title: "Apple Task",
+                    source: .apple
+                ),
+                TaskItem(
+                    id: "google-task-\(UUID().uuidString)",
+                    title: "Google Task",
+                    source: .google
+                )
+            ]
+
+            state.updateIntegrationStatus(.googleTasks, isConnected: true)
+            state.updateIntegrationStatus(.appleReminders, isConnected: true)
+
+            let googleTasks = state.integrations.first { $0.type == .googleTasks }
+            let appleReminders = state.integrations.first { $0.type == .appleReminders }
+
+            #expect(googleTasks?.isConnected == false)
+            #expect(appleReminders?.isConnected == true)
+            #expect(state.tasks.contains { $0.source == .google } == false)
+        }
     }
 
     // MARK: - User Profile Tests

@@ -68,10 +68,17 @@ public actor EventKitService {
         let ekEvents = eventStore.events(matching: predicate)
 
         return ekEvents.map { event in
-            CalendarEvent(
-                id: event.eventIdentifier,
-                appleEventId: event.eventIdentifier,
-                appleCalendarId: event.calendar.calendarIdentifier,
+            let eventIdentifier = event.eventIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+            let safeEventId: String
+            if !eventIdentifier.isEmpty {
+                safeEventId = eventIdentifier
+            } else {
+                safeEventId = UUID().uuidString
+            }
+            return CalendarEvent(
+                id: safeEventId,
+                appleEventId: eventIdentifier.isEmpty ? nil : eventIdentifier,
+                appleCalendarId: event.calendar?.calendarIdentifier,
                 title: event.title ?? "Untitled Event",
                 startTime: event.startDate,
                 endTime: event.endDate,
@@ -122,19 +129,40 @@ public actor EventKitService {
         )
 
         return await withCheckedContinuation { continuation in
+            let lock = NSLock()
+            var didResume = false
+
             eventStore.fetchReminders(matching: predicate) { reminders in
-                let tasks = (reminders ?? []).map { self.mapReminderToTask($0) }
+                let tasks = (reminders ?? []).compactMap(Self.mapReminderToTask)
+
+                lock.lock()
+                defer { lock.unlock() }
+                guard !didResume else { return }
+                didResume = true
                 continuation.resume(returning: tasks)
             }
         }
     }
 
-    private func mapReminderToTask(_ reminder: EKReminder) -> TaskItem {
-        TaskItem(
-            id: reminder.calendarItemIdentifier,
-            appleReminderId: reminder.calendarItemIdentifier,
-            appleExternalId: reminder.calendarItemExternalIdentifier,
-            appleListId: reminder.calendar.calendarIdentifier,
+    private nonisolated static func mapReminderToTask(_ reminder: EKReminder) -> TaskItem? {
+        let reminderIdentifier = reminder.calendarItemIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        let externalIdentifier = reminder.calendarItemExternalIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fallbackIdentifier = UUID().uuidString
+        let localId = {
+            if !reminderIdentifier.isEmpty {
+                return reminderIdentifier
+            }
+            if let externalIdentifier, !externalIdentifier.isEmpty {
+                return externalIdentifier
+            }
+            return fallbackIdentifier
+        }()
+
+        return TaskItem(
+            id: localId,
+            appleReminderId: reminderIdentifier.isEmpty ? nil : reminderIdentifier,
+            appleExternalId: externalIdentifier,
+            appleListId: reminder.calendar?.calendarIdentifier,
             title: reminder.title ?? "Untitled Reminder",
             isCompleted: reminder.isCompleted,
             dueDate: reminder.dueDateComponents?.date,
@@ -196,7 +224,15 @@ public actor EventKitService {
         }
 
         try eventStore.save(reminder, commit: true)
-        return (reminder.calendarItemIdentifier, reminder.calendarItemExternalIdentifier ?? "")
+        let identifier = reminder.calendarItemIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        let externalIdentifier = reminder.calendarItemExternalIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let safeIdentifier: String
+        if !identifier.isEmpty {
+            safeIdentifier = identifier
+        } else {
+            safeIdentifier = UUID().uuidString
+        }
+        return (safeIdentifier, externalIdentifier ?? "")
     }
 
     // MARK: - Update Reminder Fields
@@ -263,8 +299,16 @@ public actor EventKitService {
         )
 
         return await withCheckedContinuation { continuation in
+            let lock = NSLock()
+            var didResume = false
+
             eventStore.fetchReminders(matching: predicate) { reminders in
-                let tasks = (reminders ?? []).map { self.mapReminderToTask($0) }
+                let tasks = (reminders ?? []).compactMap(Self.mapReminderToTask)
+
+                lock.lock()
+                defer { lock.unlock() }
+                guard !didResume else { return }
+                didResume = true
                 continuation.resume(returning: tasks)
             }
         }
@@ -282,7 +326,7 @@ public actor EventKitService {
 
     // MARK: - Helpers
 
-    private func mapPriority(_ ekPriority: Int) -> TaskPriority {
+    private nonisolated static func mapPriority(_ ekPriority: Int) -> TaskPriority {
         switch ekPriority {
         case 1...4: return .high
         case 5: return .medium
