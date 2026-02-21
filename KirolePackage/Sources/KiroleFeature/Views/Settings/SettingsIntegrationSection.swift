@@ -17,10 +17,16 @@ public struct SettingsIntegrationSection: View {
         appState.integrations.filter { $0.isConnected }
     }
 
+    private var connectedTypes: Set<IntegrationType> {
+        Set(connectedIntegrations.map(\.type))
+    }
+
     private var filteredTypes: [IntegrationType] {
-        let supportedTypes = IntegrationType.displayOrder.filter { $0.isSupported }
-        if searchText.isEmpty { return supportedTypes }
-        return supportedTypes.filter { $0.rawValue.localizedCaseInsensitiveContains(searchText) }
+        let connectableTypes = IntegrationType.displayOrder.filter {
+            $0.isSupported && !connectedTypes.contains($0)
+        }
+        if searchText.isEmpty { return connectableTypes }
+        return connectableTypes.filter { $0.rawValue.localizedCaseInsensitiveContains(searchText) }
     }
 
     public var body: some View {
