@@ -115,4 +115,14 @@ public enum PetForm: String, CaseIterable, Sendable, Codable {
         case .dragon: return "flame.fill"
         }
     }
+
+    public var imageName: String {
+        switch self {
+        case .cat: return "tiko_mushroom"
+        case .dog: return "tiko_dog"
+        case .bunny: return "tiko_bunny"
+        case .bird: return "tiko_bird"
+        case .dragon: return "tiko_dragon"
+        }
+    }
 }

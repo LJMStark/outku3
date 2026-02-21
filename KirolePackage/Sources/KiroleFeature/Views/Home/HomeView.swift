@@ -9,31 +9,43 @@ public struct HomeView: View {
     @State private var showScrollToTop = false
     @State private var scrollOffset: CGFloat = 0
     @State private var isInitialLoading = true
+    @State private var dataSource = TimelineDataSource()
 
     public init() {}
 
     public var body: some View {
         ZStack(alignment: .bottomTrailing) {
             VStack(spacing: 0) {
-                // Scrollable content
                 ScrollViewReader { proxy in
                     ScrollView(.vertical, showsIndicators: false) {
-                        VStack(spacing: 0) {
-                            // Anchor for scroll to top
+                        LazyVStack(spacing: 0) {
                             Color.clear
                                 .frame(height: 1)
                                 .id("top")
 
-                            // Loading indicator
                             if isInitialLoading {
                                 LoadingIndicatorView()
                                     .padding(.top, 40)
                             }
 
-                            // Timeline content
-                            TimelineContentView()
+                            ForEach(dataSource.dayOffsets, id: \.self) { offset in
+                                DaySectionView(date: dataSource.dateForOffset(offset))
 
-                            // Bottom spacing
+                                if offset == 1 {
+                                    TimelineWithHaikuView()
+                                        .padding(.horizontal, 24)
+                                }
+
+                                if dataSource.shouldShowPetMarker(at: offset) {
+                                    PetMarkerView(dayOffset: offset)
+                                }
+                            }
+
+                            // Sentinel to trigger loading more days
+                            Color.clear
+                                .frame(height: 1)
+                                .onAppear { dataSource.loadMoreDays() }
+
                             Spacer()
                                 .frame(height: 100)
                         }

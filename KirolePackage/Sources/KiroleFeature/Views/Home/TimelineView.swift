@@ -1,44 +1,5 @@
 import SwiftUI
 
-// MARK: - Timeline Content View
-
-struct TimelineContentView: View {
-    @Environment(AppState.self) private var appState
-    @Environment(ThemeManager.self) private var theme
-    @State private var appeared = false
-
-    var body: some View {
-        VStack(spacing: 0) {
-            // Date separator
-            DateDividerView(date: appState.selectedDate)
-                .padding(.top, 24)
-                .opacity(appeared ? 1 : 0)
-                .offset(y: appeared ? 0 : 10)
-                .animation(.easeOut(duration: 0.5).delay(0.2), value: appeared)
-
-            // Timeline
-            TimelineView()
-                .padding(.horizontal, 24)
-
-            // Next day section
-            DateDividerView(date: Calendar.current.date(byAdding: .day, value: 1, to: appState.selectedDate) ?? appState.selectedDate)
-                .padding(.top, 32)
-                .opacity(appeared ? 1 : 0)
-                .animation(.easeOut(duration: 0.5).delay(0.8), value: appeared)
-
-            // Second timeline with haiku
-            TimelineWithHaikuView()
-                .padding(.horizontal, 24)
-
-            Spacer()
-                .frame(height: 80)
-        }
-        .onAppear {
-            appeared = true
-        }
-    }
-}
-
 // MARK: - Date Divider View
 
 struct DateDividerView: View {
@@ -69,55 +30,47 @@ struct DateDividerView: View {
     }
 }
 
-// MARK: - Timeline View
+// MARK: - Day Timeline View
 
-struct TimelineView: View {
-    @Environment(AppState.self) private var appState
+struct DayTimelineView: View {
+    let date: Date
+    let events: [CalendarEvent]
+
     @Environment(ThemeManager.self) private var theme
-    @State private var appeared = false
 
-    private var filteredEvents: [CalendarEvent] {
-        let calendar = Calendar.current
-        return appState.events
-            .filter { calendar.isDate($0.startTime, inSameDayAs: appState.selectedDate) }
-            .sorted { $0.startTime < $1.startTime }
-    }
+    private var sunTimes: SunTimes { .forDate(date) }
 
     var body: some View {
         VStack(spacing: 0) {
-            // Sunrise
             TimelineEventRow(
-                time: AppDateFormatters.time.string(from: appState.sunTimes.sunrise),
+                time: AppDateFormatters.time.string(from: sunTimes.sunrise),
                 icon: "sunrise.fill",
                 title: "Sunrise",
-                delay: 0.3,
+                delay: 0,
                 isSystemIcon: true
             )
 
-            // Day Start
             TimelineEventRow(
                 time: "9:00 AM",
                 icon: "sun.max.fill",
                 title: "Day Start",
-                delay: 0.4,
+                delay: 0,
                 isSystemIcon: true
             )
 
-            // Dynamic Events
-            if filteredEvents.isEmpty {
-                TimelineEmptyStateRow(delay: 0.5)
+            if events.isEmpty {
+                TimelineEmptyStateRow(delay: 0)
             } else {
-                ForEach(Array(filteredEvents.enumerated()), id: \.element.id) { index, event in
-                    TimelineEventCardRow(event: event, delay: 0.5 + Double(index) * 0.1)
+                ForEach(Array(events.enumerated()), id: \.element.id) { index, event in
+                    TimelineEventCardRow(event: event, delay: 0)
                 }
             }
 
-            // Sunset
             TimelineEventRow(
-                time: AppDateFormatters.time.string(from: appState.sunTimes.sunset),
+                time: AppDateFormatters.time.string(from: sunTimes.sunset),
                 icon: "sunset.fill",
                 title: "Sunset",
-                delay: 0.6 + Double(max(filteredEvents.count, 1)) * 0.1,
+                delay: 0,
                 isSystemIcon: true
             )
         }
@@ -285,29 +238,26 @@ struct TimelineWithHaikuView: View {
     @State private var appeared = false
 
     private var tomorrowSunTimes: SunTimes {
-        .default
+        .forDate(Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date())
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            // Sunrise
             TimelineEventRow(
                 time: AppDateFormatters.time.string(from: tomorrowSunTimes.sunrise),
                 icon: "sunrise.fill",
                 title: "Sunrise",
-                delay: 0.9,
+                delay: 0,
                 isSystemIcon: true
             )
 
-            // Haiku and Image
-            HaikuSectionView(delay: 1.0)
+            HaikuSectionView(delay: 0)
 
-            // Sunset
             TimelineEventRow(
                 time: AppDateFormatters.time.string(from: tomorrowSunTimes.sunset),
                 icon: "sunset.fill",
                 title: "Sunset",
-                delay: 1.1,
+                delay: 0,
                 isSystemIcon: true
             )
         }
@@ -406,7 +356,8 @@ struct HaikuSectionView: View {
 
 #Preview {
     ScrollView {
-        TimelineContentView()
+        DayTimelineView(date: Date(), events: [])
+            .padding(.horizontal, 24)
     }
     .background(Color(hex: "f5f1e8"))
     .environment(AppState.shared)

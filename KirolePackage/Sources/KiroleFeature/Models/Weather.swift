@@ -41,10 +41,13 @@ public struct SunTimes: Sendable, Codable {
     }
 
     public static var `default`: SunTimes {
+        forDate(Date())
+    }
+
+    public static func forDate(_ date: Date) -> SunTimes {
         let calendar = Calendar.current
-        let today = Date()
-        let sunrise = calendar.date(bySettingHour: 6, minute: 45, second: 0, of: today) ?? today
-        let sunset = calendar.date(bySettingHour: 17, minute: 30, second: 0, of: today) ?? today
+        let sunrise = calendar.date(bySettingHour: 6, minute: 45, second: 0, of: date) ?? date
+        let sunset = calendar.date(bySettingHour: 17, minute: 30, second: 0, of: date) ?? date
         return SunTimes(sunrise: sunrise, sunset: sunset)
     }
 }
