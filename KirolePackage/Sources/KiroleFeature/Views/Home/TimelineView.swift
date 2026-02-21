@@ -206,6 +206,7 @@ struct TimelineEventCardRow: View {
                     duration: event.durationText,
                     participants: event.participants.count,
                     description: event.description ?? "",
+                    source: event.source,
                     onTap: {
                         appState.selectEvent(event)
                     }
