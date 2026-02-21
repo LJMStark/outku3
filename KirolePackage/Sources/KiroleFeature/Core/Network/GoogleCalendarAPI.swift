@@ -2,6 +2,12 @@ import Foundation
 
 // MARK: - Google Calendar API
 
+private struct CalendarFetchOutcome: Sendable {
+    let calendarId: String
+    let events: [CalendarEvent]
+    let errorDescription: String?
+}
+
 /// Google Calendar API 客户端（只读）
 public actor GoogleCalendarAPI {
     public static let shared = GoogleCalendarAPI()
@@ -121,13 +127,7 @@ public actor GoogleCalendarAPI {
         let now = Date()
         let startOfDay = calendar.startOfDay(for: now)
         let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
-
-        let response = try await fetchAllPages(
-            timeMin: startOfDay,
-            timeMax: endOfDay
-        )
-
-        return (response.items ?? []).compactMap { CalendarEvent.from(googleEvent: $0) }
+        return try await getEventsAcrossCalendars(timeMin: startOfDay, timeMax: endOfDay)
     }
 
     /// 获取本周事件
@@ -136,13 +136,94 @@ public actor GoogleCalendarAPI {
         let now = Date()
         let startOfWeek = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now))!
         let endOfWeek = calendar.date(byAdding: .day, value: 7, to: startOfWeek)!
+        return try await getEventsAcrossCalendars(timeMin: startOfWeek, timeMax: endOfWeek)
+    }
 
-        let response = try await fetchAllPages(
-            timeMin: startOfWeek,
-            timeMax: endOfWeek
-        )
+    // MARK: - Multi Calendar Fetch
 
-        return (response.items ?? []).compactMap { CalendarEvent.from(googleEvent: $0) }
+    /// 获取多个日历的事件并去重（默认至少包含 primary）
+    private func getEventsAcrossCalendars(timeMin: Date, timeMax: Date) async throws -> [CalendarEvent] {
+        let calendarIds = Array(Set(try await loadTargetCalendarIds()))
+
+        var latestByEventId: [String: CalendarEvent] = [:]
+        var successfulFetchCount = 0
+        var failures: [String] = []
+
+        await withTaskGroup(of: CalendarFetchOutcome.self) { group in
+            for calendarId in calendarIds {
+                group.addTask {
+                    do {
+                        let response = try await self.fetchAllPages(
+                            calendarId: calendarId,
+                            timeMin: timeMin,
+                            timeMax: timeMax
+                        )
+                        let events = (response.items ?? []).compactMap { CalendarEvent.from(googleEvent: $0) }
+                        return CalendarFetchOutcome(
+                            calendarId: calendarId,
+                            events: events,
+                            errorDescription: nil
+                        )
+                    } catch {
+                        return CalendarFetchOutcome(
+                            calendarId: calendarId,
+                            events: [],
+                            errorDescription: error.localizedDescription
+                        )
+                    }
+                }
+            }
+
+            for await outcome in group {
+                if let errorDescription = outcome.errorDescription {
+                    failures.append("\(outcome.calendarId): \(errorDescription)")
+                    continue
+                }
+
+                successfulFetchCount += 1
+                for event in outcome.events {
+                    if let existing = latestByEventId[event.id] {
+                        if event.lastModified > existing.lastModified {
+                            latestByEventId[event.id] = event
+                        }
+                    } else {
+                        latestByEventId[event.id] = event
+                    }
+                }
+            }
+        }
+
+        #if DEBUG
+        if !failures.isEmpty {
+            print("[GoogleCalendarAPI] Calendar fetch partial failures: \(failures.joined(separator: " | "))")
+        }
+        print("[GoogleCalendarAPI] Calendar fetch success=\(successfulFetchCount)/\(calendarIds.count), events=\(latestByEventId.count)")
+        #endif
+
+        if successfulFetchCount == 0 && !failures.isEmpty {
+            throw GoogleCalendarError.calendarFetchFailed(failures.joined(separator: " | "))
+        }
+
+        return latestByEventId.values.sorted { $0.startTime < $1.startTime }
+    }
+
+    private func loadTargetCalendarIds() async throws -> [String] {
+        do {
+            let calendars = try await getCalendarList()
+            let selectedIds = calendars
+                .filter { ($0.selected ?? true) && !($0.hidden ?? false) }
+                .map(\.id)
+
+            let allIds = selectedIds.isEmpty ? calendars.map(\.id) : selectedIds
+            let uniqueIds = Array(Set(allIds))
+
+            guard !uniqueIds.isEmpty else { return ["primary"] }
+            if uniqueIds.contains("primary") { return uniqueIds }
+            return ["primary"] + uniqueIds
+        } catch {
+            // Fallback to primary calendar if calendar list API fails
+            return ["primary"]
+        }
     }
 
     /// 增量同步事件
@@ -185,6 +266,7 @@ public enum GoogleCalendarError: LocalizedError, Sendable {
     case syncTokenExpired
     case calendarNotFound
     case accessDenied
+    case calendarFetchFailed(String)
     case invalidURL
 
     public var errorDescription: String? {
@@ -195,6 +277,8 @@ public enum GoogleCalendarError: LocalizedError, Sendable {
             return "Calendar not found"
         case .accessDenied:
             return "Calendar access denied"
+        case .calendarFetchFailed(let details):
+            return "Failed to fetch calendars: \(details)"
         case .invalidURL:
             return "Failed to construct calendar API URL"
         }
@@ -207,6 +291,8 @@ public struct GoogleCalendarInfo: Codable, Sendable {
     public let id: String
     public let summary: String?
     public let primary: Bool?
+    public let selected: Bool?
+    public let hidden: Bool?
     public let backgroundColor: String?
     public let foregroundColor: String?
 }

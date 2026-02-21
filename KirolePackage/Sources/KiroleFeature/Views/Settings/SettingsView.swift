@@ -209,6 +209,8 @@ private struct DebugSection: View {
                     DebugRow(label: "isGoogleConnected", value: authManager.isGoogleConnected)
                     DebugRow(label: "hasCalendarAccess", value: authManager.hasCalendarAccess)
                     DebugRow(label: "hasTasksAccess", value: authManager.hasTasksAccess)
+                    DebugRow(label: "googleCalendarLinked", value: appState.integrations.first { $0.type == .googleCalendar }?.isConnected == true)
+                    DebugRow(label: "googleTasksLinked", value: appState.integrations.first { $0.type == .googleTasks }?.isConnected == true)
                 }
 
                 Divider()
@@ -223,6 +225,17 @@ private struct DebugSection: View {
                     DebugCountRow(label: "Google Events", count: appState.events.filter { $0.source == .google }.count)
                     DebugCountRow(label: "Apple Events", count: appState.events.filter { $0.source == .apple }.count)
                     DebugCountRow(label: "Total Tasks", count: appState.tasks.count)
+                }
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Sync Diagnostics")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(theme.colors.primaryText)
+
+                    DebugTextRow(label: "lastGoogleSync", value: appState.lastGoogleSyncDebug)
+                    DebugTextRow(label: "lastError", value: appState.lastError ?? "nil")
                 }
 
                 Divider()
@@ -346,6 +359,24 @@ private struct DebugCountRow: View {
                 .font(.system(size: 12, weight: .bold, design: .monospaced))
                 .foregroundStyle(Color(hex: "374151"))
         }
+    }
+}
+
+private struct DebugTextRow: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .foregroundStyle(Color(hex: "6B7280"))
+            Text(value)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(Color(hex: "111827"))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

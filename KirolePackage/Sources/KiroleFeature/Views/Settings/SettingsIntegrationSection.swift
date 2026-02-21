@@ -58,14 +58,8 @@ public struct SettingsIntegrationSection: View {
     }
 
     private func syncGoogleConnectionStatus() {
-        if authManager.isGoogleConnected {
-            if authManager.hasCalendarAccess {
-                appState.updateIntegrationStatus(.googleCalendar, isConnected: true)
-            }
-            if authManager.hasTasksAccess {
-                appState.updateIntegrationStatus(.googleTasks, isConnected: true)
-            }
-        }
+        guard authManager.isGoogleConnected else { return }
+        appState.syncGoogleIntegrationStatusFromAuth()
     }
 
     private var emptyStateView: some View {
@@ -149,7 +143,16 @@ public struct SettingsIntegrationSection: View {
                 if needsGoogleSignIn {
                     try await authManager.signInWithGoogle()
                 }
-                appState.updateIntegrationStatus(type, isConnected: true)
+
+                let hasRequiredAccess = hasGoogleAccess(for: type)
+                appState.updateIntegrationStatus(type, isConnected: hasRequiredAccess)
+                guard hasRequiredAccess else {
+                    appState.lastError = type == .googleCalendar
+                        ? "Google Calendar permission was not granted."
+                        : "Google Tasks permission was not granted."
+                    return
+                }
+
                 await appState.syncGoogleData()
 
             case .appleCalendar:
@@ -173,6 +176,17 @@ public struct SettingsIntegrationSection: View {
             #if DEBUG
             print("Failed to connect \(type.rawValue): \(error)")
             #endif
+        }
+    }
+
+    private func hasGoogleAccess(for type: IntegrationType) -> Bool {
+        switch type {
+        case .googleCalendar:
+            return authManager.hasCalendarAccess
+        case .googleTasks:
+            return authManager.hasTasksAccess
+        default:
+            return false
         }
     }
 

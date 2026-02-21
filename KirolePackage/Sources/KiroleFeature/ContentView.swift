@@ -21,6 +21,7 @@ public struct ContentView: View {
         }
         .task {
             await authManager.initialize()
+            appState.syncGoogleIntegrationStatusFromAuth()
             await configureOpenAI()
         }
     }

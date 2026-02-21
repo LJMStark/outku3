@@ -76,7 +76,7 @@ public actor NetworkClient {
         }
 
         let (data, response) = try await session.data(for: request)
-        try validateResponse(response)
+        try validateResponse(response, data: data)
 
         if T.self == EmptyResponse.self {
             return EmptyResponse() as! T
@@ -134,17 +134,25 @@ public actor NetworkClient {
 
     // MARK: - Validation
 
-    private func validateResponse(_ response: URLResponse) throws {
+    private func validateResponse(_ response: URLResponse, data: Data) throws {
         guard let httpResponse = response as? HTTPURLResponse else {
             throw NetworkError.invalidResponse
         }
+
+        let errorDetail = extractErrorDetail(from: data)
 
         switch httpResponse.statusCode {
         case 200...299:
             return
         case 401:
+            if let errorDetail {
+                throw NetworkError.unauthorizedWithMessage(errorDetail)
+            }
             throw NetworkError.unauthorized
         case 403:
+            if let errorDetail {
+                throw NetworkError.forbiddenWithMessage(errorDetail)
+            }
             throw NetworkError.forbidden
         case 404:
             throw NetworkError.notFound
@@ -155,6 +163,32 @@ public actor NetworkClient {
         default:
             throw NetworkError.httpError(httpResponse.statusCode)
         }
+    }
+
+    private func extractErrorDetail(from data: Data) -> String? {
+        guard !data.isEmpty else { return nil }
+
+        if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            if let error = object["error"] as? [String: Any] {
+                if let message = error["message"] as? String, !message.isEmpty {
+                    if let status = error["status"] as? String, !status.isEmpty {
+                        return "\(status): \(message)"
+                    }
+                    return message
+                }
+            }
+            if let message = object["message"] as? String, !message.isEmpty {
+                return message
+            }
+        }
+
+        if let text = String(data: data, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !text.isEmpty {
+            return String(text.prefix(280))
+        }
+
+        return nil
     }
 }
 
@@ -181,7 +215,9 @@ private struct AnyEncodable: Encodable {
 public enum NetworkError: LocalizedError, Sendable {
     case invalidResponse
     case unauthorized
+    case unauthorizedWithMessage(String)
     case forbidden
+    case forbiddenWithMessage(String)
     case notFound
     case rateLimited
     case serverError(Int)
@@ -194,8 +230,12 @@ public enum NetworkError: LocalizedError, Sendable {
             return "Invalid response from server"
         case .unauthorized:
             return "Unauthorized - please sign in again"
+        case .unauthorizedWithMessage(let message):
+            return "Unauthorized - \(message)"
         case .forbidden:
             return "Access forbidden"
+        case .forbiddenWithMessage(let message):
+            return "Access forbidden - \(message)"
         case .notFound:
             return "Resource not found"
         case .rateLimited:

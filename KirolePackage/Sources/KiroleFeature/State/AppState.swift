@@ -62,6 +62,7 @@ public final class AppState: @unchecked Sendable {
     // Loading State
     public var isLoading: Bool = false
     public var lastError: String?
+    public var lastGoogleSyncDebug: String = "Not synced yet"
     public var hasCompletedInitialHomeLoad: Bool = false
 
     // Services
@@ -258,40 +259,65 @@ public final class AppState: @unchecked Sendable {
 
     @MainActor
     public func syncGoogleData() async {
-        guard AuthManager.shared.isGoogleConnected else { return }
+        guard AuthManager.shared.isGoogleConnected else {
+            lastGoogleSyncDebug = "Skipped: Google not connected"
+            return
+        }
+        syncGoogleIntegrationStatusFromAuth()
 
-        let shouldSyncCalendar = isIntegrationConnected(.googleCalendar) && AuthManager.shared.hasCalendarAccess
-        let shouldSyncTasks = isIntegrationConnected(.googleTasks) && AuthManager.shared.hasTasksAccess
-        guard shouldSyncCalendar || shouldSyncTasks else { return }
+        let syncPlan = (
+            calendar: isIntegrationConnected(.googleCalendar) && AuthManager.shared.hasCalendarAccess,
+            tasks: isIntegrationConnected(.googleTasks) && AuthManager.shared.hasTasksAccess
+        )
+
+        guard syncPlan.calendar || syncPlan.tasks else {
+            lastGoogleSyncDebug = "Skipped: integration disabled or scope missing (calendar=\(syncPlan.calendar), tasks=\(syncPlan.tasks))"
+            return
+        }
+
+        let syncStart = Date()
 
         do {
             let googleEvents = events.filter { $0.source == .google }
             let googleTasks = tasks.filter { $0.source == .google }
 
-            let (syncedEvents, syncedTasks) = try await googleSyncEngine.performFullSync(
+            let (syncedEvents, syncedTasks, syncWarnings) = try await googleSyncEngine.performFullSync(
                 currentEvents: googleEvents,
                 currentTasks: googleTasks,
-                includeCalendar: shouldSyncCalendar,
-                includeTasks: shouldSyncTasks
+                includeCalendar: syncPlan.calendar,
+                includeTasks: syncPlan.tasks
             )
 
-            if shouldSyncCalendar {
+            if syncPlan.calendar {
                 // Merge: keep non-google items, add synced google items
                 let nonGoogleEvents = events.filter { $0.source != .google }
                 events = nonGoogleEvents + syncedEvents
                 try await localStorage.saveEvents(events)
             }
 
-            if shouldSyncTasks {
+            if syncPlan.tasks {
                 let nonGoogleTasks = tasks.filter { $0.source != .google }
                 tasks = nonGoogleTasks + syncedTasks
                 updateStatistics()
                 try await localStorage.saveTasks(tasks)
             }
 
+            let durationMs = Int(Date().timeIntervalSince(syncStart) * 1000)
+            let syncedEventCount = syncPlan.calendar ? syncedEvents.count : 0
+            let syncedTaskCount = syncPlan.tasks ? syncedTasks.count : 0
+            if syncWarnings.isEmpty {
+                lastError = nil
+                lastGoogleSyncDebug = "Success: events=\(syncedEventCount), tasks=\(syncedTaskCount), duration=\(durationMs)ms"
+            } else {
+                let warningText = syncWarnings.joined(separator: " | ")
+                lastError = warningText
+                lastGoogleSyncDebug = "Partial: events=\(syncedEventCount), tasks=\(syncedTaskCount), warnings=\(warningText), duration=\(durationMs)ms"
+            }
+
         } catch {
             print("Google sync error: \(error)")
             lastError = error.localizedDescription
+            lastGoogleSyncDebug = "Error: \(error.localizedDescription)"
         }
 
         await updatePetState()
@@ -569,6 +595,22 @@ public final class AppState: @unchecked Sendable {
     }
 
     // MARK: - Integration Management
+
+    @MainActor
+    public func syncGoogleIntegrationStatusFromAuth() {
+        guard AuthManager.shared.isGoogleConnected else { return }
+
+        // Non-destructive hydration: keep Google linkage aligned with granted scopes.
+        // Uses setIntegrationStatus() to avoid conflict cleanup and data clearing.
+        let mappings: [(isGranted: Bool, type: IntegrationType)] = [
+            (AuthManager.shared.hasCalendarAccess, .googleCalendar),
+            (AuthManager.shared.hasTasksAccess, .googleTasks)
+        ]
+
+        for mapping in mappings where mapping.isGranted {
+            setIntegrationStatus(mapping.type, isConnected: true)
+        }
+    }
 
     @MainActor
     public func updateIntegrationStatus(_ type: IntegrationType, isConnected: Bool) {

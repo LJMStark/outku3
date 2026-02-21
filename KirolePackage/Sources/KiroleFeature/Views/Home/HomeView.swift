@@ -86,6 +86,7 @@ public struct HomeView: View {
     private func loadInitialData() async {
         isInitialLoading = true
         defer { isInitialLoading = false }
+        appState.selectedDate = Date()
 
         // Initial screen should not be blocked by network / EventKit callbacks.
         Task { @MainActor in
@@ -109,6 +110,7 @@ public struct HomeView: View {
     private func refreshData() async {
         // Haptic feedback at start
         SoundService.shared.haptic(.medium)
+        appState.selectedDate = Date()
 
         // Sync all data
         if authManager.isGoogleConnected {

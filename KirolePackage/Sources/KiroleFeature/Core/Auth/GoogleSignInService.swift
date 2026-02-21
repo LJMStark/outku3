@@ -112,6 +112,10 @@ public final class GoogleSignInService: @unchecked Sendable {
         let task = Task<String, Error> { @MainActor in
             defer { self.refreshTask = nil }
 
+            if GIDSignIn.sharedInstance.currentUser == nil {
+                _ = try? await GIDSignIn.sharedInstance.restorePreviousSignIn()
+            }
+
             guard let currentUser = GIDSignIn.sharedInstance.currentUser else {
                 throw GoogleSignInError.notSignedIn
             }

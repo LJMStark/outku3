@@ -40,41 +40,81 @@ public actor GoogleSyncEngine {
         currentTasks: [TaskItem],
         includeCalendar: Bool = true,
         includeTasks: Bool = true
-    ) async throws -> (events: [CalendarEvent], tasks: [TaskItem]) {
-        guard !isSyncing else { return (currentEvents, currentTasks) }
+    ) async throws -> (events: [CalendarEvent], tasks: [TaskItem], warnings: [String]) {
+        guard !isSyncing else { return (currentEvents, currentTasks, []) }
         isSyncing = true
         defer { isSyncing = false }
 
         await loadPersistedState()
 
-        let events = includeCalendar ? try await syncCalendar() : currentEvents
-        let tasks = includeTasks ? try await syncTasks(currentTasks: currentTasks) : currentTasks
+        var events = currentEvents
+        var tasks = currentTasks
+        var warnings: [String] = []
+        var successCount = 0
+        let attemptedCount = (includeCalendar ? 1 : 0) + (includeTasks ? 1 : 0)
+
+        if includeCalendar {
+            switch await runSyncStep(name: "Calendar", operation: { try await self.syncCalendar() }) {
+            case .success(let syncedEvents):
+                events = syncedEvents
+                successCount += 1
+            case .failure(let warning):
+                warnings.append(warning)
+            }
+        }
+
+        if includeTasks {
+            switch await runSyncStep(name: "Tasks", operation: { try await self.syncTasks(currentTasks: currentTasks) }) {
+            case .success(let syncedTasks):
+                tasks = syncedTasks
+                successCount += 1
+            case .failure(let warning):
+                warnings.append(warning)
+            }
+        }
 
         metadata.lastFullSyncTime = Date()
-        try await storage.saveGoogleSyncMetadata(metadata)
+        try? await storage.saveGoogleSyncMetadata(metadata)
 
-        return (events, tasks)
+        guard attemptedCount == 0 || successCount > 0 else {
+            throw GoogleSyncEngineError.fullSyncFailed(warnings)
+        }
+
+        return (events, tasks, warnings)
+    }
+
+    private func runSyncStep<T>(
+        name: String,
+        operation: () async throws -> T
+    ) async -> SyncStepResult<T> {
+        do {
+            return .success(try await operation())
+        } catch {
+            let warning = "\(name) sync failed: \(error.localizedDescription)"
+            #if DEBUG
+            print("[GoogleSyncEngine] \(name) sync failed: \(error)")
+            #endif
+            return .failure(warning)
+        }
     }
 
     // MARK: - Calendar Sync
 
     private func syncCalendar() async throws -> [CalendarEvent] {
-        if let token = metadata.calendarSyncToken {
-            do {
-                let (events, newToken) = try await calendarAPI.syncEvents(syncToken: token)
-                if let newToken {
-                    metadata.calendarSyncToken = newToken
-                    try? await storage.saveGoogleSyncMetadata(metadata)
-                }
-                return events
-            } catch GoogleCalendarError.syncTokenExpired {
-                metadata.calendarSyncToken = nil
-                // Fall through to full fetch
-            }
+        // NOTE:
+        // Current calendar sync is day-scoped + multi-calendar full fetch.
+        // Previous token-based incremental sync could return partial changes only
+        // and accidentally replace full local Google event lists.
+        // Keep token cleared until we implement per-calendar incremental merge.
+        if metadata.calendarSyncToken != nil {
+            metadata.calendarSyncToken = nil
+            try? await storage.saveGoogleSyncMetadata(metadata)
         }
 
-        // Full fetch (no sync token)
         let events = try await calendarAPI.getTodayEvents()
+        #if DEBUG
+        print("[GoogleSyncEngine] Full calendar sync events=\(events.count)")
+        #endif
         return events
     }
 
@@ -230,5 +270,26 @@ public actor GoogleSyncEngine {
 
         outbox = remaining
         try? await storage.saveOutbox(outbox)
+    }
+}
+
+private enum SyncStepResult<T> {
+    case success(T)
+    case failure(String)
+}
+
+// MARK: - Google Sync Engine Error
+
+public enum GoogleSyncEngineError: LocalizedError, Sendable {
+    case fullSyncFailed([String])
+
+    public var errorDescription: String? {
+        switch self {
+        case .fullSyncFailed(let warnings):
+            if warnings.isEmpty {
+                return "Google sync failed"
+            }
+            return warnings.joined(separator: " | ")
+        }
     }
 }
