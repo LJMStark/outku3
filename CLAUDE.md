@@ -16,6 +16,7 @@ For agent workflow and interaction rules, see `AGENTS.md`.
 - **NO CoreData**: Use SwiftData or raw persistence
 - **NO XCTest**: Use Swift Testing (`import Testing`)
 - **NO Combine**: Unless strictly necessary
+- **NO secrets in `Info.plist`**: Never place `OPENROUTER_API_KEY`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `BLE_SHARED_SECRET` in app plist
 
 ## Project Overview
 
@@ -153,6 +154,9 @@ Views access via `@Environment(AppState.self)`, `@Environment(ThemeManager.self)
 | `BLEBackgroundSyncScheduler` | BGTask scheduling for BLE sync |
 | `BLEPacketizer` | BLE payload chunking + CRC header |
 | `BLEPacketAssembler` | Reassemble incoming chunks into payloads |
+| `BLESecurityManager` | BLE v2 handshake + secure envelope (HMAC + nonce) |
+| `BLEDeviceIdentityStore` | Trusted/blocklist device identity storage |
+| `BLERateLimiter` | BLE write/request rate limiting |
 | `DayPackGenerator` | Generate daily data for E-ink device |
 | `FocusSessionService` | Track task focus time with screen activity |
 | `TaskDehydrationService` | AI task decomposition into What/When/Why micro-actions |
@@ -160,7 +164,9 @@ Views access via `@Environment(AppState.self)`, `@Environment(ThemeManager.self)
 
 ## Supabase Rules
 
-- iOS 客户端只允许使用 `SUPABASE_URL` 和 `SUPABASE_ANON_KEY`；密钥放在 `Config/Secrets.xcconfig`，且该文件必须保持 git 忽略。
+- iOS 客户端运行时配置由 App 壳层调用 `AppSecrets.configure(...)` 注入（来自构建期常量）。
+- 严禁在 `Info.plist`、`Bundle.infoDictionary`、日志或任何前端可见配置中放置 `OPENROUTER_API_KEY`、`SUPABASE_URL`、`SUPABASE_ANON_KEY`、`BLE_SHARED_SECRET`。
+- 构建期密钥来源（环境变量 / `Config/Secrets.xcconfig` / `Kirole/BuildSecrets.generated.swift`）不得提交真实值。
 - 严禁在客户端、仓库、日志、`Info.plist` 或任何前端可见配置中使用/暴露 `service_role` 高权限密钥。
 - 所有业务表必须启用 RLS，并按 `auth.uid()` 进行数据隔离。
 - 任何 `SupabaseClient` 数据模型字段变更（新增/重命名/删除）必须在同一个提交中同步更新 `Config/supabase-schema.sql`。
@@ -237,13 +243,16 @@ var body: some View {
 - Use `.task` modifier in views (auto-cancels on disappear)
 - Never use `Task {}` in `onAppear`
 - Ensure `Sendable` conformance for types crossing concurrency boundaries
-- Use `@unchecked Sendable` for thread-safe types that can't prove it to compiler
+- Avoid `@unchecked Sendable` unless there is no practical alternative; if used, document why the type is truly thread-safe
 
 ## BLE Protocol & Sync (Hardware Requirements)
 
 - Packet header (9 bytes, big-endian): `type (UInt8)`, `messageId (UInt16)`, `seq (UInt8)`, `total (UInt8)`, `payloadLen (UInt16)`, `crc16 (UInt16)`
 - CRC16-CCITT-FALSE (poly `0x1021`, init `0xFFFF`, xorout `0x0000`, refin/refout `false`)
 - Always send via `BLEPacketizer` and assemble via `BLEPacketAssembler` before parsing payloads.
+- BLE security mode is dual-track:
+  - **Compatibility Mode (MVP default)**: no `BLE_SHARED_SECRET` configured, allows legacy plaintext protocol for firmware integration.
+  - **Secure Mode**: `BLE_SHARED_SECRET` configured, requires BLE v2 handshake and signed secure envelopes.
 - Event Log record format: `eventType (UInt8)`, `timestamp (UInt32, epoch seconds)`, `value (Int16, big-endian)`
 - BLE data types include `eventLogRequest` and `eventLogBatch` for incremental log sync.
 - Sync policy: 08:00–23:00 hourly; 23:00–08:00 every 4 hours; 30s connection window.
