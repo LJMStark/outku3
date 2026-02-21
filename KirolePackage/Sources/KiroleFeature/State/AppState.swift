@@ -305,14 +305,12 @@ public final class AppState: @unchecked Sendable {
             let durationMs = Int(Date().timeIntervalSince(syncStart) * 1000)
             let syncedEventCount = syncPlan.calendar ? syncedEvents.count : 0
             let syncedTaskCount = syncPlan.tasks ? syncedTasks.count : 0
-            if syncWarnings.isEmpty {
-                lastError = nil
-                lastGoogleSyncDebug = "Success: events=\(syncedEventCount), tasks=\(syncedTaskCount), duration=\(durationMs)ms"
-            } else {
-                let warningText = syncWarnings.joined(separator: " | ")
-                lastError = warningText
-                lastGoogleSyncDebug = "Partial: events=\(syncedEventCount), tasks=\(syncedTaskCount), warnings=\(warningText), duration=\(durationMs)ms"
-            }
+            applyGoogleSyncOutcome(
+                eventsCount: syncedEventCount,
+                tasksCount: syncedTaskCount,
+                warnings: syncWarnings,
+                durationMs: durationMs
+            )
 
         } catch {
             print("Google sync error: \(error)")
@@ -687,22 +685,47 @@ public final class AppState: @unchecked Sendable {
     private func cleanupDisconnectedIntegrationData(for type: IntegrationType) {
         switch type {
         case .appleCalendar:
-            events = events.filter { $0.source != .apple }
-            Task { try? await localStorage.saveEvents(events) }
+            removeEvents(from: .apple)
         case .googleCalendar:
-            events = events.filter { $0.source != .google }
-            Task { try? await localStorage.saveEvents(events) }
+            removeEvents(from: .google)
         case .appleReminders:
-            tasks = tasks.filter { $0.source != .apple }
-            updateStatistics()
-            Task { try? await localStorage.saveTasks(tasks) }
+            removeTasks(from: .apple)
         case .googleTasks:
-            tasks = tasks.filter { $0.source != .google }
-            updateStatistics()
-            Task { try? await localStorage.saveTasks(tasks) }
+            removeTasks(from: .google)
         default:
             break
         }
+    }
+
+    @MainActor
+    private func applyGoogleSyncOutcome(
+        eventsCount: Int,
+        tasksCount: Int,
+        warnings: [String],
+        durationMs: Int
+    ) {
+        if warnings.isEmpty {
+            lastError = nil
+            lastGoogleSyncDebug = "Success: events=\(eventsCount), tasks=\(tasksCount), duration=\(durationMs)ms"
+            return
+        }
+
+        let warningText = warnings.joined(separator: " | ")
+        lastError = warningText
+        lastGoogleSyncDebug = "Partial: events=\(eventsCount), tasks=\(tasksCount), warnings=\(warningText), duration=\(durationMs)ms"
+    }
+
+    @MainActor
+    private func removeEvents(from source: EventSource) {
+        events = events.filter { $0.source != source }
+        Task { try? await localStorage.saveEvents(events) }
+    }
+
+    @MainActor
+    private func removeTasks(from source: EventSource) {
+        tasks = tasks.filter { $0.source != source }
+        updateStatistics()
+        Task { try? await localStorage.saveTasks(tasks) }
     }
 
     @MainActor

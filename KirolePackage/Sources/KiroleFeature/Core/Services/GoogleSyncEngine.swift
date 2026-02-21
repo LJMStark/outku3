@@ -151,15 +151,7 @@ public actor GoogleSyncEngine {
                         showDeleted: true,
                         updatedMin: updatedMin
                     )
-                    return tasks.compactMap { googleTask in
-                        // Mark deleted tasks so merge logic can handle them
-                        if googleTask.deleted == true {
-                            var item = TaskItem.from(googleTask: googleTask, taskListId: taskList.id)
-                            item.syncStatus = .deleted
-                            return item
-                        }
-                        return TaskItem.from(googleTask: googleTask, taskListId: taskList.id)
-                    }
+                    return tasks.map { Self.mapRemoteTask($0, taskListId: taskList.id) }
                 }
             }
 
@@ -190,31 +182,26 @@ public actor GoogleSyncEngine {
 
         for remoteTask in remote {
             guard let gid = remoteTask.googleTaskId else { continue }
-
-            if let localTask = localByGoogleId.removeValue(forKey: gid) {
-                // Existing task - check sync status
-                if remoteTask.syncStatus == .deleted {
-                    // Remote was deleted - remove from local (don't add to result)
-                    continue
-                } else if localTask.syncStatus == .synced {
-                    // Local is clean - accept remote
-                    result.append(remoteTask)
-                } else {
-                    // Local is dirty - Last-Writer-Wins
-                    let localTime = localTask.lastModified
-                    let remoteTime = remoteTask.remoteUpdatedAt ?? remoteTask.lastModified
-                    if remoteTime > localTime {
-                        result.append(remoteTask)
-                    } else {
-                        result.append(localTask)
-                    }
-                }
-            } else {
-                // New remote task - add it (skip if deleted)
+            guard let localTask = localByGoogleId.removeValue(forKey: gid) else {
                 if remoteTask.syncStatus != .deleted {
                     result.append(remoteTask)
                 }
+                continue
             }
+
+            if remoteTask.syncStatus == .deleted {
+                continue
+            }
+
+            if localTask.syncStatus == .synced {
+                result.append(remoteTask)
+                continue
+            }
+
+            // Local is dirty - Last-Writer-Wins
+            let localTime = localTask.lastModified
+            let remoteTime = remoteTask.remoteUpdatedAt ?? remoteTask.lastModified
+            result.append(remoteTime > localTime ? remoteTask : localTask)
         }
 
         // Keep remaining local tasks that weren't matched
@@ -223,6 +210,14 @@ public actor GoogleSyncEngine {
         }
 
         return result
+    }
+
+    private static func mapRemoteTask(_ googleTask: GoogleTask, taskListId: String) -> TaskItem {
+        var task = TaskItem.from(googleTask: googleTask, taskListId: taskListId)
+        if googleTask.deleted == true {
+            task.syncStatus = .deleted
+        }
+        return task
     }
 
     // MARK: - Outbox

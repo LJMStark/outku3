@@ -40,31 +40,13 @@ public actor GoogleCalendarAPI {
         guard var components = URLComponents(string: "\(baseURL)/calendars/\(encodedCalendarId)/events") else {
             throw GoogleCalendarError.invalidURL
         }
-        var queryItems: [URLQueryItem] = [
-            URLQueryItem(name: "maxResults", value: String(maxResults)),
-            URLQueryItem(name: "singleEvents", value: "true"),
-            URLQueryItem(name: "orderBy", value: "startTime")
-        ]
-
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-
-        if let pageToken = pageToken {
-            queryItems.append(URLQueryItem(name: "pageToken", value: pageToken))
-        }
-
-        if let syncToken = syncToken {
-            queryItems.append(URLQueryItem(name: "syncToken", value: syncToken))
-        } else {
-            if let timeMin = timeMin {
-                queryItems.append(URLQueryItem(name: "timeMin", value: formatter.string(from: timeMin)))
-            }
-            if let timeMax = timeMax {
-                queryItems.append(URLQueryItem(name: "timeMax", value: formatter.string(from: timeMax)))
-            }
-        }
-
-        components.queryItems = queryItems
+        components.queryItems = makeEventsQueryItems(
+            timeMin: timeMin,
+            timeMax: timeMax,
+            syncToken: syncToken,
+            maxResults: maxResults,
+            pageToken: pageToken
+        )
 
         guard let url = components.url else {
             throw GoogleCalendarError.invalidURL
@@ -72,7 +54,7 @@ public actor GoogleCalendarAPI {
 
         return try await networkClient.get(
             url: url,
-            headers: ["Authorization": "Bearer \(accessToken)"],
+            headers: makeAuthorizationHeader(accessToken),
             responseType: GoogleCalendarListResponse.self
         )
     }
@@ -143,7 +125,7 @@ public actor GoogleCalendarAPI {
 
     /// 获取多个日历的事件并去重（默认至少包含 primary）
     private func getEventsAcrossCalendars(timeMin: Date, timeMax: Date) async throws -> [CalendarEvent] {
-        let calendarIds = Array(Set(try await loadTargetCalendarIds()))
+        let calendarIds = try await loadTargetCalendarIds()
 
         var latestByEventId: [String: CalendarEvent] = [:]
         var successfulFetchCount = 0
@@ -215,7 +197,7 @@ public actor GoogleCalendarAPI {
                 .map(\.id)
 
             let allIds = selectedIds.isEmpty ? calendars.map(\.id) : selectedIds
-            let uniqueIds = Array(Set(allIds))
+            let uniqueIds = orderedUniqueCalendarIDs(from: allIds)
 
             guard !uniqueIds.isEmpty else { return ["primary"] }
             if uniqueIds.contains("primary") { return uniqueIds }
@@ -252,11 +234,63 @@ public actor GoogleCalendarAPI {
 
         let response: GoogleCalendarListInfoResponse = try await networkClient.get(
             url: url,
-            headers: ["Authorization": "Bearer \(accessToken)"],
+            headers: makeAuthorizationHeader(accessToken),
             responseType: GoogleCalendarListInfoResponse.self
         )
 
         return response.items ?? []
+    }
+
+    private func makeAuthorizationHeader(_ accessToken: String) -> [String: String] {
+        ["Authorization": "Bearer \(accessToken)"]
+    }
+
+    private func makeEventsQueryItems(
+        timeMin: Date?,
+        timeMax: Date?,
+        syncToken: String?,
+        maxResults: Int,
+        pageToken: String?
+    ) -> [URLQueryItem] {
+        var queryItems: [URLQueryItem] = [
+            URLQueryItem(name: "maxResults", value: String(maxResults)),
+            URLQueryItem(name: "singleEvents", value: "true"),
+            URLQueryItem(name: "orderBy", value: "startTime")
+        ]
+
+        if let pageToken {
+            queryItems.append(URLQueryItem(name: "pageToken", value: pageToken))
+        }
+
+        if let syncToken {
+            queryItems.append(URLQueryItem(name: "syncToken", value: syncToken))
+            return queryItems
+        }
+
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+
+        if let timeMin {
+            queryItems.append(URLQueryItem(name: "timeMin", value: formatter.string(from: timeMin)))
+        }
+        if let timeMax {
+            queryItems.append(URLQueryItem(name: "timeMax", value: formatter.string(from: timeMax)))
+        }
+
+        return queryItems
+    }
+
+    private func orderedUniqueCalendarIDs(from ids: [String]) -> [String] {
+        var seen: Set<String> = []
+        var result: [String] = []
+
+        for id in ids where !id.isEmpty {
+            if seen.insert(id).inserted {
+                result.append(id)
+            }
+        }
+
+        return result
     }
 }
 

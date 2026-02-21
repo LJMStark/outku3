@@ -47,33 +47,9 @@ public final class GoogleSignInService: @unchecked Sendable {
         )
 
         let user = result.user
-
-        // 保存 tokens
-        if let accessToken = user.accessToken.tokenString as String?,
-           let refreshToken = user.refreshToken.tokenString as String? {
-            let expiresIn = user.accessToken.expirationDate?.timeIntervalSinceNow ?? 3600
-            try keychainService.saveGoogleTokens(
-                accessToken: accessToken,
-                refreshToken: refreshToken,
-                expiresIn: expiresIn
-            )
-        }
-
-        // 保存授权的 scopes
-        let grantedScopes = result.user.grantedScopes ?? []
-        if !grantedScopes.isEmpty {
-            try? keychainService.saveGoogleScopes(grantedScopes)
-        }
-
-        return GoogleSignInResult(
-            userID: user.userID ?? "",
-            email: user.profile?.email,
-            displayName: user.profile?.name,
-            avatarURL: user.profile?.imageURL(withDimension: 200),
-            accessToken: user.accessToken.tokenString,
-            refreshToken: user.refreshToken.tokenString,
-            grantedScopes: result.user.grantedScopes ?? []
-        )
+        try persistTokensIfAvailable(for: user)
+        persistScopesIfAvailable(user.grantedScopes ?? [])
+        return makeSignInResult(from: user)
     }
 
     // MARK: - Restore Previous Sign In
@@ -83,16 +59,7 @@ public final class GoogleSignInService: @unchecked Sendable {
     public func restorePreviousSignIn() async throws -> GoogleSignInResult? {
         do {
             let user = try await GIDSignIn.sharedInstance.restorePreviousSignIn()
-
-            return GoogleSignInResult(
-                userID: user.userID ?? "",
-                email: user.profile?.email,
-                displayName: user.profile?.name,
-                avatarURL: user.profile?.imageURL(withDimension: 200),
-                accessToken: user.accessToken.tokenString,
-                refreshToken: user.refreshToken.tokenString,
-                grantedScopes: user.grantedScopes ?? []
-            )
+            return makeSignInResult(from: user)
         } catch {
             // 没有之前的登录状态
             return nil
@@ -122,18 +89,7 @@ public final class GoogleSignInService: @unchecked Sendable {
 
             if keychainService.isGoogleTokenExpired() {
                 try await currentUser.refreshTokensIfNeeded()
-
-                let accessToken = currentUser.accessToken.tokenString
-                let refreshToken = currentUser.refreshToken.tokenString
-                let expiresIn = currentUser.accessToken.expirationDate?.timeIntervalSinceNow ?? 3600
-
-                try keychainService.saveGoogleTokens(
-                    accessToken: accessToken,
-                    refreshToken: refreshToken,
-                    expiresIn: expiresIn
-                )
-
-                return accessToken
+                try persistTokensIfAvailable(for: currentUser)
             }
 
             return currentUser.accessToken.tokenString
@@ -202,6 +158,37 @@ public final class GoogleSignInService: @unchecked Sendable {
     /// 处理 OAuth 回调 URL
     public func handle(_ url: URL) -> Bool {
         GIDSignIn.sharedInstance.handle(url)
+    }
+
+    private func makeSignInResult(from user: GIDGoogleUser) -> GoogleSignInResult {
+        GoogleSignInResult(
+            userID: user.userID ?? "",
+            email: user.profile?.email,
+            displayName: user.profile?.name,
+            avatarURL: user.profile?.imageURL(withDimension: 200),
+            accessToken: user.accessToken.tokenString,
+            refreshToken: user.refreshToken.tokenString,
+            grantedScopes: user.grantedScopes ?? []
+        )
+    }
+
+    private func persistTokensIfAvailable(for user: GIDGoogleUser) throws {
+        guard let accessToken = user.accessToken.tokenString as String?,
+              let refreshToken = user.refreshToken.tokenString as String? else {
+            return
+        }
+
+        let expiresIn = user.accessToken.expirationDate?.timeIntervalSinceNow ?? 3600
+        try keychainService.saveGoogleTokens(
+            accessToken: accessToken,
+            refreshToken: refreshToken,
+            expiresIn: expiresIn
+        )
+    }
+
+    private func persistScopesIfAvailable(_ grantedScopes: [String]) {
+        guard !grantedScopes.isEmpty else { return }
+        try? keychainService.saveGoogleScopes(grantedScopes)
     }
 }
 

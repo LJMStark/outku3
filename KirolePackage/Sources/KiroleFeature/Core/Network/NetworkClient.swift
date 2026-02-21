@@ -96,11 +96,18 @@ public actor NetworkClient {
     ) async throws -> T {
         do {
             return try await executeRequest(url: url, method: method, headers: headers, body: body, responseType: responseType)
-        } catch NetworkError.unauthorized {
-            let newToken = try await refreshToken()
-            var updatedHeaders = headers
-            updatedHeaders["Authorization"] = "Bearer \(newToken)"
-            return try await executeRequest(url: url, method: method, headers: updatedHeaders, body: body, responseType: responseType)
+        } catch let error as NetworkError {
+            guard error.isUnauthorized else {
+                throw error
+            }
+            return try await retryAuthenticatedRequest(
+                url: url,
+                method: method,
+                headers: headers,
+                body: body,
+                responseType: responseType,
+                refreshToken: refreshToken
+            )
         }
     }
 
@@ -130,6 +137,26 @@ public actor NetworkClient {
             throw NetworkError.invalidResponse
         }
         return try await sendRequest(url: url, method: method, headers: headers, body: body)
+    }
+
+    private func retryAuthenticatedRequest<T: Decodable>(
+        url: String,
+        method: String,
+        headers: [String: String],
+        body: (any Encodable)?,
+        responseType: T.Type,
+        refreshToken: @Sendable () async throws -> String
+    ) async throws -> T {
+        let newToken = try await refreshToken()
+        var updatedHeaders = headers
+        updatedHeaders["Authorization"] = "Bearer \(newToken)"
+        return try await executeRequest(
+            url: url,
+            method: method,
+            headers: updatedHeaders,
+            body: body,
+            responseType: responseType
+        )
     }
 
     // MARK: - Validation
@@ -223,6 +250,15 @@ public enum NetworkError: LocalizedError, Sendable {
     case serverError(Int)
     case httpError(Int)
     case decodingError(String)
+
+    var isUnauthorized: Bool {
+        switch self {
+        case .unauthorized, .unauthorizedWithMessage:
+            return true
+        default:
+            return false
+        }
+    }
 
     public var errorDescription: String? {
         switch self {

@@ -92,7 +92,9 @@ public struct SettingsIntegrationSection: View {
     }
 
     private var connectNewAppSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let types = filteredTypes
+
+        return VStack(alignment: .leading, spacing: 12) {
             Text("Connect New App")
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(theme.colors.primaryText)
@@ -113,14 +115,14 @@ public struct SettingsIntegrationSection: View {
                 .padding(.top, 8)
 
             VStack(spacing: 0) {
-                ForEach(filteredTypes, id: \.self) { type in
+                ForEach(Array(types.enumerated()), id: \.element) { index, type in
                     IntegrationAppRow(type: type) {
                         Task { await connectIntegration(type) }
                     }
                     .disabled(isConnecting)
                     .opacity(isConnecting ? 0.5 : 1.0)
 
-                    if type != filteredTypes.last {
+                    if index < types.count - 1 {
                         Divider().padding(.leading, 52)
                     }
                 }
@@ -142,38 +144,13 @@ public struct SettingsIntegrationSection: View {
         do {
             switch type {
             case .googleCalendar, .googleTasks:
-                let needsGoogleSignIn = !authManager.isGoogleConnected
-                    || (type == .googleCalendar && !authManager.hasCalendarAccess)
-                    || (type == .googleTasks && !authManager.hasTasksAccess)
-
-                if needsGoogleSignIn {
-                    try await authManager.signInWithGoogle()
-                }
-
-                let hasRequiredAccess = hasGoogleAccess(for: type)
-                appState.updateIntegrationStatus(type, isConnected: hasRequiredAccess)
-                guard hasRequiredAccess else {
-                    appState.lastError = type == .googleCalendar
-                        ? "Google Calendar permission was not granted."
-                        : "Google Tasks permission was not granted."
-                    return
-                }
-
-                await appState.syncGoogleData()
+                try await connectGoogleIntegration(type)
 
             case .appleCalendar:
-                let granted = await appState.requestAppleCalendarAccess()
-                appState.updateIntegrationStatus(type, isConnected: granted)
-                if granted {
-                    await appState.loadAppleCalendarEvents()
-                }
+                await connectAppleCalendarIntegration()
 
             case .appleReminders:
-                let granted = await appState.requestAppleRemindersAccess()
-                appState.updateIntegrationStatus(type, isConnected: granted)
-                if granted {
-                    await appState.loadAppleReminders()
-                }
+                await connectAppleRemindersIntegration()
 
             default:
                 showComingSoon = true
@@ -185,6 +162,42 @@ public struct SettingsIntegrationSection: View {
         }
     }
 
+    private func connectGoogleIntegration(_ type: IntegrationType) async throws {
+        if needsGoogleSignIn(for: type) {
+            try await authManager.signInWithGoogle()
+        }
+
+        let hasRequiredAccess = hasGoogleAccess(for: type)
+        appState.updateIntegrationStatus(type, isConnected: hasRequiredAccess)
+        guard hasRequiredAccess else {
+            appState.lastError = permissionDeniedMessage(for: type)
+            return
+        }
+
+        await appState.syncGoogleData()
+    }
+
+    private func connectAppleCalendarIntegration() async {
+        let granted = await appState.requestAppleCalendarAccess()
+        appState.updateIntegrationStatus(.appleCalendar, isConnected: granted)
+        if granted {
+            await appState.loadAppleCalendarEvents()
+        }
+    }
+
+    private func connectAppleRemindersIntegration() async {
+        let granted = await appState.requestAppleRemindersAccess()
+        appState.updateIntegrationStatus(.appleReminders, isConnected: granted)
+        if granted {
+            await appState.loadAppleReminders()
+        }
+    }
+
+    private func needsGoogleSignIn(for type: IntegrationType) -> Bool {
+        guard authManager.isGoogleConnected else { return true }
+        return !hasGoogleAccess(for: type)
+    }
+
     private func hasGoogleAccess(for type: IntegrationType) -> Bool {
         switch type {
         case .googleCalendar:
@@ -193,6 +206,17 @@ public struct SettingsIntegrationSection: View {
             return authManager.hasTasksAccess
         default:
             return false
+        }
+    }
+
+    private func permissionDeniedMessage(for type: IntegrationType) -> String {
+        switch type {
+        case .googleCalendar:
+            return "Google Calendar permission was not granted."
+        case .googleTasks:
+            return "Google Tasks permission was not granted."
+        default:
+            return "Google permission was not granted."
         }
     }
 
