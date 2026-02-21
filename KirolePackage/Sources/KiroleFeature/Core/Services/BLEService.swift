@@ -33,6 +33,40 @@ public enum BLEConnectionState: Sendable, Equatable {
     }
 }
 
+// MARK: - BLE Security Mode
+
+public enum BLESecurityMode: Sendable, Equatable {
+    case compatibility
+    case secure
+
+    public var displayTitle: String {
+        switch self {
+        case .compatibility:
+            return "Compatibility Mode"
+        case .secure:
+            return "Secure Mode"
+        }
+    }
+
+    public var detailText: String {
+        switch self {
+        case .compatibility:
+            return "Legacy plaintext protocol is enabled for MVP hardware integration."
+        case .secure:
+            return "BLE v2 secure handshake and signed envelopes are enabled."
+        }
+    }
+
+    public var sourceText: String {
+        switch self {
+        case .compatibility:
+            return "Source: BLE_SHARED_SECRET not configured"
+        case .secure:
+            return "Source: BLE_SHARED_SECRET configured"
+        }
+    }
+}
+
 // MARK: - BLE Data Types
 
 /// 发送到 E-ink 设备的数据类型
@@ -48,6 +82,8 @@ public enum BLEDataType: UInt8, Sendable {
     case smartReminder = 0x13
     case eventLogRequest = 0x20
     case eventLogBatch = 0x21
+    case secureData = 0x7E
+    case securityHandshake = 0x7F
 }
 
 // MARK: - BLE Service UUIDs
@@ -87,11 +123,17 @@ public final class BLEService: NSObject {
     private var packetAssembler = BLEPacketAssembler()
 
     private let localStorage = LocalStorage.shared
+    private let securityManager = BLESecurityManager()
+    private let deviceIdentityStore = BLEDeviceIdentityStore.shared
+    private let rateLimiter = BLERateLimiter.shared
 
     private var scanCompletion: (([BLEDevice]) -> Void)?
     private var connectCompletion: ((Result<Void, BLEError>) -> Void)?
     private var writeCompletion: ((Result<Void, BLEError>) -> Void)?
     private var nextMessageId: UInt16 = 1
+    private var pendingConnectedPeripheralID: UUID?
+    private var pendingConnectedPeripheralName: String?
+    private var handshakeTimeoutTask: Task<Void, Never>?
 
     // MARK: - UserDefaults Keys
 
@@ -105,6 +147,23 @@ public final class BLEService: NSObject {
     public var autoReconnect: Bool {
         get { UserDefaults.standard.bool(forKey: Keys.autoReconnect) }
         set { UserDefaults.standard.set(newValue, forKey: Keys.autoReconnect) }
+    }
+
+    public nonisolated static var configuredSecurityMode: BLESecurityMode {
+        guard let secret = AppSecrets.bleSharedSecret, !secret.isEmpty else {
+            return .compatibility
+        }
+        return .secure
+    }
+
+    public var securityMode: BLESecurityMode {
+        requiresSecureChannel ? .secure : .compatibility
+    }
+
+    /// MVP 兼容模式：未注入共享密钥时，允许旧协议明文联调
+    private var requiresSecureChannel: Bool {
+        guard let secret = AppSecrets.bleSharedSecret else { return false }
+        return !secret.isEmpty
     }
 
     private var lastConnectedDeviceID: UUID? {
@@ -184,11 +243,25 @@ public final class BLEService: NSObject {
             throw BLEError.bluetoothNotAvailable
         }
 
+        if requiresSecureChannel {
+            if await deviceIdentityStore.isBlocked(device.id) {
+                throw BLEError.unauthorizedDevice
+            }
+
+            if await deviceIdentityStore.hasTrustedDevices(),
+               !(await deviceIdentityStore.isTrusted(device.id)) {
+                throw BLEError.unauthorizedDevice
+            }
+        }
+
         guard let peripheral = peripheralCache[device.id] else {
             throw BLEError.deviceNotFound
         }
 
         connectionState = .connecting
+        securityManager.resetSession()
+        pendingConnectedPeripheralID = nil
+        pendingConnectedPeripheralName = nil
 
         try await withCheckedThrowingContinuation { continuation in
             connectCompletion = { result in
@@ -331,7 +404,14 @@ public final class BLEService: NSObject {
 
     public func requestEventLogsIfNeeded() async {
         let since = await localStorage.loadLastEventLogTimestamp() ?? 0
-        try? await requestEventLogs(since: since)
+        do {
+            try await requestEventLogs(since: since)
+        } catch {
+            ErrorReporter.log(
+                .sync(component: "BLE Event Logs", underlying: error.localizedDescription),
+                context: "BLEService.requestEventLogsIfNeeded"
+            )
+        }
     }
 
     // MARK: - Private Methods
@@ -342,6 +422,43 @@ public final class BLEService: NSObject {
               let peripheral = connectedPeripheral else {
             throw BLEError.notConnected
         }
+
+        guard requiresSecureChannel else {
+            try await writeLegacyData(type: type, data: data, peripheral: peripheral, characteristic: characteristic)
+            return
+        }
+
+        guard securityManager.isSessionEstablished else {
+            throw BLEError.securityHandshakeFailed("Secure BLE session not established")
+        }
+
+        let securePayload = try securityManager.securePayload(type: type.rawValue, payload: data)
+        let maxLength = peripheral.maximumWriteValueLength(for: .withResponse)
+
+        if shouldUseChunkedPacket(type: type, payloadSize: securePayload.count, maxWriteLength: maxLength) {
+            let maxChunkPayloadSize = maxLength - BLEPacketizer.headerSize
+            let packets = try BLEPacketizer.packetize(
+                type: BLEDataType.secureData.rawValue,
+                messageId: allocateMessageID(),
+                payload: securePayload,
+                maxChunkSize: maxChunkPayloadSize
+            )
+            for packet in packets {
+                try await writePacket(packet, peripheral: peripheral, characteristic: characteristic)
+            }
+            return
+        }
+
+        let packet = BLESimpleEncoder.encode(type: BLEDataType.secureData.rawValue, payload: securePayload)
+        try await writePacket(packet, peripheral: peripheral, characteristic: characteristic)
+    }
+
+    private func writeLegacyData(
+        type: BLEDataType,
+        data: Data,
+        peripheral: CBPeripheral,
+        characteristic: CBCharacteristic
+    ) async throws {
         let maxLength = peripheral.maximumWriteValueLength(for: .withResponse)
 
         if shouldUseChunkedPacket(type: type, payloadSize: data.count, maxWriteLength: maxLength) {
@@ -383,6 +500,8 @@ public final class BLEService: NSObject {
         peripheral: CBPeripheral,
         characteristic: CBCharacteristic
     ) async throws {
+        await rateLimiter.acquireWritePermit()
+
         try await withCheckedThrowingContinuation { continuation in
             writeCompletion = { result in
                 switch result {
@@ -396,11 +515,102 @@ public final class BLEService: NSObject {
         }
     }
 
+    private func startSecurityHandshake(peripheral: CBPeripheral) async {
+        guard let characteristic = writeCharacteristic else {
+            connectCompletion?(.failure(.characteristicNotFound))
+            connectCompletion = nil
+            return
+        }
+
+        do {
+            let payload = try securityManager.makeHandshakeRequestPayload()
+            let packet = BLESimpleEncoder.encode(type: BLEDataType.securityHandshake.rawValue, payload: payload)
+            try await writePacket(packet, peripheral: peripheral, characteristic: characteristic)
+
+            handshakeTimeoutTask?.cancel()
+            handshakeTimeoutTask = Task { @MainActor in
+                try? await Task.sleep(for: .seconds(5))
+                guard !Task.isCancelled else { return }
+                if !self.securityManager.isSessionEstablished {
+                    self.connectCompletion?(.failure(.securityHandshakeFailed("Handshake timeout")))
+                    self.connectCompletion = nil
+                    self.connectionState = .disconnected
+                    self.centralManager?.cancelPeripheralConnection(peripheral)
+                }
+            }
+        } catch {
+            connectCompletion?(.failure(.securityHandshakeFailed(error.localizedDescription)))
+            connectCompletion = nil
+            connectionState = .disconnected
+            centralManager?.cancelPeripheralConnection(peripheral)
+        }
+    }
+
+    private func completeSecureConnection() async {
+        handshakeTimeoutTask?.cancel()
+        handshakeTimeoutTask = nil
+
+        guard let peripheralID = pendingConnectedPeripheralID else {
+            connectCompletion?(.failure(.securityHandshakeFailed("Missing connected device identity")))
+            connectCompletion = nil
+            connectionState = .disconnected
+            return
+        }
+
+        let name = pendingConnectedPeripheralName ?? "Kirole Device"
+        connectionState = .connected
+        connectedDevice = BLEDevice(
+            id: peripheralID,
+            name: name,
+            rssi: 0,
+            isConnected: true
+        )
+        lastConnectedDeviceID = peripheralID
+        if requiresSecureChannel {
+            await deviceIdentityStore.trust(peripheralID)
+        }
+        connectCompletion?(.success(()))
+        connectCompletion = nil
+        await requestEventLogsIfNeeded()
+    }
+
+    private func decodeReceivedMessage(_ receivedData: Data) throws -> BLEReceivedMessage? {
+        let decodedMessage: BLEReceivedMessage?
+        if let message = BLESimpleDecoder.decode(receivedData) {
+            decodedMessage = message
+        } else if let message = packetAssembler.append(packetData: receivedData) {
+            decodedMessage = message
+        } else {
+            decodedMessage = nil
+        }
+
+        guard let message = decodedMessage else { return nil }
+
+        guard requiresSecureChannel else {
+            return message
+        }
+
+        if message.type == BLEDataType.securityHandshake.rawValue {
+            return message
+        }
+
+        guard message.type == BLEDataType.secureData.rawValue else {
+            throw BLEError.securityHandshakeFailed("Received non-secure BLE payload")
+        }
+
+        return try securityManager.openSecurePayload(message.payload)
+    }
+
     private func cleanup() {
+        handshakeTimeoutTask?.cancel()
+        handshakeTimeoutTask = nil
         writeCompletion?(.failure(.disconnected))
         writeCompletion = nil
         connectCompletion?(.failure(.connectionFailed(nil)))
         connectCompletion = nil
+        securityManager.resetSession()
+        pendingConnectedPeripheralID = nil
+        pendingConnectedPeripheralName = nil
         connectedPeripheral = nil
         writeCharacteristic = nil
         notifyCharacteristic = nil
@@ -442,6 +652,17 @@ extension BLEService: CBCentralManagerDelegate {
         let rssiValue = RSSI.intValue
 
         Task { @MainActor in
+            if requiresSecureChannel {
+                if await deviceIdentityStore.isBlocked(deviceID) {
+                    return
+                }
+
+                if await deviceIdentityStore.hasTrustedDevices(),
+                   !(await deviceIdentityStore.isTrusted(deviceID)) {
+                    return
+                }
+            }
+
             peripheralCache[deviceID] = peripheral
 
             let device = BLEDevice(
@@ -539,20 +760,15 @@ extension BLEService: CBPeripheralDelegate {
                 }
             }
 
-            if writeCharacteristic != nil {
-                connectionState = .connected
-                connectedDevice = BLEDevice(
-                    id: peripheralID,
-                    name: peripheralName ?? "Kirole Device",
-                    rssi: 0,
-                    isConnected: true
-                )
-                lastConnectedDeviceID = peripheralID
-                connectCompletion?(.success(()))
-                connectCompletion = nil
-
+            if writeCharacteristic != nil, notifyCharacteristic != nil {
+                pendingConnectedPeripheralID = peripheralID
+                pendingConnectedPeripheralName = peripheralName ?? "Kirole Device"
                 Task { @MainActor in
-                    await self.requestEventLogsIfNeeded()
+                    if self.requiresSecureChannel {
+                        await self.startSecurityHandshake(peripheral: peripheral)
+                    } else {
+                        await self.completeSecureConnection()
+                    }
                 }
             } else {
                 connectCompletion?(.failure(.characteristicNotFound))
@@ -585,18 +801,29 @@ extension BLEService: CBPeripheralDelegate {
 
         Task { @MainActor in
             guard error == nil, let receivedData = data else { return }
+            do {
+                guard let message = try decodeReceivedMessage(receivedData) else { return }
 
-            // Try simple 2-byte header decoder first (hardware spec v1.1.0)
-            if let message = BLESimpleDecoder.decode(receivedData) {
+                if requiresSecureChannel, message.type == BLEDataType.securityHandshake.rawValue {
+                    try securityManager.validateHandshakeResponsePayload(message.payload)
+                    await completeSecureConnection()
+                    return
+                }
+
+                if !requiresSecureChannel, message.type == BLEDataType.securityHandshake.rawValue {
+                    return
+                }
+
                 BLEEventHandler.handleReceivedPayload(message, service: self)
-            }
-            // Fall back to chunked packet assembler for multi-packet messages
-            else if let message = packetAssembler.append(packetData: receivedData) {
-                BLEEventHandler.handleReceivedPayload(message, service: self)
-            }
-            // Fall back to raw event log record parsing
-            else if let eventLog = BLEEventHandler.parseEventLogRecord(from: receivedData) {
-                BLEEventHandler.handleEventLogs([eventLog], service: self)
+            } catch {
+                ErrorReporter.log(error, context: "BLEService.didUpdateValueFor")
+                connectionState = .error(error.localizedDescription)
+                if requiresSecureChannel, let peripheralID = pendingConnectedPeripheralID {
+                    await deviceIdentityStore.block(peripheralID)
+                }
+                connectCompletion?(.failure(.securityHandshakeFailed(error.localizedDescription)))
+                connectCompletion = nil
+                centralManager?.cancelPeripheralConnection(peripheral)
             }
         }
     }
@@ -607,12 +834,14 @@ extension BLEService: CBPeripheralDelegate {
 public enum BLEError: LocalizedError, Sendable {
     case bluetoothNotAvailable
     case deviceNotFound
+    case unauthorizedDevice
     case connectionTimeout
     case connectionFailed(Error?)
     case notConnected
     case serviceNotFound
     case characteristicNotFound
     case writeFailed(Error?)
+    case securityHandshakeFailed(String)
     case disconnected
 
     public var errorDescription: String? {
@@ -621,6 +850,8 @@ public enum BLEError: LocalizedError, Sendable {
             return "Bluetooth is not available"
         case .deviceNotFound:
             return "Device not found"
+        case .unauthorizedDevice:
+            return "Unauthorized BLE device"
         case .connectionTimeout:
             return "Connection timed out"
         case .connectionFailed(let error):
@@ -633,6 +864,8 @@ public enum BLEError: LocalizedError, Sendable {
             return "BLE characteristic not found"
         case .writeFailed(let error):
             return "Write failed: \(error?.localizedDescription ?? "Unknown error")"
+        case .securityHandshakeFailed(let reason):
+            return "BLE security handshake failed: \(reason)"
         case .disconnected:
             return "Device disconnected"
         }

@@ -54,7 +54,7 @@ public struct AppHeaderView: View {
                     isSelected: selectedTab == .home,
                     primaryColor: theme.colors.primary
                 ) {
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                    withAnimation(Animation.appStandard) {
                         selectedTab = .home
                     }
                 }
@@ -63,7 +63,7 @@ public struct AppHeaderView: View {
                     isSelected: selectedTab == .pet,
                     primaryColor: theme.colors.primary
                 ) {
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                    withAnimation(Animation.appStandard) {
                         selectedTab = .pet
                     }
                     onPetClick?()
@@ -74,7 +74,7 @@ public struct AppHeaderView: View {
                     isSelected: selectedTab == .settings,
                     primaryColor: theme.colors.primary
                 ) {
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                    withAnimation(Animation.appStandard) {
                         selectedTab = .settings
                     }
                 }
@@ -175,7 +175,7 @@ private struct ScaleButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .scaleEffect(configuration.isPressed ? 0.92 : 1.0)
-            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: configuration.isPressed)
+            .animation(Animation.appStandard, value: configuration.isPressed)
     }
 }
 

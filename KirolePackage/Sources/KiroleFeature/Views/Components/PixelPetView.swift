@@ -41,58 +41,68 @@ struct PixelPetView: View {
     var scene: PetScene? = nil
     var onTap: (() -> Void)? = nil
 
-    @Environment(AppState.self) private var appState
-    @Environment(ThemeManager.self) private var theme
-    @State private var animationPhase: Int = 0
-    @State private var bounceOffset: CGFloat = 0
-    @State private var celebrationScale: CGFloat = 1.0
-    @State private var celebrationRotation: Double = 0
-    @State private var showStars: Bool = false
-    @State private var starOffsets: [CGSize] = []
-    @State private var starOpacities: [Double] = []
-    @State private var isPressed: Bool = false
+    @Environment(AppState.self) var appState
+    @Environment(ThemeManager.self) var theme
+
+    @State var animationPhase: Int = 0
+    @State var bounceOffset: CGFloat = 0
+    @State var celebrationScale: CGFloat = 1.0
+    @State var celebrationRotation: Double = 0
+    @State var showStars: Bool = false
+    @State var starOffsets: [CGSize] = []
+    @State var starOpacities: [Double] = []
+    @State var isPressed: Bool = false
 
     // Idle micro-animation states
-    @State private var idleBreathScale: CGFloat = 1.0
-    @State private var idleSwayX: CGFloat = 0
-    @State private var isBlinking: Bool = false
+    @State var idleBreathScale: CGFloat = 1.0
+    @State var idleSwayX: CGFloat = 0
+    @State var isBlinking: Bool = false
 
     // Mood-specific animation states
-    @State private var sleepyBreathScale: CGFloat = 1.0
-    @State private var sleepyZOffset: CGFloat = 0
-    @State private var showZzz: Bool = false
-    @State private var excitedSparkles: Bool = false
-    @State private var excitedTremor: CGFloat = 0
-    @State private var sparkleOffsets: [CGSize] = []
-    @State private var sparkleOpacities: [Double] = []
-    @State private var missingLookDirection: CGFloat = 0
-    @State private var focusedPulse: CGFloat = 1.0
-    @State private var focusedLean: Double = 0
-    @State private var happyTailWag: Double = 0
-    @State private var sleepySink: CGFloat = 0
+    @State var sleepyBreathScale: CGFloat = 1.0
+    @State var sleepyZOffset: CGFloat = 0
+    @State var showZzz: Bool = false
+    @State var excitedSparkles: Bool = false
+    @State var excitedTremor: CGFloat = 0
+    @State var sparkleOffsets: [CGSize] = []
+    @State var sparkleOpacities: [Double] = []
+    @State var missingLookDirection: CGFloat = 0
+    @State var focusedPulse: CGFloat = 1.0
+    @State var focusedLean: Double = 0
+    @State var happyTailWag: Double = 0
+    @State var sleepySink: CGFloat = 0
 
     // Interaction feedback states
-    @State private var showHearts: Bool = false
-    @State private var heartOffsets: [CGSize] = []
-    @State private var heartOpacities: [Double] = []
-    @State private var showNotes: Bool = false
-    @State private var noteOffsets: [CGSize] = []
-    @State private var noteOpacities: [Double] = []
-    @State private var longPressSquash: CGFloat = 1.0
-    @State private var showLoveBubble: Bool = false
-    @State private var loveBubbleOpacity: Double = 0
+    @State var showHearts: Bool = false
+    @State var heartOffsets: [CGSize] = []
+    @State var heartOpacities: [Double] = []
+    @State var showNotes: Bool = false
+    @State var noteOffsets: [CGSize] = []
+    @State var noteOpacities: [Double] = []
+    @State var longPressSquash: CGFloat = 1.0
+    @State var showLoveBubble: Bool = false
+    @State var loveBubbleOpacity: Double = 0
 
     // Scene animation states
-    @State private var cloudDriftX: CGFloat = 0
-    @State private var starTwinkle: [Double] = Array(repeating: 1.0, count: 8)
-    @State private var windowLightX: CGFloat = -50
+    @State var cloudDriftX: CGFloat = 0
+    @State var starTwinkle: [Double] = Array(repeating: 1.0, count: 8)
+    @State var windowLightX: CGFloat = -50
 
-    private let timer = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
-    private let moodTimer = Timer.publish(every: 2.0, on: .main, in: .common).autoconnect()
-    private let blinkTimer = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
+    // Track whether continuous mood animation is already running
+    @State var continuousMoodActive: Bool = false
+
+    let timer = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
+    let moodTimer = Timer.publish(every: 2.0, on: .main, in: .common).autoconnect()
+    let blinkTimer = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
+
+    // Stable star layout (computed once, not re-randomized per render)
+    let starPositions: [CGSize] = (0..<8).map { _ in
+        CGSize(width: CGFloat.random(in: -80...80), height: CGFloat.random(in: -80...(-20)))
+    }
+    let starSizes: [CGFloat] = (0..<8).map { _ in CGFloat.random(in: 2...4) }
 
     // 当前场景（优先使用传入的，否则使用 appState 中的）
-    private var currentScene: PetScene {
+    var currentScene: PetScene {
         scene ?? appState.pet.scene
     }
 
@@ -102,17 +112,12 @@ struct PixelPetView: View {
             let centerY = geometry.size.height / 2
 
             ZStack {
-                // Scene background
                 sceneBackground
                     .frame(width: geometry.size.width, height: geometry.size.height)
 
-                // Mood-specific effects
                 moodEffects
-
-                // Interaction particles
                 interactionParticles
 
-                // Celebration stars
                 if showStars {
                     ForEach(0..<5, id: \.self) { index in
                         Image(systemName: "star.fill")
@@ -123,7 +128,6 @@ struct PixelPetView: View {
                     }
                 }
 
-                // Shadow with bounce/breath linkage
                 Ellipse()
                     .fill(shadowColor.opacity(0.15))
                     .frame(width: 60 * size.scale, height: 20 * size.scale)
@@ -134,7 +138,6 @@ struct PixelPetView: View {
                     )
                     .opacity(1.0 - abs(bounceOffset) * 0.008)
 
-                // Pet body with idle + mood transforms
                 PixelArtBody(
                     pixelSize: size.pixelSize,
                     primaryColor: petPrimaryColor,
@@ -180,7 +183,6 @@ struct PixelPetView: View {
         }
         .onReceive(blinkTimer) { _ in
             guard animated else { return }
-            // Random blink every 3-5 seconds (timer fires every 1s)
             if Int.random(in: 0...3) == 0 && !isBlinking {
                 isBlinking = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
@@ -193,7 +195,7 @@ struct PixelPetView: View {
                 triggerCelebrationAnimation()
             }
         }
-        .onChange(of: appState.pet.mood) { _, newMood in
+        .onChange(of: appState.pet.mood) { _, _ in
             resetMoodAnimations()
             if animated {
                 triggerMoodAnimation()
@@ -205,616 +207,6 @@ struct PixelPetView: View {
                 startIdleAnimations()
                 startSceneAnimations()
             }
-        }
-    }
-
-    // MARK: - Scene Background
-
-    @ViewBuilder
-    private var sceneBackground: some View {
-        switch currentScene {
-        case .indoor:
-            // Indoor: warm gradient
-            LinearGradient(
-                colors: [
-                    theme.colors.cardBackground,
-                    theme.colors.background
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .overlay(
-                Ellipse()
-                    .fill(
-                        RadialGradient(
-                            colors: [
-                                Color.yellow.opacity(0.1),
-                                Color.clear
-                            ],
-                            center: .center,
-                            startRadius: 0,
-                            endRadius: 100
-                        )
-                    )
-                    .frame(width: 200, height: 150)
-                    .offset(x: windowLightX, y: -80)
-            )
-
-        case .outdoor:
-            // Outdoor: blue sky with drifting clouds
-            LinearGradient(
-                colors: [
-                    Color(hex: "#87CEEB"),
-                    Color(hex: "#E0F7FA")
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .overlay(
-                HStack(spacing: 30) {
-                    cloudShape
-                        .offset(y: -60)
-                    cloudShape
-                        .scaleEffect(0.7)
-                        .offset(y: -40)
-                }
-                .offset(x: cloudDriftX, y: -20)
-            )
-            .overlay(
-                Rectangle()
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                Color(hex: "#90EE90"),
-                                Color(hex: "#228B22")
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-                    .frame(height: 40)
-                    .offset(y: 80)
-                , alignment: .bottom
-            )
-
-        case .night:
-            // Night: twinkling starfield
-            LinearGradient(
-                colors: [
-                    Color(hex: "#0D1B2A"),
-                    Color(hex: "#1B263B")
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .overlay(
-                ZStack {
-                    ForEach(0..<8, id: \.self) { index in
-                        Circle()
-                            .fill(Color.white)
-                            .frame(width: starSizes[index], height: starSizes[index])
-                            .offset(x: starPositions[index].width, y: starPositions[index].height)
-                            .opacity(starTwinkle.indices.contains(index) ? starTwinkle[index] : 0.7)
-                    }
-                    Circle()
-                        .fill(Color(hex: "#F5F5DC"))
-                        .frame(width: 30, height: 30)
-                        .offset(x: 60, y: -70)
-                        .shadow(color: Color(hex: "#F5F5DC").opacity(0.5), radius: 10)
-                }
-            )
-
-        case .work:
-            // 工作模式：专注的简洁背景
-            LinearGradient(
-                colors: [
-                    theme.colors.background,
-                    theme.colors.cardBackground.opacity(0.8)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .overlay(
-                // 专注光环
-                Circle()
-                    .stroke(theme.colors.accent.opacity(0.2), lineWidth: 2)
-                    .frame(width: 120, height: 120)
-            )
-            .overlay(
-                // 小装饰点
-                HStack(spacing: 8) {
-                    ForEach(0..<3, id: \.self) { _ in
-                        Circle()
-                            .fill(theme.colors.accent.opacity(0.3))
-                            .frame(width: 6, height: 6)
-                    }
-                }
-                .offset(y: 70)
-            )
-        }
-    }
-
-    private var cloudShape: some View {
-        ZStack {
-            Circle()
-                .fill(Color.white.opacity(0.9))
-                .frame(width: 30, height: 30)
-            Circle()
-                .fill(Color.white.opacity(0.9))
-                .frame(width: 25, height: 25)
-                .offset(x: 15, y: 5)
-            Circle()
-                .fill(Color.white.opacity(0.9))
-                .frame(width: 20, height: 20)
-                .offset(x: -12, y: 3)
-        }
-    }
-
-    // MARK: - Mood Effects
-
-    @ViewBuilder
-    private var moodEffects: some View {
-        switch appState.pet.mood {
-        case .sleepy:
-            // Zzz 效果
-            if showZzz {
-                ZStack {
-                    Text("Z")
-                        .font(.system(size: 14 * size.scale, weight: .bold))
-                        .foregroundStyle(theme.colors.secondaryText.opacity(0.6))
-                        .offset(x: 30 * size.scale, y: -40 * size.scale + sleepyZOffset)
-                    Text("z")
-                        .font(.system(size: 10 * size.scale, weight: .bold))
-                        .foregroundStyle(theme.colors.secondaryText.opacity(0.4))
-                        .offset(x: 40 * size.scale, y: -50 * size.scale + sleepyZOffset * 0.8)
-                    Text("z")
-                        .font(.system(size: 8 * size.scale, weight: .bold))
-                        .foregroundStyle(theme.colors.secondaryText.opacity(0.3))
-                        .offset(x: 48 * size.scale, y: -58 * size.scale + sleepyZOffset * 0.6)
-                }
-            }
-
-        case .excited:
-            // 闪烁星星效果
-            if excitedSparkles {
-                ForEach(0..<4, id: \.self) { index in
-                    Image(systemName: "sparkle")
-                        .font(.system(size: 10 * size.scale))
-                        .foregroundStyle(theme.colors.accent)
-                        .offset(sparkleOffsets.indices.contains(index) ? sparkleOffsets[index] : .zero)
-                        .opacity(sparkleOpacities.indices.contains(index) ? sparkleOpacities[index] : 0)
-                }
-            }
-
-        case .missing:
-            // 问号效果
-            Text("?")
-                .font(.system(size: 16 * size.scale, weight: .bold))
-                .foregroundStyle(theme.colors.secondaryText.opacity(0.5))
-                .offset(x: 35 * size.scale, y: -45 * size.scale)
-
-        case .focused:
-            // 专注光环
-            Circle()
-                .stroke(theme.colors.accent.opacity(0.3), lineWidth: 2)
-                .frame(width: 80 * size.scale * focusedPulse, height: 80 * size.scale * focusedPulse)
-
-        case .happy:
-            // 小心形效果（偶尔出现）
-            EmptyView()
-        }
-    }
-
-    // MARK: - Mood Animations
-
-    // Track whether continuous mood animation is already running
-    @State private var continuousMoodActive: Bool = false
-
-    private func triggerMoodAnimation() {
-        switch appState.pet.mood {
-        case .sleepy:
-            guard !continuousMoodActive else { return }
-            continuousMoodActive = true
-            triggerSleepyAnimation()
-        case .excited:
-            triggerExcitedAnimation()
-        case .missing:
-            triggerMissingAnimation()
-        case .focused:
-            guard !continuousMoodActive else { return }
-            continuousMoodActive = true
-            triggerFocusedAnimation()
-        case .happy:
-            if !continuousMoodActive {
-                continuousMoodActive = true
-                withAnimation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true)) {
-                    happyTailWag = 3
-                }
-            }
-            triggerHappyIdleAnimation()
-        }
-    }
-
-    private func resetMoodAnimations() {
-        continuousMoodActive = false
-        sleepyBreathScale = 1.0
-        showZzz = false
-        excitedSparkles = false
-        excitedTremor = 0
-        missingLookDirection = 0
-        focusedPulse = 1.0
-        focusedLean = 0
-        happyTailWag = 0
-        sleepySink = 0
-    }
-
-    private func triggerSleepyAnimation() {
-        // Breathing effect
-        withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
-            sleepyBreathScale = 1.03
-        }
-
-        // Body sinks slightly
-        withAnimation(.easeInOut(duration: 2.5).repeatForever(autoreverses: true)) {
-            sleepySink = 2
-        }
-
-        // Zzz floating
-        showZzz = true
-        withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
-            sleepyZOffset = -10
-        }
-    }
-
-    private func triggerExcitedAnimation() {
-        // Jump
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.5)) {
-            bounceOffset = -15
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
-                bounceOffset = 0
-            }
-        }
-
-        // Quick tremor
-        withAnimation(.easeInOut(duration: 0.08).repeatCount(6, autoreverses: true)) {
-            excitedTremor = 1.5
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            excitedTremor = 0
-        }
-
-        // Sparkles
-        excitedSparkles = true
-        sparkleOffsets = [
-            CGSize(width: -35, height: -30),
-            CGSize(width: 35, height: -35),
-            CGSize(width: -40, height: -50),
-            CGSize(width: 40, height: -45)
-        ]
-        sparkleOpacities = Array(repeating: 1.0, count: 4)
-
-        withAnimation(.easeOut(duration: 1.0)) {
-            sparkleOpacities = Array(repeating: 0.0, count: 4)
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            excitedSparkles = false
-        }
-    }
-
-    private func triggerMissingAnimation() {
-        // 左右张望效果
-        withAnimation(.easeInOut(duration: 1.0)) {
-            missingLookDirection = -8
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            withAnimation(.easeInOut(duration: 1.0)) {
-                missingLookDirection = 8
-            }
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-            withAnimation(.easeInOut(duration: 0.5)) {
-                missingLookDirection = 0
-            }
-        }
-    }
-
-    private func triggerFocusedAnimation() {
-        // Focus pulse
-        withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
-            focusedPulse = 1.02
-        }
-        // Slight forward lean
-        withAnimation(.easeInOut(duration: 2.0)) {
-            focusedLean = -2
-        }
-    }
-
-    private func triggerHappyIdleAnimation() {
-        // Occasional small hop (tail wag started in triggerMoodAnimation)
-        if Int.random(in: 0...2) == 0 {
-            withAnimation(.spring(response: 0.2, dampingFraction: 0.5)) {
-                bounceOffset = -8
-            }
-
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
-                    bounceOffset = 0
-                }
-            }
-        }
-    }
-
-    // Stable star layout (computed once, not re-randomized per render)
-    private let starPositions: [CGSize] = (0..<8).map { _ in
-        CGSize(width: CGFloat.random(in: -80...80), height: CGFloat.random(in: -80...(-20)))
-    }
-    private let starSizes: [CGFloat] = (0..<8).map { _ in CGFloat.random(in: 2...4) }
-
-    private var shadowColor: Color {
-        switch currentScene {
-        case .night:
-            return Color.white
-        default:
-            return theme.colors.primaryText
-        }
-    }
-
-    // MARK: - Animations
-
-    private func triggerCelebrationAnimation() {
-        // Jump animation
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.4)) {
-            bounceOffset = -25
-            celebrationScale = 1.15
-        }
-
-        // Show stars
-        showStars = true
-        starOffsets = (0..<5).map { _ in
-            CGSize(width: CGFloat.random(in: -40...40), height: CGFloat.random(in: -50...(-20)))
-        }
-        starOpacities = Array(repeating: 1.0, count: 5)
-
-        // Animate stars outward and fade
-        withAnimation(.easeOut(duration: 0.6)) {
-            starOffsets = starOffsets.map { offset in
-                CGSize(width: offset.width * 2, height: offset.height * 1.5)
-            }
-        }
-
-        withAnimation(.easeOut(duration: 0.8)) {
-            starOpacities = Array(repeating: 0.0, count: 5)
-        }
-
-        // Return to normal
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
-                bounceOffset = 0
-                celebrationScale = 1.0
-            }
-        }
-
-        // Hide stars
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-            showStars = false
-        }
-    }
-
-    private func triggerHappyAnimation() {
-        // Quick wiggle animation
-        withAnimation(.spring(response: 0.15, dampingFraction: 0.3)) {
-            celebrationRotation = 8
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            withAnimation(.spring(response: 0.15, dampingFraction: 0.3)) {
-                celebrationRotation = -8
-            }
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            withAnimation(.spring(response: 0.15, dampingFraction: 0.3)) {
-                celebrationRotation = 5
-            }
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            withAnimation(.spring(response: 0.2, dampingFraction: 0.5)) {
-                celebrationRotation = 0
-            }
-        }
-
-        // Small bounce
-        withAnimation(.spring(response: 0.2, dampingFraction: 0.4)) {
-            bounceOffset = -10
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
-                bounceOffset = 0
-            }
-        }
-    }
-
-    // MARK: - Interaction Particles
-
-    @ViewBuilder
-    private var interactionParticles: some View {
-        // Heart particles (happy mood tap)
-        if showHearts {
-            ForEach(0..<3, id: \.self) { index in
-                Image(systemName: "heart.fill")
-                    .font(.system(size: 10 * size.scale))
-                    .foregroundStyle(Color.pink)
-                    .offset(heartOffsets.indices.contains(index) ? heartOffsets[index] : .zero)
-                    .opacity(heartOpacities.indices.contains(index) ? heartOpacities[index] : 0)
-            }
-        }
-
-        // Note particles (excited mood tap)
-        if showNotes {
-            ForEach(0..<3, id: \.self) { index in
-                Image(systemName: index % 2 == 0 ? "music.note" : "music.quarternote.3")
-                    .font(.system(size: 10 * size.scale))
-                    .foregroundStyle(theme.colors.accent)
-                    .offset(noteOffsets.indices.contains(index) ? noteOffsets[index] : .zero)
-                    .opacity(noteOpacities.indices.contains(index) ? noteOpacities[index] : 0)
-            }
-        }
-
-        // Love bubble (long press)
-        if showLoveBubble {
-            Image(systemName: "heart.circle.fill")
-                .font(.system(size: 24 * size.scale))
-                .foregroundStyle(Color.pink.opacity(0.8))
-                .offset(y: -50 * size.scale)
-                .opacity(loveBubbleOpacity)
-        }
-    }
-
-    // MARK: - Idle Animations
-
-    private func startIdleAnimations() {
-        // Breathing: subtle scale pulse
-        withAnimation(.easeInOut(duration: 3.0).repeatForever(autoreverses: true)) {
-            idleBreathScale = 1.02
-        }
-
-        // Weight shift: gentle horizontal sway
-        withAnimation(.easeInOut(duration: 4.0).repeatForever(autoreverses: true)) {
-            idleSwayX = 2
-        }
-    }
-
-    // MARK: - Scene Animations
-
-    private func startSceneAnimations() {
-        switch currentScene {
-        case .indoor:
-            withAnimation(.easeInOut(duration: 8.0).repeatForever(autoreverses: true)) {
-                windowLightX = 50
-            }
-        case .outdoor:
-            withAnimation(.linear(duration: 12.0).repeatForever(autoreverses: true)) {
-                cloudDriftX = 40
-            }
-        case .night:
-            for i in 0..<8 {
-                let delay = Double.random(in: 0...2)
-                let duration = Double.random(in: 1.5...3.0)
-                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                    withAnimation(.easeInOut(duration: duration).repeatForever(autoreverses: true)) {
-                        starTwinkle[i] = Double.random(in: 0.3...1.0)
-                    }
-                }
-            }
-        case .work:
-            break
-        }
-    }
-
-    // MARK: - Tap Particle Effects
-
-    private func triggerTapParticles() {
-        switch appState.pet.mood {
-        case .happy:
-            triggerHeartParticles()
-        case .excited:
-            triggerNoteParticles()
-        case .missing:
-            // Question mark becomes exclamation (handled in moodEffects)
-            break
-        default:
-            break
-        }
-    }
-
-    private func triggerHeartParticles() {
-        showHearts = true
-        heartOffsets = [
-            CGSize(width: -20, height: -35),
-            CGSize(width: 5, height: -45),
-            CGSize(width: 25, height: -30)
-        ]
-        heartOpacities = Array(repeating: 1.0, count: 3)
-
-        withAnimation(.easeOut(duration: 0.8)) {
-            heartOffsets = heartOffsets.map { CGSize(width: $0.width * 1.5, height: $0.height * 1.8) }
-            heartOpacities = Array(repeating: 0.0, count: 3)
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-            showHearts = false
-        }
-    }
-
-    private func triggerNoteParticles() {
-        showNotes = true
-        noteOffsets = [
-            CGSize(width: -25, height: -30),
-            CGSize(width: 10, height: -45),
-            CGSize(width: 30, height: -35)
-        ]
-        noteOpacities = Array(repeating: 1.0, count: 3)
-
-        withAnimation(.easeOut(duration: 0.8)) {
-            noteOffsets = noteOffsets.map { CGSize(width: $0.width * 1.5, height: $0.height * 1.5) }
-            noteOpacities = Array(repeating: 0.0, count: 3)
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-            showNotes = false
-        }
-    }
-
-    private func triggerLoveBubble() {
-        showLoveBubble = true
-        withAnimation(.easeOut(duration: 0.3)) {
-            loveBubbleOpacity = 1.0
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            withAnimation(.easeOut(duration: 0.5)) {
-                loveBubbleOpacity = 0
-            }
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-            showLoveBubble = false
-        }
-    }
-
-    private var petPrimaryColor: Color {
-        switch appState.pet.currentForm {
-        case .cat:
-            return Color(hex: "#FFB366") // Orange for cat
-        case .dog:
-            return Color(hex: "#C4A484") // Brown for dog
-        case .bunny:
-            return Color(hex: "#F5F5DC") // Cream for bunny
-        case .bird:
-            return Color(hex: "#87CEEB") // Sky blue for bird
-        case .dragon:
-            return Color(hex: "#9370DB") // Purple for dragon
-        }
-    }
-
-    private var petSecondaryColor: Color {
-        switch appState.pet.currentForm {
-        case .cat:
-            return Color(hex: "#FF8C00") // Darker orange
-        case .dog:
-            return Color(hex: "#8B7355") // Darker brown
-        case .bunny:
-            return Color(hex: "#FFB6C1") // Pink for bunny ears
-        case .bird:
-            return Color(hex: "#4682B4") // Steel blue
-        case .dragon:
-            return Color(hex: "#6A5ACD") // Slate blue
         }
     }
 }

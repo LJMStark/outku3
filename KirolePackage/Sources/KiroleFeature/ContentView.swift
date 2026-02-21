@@ -27,9 +27,9 @@ public struct ContentView: View {
     }
 
     private func configureOpenAI() async {
-        // Priority: Keychain (user-entered) > Info.plist (xcconfig bundled)
+        // Priority: Keychain (user-entered) > App shell injected compile-time constants
         let apiKey = KeychainService.shared.getOpenAIAPIKey()
-            ?? Bundle.main.infoDictionary?["OPENROUTER_API_KEY"] as? String
+            ?? AppSecrets.openRouterAPIKey
         if let apiKey, !apiKey.isEmpty {
             await OpenAIService.shared.configure(apiKey: apiKey)
         }

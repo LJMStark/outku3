@@ -7,7 +7,7 @@ import SwiftUI
 /// 统一管理认证状态，协调 Apple Sign In 和 Google Sign In
 @Observable
 @MainActor
-public final class AuthManager: @unchecked Sendable {
+public final class AuthManager {
     public static let shared = AuthManager()
 
     // MARK: - State

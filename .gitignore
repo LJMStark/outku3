@@ -86,4 +86,5 @@ docs/Outku 硬件产品规格文档*.md
 
 # Secrets (API keys, credentials)
 Config/Secrets.xcconfig
+Kirole/BuildSecrets.generated.swift
 *.xcconfig.local

@@ -102,11 +102,18 @@ public final class BLESyncCoordinator {
                 streak: appState.streak,
                 pet: appState.pet
             ) {
-                try? await bleService.sendSmartReminder(
-                    text: reminder.text,
-                    urgency: reminder.urgency,
-                    petMood: appState.pet.mood
-                )
+                do {
+                    try await bleService.sendSmartReminder(
+                        text: reminder.text,
+                        urgency: reminder.urgency,
+                        petMood: appState.pet.mood
+                    )
+                } catch {
+                    ErrorReporter.log(
+                        .sync(component: "BLE SmartReminder", underlying: error.localizedDescription),
+                        context: "BLESyncCoordinator.performSync"
+                    )
+                }
             }
 
             await bleService.requestEventLogsIfNeeded()

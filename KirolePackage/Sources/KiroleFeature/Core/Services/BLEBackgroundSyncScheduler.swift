@@ -31,7 +31,10 @@ public final class BLEBackgroundSyncScheduler {
             do {
                 try BGTaskScheduler.shared.submit(request)
             } catch {
-                // 静默处理调度失败
+                ErrorReporter.log(
+                    .sync(component: "BLEBackgroundSyncScheduler", underlying: error.localizedDescription),
+                    context: "BLEBackgroundSyncScheduler.schedule"
+                )
             }
         }
     }

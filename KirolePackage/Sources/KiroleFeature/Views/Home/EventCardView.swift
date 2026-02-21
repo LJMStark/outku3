@@ -74,7 +74,7 @@ private struct CardButtonStyle: ButtonStyle {
                 radius: configuration.isPressed ? 4 : 8,
                 y: configuration.isPressed ? 2 : 4
             )
-            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: configuration.isPressed)
+            .animation(Animation.appStandard, value: configuration.isPressed)
     }
 }
 

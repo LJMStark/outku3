@@ -65,12 +65,26 @@ public enum BLEEventHandler {
 
         case .requestRefresh:
             Task { @MainActor in
+                guard await BLERateLimiter.shared.allowRefreshRequest() else {
+                    ErrorReporter.log(
+                        .bleSecurity("Dropped refresh request due to rate limit"),
+                        context: "BLEEventHandler.requestRefresh"
+                    )
+                    return
+                }
                 await BLESyncCoordinator.shared.performSync(force: true)
             }
 
         case .deviceWake:
             Task { @MainActor in
-                try? await service.syncTime()
+                do {
+                    try await service.syncTime()
+                } catch {
+                    ErrorReporter.log(
+                        .sync(component: "BLE Sync Time", underlying: error.localizedDescription),
+                        context: "BLEEventHandler.deviceWake"
+                    )
+                }
                 await BLESyncCoordinator.shared.performSync(force: false)
             }
 
@@ -112,7 +126,14 @@ public enum BLEEventHandler {
             let taskInPage = await DayPackGenerator.shared.generateTaskInPage(
                 task: task, pet: AppState.shared.pet
             )
-            try? await service.sendTaskInPage(taskInPage)
+            do {
+                try await service.sendTaskInPage(taskInPage)
+            } catch {
+                ErrorReporter.log(
+                    .sync(component: "BLE TaskInPage", underlying: error.localizedDescription),
+                    context: "BLEEventHandler.handleEnterTaskIn"
+                )
+            }
         }
     }
 
@@ -230,9 +251,21 @@ public enum BLEEventHandler {
         let filtered = logs.filter { UInt32($0.timestamp.timeIntervalSince1970) > lastTimestamp }
         guard !filtered.isEmpty else { return }
 
-        let existing = (try? await localStorage.loadEventLogs()) ?? []
-        let merged = Array((existing + filtered).suffix(1000))
-        try? await localStorage.saveEventLogs(merged)
+        do {
+            let existing = try await localStorage.loadEventLogs() ?? []
+            let merged = Array((existing + filtered).suffix(1000))
+            try await localStorage.saveEventLogs(merged)
+        } catch {
+            ErrorReporter.log(
+                .persistence(
+                    operation: "save",
+                    target: "event_logs.json",
+                    underlying: error.localizedDescription
+                ),
+                context: "BLEEventHandler.persistEventLogs"
+            )
+            return
+        }
 
         let maxTimestamp = filtered
             .map { UInt32($0.timestamp.timeIntervalSince1970) }

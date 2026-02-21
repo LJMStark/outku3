@@ -1,7 +1,7 @@
 # Kirole BLE 通信协议规格文档
 
-**版本:** v1.3.1
-**更新日期:** 2026-02-12
+**版本:** v2.0.0
+**更新日期:** 2026-02-21
 **状态:** 草稿
 
 ---
@@ -38,6 +38,7 @@
 | v1.2.0  | 2026-02-12 | 新增 Spectra 6 像素格式、Encoder/Power 按钮事件文档 |
 | v1.3.0  | 2026-02-12 | Message House：新增 SmartReminder (0x13) 命令、DayPack/TaskInPage 中的 microAction 字段、SettlementData 中的专注指标、ReminderAcknowledged/Dismissed 事件 |
 | v1.3.1  | 2026-02-12 | 新增 Section 3.2 九字节分包格式；Spectra 6 部分新增交叉引用至硬件需求文档 |
+| v2.0.0  | 2026-02-21 | 新增安全握手与 SecureEnvelope（HMAC-SHA256）；MVP 默认兼容旧协议（未配置密钥时） |
 
 ### 1.3 术语表
 
@@ -49,6 +50,7 @@
 | Settlement    | 每日结算总结页 |
 | Focus Mode    | 减少干扰的简化显示模式 |
 | Encoder Knob  | 带按压按钮的旋转编码器，用于导航 |
+| SecureEnvelope | v2 安全封装，包含 nonce、timestamp、HMAC-SHA256 |
 
 ---
 
@@ -130,7 +132,26 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 
 **使用场景：** DayPack (0x10)、TaskInPage (0x11) 及其他大 payload 使用此格式。简单命令（PetStatus、Weather、Time）使用 Section 3.1 的 3 字节头部。
 
-### 3.3 字符串编码
+### 3.3 安全握手（v2）
+
+当 App 配置了 `BLE_SHARED_SECRET` 时，连接后必须先完成安全握手，握手命令类型为 `0x7F`，未通过握手不得进入业务通信。  
+当未配置密钥时，App 进入 MVP 兼容模式，可直接使用旧协议明文通信用于联调。
+
+- `ClientHello`：`kind(0x01) + clientNonce(8B) + timestamp(4B) + hmac(32B)`
+- `ServerHello`：`kind(0x02) + clientNonce(8B) + serverNonce(8B) + timestamp(4B) + hmac(32B)`
+- `hmac` 算法：`HMAC-SHA256`
+- 时间窗口：±120 秒
+
+### 3.4 SecureEnvelope（v2）
+
+当 App 配置了 `BLE_SHARED_SECRET` 时，业务 payload 必须封装为 `SecureEnvelope`，外层命令类型固定 `0x7E`：
+
+`version(1B=2) + payloadType(1B) + nonce(8B) + issuedAt(4B) + payloadLen(2B) + payload(NB) + signature(32B)`
+
+- `signature = HMAC-SHA256(version..payload)`  
+- 接收端必须校验签名、时间窗口和 nonce 重放。
+
+### 3.5 字符串编码
 
 字符串使用长度前缀编码：
 
@@ -145,7 +166,7 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 - **最大长度：** 按字段指定（超出则截断）
 - **Length 字节：** 实际字节数（非字符数）
 
-### 3.4 字节序
+### 3.6 字节序
 
 - **多字节整数：** Big Endian
 - **有符号整数：** 二进制补码
@@ -168,6 +189,8 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 | `0x12` | DeviceMode   | 设备运行模式 |
 | `0x13` | SmartReminder| AI 智能提醒推送 |
 | `0x20` | EventLogRequest | 请求指定时间戳之后的事件日志 |
+| `0x7E` | SecureData | 安全业务封装（v2） |
+| `0x7F` | SecurityHandshake | 安全握手（v2） |
 
 ---
 

@@ -94,7 +94,7 @@ struct SettingsToggleSwitch: View {
                 .shadow(color: .black.opacity(0.1), radius: 1, y: 1)
                 .padding(4)
         }
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isOn)
+        .animation(Animation.appStandard, value: isOn)
     }
 }
 
@@ -124,7 +124,7 @@ private struct SoundSettingsSection: View {
                     Spacer()
 
                     Button {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                        withAnimation(Animation.appStandard) {
                             soundEnabled.toggle()
                             SoundService.shared.isSoundEnabled = soundEnabled
                         }

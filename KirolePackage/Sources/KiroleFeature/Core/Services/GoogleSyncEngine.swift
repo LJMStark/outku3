@@ -28,8 +28,33 @@ public actor GoogleSyncEngine {
     // MARK: - Initialization
 
     private func loadPersistedState() async {
-        metadata = (try? await storage.loadGoogleSyncMetadata()) ?? GoogleSyncMetadata()
-        outbox = (try? await storage.loadOutbox()) ?? []
+        do {
+            metadata = try await storage.loadGoogleSyncMetadata() ?? GoogleSyncMetadata()
+        } catch {
+            metadata = GoogleSyncMetadata()
+            ErrorReporter.log(
+                .persistence(
+                    operation: "load",
+                    target: "google_sync_metadata.json",
+                    underlying: error.localizedDescription
+                ),
+                context: "GoogleSyncEngine.loadPersistedState"
+            )
+        }
+
+        do {
+            outbox = try await storage.loadOutbox()
+        } catch {
+            outbox = []
+            ErrorReporter.log(
+                .persistence(
+                    operation: "load",
+                    target: "outbox.json",
+                    underlying: error.localizedDescription
+                ),
+                context: "GoogleSyncEngine.loadPersistedState"
+            )
+        }
     }
 
     // MARK: - Main Entry Point
@@ -74,7 +99,7 @@ public actor GoogleSyncEngine {
         }
 
         metadata.lastFullSyncTime = Date()
-        try? await storage.saveGoogleSyncMetadata(metadata)
+        await persistMetadata(context: "GoogleSyncEngine.performFullSync")
 
         guard attemptedCount == 0 || successCount > 0 else {
             throw GoogleSyncEngineError.fullSyncFailed(warnings)
@@ -108,7 +133,7 @@ public actor GoogleSyncEngine {
         // Keep token cleared until we implement per-calendar incremental merge.
         if metadata.calendarSyncToken != nil {
             metadata.calendarSyncToken = nil
-            try? await storage.saveGoogleSyncMetadata(metadata)
+            await persistMetadata(context: "GoogleSyncEngine.syncCalendar")
         }
 
         let events = try await calendarAPI.getTodayEvents()
@@ -133,7 +158,7 @@ public actor GoogleSyncEngine {
 
         let merged = mergeTasks(local: currentTasks, remote: remoteTasks)
         metadata.lastTasksSyncTime = Date()
-        try? await storage.saveGoogleSyncMetadata(metadata)
+        await persistMetadata(context: "GoogleSyncEngine.syncTasks")
 
         return merged
     }
@@ -225,7 +250,7 @@ public actor GoogleSyncEngine {
     public func enqueueChange(task: TaskItem, action: OutboxAction) async {
         let entry = OutboxEntry(taskItem: task, action: action)
         outbox.append(entry)
-        try? await storage.saveOutbox(outbox)
+        await persistOutbox(context: "GoogleSyncEngine.enqueueChange")
     }
 
     private func flushOutbox() async {
@@ -264,7 +289,37 @@ public actor GoogleSyncEngine {
         }
 
         outbox = remaining
-        try? await storage.saveOutbox(outbox)
+        await persistOutbox(context: "GoogleSyncEngine.flushOutbox")
+    }
+
+    private func persistMetadata(context: String) async {
+        do {
+            try await storage.saveGoogleSyncMetadata(metadata)
+        } catch {
+            ErrorReporter.log(
+                .persistence(
+                    operation: "save",
+                    target: "google_sync_metadata.json",
+                    underlying: error.localizedDescription
+                ),
+                context: context
+            )
+        }
+    }
+
+    private func persistOutbox(context: String) async {
+        do {
+            try await storage.saveOutbox(outbox)
+        } catch {
+            ErrorReporter.log(
+                .persistence(
+                    operation: "save",
+                    target: "outbox.json",
+                    underlying: error.localizedDescription
+                ),
+                context: context
+            )
+        }
     }
 }
 

@@ -66,6 +66,6 @@ public struct OptionCard: View {
             }
         }
         .buttonStyle(.plain)
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
+        .animation(Animation.appStandard, value: isSelected)
     }
 }

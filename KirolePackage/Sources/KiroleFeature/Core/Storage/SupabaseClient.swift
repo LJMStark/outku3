@@ -20,13 +20,22 @@ public actor SupabaseService {
     private func ensureConfigured() {
         guard !isConfigured else { return }
 
-        guard let url = Bundle.main.infoDictionary?["SUPABASE_URL"] as? String,
-              let key = Bundle.main.infoDictionary?["SUPABASE_ANON_KEY"] as? String,
+        guard let configured = AppSecrets.supabaseConfig else {
+            #if DEBUG
+            print("[SupabaseService] Not configured - call AppSecrets.configure(...) from App shell")
+            #endif
+            return
+        }
+
+        let url = configured.url
+        let key = configured.anonKey
+
+        guard
               !url.contains("YOUR_PROJECT"),
               !key.contains("YOUR_SUPABASE"),
               let supabaseURL = URL(string: url) else {
             #if DEBUG
-            print("[SupabaseService] Not configured - set SUPABASE_URL and SUPABASE_ANON_KEY in Secrets.xcconfig")
+            print("[SupabaseService] Invalid configuration - verify AppSecrets injected values")
             #endif
             return
         }
@@ -278,7 +287,7 @@ public enum SupabaseError: Error, LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .notConfigured:
-            return "Supabase is not configured. Please set SUPABASE_URL and SUPABASE_ANON_KEY in Config/Secrets.xcconfig"
+            return "Supabase is not configured. Please inject credentials via AppSecrets.configure(...)"
         }
     }
 }

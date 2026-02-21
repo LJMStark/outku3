@@ -17,7 +17,7 @@ public struct SettingsThemeSection: View {
                         theme: themeOption,
                         isSelected: themeManager.currentTheme == themeOption
                     ) {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                        withAnimation(Animation.appStandard) {
                             themeManager.setTheme(themeOption)
                         }
                     }

@@ -6,6 +6,12 @@ struct KiroleApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
+        AppSecrets.configure(
+            supabaseURL: BuildSecrets.supabaseURL,
+            supabaseAnonKey: BuildSecrets.supabaseAnonKey,
+            openRouterAPIKey: BuildSecrets.openRouterAPIKey,
+            bleSharedSecret: BuildSecrets.bleSharedSecret
+        )
         BLEBackgroundSyncScheduler.shared.register()
     }
 

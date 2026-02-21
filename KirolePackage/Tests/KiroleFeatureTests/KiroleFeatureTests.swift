@@ -462,6 +462,7 @@ struct ThemeTests {
     }
 
     @Test("ThemeManager singleton exists")
+    @MainActor
     func themeManagerSingletonExists() {
         let manager = ThemeManager.shared
         // currentTheme is non-optional, just verify it exists

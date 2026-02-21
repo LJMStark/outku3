@@ -9,7 +9,7 @@ import UIKit
 /// 专注会话服务，管理任务专注时间追踪
 @Observable
 @MainActor
-public final class FocusSessionService: @unchecked Sendable {
+public final class FocusSessionService {
     public static let shared = FocusSessionService()
 
     // MARK: - State
@@ -230,13 +230,31 @@ public final class FocusSessionService: @unchecked Sendable {
                 updateStatistics()
             }
         } catch {
-            // 静默处理加载失败
+            ErrorReporter.log(
+                .persistence(
+                    operation: "load",
+                    target: "focus_sessions.json",
+                    underlying: error.localizedDescription
+                ),
+                context: "FocusSessionService.loadTodaySessions"
+            )
         }
     }
 
     private func saveSessions() async {
-        try? await localStorage.saveFocusSessions(todaySessions)
-        try? await localStorage.saveFocusSessionsForDate(todaySessions, date: Date())
+        do {
+            try await localStorage.saveFocusSessions(todaySessions)
+            try await localStorage.saveFocusSessionsForDate(todaySessions, date: Date())
+        } catch {
+            ErrorReporter.log(
+                .persistence(
+                    operation: "save",
+                    target: "focus_sessions",
+                    underlying: error.localizedDescription
+                ),
+                context: "FocusSessionService.saveSessions"
+            )
+        }
     }
 
     // MARK: - Focus Time Calculation

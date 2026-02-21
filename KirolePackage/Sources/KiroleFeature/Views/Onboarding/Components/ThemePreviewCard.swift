@@ -43,7 +43,7 @@ public struct ThemePreviewCard: View {
             }
             .scaleEffect(isSelected ? 1.05 : 1.0)
             .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
-            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
+            .animation(Animation.appStandard, value: isSelected)
         }
         .buttonStyle(.plain)
     }

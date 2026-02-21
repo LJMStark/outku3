@@ -110,7 +110,8 @@ public struct ThemeColors: Sendable {
 // MARK: - Theme Environment
 
 @Observable
-public final class ThemeManager: @unchecked Sendable {
+@MainActor
+public final class ThemeManager {
     public static let shared = ThemeManager()
 
     public var currentTheme: AppTheme = .classicWarm
@@ -261,6 +262,10 @@ public extension View {
     }
 }
 
+public extension Animation {
+    static let appStandard = Animation.spring(response: 0.3, dampingFraction: 0.7)
+}
+
 // MARK: - Toggle Switch Style
 
 public struct CustomToggleStyle: ToggleStyle {
@@ -277,7 +282,7 @@ public struct CustomToggleStyle: ToggleStyle {
                         .shadow(radius: 1)
                         .frame(width: 20, height: 20)
                         .offset(x: configuration.isOn ? 10 : -10)
-                        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: configuration.isOn)
+                        .animation(Animation.appStandard, value: configuration.isOn)
                 )
                 .onTapGesture {
                     configuration.isOn.toggle()

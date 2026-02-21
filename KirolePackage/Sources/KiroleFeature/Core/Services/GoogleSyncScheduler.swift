@@ -1,7 +1,7 @@
 import Foundation
 
 @MainActor
-public final class SyncScheduler: @unchecked Sendable {
+public final class SyncScheduler {
     public static let shared = SyncScheduler()
 
     private var timer: Timer?
