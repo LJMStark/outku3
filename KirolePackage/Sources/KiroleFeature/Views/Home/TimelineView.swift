@@ -283,7 +283,6 @@ struct HaikuSectionView: View {
     @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
     @State private var appeared = false
-    @State private var isRefreshing = false
 
     var body: some View {
         HStack(spacing: 0) {
@@ -298,34 +297,10 @@ struct HaikuSectionView: View {
                             .font(.system(size: 15, weight: .regular, design: .serif))
                             .italic()
                             .foregroundStyle(theme.colors.primaryText)
-                            .opacity(isRefreshing ? 0.5 : 1.0)
-                            .animation(.easeInOut(duration: 0.3), value: isRefreshing)
                     }
                 }
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
-
-                // Refresh button
-                Button {
-                    refreshHaiku()
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 12, weight: .medium))
-                            .rotationEffect(.degrees(isRefreshing ? 360 : 0))
-                            .animation(isRefreshing ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: isRefreshing)
-
-                        Text("New Haiku")
-                            .font(.system(size: 12, weight: .medium))
-                    }
-                    .foregroundStyle(theme.colors.secondaryText)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(theme.colors.cardBackground)
-                    .clipShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .disabled(isRefreshing)
 
                 // Pet image
                 Image("tiko_reading", bundle: .module)
@@ -342,14 +317,6 @@ struct HaikuSectionView: View {
         .animation(.easeOut(duration: 0.6).delay(delay), value: appeared)
         .onAppear {
             appeared = true
-        }
-    }
-
-    private func refreshHaiku() {
-        isRefreshing = true
-        Task { @MainActor in
-            await appState.loadTodayHaiku()
-            isRefreshing = false
         }
     }
 }
