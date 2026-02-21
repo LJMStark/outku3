@@ -1,6 +1,7 @@
 import SwiftUI
 import PhotosUI
 
+@MainActor
 public struct PersonalizationPage: View {
     let onboardingState: OnboardingState
     @Environment(ThemeManager.self) private var themeManager
@@ -86,6 +87,7 @@ public struct PersonalizationPage: View {
                                     }
                             }
 
+                            let hasPhotoImage = photoImage != nil
                             PhotosPicker(
                                 selection: $selectedPhoto,
                                 matching: .images
@@ -93,7 +95,7 @@ public struct PersonalizationPage: View {
                                 HStack(spacing: 8) {
                                     Image(systemName: "photo.on.rectangle.angled")
                                         .font(.system(size: 16))
-                                    Text(photoImage == nil ? "Choose Photo" : "Change Photo")
+                                    Text(hasPhotoImage ? "Change Photo" : "Choose Photo")
                                         .font(.system(size: 14, weight: .medium, design: .rounded))
                                 }
                                 .foregroundStyle(.white)
@@ -118,7 +120,8 @@ public struct PersonalizationPage: View {
         .onChange(of: selectedPhoto) { _, newValue in
             guard let newValue else { return }
             Task {
-                if let data = try? await newValue.loadTransferable(type: Data.self) {
+                guard let data = try? await newValue.loadTransferable(type: Data.self) else { return }
+                await MainActor.run {
                     onboardingState.profile.customPhotoData = data
                     #if canImport(UIKit)
                     if let uiImage = UIImage(data: data) {

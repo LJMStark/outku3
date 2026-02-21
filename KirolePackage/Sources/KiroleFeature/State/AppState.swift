@@ -87,7 +87,10 @@ public final class AppState: @unchecked Sendable {
     // MARK: - Task Filtering
 
     public func tasksForToday() -> [TaskItem] {
-        tasks.filter { $0.dueDate.map { Calendar.current.isDateInToday($0) } ?? false }
+        tasks.filter { task in
+            guard let dueDate = task.dueDate else { return false }
+            return Calendar.current.isDateInToday(dueDate)
+        }
     }
 
     public func completedTasksForToday() -> [TaskItem] {
@@ -150,12 +153,14 @@ public final class AppState: @unchecked Sendable {
         defer { isLoading = false }
 
         // Supabase sync
-        if let userId = userId {
-            let result = await syncManager.performFullSync(userId: userId)
-            if case .partial(_, let failed) = result, failed > 0 {
+        if let userId {
+            switch await syncManager.performFullSync(userId: userId) {
+            case .partial(_, let failed) where failed > 0:
                 lastError = "Some data failed to sync"
-            } else if case .failure(let error) = result {
+            case .failure(let error):
                 lastError = error.localizedDescription
+            default:
+                break
             }
         }
 
@@ -204,21 +209,15 @@ public final class AppState: @unchecked Sendable {
         let today = Date()
 
         let todayTasks = tasksForToday()
-        let todayCompleted = todayTasks.filter { $0.isCompleted }.count
+        let todayCompleted = todayTasks.filter(\.isCompleted).count
 
         let weekStart = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: today))!
-        let weekTasks = tasks.filter { task in
-            guard let dueDate = task.dueDate else { return false }
-            return dueDate >= weekStart && dueDate <= today
-        }
-        let weekCompleted = weekTasks.filter { $0.isCompleted }.count
+        let weekTasks = tasksDueBetween(start: weekStart, end: today)
+        let weekCompleted = weekTasks.filter(\.isCompleted).count
 
         let thirtyDaysAgo = calendar.date(byAdding: .day, value: -30, to: today)!
-        let monthTasks = tasks.filter { task in
-            guard let dueDate = task.dueDate else { return false }
-            return dueDate >= thirtyDaysAgo && dueDate <= today
-        }
-        let monthCompleted = monthTasks.filter { $0.isCompleted }.count
+        let monthTasks = tasksDueBetween(start: thirtyDaysAgo, end: today)
+        let monthCompleted = monthTasks.filter(\.isCompleted).count
 
         statistics = TaskStatistics(
             todayCompleted: todayCompleted,
@@ -231,6 +230,13 @@ public final class AppState: @unchecked Sendable {
 
         // Update widget data
         widgetDataService.updateFromAppState(pet: pet, streak: streak, statistics: statistics)
+    }
+
+    private func tasksDueBetween(start: Date, end: Date) -> [TaskItem] {
+        tasks.filter { task in
+            guard let dueDate = task.dueDate else { return false }
+            return dueDate >= start && dueDate <= end
+        }
     }
 
     @MainActor
