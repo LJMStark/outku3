@@ -5,13 +5,14 @@ For agent workflow and interaction rules, see `AGENTS.md`.
 
 ## Interaction Rules
 
-1. **称呼**：所有回复必须以 "佛山王力宏" 开头。
+1. **称呼**：所有回复必须以 "B哥" 开头。
 2. **语言**：所有回复必须使用中文（简体）。
 
 ## Forbidden Patterns
 
 - **NO ViewModels**: Use `@Observable` models directly in Views
 - **NO `Task { }` in `onAppear`**: Use `.task` modifier
+- **NO deprecated `.onChange(of:perform:)`**: Use `.onChange(of:) { oldValue, newValue in ... }` or `.onChange(of:) { ... }`
 - **NO CoreData**: Use SwiftData or raw persistence
 - **NO XCTest**: Use Swift Testing (`import Testing`)
 - **NO Combine**: Unless strictly necessary

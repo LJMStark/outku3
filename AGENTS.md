@@ -19,6 +19,7 @@ This file provides essential context, commands, and rules for AI agents working 
 
 ## 2. Project Context
 - **Name**: Kirole (iOS Companion App for E-ink Device)
+- **Platform**: iOS 17.0+ (iPhone only)
 - **Architecture**: Workspace + SPM Package (`Kirole.xcworkspace` + `KirolePackage`)
   - **App Shell**: `Kirole/` (Minimal entry point)
   - **Feature Logic**: `KirolePackage/Sources/KiroleFeature/` (Development happens here)
@@ -74,6 +75,7 @@ xcodebuild -workspace Kirole.xcworkspace -scheme Kirole \
 ### ❌ Forbidden Patterns
 - **NO ViewModels**: Use `@Observable` models directly in Views.
 - **NO `Task { }` in `onAppear`**: Use `.task` modifier.
+- **NO deprecated `.onChange(of:perform:)`**: Use `.onChange(of:) { oldValue, newValue in ... }` or `.onChange(of:) { ... }`.
 - **NO CoreData**: Use SwiftData or raw persistence.
 - **NO XCTest**: Use Swift Testing (`import Testing`).
 - **NO Manual File Adding**: `KirolePackage` handles file references automatically.
