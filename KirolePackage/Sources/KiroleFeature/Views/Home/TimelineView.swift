@@ -35,10 +35,14 @@ struct DateDividerView: View {
 struct DayTimelineView: View {
     let date: Date
     let events: [CalendarEvent]
+    var showPet: Bool = false
 
     @Environment(ThemeManager.self) private var theme
 
     private var sunTimes: SunTimes { .forDate(date) }
+
+    /// Insert pet after this many events (0-indexed boundary).
+    private let petInsertAfter = 2
 
     var body: some View {
         VStack(spacing: 0) {
@@ -60,9 +64,17 @@ struct DayTimelineView: View {
 
             if events.isEmpty {
                 TimelineEmptyStateRow(delay: 0)
+
+                if showPet {
+                    HaikuSectionView(delay: 0)
+                }
             } else {
                 ForEach(Array(events.enumerated()), id: \.element.id) { index, event in
                     TimelineEventCardRow(event: event, delay: 0)
+
+                    if showPet && index == min(petInsertAfter - 1, events.count - 1) {
+                        HaikuSectionView(delay: 0)
+                    }
                 }
             }
 
@@ -227,51 +239,6 @@ struct TimelineEventRow: View {
         .onAppear {
             appeared = true
         }
-    }
-}
-
-// MARK: - Timeline With Haiku View
-
-struct TimelineWithHaikuView: View {
-    @Environment(AppState.self) private var appState
-    @Environment(ThemeManager.self) private var theme
-    @State private var appeared = false
-
-    private var tomorrowSunTimes: SunTimes {
-        .forDate(Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date())
-    }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            TimelineEventRow(
-                time: AppDateFormatters.time.string(from: tomorrowSunTimes.sunrise),
-                icon: "sunrise.fill",
-                title: "Sunrise",
-                delay: 0,
-                isSystemIcon: true
-            )
-
-            HaikuSectionView(delay: 0)
-
-            TimelineEventRow(
-                time: AppDateFormatters.time.string(from: tomorrowSunTimes.sunset),
-                icon: "sunset.fill",
-                title: "Sunset",
-                delay: 0,
-                isSystemIcon: true
-            )
-        }
-        .background(
-            // Vertical timeline line
-            HStack {
-                Spacer()
-                    .frame(width: 64)
-                Rectangle()
-                    .fill(Color(hex: "D1D5DB"))
-                    .frame(width: 2)
-                Spacer()
-            }
-        )
     }
 }
 

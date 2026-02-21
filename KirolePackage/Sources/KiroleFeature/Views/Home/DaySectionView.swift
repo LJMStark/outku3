@@ -2,6 +2,7 @@ import SwiftUI
 
 struct DaySectionView: View {
     let date: Date
+    var showPet: Bool = false
 
     @Environment(AppState.self) private var appState
 
@@ -15,9 +16,9 @@ struct DaySectionView: View {
     var body: some View {
         VStack(spacing: 0) {
             DateDividerView(date: date)
-                .padding(.top, 24)
+                .padding(.top, 12)
 
-            DayTimelineView(date: date, events: eventsForDay)
+            DayTimelineView(date: date, events: eventsForDay, showPet: showPet)
                 .padding(.horizontal, 24)
         }
     }

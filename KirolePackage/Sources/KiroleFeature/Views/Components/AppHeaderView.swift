@@ -82,7 +82,7 @@ public struct AppHeaderView: View {
         }
         .padding(.horizontal, 24)
         .padding(.top, 16)
-        .padding(.bottom, 24)
+        .padding(.bottom, 12)
     }
 
     private var formattedDate: String {

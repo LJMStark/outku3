@@ -28,17 +28,15 @@ public struct HomeView: View {
                                     .padding(.top, 40)
                             }
 
-                            ForEach(dataSource.dayOffsets, id: \.self) { offset in
-                                DaySectionView(date: dataSource.dateForOffset(offset))
+                            // Today section with pet embedded in timeline
+                            DaySectionView(date: dataSource.dateForOffset(0), showPet: true)
 
-                                if offset == 1 {
-                                    TimelineWithHaikuView()
-                                        .padding(.horizontal, 24)
-                                }
-
-                                if dataSource.shouldShowPetMarker(at: offset) {
-                                    PetMarkerView(dayOffset: offset)
-                                }
+                            // Remaining days (offset 1+)
+                            ForEach(dataSource.dayOffsets.dropFirst(), id: \.self) { offset in
+                                DaySectionView(
+                                    date: dataSource.dateForOffset(offset),
+                                    showPet: dataSource.shouldShowPetMarker(at: offset)
+                                )
                             }
 
                             // Sentinel to trigger loading more days
