@@ -120,7 +120,7 @@ Three singletons injected via `.environment()` from ContentView:
 | Singleton | Purpose |
 |-----------|---------|
 | `AppState` | Pet, tasks, events, navigation, integrations |
-| `ThemeManager` | Current theme colors (5 themes) |
+| `ThemeManager` | Current theme colors (3 themes) |
 | `AuthManager` | Authentication state (Apple/Google Sign In) |
 
 Views access via `@Environment(AppState.self)`, `@Environment(ThemeManager.self)`, `@Environment(AuthManager.self)`.
@@ -132,6 +132,16 @@ Views access via `@Environment(AppState.self)`, `@Environment(ThemeManager.self)
 - Tab-based navigation via `AppState.selectedTab` (`.home`, `.pet`, `.settings`)
 - Custom header (`AppHeaderView`) with tab buttons - no TabView
 - **Header is fixed at top** - placed outside ScrollView in each main page
+
+### Home Timeline Architecture
+
+Home page is an infinite-scroll multi-day timeline managed by `TimelineDataSource`:
+
+- `HomeView` → `LazyVStack` with today (offset 0) followed by `ForEach(offset 1+)`
+- `DaySectionView(date:, showPet:)` → `DateDividerView` + `DayTimelineView`
+- `DayTimelineView(date:, events:, showPet:)` → sunrise/events/sunset, with `HaikuSectionView` (haiku text + tiko pet image) embedded after the 2nd event card when `showPet: true`
+- Today always has `showPet: true`; subsequent days show pet every 3 days via `TimelineDataSource.shouldShowPetMarker(at:)`
+- All timeline components (`DayTimelineView`, `HaikuSectionView`, `TimelineEventRow`, etc.) live in `Views/Home/TimelineView.swift`
 
 ### Key Services
 
