@@ -14,12 +14,27 @@
 		<string>$(AppIdentifierPrefix)com.kirole.app</string>
 	</array>
 
-	<!-- Sign in with Apple (requires paid Apple Developer Program) -->
-	<!-- Uncomment when you have a paid developer account:
+	<!-- Sign in with Apple -->
 	<key>com.apple.developer.applesignin</key>
 	<array>
 		<string>Default</string>
 	</array>
-	-->
+
+	<!-- iCloud / CloudKit -->
+	<key>com.apple.developer.icloud-container-identifiers</key>
+	<array>
+		<string>iCloud.com.kirole.app</string>
+	</array>
+	<key>com.apple.developer.icloud-services</key>
+	<array>
+		<string>CloudDocuments</string>
+		<string>CloudKit</string>
+	</array>
+	<key>com.apple.developer.ubiquity-kvstore-identifier</key>
+	<string>$(TeamIdentifierPrefix)com.kirole.app</string>
+
+	<!-- Push Notifications -->
+	<key>aps-environment</key>
+	<string>development</string>
 </dict>
 </plist>

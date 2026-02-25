@@ -20,6 +20,7 @@ struct KiroleApp: App {
             ContentView()
                 .task {
                     BLEBackgroundSyncScheduler.shared.schedule()
+                    await NotificationService.shared.refreshAuthorizationStatus()
                 }
         }
         .onChange(of: scenePhase) { _, newPhase in
