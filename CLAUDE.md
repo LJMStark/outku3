@@ -16,6 +16,7 @@ For agent workflow and interaction rules, see `AGENTS.md`.
 - **NO CoreData**: Use SwiftData or raw persistence
 - **NO XCTest**: Use Swift Testing (`import Testing`)
 - **NO Combine**: Unless strictly necessary
+- **NO CloudKit/iCloud**: Removed for MVP; use Supabase for cloud persistence
 - **NO secrets in `Info.plist`**: Never place `OPENROUTER_API_KEY`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `BLE_SHARED_SECRET` in app plist
 
 ## Project Overview
@@ -155,7 +156,6 @@ Home page is an infinite-scroll multi-day timeline managed by `TimelineDataSourc
 | `CompanionTextService` | Personalized text with OpenAI fallback to local templates |
 | `BehaviorAnalyzer` | User behavior summary from task/focus data |
 | `SupabaseService` | Cloud data persistence |
-| `CloudKitService` | iCloud sync (lazy-loaded) |
 | `BLEService` | E-ink device communication |
 | `BLEDataEncoder` | Data encoding (Pet, Task, DayPack) |
 | `BLEEventHandler` | Event parsing, Focus Session events |

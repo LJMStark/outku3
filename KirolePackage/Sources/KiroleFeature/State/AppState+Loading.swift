@@ -99,25 +99,7 @@ extension AppState {
             }
         }
 
-        await syncWithCloudKit()
         await loadLocalData()
-    }
-
-    public func syncWithCloudKit() async {
-        do {
-            let syncedPet = try await cloudKitService.syncPet(local: pet)
-            pet = syncedPet
-            try await localStorage.savePet(pet)
-
-            let syncedStreak = try await cloudKitService.syncStreak(local: streak)
-            streak = syncedStreak
-            try await localStorage.saveStreak(streak)
-        } catch {
-            ErrorReporter.log(
-                .sync(component: "CloudKit", underlying: error.localizedDescription),
-                context: "AppState.syncWithCloudKit"
-            )
-        }
     }
 
     func updatePetState() async {

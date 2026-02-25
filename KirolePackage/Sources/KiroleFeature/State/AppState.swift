@@ -77,7 +77,6 @@ public final class AppState {
     let eventKitService = EventKitService.shared
     let appleSyncEngine = AppleSyncEngine.shared
     let widgetDataService = WidgetDataService.shared
-    let cloudKitService = CloudKitService.shared
 
     // Managers
     let petManager = PetManager()
