@@ -388,4 +388,4 @@ SUPABASE_ANON_KEY = eyJxxx
 | Google Sign In | Configured | `Config/Secrets.xcconfig` |
 | Supabase | Configured | `Config/Secrets.xcconfig` |
 | OpenAI | Optional | User enters in Settings |
-| Sign in with Apple | Pending | Requires paid Apple Developer ($99/yr) |
+| Sign in with Apple | Configured | `Config/Kirole.entitlements` |

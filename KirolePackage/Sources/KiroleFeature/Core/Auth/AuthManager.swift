@@ -104,7 +104,11 @@ public final class AuthManager {
                 displayName: result.displayName
             )
         } catch {
-            authState = .error(error.localizedDescription)
+            if let appleError = error as? AppleSignInError, case .canceled = appleError {
+                authState = .unauthenticated
+            } else {
+                authState = .error(error.localizedDescription)
+            }
             throw error
         }
     }

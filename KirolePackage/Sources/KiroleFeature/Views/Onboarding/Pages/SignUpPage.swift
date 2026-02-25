@@ -9,6 +9,7 @@ public struct SignUpPage: View {
     @State private var email: String = ""
     @State private var isSigningIn = false
     @State private var showComingSoonAlert = false
+    @State private var signInError: String?
 
     private var isValidEmail: Bool {
         let pattern = #"^[^\s@]+@[^\s@]+\.[^\s@]+$"#
@@ -105,9 +106,20 @@ public struct SignUpPage: View {
                             }
                             .disabled(isSigningIn)
 
-                            // Apple Sign In (coming soon)
+                            // Apple Sign In
                             Button {
-                                showComingSoonAlert = true
+                                isSigningIn = true
+                                Task { @MainActor in
+                                    do {
+                                        try await authManager.signInWithApple()
+                                        appState.completeOnboarding(with: onboardingState.profile)
+                                    } catch AppleSignInError.canceled {
+                                        // User canceled, do nothing
+                                    } catch {
+                                        signInError = error.localizedDescription
+                                    }
+                                    isSigningIn = false
+                                }
                             } label: {
                                 HStack(spacing: 12) {
                                     Image(systemName: "apple.logo")
@@ -122,8 +134,17 @@ public struct SignUpPage: View {
                                 .clipShape(Capsule())
                                 .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
                             }
+                            .disabled(isSigningIn)
                         }
                         .padding(.top, 32)
+
+                        if let signInError {
+                            Text(signInError)
+                                .font(.system(size: 13, design: .rounded))
+                                .foregroundStyle(.red)
+                                .multilineTextAlignment(.center)
+                                .padding(.top, 12)
+                        }
 
                         // Divider
                         HStack(spacing: 16) {
