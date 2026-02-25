@@ -2,90 +2,28 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- App Display Name -->
-	<key>CFBundleDisplayName</key>
-	<string>Kirole</string>
-	<key>CFBundleName</key>
-	<string>$(PRODUCT_NAME)</string>
-	<key>CFBundleIdentifier</key>
-	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
-	<key>CFBundleVersion</key>
-	<string>$(CURRENT_PROJECT_VERSION)</string>
-	<key>CFBundleShortVersionString</key>
-	<string>$(MARKETING_VERSION)</string>
-	<key>CFBundlePackageType</key>
-	<string>APPL</string>
-	<key>CFBundleExecutable</key>
-	<string>$(EXECUTABLE_NAME)</string>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.kirole.app.ble.sync</string>
+	</array>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>Kirole</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
-
-	<!-- Launch Screen -->
-	<key>UILaunchScreen</key>
-	<dict/>
-
-	<!-- Device Orientation -->
-	<key>UISupportedInterfaceOrientations</key>
-	<array>
-		<string>UIInterfaceOrientationPortrait</string>
-	</array>
-	<key>UISupportedInterfaceOrientations~ipad</key>
-	<array>
-		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationPortraitUpsideDown</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
-	</array>
-
-	<!-- Requires Full Screen -->
-	<key>UIRequiresFullScreen</key>
-	<true/>
-
-	<!-- ==========================================
-	     Privacy Descriptions (Required for iOS 17+)
-	     ========================================== -->
-
-	<!-- Calendar Access -->
-	<key>NSCalendarsUsageDescription</key>
-	<string>Kirole needs calendar access to sync your events and help you stay organized with your pet companion.</string>
-
-	<!-- Full Calendar Access (iOS 17+) -->
-	<key>NSCalendarsFullAccessUsageDescription</key>
-	<string>Kirole needs full calendar access to sync your events and help you stay organized with your pet companion.</string>
-
-	<!-- Write-Only Calendar Access (iOS 17+) -->
-	<key>NSCalendarsWriteOnlyAccessUsageDescription</key>
-	<string>Kirole needs calendar write access to create events for your tasks and habits.</string>
-
-	<!-- Reminders Access -->
-	<key>NSRemindersUsageDescription</key>
-	<string>Kirole needs reminders access to sync your tasks and help track your habits.</string>
-
-	<!-- Full Reminders Access (iOS 17+) -->
-	<key>NSRemindersFullAccessUsageDescription</key>
-	<string>Kirole needs full reminders access to sync your tasks and help track your habits.</string>
-
-	<!-- Bluetooth Access (E-ink Device) -->
-	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>Kirole uses Bluetooth to connect with your E-ink companion device and display your pet.</string>
-
-	<key>NSBluetoothPeripheralUsageDescription</key>
-	<string>Kirole uses Bluetooth to communicate with your E-ink companion device.</string>
-
-	<!-- ==========================================
-	     Google Sign In Configuration
-	     ========================================== -->
-
-	<!-- Google Client ID - Replace with your actual Client ID -->
-	<key>GIDClientID</key>
-	<string>$(GOOGLE_CLIENT_ID)</string>
-
-	<!-- URL Schemes for OAuth callbacks -->
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleURLTypes</key>
 	<array>
-		<!-- Google Sign In URL Scheme -->
 		<dict>
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
@@ -96,7 +34,6 @@
 				<string>$(GOOGLE_REVERSED_CLIENT_ID)</string>
 			</array>
 		</dict>
-		<!-- App URL Scheme for deep linking -->
 		<dict>
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
@@ -108,36 +45,54 @@
 			</array>
 		</dict>
 	</array>
-
-	<!-- ==========================================
-	     Background Modes (if needed)
-	     ========================================== -->
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>bluetooth-central</string>
-		<string>remote-notification</string>
-	</array>
-	<key>BGTaskSchedulerPermittedIdentifiers</key>
-	<array>
-		<string>com.kirole.app.ble.sync</string>
-	</array>
-
-	<!-- ==========================================
-	     App Transport Security
-	     ========================================== -->
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>GIDClientID</key>
+	<string>$(GOOGLE_CLIENT_ID)</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
 		<false/>
 	</dict>
-
-	<!-- ==========================================
-	     Scene Configuration
-	     ========================================== -->
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Kirole uses Bluetooth to connect with your E-ink companion device and display your pet.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>Kirole uses Bluetooth to communicate with your E-ink companion device.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Kirole needs full calendar access to sync your events and help you stay organized with your pet companion.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Kirole needs calendar access to sync your events and help you stay organized with your pet companion.</string>
+	<key>NSCalendarsWriteOnlyAccessUsageDescription</key>
+	<string>Kirole needs calendar write access to create events for your tasks and habits.</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>Kirole needs full reminders access to sync your tasks and help track your habits.</string>
+	<key>NSRemindersUsageDescription</key>
+	<string>Kirole needs reminders access to sync your tasks and help track your habits.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
 		<false/>
 	</dict>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>bluetooth-central</string>
+		<string>remote-notification</string>
+		<string>processing</string>
+	</array>
+	<key>UILaunchScreen</key>
+	<dict/>
+	<key>UIRequiresFullScreen</key>
+	<true/>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
 </dict>
 </plist>
