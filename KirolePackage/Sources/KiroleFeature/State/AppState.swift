@@ -51,6 +51,7 @@ public final class AppState {
 
     // Device Mode
     public var deviceMode: DeviceMode = .interactive
+    public var focusEnforcementMode: FocusEnforcementMode = .standard
     public var isDemoMode: Bool = false
 
     // UI State

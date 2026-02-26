@@ -52,11 +52,11 @@ struct GoogleSyncEngineResilienceTests {
 struct FocusSessionPersistenceTests {
     @Test("Ending focus session keeps completed session in memory and updates summary")
     @MainActor
-    func endingSessionUpdatesInMemoryState() {
+    func endingSessionUpdatesInMemoryState() async {
         let service = FocusSessionService.shared
         let baseline = service.todaySessions.count
 
-        service.startSession(taskId: "focus-test-\(UUID().uuidString)", taskTitle: "Focus Test Task")
+        await service.startSession(taskId: "focus-test-\(UUID().uuidString)", taskTitle: "Focus Test Task")
         service.endSession(reason: .completed)
 
         #expect(service.activeSession == nil)

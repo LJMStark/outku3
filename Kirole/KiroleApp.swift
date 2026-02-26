@@ -10,7 +10,8 @@ struct KiroleApp: App {
             supabaseURL: BuildSecrets.supabaseURL,
             supabaseAnonKey: BuildSecrets.supabaseAnonKey,
             openRouterAPIKey: BuildSecrets.openRouterAPIKey,
-            bleSharedSecret: BuildSecrets.bleSharedSecret
+            bleSharedSecret: BuildSecrets.bleSharedSecret,
+            deepFocusFeatureEnabled: BuildSecrets.deepFocusFeatureEnabled
         )
         BLEBackgroundSyncScheduler.shared.register()
     }

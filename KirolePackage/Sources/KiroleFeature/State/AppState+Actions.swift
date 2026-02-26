@@ -104,6 +104,14 @@ extension AppState {
         }
     }
 
+    public func setFocusEnforcementMode(_ mode: FocusEnforcementMode) {
+        focusEnforcementMode = mode
+
+        Task {
+            await localStorage.saveFocusEnforcementMode(mode)
+        }
+    }
+
     public func addTask(_ task: TaskItem) {
         tasks = taskManager.addingTask(tasks, task: task)
         updateStatistics()

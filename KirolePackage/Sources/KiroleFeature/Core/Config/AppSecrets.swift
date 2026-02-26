@@ -6,22 +6,25 @@ public enum AppSecrets {
         var supabaseAnonKey: String?
         var openRouterAPIKey: String?
         var bleSharedSecret: String?
+        var deepFocusFeatureEnabled: Bool
     }
 
-    private nonisolated(unsafe) static var storage = Storage()
+    private nonisolated(unsafe) static var storage = Storage(deepFocusFeatureEnabled: false)
     private static let queue = DispatchQueue(label: "com.kirole.app.secrets", attributes: .concurrent)
 
     public static func configure(
         supabaseURL: String?,
         supabaseAnonKey: String?,
         openRouterAPIKey: String?,
-        bleSharedSecret: String?
+        bleSharedSecret: String?,
+        deepFocusFeatureEnabled: Bool = false
     ) {
         queue.sync(flags: .barrier) {
             storage.supabaseURL = normalize(supabaseURL)
             storage.supabaseAnonKey = normalize(supabaseAnonKey)
             storage.openRouterAPIKey = normalize(openRouterAPIKey)
             storage.bleSharedSecret = normalize(bleSharedSecret)
+            storage.deepFocusFeatureEnabled = deepFocusFeatureEnabled
         }
     }
 
@@ -38,6 +41,10 @@ public enum AppSecrets {
 
     public static var bleSharedSecret: String? {
         queue.sync { storage.bleSharedSecret }
+    }
+
+    public static var deepFocusFeatureEnabled: Bool {
+        queue.sync { storage.deepFocusFeatureEnabled }
     }
 
     private static func normalize(_ value: String?) -> String? {

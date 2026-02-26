@@ -20,6 +20,7 @@ public struct ContentView: View {
             }
         }
         .task {
+            _ = FocusSessionService.shared
             await authManager.initialize()
             appState.syncGoogleIntegrationStatusFromAuth()
             await configureOpenAI()
@@ -86,6 +87,7 @@ public struct ContentView: View {
             case .active:
                 Task {
                     await SyncScheduler.shared.syncOnResume()
+                    await FocusSessionService.shared.refreshProtectionStatus()
                 }
                 SyncScheduler.shared.startForegroundSync()
             case .background:

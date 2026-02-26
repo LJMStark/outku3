@@ -14,10 +14,10 @@ public enum BLEEventHandler {
     // MARK: - Payload Handling
 
     /// 处理接收到的 BLE 消息
-    static func handleReceivedPayload(_ message: BLEReceivedMessage, service: BLEService) {
+    static func handleReceivedPayload(_ message: BLEReceivedMessage, service: BLEService) async {
         // Handle event log batch (0x21) separately -- keep existing batch logic
         if message.type == BLEDataType.eventLogBatch.rawValue {
-            handleEventLogBatch(message.payload, service: service)
+            await handleEventLogBatch(message.payload, service: service)
             return
         }
 
@@ -26,15 +26,15 @@ public enum BLEEventHandler {
             return
         }
 
-        handleSingleEvent(eventLog, service: service)
+        await handleSingleEvent(eventLog, service: service)
     }
 
     // MARK: - Single Event Routing
 
     /// 处理单个设备事件，路由到对应的处理逻辑
-    private static func handleSingleEvent(_ eventLog: EventLog, service: BLEService) {
+    private static func handleSingleEvent(_ eventLog: EventLog, service: BLEService) async {
         // Persist the event and handle focus session (existing logic)
-        handleEventLogs([eventLog], service: service)
+        await handleEventLogs([eventLog], service: service)
 
         // Route to type-specific handlers
         switch eventLog.eventType {
@@ -178,10 +178,10 @@ public enum BLEEventHandler {
     // MARK: - Event Log Batch Processing
 
     /// 处理 Event Log 批次数据
-    private static func handleEventLogBatch(_ payload: Data, service: BLEService) {
+    private static func handleEventLogBatch(_ payload: Data, service: BLEService) async {
         let logs = parseEventLogBatchPayload(payload)
         guard !logs.isEmpty else { return }
-        handleEventLogs(logs, service: service)
+        await handleEventLogs(logs, service: service)
     }
 
     /// 解析 Event Log 批次 payload:
@@ -234,13 +234,13 @@ public enum BLEEventHandler {
     // MARK: - Event Log Handling
 
     /// 处理接收到的事件日志
-    static func handleEventLogs(_ logs: [EventLog], service: BLEService) {
+    static func handleEventLogs(_ logs: [EventLog], service: BLEService) async {
         Task {
             await persistEventLogs(logs)
         }
 
         for log in logs {
-            handleFocusSessionEvent(log)
+            await handleFocusSessionEvent(log)
             service.onEventLogReceived?(log)
         }
     }
@@ -276,14 +276,18 @@ public enum BLEEventHandler {
     // MARK: - Focus Session Events
 
     /// 处理专注会话相关事件
-    private static func handleFocusSessionEvent(_ eventLog: EventLog) {
+    private static func handleFocusSessionEvent(_ eventLog: EventLog) async {
         let focusService = FocusSessionService.shared
 
         switch eventLog.eventType {
         case .enterTaskIn:
             if let taskId = eventLog.taskId {
                 let taskTitle = AppState.shared.tasks.first { $0.id == taskId }?.title ?? "Unknown Task"
-                focusService.startSession(taskId: taskId, taskTitle: taskTitle)
+                await focusService.startSession(
+                    taskId: taskId,
+                    taskTitle: taskTitle,
+                    mode: AppState.shared.focusEnforcementMode
+                )
             }
 
         case .completeTask:

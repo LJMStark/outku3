@@ -36,6 +36,9 @@ struct SettingsView: View {
                 DeviceModeSection()
                     .appearAnimation(delay: 0.05, appeared: appeared)
 
+                SettingsFocusSection()
+                    .appearAnimation(delay: 0.08, appeared: appeared)
+
                 SettingsThemeSection()
                     .appearAnimation(delay: 0.1, appeared: appeared)
 

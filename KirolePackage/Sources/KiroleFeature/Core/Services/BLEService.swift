@@ -814,7 +814,7 @@ extension BLEService: CBPeripheralDelegate {
                     return
                 }
 
-                BLEEventHandler.handleReceivedPayload(message, service: self)
+                await BLEEventHandler.handleReceivedPayload(message, service: self)
             } catch {
                 ErrorReporter.log(error, context: "BLEService.didUpdateValueFor")
                 connectionState = .error(error.localizedDescription)

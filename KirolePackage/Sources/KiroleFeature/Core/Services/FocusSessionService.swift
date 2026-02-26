@@ -25,8 +25,11 @@ public final class FocusSessionService {
 
     // MARK: - Private Properties
 
-    private let localStorage = LocalStorage.shared
+    private let localStorage: LocalStorage
+    private let focusGuardService: any FocusGuardService
+    private let persistenceEnabled: Bool
     private var screenActivityTracker: ScreenActivityTracker?
+    private var pendingSessionPersistenceTask: Task<Void, Never>?
 
     // MARK: - Constants
 
@@ -38,11 +41,40 @@ public final class FocusSessionService {
 
     // MARK: - Initialization
 
-    private init() {
+    private init(
+        localStorage: LocalStorage = .shared,
+        focusGuardService: any FocusGuardService = ScreenTimeFocusGuardService.shared,
+        persistenceEnabled: Bool = true,
+        loadOnInit: Bool = true
+    ) {
+        self.localStorage = localStorage
+        self.focusGuardService = focusGuardService
+        self.persistenceEnabled = persistenceEnabled
+
+        guard loadOnInit else { return }
         Task { @MainActor in
             await loadTodaySessions()
+            await recoverSessionOnLaunchIfNeeded()
             setupScreenTracking()
         }
+    }
+
+    static func makeForTesting(
+        focusGuardService: any FocusGuardService,
+        persistenceEnabled: Bool = false
+    ) -> FocusSessionService {
+        FocusSessionService(
+            localStorage: .shared,
+            focusGuardService: focusGuardService,
+            persistenceEnabled: persistenceEnabled,
+            loadOnInit: false
+        )
+    }
+
+    func bootstrapForTesting() async {
+        await loadTodaySessions()
+        await recoverSessionOnLaunchIfNeeded()
+        setupScreenTracking()
     }
 
     private func setupScreenTracking() {
@@ -53,25 +85,44 @@ public final class FocusSessionService {
     // MARK: - Session Management
 
     /// 开始新的专注会话（当收到 EnterTaskIn 事件时调用）
-    public func startSession(taskId: String, taskTitle: String) {
+    public func startSession(
+        taskId: String,
+        taskTitle: String,
+        mode requestedMode: FocusEnforcementMode = .standard
+    ) async {
         // 如果有活跃会话，先结束它
         if activeSession != nil {
             endSession(reason: .timeout)
         }
 
+        let protectionContext = await resolveProtectionContext(requestedMode: requestedMode)
         let session = FocusSession(
             taskId: taskId,
             taskTitle: taskTitle,
-            startTime: Date()
+            startTime: Date(),
+            mode: protectionContext.mode,
+            protectionState: protectionContext.protectionState,
+            interruptionSource: protectionContext.interruptionSource
         )
 
         activeSession = session
         screenActivityTracker?.markSessionStart()
+        await waitForPendingSessionPersistence()
+        await persistActiveSessionIfNeeded(session)
     }
 
     /// 结束当前专注会话（当收到 CompleteTask 或 SkipTask 事件时调用）
     public func endSession(reason: FocusEndReason) {
         guard var session = activeSession else { return }
+
+        if session.protectionState == .protected {
+            focusGuardService.clearShield()
+            if persistenceEnabled {
+                Task {
+                    await localStorage.saveDeepFocusShieldActive(false)
+                }
+            }
+        }
 
         let endTime = Date()
         session.endTime = endTime
@@ -99,8 +150,10 @@ public final class FocusSessionService {
         updateStatistics()
 
         // 持久化
-        Task {
-            await saveSessions()
+        scheduleSessionPersistence { [weak self] in
+            guard let self else { return }
+            await self.clearPersistedActiveSessionIfNeeded()
+            await self.saveSessions()
         }
     }
 
@@ -123,6 +176,28 @@ public final class FocusSessionService {
         }
     }
 
+    /// 应用回到前台时，刷新深度专注权限并在必要时降级
+    public func refreshProtectionStatus() async {
+        guard var current = activeSession else { return }
+        guard current.protectionState == .protected else { return }
+
+        await focusGuardService.refreshAuthorizationStatus()
+        guard focusGuardService.authorizationStatus != .approved else { return }
+
+        focusGuardService.clearShield()
+        if persistenceEnabled {
+            await localStorage.saveDeepFocusShieldActive(false)
+        }
+        Task {
+            await FocusMetricsService.shared.record(.sessionInterrupted)
+        }
+        current.mode = .standard
+        current.protectionState = .fallback
+        current.interruptionSource = .authorizationRevoked
+        activeSession = current
+        await persistActiveSessionIfNeeded(current)
+    }
+
     // MARK: - Statistics
 
     private func updateStatistics() {
@@ -136,6 +211,7 @@ public final class FocusSessionService {
 
         let focusTimes = todayCompletedSessions.compactMap { $0.calculatedFocusTime }
         let todayFocusTime = focusTimes.reduce(0, +)
+        let protectedSessionCount = todayCompletedSessions.filter { $0.protectionState == .protected }.count
 
         let averageMinutes: Int = focusTimes.isEmpty ? 0 : Int(focusTimes.reduce(0, +) / Double(focusTimes.count) / 60)
         let longestMinutes: Int = Int((focusTimes.max() ?? 0) / 60)
@@ -145,6 +221,7 @@ public final class FocusSessionService {
         statistics = FocusStatistics(
             todayFocusTime: todayFocusTime,
             todaySessions: todayCompletedSessions.count,
+            protectedSessionCount: protectedSessionCount,
             averageSessionMinutes: averageMinutes,
             longestSessionMinutes: longestMinutes,
             interruptionCount: interruptions,
@@ -158,6 +235,7 @@ public final class FocusSessionService {
             statistics = FocusStatistics(
                 todayFocusTime: statistics.todayFocusTime,
                 todaySessions: statistics.todaySessions,
+                protectedSessionCount: statistics.protectedSessionCount,
                 averageSessionMinutes: statistics.averageSessionMinutes,
                 longestSessionMinutes: statistics.longestSessionMinutes,
                 interruptionCount: statistics.interruptionCount,
@@ -181,6 +259,8 @@ public final class FocusSessionService {
     }
 
     private func computeTrendDirection() async -> TrendDirection {
+        guard persistenceEnabled else { return .stable }
+
         let calendar = Calendar.current
         guard let yesterday = calendar.date(byAdding: .day, value: -1, to: calendar.startOfDay(for: Date())) else {
             return .stable
@@ -220,6 +300,8 @@ public final class FocusSessionService {
     // MARK: - Persistence
 
     private func loadTodaySessions() async {
+        guard persistenceEnabled else { return }
+
         do {
             if let sessions = try await localStorage.loadFocusSessions() {
                 let calendar = Calendar.current
@@ -242,6 +324,8 @@ public final class FocusSessionService {
     }
 
     private func saveSessions() async {
+        guard persistenceEnabled else { return }
+
         do {
             try await localStorage.saveFocusSessions(todaySessions)
             try await localStorage.saveFocusSessionsForDate(todaySessions, date: Date())
@@ -254,6 +338,179 @@ public final class FocusSessionService {
                 ),
                 context: "FocusSessionService.saveSessions"
             )
+        }
+    }
+
+    private func scheduleSessionPersistence(_ operation: @escaping @MainActor () async -> Void) {
+        let previousTask = pendingSessionPersistenceTask
+        pendingSessionPersistenceTask = Task { @MainActor in
+            _ = await previousTask?.result
+            await operation()
+        }
+    }
+
+    private func waitForPendingSessionPersistence() async {
+        _ = await pendingSessionPersistenceTask?.result
+    }
+
+    private func persistActiveSessionIfNeeded(_ session: FocusSession) async {
+        guard persistenceEnabled else { return }
+
+        do {
+            try await localStorage.saveActiveFocusSession(session)
+        } catch {
+            ErrorReporter.log(
+                .persistence(
+                    operation: "save",
+                    target: "focus_session_active.json",
+                    underlying: error.localizedDescription
+                ),
+                context: "FocusSessionService.persistActiveSessionIfNeeded"
+            )
+        }
+    }
+
+    private func clearPersistedActiveSessionIfNeeded() async {
+        guard persistenceEnabled else { return }
+
+        do {
+            try await localStorage.clearActiveFocusSession()
+        } catch {
+            ErrorReporter.log(
+                .persistence(
+                    operation: "delete",
+                    target: "focus_session_active.json",
+                    underlying: error.localizedDescription
+                ),
+                context: "FocusSessionService.clearPersistedActiveSessionIfNeeded"
+            )
+        }
+    }
+
+    private func recoverSessionOnLaunchIfNeeded() async {
+        guard persistenceEnabled else { return }
+
+        let wasShieldActive = await localStorage.loadDeepFocusShieldActive()
+        if wasShieldActive {
+            focusGuardService.clearShield()
+            await localStorage.saveDeepFocusShieldActive(false)
+        }
+
+        guard let recovered = try? await localStorage.loadActiveFocusSession() else {
+            return
+        }
+
+        applyRecoveredSession(recovered, wasShieldActive: wasShieldActive, endTime: Date())
+
+        await clearPersistedActiveSessionIfNeeded()
+        await saveSessions()
+    }
+
+    func recoverPersistedSessionForTesting(
+        _ persistedSession: FocusSession,
+        wasShieldActive: Bool,
+        endTime: Date = Date()
+    ) {
+        if wasShieldActive {
+            focusGuardService.clearShield()
+        }
+        applyRecoveredSession(persistedSession, wasShieldActive: wasShieldActive, endTime: endTime)
+    }
+
+    private func applyRecoveredSession(
+        _ persistedSession: FocusSession,
+        wasShieldActive: Bool,
+        endTime: Date
+    ) {
+        var recovered = persistedSession
+        recovered.endTime = endTime
+        recovered.endReason = .recoveredOnLaunch
+        recovered.screenUnlockEvents = []
+        recovered.calculatedFocusTime = calculateFocusTime(
+            sessionStart: recovered.startTime,
+            sessionEnd: endTime,
+            screenUnlockEvents: []
+        )
+        if wasShieldActive || recovered.protectionState == .protected {
+            recovered.mode = .standard
+            recovered.protectionState = .fallback
+            recovered.interruptionSource = .recoveredOnLaunch
+        }
+
+        todaySessions.append(recovered)
+        activeSession = nil
+        updateStatistics()
+    }
+
+    // MARK: - Protection Resolution
+
+    private struct ProtectionContext {
+        var mode: FocusEnforcementMode
+        var protectionState: FocusProtectionState
+        var interruptionSource: FocusInterruptionSource?
+    }
+
+    private func resolveProtectionContext(requestedMode: FocusEnforcementMode) async -> ProtectionContext {
+        guard requestedMode == .deepFocus else {
+            return ProtectionContext(mode: .standard, protectionState: .unprotected, interruptionSource: nil)
+        }
+
+        guard focusGuardService.isDeepFocusFeatureEnabled else {
+            Task {
+                await FocusMetricsService.shared.record(.sessionFallback)
+            }
+            return ProtectionContext(mode: .standard, protectionState: .fallback, interruptionSource: .featureDisabled)
+        }
+        guard focusGuardService.isDeepFocusCapable else {
+            Task {
+                await FocusMetricsService.shared.record(.sessionFallback)
+            }
+            return ProtectionContext(mode: .standard, protectionState: .fallback, interruptionSource: .capabilityUnavailable)
+        }
+
+        await focusGuardService.refreshAuthorizationStatus()
+        var status = focusGuardService.authorizationStatus
+        if status == .notDetermined {
+            Task {
+                await FocusMetricsService.shared.record(.authorizationRequested)
+            }
+            status = await focusGuardService.requestAuthorization()
+        }
+
+        guard status == .approved else {
+            Task {
+                await FocusMetricsService.shared.record(.authorizationDenied)
+                await FocusMetricsService.shared.record(.sessionFallback)
+            }
+            return ProtectionContext(mode: .standard, protectionState: .fallback, interruptionSource: .permissionDenied)
+        }
+
+        Task {
+            await FocusMetricsService.shared.record(.authorizationApproved)
+        }
+
+        guard let selection = focusGuardService.currentSelection(), !selection.isEmpty else {
+            Task {
+                await FocusMetricsService.shared.record(.sessionFallback)
+            }
+            return ProtectionContext(mode: .standard, protectionState: .fallback, interruptionSource: .selectionMissing)
+        }
+
+        do {
+            try focusGuardService.applyShield(selection: selection)
+            if persistenceEnabled {
+                await localStorage.saveDeepFocusShieldActive(true)
+            }
+            Task {
+                await FocusMetricsService.shared.record(.protectionApplied)
+            }
+            return ProtectionContext(mode: .deepFocus, protectionState: .protected, interruptionSource: nil)
+        } catch {
+            Task {
+                await FocusMetricsService.shared.record(.protectionApplyFailed)
+                await FocusMetricsService.shared.record(.sessionFallback)
+            }
+            return ProtectionContext(mode: .standard, protectionState: .fallback, interruptionSource: .shieldApplyFailed)
         }
     }
 

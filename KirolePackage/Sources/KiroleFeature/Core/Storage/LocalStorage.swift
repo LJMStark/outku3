@@ -15,6 +15,9 @@ public actor LocalStorage {
         static let lastEventLogTimestamp = "lastEventLogTimestamp"
         static let lastDayPackHash = "lastDayPackHash"
         static let lastBleSyncTime = "lastBleSyncTime"
+        static let focusEnforcementMode = "focusEnforcementMode"
+        static let deepFocusShieldActive = "deepFocusShieldActive"
+        static let deepFocusSelectionCount = "deepFocusSelectionCount"
     }
 
     private var documentsDirectory: URL {
@@ -205,6 +208,18 @@ public actor LocalStorage {
         return try load([FocusSession].self, from: "focus_sessions_\(dateKey).json")
     }
 
+    public func saveActiveFocusSession(_ session: FocusSession) throws {
+        try save(session, to: "focus_session_active.json")
+    }
+
+    public func loadActiveFocusSession() throws -> FocusSession? {
+        try load(FocusSession.self, from: "focus_session_active.json")
+    }
+
+    public func clearActiveFocusSession() throws {
+        try deleteFile(named: "focus_session_active.json")
+    }
+
     private static func dateKey(from date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
@@ -250,6 +265,41 @@ public actor LocalStorage {
         userDefaults.object(forKey: Keys.lastBleSyncTime) as? Date
     }
 
+    // MARK: - Focus Enforcement Settings
+
+    public func saveFocusEnforcementMode(_ mode: FocusEnforcementMode) {
+        userDefaults.set(mode.rawValue, forKey: Keys.focusEnforcementMode)
+    }
+
+    public func loadFocusEnforcementMode() -> FocusEnforcementMode? {
+        guard let raw = userDefaults.string(forKey: Keys.focusEnforcementMode) else {
+            return nil
+        }
+        return FocusEnforcementMode(rawValue: raw)
+    }
+
+    public func saveDeepFocusSelection(_ selection: FocusAppSelection) throws {
+        try save(selection, to: "deep_focus_selection.json")
+        userDefaults.set(selection.selectedApplicationCount, forKey: Keys.deepFocusSelectionCount)
+    }
+
+    public func loadDeepFocusSelection() throws -> FocusAppSelection? {
+        try load(FocusAppSelection.self, from: "deep_focus_selection.json")
+    }
+
+    public func clearDeepFocusSelection() throws {
+        try deleteFile(named: "deep_focus_selection.json")
+        userDefaults.removeObject(forKey: Keys.deepFocusSelectionCount)
+    }
+
+    public func saveDeepFocusShieldActive(_ active: Bool) {
+        userDefaults.set(active, forKey: Keys.deepFocusShieldActive)
+    }
+
+    public func loadDeepFocusShieldActive() -> Bool {
+        userDefaults.bool(forKey: Keys.deepFocusShieldActive)
+    }
+
     // MARK: - Dehydration Cache
 
     public func saveDehydrationCache(_ cache: DehydrationCache, taskId: String) throws {
@@ -291,6 +341,7 @@ public actor LocalStorage {
             "sync_state.json", "haiku_cache.json", "user_profile.json",
             "focus_sessions.json", "event_logs.json", "ai_interactions.json",
             "behavior_summary.json", "onboarding_profile.json",
+            "deep_focus_selection.json", "focus_session_active.json",
             "outbox.json", "google_sync_metadata.json"
         ]
         for file in files {
@@ -303,6 +354,9 @@ public actor LocalStorage {
         userDefaults.removeObject(forKey: Keys.lastEventLogTimestamp)
         userDefaults.removeObject(forKey: Keys.lastDayPackHash)
         userDefaults.removeObject(forKey: Keys.lastBleSyncTime)
+        userDefaults.removeObject(forKey: Keys.focusEnforcementMode)
+        userDefaults.removeObject(forKey: Keys.deepFocusShieldActive)
+        userDefaults.removeObject(forKey: Keys.deepFocusSelectionCount)
     }
 }
 
