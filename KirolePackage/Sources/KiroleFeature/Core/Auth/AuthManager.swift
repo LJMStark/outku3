@@ -30,34 +30,31 @@ public final class AuthManager {
 
     /// 在 App 启动时调用，恢复之前的登录状态
     public func initialize() async {
-        // 配置 Google Sign In
         googleSignInService.configure()
-
-        // 仅从 Keychain 恢复 Apple 登录态，避免启动时额外认证调用导致不稳定
         restoreAppleStateFromKeychain()
 
-        // 检查 Google 连接状态
         if let googleResult = try? await googleSignInService.restorePreviousSignIn() {
-            // Google SDK 恢复成功
-            isGoogleConnected = true
-            hasCalendarAccess = googleResult.hasCalendarAccess
-            hasTasksAccess = googleResult.hasTasksAccess
-
-            // 如果没有 Apple 登录，使用 Google 作为主要认证
-            if currentUser == nil {
-                let user = User(
-                    id: googleResult.userID,
-                    email: googleResult.email,
-                    displayName: googleResult.displayName,
-                    avatarURL: googleResult.avatarURL,
-                    authProvider: .google
-                )
-                currentUser = user
-                authState = .authenticated(user)
-            }
+            applyGoogleSignInResult(googleResult, isRestore: true)
         } else {
-            // Google SDK 恢复失败，尝试从 Keychain 恢复状态
             restoreGoogleStateFromKeychain()
+        }
+    }
+
+    private func applyGoogleSignInResult(_ result: GoogleSignInResult, isRestore: Bool) {
+        isGoogleConnected = true
+        hasCalendarAccess = result.hasCalendarAccess
+        hasTasksAccess = result.hasTasksAccess
+
+        if isRestore && currentUser == nil {
+            let user = User(
+                id: result.userID,
+                email: result.email,
+                displayName: result.displayName,
+                avatarURL: result.avatarURL,
+                authProvider: .google
+            )
+            currentUser = user
+            authState = .authenticated(user)
         }
     }
 
@@ -77,14 +74,12 @@ public final class AuthManager {
 
     /// 从 Keychain 恢复 Google 连接状态
     private func restoreGoogleStateFromKeychain() {
-        // 检查是否有有效的 tokens 和 scopes
         guard keychainService.getGoogleAccessToken() != nil,
               keychainService.getGoogleRefreshToken() != nil,
               let savedScopes = keychainService.getGoogleScopes() else {
             return
         }
 
-        // 从保存的 scopes 恢复权限状态
         isGoogleConnected = true
         hasCalendarAccess = savedScopes.contains("https://www.googleapis.com/auth/calendar.readonly")
         hasTasksAccess = savedScopes.contains("https://www.googleapis.com/auth/tasks")
@@ -104,11 +99,7 @@ public final class AuthManager {
                 displayName: result.displayName
             )
         } catch {
-            if let appleError = error as? AppleSignInError, case .canceled = appleError {
-                authState = .unauthenticated
-            } else {
-                authState = .error(error.localizedDescription)
-            }
+            handleAuthenticationError(error)
             throw error
         }
     }
@@ -122,15 +113,7 @@ public final class AuthManager {
                 throw AppleSignInError.invalidCredential
             }
 
-            var nameParts: [String] = []
-            if let givenName = credential.fullName?.givenName {
-                nameParts.append(givenName)
-            }
-            if let familyName = credential.fullName?.familyName {
-                nameParts.append(familyName)
-            }
-            let displayName = nameParts.isEmpty ? nil : nameParts.joined(separator: " ")
-
+            let displayName = buildDisplayName(from: credential.fullName)
             try completeAppleSignIn(
                 userIdentifier: credential.user,
                 email: credential.email,
@@ -139,6 +122,26 @@ public final class AuthManager {
         } catch {
             authState = .error(error.localizedDescription)
             throw error
+        }
+    }
+
+    private func buildDisplayName(from fullName: PersonNameComponents?) -> String? {
+        guard let fullName else { return nil }
+        var nameParts: [String] = []
+        if let givenName = fullName.givenName {
+            nameParts.append(givenName)
+        }
+        if let familyName = fullName.familyName {
+            nameParts.append(familyName)
+        }
+        return nameParts.isEmpty ? nil : nameParts.joined(separator: " ")
+    }
+
+    private func handleAuthenticationError(_ error: Error) {
+        if let appleError = error as? AppleSignInError, case .canceled = appleError {
+            authState = .unauthenticated
+        } else {
+            authState = .error(error.localizedDescription)
         }
     }
 

@@ -16,8 +16,15 @@ public actor SyncManager {
     // MARK: - Initialize
 
     public func initialize() async {
-        if let state = try? await localStorage.loadSyncState() {
-            syncState = state
+        do {
+            if let state = try await localStorage.loadSyncState() {
+                syncState = state
+            }
+        } catch {
+            ErrorReporter.log(
+                .persistence(operation: "load", target: "sync_state.json", underlying: error.localizedDescription),
+                context: "SyncManager.initialize"
+            )
         }
     }
 
@@ -52,8 +59,23 @@ public actor SyncManager {
         syncState.status = failedCount == 0 ? .synced : .pending
         syncState.pendingChanges = 0
 
-        try? await localStorage.saveSyncState(syncState)
-        try? await supabaseService.saveSyncState(syncState, userId: userId)
+        do {
+            try await localStorage.saveSyncState(syncState)
+        } catch {
+            ErrorReporter.log(
+                .persistence(operation: "save", target: "sync_state.json", underlying: error.localizedDescription),
+                context: "SyncManager.performFullSync"
+            )
+        }
+
+        do {
+            try await supabaseService.saveSyncState(syncState, userId: userId)
+        } catch {
+            ErrorReporter.log(
+                .sync(component: "Supabase", underlying: error.localizedDescription),
+                context: "SyncManager.performFullSync"
+            )
+        }
 
         return failedCount == 0
             ? .success(itemsSynced: syncedCount)
@@ -131,23 +153,57 @@ public actor SyncManager {
     // MARK: - Load Data
 
     public func loadPet(userId: String?) async -> Pet? {
-        let localPet = try? await localStorage.loadPet()
+        do {
+            let localPet = try await localStorage.loadPet()
 
-        if let userId = userId {
-            Task { try? await syncPet(userId: userId) }
+            if let userId = userId {
+                Task {
+                    do {
+                        try await syncPet(userId: userId)
+                    } catch {
+                        ErrorReporter.log(
+                            .sync(component: "Pet", underlying: error.localizedDescription),
+                            context: "SyncManager.loadPet.backgroundSync"
+                        )
+                    }
+                }
+            }
+
+            return localPet
+        } catch {
+            ErrorReporter.log(
+                .persistence(operation: "load", target: "pet.json", underlying: error.localizedDescription),
+                context: "SyncManager.loadPet"
+            )
+            return nil
         }
-
-        return localPet
     }
 
     public func loadStreak(userId: String?) async -> Streak? {
-        let localStreak = try? await localStorage.loadStreak()
+        do {
+            let localStreak = try await localStorage.loadStreak()
 
-        if let userId = userId {
-            Task { try? await syncStreak(userId: userId) }
+            if let userId = userId {
+                Task {
+                    do {
+                        try await syncStreak(userId: userId)
+                    } catch {
+                        ErrorReporter.log(
+                            .sync(component: "Streak", underlying: error.localizedDescription),
+                            context: "SyncManager.loadStreak.backgroundSync"
+                        )
+                    }
+                }
+            }
+
+            return localStreak
+        } catch {
+            ErrorReporter.log(
+                .persistence(operation: "load", target: "streak.json", underlying: error.localizedDescription),
+                context: "SyncManager.loadStreak"
+            )
+            return nil
         }
-
-        return localStreak
     }
 
     // MARK: - Sync State

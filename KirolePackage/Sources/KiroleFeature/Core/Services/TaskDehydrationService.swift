@@ -88,21 +88,36 @@ public final class TaskDehydrationService {
     // MARK: - Cache
 
     private func loadCachedActions(for task: TaskItem) async -> [MicroAction]? {
-        guard let cached = try? await localStorage.loadDehydrationCache(taskId: task.id) else {
+        do {
+            guard let cached = try await localStorage.loadDehydrationCache(taskId: task.id) else {
+                return nil
+            }
+            guard Date().timeIntervalSince(cached.cachedAt) < Self.cacheExpiry else {
+                return nil
+            }
+            guard cached.taskTitle == task.title else {
+                return nil
+            }
+            return cached.actions
+        } catch {
+            ErrorReporter.log(
+                .persistence(operation: "load", target: "dehydration_cache_\(task.id).json", underlying: error.localizedDescription),
+                context: "TaskDehydrationService.loadCachedActions"
+            )
             return nil
         }
-        guard Date().timeIntervalSince(cached.cachedAt) < Self.cacheExpiry else {
-            return nil
-        }
-        guard cached.taskTitle == task.title else {
-            return nil
-        }
-        return cached.actions
     }
 
     private func cacheActions(_ actions: [MicroAction], for task: TaskItem) async {
-        let cached = DehydrationCache(taskTitle: task.title, actions: actions, cachedAt: Date())
-        try? await localStorage.saveDehydrationCache(cached, taskId: task.id)
+        do {
+            let cached = DehydrationCache(taskTitle: task.title, actions: actions, cachedAt: Date())
+            try await localStorage.saveDehydrationCache(cached, taskId: task.id)
+        } catch {
+            ErrorReporter.log(
+                .persistence(operation: "save", target: "dehydration_cache_\(task.id).json", underlying: error.localizedDescription),
+                context: "TaskDehydrationService.cacheActions"
+            )
+        }
     }
 
     // MARK: - Schedule Gap Analysis

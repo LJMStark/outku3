@@ -188,7 +188,14 @@ public final class GoogleSignInService: @unchecked Sendable {
 
     private func persistScopesIfAvailable(_ grantedScopes: [String]) {
         guard !grantedScopes.isEmpty else { return }
-        try? keychainService.saveGoogleScopes(grantedScopes)
+        do {
+            try keychainService.saveGoogleScopes(grantedScopes)
+        } catch {
+            ErrorReporter.log(
+                .persistence(operation: "save", target: "google_scopes", underlying: error.localizedDescription),
+                context: "GoogleSignInService.persistScopesIfAvailable"
+            )
+        }
     }
 }
 

@@ -10,38 +10,14 @@ extension AppState {
         let isCompleted = updatedTask.isCompleted
 
         tasks = taskManager.withTask(tasks, updatedTask: updatedTask)
-
-        if isCompleted {
-            SoundService.shared.playWithHaptic(.taskComplete, haptic: .success)
-
-            var updatedPet = pet
-            updatedPet.adventuresCount += 1
-            updatedPet.progress = min(1.0, updatedPet.progress + ProgressConstants.taskCompletionIncrement)
-            updatedPet.points += ProgressConstants.pointsPerTask
-            updatedPet.lastInteraction = Date()
-            pet = updatedPet
-
-            streak = petManager.updateStreak(streak)
-        } else {
-            SoundService.shared.playWithHaptic(.taskUncomplete, haptic: .light)
-
-            var updatedPet = pet
-            updatedPet.adventuresCount = max(0, updatedPet.adventuresCount - 1)
-            updatedPet.progress = max(0, updatedPet.progress - ProgressConstants.taskCompletionIncrement)
-            updatedPet.points = max(0, updatedPet.points - ProgressConstants.pointsPerTask)
-            updatedPet.lastInteraction = Date()
-            pet = updatedPet
-        }
-
+        updatePetForTaskToggle(isCompleted: isCompleted)
         updateStatistics()
 
-        if isCompleted {
-            Task { @MainActor in
+        Task { @MainActor in
+            if isCompleted {
                 await checkAndTriggerEvolution()
             }
-        }
 
-        Task { @MainActor in
             await persistTaskAndPetState(
                 tasks: self.tasks,
                 pet: self.pet,
@@ -49,31 +25,10 @@ extension AppState {
                 context: "AppState.toggleTaskCompletion"
             )
 
-            switch updatedTask.source {
-            case .google:
-                await self.googleSyncEngine.enqueueChange(task: updatedTask, action: .updateStatus)
-                do {
-                    try await self.googleTasksAPI.syncTaskCompletion(updatedTask)
-                } catch {
-                    self.reportSyncError(error, component: "Google Tasks", context: "AppState.toggleTaskCompletion")
-                }
-            case .apple:
-                do {
-                    try await self.appleSyncEngine.pushReminderUpdate(updatedTask)
-                } catch {
-                    self.reportSyncError(error, component: "Apple Reminders", context: "AppState.toggleTaskCompletion")
-                }
-            default:
-                break
-            }
-        }
-
-        Task { @MainActor in
+            await syncTaskToExternalService(updatedTask)
             await updatePetState()
-        }
 
-        if isCompleted {
-            Task { @MainActor in
+            if isCompleted {
                 currentHaiku = await haikuService.generateCompletionHaiku(
                     tasksCompleted: statistics.todayCompleted,
                     totalTasks: statistics.todayTotal,
@@ -81,6 +36,43 @@ extension AppState {
                     streak: streak.currentStreak
                 )
             }
+        }
+    }
+
+    private func updatePetForTaskToggle(isCompleted: Bool) {
+        if isCompleted {
+            SoundService.shared.playWithHaptic(.taskComplete, haptic: .success)
+            pet.adventuresCount += 1
+            pet.progress = min(1.0, pet.progress + ProgressConstants.taskCompletionIncrement)
+            pet.points += ProgressConstants.pointsPerTask
+            pet.lastInteraction = Date()
+            streak = petManager.updateStreak(streak)
+        } else {
+            SoundService.shared.playWithHaptic(.taskUncomplete, haptic: .light)
+            pet.adventuresCount = max(0, pet.adventuresCount - 1)
+            pet.progress = max(0, pet.progress - ProgressConstants.taskCompletionIncrement)
+            pet.points = max(0, pet.points - ProgressConstants.pointsPerTask)
+            pet.lastInteraction = Date()
+        }
+    }
+
+    private func syncTaskToExternalService(_ task: TaskItem) async {
+        switch task.source {
+        case .google:
+            await googleSyncEngine.enqueueChange(task: task, action: .updateStatus)
+            do {
+                try await googleTasksAPI.syncTaskCompletion(task)
+            } catch {
+                reportSyncError(error, component: "Google Tasks", context: "AppState.toggleTaskCompletion")
+            }
+        case .apple:
+            do {
+                try await appleSyncEngine.pushReminderUpdate(task)
+            } catch {
+                reportSyncError(error, component: "Apple Reminders", context: "AppState.toggleTaskCompletion")
+            }
+        default:
+            break
         }
     }
 

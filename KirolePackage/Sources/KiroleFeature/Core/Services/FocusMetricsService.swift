@@ -14,17 +14,17 @@ public actor FocusMetricsService {
     public static let shared = FocusMetricsService()
 
     private let defaults = UserDefaults.standard
-    private let prefix = "focus.metrics."
+    private let keyPrefix = "focus.metrics."
 
     private init() {}
 
     public func record(_ event: FocusMetricEvent) {
-        let key = prefix + event.rawValue
+        let key = keyPrefix + event.rawValue
         let current = defaults.integer(forKey: key)
         defaults.set(current + 1, forKey: key)
     }
 
     public func count(for event: FocusMetricEvent) -> Int {
-        defaults.integer(forKey: prefix + event.rawValue)
+        defaults.integer(forKey: keyPrefix + event.rawValue)
     }
 }

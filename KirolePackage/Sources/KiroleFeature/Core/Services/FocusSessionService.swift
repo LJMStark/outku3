@@ -213,8 +213,8 @@ public final class FocusSessionService {
         let todayFocusTime = focusTimes.reduce(0, +)
         let protectedSessionCount = todayCompletedSessions.filter { $0.protectionState == .protected }.count
 
-        let averageMinutes: Int = focusTimes.isEmpty ? 0 : Int(focusTimes.reduce(0, +) / Double(focusTimes.count) / 60)
-        let longestMinutes: Int = Int((focusTimes.max() ?? 0) / 60)
+        let averageMinutes = focusTimes.isEmpty ? 0 : Int(focusTimes.reduce(0, +) / Double(focusTimes.count) / 60)
+        let longestMinutes = Int((focusTimes.max() ?? 0) / 60)
         let interruptions = todayCompletedSessions.reduce(0) { $0 + $1.screenUnlockEvents.count }
         let peakHour = computePeakFocusHour(sessions: todayCompletedSessions, calendar: calendar)
 
@@ -229,19 +229,9 @@ public final class FocusSessionService {
             focusTrendDirection: .stable
         )
 
-        // Compute trend asynchronously and update
         Task {
             let trend = await computeTrendDirection()
-            statistics = FocusStatistics(
-                todayFocusTime: statistics.todayFocusTime,
-                todaySessions: statistics.todaySessions,
-                protectedSessionCount: statistics.protectedSessionCount,
-                averageSessionMinutes: statistics.averageSessionMinutes,
-                longestSessionMinutes: statistics.longestSessionMinutes,
-                interruptionCount: statistics.interruptionCount,
-                peakFocusHour: statistics.peakFocusHour,
-                focusTrendDirection: trend
-            )
+            statistics.focusTrendDirection = trend
         }
     }
 

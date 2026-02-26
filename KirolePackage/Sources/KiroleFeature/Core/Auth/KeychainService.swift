@@ -45,18 +45,42 @@ public final class KeychainService: @unchecked Sendable {
     }
 
     public func getGoogleAccessToken() -> String? {
-        try? keychain.get(Keys.googleAccessToken)
+        do {
+            return try keychain.get(Keys.googleAccessToken)
+        } catch {
+            ErrorReporter.log(
+                .persistence(operation: "read", target: "google_access_token", underlying: error.localizedDescription),
+                context: "KeychainService.getGoogleAccessToken"
+            )
+            return nil
+        }
     }
 
     public func getGoogleRefreshToken() -> String? {
-        try? keychain.get(Keys.googleRefreshToken)
+        do {
+            return try keychain.get(Keys.googleRefreshToken)
+        } catch {
+            ErrorReporter.log(
+                .persistence(operation: "read", target: "google_refresh_token", underlying: error.localizedDescription),
+                context: "KeychainService.getGoogleRefreshToken"
+            )
+            return nil
+        }
     }
 
     public func getGoogleTokenExpiry() -> Date? {
-        guard let expiryString = try? keychain.get(Keys.googleTokenExpiry) else {
+        do {
+            guard let expiryString = try keychain.get(Keys.googleTokenExpiry) else {
+                return nil
+            }
+            return ISO8601DateFormatter().date(from: expiryString)
+        } catch {
+            ErrorReporter.log(
+                .persistence(operation: "read", target: "google_token_expiry", underlying: error.localizedDescription),
+                context: "KeychainService.getGoogleTokenExpiry"
+            )
             return nil
         }
-        return ISO8601DateFormatter().date(from: expiryString)
     }
 
     public func isGoogleTokenExpired() -> Bool {
@@ -68,10 +92,17 @@ public final class KeychainService: @unchecked Sendable {
     }
 
     public func clearGoogleTokens() {
-        try? keychain.remove(Keys.googleAccessToken)
-        try? keychain.remove(Keys.googleRefreshToken)
-        try? keychain.remove(Keys.googleTokenExpiry)
-        try? keychain.remove(Keys.googleGrantedScopes)
+        do {
+            try keychain.remove(Keys.googleAccessToken)
+            try keychain.remove(Keys.googleRefreshToken)
+            try keychain.remove(Keys.googleTokenExpiry)
+            try keychain.remove(Keys.googleGrantedScopes)
+        } catch {
+            ErrorReporter.log(
+                .persistence(operation: "delete", target: "google_tokens", underlying: error.localizedDescription),
+                context: "KeychainService.clearGoogleTokens"
+            )
+        }
     }
 
     // MARK: - Google Scopes
@@ -84,16 +115,31 @@ public final class KeychainService: @unchecked Sendable {
 
     /// 获取保存的 Google scopes
     public func getGoogleScopes() -> [String]? {
-        guard let scopesString = try? keychain.get(Keys.googleGrantedScopes),
-              !scopesString.isEmpty else {
+        do {
+            guard let scopesString = try keychain.get(Keys.googleGrantedScopes),
+                  !scopesString.isEmpty else {
+                return nil
+            }
+            return scopesString.components(separatedBy: ",")
+        } catch {
+            ErrorReporter.log(
+                .persistence(operation: "read", target: "google_scopes", underlying: error.localizedDescription),
+                context: "KeychainService.getGoogleScopes"
+            )
             return nil
         }
-        return scopesString.components(separatedBy: ",")
     }
 
     /// 清除 Google scopes
     public func clearGoogleScopes() {
-        try? keychain.remove(Keys.googleGrantedScopes)
+        do {
+            try keychain.remove(Keys.googleGrantedScopes)
+        } catch {
+            ErrorReporter.log(
+                .persistence(operation: "delete", target: "google_scopes", underlying: error.localizedDescription),
+                context: "KeychainService.clearGoogleScopes"
+            )
+        }
     }
 
     // MARK: - Apple Sign In
@@ -103,16 +149,31 @@ public final class KeychainService: @unchecked Sendable {
     }
 
     public func getAppleUserIdentifier() -> String? {
-        guard let storedIdentifier = try? keychain.get(Keys.appleUserIdentifier) else {
+        do {
+            guard let storedIdentifier = try keychain.get(Keys.appleUserIdentifier) else {
+                return nil
+            }
+            let identifier = storedIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !identifier.isEmpty else { return nil }
+            return identifier
+        } catch {
+            ErrorReporter.log(
+                .persistence(operation: "read", target: "apple_user_identifier", underlying: error.localizedDescription),
+                context: "KeychainService.getAppleUserIdentifier"
+            )
             return nil
         }
-        let identifier = storedIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !identifier.isEmpty else { return nil }
-        return identifier
     }
 
     public func clearAppleUserIdentifier() {
-        try? keychain.remove(Keys.appleUserIdentifier)
+        do {
+            try keychain.remove(Keys.appleUserIdentifier)
+        } catch {
+            ErrorReporter.log(
+                .persistence(operation: "delete", target: "apple_user_identifier", underlying: error.localizedDescription),
+                context: "KeychainService.clearAppleUserIdentifier"
+            )
+        }
     }
 
     // MARK: - Supabase Tokens
@@ -123,16 +184,39 @@ public final class KeychainService: @unchecked Sendable {
     }
 
     public func getSupabaseAccessToken() -> String? {
-        try? keychain.get(Keys.supabaseAccessToken)
+        do {
+            return try keychain.get(Keys.supabaseAccessToken)
+        } catch {
+            ErrorReporter.log(
+                .persistence(operation: "read", target: "supabase_access_token", underlying: error.localizedDescription),
+                context: "KeychainService.getSupabaseAccessToken"
+            )
+            return nil
+        }
     }
 
     public func getSupabaseRefreshToken() -> String? {
-        try? keychain.get(Keys.supabaseRefreshToken)
+        do {
+            return try keychain.get(Keys.supabaseRefreshToken)
+        } catch {
+            ErrorReporter.log(
+                .persistence(operation: "read", target: "supabase_refresh_token", underlying: error.localizedDescription),
+                context: "KeychainService.getSupabaseRefreshToken"
+            )
+            return nil
+        }
     }
 
     public func clearSupabaseTokens() {
-        try? keychain.remove(Keys.supabaseAccessToken)
-        try? keychain.remove(Keys.supabaseRefreshToken)
+        do {
+            try keychain.remove(Keys.supabaseAccessToken)
+            try keychain.remove(Keys.supabaseRefreshToken)
+        } catch {
+            ErrorReporter.log(
+                .persistence(operation: "delete", target: "supabase_tokens", underlying: error.localizedDescription),
+                context: "KeychainService.clearSupabaseTokens"
+            )
+        }
     }
 
     // MARK: - OpenAI API Key
@@ -142,11 +226,26 @@ public final class KeychainService: @unchecked Sendable {
     }
 
     public func getOpenAIAPIKey() -> String? {
-        try? keychain.get(Keys.openAIAPIKey)
+        do {
+            return try keychain.get(Keys.openAIAPIKey)
+        } catch {
+            ErrorReporter.log(
+                .persistence(operation: "read", target: "openai_api_key", underlying: error.localizedDescription),
+                context: "KeychainService.getOpenAIAPIKey"
+            )
+            return nil
+        }
     }
 
     public func clearOpenAIAPIKey() {
-        try? keychain.remove(Keys.openAIAPIKey)
+        do {
+            try keychain.remove(Keys.openAIAPIKey)
+        } catch {
+            ErrorReporter.log(
+                .persistence(operation: "delete", target: "openai_api_key", underlying: error.localizedDescription),
+                context: "KeychainService.clearOpenAIAPIKey"
+            )
+        }
     }
 
     public func hasOpenAIAPIKey() -> Bool {

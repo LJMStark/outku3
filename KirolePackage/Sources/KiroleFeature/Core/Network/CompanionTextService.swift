@@ -241,7 +241,14 @@ public final class CompanionTextService {
             petName: petName
         )
 
-        let existing = (try? await localStorage.loadAIInteractions()) ?? []
-        try? await localStorage.saveAIInteractions(existing + [interaction])
+        do {
+            let existing = (try? await localStorage.loadAIInteractions()) ?? []
+            try await localStorage.saveAIInteractions(existing + [interaction])
+        } catch {
+            ErrorReporter.log(
+                .persistence(operation: "save", target: "ai_interactions.json", underlying: error.localizedDescription),
+                context: "CompanionTextService.saveInteraction"
+            )
+        }
     }
 }

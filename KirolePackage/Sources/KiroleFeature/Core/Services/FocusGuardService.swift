@@ -105,11 +105,7 @@ public final class ScreenTimeFocusGuardService: FocusGuardService {
     }
 
     public func refreshAuthorizationStatus() async {
-        guard isDeepFocusFeatureEnabled else {
-            authorizationStatus = .unsupported
-            return
-        }
-        guard isDeepFocusCapable else {
+        guard canProceedWithDeepFocus() else {
             authorizationStatus = .unsupported
             return
         }
@@ -122,11 +118,7 @@ public final class ScreenTimeFocusGuardService: FocusGuardService {
     }
 
     public func requestAuthorization() async -> FocusAuthorizationStatus {
-        guard isDeepFocusFeatureEnabled else {
-            authorizationStatus = .unsupported
-            return authorizationStatus
-        }
-        guard isDeepFocusCapable else {
+        guard canProceedWithDeepFocus() else {
             authorizationStatus = .unsupported
             return authorizationStatus
         }
@@ -143,6 +135,10 @@ public final class ScreenTimeFocusGuardService: FocusGuardService {
         #endif
 
         return authorizationStatus
+    }
+
+    private func canProceedWithDeepFocus() -> Bool {
+        isDeepFocusFeatureEnabled && isDeepFocusCapable
     }
 
     public func presentAppPicker() {
