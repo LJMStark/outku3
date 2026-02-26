@@ -28,6 +28,24 @@ For agent workflow and interaction rules, see `AGENTS.md`.
 - **UI Framework**: SwiftUI with Model-View (MV) pattern - no ViewModels
 - **Testing**: Swift Testing framework (`@Test`, `#expect`, `#require`)
 
+## Apple Developer Account
+
+- **Account Type**: Paid Apple Developer Program ($99/year)
+- **Email**: xiaoyouzi2010@gmail.com
+- **Team ID**: 93SL23NPNG
+- **Team Name**: Jiaming Liang
+- **Status**: Active
+- **Capabilities**: Can publish to TestFlight and App Store
+- **Family Controls**: Distribution version application submitted
+  - Application submitted: 2026-02-26
+  - Approval status: Pending review (1-2 weeks)
+  - Contact: developer-relations@apple.com
+  - Current limitation: Cannot upload to TestFlight until approved
+  - Temporary workaround: Use Development version for local testing
+  - Archive attempt: 2026-02-26 20:26 - Failed (Provisioning Profile missing Distribution entitlement)
+  - Next steps: Monitor email daily, prepare screenshots/video if requested
+  - Progress tracking: See TESTFLIGHT_PROGRESS.md
+
 ## Build & Test Commands
 
 When XcodeBuildMCP tools are available, prefer them over raw xcodebuild:
@@ -272,20 +290,19 @@ var body: some View {
 - Spectra 6 pixel encoding: 4bpp (2 pixels per byte), color index: Black=0x0, White=0x1, Yellow=0x2, Red=0x3, Blue=0x5, Green=0x6
 - Frame buffer size: width * height / 2 bytes (4寸: 120,000 bytes, 7.3寸: 192,000 bytes)
 
-## Onboarding Flow (15 Screens)
+## Onboarding Flow (14 Screens)
 
-15-screen onboarding ported from React + Framer Motion (`temp/app/`), fully native SwiftUI.
+14-screen onboarding fully native SwiftUI implementation.
 
 | Screen | View | Description |
 |--------|------|-------------|
 | 0 | `WelcomePage` | Teal bg, FloatingIconRing, CharacterView + dialog, CTA "I'm Ready!" |
 | 1 | `FeatureCalendarPage` | 3 staggered DialogBubbles, bouncing arrows |
 | 2 | `FeatureFocusPage` | BeforeAfterCard (tap-to-flip), blue-monster |
-| 3 | `PersonalizationPage` | Theme picker (ThemePreviewCard) + Avatar selector |
-| 4 | `KickstarterPage` | Kickstarter stats card + funded badge |
-| 5 | `TextAnimationPage` | Dark bg, 7-line sequential text animation, tap to continue |
-| 6-13 | `QuestionnairePage(questionIndex:)` | Data-driven from OnboardingQuestions (8 questions) |
-| 14 | `SignUpPage` | Google Sign In + Apple/Email placeholders |
+| 3 | `TextAnimationPage` | Dark bg, 7-line sequential text animation, tap to continue |
+| 4 | `PersonalizationPage` | Theme picker (ThemePreviewCard) + Avatar selector |
+| 5-12 | `QuestionnairePage(questionIndex:)` | Data-driven from OnboardingQuestions (8 questions) |
+| 13 | `SignUpPage` | Google Sign In + Apple/Email placeholders |
 
 Key types:
 - `OnboardingState` (`@Observable @MainActor`): manages `currentPage` (0-14), `direction`, `profile`, `soundEnabled`

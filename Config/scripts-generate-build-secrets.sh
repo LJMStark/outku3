@@ -5,8 +5,9 @@ OUTPUT_FILE="${SRCROOT}/Kirole/BuildSecrets.generated.swift"
 
 escape_swift() {
   local value="${1:-}"
-  value="${value//\\/\\\\}"
-  value="${value//\"/\\\"}"
+  # Only escape backslashes and double quotes for Swift string literals
+  # Use sed to avoid bash parameter expansion issues with URLs
+  value=$(printf '%s' "$value" | sed 's/\\/\\\\/g; s/"/\\"/g')
   printf '%s' "$value"
 }
 

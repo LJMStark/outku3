@@ -1,0 +1,142 @@
+收件人: developer-relations@apple.com
+主题: Family Controls Distribution Entitlement Request for Kirole (com.kirole.app)
+
+Dear Apple Developer Relations Team,
+
+I am writing to request the Family Controls (Distribution) entitlement for my iOS app.
+
+App Information:
+- App Name: Kirole
+- Bundle ID: com.kirole.app
+- Developer Account: xiaoyouzi2010@gmail.com
+- Platform: iOS 17.0+
+- Expected Launch: Q2 2026
+- Requested Entitlement: com.apple.developer.family-controls (Distribution)
+
+App Overview:
+
+Kirole is a productivity and habit-building app designed for remote workers and professionals. The app combines AI-powered companionship with gamified task management to help users build better work habits and maintain focus during work sessions.
+
+Why We Need Family Controls:
+
+We use the Family Controls framework to implement a "Deep Focus" mode that helps users eliminate distractions during work sessions by temporarily blocking apps they've identified as distracting (e.g., social media, games, entertainment apps).
+
+How We Use Family Controls:
+
+1. User-Initiated Blocking
+   - Users explicitly enable "Deep Focus" mode in the app's Settings
+   - Users manually select which apps to block using the FamilyActivityPicker
+   - Blocking is ONLY active during focus sessions that users start manually
+   - Users can stop focus sessions at any time to restore access
+
+2. Transparency and Control
+   - All settings are visible and configurable in the Settings screen
+   - Users see exactly which apps are blocked before starting a session
+   - Clear visual indicators show when Deep Focus mode is active
+   - No hidden or automatic blocking
+
+3. Privacy-First Design
+   - We do NOT collect or transmit Screen Time data
+   - We do NOT monitor user app usage patterns
+   - We do NOT track which apps users block
+   - All settings are stored locally on the device using UserDefaults
+   - No server-side storage of blocking preferences
+
+4. Technical Implementation
+   - We use AuthorizationCenter to request user permission
+   - We use FamilyActivityPicker for app selection (user-driven)
+   - We use DeviceActivityMonitor to enforce blocking during sessions
+   - We use ManagedSettingsStore to apply restrictions temporarily
+   - All restrictions are cleared when focus sessions end
+
+Target Audience:
+- Remote workers seeking productivity tools
+- Professionals with ADHD or focus challenges
+- Students preparing for exams
+- Anyone wanting to build better digital habits
+
+Key Differentiators:
+- Focus on productivity, not parental control
+- User controls their own device (not controlling others)
+- Temporary, session-based blocking (not permanent restrictions)
+- Integrated with task management and habit tracking
+- AI companion provides encouragement and accountability
+
+Privacy and Security Commitments:
+
+Data Collection:
+- We do NOT collect Screen Time data
+- We do NOT collect app usage statistics
+- We do NOT collect blocked app lists
+- We do NOT transmit any Family Controls data to servers
+
+Data Storage:
+- All settings stored locally on device
+- No cloud sync of blocking preferences
+- No analytics on Family Controls usage
+
+User Control:
+- Users explicitly grant Screen Time permission
+- Users manually select apps to block
+- Users can revoke permission at any time in iOS Settings
+- Users can disable Deep Focus mode at any time
+
+Compliance:
+- Full compliance with App Store Review Guidelines
+- Clear privacy policy explaining Family Controls usage
+- Transparent NSFamilyControlsUsageDescription in Info.plist
+- No deceptive practices or hidden functionality
+
+Technical Details:
+
+Entitlements Required:
+com.apple.developer.family-controls
+
+Frameworks Used:
+- FamilyControls.framework
+- ManagedSettings.framework
+- DeviceActivity.framework
+
+Why This Matters:
+
+Remote work has increased dramatically, and many professionals struggle with digital distractions. Kirole provides a holistic solution that combines task management, habit tracking, and focus tools in a single app with a friendly, gamified interface.
+
+The Deep Focus feature is a key differentiator that sets Kirole apart from generic to-do list apps. By temporarily blocking distracting apps during work sessions, users can maintain concentration and build better work habits over time.
+
+Commitment to Responsible Use:
+
+We understand the sensitivity of Family Controls API and commit to:
+- Using it solely for the stated productivity purpose
+- Never collecting or monetizing Screen Time data
+- Maintaining transparency with users
+- Following all App Store guidelines
+- Responding promptly to any concerns from Apple or users
+
+Current Status:
+
+We have already implemented the Family Controls feature using the Development entitlement and have successfully tested it with internal users. We are now ready to submit for App Store review and need the Distribution entitlement to proceed.
+
+Supporting Materials:
+
+I can provide the following upon request:
+- Screenshots of the Deep Focus configuration interface
+- Demo video showing the complete user flow
+- Privacy policy document
+- Additional technical documentation
+
+Thank you for considering our request. We are committed to building a high-quality, privacy-respecting productivity app and look forward to bringing Kirole to users who need better focus and productivity tools.
+
+Please let me know if you need any additional information or clarification.
+
+Best regards,
+
+[你的姓名]
+Kirole Development Team
+xiaoyouzi2010@gmail.com
+
+App Details:
+- App Name: Kirole
+- Bundle ID: com.kirole.app
+- Team ID: [从 Developer Portal 获取]
+- Developer Account: xiaoyouzi2010@gmail.com
+- Expected Launch: Q2 2026
