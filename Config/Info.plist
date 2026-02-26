@@ -64,6 +64,8 @@
 	<string>Kirole needs calendar access to sync your events and help you stay organized with your pet companion.</string>
 	<key>NSCalendarsWriteOnlyAccessUsageDescription</key>
 	<string>Kirole needs calendar write access to create events for your tasks and habits.</string>
+	<key>NSFamilyControlsUsageDescription</key>
+	<string>Kirole 需要访问屏幕使用时间权限,以便在专注模式下帮助你屏蔽分心应用,让你和你的宠物伙伴一起保持专注。</string>
 	<key>NSRemindersFullAccessUsageDescription</key>
 	<string>Kirole needs full reminders access to sync your tasks and help track your habits.</string>
 	<key>NSRemindersUsageDescription</key>
