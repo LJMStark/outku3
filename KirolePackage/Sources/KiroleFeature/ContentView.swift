@@ -21,6 +21,7 @@ public struct ContentView: View {
         }
         .task {
             _ = FocusSessionService.shared
+            await ScreenTimeFocusGuardService.shared.initialize()
             await authManager.initialize()
             appState.syncGoogleIntegrationStatusFromAuth()
             await configureOpenAI()

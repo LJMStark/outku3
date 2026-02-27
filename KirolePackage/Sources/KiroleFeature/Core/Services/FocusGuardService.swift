@@ -98,10 +98,12 @@ public final class ScreenTimeFocusGuardService: FocusGuardService {
 
     private init(localStorage: LocalStorage = .shared) {
         self.localStorage = localStorage
-        Task { @MainActor in
-            await refreshAuthorizationStatus()
-            await loadPersistedSelection()
-        }
+    }
+
+    /// 显式初始化，在 App 启动时调用
+    public func initialize() async {
+        await refreshAuthorizationStatus()
+        await loadPersistedSelection()
     }
 
     public func refreshAuthorizationStatus() async {

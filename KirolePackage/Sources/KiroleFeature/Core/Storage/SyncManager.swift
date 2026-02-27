@@ -152,10 +152,15 @@ public actor SyncManager {
 
     // MARK: - Load Data
 
+    /// 加载 Pet 数据
+    /// - Note: 后台同步是 fire-and-forget 模式，同步失败会记录但不阻塞返回
+    /// - Parameter userId: 云端用户 ID，如果提供则触发后台同步
+    /// - Returns: 本地 Pet 数据，如果加载失败返回 nil
     public func loadPet(userId: String?) async -> Pet? {
         do {
             let localPet = try await localStorage.loadPet()
 
+            // Fire-and-forget background sync: errors are logged but don't block
             if let userId = userId {
                 Task {
                     do {
@@ -179,10 +184,15 @@ public actor SyncManager {
         }
     }
 
+    /// 加载 Streak 数据
+    /// - Note: 后台同步是 fire-and-forget 模式，同步失败会记录但不阻塞返回
+    /// - Parameter userId: 云端用户 ID，如果提供则触发后台同步
+    /// - Returns: 本地 Streak 数据，如果加载失败返回 nil
     public func loadStreak(userId: String?) async -> Streak? {
         do {
             let localStreak = try await localStorage.loadStreak()
 
+            // Fire-and-forget background sync: errors are logged but don't block
             if let userId = userId {
                 Task {
                     do {

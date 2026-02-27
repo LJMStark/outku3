@@ -40,20 +40,24 @@ extension AppState {
     }
 
     private func updatePetForTaskToggle(isCompleted: Bool) {
+        var updatedPet = pet
+
         if isCompleted {
             SoundService.shared.playWithHaptic(.taskComplete, haptic: .success)
-            pet.adventuresCount += 1
-            pet.progress = min(1.0, pet.progress + ProgressConstants.taskCompletionIncrement)
-            pet.points += ProgressConstants.pointsPerTask
-            pet.lastInteraction = Date()
+            updatedPet.adventuresCount += 1
+            updatedPet.progress = min(1.0, updatedPet.progress + ProgressConstants.taskCompletionIncrement)
+            updatedPet.points += ProgressConstants.pointsPerTask
+            updatedPet.lastInteraction = Date()
             streak = petManager.updateStreak(streak)
         } else {
             SoundService.shared.playWithHaptic(.taskUncomplete, haptic: .light)
-            pet.adventuresCount = max(0, pet.adventuresCount - 1)
-            pet.progress = max(0, pet.progress - ProgressConstants.taskCompletionIncrement)
-            pet.points = max(0, pet.points - ProgressConstants.pointsPerTask)
-            pet.lastInteraction = Date()
+            updatedPet.adventuresCount = max(0, updatedPet.adventuresCount - 1)
+            updatedPet.progress = max(0, updatedPet.progress - ProgressConstants.taskCompletionIncrement)
+            updatedPet.points = max(0, updatedPet.points - ProgressConstants.pointsPerTask)
+            updatedPet.lastInteraction = Date()
         }
+
+        pet = updatedPet
     }
 
     private func syncTaskToExternalService(_ task: TaskItem) async {
