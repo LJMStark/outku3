@@ -103,6 +103,33 @@ public actor EventKitService {
         return try queryEvents(from: startDate, to: endDate)
     }
 
+    // MARK: - Update Event
+
+    public func updateEvent(
+        identifier: String,
+        title: String?,
+        startDate: Date?,
+        endDate: Date?,
+        location: String?,
+        notes: String?
+    ) async throws {
+        guard calendarAuthorizationStatus == .fullAccess else {
+            throw EventKitError.notAuthorized
+        }
+
+        guard let ekEvent = eventStore.event(withIdentifier: identifier) else {
+            throw EventKitError.eventNotFound
+        }
+
+        if let title { ekEvent.title = title }
+        if let startDate { ekEvent.startDate = startDate }
+        if let endDate { ekEvent.endDate = endDate }
+        ekEvent.location = location
+        ekEvent.notes = notes
+
+        try eventStore.save(ekEvent, span: .thisEvent)
+    }
+
     // MARK: - Reminders
 
     public func fetchIncompleteReminders() async throws -> [TaskItem] {

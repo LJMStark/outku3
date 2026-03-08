@@ -40,7 +40,25 @@ public final class DayPackGenerator {
         async let summary = textService.generateDailySummary(tasksCount: todayTasks.count, eventsCount: todayEvents.count, petName: pet.name, userProfile: userProfile)
         async let phrase = textService.generateCompanionPhrase(petMood: pet.mood, timeOfDay: TimeOfDay.current(), userProfile: userProfile)
 
-        let topTasks = todayTasks
+        // Dehydrate incomplete tasks to populate microActions before building summaries
+        var hydratedTasks = todayTasks
+        // Sort by priority to match topTasks selection order — ensures the tasks
+        // that will appear in topTasks are the ones that get micro-actions injected.
+        let incompleteSorted = todayTasks.enumerated()
+            .filter { !$0.element.isCompleted }
+            .sorted { $0.element.priority.rawValue > $1.element.priority.rawValue }
+        for (index, task) in incompleteSorted.prefix(screenSize.maxTasks) {
+            if task.microActions == nil {
+                let actions = await dehydrationService.dehydrate(
+                    task: task,
+                    schedule: todayEvents,
+                    userProfile: userProfile
+                )
+                hydratedTasks[index].microActions = actions
+            }
+        }
+
+        let topTasks = hydratedTasks
             .filter { !$0.isCompleted }
             .sorted { $0.priority.rawValue > $1.priority.rawValue }
             .prefix(screenSize.maxTasks)

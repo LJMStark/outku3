@@ -222,6 +222,42 @@ public actor GoogleCalendarAPI {
         }
     }
 
+    // MARK: - Patch Event
+
+    public func patchEvent(
+        calendarId: String = "primary",
+        eventId: String,
+        title: String?,
+        startTime: Date?,
+        endTime: Date?,
+        isAllDay: Bool = false,
+        location: String?,
+        description: String?
+    ) async throws {
+        let accessToken = try await AuthManager.shared.getGoogleAccessToken()
+
+        let encodedCalendarId = calendarId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? calendarId
+        let encodedEventId = eventId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? eventId
+        guard let url = URL(string: "\(baseURL)/calendars/\(encodedCalendarId)/events/\(encodedEventId)") else {
+            throw GoogleCalendarError.invalidURL
+        }
+
+        let body = GoogleCalendarEventPatchRequest(
+            summary: title,
+            location: location,
+            description: description,
+            start: startTime.map { isAllDay ? .allDay($0) : .timed($0) },
+            end: endTime.map { isAllDay ? .allDay($0) : .timed($0) }
+        )
+
+        _ = try await networkClient.patch(
+            url: url,
+            headers: makeAuthorizationHeader(accessToken),
+            body: body,
+            responseType: GoogleCalendarEvent.self
+        )
+    }
+
     // MARK: - Get Calendar List
 
     /// 获取用户的日历列表

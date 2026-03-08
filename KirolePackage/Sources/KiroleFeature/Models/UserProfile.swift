@@ -6,22 +6,46 @@ public struct UserProfile: Sendable, Codable, Equatable {
     public var workType: WorkType
     public var primaryGoals: [UserGoal]
     public var companionStyle: CompanionStyle
+    public var motivationStyle: MotivationStyle?
+    public var reminderPreference: ReminderPreference?
+    public var taskApproach: TaskApproach?
     public var onboardingCompletedAt: Date?
 
     public init(
         workType: WorkType = .other,
         primaryGoals: [UserGoal] = [],
         companionStyle: CompanionStyle = .encouraging,
+        motivationStyle: MotivationStyle? = nil,
+        reminderPreference: ReminderPreference? = nil,
+        taskApproach: TaskApproach? = nil,
         onboardingCompletedAt: Date? = nil
     ) {
         self.workType = workType
         self.primaryGoals = primaryGoals
         self.companionStyle = companionStyle
+        self.motivationStyle = motivationStyle
+        self.reminderPreference = reminderPreference
+        self.taskApproach = taskApproach
         self.onboardingCompletedAt = onboardingCompletedAt
     }
 
     public static var `default`: UserProfile {
         UserProfile()
+    }
+
+    /// Map onboarding answers into a UserProfile.
+    /// Pass the current profile as `merging:` to preserve fields (workType, primaryGoals)
+    /// that live outside the onboarding questionnaire.
+    public static func from(onboarding profile: OnboardingProfile, merging existing: UserProfile = .default) -> UserProfile {
+        UserProfile(
+            workType: existing.workType,
+            primaryGoals: existing.primaryGoals,
+            companionStyle: profile.companionStyle ?? existing.companionStyle,
+            motivationStyle: profile.motivationStyle ?? existing.motivationStyle,
+            reminderPreference: profile.reminderPreference ?? existing.reminderPreference,
+            taskApproach: profile.taskApproach ?? existing.taskApproach,
+            onboardingCompletedAt: profile.onboardingCompletedAt
+        )
     }
 }
 

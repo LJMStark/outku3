@@ -342,12 +342,6 @@ import Foundation
     #expect(result == "A free day! Time to relax.")
 }
 
-@Test @MainActor func testVerbalizeTaskPassthrough() async throws {
-    let service = CompanionTextService.shared
-    let result = await service.verbalizeTask(taskTitle: "Review PR #42")
-    #expect(result == "Review PR #42")
-}
-
 // MARK: - Work Hour Range Tests
 
 @Test func testWorkHourRangeDefaults() async throws {

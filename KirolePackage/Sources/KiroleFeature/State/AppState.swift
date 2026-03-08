@@ -78,6 +78,9 @@ public final class AppState {
     let eventKitService = EventKitService.shared
     let appleSyncEngine = AppleSyncEngine.shared
     let widgetDataService = WidgetDataService.shared
+    #if os(iOS)
+    let weatherService = WeatherService.shared
+    #endif
 
     // Managers
     let petManager = PetManager()

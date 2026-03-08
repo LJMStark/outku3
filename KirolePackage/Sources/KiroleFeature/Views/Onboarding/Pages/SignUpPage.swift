@@ -6,15 +6,8 @@ public struct SignUpPage: View {
     @Environment(AuthManager.self) private var authManager
     @Environment(ThemeManager.self) private var theme
 
-    @State private var email: String = ""
     @State private var isSigningIn = false
-    @State private var showComingSoonAlert = false
     @State private var signInError: String?
-
-    private var isValidEmail: Bool {
-        let pattern = #"^[^\s@]+@[^\s@]+\.[^\s@]+$"#
-        return email.range(of: pattern, options: .regularExpression) != nil
-    }
 
     public init(onboardingState: OnboardingState) {
         self.onboardingState = onboardingState
@@ -146,63 +139,6 @@ public struct SignUpPage: View {
                                 .padding(.top, 12)
                         }
 
-                        // Divider
-                        HStack(spacing: 16) {
-                            Rectangle()
-                                .fill(theme.colors.timeline)
-                                .frame(height: 1)
-                            Text("or")
-                                .font(.system(size: 14, design: .rounded))
-                                .foregroundStyle(theme.colors.secondaryText)
-                            Rectangle()
-                                .fill(theme.colors.timeline)
-                                .frame(height: 1)
-                        }
-                        .padding(.vertical, 24)
-
-                        // Email input
-                        VStack(spacing: 12) {
-                            TextField("Email address", text: $email)
-                                .font(.system(size: 16, design: .rounded))
-                                .padding(.horizontal, 24)
-                                .padding(.vertical, 18)
-                                .background {
-                                    Capsule()
-                                        .stroke(
-                                            isValidEmail ? theme.colors.primary : theme.colors.timeline,
-                                            lineWidth: 2
-                                        )
-                                }
-                                #if os(iOS)
-                                .textInputAutocapitalization(.never)
-                                .keyboardType(.emailAddress)
-                                #endif
-                                .autocorrectionDisabled()
-
-                            Button {
-                                if isValidEmail {
-                                    showComingSoonAlert = true
-                                }
-                            } label: {
-                                Text("Send Magic Link")
-                                    .font(.system(size: 16, weight: .semibold, design: .rounded))
-                                    .foregroundStyle(isValidEmail ? theme.colors.primaryText : theme.colors.secondaryText)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 18)
-                                    .background {
-                                        Capsule()
-                                            .fill(isValidEmail ? theme.colors.cardBackground : theme.colors.background)
-                                            .overlay {
-                                                if isValidEmail {
-                                                    Capsule().stroke(theme.colors.timeline, lineWidth: 2)
-                                                }
-                                            }
-                                    }
-                                    .shadow(color: .black.opacity(isValidEmail ? 0.08 : 0), radius: 4, y: 2)
-                            }
-                            .disabled(!isValidEmail)
-                        }
-
                         // Skip for now
                         Button {
                             appState.completeOnboarding(with: onboardingState.profile)
@@ -217,11 +153,6 @@ public struct SignUpPage: View {
                     .padding(.horizontal, 24)
                 }
             }
-        }
-        .alert("Coming Soon", isPresented: $showComingSoonAlert) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text("This sign-in method will be available in a future update.")
         }
     }
 }

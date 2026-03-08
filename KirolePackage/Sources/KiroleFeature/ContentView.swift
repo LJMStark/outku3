@@ -82,6 +82,7 @@ public struct ContentView: View {
             if appState.isAnyAppleIntegrationConnected {
                 await appState.setupAppleChangeObserver()
             }
+            await appState.refreshWeather()
         }
         .onChange(of: scenePhase) { _, newPhase in
             switch newPhase {

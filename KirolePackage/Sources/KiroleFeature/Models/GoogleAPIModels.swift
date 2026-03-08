@@ -134,6 +134,55 @@ public struct GoogleTaskUpdateRequest: Codable, Sendable {
     }
 }
 
+// MARK: - Google Calendar Event Patch Request
+
+public struct GoogleCalendarEventPatchRequest: Codable, Sendable {
+    public let summary: String?
+    public let location: String?
+    public let description: String?
+    public let start: GoogleDateTimePatch?
+    public let end: GoogleDateTimePatch?
+
+    public init(
+        summary: String? = nil,
+        location: String? = nil,
+        description: String? = nil,
+        start: GoogleDateTimePatch? = nil,
+        end: GoogleDateTimePatch? = nil
+    ) {
+        self.summary = summary
+        self.location = location
+        self.description = description
+        self.start = start
+        self.end = end
+    }
+}
+
+public struct GoogleDateTimePatch: Codable, Sendable {
+    public let dateTime: String?
+    public let date: String?
+
+    /// For timed events — sends RFC 3339 dateTime
+    public static func timed(_ date: Date) -> GoogleDateTimePatch {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return GoogleDateTimePatch(dateTime: formatter.string(from: date), date: nil)
+    }
+
+    /// For all-day events — sends date-only string (Google Calendar API requirement)
+    public static func allDay(_ date: Date) -> GoogleDateTimePatch {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        return GoogleDateTimePatch(dateTime: nil, date: formatter.string(from: date))
+    }
+
+    private init(dateTime: String?, date: String?) {
+        self.dateTime = dateTime
+        self.date = date
+    }
+}
+
 // MARK: - Google Task Create Request
 
 public struct GoogleTaskCreateRequest: Codable, Sendable {

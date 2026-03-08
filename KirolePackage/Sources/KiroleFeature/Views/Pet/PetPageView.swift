@@ -209,6 +209,7 @@ private struct TaskItemRow: View {
     let task: TaskItem
     @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
+    @State private var showEditSheet = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -255,8 +256,19 @@ private struct TaskItemRow: View {
                     .clipShape(Capsule())
             }
 
-            // More button
-            Button {
+            // More menu
+            Menu {
+                Button {
+                    showEditSheet = true
+                } label: {
+                    Label("Edit", systemImage: "pencil")
+                }
+
+                Button(role: .destructive) {
+                    appState.deleteTask(task)
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
             } label: {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 16))
@@ -273,6 +285,11 @@ private struct TaskItemRow: View {
             RoundedRectangle(cornerRadius: 16)
                 .stroke(Color(hex: "F3F4F6"), lineWidth: 1)
         )
+        .sheet(isPresented: $showEditSheet) {
+            TaskEditSheet(task: task)
+                .environment(appState)
+                .environment(theme)
+        }
     }
 
     private func formatDueDate(_ date: Date) -> String {

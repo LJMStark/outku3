@@ -102,10 +102,6 @@ public final class CompanionTextService {
             .randomElement() ?? "You've got this!"
     }
 
-    // MARK: - Task Verbalization
-
-    public func verbalizeTask(taskTitle: String) async -> String { taskTitle }
-
     // MARK: - Settlement Message
 
     public func generateSettlementMessage(

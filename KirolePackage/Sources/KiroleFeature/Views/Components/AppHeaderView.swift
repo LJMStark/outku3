@@ -2,6 +2,7 @@ import SwiftUI
 
 public struct AppHeaderView: View {
     @Environment(ThemeManager.self) private var theme
+    @Environment(AppState.self) private var appState
     @Binding var selectedTab: AppTab
     var onPetClick: (() -> Void)?
 
@@ -37,8 +38,10 @@ public struct AppHeaderView: View {
                         .foregroundStyle(.white.opacity(0.9))
 
                     HStack(spacing: 4) {
-                        Text("☀️")
-                        Text("85°/46°")
+                        Image(systemName: appState.weather.condition.rawValue)
+                            .font(.system(size: 14))
+                            .foregroundStyle(.white.opacity(0.9))
+                        Text("\(appState.weather.highTemp)\u{00B0}/\(appState.weather.lowTemp)\u{00B0}")
                             .font(.system(size: 14))
                             .foregroundStyle(.white.opacity(0.9))
                     }
@@ -192,6 +195,7 @@ private struct ScaleButtonStyle: ButtonStyle {
             }
             .background(Color(hex: "f5f1e8"))
             .environment(ThemeManager.shared)
+            .environment(AppState.shared)
         }
     }
 

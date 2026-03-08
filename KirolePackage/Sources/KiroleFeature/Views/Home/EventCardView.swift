@@ -100,6 +100,7 @@ public struct EventDetailModal: View {
     let event: CalendarEvent
     @Environment(\.dismiss) private var dismiss
     @Environment(ThemeManager.self) private var theme
+    @State private var showEditSheet = false
 
     public init(event: CalendarEvent) {
         self.event = event
@@ -157,7 +158,7 @@ public struct EventDetailModal: View {
                     // Event Title Card
                     EventDetailCard {
                         VStack(spacing: 0) {
-                            EventDetailRow(icon: "calendar", showPencil: true) {
+                            EventDetailRow(icon: "calendar", showPencil: true, onPencilTap: { showEditSheet = true }) {
                                 Text(event.title.isEmpty ? "No Title" : event.title)
                                     .font(.system(size: 16, weight: .bold))
                                     .foregroundStyle(theme.colors.primaryText)
@@ -182,7 +183,7 @@ public struct EventDetailModal: View {
                     // Time Card
                     EventDetailCard {
                         VStack(spacing: 0) {
-                            EventDetailRow(icon: "calendar.badge.clock", showPencil: true) {
+                            EventDetailRow(icon: "calendar.badge.clock", showPencil: true, onPencilTap: { showEditSheet = true }) {
                                 Text("\(EventDetailFormatters.date.string(from: event.startTime)) · \(EventDetailFormatters.time.string(from: event.startTime))-\(EventDetailFormatters.time.string(from: event.endTime)) · \(event.durationText)")
                                     .font(.system(size: 14))
                                     .foregroundStyle(theme.colors.primaryText)
@@ -198,7 +199,7 @@ public struct EventDetailModal: View {
 
                     // Repeat Card
                     EventDetailCard {
-                        EventDetailRow(icon: "arrow.2.squarepath", showPencil: true) {
+                        EventDetailRow(icon: "arrow.2.squarepath", showPencil: true, onPencilTap: { showEditSheet = true }) {
                             Text("Does not repeat")
                                 .font(.system(size: 14))
                                 .foregroundStyle(theme.colors.primaryText)
@@ -227,6 +228,9 @@ public struct EventDetailModal: View {
             }
         }
         .background(Color.white)
+        .sheet(isPresented: $showEditSheet) {
+            EventEditSheet(event: event)
+        }
     }
 
     private func startStatusText() -> String {
@@ -266,6 +270,7 @@ private struct EventDetailCard<Content: View>: View {
 private struct EventDetailRow<Content: View>: View {
     let icon: String // systemName
     let showPencil: Bool
+    var onPencilTap: (() -> Void)? = nil
     @ViewBuilder let content: Content
 
     var body: some View {
@@ -281,6 +286,7 @@ private struct EventDetailRow<Content: View>: View {
                 Spacer(minLength: 16)
                 if showPencil {
                     Button {
+                        onPencilTap?()
                     } label: {
                         Image(systemName: "pencil")
                             .font(.system(size: 14))

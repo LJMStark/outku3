@@ -80,6 +80,64 @@ extension AppState {
         }
     }
 
+    public func editEvent(
+        _ event: CalendarEvent,
+        title: String,
+        startTime: Date,
+        endTime: Date,
+        location: String?,
+        notes: String?
+    ) async {
+        guard let index = events.firstIndex(where: { $0.id == event.id }) else { return }
+
+        var updatedEvent = events[index]
+        updatedEvent.title = title
+        updatedEvent.startTime = startTime
+        updatedEvent.endTime = endTime
+        updatedEvent.location = location
+        updatedEvent.description = notes
+        updatedEvent.lastModified = Date()
+
+        events[index] = updatedEvent
+        await persistEvents(events, context: "AppState.editEvent")
+
+        switch event.source {
+        case .apple:
+            if let identifier = event.appleEventId {
+                do {
+                    try await eventKitService.updateEvent(
+                        identifier: identifier,
+                        title: title,
+                        startDate: startTime,
+                        endDate: endTime,
+                        location: location,
+                        notes: notes
+                    )
+                } catch {
+                    reportSyncError(error, component: "Apple Calendar", context: "AppState.editEvent")
+                }
+            }
+        case .google:
+            if let eventId = event.googleEventId {
+                do {
+                    try await googleCalendarAPI.patchEvent(
+                        eventId: eventId,
+                        title: title,
+                        startTime: startTime,
+                        endTime: endTime,
+                        isAllDay: event.isAllDay,
+                        location: location,
+                        description: notes
+                    )
+                } catch {
+                    reportSyncError(error, component: "Google Calendar", context: "AppState.editEvent")
+                }
+            }
+        case .todoist:
+            break
+        }
+    }
+
     public func selectEvent(_ event: CalendarEvent) {
         selectedEvent = event
         isEventDetailPresented = true
@@ -123,6 +181,33 @@ extension AppState {
 
         Task { @MainActor in
             await persistTasks(tasks, context: "AppState.deleteTask")
+        }
+    }
+
+    public func editTask(
+        _ task: TaskItem,
+        title: String,
+        priority: TaskPriority,
+        dueDate: Date?,
+        notes: String?
+    ) {
+        guard let index = tasks.firstIndex(where: { $0.id == task.id }) else { return }
+
+        var updatedTask = tasks[index]
+        updatedTask.title = title
+        updatedTask.priority = priority
+        updatedTask.dueDate = dueDate
+        updatedTask.notes = notes
+        updatedTask.lastModified = Date()
+
+        tasks = taskManager.withTask(tasks, updatedTask: updatedTask)
+        updateStatistics()
+
+        Task { @MainActor in
+            await persistTasks(tasks, context: "AppState.editTask")
+            // Content edits (title/priority/dueDate/notes) are persisted locally only.
+            // Syncing task content to Google Tasks / Apple Reminders requires
+            // dedicated PATCH APIs that are not yet implemented.
         }
     }
 

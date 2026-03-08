@@ -89,11 +89,11 @@ private struct PetStatusCard: View {
 
                 // Pet Info
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Baby Waffle")
+                    Text(appState.pet.name)
                         .font(.system(size: 24, weight: .bold))
                         .foregroundStyle(theme.colors.primaryText)
 
-                    Text("He/Him • 3 Adventures")
+                    Text("\(appState.pet.pronouns.rawValue) • \(appState.pet.adventuresCount) Adventures")
                         .font(.system(size: 14))
                         .foregroundStyle(theme.colors.secondaryText)
                 }
@@ -119,10 +119,10 @@ private struct PetStatusCard: View {
 
             // Stats Grid
             VStack(spacing: 12) {
-                StatRow(label: "Age", value: "29 days")
-                StatRow(label: "Status", value: "Exploring", emoji: "🧭")
-                StatRow(label: "Stage", value: "Newborn")
-                ProgressRow(progress: 0.3)
+                StatRow(label: "Age", value: "\(appState.pet.age) days")
+                StatRow(label: "Status", value: appState.pet.status.rawValue)
+                StatRow(label: "Stage", value: appState.pet.stage.rawValue)
+                ProgressRow(progress: appState.pet.progress)
             }
             .padding(.horizontal, 24)
             .padding(.top, 16)
@@ -136,9 +136,9 @@ private struct PetStatusCard: View {
 
             // Pet Measurements
             HStack(spacing: 24) {
-                MeasurementItem(emoji: "⚖️", value: "4.9g")
-                MeasurementItem(emoji: "📏", value: "1.6cm")
-                MeasurementItem(emoji: "🦋", value: "4.1cm")
+                MeasurementItem(emoji: "⚖️", value: String(format: "%.1fg", appState.pet.weight))
+                MeasurementItem(emoji: "📏", value: String(format: "%.1fcm", appState.pet.height))
+                MeasurementItem(emoji: "🦋", value: String(format: "%.1fcm", appState.pet.tailLength))
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 16)
@@ -249,8 +249,17 @@ private struct MeasurementItem: View {
 // MARK: - Achievement Card
 
 private struct AchievementCard: View {
+    @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
     @State private var iconRotated = false
+
+    private var streakSubtitle: String {
+        let streak = appState.streak
+        if streak.currentStreak > 0 && streak.currentStreak >= streak.longestStreak {
+            return "Longest self-care streak ever!"
+        }
+        return "Best: \(streak.longestStreak) days"
+    }
 
     var body: some View {
         HStack(spacing: 16) {
@@ -279,11 +288,11 @@ private struct AchievementCard: View {
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("7 day streak")
+                Text("\(appState.streak.currentStreak) day streak")
                     .font(.system(size: 20, weight: .bold))
                     .foregroundStyle(theme.colors.primaryText)
 
-                Text("Longest self-care streak ever!")
+                Text(streakSubtitle)
                     .font(.system(size: 14))
                     .foregroundStyle(theme.colors.secondaryText)
             }
@@ -304,8 +313,19 @@ private struct AchievementCard: View {
 // MARK: - Tasks Statistics Card
 
 private struct TasksStatisticsCard: View {
+    @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
     @State private var appeared = false
+
+    private var todayFocusTimeFormatted: String {
+        let totalSeconds = FocusSessionService.shared.statistics.todayFocusTime
+        let hours = Int(totalSeconds) / 3600
+        let minutes = (Int(totalSeconds) % 3600) / 60
+        if hours > 0 {
+            return "\(hours)h \(minutes)m"
+        }
+        return "\(minutes)m"
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -314,9 +334,9 @@ private struct TasksStatisticsCard: View {
                 .foregroundStyle(theme.colors.primaryText)
 
             VStack(spacing: 24) {
-                TaskStatSection(title: "Today", tasks: 5, focusTime: "7h 11m", delay: 0.1)
-                TaskStatSection(title: "Past Week", tasks: 5, focusTime: "7h 11m", delay: 0.2)
-                TaskStatSection(title: "Last 30 Days", tasks: 5, focusTime: "7h 11m", delay: 0.3)
+                TaskStatSection(title: "Today", tasks: appState.statistics.todayCompleted, focusTime: todayFocusTimeFormatted, delay: 0.1)
+                TaskStatSection(title: "Past Week", tasks: appState.statistics.pastWeekCompleted, focusTime: "--", delay: 0.2)
+                TaskStatSection(title: "Last 30 Days", tasks: appState.statistics.last30DaysCompleted, focusTime: "--", delay: 0.3)
             }
             .padding(24)
             .background(Color.white)

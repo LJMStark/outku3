@@ -18,9 +18,14 @@ extension AppState {
         completedProfile.onboardingCompletedAt = Date()
         onboardingProfile = completedProfile
 
+        // Map AI-relevant fields into UserProfile
+        let mappedProfile = UserProfile.from(onboarding: completedProfile, merging: userProfile)
+        userProfile = mappedProfile
+
         Task { @MainActor in
             do {
                 try await localStorage.saveOnboardingProfile(completedProfile)
+                try await localStorage.saveUserProfile(mappedProfile)
             } catch {
                 reportPersistenceError(error, operation: "save", target: "onboarding_profile.json")
                 ErrorReporter.log(error, context: "AppState.completeOnboarding")
@@ -28,8 +33,9 @@ extension AppState {
         }
     }
 
+    /// UserProfile is the authoritative source for onboarding completion
     public var isOnboardingCompleted: Bool {
-        onboardingProfile?.onboardingCompletedAt != nil || userProfile.onboardingCompletedAt != nil
+        userProfile.onboardingCompletedAt != nil
     }
 
     public func resetOnboarding() async {
