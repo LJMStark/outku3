@@ -72,7 +72,7 @@ public struct SettingsAccountSection: View {
 
             HStack(spacing: 16) {
                 VStack(spacing: 8) {
-                    ZStack {
+                    ZStack(alignment: .bottom) {
                         RoundedRectangle(cornerRadius: 24)
                             .fill(theme.currentTheme.cardGradient)
                             .frame(width: 96, height: 96)
@@ -88,8 +88,7 @@ public struct SettingsAccountSection: View {
                             Image("tiko_avatar", bundle: .module)
                                 .resizable()
                                 .aspectRatio(contentMode: .fit)
-                                .frame(width: 80, height: 80)
-                                .clipShape(Circle())
+                                .frame(width: 76, height: 95)
                         }
                     }
 

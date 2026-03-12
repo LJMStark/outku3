@@ -74,16 +74,15 @@ private struct PetStatusCard: View {
             // Pet info row
             HStack(alignment: .top, spacing: 20) {
                 // Pet Avatar
-                ZStack {
+                ZStack(alignment: .bottom) {
                     RoundedRectangle(cornerRadius: 24)
                         .fill(theme.currentTheme.cardGradient)
-                        .frame(width: 128, height: 128)
+                        .frame(width: 128, height: 160)
 
                     Image("tiko_avatar", bundle: .module)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
-                        .frame(width: 100, height: 100)
-                        .clipShape(Circle())
+                        .frame(width: 120, height: 150)
                 }
                 .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
 

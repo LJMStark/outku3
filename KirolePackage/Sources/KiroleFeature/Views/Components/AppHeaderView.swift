@@ -164,8 +164,7 @@ private struct PetTabButton: View {
                 Image("tiko_avatar", bundle: .module)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
-                    .frame(width: 28, height: 28)
-                    .clipShape(Circle())
+                    .frame(width: 28, height: 35)
             }
         }
         .buttonStyle(ScaleButtonStyle())
