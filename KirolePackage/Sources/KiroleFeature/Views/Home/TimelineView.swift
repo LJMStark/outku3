@@ -250,6 +250,8 @@ struct HaikuSectionView: View {
     @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
     @State private var appeared = false
+    @State private var ballOffset: CGFloat = -140
+    @State private var ballRotation: Double = -180
 
     var body: some View {
         HStack(spacing: 0) {
@@ -269,13 +271,21 @@ struct HaikuSectionView: View {
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
 
-                // Pet image
-                Image("tiko_reading", bundle: .module)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(height: 200)
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
-                    .shadow(color: .black.opacity(0.1), radius: 8, y: 4)
+                // Pet image with rolling toy ball
+                ZStack {
+                    PetToyBall(size: 46)
+                        .rotationEffect(.degrees(ballRotation))
+                        // The pet image has height 200.
+                        // Setting y to 25 brings the ball up tighter to the pet's sitting baseline
+                        .offset(x: ballOffset, y: 25)
+
+                    Image("tiko_reading", bundle: .module)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(height: 200)
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                        .shadow(color: .black.opacity(0.1), radius: 8, y: 4)
+                }
             }
             .padding(.vertical, 24)
         }
@@ -284,7 +294,59 @@ struct HaikuSectionView: View {
         .animation(.easeOut(duration: 0.6).delay(delay), value: appeared)
         .onAppear {
             appeared = true
+            
+            // Rolling Ball Animation
+            withAnimation(
+                .easeInOut(duration: 4.0)
+                .repeatForever(autoreverses: true)
+            ) {
+                ballOffset = 140
+                ballRotation = 360 * 2.5
+            }
         }
+    }
+}
+
+// MARK: - Pet Toy Ball
+
+private struct PetToyBall: View {
+    let size: CGFloat
+    
+    var body: some View {
+        ZStack {
+            // Base sphere with 3D shading
+            Circle()
+                .fill(
+                    RadialGradient(
+                        gradient: Gradient(colors: [Color(hex: "E0C9B1"), Color(hex: "AE917A")]),
+                        center: UnitPoint(x: 0.3, y: 0.3),
+                        startRadius: 0,
+                        endRadius: size * 0.8
+                    )
+                )
+            
+            // Subtle top-left highlight
+            Capsule()
+                .fill(Color.white.opacity(0.35))
+                .frame(width: size * 0.35, height: size * 0.18)
+                .rotationEffect(.degrees(-30))
+                .offset(x: -size * 0.18, y: -size * 0.22)
+            
+            // Elegant horizontal stripe (curved for 3D sphere look)
+            Ellipse()
+                .stroke(Color(hex: "F2E2CF"), lineWidth: size * 0.1)
+                .frame(width: size * 1.5, height: size * 0.6)
+                .offset(y: size * 0.12)
+                
+            // Inner bottom shadow for extra depth
+            Circle()
+                .stroke(Color(hex: "816752").opacity(0.2), lineWidth: size * 0.12)
+                .offset(x: size * 0.05, y: size * 0.05)
+                .blur(radius: size * 0.03)
+        }
+        .clipShape(Circle()) // Ensures contents stay within the sphere
+        .frame(width: size, height: size)
+        .shadow(color: Color(hex: "A38771").opacity(0.4), radius: size * 0.12, x: 0, y: size * 0.08)
     }
 }
 
