@@ -332,6 +332,32 @@ public actor LocalStorage {
         try load(GoogleSyncMetadata.self, from: "google_sync_metadata.json")
     }
 
+    // MARK: - Avatar Data
+
+    /// Save original avatar image data
+    public func saveAvatarData(_ data: Data) throws {
+        let url = documentsDirectory.appendingPathComponent("avatar.dat")
+        try data.write(to: url)
+    }
+
+    /// Load original avatar image data
+    public func loadAvatarData() -> Data? {
+        let url = documentsDirectory.appendingPathComponent("avatar.dat")
+        return try? Data(contentsOf: url)
+    }
+
+    /// Save 4bpp encoded pixel data for BLE transmission
+    public func saveAvatarPixels(_ data: Data) throws {
+        let url = documentsDirectory.appendingPathComponent("avatar_pixels.dat")
+        try data.write(to: url)
+    }
+
+    /// Load 4bpp encoded pixel data
+    public func loadAvatarPixels() -> Data? {
+        let url = documentsDirectory.appendingPathComponent("avatar_pixels.dat")
+        return try? Data(contentsOf: url)
+    }
+
     // MARK: - Clear All
 
     /// Remove all persisted local data
@@ -342,7 +368,8 @@ public actor LocalStorage {
             "focus_sessions.json", "event_logs.json", "ai_interactions.json",
             "behavior_summary.json", "onboarding_profile.json",
             "deep_focus_selection.json", "focus_session_active.json",
-            "outbox.json", "google_sync_metadata.json"
+            "outbox.json", "google_sync_metadata.json",
+            "avatar.dat", "avatar_pixels.dat"
         ]
         for file in files {
             let url = documentsDirectory.appendingPathComponent(file)
