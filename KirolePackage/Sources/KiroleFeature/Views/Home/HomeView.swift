@@ -30,6 +30,7 @@ public struct HomeView: View {
 
                             // Today section with pet embedded in timeline
                             DaySectionView(date: dataSource.dateForOffset(0), showPet: true)
+                                .background(daySectionPositionTracker(for: dataSource.dateForOffset(0)))
 
                             // Remaining days (offset 1+)
                             ForEach(dataSource.dayOffsets.dropFirst(), id: \.self) { offset in
@@ -37,6 +38,7 @@ public struct HomeView: View {
                                     date: dataSource.dateForOffset(offset),
                                     showPet: dataSource.shouldShowPetMarker(at: offset)
                                 )
+                                .background(daySectionPositionTracker(for: dataSource.dateForOffset(offset)))
                             }
 
                             // Sentinel to trigger loading more days
@@ -64,6 +66,15 @@ public struct HomeView: View {
                         }
                         scrollOffset = value
                     }
+                    .onPreferenceChange(VisibleDatePreferenceKey.self) { items in
+                        // Pick the topmost section that has scrolled to or past the top
+                        if let top = items
+                            .filter({ $0.minY <= 40 })
+                            .max(by: { $0.minY < $1.minY })
+                        {
+                            appState.selectedDate = top.date
+                        }
+                    }
                     .refreshable {
                         await refreshData()
                     }
@@ -90,6 +101,20 @@ public struct HomeView: View {
             }
             appState.hasCompletedInitialHomeLoad = true
             await loadInitialData()
+        }
+    }
+
+    /// Invisible background that reports this section's Y position for date tracking.
+    private func daySectionPositionTracker(for date: Date) -> some View {
+        GeometryReader { geo in
+            Color.clear
+                .preference(
+                    key: VisibleDatePreferenceKey.self,
+                    value: [VisibleDateItem(
+                        date: date,
+                        minY: geo.frame(in: .named("scroll")).minY
+                    )]
+                )
         }
     }
 
@@ -132,6 +157,20 @@ public struct HomeView: View {
 
         // Success haptic
         SoundService.shared.haptic(.success)
+    }
+}
+
+// MARK: - Visible Date Tracking
+
+private struct VisibleDateItem: Equatable {
+    let date: Date
+    let minY: CGFloat
+}
+
+private struct VisibleDatePreferenceKey: PreferenceKey {
+    nonisolated(unsafe) static var defaultValue: [VisibleDateItem] = []
+    static func reduce(value: inout [VisibleDateItem], nextValue: () -> [VisibleDateItem]) {
+        value.append(contentsOf: nextValue())
     }
 }
 

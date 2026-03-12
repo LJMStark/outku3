@@ -91,7 +91,7 @@ public struct AppHeaderView: View {
     private var formattedDate: String {
         let formatter = DateFormatter()
         formatter.dateFormat = "EEE, MMM dd"
-        return formatter.string(from: Date())
+        return formatter.string(from: appState.selectedDate)
     }
 
     private var formattedTime: String {
