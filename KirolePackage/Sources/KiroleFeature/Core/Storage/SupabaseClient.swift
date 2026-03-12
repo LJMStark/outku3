@@ -188,7 +188,7 @@ public actor SupabaseService {
             weight: record.weight,
             height: record.height,
             tailLength: record.tailLength,
-            currentForm: PetForm(rawValue: record.currentForm) ?? .cat,
+            currentForm: PetForm(rawValue: record.currentForm) ?? .sprout,
             lastInteraction: record.lastInteraction,
             points: record.points
         )

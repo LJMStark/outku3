@@ -146,30 +146,30 @@ extension PixelPetView {
 
     var petPrimaryColor: Color {
         switch appState.pet.currentForm {
-        case .cat:
+        case .sprout:
             return Color(hex: "#FFB366")
-        case .dog:
+        case .pup:
             return Color(hex: "#C4A484")
-        case .bunny:
+        case .hopper:
             return Color(hex: "#F5F5DC")
-        case .bird:
+        case .flyer:
             return Color(hex: "#87CEEB")
-        case .dragon:
+        case .blaze:
             return Color(hex: "#9370DB")
         }
     }
 
     var petSecondaryColor: Color {
         switch appState.pet.currentForm {
-        case .cat:
+        case .sprout:
             return Color(hex: "#FF8C00")
-        case .dog:
+        case .pup:
             return Color(hex: "#8B7355")
-        case .bunny:
+        case .hopper:
             return Color(hex: "#FFB6C1")
-        case .bird:
+        case .flyer:
             return Color(hex: "#4682B4")
-        case .dragon:
+        case .blaze:
             return Color(hex: "#6A5ACD")
         }
     }

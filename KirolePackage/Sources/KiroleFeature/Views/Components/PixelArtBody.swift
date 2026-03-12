@@ -54,19 +54,19 @@ struct PixelArtBody: View {
         var result = pattern
 
         switch form {
-        case .cat:
+        case .sprout:
             result[4] = [0, 0, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 0, 0]
             result[5] = [0, 0, 2, 1, 5, 5, 1, 1, 1, 1, 5, 5, 1, 2, 0, 0]
-        case .dog:
+        case .pup:
             result[4] = [0, 0, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 0, 0]
             result[5] = [0, 0, 2, 1, 5, 5, 1, 1, 1, 1, 5, 5, 1, 2, 0, 0]
-        case .bunny:
+        case .hopper:
             result[5] = [0, 0, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 0, 0]
             result[6] = [0, 2, 6, 1, 1, 5, 5, 1, 1, 5, 5, 1, 1, 6, 2, 0]
-        case .bird:
+        case .flyer:
             result[4] = [0, 0, 0, 2, 1, 1, 1, 1, 1, 1, 1, 2, 0, 0, 0, 0]
             result[5] = [0, 0, 0, 2, 1, 5, 5, 1, 5, 5, 1, 2, 2, 2, 0, 0]
-        case .dragon:
+        case .blaze:
             result[4] = [0, 0, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 0, 0]
             result[5] = [0, 0, 2, 1, 5, 5, 1, 1, 1, 1, 5, 5, 1, 2, 0, 0]
         }
@@ -79,19 +79,19 @@ struct PixelArtBody: View {
 
         // 使用 accent 色（3）替代白色（4）让眼睛更亮
         switch form {
-        case .cat:
+        case .sprout:
             result[4] = [0, 0, 2, 1, 5, 3, 1, 1, 1, 1, 5, 3, 1, 2, 0, 0]
             result[5] = [0, 0, 2, 1, 5, 3, 1, 1, 1, 1, 5, 3, 1, 2, 0, 0]
-        case .dog:
+        case .pup:
             result[4] = [0, 0, 2, 1, 5, 3, 1, 1, 1, 1, 5, 3, 1, 2, 0, 0]
             result[5] = [0, 0, 2, 1, 5, 3, 1, 1, 1, 1, 5, 3, 1, 2, 0, 0]
-        case .bunny:
+        case .hopper:
             result[5] = [0, 0, 2, 1, 1, 5, 3, 1, 1, 5, 3, 1, 1, 2, 0, 0]
             result[6] = [0, 2, 6, 1, 1, 5, 3, 1, 1, 5, 3, 1, 1, 6, 2, 0]
-        case .bird:
+        case .flyer:
             result[4] = [0, 0, 0, 2, 1, 5, 3, 1, 5, 3, 1, 2, 0, 0, 0, 0]
             result[5] = [0, 0, 0, 2, 1, 5, 3, 1, 5, 3, 1, 2, 2, 2, 0, 0]
-        case .dragon:
+        case .blaze:
             // Dragon already has glowing eyes
             break
         }
@@ -104,19 +104,19 @@ struct PixelArtBody: View {
 
         // 眼睛向下看的效果
         switch form {
-        case .cat:
+        case .sprout:
             result[4] = [0, 0, 2, 1, 4, 4, 1, 1, 1, 1, 4, 4, 1, 2, 0, 0]
             result[5] = [0, 0, 2, 1, 5, 5, 1, 1, 1, 1, 5, 5, 1, 2, 0, 0]
-        case .dog:
+        case .pup:
             result[4] = [0, 0, 2, 1, 4, 4, 1, 1, 1, 1, 4, 4, 1, 2, 0, 0]
             result[5] = [0, 0, 2, 1, 5, 5, 1, 1, 1, 1, 5, 5, 1, 2, 0, 0]
-        case .bunny:
+        case .hopper:
             result[5] = [0, 0, 2, 1, 1, 4, 4, 1, 1, 4, 4, 1, 1, 2, 0, 0]
             result[6] = [0, 2, 6, 1, 1, 5, 5, 1, 1, 5, 5, 1, 1, 6, 2, 0]
-        case .bird:
+        case .flyer:
             result[4] = [0, 0, 0, 2, 1, 4, 4, 1, 4, 4, 1, 2, 0, 0, 0, 0]
             result[5] = [0, 0, 0, 2, 1, 5, 5, 1, 5, 5, 1, 2, 2, 2, 0, 0]
-        case .dragon:
+        case .blaze:
             result[4] = [0, 0, 2, 1, 4, 4, 1, 1, 1, 1, 4, 4, 1, 2, 0, 0]
             result[5] = [0, 0, 2, 1, 5, 5, 1, 1, 1, 1, 5, 5, 1, 2, 0, 0]
         }
@@ -128,15 +128,15 @@ struct PixelArtBody: View {
 
     private func basePatternForForm(_ form: PetForm) -> [[Int]] {
         switch form {
-        case .cat:
+        case .sprout:
             return catPattern
-        case .dog:
+        case .pup:
             return dogPattern
-        case .bunny:
+        case .hopper:
             return bunnyPattern
-        case .bird:
+        case .flyer:
             return birdPattern
-        case .dragon:
+        case .blaze:
             return dragonPattern
         }
     }
@@ -258,19 +258,19 @@ struct PixelArtBody: View {
 
         // Find eye rows and close them (replace white/pupil with primary color)
         switch form {
-        case .cat:
+        case .sprout:
             result[4] = [0, 0, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 0, 0]
             result[5] = [0, 0, 2, 1, 5, 5, 1, 1, 1, 1, 5, 5, 1, 2, 0, 0]
-        case .dog:
+        case .pup:
             result[4] = [0, 0, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 0, 0]
             result[5] = [0, 0, 2, 1, 5, 5, 1, 1, 1, 1, 5, 5, 1, 2, 0, 0]
-        case .bunny:
+        case .hopper:
             result[5] = [0, 0, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 0, 0]
             result[6] = [0, 2, 6, 1, 1, 5, 5, 1, 1, 5, 5, 1, 1, 6, 2, 0]
-        case .bird:
+        case .flyer:
             result[4] = [0, 0, 0, 2, 1, 1, 1, 1, 1, 1, 1, 2, 0, 0, 0, 0]
             result[5] = [0, 0, 0, 2, 1, 5, 5, 1, 5, 5, 1, 2, 2, 2, 0, 0]
-        case .dragon:
+        case .blaze:
             result[4] = [0, 0, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 0, 0]
             result[5] = [0, 0, 2, 1, 5, 5, 1, 1, 1, 1, 5, 5, 1, 2, 0, 0]
         }

@@ -243,13 +243,13 @@ private struct DebugSection: View {
 
                 Divider()
 
-                // Pet Transformation
+                // Tiko Evolution
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Pet Transformation")
+                    Text("Tiko Evolution")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(theme.colors.primaryText)
 
-                    Picker("Pet Form", selection: Binding(
+                    Picker("Evolution Form", selection: Binding(
                         get: { appState.pet.currentForm },
                         set: { appState.pet.currentForm = $0 }
                     )) {

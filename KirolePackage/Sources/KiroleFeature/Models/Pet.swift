@@ -30,7 +30,7 @@ public struct Pet: Sendable, Codable {
         weight: Double = 50,
         height: Double = 5,
         tailLength: Double = 2,
-        currentForm: PetForm = .cat,
+        currentForm: PetForm = .sprout,
         lastInteraction: Date = Date(),
         points: Int = 0
     ) {
@@ -100,29 +100,29 @@ public enum PetStage: String, Sendable, Codable {
 }
 
 public enum PetForm: String, CaseIterable, Sendable, Codable {
-    case cat = "Cat"
-    case dog = "Dog"
-    case bunny = "Bunny"
-    case bird = "Bird"
-    case dragon = "Dragon"
+    case sprout = "Sprout"
+    case pup = "Pup"
+    case hopper = "Hopper"
+    case flyer = "Flyer"
+    case blaze = "Blaze"
 
     public var iconName: String {
         switch self {
-        case .cat: return "cat.fill"
-        case .dog: return "dog.fill"
-        case .bunny: return "hare.fill"
-        case .bird: return "bird.fill"
-        case .dragon: return "flame.fill"
+        case .sprout: return "leaf.fill"
+        case .pup: return "pawprint.fill"
+        case .hopper: return "hare.fill"
+        case .flyer: return "bird.fill"
+        case .blaze: return "flame.fill"
         }
     }
 
     public var imageName: String {
         switch self {
-        case .cat: return "tiko_mushroom"
-        case .dog: return "tiko_dog"
-        case .bunny: return "tiko_bunny"
-        case .bird: return "tiko_bird"
-        case .dragon: return "tiko_dragon"
+        case .sprout: return "tiko_mushroom"
+        case .pup: return "tiko_dog"
+        case .hopper: return "tiko_bunny"
+        case .flyer: return "tiko_bird"
+        case .blaze: return "tiko_dragon"
         }
     }
 }
