@@ -13,6 +13,7 @@ public struct SettingsAccountSection: View {
 
     public init() {}
 
+    @MainActor
     public var body: some View {
         VStack(spacing: 24) {
             avatarSection
@@ -64,6 +65,7 @@ public struct SettingsAccountSection: View {
 
     // MARK: - Avatar
 
+    @MainActor
     private var avatarSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             SettingsSectionHeader(title: "Avatar")
@@ -97,33 +99,18 @@ public struct SettingsAccountSection: View {
                 }
                 .frame(maxWidth: .infinity)
 
-                PhotosPicker(
-                    selection: $selectedPhoto,
-                    matching: .images
-                ) {
-                    VStack(spacing: 8) {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 24)
-                                .fill(Color(hex: "F3F4F6"))
-                                .frame(width: 96, height: 96)
+                ZStack {
+                    UploadButtonView(isProcessing: isProcessing, theme: theme)
+                        .frame(maxWidth: .infinity)
 
-                            if isProcessing {
-                                ProgressView()
-                                    .scaleEffect(1.2)
-                            } else {
-                                Image(systemName: "arrow.up.doc")
-                                    .font(.system(size: 40))
-                                    .foregroundStyle(Color(hex: "9CA3AF"))
-                            }
-                        }
-
-                        Text("Upload")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundStyle(theme.colors.secondaryText)
+                    PhotosPicker(
+                        selection: $selectedPhoto,
+                        matching: .images
+                    ) {
+                        Color.clear
                     }
+                    .disabled(isProcessing)
                 }
-                .buttonStyle(.plain)
-                .disabled(isProcessing)
                 .frame(maxWidth: .infinity)
             }
             .padding(20)
@@ -132,6 +119,8 @@ public struct SettingsAccountSection: View {
             .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
         }
     }
+
+
 
     // MARK: - Private Helpers
 
@@ -162,6 +151,36 @@ public struct SettingsAccountSection: View {
                 }
                 #endif
             }
+        }
+    }
+}
+
+// MARK: - Upload Button View
+
+private struct UploadButtonView: View {
+    let isProcessing: Bool
+    let theme: ThemeManager
+
+    var body: some View {
+        VStack(spacing: 8) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 24)
+                    .fill(Color(hex: "F3F4F6"))
+                    .frame(width: 96, height: 96)
+
+                if isProcessing {
+                    ProgressView()
+                        .scaleEffect(1.2)
+                } else {
+                    Image(systemName: "arrow.up.doc")
+                        .font(.system(size: 40))
+                        .foregroundStyle(Color(hex: "9CA3AF"))
+                }
+            }
+
+            Text("Upload")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(theme.colors.secondaryText)
         }
     }
 }

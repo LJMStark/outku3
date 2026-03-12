@@ -42,7 +42,7 @@ struct DayTimelineView: View {
     private var sunTimes: SunTimes { .forDate(date) }
 
     /// Insert pet after this many events (0-indexed boundary).
-    private let petInsertAfter = 2
+    private let petInsertAfter = 4
 
     var body: some View {
         VStack(spacing: 0) {
