@@ -1,9 +1,12 @@
 import SwiftUI
+import PhotosUI
 
 // MARK: - Account Section (Avatar + AI Settings)
 
 public struct SettingsAccountSection: View {
     @Environment(ThemeManager.self) private var theme
+    @State private var selectedPhoto: PhotosPickerItem?
+    @State private var avatarImage: Image?
 
     public init() {}
 
@@ -11,6 +14,19 @@ public struct SettingsAccountSection: View {
         VStack(spacing: 24) {
             avatarSection
             aiSettingsSection
+        }
+        .onChange(of: selectedPhoto) { _, newValue in
+            guard let newValue else { return }
+            Task {
+                guard let data = try? await newValue.loadTransferable(type: Data.self) else { return }
+                await MainActor.run {
+                    #if canImport(UIKit)
+                    if let uiImage = UIImage(data: data) {
+                        avatarImage = Image(uiImage: uiImage)
+                    }
+                    #endif
+                }
+            }
         }
     }
 
@@ -27,11 +43,19 @@ public struct SettingsAccountSection: View {
                             .fill(theme.currentTheme.cardGradient)
                             .frame(width: 96, height: 96)
 
-                        Image("tiko_avatar", bundle: .module)
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(width: 80, height: 80)
-                            .clipShape(Circle())
+                        if let avatarImage {
+                            avatarImage
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: 80, height: 80)
+                                .clipShape(Circle())
+                        } else {
+                            Image("tiko_avatar", bundle: .module)
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(width: 80, height: 80)
+                                .clipShape(Circle())
+                        }
                     }
 
                     Text("Avatar")
@@ -40,21 +64,27 @@ public struct SettingsAccountSection: View {
                 }
                 .frame(maxWidth: .infinity)
 
-                VStack(spacing: 8) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 24)
-                            .fill(Color(hex: "F3F4F6"))
-                            .frame(width: 96, height: 96)
+                PhotosPicker(
+                    selection: $selectedPhoto,
+                    matching: .images
+                ) {
+                    VStack(spacing: 8) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 24)
+                                .fill(Color(hex: "F3F4F6"))
+                                .frame(width: 96, height: 96)
 
-                        Image(systemName: "arrow.up.doc")
-                            .font(.system(size: 40))
-                            .foregroundStyle(Color(hex: "9CA3AF"))
+                            Image(systemName: "arrow.up.doc")
+                                .font(.system(size: 40))
+                                .foregroundStyle(Color(hex: "9CA3AF"))
+                        }
+
+                        Text("Upload")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(theme.colors.secondaryText)
                     }
-
-                    Text("Upload")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(theme.colors.secondaryText)
                 }
+                .buttonStyle(.plain)
                 .frame(maxWidth: .infinity)
             }
             .padding(20)
