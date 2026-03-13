@@ -2,6 +2,7 @@ import SwiftUI
 
 public struct OptionCard: View {
     @Environment(ThemeManager.self) private var theme
+    @State private var confettiTrigger = 0
 
     let label: String
     let emoji: String?
@@ -67,5 +68,11 @@ public struct OptionCard: View {
         }
         .buttonStyle(.plain)
         .animation(Animation.appStandard, value: isSelected)
+        .confetti(trigger: $confettiTrigger, particleCount: 30, explosionRadius: 180)
+        .onChange(of: isSelected) { oldValue, newValue in
+            if newValue && !oldValue {
+                confettiTrigger += 1
+            }
+        }
     }
 }

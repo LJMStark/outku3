@@ -4,6 +4,7 @@ public struct ThemePreviewCard: View {
     let theme: AppTheme
     let isSelected: Bool
     let action: () -> Void
+    @State private var confettiTrigger = 0
 
     public init(theme: AppTheme, isSelected: Bool, action: @escaping () -> Void) {
         self.theme = theme
@@ -46,5 +47,11 @@ public struct ThemePreviewCard: View {
             .animation(Animation.appStandard, value: isSelected)
         }
         .buttonStyle(.plain)
+        .confetti(trigger: $confettiTrigger, particleCount: 30, explosionRadius: 150)
+        .onChange(of: isSelected) { oldValue, newValue in
+            if newValue && !oldValue {
+                confettiTrigger += 1
+            }
+        }
     }
 }

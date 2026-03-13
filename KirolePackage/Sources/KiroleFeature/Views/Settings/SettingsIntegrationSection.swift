@@ -256,7 +256,7 @@ private struct IntegrationAppRow: View {
             .padding(.vertical, 12)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.kiroleRow)
     }
 }
 
@@ -272,18 +272,19 @@ private struct ConnectedAppRow: View {
         HStack(spacing: 12) {
             IntegrationIcon(type: integration.type)
                 .frame(width: 32, height: 32)
-
+            
             Text(integration.name)
                 .font(.system(size: 15))
                 .foregroundStyle(theme.colors.primaryText)
-
+            
             Spacer()
-
+            
             Button("Disconnect") {
                 onDisconnect()
             }
+            .buttonStyle(.bordered)
+            .tint(.red)
             .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(.red)
         }
         .padding(.vertical, 8)
     }

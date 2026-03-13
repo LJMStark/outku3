@@ -58,25 +58,13 @@ struct EventCardView: View {
                 RoundedRectangle(cornerRadius: 16)
                     .stroke(Color(hex: "294A3B"), lineWidth: 1)
             )
+            .shadow(color: .black.opacity(0.08), radius: 8, y: 4)
         }
-        .buttonStyle(CardButtonStyle())
+        .buttonStyle(.kiroleCTA)
     }
 }
 
-// MARK: - Card Button Style
 
-private struct CardButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.98 : 1.0)
-            .shadow(
-                color: .black.opacity(configuration.isPressed ? 0.12 : 0.08),
-                radius: configuration.isPressed ? 4 : 8,
-                y: configuration.isPressed ? 2 : 4
-            )
-            .animation(Animation.appStandard, value: configuration.isPressed)
-    }
-}
 
 // MARK: - Event Detail Formatters
 

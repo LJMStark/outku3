@@ -132,7 +132,7 @@ private struct TabButton: View {
                     .foregroundStyle(primaryColor)
             }
         }
-        .buttonStyle(ScaleButtonStyle())
+        .buttonStyle(.kiroleIcon)
     }
 }
 
@@ -167,19 +167,11 @@ private struct PetTabButton: View {
                     .frame(width: 28, height: 35)
             }
         }
-        .buttonStyle(ScaleButtonStyle())
+        .buttonStyle(.kiroleIcon)
     }
 }
 
-// MARK: - Scale Button Style
 
-private struct ScaleButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.92 : 1.0)
-            .animation(Animation.appStandard, value: configuration.isPressed)
-    }
-}
 
 // MARK: - Preview
 

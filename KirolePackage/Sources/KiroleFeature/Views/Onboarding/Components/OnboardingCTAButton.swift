@@ -2,7 +2,6 @@ import SwiftUI
 
 public struct OnboardingCTAButton: View {
     @Environment(ThemeManager.self) private var theme
-
     let title: String
     let emoji: String?
     let isEnabled: Bool
@@ -35,15 +34,7 @@ public struct OnboardingCTAButton: View {
             }
             .shadow(color: .black.opacity(isEnabled ? 0.2 : 0), radius: 12, y: 6)
         }
-        .buttonStyle(CTAButtonStyle())
+        .buttonStyle(.kiroleCTA) // Use the new global cta style
         .disabled(!isEnabled)
-    }
-}
-
-private struct CTAButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.98 : 1.0)
-            .animation(.spring(response: 0.2, dampingFraction: 0.7), value: configuration.isPressed)
     }
 }
