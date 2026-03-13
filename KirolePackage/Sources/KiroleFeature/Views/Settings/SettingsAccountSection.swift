@@ -68,15 +68,21 @@ public struct SettingsAccountSection: View {
     @MainActor
     private var avatarSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SettingsSectionHeader(title: "Avatar")
+            Text("Avatar")
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(theme.colors.primaryText)
 
             HStack(spacing: 16) {
-                VStack(spacing: 8) {
-                    ZStack(alignment: .bottom) {
-                        RoundedRectangle(cornerRadius: 24)
-                            .fill(theme.currentTheme.cardGradient)
-                            .frame(width: 96, height: 96)
+                // Avatar Card
+                ZStack {
+                    RoundedRectangle(cornerRadius: 20)
+                        .stroke(Color(hex: "374151"), lineWidth: 1) // Dark border from mockup
+                        .background(
+                            RoundedRectangle(cornerRadius: 20)
+                                .fill(Color(hex: "F3F4F6"))
+                        )
 
+                    VStack(spacing: 8) {
                         if let avatarImage {
                             avatarImage
                                 .resizable()
@@ -89,18 +95,43 @@ public struct SettingsAccountSection: View {
                                 .resizable()
                                 .aspectRatio(contentMode: .fit)
                                 .frame(width: 76, height: 95)
+                                .offset(y: 5)
                         }
-                    }
 
-                    Text("Avatar")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(theme.colors.secondaryText)
+                        Text("Avatar")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(theme.colors.primaryText)
+                            .padding(.bottom, 8)
+                    }
+                    .padding(.top, 16)
                 }
                 .frame(maxWidth: .infinity)
+                .aspectRatio(1, contentMode: .fit)
 
+                // Upload Card
                 ZStack {
-                    UploadButtonView(isProcessing: isProcessing, theme: theme)
-                        .frame(maxWidth: .infinity)
+                    RoundedRectangle(cornerRadius: 20)
+                        .fill(Color(hex: "F3F4F6")) // Light borderless card
+
+                    VStack(spacing: 8) {
+                        ZStack {
+                            if isProcessing {
+                                ProgressView()
+                                    .scaleEffect(1.2)
+                            } else {
+                                Image(systemName: "icloud.and.arrow.up")
+                                    .font(.system(size: 40, weight: .medium))
+                                    .foregroundStyle(Color(hex: "6B7280"))
+                            }
+                        }
+                        .frame(width: 80, height: 80)
+
+                        Text("Upload")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(theme.colors.primaryText)
+                            .padding(.bottom, 8)
+                    }
+                    .padding(.top, 16)
 
                     PhotosPicker(
                         selection: $selectedPhoto,
@@ -111,11 +142,8 @@ public struct SettingsAccountSection: View {
                     .disabled(isProcessing)
                 }
                 .frame(maxWidth: .infinity)
+                .aspectRatio(1, contentMode: .fit)
             }
-            .padding(20)
-            .background(Color.white)
-            .clipShape(RoundedRectangle(cornerRadius: 24))
-            .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
         }
     }
 
@@ -154,32 +182,4 @@ public struct SettingsAccountSection: View {
     }
 }
 
-// MARK: - Upload Button View
-
-private struct UploadButtonView: View {
-    let isProcessing: Bool
-    let theme: ThemeManager
-
-    var body: some View {
-        VStack(spacing: 8) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 24)
-                    .fill(Color(hex: "F3F4F6"))
-                    .frame(width: 96, height: 96)
-
-                if isProcessing {
-                    ProgressView()
-                        .scaleEffect(1.2)
-                } else {
-                    Image(systemName: "arrow.up.doc")
-                        .font(.system(size: 40))
-                        .foregroundStyle(Color(hex: "9CA3AF"))
-                }
-            }
-
-            Text("Upload")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(theme.colors.secondaryText)
-        }
-    }
-}
+// Removed UploadButtonView as it's now inline

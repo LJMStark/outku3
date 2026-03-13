@@ -1,6 +1,6 @@
 import SwiftUI
 
-// MARK: - Device Mode Section
+// MARK: - Device Section
 
 /// 设备模式设置区域
 public struct DeviceModeSection: View {
@@ -13,153 +13,96 @@ public struct DeviceModeSection: View {
         VStack(alignment: .leading, spacing: 12) {
             sectionHeader
 
-            VStack(spacing: 16) {
-                deviceModeSelector
-                demoModeToggle
+            VStack(spacing: 12) {
+                deviceCard
+                
+                homeScreenHint
             }
-            .padding(16)
-            .background(Color.white)
-            .clipShape(RoundedRectangle(cornerRadius: 24))
-            .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
         }
     }
 
     private var sectionHeader: some View {
-        Text("DEVICE MODE")
-            .font(.system(size: 12, weight: .bold))
-            .foregroundStyle(theme.colors.secondaryText)
-            .textCase(.uppercase)
-            .tracking(0.5)
+        Text("Device")
+            .font(.system(size: 15, weight: .bold))
+            .foregroundStyle(theme.colors.primaryText)
     }
 
-    private var deviceModeSelector: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Operating Mode")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(theme.colors.primaryText)
+    private var deviceCard: some View {
+        ZStack {
+            // Background
+            RoundedRectangle(cornerRadius: 24)
+                .fill(
+                    LinearGradient(
+                        colors: [Color(hex: "5A7D6A"), Color(hex: "4A6352")],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+            
+            // Texture overlay (optional)
+            RoundedRectangle(cornerRadius: 24)
+                .fill(Color.black.opacity(0.1))
+                .blendMode(.multiply)
 
-            HStack(spacing: 12) {
-                ForEach(DeviceMode.allCases, id: \.self) { mode in
-                    DeviceModeButton(
-                        mode: mode,
-                        isSelected: appState.deviceMode == mode
-                    ) {
-                        withAnimation(Animation.appStandard) {
-                            appState.deviceMode = mode
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private var demoModeToggle: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Demo Mode")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(theme.colors.primaryText)
-
-                    Text("Use sample data for testing")
-                        .font(.system(size: 12))
-                        .foregroundStyle(theme.colors.secondaryText)
-                }
-
-                Spacer()
-
-                Button {
-                    withAnimation(Animation.appStandard) {
-                        if appState.isDemoMode {
-                            Task {
-                                await appState.disableDemoMode()
+            HStack(spacing: 8) {
+                // Pet Image
+                Image("tiko_avatar", bundle: .module)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 100, height: 120)
+                    .offset(y: 10) // Push pet slightly down
+                
+                VStack(alignment: .trailing, spacing: 12) {
+                    // Battery indicator
+                    HStack(spacing: 4) {
+                        HStack(spacing: 2) {
+                            ForEach(0..<10) { i in
+                                Circle()
+                                    .fill(i < 5 ? Color.white : Color.white.opacity(0.3))
+                                    .frame(width: 6, height: 6)
                             }
-                        } else {
-                            appState.enableDemoMode()
                         }
+                        Text("50%")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(.white)
                     }
-                } label: {
-                    DemoToggleSwitch(isOn: appState.isDemoMode)
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(12)
-            .background(Color(hex: "F9FAFB"))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-
-            if appState.isDemoMode {
-                HStack(spacing: 6) {
-                    Image(systemName: "info.circle.fill")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.orange)
-
-                    Text("Demo mode active - showing sample data")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.orange)
+                    
+                    // Speech Bubble
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(Color(hex: "C6D8C8"))
+                        
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(Color(hex: "95B19A"), lineWidth: 4)
+                        
+                        Text("Back to back meetings to start the day, an intense morning, I must say.")
+                            .font(.system(size: 13, weight: .medium, design: .rounded))
+                            .foregroundStyle(Color(hex: "374151"))
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                            .minimumScaleFactor(0.8)
+                    }
                 }
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 20)
         }
+        .frame(height: 140)
+        .shadow(color: .black.opacity(0.1), radius: 10, y: 5)
     }
-}
-
-// MARK: - Device Mode Button
-
-private struct DeviceModeButton: View {
-    let mode: DeviceMode
-    let isSelected: Bool
-    let action: () -> Void
-
-    @Environment(ThemeManager.self) private var theme
-
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: 8) {
-                Image(systemName: mode.iconName)
-                    .font(.system(size: 24))
-                    .foregroundStyle(isSelected ? theme.colors.accent : theme.colors.secondaryText)
-
-                Text(mode.displayName)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(isSelected ? theme.colors.primaryText : theme.colors.secondaryText)
-
-                Text(mode.description)
-                    .font(.system(size: 10))
-                    .foregroundStyle(theme.colors.secondaryText)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
-            .padding(.horizontal, 8)
-            .background(isSelected ? theme.colors.accentLight : Color(hex: "F9FAFB"))
-            .clipShape(RoundedRectangle(cornerRadius: 16))
-            .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(isSelected ? theme.colors.accent : Color.clear, lineWidth: 2)
-            )
+    
+    private var homeScreenHint: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "info.circle")
+                .font(.system(size: 14))
+                .foregroundStyle(theme.colors.secondaryText)
+            
+            Text("How do I add to my home screen?")
+                .font(.system(size: 13))
+                .foregroundStyle(theme.colors.secondaryText)
         }
-        .buttonStyle(.plain)
-    }
-}
-
-// MARK: - Demo Toggle Switch
-
-private struct DemoToggleSwitch: View {
-    let isOn: Bool
-
-    var body: some View {
-        ZStack(alignment: isOn ? .trailing : .leading) {
-            RoundedRectangle(cornerRadius: 12)
-                .fill(isOn ? Color.orange : Color(hex: "E0E0E0"))
-                .frame(width: 40, height: 24)
-
-            Circle()
-                .fill(Color.white)
-                .frame(width: 16, height: 16)
-                .shadow(color: .black.opacity(0.1), radius: 1, y: 1)
-                .padding(4)
-        }
-        .animation(Animation.appStandard, value: isOn)
+        .frame(maxWidth: .infinity)
+        .padding(.top, 4)
     }
 }
 

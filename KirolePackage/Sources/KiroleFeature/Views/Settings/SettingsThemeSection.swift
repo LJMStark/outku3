@@ -9,7 +9,9 @@ public struct SettingsThemeSection: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SettingsSectionHeader(title: "Theme")
+            Text("Theme")
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(themeManager.colors.primaryText)
 
             VStack(spacing: 12) {
                 ForEach(AppTheme.allCases) { themeOption in
@@ -23,10 +25,6 @@ public struct SettingsThemeSection: View {
                     }
                 }
             }
-            .padding(16)
-            .background(Color.white)
-            .clipShape(RoundedRectangle(cornerRadius: 24))
-            .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
         }
     }
 }
@@ -54,24 +52,17 @@ private struct ThemeOptionRow: View {
                     ForEach(theme.previewColors, id: \.self) { color in
                         Circle()
                             .fill(color)
-                            .frame(width: 20, height: 20)
-                            .overlay(
-                                Circle()
-                                    .stroke(Color.white, lineWidth: 2)
-                            )
-                            .shadow(color: .black.opacity(0.1), radius: 1, y: 1)
+                            .frame(width: 16, height: 16)
                     }
                 }
-
-                // Toggle
-                SettingsToggleSwitch(isOn: isSelected)
             }
-            .padding(16)
-            .background(Color(hex: "F9FAFB"))
-            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .padding(.horizontal, 24)
+            .padding(.vertical, 16)
+            .background(Color.white)
+            .clipShape(Capsule())
             .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(isSelected ? Color(hex: "D1D5DB") : Color.clear, lineWidth: 2)
+                Capsule()
+                    .stroke(isSelected ? Color.black : Color(hex: "E5E7EB"), lineWidth: 1)
             )
         }
         .buttonStyle(.plain)

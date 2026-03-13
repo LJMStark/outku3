@@ -31,25 +31,31 @@ public struct SettingsIntegrationSection: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SettingsSectionHeader(title: "Integrations")
+            Text("Integrations")
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(theme.colors.primaryText)
 
-            VStack(spacing: 16) {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("For best results, it is recommended to only have 1-2 of your most important calendars enabled at once.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(theme.colors.secondaryText)
+                    .lineSpacing(2)
+
                 if connectedIntegrations.isEmpty {
                     emptyStateView
                 } else {
                     connectedAppsView
                 }
 
-                Text("For best results, it is recommended to only have 1-2 of your most important calendars enabled at once.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(theme.colors.secondaryText)
-
-                Divider()
+                Text("Connect New App")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(theme.colors.primaryText)
+                    .padding(.top, 8)
 
                 connectNewAppSection
             }
             .padding(16)
-            .background(theme.colors.cardBackground)
+            .background(Color.white)
             .clipShape(RoundedRectangle(cornerRadius: 24))
             .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
         }
@@ -95,19 +101,20 @@ public struct SettingsIntegrationSection: View {
         let types = filteredTypes
 
         return VStack(alignment: .leading, spacing: 12) {
-            Text("Connect New App")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(theme.colors.primaryText)
-
             HStack {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(theme.colors.secondaryText)
                 TextField("Search all apps", text: $searchText)
                     .font(.system(size: 14))
             }
-            .padding(12)
-            .background(Color(hex: "F3F4F6"))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(Color.white)
+            .clipShape(Capsule())
+            .overlay(
+                Capsule()
+                    .stroke(Color(hex: "374151"), lineWidth: 1)
+            )
 
             Text("Commonly connected apps")
                 .font(.system(size: 12))
@@ -269,24 +276,51 @@ private struct ConnectedAppRow: View {
     @Environment(ThemeManager.self) private var theme
 
     var body: some View {
-        HStack(spacing: 12) {
-            IntegrationIcon(type: integration.type)
-                .frame(width: 32, height: 32)
-            
-            Text(integration.name)
-                .font(.system(size: 15))
-                .foregroundStyle(theme.colors.primaryText)
-            
-            Spacer()
-            
-            Button("Disconnect") {
-                onDisconnect()
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                IntegrationIcon(type: integration.type)
+                    .frame(width: 24, height: 24)
+                
+                Text(integration.name)
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(theme.colors.primaryText)
+                
+                Spacer()
+                
+                SettingsToggleSwitch(isOn: true)
             }
-            .buttonStyle(.bordered)
-            .tint(.red)
-            .font(.system(size: 12, weight: .medium))
+            
+            HStack(alignment: .bottom) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(integration.type == .googleCalendar || integration.type == .googleTasks ? "39181726a@gmail.com" : "No username")
+                        .font(.system(size: 11))
+                        .foregroundStyle(theme.colors.secondaryText)
+                    
+                    Text("last updated 16 minutes ago")
+                        .font(.system(size: 11))
+                        .foregroundStyle(theme.colors.secondaryText)
+                }
+                
+                Spacer()
+                
+                Button("Manage") {
+                    onDisconnect()
+                }
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(theme.colors.primaryText)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Color(hex: "F3F4F6"))
+                .clipShape(Capsule())
+            }
         }
-        .padding(.vertical, 8)
+        .padding(16)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color(hex: "E5E7EB"), lineWidth: 1)
+        )
     }
 }
 

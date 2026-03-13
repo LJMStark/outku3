@@ -30,29 +30,30 @@ struct SettingsView: View {
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: 24) {
-                SettingsBLESection()
+                DeviceModeSection()
                     .appearAnimation(appeared: appeared)
 
-                DeviceModeSection()
+                SettingsThemeSection()
                     .appearAnimation(delay: 0.05, appeared: appeared)
 
-                SettingsFocusSection()
-                    .appearAnimation(delay: 0.08, appeared: appeared)
-
-                SettingsThemeSection()
+                SettingsAccountSection()
                     .appearAnimation(delay: 0.1, appeared: appeared)
 
-                SettingsAccountSection()
+                SettingsIntegrationSection()
                     .appearAnimation(delay: 0.2, appeared: appeared)
 
-                SoundSettingsSection()
+                // Other settings moved below
+                SettingsBLESection()
                     .appearAnimation(delay: 0.3, appeared: appeared)
 
-                SettingsIntegrationSection()
+                SettingsFocusSection()
                     .appearAnimation(delay: 0.35, appeared: appeared)
 
-                DebugSection()
+                SoundSettingsSection()
                     .appearAnimation(delay: 0.4, appeared: appeared)
+
+                DebugSection()
+                    .appearAnimation(delay: 0.45, appeared: appeared)
 
                 Spacer()
                     .frame(height: 80)
