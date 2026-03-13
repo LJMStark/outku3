@@ -126,31 +126,51 @@ private struct PetIllustrationSection: View {
     @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
     @State private var breathingOffset: CGFloat = 0
+    @State private var particleOffsets: [CGFloat] = [0, 0, 0]
 
     var body: some View {
         Button(action: onTap) {
-            VStack {
-                Spacer()
+            ZStack {
+                // Background Radial Gradient for "Habitat Focus"
+                RadialGradient(
+                    gradient: Gradient(colors: [
+                        theme.colors.primary.opacity(0.15),
+                        Color.clear
+                    ]),
+                    center: .center,
+                    startRadius: 50,
+                    endRadius: 200
+                )
+                .frame(height: 340)
 
-                ZStack {
-                    // Ground shadow
-                    Ellipse()
-                        .fill(Color.black.opacity(0.1))
-                        .frame(width: 120, height: 30)
-                        .offset(y: 60)
+                VStack {
+                    Spacer()
 
-                    // Pet image
-                    Image(petImageName, bundle: .module)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: 320, height: 320)
-                        .offset(y: breathingOffset)
+                    ZStack {
+                        // Soft blurred ground shadow
+                        Ellipse()
+                            .fill(Color(hex: "8B5A2B").opacity(0.15))
+                            .frame(width: 140, height: 24)
+                            .blur(radius: 8)
+                            .offset(y: 70)
+
+                        // Pet image
+                        Image(petImageName, bundle: .module)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 320, height: 320)
+                            .offset(y: breathingOffset)
+                            .shadow(color: theme.colors.primary.opacity(0.1), radius: 20, x: 0, y: 10)
+                            
+                        // Floating Particles for liveliness
+                        floatingParticles
+                    }
+
+                    Spacer()
+                        .frame(height: 40)
                 }
-
-                Spacer()
-                    .frame(height: 40)
+                .frame(height: 340)
             }
-            .frame(height: 340)
         }
         .buttonStyle(.plain)
         .onAppear {
@@ -160,11 +180,58 @@ private struct PetIllustrationSection: View {
             ) {
                 breathingOffset = -8
             }
+            
+            // Staggered particle animations
+            for i in 0..<particleOffsets.count {
+                withAnimation(
+                    .easeInOut(duration: Double.random(in: 2...4))
+                    .repeatForever(autoreverses: true)
+                    .delay(Double.random(in: 0...2))
+                ) {
+                    particleOffsets[i] = -15
+                }
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private var floatingParticles: some View {
+        ZStack {
+            Image(systemName: "sparkle")
+                .font(.system(size: 14))
+                .foregroundColor(theme.colors.primary.opacity(0.3))
+                .offset(x: -100, y: -40 + particleOffsets[0])
+                
+            Image(systemName: "leaf.fill")
+                .font(.system(size: 10))
+                .foregroundColor(Color.green.opacity(0.2))
+                .offset(x: 110, y: 20 + particleOffsets[1])
+                .rotationEffect(.degrees(15))
+                
+            Image(systemName: "sparkle")
+                .font(.system(size: 18))
+                .foregroundColor(theme.colors.primary.opacity(0.2))
+                .offset(x: -80, y: 60 + particleOffsets[2])
         }
     }
 
     private var petImageName: String {
         appState.pet.currentForm.imageName
+    }
+}
+
+// MARK: - Task Section Helper
+
+private func iconForSectionTitle(_ title: String) -> String {
+    switch title {
+    case "Tasks Today":
+        return "sun.max.fill"
+    case "Upcoming":
+        return "calendar"
+    case "No Due Dates":
+        return "tray.fill"
+    default:
+        return "list.bullet"
     }
 }
 
@@ -180,9 +247,16 @@ private struct TaskSectionView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(title)
-                .font(.system(size: 20, weight: .bold))
-                .foregroundStyle(theme.colors.primaryText)
+            HStack(spacing: 8) {
+                Image(systemName: iconForSectionTitle(title))
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(theme.colors.primary.opacity(0.8))
+                
+                Text(title)
+                    .font(.system(size: 20, weight: .bold, design: .rounded))
+                    .foregroundStyle(theme.colors.primaryText)
+            }
+            .padding(.bottom, 4)
 
             if tasks.isEmpty {
                 EmptyTaskPlaceholder()
@@ -210,81 +284,96 @@ private struct TaskItemRow: View {
     @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
     @State private var showEditSheet = false
+    @State private var isPressed = false
 
     var body: some View {
-        HStack(spacing: 12) {
-            // Checkbox
-            Button {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
-                    appState.toggleTaskCompletion(task)
-                }
-            } label: {
-                RoundedRectangle(cornerRadius: 6)
-                    .stroke(task.isCompleted ? theme.colors.taskComplete : Color(hex: "D1D5DB"), lineWidth: 2)
-                    .frame(width: 24, height: 24)
-                    .overlay {
-                        if task.isCompleted {
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 14, weight: .bold))
-                                .foregroundStyle(Color(hex: "3B82F6"))
-                        }
+        Button {
+            showEditSheet = true
+        } label: {
+            HStack(spacing: 12) {
+                // Checkbox
+                Button {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                        appState.toggleTaskCompletion(task)
                     }
-            }
-            .buttonStyle(.plain)
+                } label: {
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(task.isCompleted ? theme.colors.taskComplete : Color(hex: "D1D5DB"), lineWidth: 2)
+                        .frame(width: 24, height: 24)
+                        .overlay {
+                            if task.isCompleted {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundStyle(Color(hex: "3B82F6"))
+                            }
+                        }
+                }
+                .buttonStyle(.plain)
 
-            // Task title
-            Text(task.title)
-                .font(.system(size: 15))
-                .foregroundStyle(task.isCompleted ? theme.colors.secondaryText : theme.colors.primaryText)
-                .strikethrough(task.isCompleted, color: theme.colors.secondaryText)
+                // Task title
+                Text(task.title)
+                    .font(.system(size: 15))
+                    .foregroundStyle(task.isCompleted ? theme.colors.secondaryText : theme.colors.primaryText)
+                    .strikethrough(task.isCompleted, color: theme.colors.secondaryText)
+                    .lineLimit(1)
 
-            Spacer()
+                Spacer()
 
-            // Tag
-            Text("#My Tasks")
-                .font(.system(size: 12))
-                .foregroundStyle(theme.colors.secondaryText)
-
-            // Due date label
-            if let dueDate = task.dueDate {
-                Text(formatDueDate(dueDate))
-                    .font(.system(size: 12))
-                    .foregroundStyle(theme.colors.primaryText)
+                // Tag
+                Text("#My Tasks")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(theme.colors.primary.opacity(0.8))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(Color(hex: "E5E7EB"))
+                    .background(theme.colors.primary.opacity(0.1))
                     .clipShape(Capsule())
-            }
 
-            // More menu
-            Menu {
-                Button {
-                    showEditSheet = true
-                } label: {
-                    Label("Edit", systemImage: "pencil")
+                // Due date label
+                if let dueDate = task.dueDate {
+                    Text(formatDueDate(dueDate))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color(hex: "8B5A2B"))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color(hex: "FDE68A").opacity(0.3)) // Soft pastel yellow
+                        .clipShape(Capsule())
                 }
 
-                Button(role: .destructive) {
-                    appState.deleteTask(task)
+                // More menu
+                Menu {
+                    Button {
+                        showEditSheet = true
+                    } label: {
+                        Label("Edit", systemImage: "pencil")
+                    }
+
+                    Button(role: .destructive) {
+                        appState.deleteTask(task)
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
                 } label: {
-                    Label("Delete", systemImage: "trash")
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 16))
+                        .foregroundStyle(theme.colors.secondaryText)
+                        .rotationEffect(.degrees(90))
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
                 }
-            } label: {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 16))
-                    .foregroundStyle(Color(hex: "3B82F6"))
-                    .rotationEffect(.degrees(90))
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
+            .padding(16)
+            .background(Color.white)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            // Warm shadow instead of pure black
+            .shadow(color: theme.colors.primary.opacity(0.08), radius: 8, x: 0, y: 4)
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(Color(hex: "F3F4F6"), lineWidth: 1)
+            )
         }
-        .padding(16)
-        .background(Color.white)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(Color(hex: "F3F4F6"), lineWidth: 1)
-        )
+        .buttonStyle(RowScaleButtonStyle(isPressed: $isPressed))
+        .opacity(task.isCompleted ? 0.6 : 1.0)
         .sheet(isPresented: $showEditSheet) {
             TaskEditSheet(task: task)
                 .environment(appState)
@@ -300,6 +389,20 @@ private struct TaskItemRow: View {
     }
 }
 
+// Custom Row Button Style for scale effect
+private struct RowScaleButtonStyle: ButtonStyle {
+    @Binding var isPressed: Bool
+    
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: configuration.isPressed)
+            .onChange(of: configuration.isPressed) { _, newValue in
+                isPressed = newValue
+            }
+    }
+}
+
 // MARK: - Empty Task Placeholder
 
 private struct EmptyTaskPlaceholder: View {
@@ -307,20 +410,26 @@ private struct EmptyTaskPlaceholder: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            RoundedRectangle(cornerRadius: 6)
-                .stroke(Color(hex: "D1D5DB"), lineWidth: 2)
-                .frame(width: 24, height: 24)
+            Image(systemName: "leaf.fill")
+                .font(.system(size: 18))
+                .foregroundStyle(theme.colors.primary.opacity(0.6))
 
-            Text("No tasks")
-                .font(.system(size: 15))
-                .foregroundStyle(theme.colors.secondaryText)
+            Text("All caught up! Relax time.")
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(theme.colors.primary.opacity(0.7))
 
             Spacer()
         }
         .padding(16)
-        .background(Color.white)
+        .background(theme.colors.primary.opacity(0.03))
         .clipShape(RoundedRectangle(cornerRadius: 16))
-        .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .strokeBorder(
+                    style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])
+                )
+                .foregroundColor(theme.colors.primary.opacity(0.3))
+        )
     }
 }
 
