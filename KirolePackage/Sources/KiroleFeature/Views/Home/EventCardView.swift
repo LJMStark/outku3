@@ -306,6 +306,14 @@ private struct EventSourceIconView: View {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: size * 0.95))
                     .foregroundStyle(Color(hex: "DC4C3E"))
+            case .notion:
+                Image(systemName: "doc.text")
+                    .font(.system(size: size * 0.85))
+                    .foregroundStyle(Color.black.opacity(0.75))
+            case .taskade:
+                Image(systemName: "list.bullet.rectangle")
+                    .font(.system(size: size * 0.85))
+                    .foregroundStyle(Color(hex: "7B68EE"))
             }
         }
         .frame(width: size, height: size)

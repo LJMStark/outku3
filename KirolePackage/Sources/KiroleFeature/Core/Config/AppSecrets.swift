@@ -7,6 +7,10 @@ public enum AppSecrets {
         var openRouterAPIKey: String?
         var bleSharedSecret: String?
         var deepFocusFeatureEnabled: Bool
+        var notionClientId: String?
+        var notionClientSecret: String?
+        var taskadeClientId: String?
+        var taskadeClientSecret: String?
     }
 
     private nonisolated(unsafe) static var storage = Storage(deepFocusFeatureEnabled: false)
@@ -17,7 +21,11 @@ public enum AppSecrets {
         supabaseAnonKey: String?,
         openRouterAPIKey: String?,
         bleSharedSecret: String?,
-        deepFocusFeatureEnabled: Bool = false
+        deepFocusFeatureEnabled: Bool = false,
+        notionClientId: String? = nil,
+        notionClientSecret: String? = nil,
+        taskadeClientId: String? = nil,
+        taskadeClientSecret: String? = nil
     ) {
         queue.sync(flags: .barrier) {
             storage.supabaseURL = normalize(supabaseURL)
@@ -25,6 +33,10 @@ public enum AppSecrets {
             storage.openRouterAPIKey = normalize(openRouterAPIKey)
             storage.bleSharedSecret = normalize(bleSharedSecret)
             storage.deepFocusFeatureEnabled = deepFocusFeatureEnabled
+            storage.notionClientId = normalize(notionClientId)
+            storage.notionClientSecret = normalize(notionClientSecret)
+            storage.taskadeClientId = normalize(taskadeClientId)
+            storage.taskadeClientSecret = normalize(taskadeClientSecret)
         }
     }
 
@@ -45,6 +57,22 @@ public enum AppSecrets {
 
     public static var deepFocusFeatureEnabled: Bool {
         queue.sync { storage.deepFocusFeatureEnabled }
+    }
+
+    public static var notionClientId: String? {
+        queue.sync { storage.notionClientId }
+    }
+
+    public static var notionClientSecret: String? {
+        queue.sync { storage.notionClientSecret }
+    }
+
+    public static var taskadeClientId: String? {
+        queue.sync { storage.taskadeClientId }
+    }
+
+    public static var taskadeClientSecret: String? {
+        queue.sync { storage.taskadeClientSecret }
     }
 
     private static func normalize(_ value: String?) -> String? {

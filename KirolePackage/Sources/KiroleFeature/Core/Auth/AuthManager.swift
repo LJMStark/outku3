@@ -17,11 +17,15 @@ public final class AuthManager {
     public private(set) var isGoogleConnected: Bool = false
     public private(set) var hasCalendarAccess: Bool = false
     public private(set) var hasTasksAccess: Bool = false
+    public private(set) var isNotionConnected: Bool = false
+    public private(set) var isTaskadeConnected: Bool = false
 
     // MARK: - Services
 
     private let appleSignInService = AppleSignInService.shared
     private let googleSignInService = GoogleSignInService.shared
+    private let notionAuthService = NotionAuthService.shared
+    private let taskadeAuthService = TaskadeAuthService.shared
     private let keychainService = KeychainService.shared
 
     private init() {}
@@ -38,6 +42,9 @@ public final class AuthManager {
         } else {
             restoreGoogleStateFromKeychain()
         }
+
+        isNotionConnected = notionAuthService.isConnected
+        isTaskadeConnected = taskadeAuthService.isConnected
     }
 
     private func applyGoogleSignInResult(_ result: GoogleSignInResult, isRestore: Bool) {
@@ -211,6 +218,44 @@ public final class AuthManager {
         }
     }
 
+    // MARK: - Notion Sign In
+
+    /// 使用 Notion 连接
+    public func signInWithNotion() async throws {
+        _ = try await notionAuthService.authorize()
+        isNotionConnected = true
+    }
+
+    /// 获取 Notion access token
+    public func getNotionAccessToken() -> String? {
+        notionAuthService.getAccessToken()
+    }
+
+    /// 断开 Notion 连接
+    public func disconnectNotion() {
+        notionAuthService.disconnect()
+        isNotionConnected = false
+    }
+
+    // MARK: - Taskade Sign In
+
+    /// 使用 Taskade 连接
+    public func signInWithTaskade() async throws {
+        _ = try await taskadeAuthService.authorize()
+        isTaskadeConnected = true
+    }
+
+    /// 获取 Taskade access token
+    public func getTaskadeAccessToken() async throws -> String {
+        try await taskadeAuthService.getAccessToken()
+    }
+
+    /// 断开 Taskade 连接
+    public func disconnectTaskade() {
+        taskadeAuthService.disconnect()
+        isTaskadeConnected = false
+    }
+
     // MARK: - Sign Out
 
     /// 完全登出
@@ -223,6 +268,12 @@ public final class AuthManager {
 
         // 清除 Apple
         appleSignInService.clearCredentials()
+
+        // 清除 Notion + Taskade
+        notionAuthService.disconnect()
+        isNotionConnected = false
+        taskadeAuthService.disconnect()
+        isTaskadeConnected = false
 
         // 清除所有 keychain 数据
         keychainService.clearAll()

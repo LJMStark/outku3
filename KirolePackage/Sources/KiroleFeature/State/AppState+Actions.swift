@@ -75,6 +75,22 @@ extension AppState {
             } catch {
                 reportSyncError(error, component: "Apple Reminders", context: "AppState.toggleTaskCompletion")
             }
+        case .notion:
+            do {
+                guard let accessToken = AuthManager.shared.getNotionAccessToken() else {
+                    throw NotionSyncError.notAuthenticated
+                }
+                try await notionSyncEngine.pushTaskUpdate(task, accessToken: accessToken)
+            } catch {
+                reportSyncError(error, component: "Notion", context: "AppState.toggleTaskCompletion")
+            }
+        case .taskade:
+            do {
+                let accessToken = try await AuthManager.shared.getTaskadeAccessToken()
+                try await taskadeSyncEngine.pushTaskUpdate(task, accessToken: accessToken)
+            } catch {
+                reportSyncError(error, component: "Taskade", context: "AppState.toggleTaskCompletion")
+            }
         default:
             break
         }
@@ -134,6 +150,10 @@ extension AppState {
                 }
             }
         case .todoist:
+            break
+        case .notion:
+            break
+        case .taskade:
             break
         }
     }

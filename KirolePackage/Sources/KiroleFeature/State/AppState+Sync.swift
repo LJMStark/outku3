@@ -165,4 +165,63 @@ extension AppState {
         lastGoogleSyncDebug = "Partial: events=\(eventsCount), tasks=\(tasksCount), warnings=\(warningText), duration=\(durationMs)ms"
         ErrorReporter.log(appError, context: "AppState.applyGoogleSyncOutcome")
     }
+
+    // MARK: - Notion Sync
+
+    public func syncNotionData() async {
+        guard isIntegrationConnected(.notion) else { return }
+
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            guard let accessToken = AuthManager.shared.getNotionAccessToken() else {
+                throw NotionSyncError.notAuthenticated
+            }
+            let notionTasks = tasks.filter { $0.source == .notion }
+            let syncedTasks = try await notionSyncEngine.syncTasks(
+                currentTasks: notionTasks,
+                accessToken: accessToken
+            )
+            let otherTasks = tasks.filter { $0.source != .notion }
+            tasks = otherTasks + syncedTasks
+            updateStatistics()
+            try await localStorage.saveTasks(tasks)
+        } catch {
+            let appError = AppError.sync(component: "Notion", underlying: error.localizedDescription)
+            lastError = UserFacingErrorMapper.message(for: appError)
+            ErrorReporter.log(appError, context: "AppState.syncNotionData")
+        }
+
+        await updatePetState()
+    }
+
+    // MARK: - Taskade Sync
+
+    public func syncTaskadeData() async {
+        guard isIntegrationConnected(.taskade) else { return }
+
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            let accessToken = try await AuthManager.shared.getTaskadeAccessToken()
+            let taskadeTasks = tasks.filter { $0.source == .taskade }
+            let syncedTasks = try await taskadeSyncEngine.syncTasks(
+                currentTasks: taskadeTasks,
+                accessToken: accessToken
+            )
+            let otherTasks = tasks.filter { $0.source != .taskade }
+            tasks = otherTasks + syncedTasks
+            updateStatistics()
+            try await localStorage.saveTasks(tasks)
+        } catch {
+            let appError = AppError.sync(component: "Taskade", underlying: error.localizedDescription)
+            lastError = UserFacingErrorMapper.message(for: appError)
+            ErrorReporter.log(appError, context: "AppState.syncTaskadeData")
+        }
+
+        await updatePetState()
+    }
 }
+

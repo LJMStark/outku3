@@ -62,6 +62,10 @@ final class IntegrationCoordinator {
             return (events, tasks.filter { $0.source != .apple })
         case .googleTasks:
             return (events, tasks.filter { $0.source != .google })
+        case .notion:
+            return (events, tasks.filter { $0.source != .notion })
+        case .taskade:
+            return (events, tasks.filter { $0.source != .taskade })
         default:
             return (events, tasks)
         }

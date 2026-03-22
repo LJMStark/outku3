@@ -159,6 +159,12 @@ public struct SettingsIntegrationSection: View {
             case .appleReminders:
                 await connectAppleRemindersIntegration()
 
+            case .notion:
+                await connectNotionIntegration()
+
+            case .taskade:
+                await connectTaskadeIntegration()
+
             default:
                 showComingSoon = true
             }
@@ -229,6 +235,39 @@ public struct SettingsIntegrationSection: View {
 
     private func disconnectIntegration(_ type: IntegrationType) {
         appState.updateIntegrationStatus(type, isConnected: false)
+
+        switch type {
+        case .notion:
+            authManager.disconnectNotion()
+        case .taskade:
+            authManager.disconnectTaskade()
+        default:
+            break
+        }
+    }
+
+    // MARK: - Notion
+
+    private func connectNotionIntegration() async {
+        do {
+            try await authManager.signInWithNotion()
+            appState.updateIntegrationStatus(.notion, isConnected: true)
+            await appState.syncNotionData()
+        } catch {
+            appState.lastError = "Failed to connect Notion: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - Taskade
+
+    private func connectTaskadeIntegration() async {
+        do {
+            try await authManager.signInWithTaskade()
+            appState.updateIntegrationStatus(.taskade, isConnected: true)
+            await appState.syncTaskadeData()
+        } catch {
+            appState.lastError = "Failed to connect Taskade: \(error.localizedDescription)"
+        }
     }
 }
 

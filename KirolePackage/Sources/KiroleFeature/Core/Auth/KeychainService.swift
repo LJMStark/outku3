@@ -18,6 +18,10 @@ public final class KeychainService: @unchecked Sendable {
         static let supabaseAccessToken = "supabase_access_token"
         static let supabaseRefreshToken = "supabase_refresh_token"
         static let openAIAPIKey = "openai_api_key"
+        static let notionAccessToken = "notion_access_token"
+        static let notionWorkspaceId = "notion_workspace_id"
+        static let taskadeAccessToken = "taskade_access_token"
+        static let taskadeRefreshToken = "taskade_refresh_token"
     }
 
     private init() {
@@ -252,6 +256,89 @@ public final class KeychainService: @unchecked Sendable {
         getOpenAIAPIKey() != nil
     }
 
+    // MARK: - Notion Tokens
+
+    public func saveNotionAccessToken(_ token: String) throws {
+        try keychain.set(token, key: Keys.notionAccessToken)
+    }
+
+    public func saveNotionWorkspaceId(_ id: String) throws {
+        try keychain.set(id, key: Keys.notionWorkspaceId)
+    }
+
+    public func getNotionAccessToken() -> String? {
+        do {
+            return try keychain.get(Keys.notionAccessToken)
+        } catch {
+            ErrorReporter.log(
+                .persistence(operation: "read", target: "notion_access_token", underlying: error.localizedDescription),
+                context: "KeychainService.getNotionAccessToken"
+            )
+            return nil
+        }
+    }
+
+    public func getNotionWorkspaceId() -> String? {
+        do {
+            return try keychain.get(Keys.notionWorkspaceId)
+        } catch {
+            return nil
+        }
+    }
+
+    public func clearNotionTokens() {
+        do {
+            try keychain.remove(Keys.notionAccessToken)
+            try keychain.remove(Keys.notionWorkspaceId)
+        } catch {
+            ErrorReporter.log(
+                .persistence(operation: "delete", target: "notion_tokens", underlying: error.localizedDescription),
+                context: "KeychainService.clearNotionTokens"
+            )
+        }
+    }
+
+    // MARK: - Taskade Tokens
+
+    public func saveTaskadeTokens(accessToken: String, refreshToken: String?) throws {
+        try keychain.set(accessToken, key: Keys.taskadeAccessToken)
+        if let refreshToken {
+            try keychain.set(refreshToken, key: Keys.taskadeRefreshToken)
+        }
+    }
+
+    public func getTaskadeAccessToken() -> String? {
+        do {
+            return try keychain.get(Keys.taskadeAccessToken)
+        } catch {
+            ErrorReporter.log(
+                .persistence(operation: "read", target: "taskade_access_token", underlying: error.localizedDescription),
+                context: "KeychainService.getTaskadeAccessToken"
+            )
+            return nil
+        }
+    }
+
+    public func getTaskadeRefreshToken() -> String? {
+        do {
+            return try keychain.get(Keys.taskadeRefreshToken)
+        } catch {
+            return nil
+        }
+    }
+
+    public func clearTaskadeTokens() {
+        do {
+            try keychain.remove(Keys.taskadeAccessToken)
+            try keychain.remove(Keys.taskadeRefreshToken)
+        } catch {
+            ErrorReporter.log(
+                .persistence(operation: "delete", target: "taskade_tokens", underlying: error.localizedDescription),
+                context: "KeychainService.clearTaskadeTokens"
+            )
+        }
+    }
+
     // MARK: - Clear All
 
     public func clearAll() {
@@ -259,5 +346,7 @@ public final class KeychainService: @unchecked Sendable {
         clearAppleUserIdentifier()
         clearSupabaseTokens()
         clearOpenAIAPIKey()
+        clearNotionTokens()
+        clearTaskadeTokens()
     }
 }

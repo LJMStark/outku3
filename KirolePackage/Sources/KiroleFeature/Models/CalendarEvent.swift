@@ -100,12 +100,16 @@ public enum EventSource: String, Sendable, Codable {
     case apple = "Apple Calendar"
     case google = "Google Calendar"
     case todoist = "Todoist"
+    case notion = "Notion"
+    case taskade = "Taskade"
 
     public var iconName: String {
         switch self {
         case .apple: return "apple.logo"
         case .google: return "g.circle.fill"
         case .todoist: return "checkmark.circle.fill"
+        case .notion: return "doc.text"
+        case .taskade: return "list.bullet.rectangle"
         }
     }
 }

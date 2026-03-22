@@ -77,6 +77,8 @@ public final class AppState {
     let googleSyncEngine = GoogleSyncEngine.shared
     let eventKitService = EventKitService.shared
     let appleSyncEngine = AppleSyncEngine.shared
+    let notionSyncEngine = NotionSyncEngine.shared
+    let taskadeSyncEngine = TaskadeSyncEngine.shared
     let widgetDataService = WidgetDataService.shared
     #if os(iOS)
     let weatherService = WeatherService.shared
@@ -103,7 +105,9 @@ extension Integration {
             Integration(name: "Apple Reminders", iconName: "checklist", isConnected: true, type: .appleReminders),
             Integration(name: "Google Calendar", iconName: "calendar.badge.clock", isConnected: false, type: .googleCalendar),
             Integration(name: "Google Tasks", iconName: "checkmark.circle", isConnected: false, type: .googleTasks),
-            Integration(name: "Todoist", iconName: "checklist.checked", isConnected: false, type: .todoist)
+            Integration(name: "Todoist", iconName: "checklist.checked", isConnected: false, type: .todoist),
+            Integration(name: "Notion", iconName: "doc.text", isConnected: false, type: .notion),
+            Integration(name: "Taskade", iconName: "list.bullet.rectangle", isConnected: false, type: .taskade)
         ]
     }
 }

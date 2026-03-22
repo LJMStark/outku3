@@ -26,12 +26,14 @@ public enum IntegrationType: String, Sendable, Codable, CaseIterable {
     case todoist = "Todoist"
     case tickTick = "TickTick"
     case notion = "Notion"
+    case taskade = "Taskade"
     case caldav = "CalDAV"
     case icalWebcal = "iCal/WebCal"
 
     public var isSupported: Bool {
         switch self {
-        case .googleCalendar, .googleTasks, .appleCalendar, .appleReminders:
+        case .googleCalendar, .googleTasks, .appleCalendar, .appleReminders,
+             .notion, .taskade:
             return true
         default:
             return false
@@ -49,17 +51,18 @@ public enum IntegrationType: String, Sendable, Codable, CaseIterable {
         case .todoist: return "checklist.checked"
         case .tickTick: return "checkmark.circle"
         case .notion: return "doc.text"
+        case .taskade: return "list.bullet.rectangle"
         case .caldav: return "calendar"
         case .icalWebcal: return "calendar"
         }
     }
 
     public var isExperimental: Bool {
-        self == .notion
+        self == .notion || self == .taskade
     }
 
     public static var displayOrder: [IntegrationType] {
         [.googleCalendar, .outlookCalendar, .appleCalendar, .appleReminders,
-         .googleTasks, .microsoftToDo, .todoist, .tickTick, .notion, .caldav, .icalWebcal]
+         .googleTasks, .microsoftToDo, .todoist, .tickTick, .notion, .taskade, .caldav, .icalWebcal]
     }
 }
