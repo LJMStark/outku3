@@ -52,10 +52,9 @@ public struct TaskadeTasksResponse: Codable, Sendable {
     public let items: [TaskadeTask]
 }
 
-// MARK: Update Request
-
-struct TaskadeUpdateTaskRequest: Encodable {
-    let completed: Bool
+public struct TaskadeTaskMutationResponse: Codable, Sendable {
+    public let ok: Bool
+    public let item: TaskadeTask?
 }
 
 // MARK: - TaskItem Mapping

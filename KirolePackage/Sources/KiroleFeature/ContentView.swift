@@ -23,7 +23,7 @@ public struct ContentView: View {
             _ = FocusSessionService.shared
             await ScreenTimeFocusGuardService.shared.initialize()
             await authManager.initialize()
-            appState.syncGoogleIntegrationStatusFromAuth()
+            appState.syncIntegrationStatusFromAuth()
             await configureOpenAI()
         }
     }

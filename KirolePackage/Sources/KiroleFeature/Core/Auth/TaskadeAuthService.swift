@@ -22,13 +22,23 @@ public final class TaskadeAuthService {
         }
 
         let redirectURI = "kirole://taskade-callback"
-        let authURL = "https://www.taskade.com/oauth/authorize?client_id=\(clientId)&response_type=code&redirect_uri=\(redirectURI)&scope=read,write"
-
-        guard let url = URL(string: authURL) else {
+        let state = UUID().uuidString
+        guard var components = URLComponents(string: "https://www.taskade.com/oauth2/authorize") else {
+            throw TaskadeAuthError.invalidURL
+        }
+        components.queryItems = [
+            URLQueryItem(name: "client_id", value: clientId),
+            URLQueryItem(name: "response_type", value: "code"),
+            URLQueryItem(name: "redirect_uri", value: redirectURI),
+            URLQueryItem(name: "scope", value: "read,write"),
+            URLQueryItem(name: "state", value: state)
+        ]
+        guard let url = components.url else {
             throw TaskadeAuthError.invalidURL
         }
 
         let callbackURL = try await performWebAuth(url: url, callbackScheme: "kirole")
+        try validateState(expected: state, callbackURL: callbackURL)
 
         guard let code = extractCode(from: callbackURL) else {
             throw TaskadeAuthError.noAuthorizationCode
@@ -57,7 +67,7 @@ public final class TaskadeAuthService {
         clientSecret: String,
         redirectURI: String
     ) async throws -> TaskadeTokenResponse {
-        guard let url = URL(string: "https://www.taskade.com/oauth/token") else {
+        guard let url = URL(string: "https://www.taskade.com/oauth2/token") else {
             throw TaskadeAuthError.invalidURL
         }
 
@@ -105,12 +115,26 @@ public final class TaskadeAuthService {
         )
     }
 
+    public func forceRefreshAccessToken() async throws -> String {
+        guard let refreshToken = keychainService.getTaskadeRefreshToken(),
+              let clientId = AppSecrets.taskadeClientId,
+              let clientSecret = AppSecrets.taskadeClientSecret else {
+            throw TaskadeAuthError.tokenExpired
+        }
+
+        return try await refreshAccessToken(
+            refreshToken: refreshToken,
+            clientId: clientId,
+            clientSecret: clientSecret
+        )
+    }
+
     private func refreshAccessToken(
         refreshToken: String,
         clientId: String,
         clientSecret: String
     ) async throws -> String {
-        guard let url = URL(string: "https://www.taskade.com/oauth/token") else {
+        guard let url = URL(string: "https://www.taskade.com/oauth2/token") else {
             throw TaskadeAuthError.invalidURL
         }
 
@@ -187,6 +211,17 @@ public final class TaskadeAuthService {
             .first(where: { $0.name == "code" })?
             .value
     }
+
+    private func validateState(expected: String, callbackURL: URL) throws {
+        let returnedState = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false)?
+            .queryItems?
+            .first(where: { $0.name == "state" })?
+            .value
+
+        guard returnedState == expected else {
+            throw TaskadeAuthError.invalidState
+        }
+    }
 }
 
 // MARK: - Token Response
@@ -211,11 +246,12 @@ public enum TaskadeAuthError: LocalizedError, Sendable {
     case tokenExpired
     case tokenRefreshFailed
     case noCallbackURL
+    case invalidState
 
     public var errorDescription: String? {
         switch self {
         case .missingCredentials:
-            return "Taskade OAuth credentials not configured"
+            return "Taskade OAuth credentials not configured. Fill TASKADE_OAUTH_CLIENT_ID and TASKADE_OAUTH_CLIENT_SECRET in Config/Secrets.xcconfig, then rebuild the app."
         case .invalidURL:
             return "Invalid Taskade OAuth URL"
         case .noAuthorizationCode:
@@ -228,6 +264,8 @@ public enum TaskadeAuthError: LocalizedError, Sendable {
             return "Failed to refresh Taskade token"
         case .noCallbackURL:
             return "No callback URL received from Taskade"
+        case .invalidState:
+            return "Taskade OAuth state validation failed"
         }
     }
 }

@@ -70,8 +70,7 @@ public struct SettingsIntegrationSection: View {
     }
 
     private func syncGoogleConnectionStatus() {
-        guard authManager.isGoogleConnected else { return }
-        appState.syncGoogleIntegrationStatusFromAuth()
+        appState.syncIntegrationStatusFromAuth()
     }
 
     private var emptyStateView: some View {

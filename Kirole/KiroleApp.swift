@@ -11,7 +11,11 @@ struct KiroleApp: App {
             supabaseAnonKey: BuildSecrets.supabaseAnonKey,
             openRouterAPIKey: BuildSecrets.openRouterAPIKey,
             bleSharedSecret: BuildSecrets.bleSharedSecret,
-            deepFocusFeatureEnabled: BuildSecrets.deepFocusFeatureEnabled
+            deepFocusFeatureEnabled: BuildSecrets.deepFocusFeatureEnabled,
+            notionClientId: BuildSecrets.notionClientId,
+            notionClientSecret: BuildSecrets.notionClientSecret,
+            taskadeClientId: BuildSecrets.taskadeClientId,
+            taskadeClientSecret: BuildSecrets.taskadeClientSecret
         )
         BLEBackgroundSyncScheduler.shared.register()
     }

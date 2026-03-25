@@ -5,17 +5,21 @@ extension AppState {
         integrationCoordinator.hasIntegration(type, integrations: integrations)
     }
 
-    public func syncGoogleIntegrationStatusFromAuth() {
-        guard AuthManager.shared.isGoogleConnected else { return }
-
-        let mappings: [(isGranted: Bool, type: IntegrationType)] = [
-            (AuthManager.shared.hasCalendarAccess, .googleCalendar),
-            (AuthManager.shared.hasTasksAccess, .googleTasks)
+    public func syncIntegrationStatusFromAuth() {
+        let mappings: [(isConnected: Bool, type: IntegrationType)] = [
+            (AuthManager.shared.isGoogleConnected && AuthManager.shared.hasCalendarAccess, .googleCalendar),
+            (AuthManager.shared.isGoogleConnected && AuthManager.shared.hasTasksAccess, .googleTasks),
+            (AuthManager.shared.isNotionConnected, .notion),
+            (AuthManager.shared.isTaskadeConnected, .taskade)
         ]
 
-        for mapping in mappings where mapping.isGranted {
+        for mapping in mappings where mapping.isConnected {
             setIntegrationStatus(mapping.type, isConnected: true)
         }
+    }
+
+    public func syncGoogleIntegrationStatusFromAuth() {
+        syncIntegrationStatusFromAuth()
     }
 
     public func updateIntegrationStatus(_ type: IntegrationType, isConnected: Bool) {

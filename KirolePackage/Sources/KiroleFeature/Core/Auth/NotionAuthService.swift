@@ -23,13 +23,23 @@ public final class NotionAuthService {
         }
 
         let redirectURI = "kirole://notion-callback"
-        let authURL = "https://api.notion.com/v1/oauth/authorize?client_id=\(clientId)&response_type=code&owner=user&redirect_uri=\(redirectURI)"
-
-        guard let url = URL(string: authURL) else {
+        let state = UUID().uuidString
+        guard var components = URLComponents(string: "https://api.notion.com/v1/oauth/authorize") else {
+            throw NotionAuthError.invalidURL
+        }
+        components.queryItems = [
+            URLQueryItem(name: "client_id", value: clientId),
+            URLQueryItem(name: "response_type", value: "code"),
+            URLQueryItem(name: "owner", value: "user"),
+            URLQueryItem(name: "redirect_uri", value: redirectURI),
+            URLQueryItem(name: "state", value: state)
+        ]
+        guard let url = components.url else {
             throw NotionAuthError.invalidURL
         }
 
         let callbackURL = try await performWebAuth(url: url, callbackScheme: "kirole")
+        try validateState(expected: state, callbackURL: callbackURL)
 
         guard let code = extractCode(from: callbackURL) else {
             throw NotionAuthError.noAuthorizationCode
@@ -131,6 +141,17 @@ public final class NotionAuthService {
             .first(where: { $0.name == "code" })?
             .value
     }
+
+    private func validateState(expected: String, callbackURL: URL) throws {
+        let returnedState = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false)?
+            .queryItems?
+            .first(where: { $0.name == "state" })?
+            .value
+
+        guard returnedState == expected else {
+            throw NotionAuthError.invalidState
+        }
+    }
 }
 
 // MARK: - Token Response
@@ -153,11 +174,12 @@ public enum NotionAuthError: LocalizedError, Sendable {
     case noAuthorizationCode
     case tokenExchangeFailed
     case noCallbackURL
+    case invalidState
 
     public var errorDescription: String? {
         switch self {
         case .missingCredentials:
-            return "Notion OAuth credentials not configured"
+            return "Notion OAuth credentials not configured. Fill NOTION_OAUTH_CLIENT_ID and NOTION_OAUTH_CLIENT_SECRET in Config/Secrets.xcconfig, then rebuild the app."
         case .invalidURL:
             return "Invalid Notion OAuth URL"
         case .noAuthorizationCode:
@@ -166,6 +188,8 @@ public enum NotionAuthError: LocalizedError, Sendable {
             return "Failed to exchange authorization code for Notion token"
         case .noCallbackURL:
             return "No callback URL received from Notion"
+        case .invalidState:
+            return "Notion OAuth state validation failed"
         }
     }
 }

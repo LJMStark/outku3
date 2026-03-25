@@ -15,14 +15,14 @@ public actor TaskadeAPI {
 
     /// Get all workspaces accessible by the authenticated user
     public func getWorkspaces(accessToken: String) async throws -> [TaskadeWorkspace] {
-        guard let url = URL(string: "\(baseURL)/workspaces") else {
-            throw TaskadeAPIError.invalidURL
-        }
-
-        let response: TaskadeWorkspacesResponse = try await networkClient.get(
+        let url = "\(baseURL)/workspaces"
+        let response: TaskadeWorkspacesResponse = try await networkClient.authenticatedRequest(
             url: url,
             headers: makeHeaders(accessToken),
-            responseType: TaskadeWorkspacesResponse.self
+            responseType: TaskadeWorkspacesResponse.self,
+            refreshToken: {
+                try await TaskadeAuthService.shared.forceRefreshAccessToken()
+            }
         )
 
         return response.items
@@ -35,14 +35,14 @@ public actor TaskadeAPI {
         workspaceId: String,
         accessToken: String
     ) async throws -> [TaskadeProject] {
-        guard let url = URL(string: "\(baseURL)/workspaces/\(workspaceId)/projects") else {
-            throw TaskadeAPIError.invalidURL
-        }
-
-        let response: TaskadeProjectsResponse = try await networkClient.get(
+        let url = "\(baseURL)/workspaces/\(workspaceId)/projects"
+        let response: TaskadeProjectsResponse = try await networkClient.authenticatedRequest(
             url: url,
             headers: makeHeaders(accessToken),
-            responseType: TaskadeProjectsResponse.self
+            responseType: TaskadeProjectsResponse.self,
+            refreshToken: {
+                try await TaskadeAuthService.shared.forceRefreshAccessToken()
+            }
         )
 
         return response.items
@@ -55,17 +55,45 @@ public actor TaskadeAPI {
         projectId: String,
         accessToken: String
     ) async throws -> [TaskadeTask] {
-        guard let url = URL(string: "\(baseURL)/projects/\(projectId)/tasks") else {
-            throw TaskadeAPIError.invalidURL
+        var allTasks: [TaskadeTask] = []
+        var after: String? = nil
+        let limit = 100
+
+        while true {
+            guard var components = URLComponents(string: "\(baseURL)/projects/\(projectId)/tasks") else {
+                throw TaskadeAPIError.invalidURL
+            }
+            var queryItems = [URLQueryItem(name: "limit", value: String(limit))]
+            if let after {
+                queryItems.append(URLQueryItem(name: "after", value: after))
+            }
+            components.queryItems = queryItems
+
+            guard let url = components.url else {
+                throw TaskadeAPIError.invalidURL
+            }
+
+            let response: TaskadeTasksResponse = try await networkClient.authenticatedRequest(
+                url: url.absoluteString,
+                headers: makeHeaders(accessToken),
+                responseType: TaskadeTasksResponse.self,
+                refreshToken: {
+                    try await TaskadeAuthService.shared.forceRefreshAccessToken()
+                }
+            )
+
+            allTasks.append(contentsOf: response.items)
+
+            guard response.items.count == limit,
+                  let nextAfter = response.items.last?.id,
+                  nextAfter != after else {
+                break
+            }
+
+            after = nextAfter
         }
 
-        let response: TaskadeTasksResponse = try await networkClient.get(
-            url: url,
-            headers: makeHeaders(accessToken),
-            responseType: TaskadeTasksResponse.self
-        )
-
-        return response.items
+        return allTasks
     }
 
     /// Get all tasks across all projects in all workspaces
@@ -127,17 +155,16 @@ public actor TaskadeAPI {
         completed: Bool,
         accessToken: String
     ) async throws {
-        guard let url = URL(string: "\(baseURL)/projects/\(projectId)/tasks/\(taskId)") else {
-            throw TaskadeAPIError.invalidURL
-        }
-
-        let body = TaskadeUpdateTaskRequest(completed: completed)
-
-        _ = try await networkClient.patch(
+        let endpoint = completed ? "complete" : "uncomplete"
+        let url = "\(baseURL)/projects/\(projectId)/tasks/\(taskId)/\(endpoint)"
+        let _: TaskadeTaskMutationResponse = try await networkClient.authenticatedRequest(
             url: url,
+            method: "POST",
             headers: makeHeaders(accessToken),
-            body: body,
-            responseType: TaskadeTask.self
+            responseType: TaskadeTaskMutationResponse.self,
+            refreshToken: {
+                try await TaskadeAuthService.shared.forceRefreshAccessToken()
+            }
         )
     }
 
