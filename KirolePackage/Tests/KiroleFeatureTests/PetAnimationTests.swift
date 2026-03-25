@@ -102,7 +102,7 @@ struct PetAnimationTests {
                 secondaryColor: .brown,
                 accentColor: .blue,
                 animationPhase: 0,
-                petForm: .cat,
+                petForm: .sprout,
                 mood: .happy,
                 isBlinking: true
             )
@@ -118,7 +118,7 @@ struct PetAnimationTests {
                     secondaryColor: .brown,
                     accentColor: .blue,
                     animationPhase: 0,
-                    petForm: .cat,
+                    petForm: .sprout,
                     mood: mood
                 )
                 #expect(type(of: body) == PixelArtBody.self)

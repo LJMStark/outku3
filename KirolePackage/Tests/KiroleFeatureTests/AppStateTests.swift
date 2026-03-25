@@ -571,14 +571,14 @@ struct AppStateTests {
         func setPetFormUpdatesState() {
             let state = AppState.shared
 
-            state.setPetForm(.dragon)
-            #expect(state.pet.currentForm == .dragon)
+            state.setPetForm(.blaze)
+            #expect(state.pet.currentForm == .blaze)
 
-            state.setPetForm(.bunny)
-            #expect(state.pet.currentForm == .bunny)
+            state.setPetForm(.hopper)
+            #expect(state.pet.currentForm == .hopper)
 
             // Reset
-            state.setPetForm(.cat)
+            state.setPetForm(.sprout)
         }
 
         @Test("All pet forms are valid")
@@ -592,7 +592,7 @@ struct AppStateTests {
             }
 
             // Reset
-            state.setPetForm(.cat)
+            state.setPetForm(.sprout)
         }
     }
 
