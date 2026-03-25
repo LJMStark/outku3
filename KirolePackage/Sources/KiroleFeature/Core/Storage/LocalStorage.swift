@@ -18,6 +18,8 @@ public actor LocalStorage {
         static let focusEnforcementMode = "focusEnforcementMode"
         static let deepFocusShieldActive = "deepFocusShieldActive"
         static let deepFocusSelectionCount = "deepFocusSelectionCount"
+        static let consecutiveDays = "consecutiveDays"
+        static let energyBlocks = "energyBlocks"
     }
 
     private var documentsDirectory: URL {
@@ -239,6 +241,24 @@ public actor LocalStorage {
     }
 
     // MARK: - UserDefaults Accessors
+    
+    // MARK: Gamify Accessors
+    
+    public func saveConsecutiveDays(_ days: Int) {
+        userDefaults.set(days, forKey: Keys.consecutiveDays)
+    }
+    
+    public func loadConsecutiveDays() -> Int {
+        userDefaults.integer(forKey: Keys.consecutiveDays)
+    }
+    
+    public func saveEnergyBlocks(_ blocks: Int) {
+        userDefaults.set(blocks, forKey: Keys.energyBlocks)
+    }
+    
+    public func loadEnergyBlocks() -> Int {
+        userDefaults.integer(forKey: Keys.energyBlocks)
+    }
 
     public func saveLastEventLogTimestamp(_ timestamp: UInt32) {
         userDefaults.set(Int(timestamp), forKey: Keys.lastEventLogTimestamp)
@@ -384,6 +404,8 @@ public actor LocalStorage {
         userDefaults.removeObject(forKey: Keys.focusEnforcementMode)
         userDefaults.removeObject(forKey: Keys.deepFocusShieldActive)
         userDefaults.removeObject(forKey: Keys.deepFocusSelectionCount)
+        userDefaults.removeObject(forKey: Keys.consecutiveDays)
+        userDefaults.removeObject(forKey: Keys.energyBlocks)
     }
 }
 
