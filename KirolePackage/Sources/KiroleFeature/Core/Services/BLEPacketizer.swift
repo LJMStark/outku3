@@ -163,3 +163,13 @@ public enum BLEPacketError: Error {
     case invalidChunkSize
     case payloadTooLarge
 }
+
+// MARK: - Gamify Scene Unlock
+
+extension BLEPacketizer {
+    public static func buildSceneUnlockPacket(sceneId: UInt8) -> Data {
+        var data = Data()
+        data.append(contentsOf: [0xAA, 0x01, 0x01, sceneId]) 
+        return data
+    }
+}
