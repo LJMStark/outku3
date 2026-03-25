@@ -12,6 +12,7 @@ xcuserdata/
 
 ## IDE
 .cursor/
+.claude/
 .vscode/
 .idea/
 
