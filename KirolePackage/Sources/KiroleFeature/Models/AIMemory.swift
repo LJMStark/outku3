@@ -27,6 +27,10 @@ public struct AIContext: Sendable {
     public let recentCompletionRate: Double
     public let behaviorSummary: UserBehaviorSummary?
     public let recentTexts: [String]
+    public let focusTimeToday: Int
+    public let energyBlocks: Int
+    public let currentSceneName: String?
+    public let hardwareConnected: Bool
 
     public init(
         companionStyle: CompanionStyle = .encouraging,
@@ -41,7 +45,11 @@ public struct AIContext: Sendable {
         currentStreak: Int = 0,
         recentCompletionRate: Double = 0,
         behaviorSummary: UserBehaviorSummary? = nil,
-        recentTexts: [String] = []
+        recentTexts: [String] = [],
+        focusTimeToday: Int = 0,
+        energyBlocks: Int = 0,
+        currentSceneName: String? = nil,
+        hardwareConnected: Bool = false
     ) {
         self.companionStyle = companionStyle
         self.workType = workType
@@ -56,6 +64,10 @@ public struct AIContext: Sendable {
         self.recentCompletionRate = recentCompletionRate
         self.behaviorSummary = behaviorSummary
         self.recentTexts = recentTexts
+        self.focusTimeToday = focusTimeToday
+        self.energyBlocks = energyBlocks
+        self.currentSceneName = currentSceneName
+        self.hardwareConnected = hardwareConnected
     }
 }
 

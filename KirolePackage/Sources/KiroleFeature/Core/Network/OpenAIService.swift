@@ -66,9 +66,10 @@ public actor OpenAIService {
         let systemPrompt = """
             You are an execution coach using Implementation Intentions theory. \
             Break down tasks into concrete micro-actions with What (specific action, max 40 chars), \
-            When (suggested time slot based on schedule), and Why (motivation anchor, max 60 chars). \
+            When (suggested time slot based on schedule), Why (motivation anchor, max 60 chars), \
+            and expected focus energy blocks the user might earn. \
             Return 1-3 micro-actions as a JSON array. Each object has keys: \
-            "what" (string), "when" (string or null), "why" (string or null), "estimatedMinutes" (int or null). \
+            "what" (string), "when" (string or null), "why" (string or null), "estimatedMinutes" (int or null), "expectedEnergyBlocks" (int). \
             Respond with ONLY the JSON array, no markdown fences or extra text.
             """
 
@@ -150,23 +151,37 @@ public actor OpenAIService {
 
         let goalsText = context.primaryGoals.map { $0.rawValue }.joined(separator: ", ")
         let completionPercent = Int(context.recentCompletionRate * 100)
+        let sceneName = context.currentSceneName ?? "Default"
+        let hardwareStatus = context.hardwareConnected ? "Connected & Synced" : "Offline"
 
         var prompt = """
+            <role>
             You are \(context.petName), a \(styleDescription)
-            The user is a \(context.workType.rawValue)\(goalsText.isEmpty ? "" : ", with goals: \(goalsText)").
-            Recent behavior: \(completionPercent)% completion rate this week, \(context.currentStreak)-day streak.
+            </role>
+
+            <user_state>
+            - Work Type: \(context.workType.rawValue)
+            - Goals: \(goalsText.isEmpty ? "None" : goalsText)
+            - Today's Focus: \(context.focusTimeToday) minutes
+            - Current Energy Blocks: \(context.energyBlocks)
+            - Active E-Ink Scene: \(sceneName)
+            - Hardware Sync: \(hardwareStatus)
+            - Recent Week Completion: \(completionPercent)%
+            - Recent Streak: \(context.currentStreak) days
             """
 
         if let behavior = context.behaviorSummary {
-            prompt += "\nAverage \(behavior.averageDailyTasks) tasks/day. Streak record: \(behavior.streakRecord) days."
+            prompt += "\n- Avg Daily Tasks: \(behavior.averageDailyTasks)\n- Streak Record: \(behavior.streakRecord) days"
         }
+
+        prompt += "\n</user_state>\n\n<rules>\n1. Respond with ONLY the message text, 1-2 sentences max.\n2. Be natural and personal. No quotes.\n3. Occasionally reference their focus efforts, energy blocks, or the currently displayed E-ink scene to make the companion feel \"alive\" on their physical device.\n"
 
         if !context.recentTexts.isEmpty {
             let recent = context.recentTexts.prefix(3).joined(separator: " | ")
-            prompt += "\nAvoid repeating these recent messages: \(recent)"
+            prompt += "4. Avoid repeating these recent messages: \(recent)\n"
         }
-
-        prompt += "\nRespond with ONLY the message text, 1-2 sentences max. Be natural and personal. No quotes."
+        
+        prompt += "</rules>"
 
         return prompt
     }
@@ -249,6 +264,11 @@ public actor OpenAIService {
             prompt += ". They're on a \(context.currentStreak)-day streak"
         }
 
+        // Scene
+        if let scene = context.currentSceneName {
+            prompt += ". Their E-ink companion display shows the '\(scene)' scene. Use imagery from this scene in the haiku"
+        }
+
         prompt += "."
 
         return prompt
@@ -287,19 +307,22 @@ public struct HaikuContext: Sendable {
     public let totalTasksToday: Int
     public let petMood: PetMood?
     public let currentStreak: Int
+    public let currentSceneName: String?
 
     public init(
         currentTime: Date = Date(),
         tasksCompletedToday: Int = 0,
         totalTasksToday: Int = 0,
         petMood: PetMood? = nil,
-        currentStreak: Int = 0
+        currentStreak: Int = 0,
+        currentSceneName: String? = nil
     ) {
         self.currentTime = currentTime
         self.tasksCompletedToday = tasksCompletedToday
         self.totalTasksToday = totalTasksToday
         self.petMood = petMood
         self.currentStreak = currentStreak
+        self.currentSceneName = currentSceneName
     }
 }
 
