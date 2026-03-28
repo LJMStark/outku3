@@ -10,6 +10,7 @@ public struct SettingsFocusSection: View {
     @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
     @State private var guardService = ScreenTimeFocusGuardService.shared
+    @State private var showFocusTest = false
 
     public init() {}
 
@@ -22,6 +23,25 @@ public struct SettingsFocusSection: View {
                     modeSelector
                     statusCard
                     actionArea
+                    
+                    Divider()
+                        .padding(.vertical, 4)
+                    
+                    Button {
+                        showFocusTest = true
+                    } label: {
+                        HStack {
+                            Image(systemName: "gamecontroller.fill")
+                            Text("Test Focus UI")
+                        }
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(theme.colors.accent)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                    }
+                    .buttonStyle(.plain)
                 }
                 .padding(16)
                 .background(Color.white)
@@ -38,6 +58,9 @@ public struct SettingsFocusSection: View {
                 )
             ) {
                 pickerSheet
+            }
+            .fullScreenCover(isPresented: $showFocusTest) {
+                FocusTestOverlayView(isPresented: $showFocusTest)
             }
         }
     }
@@ -214,5 +237,83 @@ public struct SettingsFocusSection: View {
         Text("Deep Focus picker is unavailable on this platform.")
             .padding(24)
         #endif
+    }
+}
+
+// MARK: - Focus Test View
+
+private struct FocusTestOverlayView: View {
+    @Binding var isPresented: Bool
+    @Environment(ThemeManager.self) private var theme
+    
+    @State private var elapsedSeconds: Int = 0
+    @State private var isAccelerated = false
+    
+    let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            theme.colors.background.ignoresSafeArea()
+            
+            VStack(spacing: 40) {
+                Spacer()
+                
+                Text(elapsedSeconds > 0 ? "Focusing" : "Ready to Focus")
+                    .font(.system(size: 24, weight: .bold))
+                    .foregroundStyle(theme.colors.primaryText)
+                
+                FocusPetView(focusMinutes: elapsedSeconds / 60)
+                
+                Text(timeString(from: elapsedSeconds))
+                    .font(.system(size: 40, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(theme.colors.primaryText)
+                
+                HStack(spacing: 20) {
+                    Toggle(isOn: $isAccelerated) {
+                        Text("加速测试 (1秒=1分)")
+                    }
+                    .toggleStyle(.button)
+                    .tint(theme.colors.accent)
+                    
+                    Button("Reset") {
+                        withAnimation { elapsedSeconds = 0 }
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(theme.colors.secondaryText)
+                }
+                
+                Spacer()
+            }
+            .frame(maxWidth: .infinity)
+            
+            Button {
+                isPresented = false
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 30))
+                    .foregroundStyle(theme.colors.secondaryText)
+                    .padding()
+            }
+        }
+        .onReceive(timer) { _ in
+            if isPresented {
+                withAnimation {
+                    // 如果是加速测试，每1秒跳1分钟（60秒）
+                    elapsedSeconds += isAccelerated ? 60 : 1
+                }
+            }
+        }
+    }
+    
+    private func timeString(from totalSeconds: Int) -> String {
+        let h = totalSeconds / 3600
+        let m = (totalSeconds % 3600) / 60
+        let s = totalSeconds % 60
+        if h > 0 {
+            return String(format: "%02d:%02d:%02d", h, m, s)
+        } else {
+            return String(format: "%02d:%02d", m, s)
+        }
     }
 }
