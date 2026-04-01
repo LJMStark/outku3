@@ -1,7 +1,5 @@
 import SwiftUI
 
-#if DEBUG
-
 // MARK: - Prompt Debugger FAB
 
 public struct PromptDebuggerFAB: View {
@@ -225,5 +223,3 @@ struct PromptDebuggerSheet: View {
         isForceRefreshing = false
     }
 }
-
-#endif

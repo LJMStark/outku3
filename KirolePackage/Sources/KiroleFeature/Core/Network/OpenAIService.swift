@@ -206,7 +206,6 @@ public actor OpenAIService {
     private func buildCompanionSystemPrompt(context: AIContext) async -> String {
         let styleDescription: String
         
-        #if DEBUG
         let customGlobal = await MainActor.run { PromptDebuggerState.shared.customGlobalOverride }
         let override = await MainActor.run { PromptDebuggerState.shared.overridePrompts[context.companionStyle] }
         
@@ -217,9 +216,6 @@ public actor OpenAIService {
         } else {
             styleDescription = Self.defaultPrompt(for: context.companionStyle)
         }
-        #else
-        styleDescription = Self.defaultPrompt(for: context.companionStyle)
-        #endif
 
         let goalsText = context.primaryGoals.map { $0.rawValue }.joined(separator: ", ")
         let completionPercent = Int(context.recentCompletionRate * 100)

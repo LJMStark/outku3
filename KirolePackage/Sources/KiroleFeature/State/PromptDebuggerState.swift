@@ -1,8 +1,6 @@
 import SwiftUI
 import Observation
 
-#if DEBUG
-
 /// A state container for the prompt debugger module.
 /// It stores custom prompt overrides for the 6 CompanionStyles.
 @Observable
@@ -78,5 +76,3 @@ public final class PromptDebuggerState {
 
     private init() {}
 }
-
-#endif
