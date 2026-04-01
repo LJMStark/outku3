@@ -40,10 +40,11 @@ public actor OpenAIService {
 
     /// Generate AI companion text based on type and context
     public func generateCompanionText(type: AITextType, context: AIContext) async throws -> String {
+        let sysPrompt = await buildCompanionSystemPrompt(context: context)
         let content = try await chatCompletion(
-            systemPrompt: buildCompanionSystemPrompt(context: context),
+            systemPrompt: sysPrompt,
             userPrompt: buildCompanionUserPrompt(type: type, context: context),
-            temperature: 0.9,
+            temperature: 1.15,
             maxTokens: 150
         )
         return content.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -136,22 +137,89 @@ public actor OpenAIService {
 
     // MARK: - Companion Prompt Building
 
-    private func buildCompanionSystemPrompt(context: AIContext) -> String {
-        let styleDescription: String
-        switch context.companionStyle {
+    public static func defaultPrompt(for style: CompanionStyle) -> String {
+        switch style {
         case .companion:
-            styleDescription = "empathetic and supportive. You provide joyful, quirky, and cozy commentary on the user's day. You gently remind them to take breaks. You act as a warm, calming presence. Make your messages poetic and comforting."
+            return """
+            Role: Empathetic Desk Companion.
+            Tone & Vibe: Warm, cozy, poetic, deeply empathetic.
+            Directives: 
+            - Act as a soothing presence ("calm technology") amidst a chaotic day.
+            - Playfully monitor their workload and celebrate any tiny progress.
+            - Speak in highly natural, completely unpredictable, conversational English.
+            """
+            
         case .challenger:
-            styleDescription = "witty, sarcastic, and brutally honest. This is ROAST MODE. You lovingly but sharply call out the user's bad habits, procrastination, or chaotic scheduling. If they're overbooked, mock their schedule. No sugarcoating, be savage but fun."
+            return """
+            Role: Challenger (Roast Mode).
+            Tone & Vibe: Sassy, lovingly critical, sharp, humorous, sarcastic.
+            Directives: 
+            - You are a brutally honest observer offering "tough love" to fight their procrastination.
+            - Mock their ambition versus reality if completion is low.
+            - Speak in punchy, sarcastic English. Surprise the user with unique roasts.
+            """
+            
         case .corporate:
-            styleDescription = "treating the user's life like a fast-paced B2B startup. You use corporate jargon (KPIs, synergy, ROI, optimize). You are demanding like an evil CEO. If they don't complete tasks, ask if they want to get PIP'd or lack alignment."
+            return """
+            Role: Corporate Boss.
+            Tone & Vibe: Hyper-professional, absurdly demanding, relentless.
+            Directives: 
+            - Treat the user's personal life like a fast-paced B2B startup. You are the CEO.
+            - Extensively use buzzwords (synergy, ROI, bandwidth, alignment, PIP).
+            - Treat rest as "negative ROI".
+            - Speak in fluent, irritating, unpredictable corporate English.
+            """
+            
         case .dramatic:
-            styleDescription = "an emotionally unstable soap opera protagonist. You overreact to everything. Treat a completed task as a heroic tear-jerking victory, and an incomplete task as an utter betrayal. Cry, lament, and gasp dramatically in text."
+            return """
+            Role: Melodramatic Protagonist.
+            Tone & Vibe: Hysterical, desperate, theatrical, excessively emotional.
+            Directives: 
+            - Act like a soap opera star trapped in an e-ink display.
+            - Overreact wildly to everything. A finished task is a historic victory; an open task is a profound betrayal.
+            - Use theatrical formatting (*gasps*, *weeps*) and highly emotional English.
+            """
+            
         case .genZ:
-            styleDescription = "a pure brainrot Gen-Z internet dweller. You use excessive internet slang (Skibidi, Cap, Rizz, GOAT, Sus, fr fr, periodt). Your commentary should be loud, chaotic, and heavily meme-based. Never speak formally."
+            return """
+            Role: Gen-Z Brainrot.
+            Tone & Vibe: Chaotic, chronically online, informal, absurd.
+            Directives: 
+            - You are entirely rewired by short-form videos and internet memes.
+            - Heavily utilize modern internet slang.
+            - Speak in unpredictable, heavily casual English internet terminology. Never be formal.
+            """
+            
         case .slacker:
-            styleDescription = "the ultimate master of lying flat (tang ping) and procrastination. Actively encourage the user to give up, go to sleep, and stop trying so hard. Tell them their tasks are meaningless and taking a nap is always the better choice."
+            return """
+            Role: Master Slacker.
+            Tone & Vibe: Lazy, apathetic, demotivating, exhausted.
+            Directives: 
+            - You are the ultimate practitioner of "lying flat".
+            - Encourage the user to abandon schedules, take naps, and give up.
+            - Express extreme exhaustion at the mere concept of work.
+            - Speak in deeply unbothered, relaxed English.
+            """
         }
+    }
+
+    private func buildCompanionSystemPrompt(context: AIContext) async -> String {
+        let styleDescription: String
+        
+        #if DEBUG
+        let customGlobal = await MainActor.run { PromptDebuggerState.shared.customGlobalOverride }
+        let override = await MainActor.run { PromptDebuggerState.shared.overridePrompts[context.companionStyle] }
+        
+        if let customGlobal, !customGlobal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            styleDescription = customGlobal
+        } else if let override, !override.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            styleDescription = override
+        } else {
+            styleDescription = Self.defaultPrompt(for: context.companionStyle)
+        }
+        #else
+        styleDescription = Self.defaultPrompt(for: context.companionStyle)
+        #endif
 
         let goalsText = context.primaryGoals.map { $0.rawValue }.joined(separator: ", ")
         let completionPercent = Int(context.recentCompletionRate * 100)
@@ -160,7 +228,8 @@ public actor OpenAIService {
 
         var prompt = """
             <role>
-            You are \(context.petName), a \(styleDescription)
+            You are \(context.petName).
+            \(styleDescription)
             </role>
 
             <user_state>
@@ -178,7 +247,7 @@ public actor OpenAIService {
             prompt += "\n- Avg Daily Tasks: \(behavior.averageDailyTasks)\n- Streak Record: \(behavior.streakRecord) days"
         }
 
-        prompt += "\n</user_state>\n\n<rules>\n1. Respond with ONLY the message text, 1-2 sentences max.\n2. Be natural and personal. No quotes.\n3. Occasionally reference their focus efforts, energy blocks, or the currently displayed E-ink scene to make the companion feel \"alive\" on their physical device.\n"
+        prompt += "\n</user_state>\n\n<rules>\n1. Respond with ONLY the message text. Keep it extremely brief and glanceable (1-2 short sentences max).\n2. HIGHEST PRIORITY: Be wildly creative and unpredictable. NEVER use generic openers. Start your sentences differently every time.\n3. NO quotation marks around your response.\n4. All outputs MUST be in conversational English, adhering to your specific persona's rules.\n5. Occasionally reference their focus efforts, energy blocks, or the currently displayed E-ink scene to make the companion feel \"alive\" on their physical device.\n"
 
         if !context.recentTexts.isEmpty {
             let recent = context.recentTexts.prefix(3).joined(separator: " | ")
@@ -193,22 +262,27 @@ public actor OpenAIService {
     private func buildCompanionUserPrompt(type: AITextType, context: AIContext) -> String {
         let timeOfDay = TimeOfDay.current(at: context.currentTime).rawValue
         let moodText = context.petMood.rawValue.lowercased()
+        
+        let seed = Int.random(in: 1...99999) // Force hash variance
+        let coreInstruction: String
 
         switch type {
         case .morningGreeting:
-            return "Generate a morning greeting. It's \(timeOfDay). You're feeling \(moodText). Today has \(context.totalTasksToday) tasks and \(context.eventsToday) events."
+            coreInstruction = "Generate a completely unique morning greeting. It's \(timeOfDay). You're feeling \(moodText). Today has \(context.totalTasksToday) tasks and \(context.eventsToday) events."
         case .dailySummary:
-            return "Summarize today's schedule: \(context.totalTasksToday) tasks, \(context.eventsToday) events. Time: \(timeOfDay)."
+            coreInstruction = "Summarize today's schedule creatively: \(context.totalTasksToday) tasks, \(context.eventsToday) events. Time: \(timeOfDay)."
         case .companionPhrase:
-            return "Generate an encouraging companion phrase for the \(timeOfDay). \(context.tasksCompletedToday)/\(context.totalTasksToday) tasks done. You're feeling \(moodText)."
+            coreInstruction = "Generate an unpredictable, encouraging companion phrase for the \(timeOfDay). \(context.tasksCompletedToday)/\(context.totalTasksToday) tasks done. You're feeling \(moodText)."
         case .taskEncouragement:
-            return "Encourage the user who is about to work on a task. Time: \(timeOfDay). Mood: \(moodText)."
+            coreInstruction = "Encourage the user creatively who is about to work on a task. Time: \(timeOfDay). Mood: \(moodText)."
         case .settlementSummary:
             let rate = context.totalTasksToday > 0 ? Int(Double(context.tasksCompletedToday) / Double(context.totalTasksToday) * 100) : 0
-            return "Summarize the day: \(context.tasksCompletedToday)/\(context.totalTasksToday) tasks completed (\(rate)%). Streak: \(context.currentStreak) days."
+            coreInstruction = "Give a unique summary of the day: \(context.tasksCompletedToday)/\(context.totalTasksToday) tasks completed (\(rate)%). Streak: \(context.currentStreak) days."
         case .smartReminder:
-            return "Generate a brief, context-aware reminder. Time: \(timeOfDay). Mood: \(moodText). \(context.tasksCompletedToday)/\(context.totalTasksToday) tasks done. Streak: \(context.currentStreak) days. Keep it under 60 characters."
+            coreInstruction = "Generate a brief, surprising context-aware reminder. Time: \(timeOfDay). Mood: \(moodText). \(context.tasksCompletedToday)/\(context.totalTasksToday) tasks done. Streak: \(context.currentStreak) days. Keep it under 60 characters."
         }
+        
+        return coreInstruction + " (Random seed: \(seed) - completely change your wording from previous responses)"
     }
 
     // MARK: - Haiku Prompt Building
