@@ -90,6 +90,24 @@ struct PromptDebuggerSheet: View {
                 }
                 .padding(.horizontal)
                 
+                // 3. User Defined Learn Text (Test)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("AI 语气/词汇附加学习 (实时生效):")
+                        .font(.caption)
+                        .foregroundStyle(theme.colors.secondaryText)
+                    
+                    TextField("你想让它学舌的话，如: 喵喵喵~", text: $state.testLearnText)
+                        .font(.system(size: 14))
+                        .padding(8)
+                        .background(theme.colors.background)
+                        .cornerRadius(8)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(theme.colors.secondaryText.opacity(0.3), lineWidth: 1)
+                        )
+                }
+                .padding(.horizontal)
+                
                 HStack {
                     if case .style(let style) = selectedPersona {
                         Button("Reset to Default") {

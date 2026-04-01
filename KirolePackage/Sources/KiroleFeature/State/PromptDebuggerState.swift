@@ -16,6 +16,9 @@ public final class PromptDebuggerState {
     /// A completely custom overarching prompt that takes precedence over everything
     public var customGlobalOverride: String? = nil
     
+    /// User provided phrase/keywords for the AI companion to learn during tests
+    public var testLearnText: String = ""
+    
     /// The style currently selected in the debugger UI for editing.
     public var selectedMockStyle: CompanionStyle = .companion
     
@@ -68,7 +71,8 @@ public final class PromptDebuggerState {
             hardwareConnected: Bool.random(),
             episodicMemories: mockMemories.randomElement() ?? [],
             dimensionalEmotion: mockEmotions.randomElement() ?? nil,
-            psychologicalObjective: mockObjectives.randomElement() ?? nil
+            psychologicalObjective: mockObjectives.randomElement() ?? nil,
+            userDefinedLearnText: testLearnText.trimmingCharacters(in: .whitespaces).isEmpty ? nil : testLearnText
         )
     }
 

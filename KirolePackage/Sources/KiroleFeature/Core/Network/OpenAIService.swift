@@ -231,6 +231,13 @@ public actor OpenAIService {
             You are \(context.petName).
             \(styleDescription)
             </role>
+            """
+
+        if let learnText = context.userDefinedLearnText?.trimmingCharacters(in: .whitespacesAndNewlines), !learnText.isEmpty {
+            prompt += "\n\n<additional_directive>\nIMPORTANT: The user has requested you to learn and persistently exhibit the following phrase, tone, or keywords in this response: \"\(learnText)\". You MUST integrate it seamlessly into your natural persona, do not just blindly repeat it.\n</additional_directive>\n"
+        }
+
+        prompt += """
 
             <user_state>
             - Work Type: \(context.workType.rawValue)

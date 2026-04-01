@@ -36,6 +36,7 @@ public struct AIContext: Sendable {
     public let episodicMemories: [String]
     public let dimensionalEmotion: String?
     public let psychologicalObjective: String?
+    public let userDefinedLearnText: String?
 
     public init(
         companionStyle: CompanionStyle = .companion,
@@ -57,7 +58,8 @@ public struct AIContext: Sendable {
         hardwareConnected: Bool = false,
         episodicMemories: [String] = [],
         dimensionalEmotion: String? = nil,
-        psychologicalObjective: String? = nil
+        psychologicalObjective: String? = nil,
+        userDefinedLearnText: String? = nil
     ) {
         self.companionStyle = companionStyle
         self.workType = workType
@@ -80,6 +82,7 @@ public struct AIContext: Sendable {
         self.episodicMemories = episodicMemories
         self.dimensionalEmotion = dimensionalEmotion
         self.psychologicalObjective = psychologicalObjective
+        self.userDefinedLearnText = userDefinedLearnText
     }
 }
 
