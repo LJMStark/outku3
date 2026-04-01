@@ -196,7 +196,8 @@ struct PromptDebuggerSheet: View {
             
             // Map the output string onto the home page's Haiku structure
             // Break it down into 3 aesthetic visual lines mimicking poetry format
-            let words = result.split(separator: " ").map { String($0) }
+            let cleanResult = result.replacingOccurrences(of: "\n", with: " ")
+            let words = cleanResult.split(separator: " ").map { String($0) }
             var lines: [String] = []
             
             if words.count >= 3 {
