@@ -247,7 +247,7 @@ public actor OpenAIService {
             prompt += "\n- Avg Daily Tasks: \(behavior.averageDailyTasks)\n- Streak Record: \(behavior.streakRecord) days"
         }
 
-        prompt += "\n</user_state>\n\n<rules>\n1. Respond with ONLY the message text. Keep it brief and glanceable, aiming for around 15-20 words.\n2. HIGHEST PRIORITY: Be wildly creative and unpredictable. NEVER use generic openers. Start your sentences differently every time.\n3. NO quotation marks around your response.\n4. All outputs MUST be in conversational English, adhering to your specific persona's rules.\n5. Occasionally reference their focus efforts, energy blocks, or the currently displayed E-ink scene to make the companion feel \"alive\" on their physical device.\n"
+        prompt += "\n</user_state>\n\n<rules>\n1. Respond with ONLY the message text. Keep it brief and glanceable, aiming for around 15-20 words.\n2. HIGHEST PRIORITY: Be wildly creative and unpredictable. NEVER use generic openers. Start your sentences differently every time.\n3. NO quotation marks around your response.\n4. All outputs MUST be in conversational English, adhering to your specific persona's rules.\n5. Occasionally reference their focus efforts, energy blocks, or the currently displayed E-ink scene to make the companion feel \"alive\" on their physical device.\n6. CRITICAL: Never act like a reporting analytics device. Do NOT mechanically recite time, stats, or \"X/Y tasks done\" formats. Use the user_state data to influence your internal thoughts, feelings, and vibes organically.\n"
 
         if !context.recentTexts.isEmpty {
             let recent = context.recentTexts.prefix(3).joined(separator: " | ")
@@ -260,29 +260,25 @@ public actor OpenAIService {
     }
 
     private func buildCompanionUserPrompt(type: AITextType, context: AIContext) -> String {
-        let timeOfDay = TimeOfDay.current(at: context.currentTime).rawValue
-        let moodText = context.petMood.rawValue.lowercased()
-        
         let seed = Int.random(in: 1...99999) // Force hash variance
         let coreInstruction: String
 
         switch type {
         case .morningGreeting:
-            coreInstruction = "Generate a completely unique morning greeting. It's \(timeOfDay). You're feeling \(moodText). Today has \(context.totalTasksToday) tasks and \(context.eventsToday) events."
+            coreInstruction = "The user has just started their day and opened the app. React naturally based on your persona."
         case .dailySummary:
-            coreInstruction = "Summarize today's schedule creatively: \(context.totalTasksToday) tasks, \(context.eventsToday) events. Time: \(timeOfDay)."
+            coreInstruction = "The user is looking for a status update. React organically to how their day is shaping up according to the user_state."
         case .companionPhrase:
-            coreInstruction = "Generate an unpredictable, encouraging companion phrase for the \(timeOfDay). \(context.tasksCompletedToday)/\(context.totalTasksToday) tasks done. You're feeling \(moodText)."
+            coreInstruction = "Offer a random, spontaneous thought or reaction to their current status."
         case .taskEncouragement:
-            coreInstruction = "Encourage the user creatively who is about to work on a task. Time: \(timeOfDay). Mood: \(moodText)."
+            coreInstruction = "The user is about to start a new deep-work task. Offer your reaction."
         case .settlementSummary:
-            let rate = context.totalTasksToday > 0 ? Int(Double(context.tasksCompletedToday) / Double(context.totalTasksToday) * 100) : 0
-            coreInstruction = "Give a unique summary of the day: \(context.tasksCompletedToday)/\(context.totalTasksToday) tasks completed (\(rate)%). Streak: \(context.currentStreak) days."
+            coreInstruction = "The day is ending. Provide your final thoughts on their overall performance today."
         case .smartReminder:
-            coreInstruction = "Generate a brief, surprising context-aware reminder. Time: \(timeOfDay). Mood: \(moodText). \(context.tasksCompletedToday)/\(context.totalTasksToday) tasks done. Streak: \(context.currentStreak) days. Keep it under 60 characters."
+            coreInstruction = "The user just glanced at you. Say something completely spontaneous and native to your personality, reacting implicitly to how their day is going."
         }
         
-        return coreInstruction + " (Random seed: \(seed) - completely change your wording from previous responses)"
+        return coreInstruction + " (Random seed: \(seed) - completely change your wording from previous responses. Embody your persona's internal thoughts, refuse robotic formatting.)"
     }
 
     // MARK: - Haiku Prompt Building
