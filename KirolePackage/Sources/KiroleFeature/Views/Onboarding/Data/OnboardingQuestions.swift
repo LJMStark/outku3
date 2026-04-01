@@ -50,10 +50,12 @@ public enum OnboardingQuestions {
             type: .single,
             category: "Companion Personality",
             options: [
-                QuestionOption(id: "Encouraging", label: "Like a supportive friend", sfSymbol: "heart.fill"),
-                QuestionOption(id: "Strict", label: "Like a no-nonsense coach", sfSymbol: "scope"),
-                QuestionOption(id: "Playful", label: "Like a playful buddy", sfSymbol: "star.fill"),
-                QuestionOption(id: "Calm", label: "Like a calm mentor", sfSymbol: "leaf.fill"),
+                QuestionOption(id: "Companion", label: "Warm Companion", sfSymbol: "heart.fill"),
+                QuestionOption(id: "Challenger", label: "Challenger (Roast Mode)", sfSymbol: "flame.fill"),
+                QuestionOption(id: "Corporate", label: "Corporate Boss", sfSymbol: "briefcase.fill"),
+                QuestionOption(id: "Dramatic", label: "Dramatic Soap Opera", sfSymbol: "theatermasks.fill"),
+                QuestionOption(id: "Gen Z", label: "Gen Z Brainrot", sfSymbol: "sparkles"),
+                QuestionOption(id: "Slacker", label: "Slacker (Anti-Hustle)", sfSymbol: "bed.double.fill"),
             ]
         ),
         OnboardingQuestion(

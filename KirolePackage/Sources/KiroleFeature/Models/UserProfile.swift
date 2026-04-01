@@ -14,7 +14,7 @@ public struct UserProfile: Sendable, Codable, Equatable {
     public init(
         workType: WorkType = .other,
         primaryGoals: [UserGoal] = [],
-        companionStyle: CompanionStyle = .encouraging,
+        companionStyle: CompanionStyle = .companion,
         motivationStyle: MotivationStyle? = nil,
         reminderPreference: ReminderPreference? = nil,
         taskApproach: TaskApproach? = nil,
@@ -108,28 +108,34 @@ public enum UserGoal: String, CaseIterable, Sendable, Codable {
 // MARK: - Companion Style
 
 public enum CompanionStyle: String, CaseIterable, Sendable, Codable {
-    case encouraging = "Encouraging"
-    case strict = "Strict"
-    case playful = "Playful"
-    case calm = "Calm"
+    case companion = "Companion"
+    case challenger = "Challenger"
+    case corporate = "Corporate"
+    case dramatic = "Dramatic"
+    case genZ = "Gen Z"
+    case slacker = "Slacker"
 
     public var displayName: String { rawValue }
 
     public var iconName: String {
         switch self {
-        case .encouraging: return "heart.fill"
-        case .strict: return "scope"
-        case .playful: return "star.fill"
-        case .calm: return "leaf.fill"
+        case .companion: return "heart.fill"
+        case .challenger: return "flame.fill"
+        case .corporate: return "briefcase.fill"
+        case .dramatic: return "theatermasks.fill"
+        case .genZ: return "sparkles"
+        case .slacker: return "bed.double.fill"
         }
     }
 
     public var description: String {
         switch self {
-        case .encouraging: return "Gentle reminders and celebrations"
-        case .strict: return "Direct feedback and accountability"
-        case .playful: return "Fun challenges and rewards"
-        case .calm: return "Mindful reminders and peace"
+        case .companion: return "Empathetic and full of gentle encouragement"
+        case .challenger: return "Lovingly calls out your bad habits and chaotic schedule"
+        case .corporate: return "Treats your life like a fast-paced B2B startup"
+        case .dramatic: return "Overreacts to everything like a dramatic soap opera"
+        case .genZ: return "Speaks fluent internet slang and brainrot"
+        case .slacker: return "Actively encourages you to give up and rest"
         }
     }
 }

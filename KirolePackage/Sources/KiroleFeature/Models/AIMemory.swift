@@ -33,7 +33,7 @@ public struct AIContext: Sendable {
     public let hardwareConnected: Bool
 
     public init(
-        companionStyle: CompanionStyle = .encouraging,
+        companionStyle: CompanionStyle = .companion,
         workType: WorkType = .other,
         primaryGoals: [UserGoal] = [],
         petName: String = "Baby Waffle",
