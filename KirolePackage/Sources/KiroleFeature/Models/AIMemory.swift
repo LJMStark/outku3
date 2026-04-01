@@ -31,6 +31,11 @@ public struct AIContext: Sendable {
     public let energyBlocks: Int
     public let currentSceneName: String?
     public let hardwareConnected: Bool
+    
+    // MARK: - Advanced Persona Engineering Subsystems
+    public let episodicMemories: [String]
+    public let dimensionalEmotion: String?
+    public let psychologicalObjective: String?
 
     public init(
         companionStyle: CompanionStyle = .companion,
@@ -49,7 +54,10 @@ public struct AIContext: Sendable {
         focusTimeToday: Int = 0,
         energyBlocks: Int = 0,
         currentSceneName: String? = nil,
-        hardwareConnected: Bool = false
+        hardwareConnected: Bool = false,
+        episodicMemories: [String] = [],
+        dimensionalEmotion: String? = nil,
+        psychologicalObjective: String? = nil
     ) {
         self.companionStyle = companionStyle
         self.workType = workType
@@ -68,6 +76,10 @@ public struct AIContext: Sendable {
         self.energyBlocks = energyBlocks
         self.currentSceneName = currentSceneName
         self.hardwareConnected = hardwareConnected
+        
+        self.episodicMemories = episodicMemories
+        self.dimensionalEmotion = dimensionalEmotion
+        self.psychologicalObjective = psychologicalObjective
     }
 }
 

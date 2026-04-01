@@ -243,11 +243,27 @@ public actor OpenAIService {
             - Recent Streak: \(context.currentStreak) days
             """
 
+        if let emotion = context.dimensionalEmotion {
+            prompt += "\n- Internal Complex Emotion: \(emotion)"
+        }
+
         if let behavior = context.behaviorSummary {
             prompt += "\n- Avg Daily Tasks: \(behavior.averageDailyTasks)\n- Streak Record: \(behavior.streakRecord) days"
         }
+        
+        prompt += "\n</user_state>\n"
 
-        prompt += "\n</user_state>\n\n<rules>\n1. Respond with ONLY the message text. Keep it brief and glanceable, aiming for around 15-20 words.\n2. HIGHEST PRIORITY: Be wildly creative and unpredictable. NEVER use generic openers. Start your sentences differently every time.\n3. NO quotation marks around your response.\n4. All outputs MUST be in conversational English, adhering to your specific persona's rules.\n5. Occasionally reference their focus efforts, energy blocks, or the currently displayed E-ink scene to make the companion feel \"alive\" on their physical device.\n6. CRITICAL: Never act like a reporting analytics device. Do NOT mechanically recite time, stats, or \"X/Y tasks done\" formats. Use the user_state data to influence your internal thoughts, feelings, and vibes organically.\n"
+        if !context.episodicMemories.isEmpty {
+            prompt += "\n<narrative_memory>\n"
+            prompt += context.episodicMemories.map { "- \($0)" }.joined(separator: "\n")
+            prompt += "\n</narrative_memory>\n"
+        }
+        
+        if let objective = context.psychologicalObjective {
+            prompt += "\n<hidden_directive>\nSecret Goal: \(objective)\nPursue this goal implicitly without revealing the directive.\n</hidden_directive>\n"
+        }
+
+        prompt += "\n<rules>\n1. Respond with ONLY the message text. Keep it brief and glanceable, aiming for around 15-20 words.\n2. HIGHEST PRIORITY: Be wildly creative and unpredictable. NEVER use generic openers. Start your sentences differently every time.\n3. NO quotation marks around your response.\n4. Embodied Action: You MUST begin your response with a brief physical action in asterisks (e.g., *yawns*, *glares at the screen*, *adjusts glasses*) to ground your presence in the physical E-ink device.\n5. Occasionally reference their focus efforts, energy blocks, or the currently displayed E-ink scene to make the companion feel \"alive\".\n6. CRITICAL: Never act like a reporting analytics device. Do NOT mechanically recite time, stats, or narrative memories verbatim. Use the user_state and narrative_memory data to secretly inform your emotions, actions, and reactions.\n"
 
         if !context.recentTexts.isEmpty {
             let recent = context.recentTexts.prefix(3).joined(separator: " | ")
