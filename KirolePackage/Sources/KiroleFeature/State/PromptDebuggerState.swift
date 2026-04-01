@@ -21,24 +21,28 @@ public final class PromptDebuggerState {
     
     /// Randomly mock an AIContext for a "worst case" scenario or an interesting setup.
     public func createMockContext() -> AIContext {
+        let maxTasks = Int.random(in: 0...8)
+        let doneTasks = Int.random(in: 0...maxTasks)
+        let rate = maxTasks > 0 ? Double(doneTasks) / Double(maxTasks) : 0
+        
         return AIContext(
             companionStyle: selectedMockStyle,
             workType: .officeWorker,
             primaryGoals: [.productivity, .procrastination],
             petName: "Demon",
-            petMood: .missing, // Make it missing to trigger emotional dramatic
-            currentTime: Date(),
-            tasksCompletedToday: 1,
-            totalTasksToday: 15, // Huge backlog
-            eventsToday: 3,
-            currentStreak: 0, // Broken streak
-            recentCompletionRate: 0.1, // Bad rate
+            petMood: .missing,
+            currentTime: Date().addingTimeInterval(TimeInterval.random(in: -43200...43200)),
+            tasksCompletedToday: doneTasks,
+            totalTasksToday: maxTasks,
+            eventsToday: Int.random(in: 0...5),
+            currentStreak: Int.random(in: 0...15),
+            recentCompletionRate: rate,
             behaviorSummary: nil,
             recentTexts: [],
-            focusTimeToday: 5, // Barely focused
-            energyBlocks: 1, // Low energy
-            currentSceneName: "Messy Room",
-            hardwareConnected: false
+            focusTimeToday: Int.random(in: 0...180),
+            energyBlocks: Int.random(in: 0...5),
+            currentSceneName: ["Messy Room", "Clean Desk", "Zen Garden", "Night City"].randomElement()!,
+            hardwareConnected: Bool.random()
         )
     }
 

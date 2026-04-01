@@ -178,9 +178,22 @@ struct PromptDebuggerSheet: View {
             // Generates a mock smart reminder / companion text natively based on override
             let result = try await OpenAIService.shared.generateCompanionText(type: .smartReminder, context: mockContext)
             
-            // Map the output string onto the home page's Haiku structure so it's visibly replaced!
-            // Format nicely on screen by breaking sentences or just a single long paragraph
-            let mockHaiku = Haiku(lines: [result])
+            // Map the output string onto the home page's Haiku structure
+            // Break it down into 3 aesthetic visual lines mimicking poetry format
+            let words = result.split(separator: " ").map { String($0) }
+            var lines: [String] = []
+            
+            if words.count >= 3 {
+                let third = Int(ceil(Double(words.count) / 3.0))
+                let line1 = words[0..<min(third, words.count)].joined(separator: " ")
+                let line2 = words[min(third, words.count)..<min(third * 2, words.count)].joined(separator: " ")
+                let line3 = words[min(third * 2, words.count)..<words.count].joined(separator: " ")
+                lines = [line1, line2, line3].filter { !$0.isEmpty }
+            } else {
+                lines = [result] // Fallback
+            }
+            
+            let mockHaiku = Haiku(lines: lines)
             
             await MainActor.run {
                 AppState.shared.currentHaiku = mockHaiku

@@ -247,7 +247,7 @@ public actor OpenAIService {
             prompt += "\n- Avg Daily Tasks: \(behavior.averageDailyTasks)\n- Streak Record: \(behavior.streakRecord) days"
         }
 
-        prompt += "\n</user_state>\n\n<rules>\n1. Respond with ONLY the message text. Keep it extremely brief and glanceable (1-2 short sentences max).\n2. HIGHEST PRIORITY: Be wildly creative and unpredictable. NEVER use generic openers. Start your sentences differently every time.\n3. NO quotation marks around your response.\n4. All outputs MUST be in conversational English, adhering to your specific persona's rules.\n5. Occasionally reference their focus efforts, energy blocks, or the currently displayed E-ink scene to make the companion feel \"alive\" on their physical device.\n"
+        prompt += "\n</user_state>\n\n<rules>\n1. Respond with ONLY the message text. Keep it brief and glanceable, aiming for around 15-20 words.\n2. HIGHEST PRIORITY: Be wildly creative and unpredictable. NEVER use generic openers. Start your sentences differently every time.\n3. NO quotation marks around your response.\n4. All outputs MUST be in conversational English, adhering to your specific persona's rules.\n5. Occasionally reference their focus efforts, energy blocks, or the currently displayed E-ink scene to make the companion feel \"alive\" on their physical device.\n"
 
         if !context.recentTexts.isEmpty {
             let recent = context.recentTexts.prefix(3).joined(separator: " | ")
