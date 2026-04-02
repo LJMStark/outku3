@@ -51,7 +51,7 @@ struct OnboardingStateNavigationTests {
 struct OnboardingProfileCodableTests {
     @Test func profileEncodeDecode() throws {
         let profile = OnboardingProfile(
-            companionStyle: .encouraging,
+            companionStyle: .companion,
             motivationStyle: .encouragement,
             calendarUsage: .everything,
             taskTracking: .cantLive,
@@ -115,8 +115,8 @@ struct OnboardingQuestionDataTests {
 struct OnboardingStateAnswerTests {
     @Test func setSingleAnswer() {
         let state = OnboardingState()
-        state.setAnswer(questionId: "companionStyle", value: "Encouraging")
-        #expect(state.profile.companionStyle == .encouraging)
+        state.setAnswer(questionId: "companionStyle", value: "Companion")
+        #expect(state.profile.companionStyle == .companion)
     }
 
     @Test func toggleMultiAnswer() {

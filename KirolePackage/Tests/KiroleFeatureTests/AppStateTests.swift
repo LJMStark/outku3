@@ -740,7 +740,7 @@ struct AppStateTests {
             let newProfile = UserProfile(
                 workType: .remoteWorker,
                 primaryGoals: [.productivity, .focus],
-                companionStyle: .encouraging,
+                companionStyle: .companion,
                 onboardingCompletedAt: nil
             )
 
@@ -748,7 +748,7 @@ struct AppStateTests {
 
             #expect(state.userProfile.workType == .remoteWorker)
             #expect(state.userProfile.primaryGoals.contains(.productivity))
-            #expect(state.userProfile.companionStyle == .encouraging)
+            #expect(state.userProfile.companionStyle == .companion)
 
             // Reset
             state.updateUserProfile(.default)

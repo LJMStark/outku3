@@ -1,5 +1,12 @@
 import Foundation
 
+enum ExternalSyncTarget: Equatable {
+    case google
+    case apple
+    case notion
+    case taskade
+}
+
 extension AppState {
     public func loadGoogleCalendarEvents() async {
         await syncGoogleData()
@@ -7,6 +14,45 @@ extension AppState {
 
     public func loadGoogleTasks() async {
         await syncGoogleData()
+    }
+
+    func connectedExternalSyncTargets() -> [ExternalSyncTarget] {
+        var targets: [ExternalSyncTarget] = []
+
+        if hasAnyGoogleIntegrationConnected {
+            targets.append(.google)
+        }
+
+        if isAnyAppleIntegrationConnected {
+            targets.append(.apple)
+        }
+
+        if isIntegrationConnected(.notion) {
+            targets.append(.notion)
+        }
+
+        if isIntegrationConnected(.taskade) {
+            targets.append(.taskade)
+        }
+
+        return targets
+    }
+
+    public func syncConnectedExternalData() async {
+        syncIntegrationStatusFromAuth()
+
+        for target in connectedExternalSyncTargets() {
+            switch target {
+            case .google:
+                await syncGoogleData()
+            case .apple:
+                await syncAppleData()
+            case .notion:
+                await syncNotionData()
+            case .taskade:
+                await syncTaskadeData()
+            }
+        }
     }
 
     public func syncGoogleData() async {
@@ -224,4 +270,3 @@ extension AppState {
         await updatePetState()
     }
 }
-

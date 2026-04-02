@@ -146,6 +146,8 @@ public extension BLESyncCoordinator {
             }
         }
 
+        await AuthManager.shared.initialize()
+        await AppState.shared.syncConnectedExternalData()
         await performSync()
         BLEBackgroundSyncScheduler.shared.schedule()
         task.setTaskCompleted(success: lastSyncSucceeded)

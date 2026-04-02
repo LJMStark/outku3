@@ -88,7 +88,9 @@ public struct ContentView: View {
             switch newPhase {
             case .active:
                 Task {
-                    await SyncScheduler.shared.syncOnResume()
+                    if appState.hasCompletedInitialHomeLoad {
+                        await SyncScheduler.shared.syncOnResume()
+                    }
                     await FocusSessionService.shared.refreshProtectionStatus()
                 }
                 SyncScheduler.shared.startForegroundSync()

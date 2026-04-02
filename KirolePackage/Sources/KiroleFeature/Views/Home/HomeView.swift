@@ -5,7 +5,6 @@ import SwiftUI
 public struct HomeView: View {
     @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
-    @Environment(AuthManager.self) private var authManager
     @State private var showScrollToTop = false
     @State private var scrollOffset: CGFloat = 0
     @State private var isInitialLoading = true
@@ -133,14 +132,8 @@ public struct HomeView: View {
             await appState.loadTodayHaiku()
         }
 
-        if authManager.isGoogleConnected {
-            Task { @MainActor in
-                await appState.syncGoogleData()
-            }
-        }
-
         Task { @MainActor in
-            await appState.syncAppleData()
+            await appState.syncConnectedExternalData()
         }
 
         // Keep loader briefly to avoid flicker and ensure first paint is stable.
@@ -152,12 +145,7 @@ public struct HomeView: View {
         SoundService.shared.haptic(.medium)
         appState.selectedDate = Date()
 
-        // Sync all data
-        if authManager.isGoogleConnected {
-            await appState.syncGoogleData()
-        }
-
-        await appState.syncAppleData()
+        await appState.syncConnectedExternalData()
         await appState.loadTodayHaiku()
 
         // Success haptic

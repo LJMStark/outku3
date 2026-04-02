@@ -16,52 +16,54 @@ public struct SettingsFocusSection: View {
 
     public var body: some View {
         if shouldShowSection {
-            VStack(alignment: .leading, spacing: 12) {
-                SettingsSectionHeader(title: "Focus Protection")
-
-                VStack(alignment: .leading, spacing: 14) {
-                    modeSelector
-                    statusCard
-                    actionArea
-                    
-                    Divider()
-                        .padding(.vertical, 4)
-                    
-                    Button {
-                        showFocusTest = true
-                    } label: {
-                        HStack {
-                            Image(systemName: "gamecontroller.fill")
-                            Text("Test Focus UI")
-                        }
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(theme.colors.accent)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                    }
-                    .buttonStyle(.plain)
+            sectionContent
+                .task {
+                    await guardService.refreshAuthorizationStatus()
                 }
-                .padding(16)
-                .background(Color.white)
-                .clipShape(RoundedRectangle(cornerRadius: 24))
-                .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
+                .sheet(
+                    isPresented: Binding(
+                        get: { guardService.isPickerPresented },
+                        set: { guardService.isPickerPresented = $0 }
+                    )
+                ) {
+                    pickerSheet
+                }
+                .modifier(FocusTestPresentationModifier(isPresented: $showFocusTest))
+        }
+    }
+
+    private var sectionContent: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SettingsSectionHeader(title: "Focus Protection")
+
+            VStack(alignment: .leading, spacing: 12) {
+                modeSelector
+                statusCard
+                actionArea
+                
+                Divider()
+                    .padding(.vertical, 4)
+                
+                Button {
+                    showFocusTest = true
+                } label: {
+                    HStack {
+                        Image(systemName: "gamecontroller.fill")
+                        Text("Test Focus UI")
+                    }
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(theme.colors.accent)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                .buttonStyle(.plain)
             }
-            .task {
-                await guardService.refreshAuthorizationStatus()
-            }
-            .sheet(
-                isPresented: Binding(
-                    get: { guardService.isPickerPresented },
-                    set: { guardService.isPickerPresented = $0 }
-                )
-            ) {
-                pickerSheet
-            }
-            .fullScreenCover(isPresented: $showFocusTest) {
-                FocusTestOverlayView(isPresented: $showFocusTest)
-            }
+            .padding(16)
+            .background(Color.white)
+            .clipShape(RoundedRectangle(cornerRadius: 24))
+            .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
         }
     }
 
@@ -241,6 +243,23 @@ public struct SettingsFocusSection: View {
 }
 
 // MARK: - Focus Test View
+
+private struct FocusTestPresentationModifier: ViewModifier {
+    @Binding var isPresented: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        #if os(iOS)
+        content.fullScreenCover(isPresented: $isPresented) {
+            FocusTestOverlayView(isPresented: $isPresented)
+        }
+        #else
+        content.sheet(isPresented: $isPresented) {
+            FocusTestOverlayView(isPresented: $isPresented)
+        }
+        #endif
+    }
+}
 
 private struct FocusTestOverlayView: View {
     @Binding var isPresented: Bool

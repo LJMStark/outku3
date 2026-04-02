@@ -1,20 +1,28 @@
 import Foundation
 
+struct ForegroundSyncPolicy {
+    let periodicInterval: TimeInterval = 300  // 5 minutes
+    let resumeThrottleInterval: TimeInterval = 2
+
+    func shouldSyncOnResume(now: Date, lastAttempt: Date?) -> Bool {
+        guard let lastAttempt else { return true }
+        return now.timeIntervalSince(lastAttempt) >= resumeThrottleInterval
+    }
+}
+
 @MainActor
 public final class SyncScheduler {
     public static let shared = SyncScheduler()
 
     private var timer: Timer?
-    private var lastGoogleSyncTime: Date?
-    private var lastAppleSyncTime: Date?
-    private let syncInterval: TimeInterval = 300  // 5 minutes
-    private let resumeThreshold: TimeInterval = 600  // 10 minutes
+    private var lastSyncAttemptTime: Date?
+    private let policy = ForegroundSyncPolicy()
 
     private init() {}
 
     public func startForegroundSync() {
         stopForegroundSync()
-        timer = Timer.scheduledTimer(withTimeInterval: syncInterval, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: policy.periodicInterval, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 await self?.performSync()
             }
@@ -28,31 +36,17 @@ public final class SyncScheduler {
 
     public func syncOnResume() async {
         let now = Date()
-        let googleStale = lastGoogleSyncTime.map { now.timeIntervalSince($0) > resumeThreshold } ?? true
-        let appleStale = lastAppleSyncTime.map { now.timeIntervalSince($0) > resumeThreshold } ?? true
-
-        if googleStale || appleStale {
-            await performSync()
-        }
+        guard policy.shouldSyncOnResume(now: now, lastAttempt: lastSyncAttemptTime) else { return }
+        await performSync(triggeredAt: now)
     }
 
     private func performSync() async {
-        let now = Date()
-        let appState = AppState.shared
+        await performSync(triggeredAt: Date())
+    }
 
-        if AuthManager.shared.isGoogleConnected {
-            lastGoogleSyncTime = now
-            await appState.syncGoogleData()
-        }
-
-        let hasAppleIntegration = appState.integrations.contains {
-            ($0.type == .appleCalendar || $0.type == .appleReminders) && $0.isConnected
-        }
-
-        if hasAppleIntegration {
-            lastAppleSyncTime = now
-            await appState.syncAppleData()
-        }
+    private func performSync(triggeredAt date: Date) async {
+        lastSyncAttemptTime = date
+        await AppState.shared.syncConnectedExternalData()
     }
 }
 

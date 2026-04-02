@@ -1,16 +1,24 @@
 import Foundation
 import AuthenticationServices
+#if canImport(UIKit)
+import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
 
 // MARK: - Taskade Auth Service
 
 /// Handles Taskade OAuth 2.0 flow using ASWebAuthenticationSession
 @MainActor
-public final class TaskadeAuthService {
+public final class TaskadeAuthService: NSObject, ASWebAuthenticationPresentationContextProviding {
     public static let shared = TaskadeAuthService()
 
     private let keychainService = KeychainService.shared
+    private var currentSession: ASWebAuthenticationSession?
 
-    private init() {}
+    private override init() {
+        super.init()
+    }
 
     // MARK: - OAuth Flow
 
@@ -184,24 +192,45 @@ public final class TaskadeAuthService {
 
     // MARK: - Helpers
 
+    public func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        #if canImport(UIKit)
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+            .first { $0.isKeyWindow } ?? UIWindow()
+        #elseif canImport(AppKit)
+        NSApplication.shared.windows.first ?? ASPresentationAnchor()
+        #else
+        ASPresentationAnchor()
+        #endif
+    }
+
     private func performWebAuth(url: URL, callbackScheme: String) async throws -> URL {
         try await withCheckedThrowingContinuation { continuation in
             let session = ASWebAuthenticationSession(
                 url: url,
                 callbackURLScheme: callbackScheme
             ) { callbackURL, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                    return
+                Task { @MainActor in
+                    self.currentSession = nil
+                    if let error {
+                        continuation.resume(throwing: error)
+                        return
+                    }
+                    guard let callbackURL else {
+                        continuation.resume(throwing: TaskadeAuthError.noCallbackURL)
+                        return
+                    }
+                    continuation.resume(returning: callbackURL)
                 }
-                guard let callbackURL else {
-                    continuation.resume(throwing: TaskadeAuthError.noCallbackURL)
-                    return
-                }
-                continuation.resume(returning: callbackURL)
             }
+            session.presentationContextProvider = self
             session.prefersEphemeralWebBrowserSession = false
-            session.start()
+            self.currentSession = session
+            if !session.start() {
+                self.currentSession = nil
+                continuation.resume(throwing: TaskadeAuthError.invalidURL)
+            }
         }
     }
 
