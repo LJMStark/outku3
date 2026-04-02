@@ -158,7 +158,7 @@ Home page is an infinite-scroll multi-day timeline managed by `TimelineDataSourc
 
 - `HomeView` → `LazyVStack` with today (offset 0) followed by `ForEach(offset 1+)`
 - `DaySectionView(date:, showPet:)` → `DateDividerView` + `DayTimelineView`
-- `DayTimelineView(date:, events:, showPet:)` → sunrise/events/sunset, with `HaikuSectionView` (haiku text + tiko pet image) embedded after the 2nd event card when `showPet: true`
+- `DayTimelineView(date:, events:, showPet:)` → sunrise/events/sunset, with `HaikuSectionView` (renders either the daily haiku or shared pet dialogue above the tiko pet image) embedded after the 2nd event card when `showPet: true`
 - Today always has `showPet: true`; subsequent days show pet every 3 days via `TimelineDataSource.shouldShowPetMarker(at:)`
 - All timeline components (`DayTimelineView`, `HaikuSectionView`, `TimelineEventRow`, etc.) live in `Views/Home/TimelineView.swift`
 
@@ -170,7 +170,7 @@ Home page is an infinite-scroll multi-day timeline managed by `TimelineDataSourc
 | `EventKitService` | Apple Calendar & Reminders |
 | `GoogleCalendarAPI` | Google Calendar sync |
 | `GoogleTasksAPI` | Google Tasks sync |
-| `OpenAIService` | Haiku + AI companion text generation (GPT-4o-mini) |
+| `OpenAIService` | Haiku + AI companion text generation (OpenRouter `openai/gpt-5.1`) |
 | `CompanionTextService` | Personalized text with OpenAI fallback to local templates |
 | `BehaviorAnalyzer` | User behavior summary from task/focus data |
 | `SupabaseService` | Cloud data persistence |
@@ -332,10 +332,20 @@ Access colors via `theme.colors.propertyName`:
 
 `CompanionTextService` generates personalized text (greetings, summaries, encouragement, etc.) using a two-tier approach:
 
-1. **OpenAI path** (when API key configured): Builds `AIContext` from `UserProfile` (companionStyle, workType, goals) + app state, calls `OpenAIService.generateCompanionText()` with style-aware prompts (4 personalities: encouraging/strict/playful/calm), saves `AIInteraction` to `LocalStorage` for memory
+1. **OpenAI path** (when API key configured): Builds `AIContext` from `UserProfile` (companionStyle, workType, goals) + app state, calls `OpenAIService.generateCompanionText()` with style-aware prompts (`companion`, `challenger`, `corporate`, `dramatic`, `genZ`, `slacker`), saves `AIInteraction` to `LocalStorage` for memory
 2. **Local fallback** (no key or API failure): Returns from hardcoded template arrays (original behavior)
 
 Key flow: `DayPackGenerator` -> `CompanionTextService` -> `OpenAIService` (optional) -> `LocalStorage` (AI interactions)
+
+### Home Companion Presentation Flow
+
+- Homepage copy is owned by `AppState.currentHaiku`, `AppState.currentPetDialogue`, and `AppState.homeCompanionDisplayMode`.
+- `AppState.refreshHomeCompanionPresentation()` is the single entry point for deciding what `HaikuSectionView` should render.
+- The first visible Home presentation on a calendar day shows the daily haiku. After that day has been marked as shown, Home falls back to the shared pet dialogue path.
+- Persist `LocalStorage.lastHomeHaikuShownDate` only after the haiku load finishes; do not mark the day as consumed before the async load completes.
+- `LocalStorage.shared_companion_dialogue.json` caches the shared pet dialogue by date + fingerprint so repeated renders reuse the same message until the underlying Home state changes.
+- `HomeView` should refresh the presentation when the scene returns to `.active`; do not rely on `onDisappear` to force mode switching across day boundaries.
+- `PromptDebuggerView` must use `CompanionTextService.previewSharedPetDialogue()` so debugger output never pollutes production `AIInteraction` history or reminder memory.
 
 - `TaskDehydrationService` decomposes tasks into `MicroAction` (What/When/Why) via `OpenAIService.dehydrateTask()`, with 24h cache in `LocalStorage` and fallback to task title
 - `SmartReminderService` evaluates 4 trigger conditions in priority order: deadline → streakProtect → idle → gentleNudge, rate-limited to 30min intervals, sends via `BLEDataEncoder.encodeSmartReminder()` (0x13 command)
