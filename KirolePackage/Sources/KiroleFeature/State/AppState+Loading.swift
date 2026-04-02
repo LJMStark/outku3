@@ -135,9 +135,9 @@ extension AppState {
         widgetDataService.updateFromAppState(pet: pet, streak: streak, statistics: statistics)
     }
 
-    public func loadTodayHaiku() async {
+    public func loadTodayHaiku(now: Date = Date()) async {
         let context = HaikuContext(
-            currentTime: Date(),
+            currentTime: now,
             tasksCompletedToday: statistics.todayCompleted,
             totalTasksToday: statistics.todayTotal,
             petMood: pet.mood,

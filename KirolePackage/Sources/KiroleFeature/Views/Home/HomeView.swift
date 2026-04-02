@@ -5,6 +5,7 @@ import SwiftUI
 public struct HomeView: View {
     @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
+    @Environment(\.scenePhase) private var scenePhase
     @State private var showScrollToTop = false
     @State private var scrollOffset: CGFloat = 0
     @State private var isInitialLoading = true
@@ -98,6 +99,10 @@ public struct HomeView: View {
             }
         }
         .background(theme.colors.background)
+        .task(id: scenePhase) {
+            guard scenePhase == .active else { return }
+            await refreshVisibleHomeCompanion()
+        }
         .task {
             guard !appState.hasCompletedInitialHomeLoad else {
                 isInitialLoading = false
@@ -125,12 +130,6 @@ public struct HomeView: View {
     private func loadInitialData() async {
         isInitialLoading = true
         defer { isInitialLoading = false }
-        appState.selectedDate = Date()
-
-        // Initial screen should not be blocked by network / EventKit callbacks.
-        Task { @MainActor in
-            await appState.loadTodayHaiku()
-        }
 
         Task { @MainActor in
             await appState.syncConnectedExternalData()
@@ -140,13 +139,18 @@ public struct HomeView: View {
         try? await Task.sleep(for: .milliseconds(300))
     }
 
+    private func refreshVisibleHomeCompanion() async {
+        appState.selectedDate = Date()
+        await appState.refreshHomeCompanionPresentation()
+    }
+
     private func refreshData() async {
         // Haptic feedback at start
         SoundService.shared.haptic(.medium)
         appState.selectedDate = Date()
 
         await appState.syncConnectedExternalData()
-        await appState.loadTodayHaiku()
+        appState.switchHomeToPetDialogue()
 
         // Success haptic
         SoundService.shared.haptic(.success)

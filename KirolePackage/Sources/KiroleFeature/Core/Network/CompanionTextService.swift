@@ -1,5 +1,14 @@
 import Foundation
 
+enum CompanionTextGenerationMode {
+    case live
+    case preview
+
+    var shouldPersistInteractions: Bool {
+        self == .live
+    }
+}
+
 // MARK: - Companion Text Service
 
 /// 文案生成服务 - 生成早安问候、日程总结、陪伴短句等
@@ -165,28 +174,45 @@ public final class CompanionTextService {
         }
     }
 
+    public func generateSharedPetDialogue(baseContext: AIContext) async -> String {
+        await generateSharedPetDialogue(baseContext: baseContext, mode: .live)
+    }
+
+    public func previewSharedPetDialogue(baseContext: AIContext) async -> String {
+        await generateSharedPetDialogue(baseContext: baseContext, mode: .preview)
+    }
+
+    private func generateSharedPetDialogue(
+        baseContext: AIContext,
+        mode: CompanionTextGenerationMode
+    ) async -> String {
+        if let aiText = await generateAIText(type: .smartReminder, baseContext: baseContext, mode: mode) {
+            return String(aiText.prefix(60))
+        }
+
+        return sharedPetDialogueFallback(baseContext)
+    }
+
     // MARK: - AI Text Generation
 
     private func generateAIText(
         type: AITextType,
         petName: String, petMood: PetMood,
         userProfile: UserProfile,
+        mode: CompanionTextGenerationMode = .live,
         completedTasks: Int = 0, totalTasks: Int = 0,
         events: Int = 0, streak: Int = 0
     ) async -> String? {
         guard await openAI.isConfigured else { return nil }
 
-        let recentTexts = await loadRecentTexts(type: type)
         let behaviorSummary = try? await localStorage.loadBehaviorSummary()
+        let weeklyRate = resolvedWeeklyRate(
+            behaviorSummary: behaviorSummary,
+            completedTasks: completedTasks,
+            totalTasks: totalTasks
+        )
 
-        let weeklyRate: Double
-        if let rates = behaviorSummary?.weeklyCompletionRates, let last = rates.last {
-            weeklyRate = last
-        } else {
-            weeklyRate = totalTasks > 0 ? Double(completedTasks) / Double(totalTasks) : 0
-        }
-
-        let context = AIContext(
+        let baseContext = AIContext(
             companionStyle: userProfile.companionStyle,
             workType: userProfile.workType,
             primaryGoals: userProfile.primaryGoals,
@@ -198,12 +224,31 @@ public final class CompanionTextService {
             currentStreak: streak,
             recentCompletionRate: weeklyRate,
             behaviorSummary: behaviorSummary,
-            recentTexts: recentTexts
+            recentTexts: []
         )
+
+        return await generateAIText(type: type, baseContext: baseContext, mode: mode)
+    }
+
+    private func generateAIText(
+        type: AITextType,
+        baseContext: AIContext,
+        mode: CompanionTextGenerationMode = .live
+    ) async -> String? {
+        guard await openAI.isConfigured else { return nil }
+        let context = await enrichedContext(for: type, baseContext: baseContext)
 
         do {
             let text = try await openAI.generateCompanionText(type: type, context: context)
-            await saveInteraction(type: type, text: text, petName: petName, petMood: petMood, completionRate: weeklyRate)
+            if mode.shouldPersistInteractions {
+                await saveInteraction(
+                    type: type,
+                    text: text,
+                    petName: context.petName,
+                    petMood: context.petMood,
+                    completionRate: context.recentCompletionRate
+                )
+            }
             return text
         } catch {
             #if DEBUG
@@ -211,6 +256,86 @@ public final class CompanionTextService {
             #endif
             return nil
         }
+    }
+
+    private func enrichedContext(for type: AITextType, baseContext: AIContext) async -> AIContext {
+        let recentTexts = baseContext.recentTexts.isEmpty ? await loadRecentTexts(type: type) : baseContext.recentTexts
+        let behaviorSummary: UserBehaviorSummary?
+        if let existingSummary = baseContext.behaviorSummary {
+            behaviorSummary = existingSummary
+        } else {
+            behaviorSummary = try? await localStorage.loadBehaviorSummary()
+        }
+        let weeklyRate = resolvedWeeklyRate(
+            behaviorSummary: behaviorSummary,
+            completedTasks: baseContext.tasksCompletedToday,
+            totalTasks: baseContext.totalTasksToday,
+            preferredRate: baseContext.recentCompletionRate
+        )
+
+        return AIContext(
+            companionStyle: baseContext.companionStyle,
+            workType: baseContext.workType,
+            primaryGoals: baseContext.primaryGoals,
+            petName: baseContext.petName,
+            petMood: baseContext.petMood,
+            currentTime: baseContext.currentTime,
+            tasksCompletedToday: baseContext.tasksCompletedToday,
+            totalTasksToday: baseContext.totalTasksToday,
+            eventsToday: baseContext.eventsToday,
+            currentStreak: baseContext.currentStreak,
+            recentCompletionRate: weeklyRate,
+            behaviorSummary: behaviorSummary,
+            recentTexts: recentTexts,
+            focusTimeToday: baseContext.focusTimeToday,
+            energyBlocks: baseContext.energyBlocks,
+            currentSceneName: baseContext.currentSceneName,
+            hardwareConnected: baseContext.hardwareConnected,
+            nextAgendaItem: baseContext.nextAgendaItem,
+            topTaskTitles: baseContext.topTaskTitles,
+            episodicMemories: baseContext.episodicMemories,
+            dimensionalEmotion: baseContext.dimensionalEmotion,
+            psychologicalObjective: baseContext.psychologicalObjective,
+            userDefinedLearnText: baseContext.userDefinedLearnText
+        )
+    }
+
+    private func resolvedWeeklyRate(
+        behaviorSummary: UserBehaviorSummary?,
+        completedTasks: Int,
+        totalTasks: Int,
+        preferredRate: Double? = nil
+    ) -> Double {
+        if let preferredRate, preferredRate > 0 {
+            return preferredRate
+        }
+
+        if let rates = behaviorSummary?.weeklyCompletionRates, let last = rates.last {
+            return last
+        }
+
+        guard totalTasks > 0 else { return 0 }
+        return Double(completedTasks) / Double(totalTasks)
+    }
+
+    private func sharedPetDialogueFallback(_ context: AIContext) -> String {
+        if let nextAgendaItem = context.nextAgendaItem, !nextAgendaItem.isEmpty {
+            return "*glances over* Next up: \(nextAgendaItem)"
+        }
+
+        if let topTask = context.topTaskTitles.first {
+            return "*nudges your list* Start with \(topTask)"
+        }
+
+        if context.totalTasksToday == 0 && context.eventsToday == 0 {
+            return "*stretches* Quiet day. Let's keep it gentle."
+        }
+
+        if context.totalTasksToday > 0, context.tasksCompletedToday >= context.totalTasksToday {
+            return "*purrs softly* You cleared the board today."
+        }
+
+        return "*tilts head* I'm waiting for your next move."
     }
 
     // MARK: - Interaction Persistence
