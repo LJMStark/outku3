@@ -143,29 +143,34 @@ struct PromptDebuggerSheet: View {
                 
                 Divider()
                 
-                // 3. Force Refresh Action
-                Button {
-                    Task {
-                        await forceTestGeneration()
+                VStack(spacing: 12) {
+                    Text("模拟生成测试")
+                        .font(.headline)
+                    
+                    HStack {
+                        Button { Task { await forceTestGeneration(type: .morningGreeting) } } label: { Text("早安问候") }
+                        Button { Task { await forceTestGeneration(type: .taskEncouragement) } } label: { Text("任务鼓励") }
                     }
-                } label: {
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isForceRefreshing)
+
+                    HStack {
+                        Button { Task { await forceTestGeneration(type: .settlementSummary) } } label: { Text("日终结算") }
+                        Button { Task { await forceTestGeneration(type: .smartReminder) } } label: { Text("闲置/随机提醒") }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isForceRefreshing)
+                    
                     if isForceRefreshing {
                         ProgressView().controlSize(.small)
-                    } else {
-                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .padding(.top, 4)
                     }
-                    Text("模拟极端参数强制生成测试")
                 }
-                .font(.headline)
-                .buttonStyle(.borderedProminent)
-                .disabled(isForceRefreshing)
                 .padding(.horizontal)
                 
                 Spacer()
             }
             .padding(.top, 24)
-
-
             .onAppear {
                 loadDraft(for: selectedPersona)
             }
@@ -185,12 +190,12 @@ struct PromptDebuggerSheet: View {
         }
     }
     
-    private func forceTestGeneration() async {
+    private func forceTestGeneration(type: AITextType = .smartReminder) async {
         isForceRefreshing = true
         
         let mockContext = state.createMockContext()
 
-        let result = await CompanionTextService.shared.previewSharedPetDialogue(baseContext: mockContext)
+        let result = await CompanionTextService.shared.previewSharedPetDialogue(baseContext: mockContext, type: type)
         await MainActor.run {
             AppState.shared.currentPetDialogue = result
             AppState.shared.switchHomeToPetDialogue()

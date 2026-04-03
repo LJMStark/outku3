@@ -188,15 +188,16 @@ public final class CompanionTextService {
         await generateSharedPetDialogue(baseContext: baseContext, mode: .live)
     }
 
-    public func previewSharedPetDialogue(baseContext: AIContext) async -> String {
-        await generateSharedPetDialogue(baseContext: baseContext, mode: .preview)
+    public func previewSharedPetDialogue(baseContext: AIContext, type: AITextType = .smartReminder) async -> String {
+        await generateSharedPetDialogue(baseContext: baseContext, type: type, mode: .preview)
     }
 
     private func generateSharedPetDialogue(
         baseContext: AIContext,
+        type: AITextType = .smartReminder,
         mode: CompanionTextGenerationMode
     ) async -> String {
-        if let aiText = await generateAIText(type: .smartReminder, baseContext: baseContext, mode: mode) {
+        if let aiText = await generateAIText(type: type, baseContext: baseContext, mode: mode) {
             return aiText
         }
 
