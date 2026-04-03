@@ -8,7 +8,7 @@ public actor OpenAIService {
 
     private let networkClient = NetworkClient.shared
     private let baseURL = "https://openrouter.ai/api/v1"
-    private let model = "openai/gpt-4o-mini"
+    private let model = "openai/gpt-5.3-chat"
 
     private var apiKey: String = ""
 
