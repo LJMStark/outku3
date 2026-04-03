@@ -1,12 +1,13 @@
 # CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-For agent workflow and interaction rules, see `AGENTS.md`.
+
+The core project rules, architecture, development commands, and best practices are defined in `./AGENTS.md`. Always read it first and follow it strictly for consistency across tools.
 
 ## Interaction Rules
 
-1. **称呼**：所有回复必须以 "B哥" 开头。
-2. **语言**：所有回复必须使用中文（简体）。
+1. All responses must begin with **B哥**.
+2. All responses must be in **Chinese** (Simplified).
 
 ## Forbidden Patterns
 
@@ -26,6 +27,7 @@ For agent workflow and interaction rules, see `AGENTS.md`.
 - **Platform**: iOS 17.0+ (iPhone only)
 - **Language**: Swift 6.1+ with strict concurrency
 - **UI Framework**: SwiftUI with Model-View (MV) pattern - no ViewModels
+- **AI Backend**: OpenRouter (`openai/gpt-4o-mini`) via `OpenAIService`
 - **Testing**: Swift Testing framework (`@Test`, `#expect`, `#require`)
 
 ## Apple Developer Account
@@ -39,11 +41,6 @@ For agent workflow and interaction rules, see `AGENTS.md`.
 - **Family Controls**: Distribution version application submitted
   - Application submitted: 2026-02-26
   - Approval status: Pending review (1-2 weeks)
-  - Contact: developer-relations@apple.com
-  - Current limitation: Cannot upload to TestFlight until approved
-  - Temporary workaround: Use Development version for local testing
-  - Archive attempt: 2026-02-26 20:26 - Failed (Provisioning Profile missing Distribution entitlement)
-  - Next steps: Monitor email daily, prepare screenshots/video if requested
   - Progress tracking: See TESTFLIGHT_PROGRESS.md
 
 ## Build & Test Commands
@@ -113,22 +110,26 @@ outku3/
 │   ├── Package.swift
 │   └── Sources/KiroleFeature/
 │       ├── ContentView.swift   # Root view with environment injection
-│       ├── State/AppState.swift
+│       ├── State/              # AppState (split into extensions), ThemeManager, etc.
 │       ├── Models/             # Pet, Task, Event, DayPack, EventLog, FocusSession, AIMemory, UserProfile, MicroAction, OnboardingProfile
 │       ├── Design/Theme.swift
-│       ├── Core/               # Services (Auth, API, Storage, BLE)
+│       ├── Core/
+│       │   ├── Auth/           # AuthManager
+│       │   ├── Config/         # AppSecrets
+│       │   ├── Network/        # OpenAIService, CompanionTextService, Google APIs, Notion/Taskade
+│       │   ├── Services/       # BLE*, FocusSession, DayPack, SmartReminder, EventKit, etc.
+│       │   └── Storage/        # LocalStorage
 │       └── Views/
-│           ├── Home/, Pet/, Settings/, Components/
-│           └── Onboarding/
-│               ├── OnboardingContainerView.swift  # Page router (15 screens)
-│               ├── Logic/OnboardingState.swift     # @Observable navigation + profile state
-│               ├── Data/OnboardingQuestions.swift   # 8 questionnaire definitions
-│               ├── Components/                     # 11 shared components
-│               └── Pages/                          # 8 page views (Screen 0-14)
+│           ├── Auth/           # Sign-in flows
+│           ├── Home/           # HomeView, TimelineView (HaikuSectionView), PromptDebuggerView
+│           ├── Pet/            # Pet status and interaction
+│           ├── Settings/       # App settings
+│           ├── Components/     # Shared UI components
+│           └── Onboarding/     # 14-screen onboarding flow
 ├── Config/
 │   ├── Shared.xcconfig         # Bundle ID, version, deployment target
 │   ├── Secrets.xcconfig        # API keys (git-ignored)
-│   └── Kirole.entitlements      # App capabilities
+│   └── Kirole.entitlements     # App capabilities
 └── docs/                       # Hardware specs, BLE protocol
 ```
 
@@ -156,9 +157,9 @@ Views access via `@Environment(AppState.self)`, `@Environment(ThemeManager.self)
 
 Home page is an infinite-scroll multi-day timeline managed by `TimelineDataSource`:
 
-- `HomeView` → `LazyVStack` with today (offset 0) followed by `ForEach(offset 1+)`
-- `DaySectionView(date:, showPet:)` → `DateDividerView` + `DayTimelineView`
-- `DayTimelineView(date:, events:, showPet:)` → sunrise/events/sunset, with `HaikuSectionView` (renders either the daily haiku or shared pet dialogue above the tiko pet image) embedded after the 2nd event card when `showPet: true`
+- `HomeView` -> `LazyVStack` with today (offset 0) followed by `ForEach(offset 1+)`
+- `DaySectionView(date:, showPet:)` -> `DateDividerView` + `DayTimelineView`
+- `DayTimelineView(date:, events:, showPet:)` -> sunrise/events/sunset, with `HaikuSectionView` (renders either the daily haiku or shared pet dialogue above the tiko pet image) embedded after the 2nd event card when `showPet: true`
 - Today always has `showPet: true`; subsequent days show pet every 3 days via `TimelineDataSource.shouldShowPetMarker(at:)`
 - All timeline components (`DayTimelineView`, `HaikuSectionView`, `TimelineEventRow`, etc.) live in `Views/Home/TimelineView.swift`
 
@@ -170,7 +171,7 @@ Home page is an infinite-scroll multi-day timeline managed by `TimelineDataSourc
 | `EventKitService` | Apple Calendar & Reminders |
 | `GoogleCalendarAPI` | Google Calendar sync |
 | `GoogleTasksAPI` | Google Tasks sync |
-| `OpenAIService` | Haiku + AI companion text generation (OpenRouter `openai/gpt-5.1`) |
+| `OpenAIService` | Haiku + AI companion text generation (OpenRouter `openai/gpt-4o-mini`) |
 | `CompanionTextService` | Personalized text with OpenAI fallback to local templates |
 | `BehaviorAnalyzer` | User behavior summary from task/focus data |
 | `SupabaseService` | Cloud data persistence |
@@ -192,14 +193,14 @@ Home page is an infinite-scroll multi-day timeline managed by `TimelineDataSourc
 
 ## Supabase Rules
 
-- iOS 客户端运行时配置由 App 壳层调用 `AppSecrets.configure(...)` 注入（来自构建期常量）。
-- 严禁在 `Info.plist`、`Bundle.infoDictionary`、日志或任何前端可见配置中放置 `OPENROUTER_API_KEY`、`SUPABASE_URL`、`SUPABASE_ANON_KEY`、`BLE_SHARED_SECRET`。
-- 构建期密钥来源（环境变量 / `Config/Secrets.xcconfig` / `Kirole/BuildSecrets.generated.swift`）不得提交真实值。
-- 严禁在客户端、仓库、日志、`Info.plist` 或任何前端可见配置中使用/暴露 `service_role` 高权限密钥。
-- 所有业务表必须启用 RLS，并按 `auth.uid()` 进行数据隔离。
-- 任何 `SupabaseClient` 数据模型字段变更（新增/重命名/删除）必须在同一个提交中同步更新 `Config/supabase-schema.sql`。
-- 对已存在数据库必须提供向后兼容迁移语句（例如 `ALTER TABLE ... ADD COLUMN IF NOT EXISTS ...`），避免线上/新环境 schema 漂移导致运行时失败。
-- 发版前先执行 schema/migration，再发布客户端，避免出现 “代码写入新字段但数据库无该列” 的同步故障。
+- Client runtime config injected via `AppSecrets.configure(...)` from App shell (build-time constants).
+- Never place `OPENROUTER_API_KEY`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `BLE_SHARED_SECRET` in `Info.plist`, logs, or any frontend-visible config.
+- Build-time secret sources (`Config/Secrets.xcconfig`, env vars, `Kirole/BuildSecrets.generated.swift`) must never commit real values.
+- Never use or expose `service_role` keys in iOS code, app bundles, repo files, or logs.
+- Keep RLS enabled on all business tables and scope policies to `auth.uid()`.
+- Any Supabase model field change must update `Config/supabase-schema.sql` in the same patch.
+- Include backward-compatible SQL migration for existing databases.
+- Apply schema/migrations before releasing app code that writes new fields.
 
 ## Code Patterns
 
@@ -283,12 +284,12 @@ var body: some View {
   - **Secure Mode**: `BLE_SHARED_SECRET` configured, requires BLE v2 handshake and signed secure envelopes.
 - Event Log record format: `eventType (UInt8)`, `timestamp (UInt32, epoch seconds)`, `value (Int16, big-endian)`
 - BLE data types include `eventLogRequest` and `eventLogBatch` for incremental log sync.
-- Sync policy: 08:00–23:00 hourly; 23:00–08:00 every 4 hours; 30s connection window.
+- Sync policy: 08:00-23:00 hourly; 23:00-08:00 every 4 hours; 30s connection window.
   - Computed by `BLESyncPolicy`, executed by `BLESyncCoordinator`.
 - DayPack refresh must be gated by `DayPack.stableFingerprint()` and `LocalStorage.lastDayPackHash`.
 - BGTask identifier: `com.kirole.app.ble.sync` (requires `bluetooth-central` background mode).
 - Spectra 6 pixel encoding: 4bpp (2 pixels per byte), color index: Black=0x0, White=0x1, Yellow=0x2, Red=0x3, Blue=0x5, Green=0x6
-- Frame buffer size: width * height / 2 bytes (4寸: 120,000 bytes, 7.3寸: 192,000 bytes)
+- Frame buffer size: width * height / 2 bytes (4-inch: 120,000 bytes, 7.3-inch: 192,000 bytes)
 
 ## Onboarding Flow (14 Screens)
 
@@ -324,16 +325,23 @@ Access colors via `theme.colors.propertyName`:
 ## Pet System
 
 - 5 forms: Cat, Dog, Bunny, Bird, Dragon
-- 5 stages: Baby → Child → Teen → Adult → Elder
+- 5 stages: Baby -> Child -> Teen -> Adult -> Elder
 - 5 moods: Happy, Excited, Focused, Sleepy, Missing You
 - 4 scenes: Indoor, Outdoor, Night, Work
 
-## AI Companion Text System
+## AI Companion Text System (Inku Paradigm)
 
 `CompanionTextService` generates personalized text (greetings, summaries, encouragement, etc.) using a two-tier approach:
 
 1. **OpenAI path** (when API key configured): Builds `AIContext` from `UserProfile` (companionStyle, workType, goals) + app state, calls `OpenAIService.generateCompanionText()` with style-aware prompts (`companion`, `challenger`, `corporate`, `dramatic`, `genZ`, `slacker`), saves `AIInteraction` to `LocalStorage` for memory
 2. **Local fallback** (no key or API failure): Returns from hardcoded template arrays (original behavior)
+
+**Inku Paradigm**: The AI companion is an emotional value provider, NOT a productivity coach. It must never give advice, task breakdowns, or productivity tips. It only provides support, encouragement, sarcasm, or emotional reactions matching its personality. Output is capped at 60 characters.
+
+**Prompt architecture (3 layers):**
+- **Layer 1 - Persona**: `CompanionStyle` defines tone (warm, sarcastic, corporate, dramatic, chaotic, lazy)
+- **Layer 2 - Context**: `<user_state>` (focus time, energy blocks, completion %, streak, petMood) + `<narrative_memory>` (episodic events)
+- **Layer 3 - Rules**: Global constraints override all above (no advice, 60 char max, show don't tell)
 
 Key flow: `DayPackGenerator` -> `CompanionTextService` -> `OpenAIService` (optional) -> `LocalStorage` (AI interactions)
 
@@ -348,7 +356,7 @@ Key flow: `DayPackGenerator` -> `CompanionTextService` -> `OpenAIService` (optio
 - `PromptDebuggerView` must use `CompanionTextService.previewSharedPetDialogue()` so debugger output never pollutes production `AIInteraction` history or reminder memory.
 
 - `TaskDehydrationService` decomposes tasks into `MicroAction` (What/When/Why) via `OpenAIService.dehydrateTask()`, with 24h cache in `LocalStorage` and fallback to task title
-- `SmartReminderService` evaluates 4 trigger conditions in priority order: deadline → streakProtect → idle → gentleNudge, rate-limited to 30min intervals, sends via `BLEDataEncoder.encodeSmartReminder()` (0x13 command)
+- `SmartReminderService` evaluates 4 trigger conditions in priority order: deadline -> streakProtect -> idle -> gentleNudge, rate-limited to 30min intervals, sends via `BLEDataEncoder.encodeSmartReminder()` (0x13 command)
 - `FocusSessionService.statistics` provides expanded metrics: `averageSessionMinutes`, `longestSessionMinutes`, `interruptionCount`, `peakFocusHour`, `focusTrendDirection` (compared to yesterday via date-keyed session storage)
 
 - `BehaviorAnalyzer` is a pure `struct` that computes `UserBehaviorSummary` from tasks/streak data for prompt injection
@@ -359,17 +367,17 @@ Key flow: `DayPackGenerator` -> `CompanionTextService` -> `OpenAIService` (optio
 ## E-ink Hardware Integration
 
 ### Hardware Specs
-- **Product form**: 4寸 / 7.3寸 two sizes
-- **4寸 screen**: 400 x 600 pixels, E Ink Spectra 6, 4bpp full color (6 colors: Black, White, Yellow, Red, Blue, Green)
-- **7.3寸 screen**: 800 x 480 pixels, E Ink Spectra 6, 4bpp full color (6 colors)
+- **Product form**: 4-inch / 7.3-inch two sizes
+- **4-inch screen**: 400 x 600 pixels, E Ink Spectra 6, 4bpp full color (6 colors: Black, White, Yellow, Red, Blue, Green)
+- **7.3-inch screen**: 800 x 480 pixels, E Ink Spectra 6, 4bpp full color (6 colors)
 - **SoC**: ESP32-S3, Flash >= 16MB, PSRAM >= 2MB
 - **RTC**: Built-in RTC for timekeeping when BLE disconnected
 - **Interaction**: Power button + Encoder knob (rotary + press) + BLE to iOS App
 
 ### Hardware Docs
-- `docs/硬件需求文档-Hardware-Requirements-Document.md` (v0.3): 硬件电气需求（SoC、显示、电源、电池）
-- `docs/固件功能规格文档.md` (v1.3.0): 固件功能规格（页面设计、交互流程、宠物系统）
-- `docs/BLE通信协议规格文档.md` (v1.3.1): BLE 通信协议（命令格式、数据结构、事件定义）
+- `docs/硬件需求文档-Hardware-Requirements-Document.md` (v0.3): Hardware electrical requirements
+- `docs/固件功能规格文档.md` (v1.3.0): Firmware functional specifications
+- `docs/BLE通信协议规格文档.md` (v1.3.1): BLE communication protocol
 
 ### BLE Protocol
 - Service UUID: `0000FFE0-0000-1000-8000-00805F9B34FB`

@@ -20,6 +20,7 @@ public actor LocalStorage {
         static let deepFocusSelectionCount = "deepFocusSelectionCount"
         static let consecutiveDays = "consecutiveDays"
         static let energyBlocks = "energyBlocks"
+        static let lastHomeHaikuShownDate = "lastHomeHaikuShownDate"
     }
 
     private var documentsDirectory: URL {
@@ -163,6 +164,16 @@ public actor LocalStorage {
         return cache.haiku
     }
 
+    // MARK: - Companion Dialogue Cache
+
+    public func saveSharedCompanionDialogue(_ cache: SharedCompanionDialogueCache) throws {
+        try save(cache, to: "shared_companion_dialogue.json")
+    }
+
+    public func loadSharedCompanionDialogue() throws -> SharedCompanionDialogueCache? {
+        try load(SharedCompanionDialogueCache.self, from: "shared_companion_dialogue.json")
+    }
+
     // MARK: - AI Interactions
 
     /// Save AI interaction history (capped at 100 most recent)
@@ -285,6 +296,16 @@ public actor LocalStorage {
         userDefaults.object(forKey: Keys.lastBleSyncTime) as? Date
     }
 
+    // MARK: Home Companion
+
+    public func saveLastHomeHaikuShownDate(_ dateString: String) {
+        userDefaults.set(dateString, forKey: Keys.lastHomeHaikuShownDate)
+    }
+
+    public func loadLastHomeHaikuShownDate() -> String? {
+        userDefaults.string(forKey: Keys.lastHomeHaikuShownDate)
+    }
+
     // MARK: - Focus Enforcement Settings
 
     public func saveFocusEnforcementMode(_ mode: FocusEnforcementMode) {
@@ -389,7 +410,7 @@ public actor LocalStorage {
             "behavior_summary.json", "onboarding_profile.json",
             "deep_focus_selection.json", "focus_session_active.json",
             "outbox.json", "google_sync_metadata.json",
-            "avatar.dat", "avatar_pixels.dat"
+            "avatar.dat", "avatar_pixels.dat", "shared_companion_dialogue.json"
         ]
         for file in files {
             let url = documentsDirectory.appendingPathComponent(file)
@@ -406,6 +427,7 @@ public actor LocalStorage {
         userDefaults.removeObject(forKey: Keys.deepFocusSelectionCount)
         userDefaults.removeObject(forKey: Keys.consecutiveDays)
         userDefaults.removeObject(forKey: Keys.energyBlocks)
+        userDefaults.removeObject(forKey: Keys.lastHomeHaikuShownDate)
     }
 }
 
@@ -414,4 +436,18 @@ public actor LocalStorage {
 private struct HaikuCache: Codable {
     let haiku: Haiku
     let date: String
+}
+
+// MARK: - Shared Companion Dialogue Cache
+
+public struct SharedCompanionDialogueCache: Codable, Sendable {
+    public let date: String
+    public let fingerprint: String
+    public let text: String
+
+    public init(date: String, fingerprint: String, text: String) {
+        self.date = date
+        self.fingerprint = fingerprint
+        self.text = text
+    }
 }

@@ -31,6 +31,8 @@ public struct AIContext: Sendable {
     public let energyBlocks: Int
     public let currentSceneName: String?
     public let hardwareConnected: Bool
+    public let nextAgendaItem: String?
+    public let topTaskTitles: [String]
     
     // MARK: - Advanced Persona Engineering Subsystems
     public let episodicMemories: [String]
@@ -56,6 +58,8 @@ public struct AIContext: Sendable {
         energyBlocks: Int = 0,
         currentSceneName: String? = nil,
         hardwareConnected: Bool = false,
+        nextAgendaItem: String? = nil,
+        topTaskTitles: [String] = [],
         episodicMemories: [String] = [],
         dimensionalEmotion: String? = nil,
         psychologicalObjective: String? = nil,
@@ -78,6 +82,8 @@ public struct AIContext: Sendable {
         self.energyBlocks = energyBlocks
         self.currentSceneName = currentSceneName
         self.hardwareConnected = hardwareConnected
+        self.nextAgendaItem = nextAgendaItem
+        self.topTaskTitles = topTaskTitles
         
         self.episodicMemories = episodicMemories
         self.dimensionalEmotion = dimensionalEmotion

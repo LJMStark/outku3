@@ -6,7 +6,7 @@ import Foundation
 
 @Test func testAIContextIncludesAllUserProfileFields() async throws {
     let context = AIContext(
-        companionStyle: .playful,
+        companionStyle: .genZ,
         workType: .freelancer,
         primaryGoals: [.productivity, .focus],
         petName: "TestPet",
@@ -18,7 +18,7 @@ import Foundation
         recentCompletionRate: 0.85
     )
 
-    #expect(context.companionStyle == .playful)
+    #expect(context.companionStyle == .genZ)
     #expect(context.workType == .freelancer)
     #expect(context.primaryGoals.count == 2)
     #expect(context.petName == "TestPet")
@@ -33,7 +33,7 @@ import Foundation
 @Test func testAIContextDefaultValues() async throws {
     let context = AIContext()
 
-    #expect(context.companionStyle == .encouraging)
+    #expect(context.companionStyle == .companion)
     #expect(context.workType == .other)
     #expect(context.primaryGoals.isEmpty)
     #expect(context.petName == "Baby Waffle")
@@ -57,7 +57,7 @@ import Foundation
     )
 
     let context = AIContext(
-        companionStyle: .calm,
+        companionStyle: .slacker,
         behaviorSummary: summary,
         recentTexts: ["Hello!", "Keep going!"]
     )
@@ -82,17 +82,19 @@ import Foundation
 
 @Test func testAllCompanionStylesHaveDistinctDescriptions() async throws {
     let styles = CompanionStyle.allCases
-    #expect(styles.count == 4)
+    #expect(styles.count == 6)
 
     let descriptions = Set(styles.map(\.description))
-    #expect(descriptions.count == 4)
+    #expect(descriptions.count == 6)
 }
 
 @Test func testCompanionStyleRawValues() async throws {
-    #expect(CompanionStyle.encouraging.rawValue == "Encouraging")
-    #expect(CompanionStyle.strict.rawValue == "Strict")
-    #expect(CompanionStyle.playful.rawValue == "Playful")
-    #expect(CompanionStyle.calm.rawValue == "Calm")
+    #expect(CompanionStyle.companion.rawValue == "Companion")
+    #expect(CompanionStyle.challenger.rawValue == "Challenger")
+    #expect(CompanionStyle.corporate.rawValue == "Corporate")
+    #expect(CompanionStyle.dramatic.rawValue == "Dramatic")
+    #expect(CompanionStyle.genZ.rawValue == "Gen Z")
+    #expect(CompanionStyle.slacker.rawValue == "Slacker")
 }
 
 // MARK: - Behavior Analyzer Tests

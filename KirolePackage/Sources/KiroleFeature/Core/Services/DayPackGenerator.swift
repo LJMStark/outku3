@@ -75,7 +75,7 @@ public final class DayPackGenerator {
             currentScheduleSummary: generateScheduleSummary(events: todayEvents),
             topTasks: Array(topTasks),
             companionPhrase: await phrase,
-            settlementData: generateSettlementData(tasks: todayTasks, pet: pet, streak: streak)
+            settlementData: await generateSettlementData(tasks: todayTasks, pet: pet, streak: streak, userProfile: userProfile)
         )
     }
 
@@ -116,19 +116,30 @@ public final class DayPackGenerator {
         return "\(count) event\(count == 1 ? "" : "s") remaining"
     }
 
-    private func generateSettlementData(tasks: [TaskItem], pet: Pet, streak: Streak) -> SettlementData {
+    private func generateSettlementData(tasks: [TaskItem], pet: Pet, streak: Streak, userProfile: UserProfile = .default) async -> SettlementData {
         let completed = tasks.filter { $0.isCompleted }.count
         let total = tasks.count
         let rate = total > 0 ? Double(completed) / Double(total) : 0
         let focusStats = FocusSessionService.shared.statistics
+        let energyBlocks = await LocalStorage.shared.loadEnergyBlocks()
+
+        let aiMessage = await textService.generateSettlementMessage(
+            tasksCompleted: completed,
+            tasksTotal: total,
+            streakDays: streak.currentStreak,
+            petName: pet.name,
+            focusTimeToday: Int(focusStats.todayFocusTime / 60),
+            energyBlocks: energyBlocks, // Loaded actual energy blocks score
+            userProfile: userProfile
+        )
 
         let (summary, encouragement): (String, String) = {
             switch rate {
-            case 1.0...: return ("Perfect day! All tasks completed!", "\(pet.name) is so proud of you!")
-            case 0.7..<1.0: return ("Great progress today!", "Keep up the momentum!")
-            case 0.3..<0.7: return ("Good effort today.", "Every step counts!")
-            case 0.0..<0.3 where completed > 0: return ("You made a start today.", "Tomorrow is a new opportunity!")
-            default: return ("Rest day?", "\(pet.name) is here for you.")
+            case 1.0...: return ("Perfect day! All tasks completed!", aiMessage)
+            case 0.7..<1.0: return ("Great progress today!", aiMessage)
+            case 0.3..<0.7: return ("Good effort today.", aiMessage)
+            case 0.0..<0.3 where completed > 0: return ("You made a start today.", aiMessage)
+            default: return ("Rest day?", aiMessage)
             }
         }()
 

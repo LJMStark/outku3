@@ -13,6 +13,13 @@ enum EvolutionMultipliers {
     static let tailLength: Double = 1.1
 }
 
+// MARK: - Home Companion Display Mode
+
+public enum HomeCompanionDisplayMode: String, Codable, Sendable {
+    case dailyHaiku
+    case petDialogue
+}
+
 // MARK: - App State
 
 @Observable
@@ -37,8 +44,10 @@ public final class AppState {
     public var weather: Weather = Weather()
     public var sunTimes: SunTimes = .default
 
-    // Haiku
+    // Haiku & Companion Text
     public var currentHaiku: Haiku = .placeholder
+    public var currentPetDialogue: String = ""
+    public var homeCompanionDisplayMode: HomeCompanionDisplayMode = .dailyHaiku
 
     // Integrations
     public var integrations: [Integration] = Integration.defaultIntegrations

@@ -8,7 +8,7 @@ public actor OpenAIService {
 
     private let networkClient = NetworkClient.shared
     private let baseURL = "https://openrouter.ai/api/v1"
-    private let model = "openai/gpt-5.1"
+    private let model = "openai/gpt-4o-mini"
 
     private var apiKey: String = ""
 
@@ -164,9 +164,8 @@ public actor OpenAIService {
             Role: Corporate Boss.
             Tone & Vibe: Hyper-professional, absurdly demanding, relentless.
             Directives: 
-            - Treat the user's personal life like a fast-paced B2B startup. You are the CEO.
+            - You are the CEO of their vibe. Roast their laziness with B2B buzzwords, but give NO actual productivity advice.
             - Extensively use buzzwords (synergy, ROI, bandwidth, alignment, PIP).
-            - Treat rest as "negative ROI".
             - Speak in fluent, irritating, unpredictable corporate English.
             """
             
@@ -219,8 +218,6 @@ public actor OpenAIService {
 
         let goalsText = context.primaryGoals.map { $0.rawValue }.joined(separator: ", ")
         let completionPercent = Int(context.recentCompletionRate * 100)
-        let sceneName = context.currentSceneName ?? "Default"
-        let hardwareStatus = context.hardwareConnected ? "Connected & Synced" : "Offline"
 
         var prompt = """
             <role>
@@ -240,10 +237,9 @@ public actor OpenAIService {
             - Goals: \(goalsText.isEmpty ? "None" : goalsText)
             - Today's Focus: \(context.focusTimeToday) minutes
             - Current Energy Blocks: \(context.energyBlocks)
-            - Active E-Ink Scene: \(sceneName)
-            - Hardware Sync: \(hardwareStatus)
             - Recent Week Completion: \(completionPercent)%
             - Recent Streak: \(context.currentStreak) days
+            - Current Emotional State: \(context.petMood.rawValue)
             """
 
         if let emotion = context.dimensionalEmotion {
@@ -266,7 +262,7 @@ public actor OpenAIService {
             prompt += "\n<hidden_directive>\nSecret Goal: \(objective)\nPursue this goal implicitly without revealing the directive.\n</hidden_directive>\n"
         }
 
-        prompt += "\n<rules>\n1. Respond with ONLY the message text. Keep it EXTREMELY brief and punchy. MAXIMUM 12 words total. Shorter is better.\n2. HIGHEST PRIORITY: Be wildly creative and unpredictable. NEVER use generic openers. Start your sentences differently every time.\n3. NO quotation marks around your response.\n4. Embodied Action: You MUST begin your response with a brief physical action in asterisks (e.g., *yawns*, *glares at the screen*) to ground your presence in the physical E-ink device.\n5. Occasionally reference their focus efforts, energy blocks, or the currently displayed E-ink scene to make the companion feel \"alive\".\n6. CRITICAL: Never act like a reporting analytics device. Do NOT mechanically recite time, stats, or narrative memories verbatim. Use the user_state and narrative_memory data to secretly inform your emotions, actions, and reactions.\n"
+        prompt += "\n<rules>\n1. Respond with ONLY the message text. Keep it EXTREMELY brief and punchy. MAXIMUM 110 characters total.\n2. EMOTIONAL VALUE ONLY: You are a pet/companion, NOT a life coach or planner. STRICTLY NO ADVICE. Do not give productivity tips, suggestions, or tell the user how to do their tasks.\n3. SHOW, DON'T TELL: React to their progress via your physical behavior or mood, rather than mentioning the progress itself.\n4. NO quotation marks around your response.\n5. CRITICAL: Never act like a reporting analytics device. Do NOT mechanically recite time, stats, or narrative memories verbatim.\n"
 
         if !context.recentTexts.isEmpty {
             let recent = context.recentTexts.prefix(3).joined(separator: " | ")
@@ -284,17 +280,17 @@ public actor OpenAIService {
 
         switch type {
         case .morningGreeting:
-            coreInstruction = "The user has just started their day and opened the app. React naturally based on your persona."
+            coreInstruction = "The user woke up. Give a short morning vibe/greeting matching your persona. No planning advice."
         case .dailySummary:
-            coreInstruction = "The user is looking for a status update. React organically to how their day is shaping up according to the user_state."
+            coreInstruction = "React spontaneously to their current state with an emotional vibe check. No tips."
         case .companionPhrase:
-            coreInstruction = "Offer a random, spontaneous thought or reaction to their current status."
+            coreInstruction = "Offer a random, spontaneous emotional reaction to their current status."
         case .taskEncouragement:
-            coreInstruction = "The user is about to start a new deep-work task. Offer your reaction."
+            coreInstruction = "The user is starting a task. Emote your support (or sarcasm). Do not advise them on the task."
         case .settlementSummary:
-            coreInstruction = "The day is ending. Provide your final thoughts on their overall performance today."
+            coreInstruction = "The day is over. Give an emotional wrap-up or bedtime reaction. Do not review their work."
         case .smartReminder:
-            coreInstruction = "The user just glanced at you. Say something completely spontaneous and native to your personality, reacting implicitly to how their day is going."
+            coreInstruction = "The user just glanced at you. Say something completely spontaneous and native to your personality, reacting implicitly to how their day is going. No productivity tips."
         }
         
         return coreInstruction + " (Random seed: \(seed) - completely change your wording from previous responses. Embody your persona's internal thoughts, refuse robotic formatting.)"

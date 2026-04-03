@@ -259,13 +259,20 @@ struct HaikuSectionView: View {
                 .frame(width: 80)
 
             VStack(spacing: 24) {
-                // Haiku text from AppState
+                // Dialogue / Haiku text from AppState
                 VStack(spacing: 4) {
-                    ForEach(Array(appState.currentHaiku.lines.enumerated()), id: \.offset) { index, line in
-                        Text(line)
+                    if appState.homeCompanionDisplayMode == .petDialogue && !appState.currentPetDialogue.isEmpty {
+                        Text(appState.currentPetDialogue)
                             .font(.system(size: 15, weight: .regular, design: .serif))
                             .italic()
                             .foregroundStyle(theme.colors.primaryText)
+                    } else {
+                        ForEach(Array(appState.currentHaiku.lines.enumerated()), id: \.offset) { index, line in
+                            Text(line)
+                                .font(.system(size: 15, weight: .regular, design: .serif))
+                                .italic()
+                                .foregroundStyle(theme.colors.primaryText)
+                        }
                     }
                 }
                 .multilineTextAlignment(.center)

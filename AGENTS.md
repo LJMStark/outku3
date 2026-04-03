@@ -1,6 +1,6 @@
-# AGENTS.md - Kirole Project Guidelines
+# AGENTS.md
 
-This file provides essential context, commands, and rules for AI agents working on the Kirole iOS codebase.
+This file provides guidance to Antigravity, Claude Code, Cursor and other AI coding agents working in this repository.
 
 ## 1. Core Philosophy
 - **Agent-First**: Delegate complex work to specialized agents.
@@ -12,7 +12,7 @@ This file provides essential context, commands, and rules for AI agents working 
 ### Personal Preferences
 - No emojis in code, comments, or documentation.
 - Prefer immutability; avoid mutating objects or arrays where practical.
-- Many small files over few large files (200–400 lines typical, 800 max).
+- Many small files over few large files (200-400 lines typical, 800 max).
 - Conventional commits: `feat:`, `fix:`, `refactor:`, `docs:`, `test:`.
 - Always run tests locally before committing.
 - Small, focused commits.
@@ -27,6 +27,7 @@ This file provides essential context, commands, and rules for AI agents working 
   - **Language**: Swift 6.1+ (Strict Concurrency)
   - **UI**: SwiftUI (Model-View Pattern - **NO ViewModels**)
   - **State**: `@Observable` singletons (`AppState`, `ThemeManager`, `AuthManager`) injected via `.environment()`
+  - **AI Backend**: OpenRouter (`openai/gpt-4o-mini`) via `OpenAIService`
   - **Testing**: Swift Testing Framework (`@Test`, `#expect`) - **NO XCTest**
 
 ## 3. Tools & Commands
@@ -48,6 +49,11 @@ build_run_sim_name_ws({
 xcodebuild -workspace Kirole.xcworkspace -scheme Kirole -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
 ```
 
+**Package-Only Build (Fastest):**
+```bash
+cd KirolePackage && swift build
+```
+
 ### Testing
 **Run All Tests (Simulator):**
 ```javascript
@@ -56,6 +62,11 @@ test_sim_name_ws({
     scheme: "Kirole",
     simulatorName: "iPhone 17 Pro"
 })
+```
+
+**Run All Tests (Package - Fast):**
+```bash
+cd KirolePackage && swift test
 ```
 
 **Run Single Test (Package - Fast):**
@@ -72,7 +83,7 @@ xcodebuild -workspace Kirole.xcworkspace -scheme Kirole \
 
 ## 4. Critical Architecture Rules
 
-### ❌ Forbidden Patterns
+### Forbidden Patterns
 - **NO ViewModels**: Use `@Observable` models directly in Views.
 - **NO `Task { }` in `onAppear`**: Use `.task` modifier.
 - **NO deprecated `.onChange(of:perform:)`**: Use `.onChange(of:) { oldValue, newValue in ... }` or `.onChange(of:) { ... }`.
@@ -80,7 +91,7 @@ xcodebuild -workspace Kirole.xcworkspace -scheme Kirole \
 - **NO XCTest**: Use Swift Testing (`import Testing`).
 - **NO Manual File Adding**: `KirolePackage` handles file references automatically.
 
-### ✅ Required Patterns
+### Required Patterns
 - **Concurrency**: Use `@MainActor` for UI. Use `actor` for shared state.
 - **Navigation**: Custom `AppHeaderView` fixed at top (outside `ScrollView`).
 - **Dependency Injection**:
@@ -88,12 +99,6 @@ xcodebuild -workspace Kirole.xcworkspace -scheme Kirole \
   @Environment(AppState.self) private var appState
   @Environment(ThemeManager.self) private var theme
   ```
-- **Home Companion Presentation**:
-  - Treat `AppState.refreshHomeCompanionPresentation()` as the only entry point for deciding whether Home shows the daily haiku or the shared pet dialogue.
-  - `HaikuSectionView` renders from `currentHaiku`, `currentPetDialogue`, and `homeCompanionDisplayMode`; keep those three values consistent.
-  - Never force Home into `petDialogue` from `onDisappear`; refresh presentation on re-entry / scene activation instead so day rollover still shows the next day's haiku.
-  - Only persist `LocalStorage.lastHomeHaikuShownDate` after the haiku has actually finished loading.
-  - Prompt debugger output must go through a preview-only path and must not be written into production `AIInteraction` history.
 - **Public Access**: View types in `KirolePackage` must be `public` to be visible to App Shell.
   ```swift
   public struct MyView: View {
@@ -102,9 +107,38 @@ xcodebuild -workspace Kirole.xcworkspace -scheme Kirole \
   }
   ```
 
+### Home Companion Presentation
+- `AppState.refreshHomeCompanionPresentation()` is the single entry point for deciding whether Home shows the daily haiku or the shared pet dialogue.
+- `HaikuSectionView` renders from `currentHaiku`, `currentPetDialogue`, and `homeCompanionDisplayMode`; keep those three values consistent.
+- First display of a new calendar day always shows the daily haiku; subsequent displays fall back to pet dialogue.
+- Never force Home into `petDialogue` from `onDisappear`; refresh presentation on re-entry / scene activation instead so day rollover still shows the next day's haiku.
+- Only persist `LocalStorage.lastHomeHaikuShownDate` after the haiku has actually finished loading.
+- Prompt debugger output must go through a preview-only path (`CompanionTextService.previewSharedPetDialogue()`) and must not be written into production `AIInteraction` history.
+
+### AI Companion Text System (Inku Paradigm)
+The AI companion is an **emotional value provider**, NOT a productivity coach or life planner.
+
+**Architecture (3-layer prompt assembly in `OpenAIService.swift`):**
+1. **Persona Layer** (`CompanionStyle`): 6 personality presets (companion, challenger, corporate, dramatic, genZ, slacker). Defines tone/vibe only.
+2. **Context Layer** (`<user_state>` + `<narrative_memory>`): Dynamic data injection (focus time, energy blocks, completion rate, streak, petMood, episodic memories).
+3. **Rules Layer** (`<rules>`): Global constraints that override everything above.
+
+**Global Rules (enforced on ALL personalities):**
+- `EMOTIONAL VALUE ONLY`: No advice, no productivity tips, no task guidance.
+- `MAXIMUM 60 characters`: Extremely brief output.
+- `SHOW, DON'T TELL`: React via mood/behavior, not by reciting stats.
+- Never act like a reporting analytics device.
+
+**When modifying AI prompts:**
+- Never add instructions that encourage the AI to give advice, suggestions, or task breakdowns.
+- Keep input data rich (so the AI "understands" the user), but output constraints strict (so it only emotes).
+- All persona changes must be tested through `PromptDebuggerView` to verify compliance with the Inku paradigm.
+
+**Data flow:** `CompanionTextService` -> `OpenAIService.generateCompanionText()` -> OpenRouter API -> `LocalStorage` (AI interactions)
+
 ### BLE Protocol & Sync (Hardware)
 - Always send BLE payloads through `BLEPacketizer` and assemble via `BLEPacketAssembler` (9-byte header + CRC16-CCITT-FALSE).
-- Use `BLESyncCoordinator` for scheduled sync (08:00–23:00 hourly; 23:00–08:00 every 4 hours; 30s window).
+- Use `BLESyncCoordinator` for scheduled sync (08:00-23:00 hourly; 23:00-08:00 every 4 hours; 30s window).
 - Gate DayPack refresh with `DayPack.stableFingerprint()` and `LocalStorage.lastDayPackHash`.
 - Background sync uses `BLEBackgroundSyncScheduler` and BGTask id `com.kirole.app.ble.sync`.
 - BLE link runs in two modes:
@@ -151,13 +185,14 @@ import Testing // For test files
     -   Run tests via `swift test` (fast) or `xcodebuild` (thorough).
     -   Fix concurrency warnings (Strict Concurrency is ENABLED).
     -   If you touch Home companion presentation behavior, update/add focused regression coverage in `KirolePackage/Tests/KiroleFeatureTests/HomeCompanionPresentationTests.swift`.
+    -   If you touch AI companion prompts, test through `PromptDebuggerView` to verify no advice/coaching leaks through.
 4.  **Configuration**:
     -   App shell injects secrets via `AppSecrets.configure(...)` (build-generated constants; no runtime `Info.plist` reads).
     -   `Kirole/BuildSecrets.generated.swift` is generated by build script and should not contain real secrets in git.
     -   Capabilities go in `Config/Kirole.entitlements`.
 
 ## 7. Reference Files
-- **Primary Guide**: `CLAUDE.md` (Read this first)
+- **Claude Code Guide**: `CLAUDE.md` (references this file)
 - **Cursor Rules**: `.cursor/rules/*.mdc`
 - **Copilot Rules**: `.github/copilot-instructions.md`
 

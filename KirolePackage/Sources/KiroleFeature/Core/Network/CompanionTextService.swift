@@ -28,10 +28,12 @@ public final class CompanionTextService {
         petName: String, petMood: PetMood, weather: Weather,
         userProfile: UserProfile = .default
     ) async -> String {
+        let memory = "The user has just woken up and is starting their day."
         if let aiText = await generateAIText(
             type: .morningGreeting,
             petName: petName, petMood: petMood,
-            userProfile: userProfile
+            userProfile: userProfile,
+            episodicMemories: [memory]
         ) {
             return aiText
         }
@@ -98,10 +100,13 @@ public final class CompanionTextService {
         taskTitle: String, petName: String, petMood: PetMood,
         userProfile: UserProfile = .default
     ) async -> String {
+        let memory = "The user has actively entered the focus task: \(taskTitle)"
         if let aiText = await generateAIText(
             type: .taskEncouragement,
             petName: petName, petMood: petMood,
-            userProfile: userProfile
+            userProfile: userProfile,
+            episodicMemories: [memory],
+            nextAgendaItem: taskTitle
         ) {
             return aiText
         }
@@ -115,14 +120,19 @@ public final class CompanionTextService {
 
     public func generateSettlementMessage(
         tasksCompleted: Int, tasksTotal: Int, streakDays: Int, petName: String,
+        focusTimeToday: Int = 0, energyBlocks: Int = 0,
         userProfile: UserProfile = .default
     ) async -> String {
+        let memory = "The user has completed their daily work. Settling today's tasks."
         if let aiText = await generateAIText(
             type: .settlementSummary,
             petName: petName, petMood: .happy,
             userProfile: userProfile,
             completedTasks: tasksCompleted, totalTasks: tasksTotal,
-            streak: streakDays
+            streak: streakDays,
+            episodicMemories: [memory],
+            focusTimeToday: focusTimeToday,
+            energyBlocks: energyBlocks
         ) {
             return aiText
         }
@@ -187,7 +197,7 @@ public final class CompanionTextService {
         mode: CompanionTextGenerationMode
     ) async -> String {
         if let aiText = await generateAIText(type: .smartReminder, baseContext: baseContext, mode: mode) {
-            return String(aiText.prefix(60))
+            return aiText
         }
 
         return sharedPetDialogueFallback(baseContext)
@@ -201,7 +211,11 @@ public final class CompanionTextService {
         userProfile: UserProfile,
         mode: CompanionTextGenerationMode = .live,
         completedTasks: Int = 0, totalTasks: Int = 0,
-        events: Int = 0, streak: Int = 0
+        events: Int = 0, streak: Int = 0,
+        episodicMemories: [String] = [],
+        nextAgendaItem: String? = nil,
+        focusTimeToday: Int = 0,
+        energyBlocks: Int = 0
     ) async -> String? {
         guard await openAI.isConfigured else { return nil }
 
@@ -224,7 +238,11 @@ public final class CompanionTextService {
             currentStreak: streak,
             recentCompletionRate: weeklyRate,
             behaviorSummary: behaviorSummary,
-            recentTexts: []
+            recentTexts: [],
+            focusTimeToday: focusTimeToday,
+            energyBlocks: energyBlocks,
+            nextAgendaItem: nextAgendaItem,
+            episodicMemories: episodicMemories
         )
 
         return await generateAIText(type: type, baseContext: baseContext, mode: mode)
@@ -253,8 +271,10 @@ public final class CompanionTextService {
         } catch {
             #if DEBUG
             print("[CompanionText] AI generation failed for \(type.rawValue): \(error.localizedDescription)")
-            #endif
+            return "[Error] \(error.localizedDescription)"
+            #else
             return nil
+            #endif
         }
     }
 
