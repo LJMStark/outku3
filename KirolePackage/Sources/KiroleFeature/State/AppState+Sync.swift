@@ -117,6 +117,8 @@ extension AppState {
         }
 
         await updatePetState()
+        await refreshSharedPetDialogueIfNeeded()
+        await refreshHomeCompanionPresentation()
     }
 
     public var isAnyAppleIntegrationConnected: Bool {
@@ -177,6 +179,8 @@ extension AppState {
         }
 
         await updatePetState()
+        await refreshSharedPetDialogueIfNeeded()
+        await refreshHomeCompanionPresentation()
     }
 
     public func requestAppleCalendarAccess() async -> Bool {

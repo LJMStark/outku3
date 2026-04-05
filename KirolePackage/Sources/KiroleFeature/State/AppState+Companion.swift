@@ -5,6 +5,13 @@ private struct CompanionDialogueTriggerState {
     let context: AIContext
 }
 
+private enum PetDialogueState {
+    case morningPrep
+    case inTask
+    case daySettled
+    case idle
+}
+
 extension AppState {
     func refreshHomeCompanionPresentation(now: Date = Date()) async {
         let todayKey = Self.homeCompanionDateKey(from: now)
@@ -50,8 +57,18 @@ extension AppState {
             return
         }
 
+        let phase = resolveCompanionPhase(triggerState: triggerState)
+        let aiType: AITextType
+        switch phase {
+        case .morningPrep: aiType = .morningGreeting
+        case .inTask: aiType = .taskEncouragement
+        case .daySettled: aiType = .settlementSummary
+        case .idle: aiType = .smartReminder
+        }
+
         let dialogue = await CompanionTextService.shared.generateSharedPetDialogue(
-            baseContext: triggerState.context
+            baseContext: triggerState.context,
+            type: aiType
         )
         currentPetDialogue = dialogue
 
@@ -66,6 +83,32 @@ extension AppState {
         } catch {
             reportPersistenceError(error, operation: "save", target: "shared_companion_dialogue.json")
         }
+    }
+
+    private func resolveCompanionPhase(triggerState: CompanionDialogueTriggerState) -> PetDialogueState {
+        let context = triggerState.context
+        
+        let activeTaskTitle = FocusSessionService.shared.activeSession?.taskTitle
+        if activeTaskTitle != nil {
+            return .inTask
+        }
+        
+        if let next = context.nextAgendaItem, next.starts(with: "Now · ") {
+            return .inTask
+        }
+        
+        let isEveningOrNight = TimeOfDay.current(at: context.currentTime) == .evening || TimeOfDay.current(at: context.currentTime) == .night
+        let allCompleted = context.totalTasksToday > 0 && context.tasksCompletedToday >= context.totalTasksToday
+        
+        if allCompleted || (isEveningOrNight && context.totalTasksToday > 0) {
+            return .daySettled
+        }
+        
+        if TimeOfDay.current(at: context.currentTime) == .morning && context.tasksCompletedToday == 0 {
+            return .morningPrep
+        }
+        
+        return .idle
     }
 
     private func buildCompanionDialogueTriggerState(at now: Date = Date()) async -> CompanionDialogueTriggerState {
@@ -112,6 +155,8 @@ extension AppState {
             userDefinedLearnText: learnText.isEmpty ? nil : learnText
         )
 
+        let activeTaskId = FocusSessionService.shared.activeSession?.taskId ?? ""
+
         return CompanionDialogueTriggerState(
             fingerprint: companionDialogueFingerprint(
                 now: now,
@@ -121,6 +166,7 @@ extension AppState {
                 nextAgendaItem: nextAgendaItem,
                 focusMinutes: focusMinutes,
                 energyBlocks: energyBlocks,
+                activeTaskId: activeTaskId,
                 learnText: context.userDefinedLearnText
             ),
             context: context
@@ -135,6 +181,7 @@ extension AppState {
         nextAgendaItem: String?,
         focusMinutes: Int,
         energyBlocks: Int,
+        activeTaskId: String,
         learnText: String?
     ) -> String {
         var parts: [String] = [
@@ -151,6 +198,7 @@ extension AppState {
             "eventsToday=\(todayEvents.count)",
             "focusMinutes=\(focusMinutes)",
             "energyBlocks=\(energyBlocks)",
+            "activeTask=\(activeTaskId)",
             "nextAgenda=\(nextAgendaItem ?? "")",
             "topTasks=\(topTaskTitles.joined(separator: "|"))",
             "learn=\(learnText ?? "")"

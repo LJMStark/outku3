@@ -184,8 +184,11 @@ public final class CompanionTextService {
         }
     }
 
-    public func generateSharedPetDialogue(baseContext: AIContext) async -> String {
-        await generateSharedPetDialogue(baseContext: baseContext, mode: .live)
+    public func generateSharedPetDialogue(
+        baseContext: AIContext,
+        type: AITextType = .smartReminder
+    ) async -> String {
+        await generateSharedPetDialogue(baseContext: baseContext, type: type, mode: .live)
     }
 
     public func previewSharedPetDialogue(baseContext: AIContext, type: AITextType = .smartReminder) async -> String {

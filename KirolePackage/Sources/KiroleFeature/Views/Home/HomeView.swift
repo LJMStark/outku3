@@ -103,6 +103,12 @@ public struct HomeView: View {
             guard scenePhase == .active else { return }
             await refreshVisibleHomeCompanion()
         }
+        .onChange(of: FocusSessionService.shared.activeSession?.taskId) { _, _ in
+            Task {
+                await appState.refreshSharedPetDialogueIfNeeded()
+                await appState.refreshHomeCompanionPresentation()
+            }
+        }
         .task {
             guard !appState.hasCompletedInitialHomeLoad else {
                 isInitialLoading = false
@@ -141,6 +147,7 @@ public struct HomeView: View {
 
     private func refreshVisibleHomeCompanion() async {
         appState.selectedDate = Date()
+        await appState.refreshSharedPetDialogueIfNeeded()
         await appState.refreshHomeCompanionPresentation()
     }
 
@@ -150,6 +157,7 @@ public struct HomeView: View {
         appState.selectedDate = Date()
 
         await appState.syncConnectedExternalData()
+        await appState.refreshSharedPetDialogueIfNeeded(force: true)
         appState.switchHomeToPetDialogue()
 
         // Success haptic
