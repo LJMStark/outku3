@@ -277,6 +277,7 @@ struct HaikuSectionView: View {
                 }
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
+                .frame(height: 66)
 
                 // Pet image with rolling toy ball
                 ZStack {
