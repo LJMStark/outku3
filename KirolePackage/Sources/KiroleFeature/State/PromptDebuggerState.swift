@@ -34,7 +34,7 @@ public final class PromptDebuggerState {
         
         // Actually modify context parameters if needed to SIMULATE the phase cleanly if the user's real schedule doesn't match
         var mockNextAgenda = c.nextAgendaItem
-        var mockFocusTime = c.focusTimeToday
+        let mockFocusTime = c.focusTimeToday
         var mockActiveTask = c.activeTaskTitle
         
         if type == .taskEncouragement && mockActiveTask == nil {

@@ -248,7 +248,7 @@ extension AppState {
             }
         case .notion:
             do {
-                guard let accessToken = try? await AuthManager.shared.getNotionAccessToken() else {
+                guard let accessToken = AuthManager.shared.getNotionAccessToken() else {
                     return
                 }
                 try await notionSyncEngine.pushTaskUpdate(task, accessToken: accessToken)
