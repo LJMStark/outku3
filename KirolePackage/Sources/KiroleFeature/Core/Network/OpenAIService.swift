@@ -227,94 +227,25 @@ public actor OpenAIService {
             styleDescription = Self.defaultPrompt(for: context.companionStyle)
         }
 
-        // Convert raw metrics into semantic signals
-        let dayIntensity = Self.dayIntensityLabel(
-            tasks: context.totalTasksToday,
-            events: context.eventsToday
-        )
-        let timeOfDay = TimeOfDay.current(at: context.currentTime).rawValue.lowercased()
-        let streakNote = context.currentStreak > 3 ? "\nStreak: \(context.currentStreak) days" : ""
-        let trendNote = Self.trendLabel(rate: context.recentCompletionRate)
+        let schedule = Self.buildScheduleDigest(context: context)
 
         var prompt = """
-            <role>
             You are \(context.petName).
             \(styleDescription)
-            </role>
+
+            Schedule: \(schedule)
+
+            React in one plain text sentence, around 50 characters.
             """
 
         if let learnText = context.userDefinedLearnText?.trimmingCharacters(in: .whitespacesAndNewlines), !learnText.isEmpty {
-            prompt += "\n\n<additional_directive>\nIntegrate this phrase or tone seamlessly: \"\(learnText)\"\n</additional_directive>"
+            prompt += "\nTone hint: \"\(learnText)\""
         }
-
-        // Build schedule digest: what the pet "sees" on the user's day
-        let scheduleParts = Self.buildScheduleDigest(context: context)
-
-        prompt += """
-
-            <context>
-            Time: \(timeOfDay)
-            Day intensity: \(dayIntensity)
-            Mood: \(context.petMood.rawValue.lowercased())\(streakNote)\(trendNote)
-            \(scheduleParts)
-            </context>
-            """
-
-        if !context.episodicMemories.isEmpty {
-            prompt += "\n\n<memory>\n"
-            prompt += context.episodicMemories.prefix(2).map { "- \($0)" }.joined(separator: "\n")
-            prompt += "\n</memory>"
-        }
-
-        if let objective = context.psychologicalObjective {
-            prompt += "\n\n<hidden_directive>\n\(objective)\n</hidden_directive>"
-        }
-
-        prompt += """
-
-
-            <format>
-            - Write one flowing sentence, 40 to 60 characters total. No line breaks.
-            - Plain letters, commas, and periods only. Absolutely no emoji, no quotes, no asterisks, no parentheses, no colons, no exclamation marks, no ellipsis.
-            - You are a pet reacting with feelings, not a coach giving advice.
-            - The examples above show your voice, not your topics. Never rephrase or echo them. Say something completely new.
-            </format>
-
-            <banned_phrases>
-            Never use any of these coaching patterns:
-            - you got this, you can do it, keep going, stay strong
-            - remember to, try to, make sure, dont forget
-            - I believe in you, I am proud of you, you are doing great
-            - how about, why not, have you tried, you should
-            - lets go, lets do this, time to, you need to
-            - good job, well done, nice work, keep it up
-            You MAY express concern through your own feelings, like a pet would.
-            OK: "you look tired" or "something feels off today"
-            NOT OK: "take a break" or "get some rest"
-            </banned_phrases>
-            """
 
         return prompt
     }
 
-    private static func dayIntensityLabel(tasks: Int, events: Int) -> String {
-        let total = tasks + events
-        switch total {
-        case 0: return "empty (nothing scheduled)"
-        case 1...3: return "light (\(tasks) tasks, \(events) events)"
-        case 4...6: return "busy (\(tasks) tasks, \(events) events)"
-        default: return "packed (\(tasks) tasks, \(events) events)"
-        }
-    }
 
-    private static func trendLabel(rate: Double) -> String {
-        switch rate {
-        case 0.8...: return "\nRecent trend: strong"
-        case 0.5..<0.8: return "\nRecent trend: steady"
-        case 0.01..<0.5: return "\nRecent trend: struggling"
-        default: return ""
-        }
-    }
 
     private static func buildScheduleDigest(context: AIContext) -> String {
         var lines: [String] = []
