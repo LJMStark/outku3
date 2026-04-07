@@ -247,12 +247,16 @@ public actor OpenAIService {
             prompt += "\n\n<additional_directive>\nIntegrate this phrase or tone seamlessly: \"\(learnText)\"\n</additional_directive>"
         }
 
+        // Build schedule digest: what the pet "sees" on the user's day
+        let scheduleParts = Self.buildScheduleDigest(context: context)
+
         prompt += """
 
             <context>
             Time: \(timeOfDay)
             Day intensity: \(dayIntensity)
             Mood: \(context.petMood.rawValue.lowercased())\(streakNote)\(trendNote)
+            \(scheduleParts)
             </context>
             """
 
@@ -277,13 +281,16 @@ public actor OpenAIService {
             </format>
 
             <banned_phrases>
-            Never use any of these patterns:
+            Never use any of these coaching patterns:
             - you got this, you can do it, keep going, stay strong
             - remember to, try to, make sure, dont forget
-            - take a break, drink water, get some rest
             - I believe in you, I am proud of you, you are doing great
             - how about, why not, have you tried, you should
-            - lets go, lets do this, time to
+            - lets go, lets do this, time to, you need to
+            - good job, well done, nice work, keep it up
+            You MAY express concern through your own feelings, like a pet would.
+            OK: "you look tired" or "something feels off today"
+            NOT OK: "take a break" or "get some rest"
             </banned_phrases>
             """
 
@@ -307,6 +314,29 @@ public actor OpenAIService {
         case 0.01..<0.5: return "\nRecent trend: struggling"
         default: return ""
         }
+    }
+
+    private static func buildScheduleDigest(context: AIContext) -> String {
+        var lines: [String] = []
+
+        // Upcoming tasks (max 3, titles only)
+        let pendingTasks = context.topTaskTitles
+        if !pendingTasks.isEmpty {
+            let taskList = pendingTasks.joined(separator: ", ")
+            lines.append("Tasks ahead: \(taskList)")
+        }
+
+        // Completed vs total
+        if context.totalTasksToday > 0 {
+            lines.append("Done: \(context.tasksCompletedToday) of \(context.totalTasksToday)")
+        }
+
+        // Next agenda item (event or task with time)
+        if let next = context.nextAgendaItem {
+            lines.append("Next: \(next)")
+        }
+
+        return lines.isEmpty ? "Schedule: nothing visible" : lines.joined(separator: "\n")
     }
 
     private func buildCompanionUserPrompt(type: AITextType, context: AIContext) -> String {
