@@ -25,11 +25,14 @@ public final class PromptDebuggerState {
     public var lastGeneratedTranslation: String = ""
     
     /// Fetch real AIContext from AppState and tailor it for testing.
-    public func createMockContext(type: AITextType) async -> AIContext {
+    public func createMockContext(
+        type: AITextType,
+        styleOverride: CompanionStyle? = nil
+    ) async -> AIContext {
         let triggerState = await AppState.shared.buildCompanionDialogueTriggerState(at: Date())
         let c = triggerState.context
         
-        let newStyle = selectedMockStyle
+        let newStyle = styleOverride ?? selectedMockStyle
         let newLearnText = testLearnText.trimmingCharacters(in: .whitespaces).isEmpty ? c.userDefinedLearnText : testLearnText
         
         // Actually modify context parameters if needed to SIMULATE the phase cleanly if the user's real schedule doesn't match

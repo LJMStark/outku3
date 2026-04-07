@@ -122,6 +122,20 @@ import Foundation
     #expect(CompanionStyle.slacker.rawValue == "Slacker")
 }
 
+@MainActor
+@Test func testPromptDebuggerMockContextHonorsVisibleStyleSelection() async throws {
+    let debuggerState = PromptDebuggerState.shared
+    debuggerState.selectedMockStyle = .companion
+
+    let context = await debuggerState.createMockContext(
+        type: .smartReminder,
+        styleOverride: .challenger
+    )
+
+    #expect(context.companionStyle == .challenger)
+    #expect(debuggerState.selectedMockStyle == .companion)
+}
+
 // MARK: - Behavior Analyzer Tests
 
 @Test func testBehaviorAnalyzerEmptyData() async throws {

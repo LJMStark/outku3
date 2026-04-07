@@ -238,7 +238,15 @@ struct PromptDebuggerSheet: View {
         await MainActor.run { state.lastGeneratedTranslation = "" }
         
         // Pass the requested type into the context builder so it reflects the phase accurately
-        let mockContext = await state.createMockContext(type: type)
+        let styleOverride: CompanionStyle?
+        switch selectedPersona {
+        case .style(let style):
+            styleOverride = style
+        case .custom:
+            styleOverride = nil
+        }
+
+        let mockContext = await state.createMockContext(type: type, styleOverride: styleOverride)
 
         let result = await CompanionTextService.shared.previewSharedPetDialogue(baseContext: mockContext, type: type)
         let translation = (try? await OpenAIService.shared.translateCompanionText(text: result)) ?? "翻译失败"
