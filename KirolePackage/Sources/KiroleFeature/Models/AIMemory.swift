@@ -7,6 +7,7 @@ public enum AITextType: String, Codable, Sendable {
     case dailySummary
     case companionPhrase
     case taskEncouragement
+    case scheduleReminder
     case settlementSummary
     case smartReminder
 }
@@ -32,6 +33,7 @@ public struct AIContext: Sendable {
     public let currentSceneName: String?
     public let hardwareConnected: Bool
     public let nextAgendaItem: String?
+    public let activeTaskTitle: String?
     public let topTaskTitles: [String]
     
     // MARK: - Advanced Persona Engineering Subsystems
@@ -59,6 +61,7 @@ public struct AIContext: Sendable {
         currentSceneName: String? = nil,
         hardwareConnected: Bool = false,
         nextAgendaItem: String? = nil,
+        activeTaskTitle: String? = nil,
         topTaskTitles: [String] = [],
         episodicMemories: [String] = [],
         dimensionalEmotion: String? = nil,
@@ -83,6 +86,7 @@ public struct AIContext: Sendable {
         self.currentSceneName = currentSceneName
         self.hardwareConnected = hardwareConnected
         self.nextAgendaItem = nextAgendaItem
+        self.activeTaskTitle = activeTaskTitle
         self.topTaskTitles = topTaskTitles
         
         self.episodicMemories = episodicMemories

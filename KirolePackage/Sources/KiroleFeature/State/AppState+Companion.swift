@@ -1,6 +1,6 @@
 import Foundation
 
-private struct CompanionDialogueTriggerState {
+struct CompanionDialogueTriggerState {
     let fingerprint: String
     let context: AIContext
 }
@@ -8,6 +8,7 @@ private struct CompanionDialogueTriggerState {
 private enum PetDialogueState {
     case morningPrep
     case inTask
+    case scheduleEvent
     case daySettled
     case idle
 }
@@ -62,6 +63,7 @@ extension AppState {
         switch phase {
         case .morningPrep: aiType = .morningGreeting
         case .inTask: aiType = .taskEncouragement
+        case .scheduleEvent: aiType = .scheduleReminder
         case .daySettled: aiType = .settlementSummary
         case .idle: aiType = .smartReminder
         }
@@ -94,7 +96,7 @@ extension AppState {
         }
         
         if let next = context.nextAgendaItem, next.starts(with: "Now · ") {
-            return .inTask
+            return .scheduleEvent
         }
         
         let isEveningOrNight = TimeOfDay.current(at: context.currentTime) == .evening || TimeOfDay.current(at: context.currentTime) == .night
@@ -111,7 +113,7 @@ extension AppState {
         return .idle
     }
 
-    private func buildCompanionDialogueTriggerState(at now: Date = Date()) async -> CompanionDialogueTriggerState {
+    func buildCompanionDialogueTriggerState(at now: Date = Date()) async -> CompanionDialogueTriggerState {
         let todayTasks = tasksForToday()
             .sorted { lhs, rhs in
                 if lhs.isCompleted != rhs.isCompleted {
@@ -151,6 +153,7 @@ extension AppState {
             currentSceneName: pet.scene.rawValue,
             hardwareConnected: BLEService.shared.connectionState.isConnected,
             nextAgendaItem: nextAgendaItem,
+            activeTaskTitle: FocusSessionService.shared.activeSession?.taskTitle,
             topTaskTitles: topTaskTitles,
             userDefinedLearnText: learnText.isEmpty ? nil : learnText
         )

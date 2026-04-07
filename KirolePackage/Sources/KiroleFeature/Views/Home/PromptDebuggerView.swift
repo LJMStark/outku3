@@ -56,8 +56,9 @@ struct PromptDebuggerSheet: View {
     
     var body: some View {
         NavigationStack {
-            VStack(spacing: 16) {
-                // 1. Selector
+            ScrollView {
+                VStack(spacing: 16) {
+                    // 1. Selector
                 Picker("Persona", selection: $selectedPersona) {
                     ForEach(CompanionStyle.allCases, id: \.self) { style in
                         Text(style.displayName).tag(DebugPersona.style(style))
@@ -150,6 +151,7 @@ struct PromptDebuggerSheet: View {
                     HStack {
                         Button { Task { await forceTestGeneration(type: .morningGreeting) } } label: { Text("早安问候") }
                         Button { Task { await forceTestGeneration(type: .taskEncouragement) } } label: { Text("任务鼓励") }
+                        Button { Task { await forceTestGeneration(type: .scheduleReminder) } } label: { Text("日程提醒") }
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(isForceRefreshing)
@@ -164,13 +166,39 @@ struct PromptDebuggerSheet: View {
                     if isForceRefreshing {
                         ProgressView().controlSize(.small)
                             .padding(.top, 4)
+                    } else if !state.lastGeneratedDialogue.isEmpty {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text(state.lastMockSummary)
+                                .font(.caption)
+                                .foregroundStyle(theme.colors.secondaryText)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(8)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(theme.colors.background)
+                                .cornerRadius(6)
+                            
+                            Text("生成结果:")
+                                .font(.caption.bold())
+                                .foregroundStyle(theme.colors.secondaryText)
+                            
+                            Text(state.lastGeneratedDialogue)
+                                .font(.body)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding()
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(theme.colors.accent.opacity(0.1))
+                                .cornerRadius(8)
+                        }
+                        .padding(.top, 8)
                     }
                 }
                 .padding(.horizontal)
                 
-                Spacer()
+                    Spacer()
+                }
+                .padding(.top, 24)
+                .padding(.bottom, 40)
             }
-            .padding(.top, 24)
             .onAppear {
                 loadDraft(for: selectedPersona)
             }
@@ -193,10 +221,14 @@ struct PromptDebuggerSheet: View {
     private func forceTestGeneration(type: AITextType = .smartReminder) async {
         isForceRefreshing = true
         
-        let mockContext = state.createMockContext()
+        // Pass the requested type into the context builder so it reflects the phase accurately
+        let mockContext = await state.createMockContext(type: type)
 
         let result = await CompanionTextService.shared.previewSharedPetDialogue(baseContext: mockContext, type: type)
         await MainActor.run {
+            state.lastGeneratedDialogue = result
+            
+            // Still update the main UI bubble so they can see how it looks rendered in the HomeView
             AppState.shared.currentPetDialogue = result
             AppState.shared.switchHomeToPetDialogue()
         }

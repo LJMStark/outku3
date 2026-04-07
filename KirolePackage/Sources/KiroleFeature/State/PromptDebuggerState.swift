@@ -20,58 +20,73 @@ public final class PromptDebuggerState {
     /// The style currently selected in the debugger UI for editing.
     public var selectedMockStyle: CompanionStyle = .companion
     
-    /// Randomly mock an AIContext for a "worst case" scenario or an interesting setup.
-    public func createMockContext() -> AIContext {
-        let maxTasks = Int.random(in: 0...8)
-        let doneTasks = Int.random(in: 0...maxTasks)
-        let rate = maxTasks > 0 ? Double(doneTasks) / Double(maxTasks) : 0
+    public var lastMockSummary: String = ""
+    public var lastGeneratedDialogue: String = ""
+    
+    /// Fetch real AIContext from AppState and tailor it for testing.
+    public func createMockContext(type: AITextType) async -> AIContext {
+        let triggerState = await AppState.shared.buildCompanionDialogueTriggerState(at: Date())
+        let c = triggerState.context
         
-        let mockMemories: [[String]] = [
-            ["Three days ago, the user completely abandoned all tasks.", "Yesterday, they made a fierce comeback."].shuffled(),
-            ["User struggled deeply with 'Writing Code' this morning."].shuffled(),
-            ["Last week the user hit a 10-day streak, their highest ever.", "They broke their streak yesterday."].shuffled(),
-            []
-        ]
+        let newStyle = selectedMockStyle
+        let newLearnText = testLearnText.trimmingCharacters(in: .whitespaces).isEmpty ? c.userDefinedLearnText : testLearnText
         
-        let mockEmotions = [
-            "deeply amused by the user's struggle but attempting to hide it",
-            "exhausted, harboring a deep sense of apathy towards productivity",
-            "frantic, treating every single open task as a ticking time bomb",
-            "judgmental and smug, feeling infinitely superior to the human user",
-            "warm, supportive, but slightly worried about the user's burnout",
-            nil
-        ]
+        // Actually modify context parameters if needed to SIMULATE the phase cleanly if the user's real schedule doesn't match
+        var mockNextAgenda = c.nextAgendaItem
+        var mockFocusTime = c.focusTimeToday
+        var mockActiveTask = c.activeTaskTitle
         
-        let mockObjectives = [
-            "Use reverse psychology. Act like the task is not worth doing so the user wants to prove you wrong.",
-            "De-escalate the user's anxiety by making the current situation feel trivial and manageable.",
-            "Mock their ambition gently to lower their defenses, then slip in a genuine piece of advice.",
-            nil
-        ]
+        if type == .taskEncouragement && mockActiveTask == nil {
+            mockActiveTask = "写核心代码"
+        }
         
-        return AIContext(
-            companionStyle: selectedMockStyle,
-            workType: .officeWorker,
-            primaryGoals: [.productivity, .procrastination],
-            petName: "Demon",
-            petMood: .missing,
-            currentTime: Date().addingTimeInterval(TimeInterval.random(in: -43200...43200)),
-            tasksCompletedToday: doneTasks,
-            totalTasksToday: maxTasks,
-            eventsToday: Int.random(in: 0...5),
-            currentStreak: Int.random(in: 0...15),
-            recentCompletionRate: rate,
-            behaviorSummary: nil,
-            recentTexts: [],
-            focusTimeToday: Int.random(in: 0...180),
-            energyBlocks: Int.random(in: 0...5),
-            currentSceneName: ["Messy Room", "Clean Desk", "Zen Garden", "Night City"].randomElement()!,
-            hardwareConnected: Bool.random(),
-            episodicMemories: mockMemories.randomElement() ?? [],
-            dimensionalEmotion: mockEmotions.randomElement() ?? nil,
-            psychologicalObjective: mockObjectives.randomElement() ?? nil,
-            userDefinedLearnText: testLearnText.trimmingCharacters(in: .whitespaces).isEmpty ? nil : testLearnText
+        if type == .scheduleReminder && mockNextAgenda == nil {
+            mockNextAgenda = "Now · 拔智齿"
+        }
+        
+        let realContext = AIContext(
+            companionStyle: newStyle,
+            workType: c.workType,
+            primaryGoals: c.primaryGoals,
+            petName: c.petName,
+            petMood: c.petMood,
+            currentTime: c.currentTime,
+            tasksCompletedToday: c.tasksCompletedToday,
+            totalTasksToday: c.totalTasksToday,
+            eventsToday: c.eventsToday,
+            currentStreak: c.currentStreak,
+            recentCompletionRate: c.recentCompletionRate,
+            behaviorSummary: c.behaviorSummary,
+            recentTexts: c.recentTexts,
+            focusTimeToday: mockFocusTime,
+            energyBlocks: c.energyBlocks,
+            currentSceneName: c.currentSceneName,
+            hardwareConnected: c.hardwareConnected,
+            nextAgendaItem: mockNextAgenda,
+            activeTaskTitle: mockActiveTask,
+            topTaskTitles: c.topTaskTitles,
+            episodicMemories: c.episodicMemories,
+            dimensionalEmotion: c.dimensionalEmotion,
+            psychologicalObjective: c.psychologicalObjective,
+            userDefinedLearnText: newLearnText
         )
+        
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        let timeStr = formatter.string(from: c.currentTime)
+        
+        lastMockSummary = """
+        【触发时机】: \(type)
+        【时间】: \(timeStr) (真实当前时间)
+        【今日进度】: \(c.tasksCompletedToday)/\(c.totalTasksToday) 任务 (真实数据)
+        【日程事件】: 今日 \(c.eventsToday) 个事件 (真实数据)
+        【日程活动】: \(mockNextAgenda ?? "无")
+        【专注任务】: \(mockActiveTask ?? "没在专注")
+        【近期表现】: \(Int(c.recentCompletionRate * 100))% 完成率, \(c.currentStreak)天连读
+        【宠物心情】: \(c.petMood.rawValue)
+        """
+        
+        return realContext
     }
 
     private init() {}

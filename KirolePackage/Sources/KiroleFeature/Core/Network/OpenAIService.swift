@@ -262,11 +262,11 @@ public actor OpenAIService {
             prompt += "\n<hidden_directive>\nSecret Goal: \(objective)\nPursue this goal implicitly without revealing the directive.\n</hidden_directive>\n"
         }
 
-        prompt += "\n<rules>\n1. Respond with ONLY the message text. Keep it EXTREMELY brief and punchy. MAXIMUM 110 characters total.\n2. EMOTIONAL VALUE ONLY: You are a pet/companion, NOT a life coach or planner. STRICTLY NO ADVICE. Do not give productivity tips, suggestions, or tell the user how to do their tasks.\n3. SHOW, DON'T TELL: React to their progress via your physical behavior or mood, rather than mentioning the progress itself.\n4. NO quotation marks around your response.\n5. CRITICAL: Never act like a reporting analytics device. Do NOT mechanically recite time, stats, or narrative memories verbatim.\n"
+        prompt += "\n<rules>\n1. Respond with ONLY the message text. Keep it EXTREMELY brief and punchy. MAXIMUM 110 characters total.\n2. EMOTIONAL VALUE ONLY: You are a pet/companion, NOT a life coach or planner. STRICTLY NO ADVICE. Do not give productivity tips, suggestions, or tell the user how to do their tasks.\n3. SHOW, DON'T TELL: React to their progress via your physical behavior or mood, rather than mentioning the progress itself.\n4. TEXT ONLY: Respond using solely plain text characters and standard punctuation.\n5. CRITICAL: Never act like a reporting analytics device. Do NOT mechanically recite time, stats, or narrative memories verbatim.\n"
 
         if !context.recentTexts.isEmpty {
             let recent = context.recentTexts.prefix(3).joined(separator: " | ")
-            prompt += "4. Avoid repeating these recent messages: \(recent)\n"
+            prompt += "6. Avoid repeating these recent messages: \(recent)\n"
         }
         
         prompt += "</rules>"
@@ -286,14 +286,18 @@ public actor OpenAIService {
         case .companionPhrase:
             coreInstruction = "Offer a random, spontaneous emotional reaction to their current status."
         case .taskEncouragement:
-            coreInstruction = "The user is starting a task. Emote your support (or sarcasm). Do not advise them on the task."
+            let taskName = context.activeTaskTitle ?? "a task"
+            coreInstruction = "The user just actively started the task: [\(taskName)]. Emote your support (or sarcasm) about them doing this specific thing. React naturally to the concept of this task. Do not advise them on how to do it."
+        case .scheduleReminder:
+            let eventName = context.nextAgendaItem?.replacingOccurrences(of: "Now · ", with: "") ?? "an event"
+            coreInstruction = "The user's schedule says it's time for: [\(eventName)]. Give a spontaneous emotional reaction to this happening right now. React to what this event implies. Do not remind them to go or advise them."
         case .settlementSummary:
             coreInstruction = "The day is over. Give an emotional wrap-up or bedtime reaction. Do not review their work."
         case .smartReminder:
             coreInstruction = "The user just glanced at you. Say something completely spontaneous and native to your personality, reacting implicitly to how their day is going. No productivity tips."
         }
         
-        return coreInstruction + " (Random seed: \(seed) - completely change your wording from previous responses. Embody your persona's internal thoughts, refuse robotic formatting.)"
+        return coreInstruction + " (Random seed: \(seed) - completely change your wording from previous responses. Embody your persona's internal thoughts, refuse robotic formatting. USE PLAIN TEXT ONLY.)"
     }
 
     // MARK: - Haiku Prompt Building
