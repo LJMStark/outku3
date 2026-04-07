@@ -188,6 +188,21 @@ struct PromptDebuggerSheet: View {
                             .padding()
                             .background(theme.colors.accent.opacity(0.1))
                             .cornerRadius(8)
+                            
+                            if !state.lastGeneratedTranslation.isEmpty {
+                                Text("中文翻译:")
+                                    .font(.caption.bold())
+                                    .foregroundStyle(theme.colors.secondaryText)
+                                    .padding(.top, 4)
+                                
+                                Text(state.lastGeneratedTranslation)
+                                    .font(.subheadline)
+                                    .foregroundStyle(theme.colors.primaryText)
+                                    .padding()
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .background(theme.colors.accent.opacity(0.05))
+                                    .cornerRadius(8)
+                            }
                         }
                         .padding(.top, 8)
                     }
@@ -220,13 +235,17 @@ struct PromptDebuggerSheet: View {
     
     private func forceTestGeneration(type: AITextType = .smartReminder) async {
         isForceRefreshing = true
+        await MainActor.run { state.lastGeneratedTranslation = "" }
         
         // Pass the requested type into the context builder so it reflects the phase accurately
         let mockContext = await state.createMockContext(type: type)
 
         let result = await CompanionTextService.shared.previewSharedPetDialogue(baseContext: mockContext, type: type)
+        let translation = (try? await OpenAIService.shared.translateCompanionText(text: result)) ?? "翻译失败"
+        
         await MainActor.run {
             state.lastGeneratedDialogue = result
+            state.lastGeneratedTranslation = translation
             
             // Still update the main UI bubble so they can see how it looks rendered in the HomeView
             AppState.shared.currentPetDialogue = result

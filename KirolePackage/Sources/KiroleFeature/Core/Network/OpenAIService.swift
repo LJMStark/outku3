@@ -51,6 +51,20 @@ public actor OpenAIService {
         return content.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    // MARK: - Translate Companion Text
+
+    /// Translate the given companion text into Chinese
+    public func translateCompanionText(text: String) async throws -> String {
+        let systemPrompt = "You are a professional translator. Translate the given English text into natural, colloquial Chinese. Do not add any extra explanations or quotes. Just output the translation."
+        let content = try await chatCompletion(
+            systemPrompt: systemPrompt,
+            userPrompt: text,
+            temperature: 0.3,
+            maxTokens: 80
+        )
+        return content.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     // MARK: - Task Dehydration
 
     /// Decompose a task into micro-actions using Implementation Intentions theory

@@ -22,6 +22,7 @@ public final class PromptDebuggerState {
     
     public var lastMockSummary: String = ""
     public var lastGeneratedDialogue: String = ""
+    public var lastGeneratedTranslation: String = ""
     
     /// Fetch real AIContext from AppState and tailor it for testing.
     public func createMockContext(type: AITextType) async -> AIContext {
