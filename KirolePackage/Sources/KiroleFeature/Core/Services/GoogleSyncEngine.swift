@@ -263,6 +263,8 @@ public actor GoogleSyncEngine {
                 switch entry.action {
                 case .updateStatus:
                     try await tasksAPI.syncTaskCompletion(entry.taskItem)
+                case .updateTask:
+                    try await tasksAPI.syncTaskUpdate(entry.taskItem)
                 case .create:
                     guard let listId = entry.taskItem.googleTaskListId else {
                         continue // Drop entries without a list ID

@@ -225,9 +225,47 @@ extension AppState {
 
         Task { @MainActor in
             await persistTasks(tasks, context: "AppState.editTask")
-            // Content edits (title/priority/dueDate/notes) are persisted locally only.
-            // Syncing task content to Google Tasks / Apple Reminders requires
-            // dedicated PATCH APIs that are not yet implemented.
+            
+            // Sync content edits to external services
+            await syncTaskContentEditToExternalService(updatedTask)
+        }
+    }
+
+    private func syncTaskContentEditToExternalService(_ task: TaskItem) async {
+        switch task.source {
+        case .google:
+            await googleSyncEngine.enqueueChange(task: task, action: .updateTask)
+            do {
+                try await googleTasksAPI.syncTaskUpdate(task)
+            } catch {
+                reportSyncError(error, component: "Google Tasks", context: "AppState.editTask")
+            }
+        case .apple:
+            do {
+                try await appleSyncEngine.pushReminderUpdate(task)
+            } catch {
+                reportSyncError(error, component: "Apple Reminders", context: "AppState.editTask")
+            }
+        case .notion:
+            do {
+                guard let accessToken = try? await AuthManager.shared.getNotionAccessToken() else {
+                    return
+                }
+                try await notionSyncEngine.pushTaskUpdate(task, accessToken: accessToken)
+            } catch {
+                reportSyncError(error, component: "Notion", context: "AppState.editTask")
+            }
+        case .taskade:
+            do {
+                let accessToken = try await AuthManager.shared.getTaskadeAccessToken()
+                if !accessToken.isEmpty {
+                    try await taskadeSyncEngine.pushTaskUpdate(task, accessToken: accessToken)
+                }
+            } catch {
+                reportSyncError(error, component: "Taskade", context: "AppState.editTask")
+            }
+        default:
+            break
         }
     }
 

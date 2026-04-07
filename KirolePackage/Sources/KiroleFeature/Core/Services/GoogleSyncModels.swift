@@ -4,6 +4,7 @@ import Foundation
 
 public enum OutboxAction: String, Codable, Sendable {
     case updateStatus
+    case updateTask
     case create
     case delete
 }
