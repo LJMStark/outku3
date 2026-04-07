@@ -162,7 +162,7 @@ public final class CompanionTextService {
             userProfile: userProfile,
             streak: streakDays
         ) {
-            return String(aiText.prefix(60))
+            return aiText
         }
 
         return smartReminderFallback(reason: reason, petName: petName, taskTitle: taskTitle, streakDays: streakDays)

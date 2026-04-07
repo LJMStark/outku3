@@ -119,9 +119,9 @@ xcodebuild -workspace Kirole.xcworkspace -scheme Kirole \
 The AI companion is an **emotional value provider**, NOT a productivity coach or life planner.
 
 **Architecture (3-layer prompt assembly in `OpenAIService.swift`):**
-1. **Persona Layer** (`CompanionStyle`): 6 personality presets (companion, challenger, corporate, dramatic, genZ, slacker). Defines tone/vibe only.
-2. **Context Layer** (`<user_state>` + `<narrative_memory>`): Dynamic data injection (focus time, energy blocks, completion rate, streak, petMood, episodic memories).
-3. **Rules Layer** (`<rules>`): Global constraints that override everything above.
+1. **Persona Layer** (`CompanionStyle`): 6 personality presets (companion, challenger, corporate, dramatic, genZ, slacker). Each includes a one-line role definition + 5 few-shot example outputs to anchor the style.
+2. **Context Layer** (`<context>` semantic signals): Condensed to 4 signals (time of day, day intensity, mood, trend). Raw metrics are converted to semantic labels to prevent the LLM from reciting stats.
+3. **Format Layer** (`<format>`): 4 positive directives. No negation-based rules.
 
 **Global Rules (enforced on ALL personalities):**
 - `EMOTIONAL VALUE ONLY`: No advice, no productivity tips, no task guidance.
@@ -130,8 +130,10 @@ The AI companion is an **emotional value provider**, NOT a productivity coach or
 - Never act like a reporting analytics device.
 
 **When modifying AI prompts:**
-- Never add instructions that encourage the AI to give advice, suggestions, or task breakdowns.
-- Keep input data rich (so the AI "understands" the user), but output constraints strict (so it only emotes).
+- Every persona MUST include 5 example outputs (few-shot). Abstract descriptions alone do not work.
+- Context data must be semantic signals ("busy day"), not raw numbers ("72% completion rate").
+- Rules must be phrased as positive directives ("React with mood"), not negations ("DO NOT give advice").
+- Temperature must stay at 0.9, maxTokens at 80.
 - All persona changes must be tested through `PromptDebuggerView` to verify compliance with the Inku paradigm.
 
 **Data flow:** `CompanionTextService` -> `OpenAIService.generateCompanionText()` -> OpenRouter API -> `LocalStorage` (AI interactions)

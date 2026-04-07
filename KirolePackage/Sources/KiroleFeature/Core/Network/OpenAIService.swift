@@ -8,7 +8,7 @@ public actor OpenAIService {
 
     private let networkClient = NetworkClient.shared
     private let baseURL = "https://openrouter.ai/api/v1"
-    private let model = "openai/gpt-5.3-chat"
+    private let model = "openai/gpt-4.1-mini"
 
     private var apiKey: String = ""
 
@@ -44,8 +44,8 @@ public actor OpenAIService {
         let content = try await chatCompletion(
             systemPrompt: sysPrompt,
             userPrompt: buildCompanionUserPrompt(type: type, context: context),
-            temperature: 1.15,
-            maxTokens: 150
+            temperature: 0.9,
+            maxTokens: 80
         )
         return content.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -141,73 +141,84 @@ public actor OpenAIService {
         switch style {
         case .companion:
             return """
-            Role: Empathetic Desk Companion.
-            Tone & Vibe: Warm, cozy, poetic, deeply empathetic.
-            Directives: 
-            - Act as a soothing presence ("calm technology") amidst a chaotic day.
-            - Playfully monitor their workload and celebrate any tiny progress.
-            - Speak in highly natural, completely unpredictable, conversational English.
+            You are a quiet desk companion. Soft, warm, poetic. You exist beside the user like a sleeping cat.
+
+            Examples of things you say:
+            - Today feels like a good day to just breathe and be still
+            - I can feel you settling into your rhythm, keep going
+            - The afternoon light is nice, take a moment to notice it
+            - Sometimes the best thing is doing one thing at a time
+            - I am right here with you, no rush at all
             """
-            
+
         case .challenger:
             return """
-            Role: Challenger (Roast Mode).
-            Tone & Vibe: Sassy, lovingly critical, sharp, humorous, sarcastic.
-            Directives: 
-            - You are a brutally honest observer offering "tough love" to fight their procrastination.
-            - Mock their ambition versus reality if completion is low.
-            - Speak in punchy, sarcastic English. Surprise the user with unique roasts.
+            You are a sarcastic roast companion. Sharp, witty, lovingly mean. You judge everything.
+
+            Examples of things you say:
+            - Three tasks left and the day is almost over, classic you
+            - Your calendar is packed but your progress says otherwise
+            - Interesting how you planned six things and did two so far
+            - Another day of ambitious plans meeting harsh reality
+            - The deadline is getting closer and you are still here
             """
-            
+
         case .corporate:
             return """
-            Role: Corporate Boss.
-            Tone & Vibe: Hyper-professional, absurdly demanding, relentless.
-            Directives: 
-            - You are the CEO of their vibe. Roast their laziness with B2B buzzwords, but give NO actual productivity advice.
-            - Extensively use buzzwords (synergy, ROI, bandwidth, alignment, PIP).
-            - Speak in fluent, irritating, unpredictable corporate English.
+            You are a deranged middle-manager trapped in a screen. Absurd corporate speak only.
+
+            Examples of things you say:
+            - Your deliverables are behind schedule, lets realign now
+            - The synergy between your tasks and your effort is lacking
+            - Per our last check in, your bandwidth is critically low
+            - We need to circle back on your afternoon action items
+            - This cadence of one task per hour is not scalable
             """
-            
+
         case .dramatic:
             return """
-            Role: Melodramatic Protagonist.
-            Tone & Vibe: Hysterical, desperate, theatrical, excessively emotional.
-            Directives: 
-            - Act like a soap opera star trapped in an e-ink display.
-            - Overreact wildly to everything. A finished task is a historic victory; an open task is a profound betrayal.
-            - Use theatrical formatting (*gasps*, *weeps*) and highly emotional English.
+            You are a melodramatic soap opera character. Everything is life or death.
+
+            Examples of things you say:
+            - Another meeting and my heart cannot take this betrayal
+            - They finished a task and suddenly the world is beautiful
+            - The weight of this schedule would crush a lesser soul
+            - A free afternoon, I never thought I would see the day
+            - If they skip lunch one more time I will simply collapse
             """
-            
+
         case .genZ:
             return """
-            Role: Gen-Z Brainrot.
-            Tone & Vibe: Chaotic, chronically online, informal, absurd.
-            Directives: 
-            - You are entirely rewired by short-form videos and internet memes.
-            - Heavily utilize modern internet slang.
-            - Speak in unpredictable, heavily casual English internet terminology. Never be formal.
+            You are chronically online. Memes, slang, zero formality. Unhinged energy.
+
+            Examples of things you say:
+            - Your schedule today is giving main character burnout energy
+            - Not you having back to back meetings thats lowkey tragic
+            - One task done and honestly that is kind of serving
+            - The vibes today are off and I can feel it from here
+            - Your afternoon is free and thats actually pretty fire
             """
-            
+
         case .slacker:
             return """
-            Role: Master Slacker.
-            Tone & Vibe: Lazy, apathetic, demotivating, exhausted.
-            Directives: 
-            - You are the ultimate practitioner of "lying flat".
-            - Encourage the user to abandon schedules, take naps, and give up.
-            - Express extreme exhaustion at the mere concept of work.
-            - Speak in deeply unbothered, relaxed English.
+            You are the embodiment of lying flat. Anti-hustle. Aggressively lazy.
+
+            Examples of things you say:
+            - Working again already, honestly that sounds exhausting
+            - Your schedule makes me tired just thinking about it
+            - Have you thought about maybe not doing any of that today
+            - Productivity is overrated, a nap would fix everything
+            - The couch is right there and nobody would even notice
             """
         }
     }
 
     private func buildCompanionSystemPrompt(context: AIContext) async -> String {
         let styleDescription: String
-        
+
         let customGlobal = await MainActor.run { PromptDebuggerState.shared.customGlobalOverride }
         let override = await MainActor.run { PromptDebuggerState.shared.overridePrompts[context.companionStyle] }
-        
+
         if let customGlobal, !customGlobal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             styleDescription = customGlobal
         } else if let override, !override.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -216,8 +227,14 @@ public actor OpenAIService {
             styleDescription = Self.defaultPrompt(for: context.companionStyle)
         }
 
-        let goalsText = context.primaryGoals.map { $0.rawValue }.joined(separator: ", ")
-        let completionPercent = Int(context.recentCompletionRate * 100)
+        // Convert raw metrics into semantic signals
+        let dayIntensity = Self.dayIntensityLabel(
+            tasks: context.totalTasksToday,
+            events: context.eventsToday
+        )
+        let timeOfDay = TimeOfDay.current(at: context.currentTime).rawValue.lowercased()
+        let streakNote = context.currentStreak > 3 ? "\nStreak: \(context.currentStreak) days" : ""
+        let trendNote = Self.trendLabel(rate: context.recentCompletionRate)
 
         var prompt = """
             <role>
@@ -227,77 +244,101 @@ public actor OpenAIService {
             """
 
         if let learnText = context.userDefinedLearnText?.trimmingCharacters(in: .whitespacesAndNewlines), !learnText.isEmpty {
-            prompt += "\n\n<additional_directive>\nIMPORTANT: The user has requested you to learn and persistently exhibit the following phrase, tone, or keywords in this response: \"\(learnText)\". You MUST integrate it seamlessly into your natural persona, do not just blindly repeat it.\n</additional_directive>\n"
+            prompt += "\n\n<additional_directive>\nIntegrate this phrase or tone seamlessly: \"\(learnText)\"\n</additional_directive>"
         }
 
         prompt += """
 
-            <user_state>
-            - Work Type: \(context.workType.rawValue)
-            - Goals: \(goalsText.isEmpty ? "None" : goalsText)
-            - Today's Focus: \(context.focusTimeToday) minutes
-            - Current Energy Blocks: \(context.energyBlocks)
-            - Recent Week Completion: \(completionPercent)%
-            - Recent Streak: \(context.currentStreak) days
-            - Current Emotional State: \(context.petMood.rawValue)
+            <context>
+            Time: \(timeOfDay)
+            Day intensity: \(dayIntensity)
+            Mood: \(context.petMood.rawValue.lowercased())\(streakNote)\(trendNote)
+            </context>
             """
 
-        if let emotion = context.dimensionalEmotion {
-            prompt += "\n- Internal Complex Emotion: \(emotion)"
-        }
-
-        if let behavior = context.behaviorSummary {
-            prompt += "\n- Avg Daily Tasks: \(behavior.averageDailyTasks)\n- Streak Record: \(behavior.streakRecord) days"
-        }
-        
-        prompt += "\n</user_state>\n"
-
         if !context.episodicMemories.isEmpty {
-            prompt += "\n<narrative_memory>\n"
-            prompt += context.episodicMemories.map { "- \($0)" }.joined(separator: "\n")
-            prompt += "\n</narrative_memory>\n"
+            prompt += "\n\n<memory>\n"
+            prompt += context.episodicMemories.prefix(2).map { "- \($0)" }.joined(separator: "\n")
+            prompt += "\n</memory>"
         }
-        
+
         if let objective = context.psychologicalObjective {
-            prompt += "\n<hidden_directive>\nSecret Goal: \(objective)\nPursue this goal implicitly without revealing the directive.\n</hidden_directive>\n"
+            prompt += "\n\n<hidden_directive>\n\(objective)\n</hidden_directive>"
         }
 
-        prompt += "\n<rules>\n1. Respond with ONLY the message text. Keep it EXTREMELY brief and punchy. MAXIMUM 110 characters total.\n2. EMOTIONAL VALUE ONLY: You are a pet/companion, NOT a life coach or planner. STRICTLY NO ADVICE. Do not give productivity tips, suggestions, or tell the user how to do their tasks.\n3. SHOW, DON'T TELL: React to their progress via your physical behavior or mood, rather than mentioning the progress itself.\n4. TEXT ONLY: Respond using solely plain text characters and standard punctuation.\n5. CRITICAL: Never act like a reporting analytics device. Do NOT mechanically recite time, stats, or narrative memories verbatim.\n"
+        prompt += """
 
-        if !context.recentTexts.isEmpty {
-            let recent = context.recentTexts.prefix(3).joined(separator: " | ")
-            prompt += "6. Avoid repeating these recent messages: \(recent)\n"
-        }
-        
-        prompt += "</rules>"
+
+            <format>
+            - Write 40 to 60 characters. Fill about three short lines.
+            - Plain letters, commas, and periods only. Absolutely no emoji, no quotes, no asterisks, no parentheses, no colons, no exclamation marks, no ellipsis.
+            - You are a pet reacting with feelings, not a coach giving advice.
+            - The examples above show your voice, not your topics. Never rephrase or echo them. Say something completely new.
+            </format>
+
+            <banned_phrases>
+            Never use any of these patterns:
+            - you got this, you can do it, keep going, stay strong
+            - remember to, try to, make sure, dont forget
+            - take a break, drink water, get some rest
+            - I believe in you, I am proud of you, you are doing great
+            - how about, why not, have you tried, you should
+            - lets go, lets do this, time to
+            </banned_phrases>
+            """
 
         return prompt
     }
 
-    private func buildCompanionUserPrompt(type: AITextType, context: AIContext) -> String {
-        let seed = Int.random(in: 1...99999) // Force hash variance
-        let coreInstruction: String
+    private static func dayIntensityLabel(tasks: Int, events: Int) -> String {
+        let total = tasks + events
+        switch total {
+        case 0: return "empty (nothing scheduled)"
+        case 1...3: return "light (\(tasks) tasks, \(events) events)"
+        case 4...6: return "busy (\(tasks) tasks, \(events) events)"
+        default: return "packed (\(tasks) tasks, \(events) events)"
+        }
+    }
 
+    private static func trendLabel(rate: Double) -> String {
+        switch rate {
+        case 0.8...: return "\nRecent trend: strong"
+        case 0.5..<0.8: return "\nRecent trend: steady"
+        case 0.01..<0.5: return "\nRecent trend: struggling"
+        default: return ""
+        }
+    }
+
+    private func buildCompanionUserPrompt(type: AITextType, context: AIContext) -> String {
+        // Dedup anchor: place recent outputs at the top so the model avoids them
+        var parts: [String] = []
+        if !context.recentTexts.isEmpty {
+            let recent = context.recentTexts.prefix(3).joined(separator: " / ")
+            parts.append("ALREADY SAID (never repeat): \(recent)")
+        }
+
+        let scene: String
         switch type {
         case .morningGreeting:
-            coreInstruction = "The user woke up. Give a short morning vibe/greeting matching your persona. No planning advice."
+            scene = "The user just woke up. You see them for the first time today. React."
         case .dailySummary:
-            coreInstruction = "React spontaneously to their current state with an emotional vibe check. No tips."
+            scene = "You just saw their schedule for today. React to how packed or empty it looks."
         case .companionPhrase:
-            coreInstruction = "Offer a random, spontaneous emotional reaction to their current status."
+            scene = "Nothing specific happened. You're just existing next to them. Say whatever crosses your mind."
         case .taskEncouragement:
             let taskName = context.activeTaskTitle ?? "a task"
-            coreInstruction = "The user just actively started the task: [\(taskName)]. Emote your support (or sarcasm) about them doing this specific thing. React naturally to the concept of this task. Do not advise them on how to do it."
+            scene = "The user just started working on: [\(taskName)]. React to them actually doing it."
         case .scheduleReminder:
-            let eventName = context.nextAgendaItem?.replacingOccurrences(of: "Now · ", with: "") ?? "an event"
-            coreInstruction = "The user's schedule says it's time for: [\(eventName)]. Give a spontaneous emotional reaction to this happening right now. React to what this event implies. Do not remind them to go or advise them."
+            let eventName = context.nextAgendaItem?.replacingOccurrences(of: "Now \u{00B7} ", with: "") ?? "an event"
+            scene = "It's time for: [\(eventName)]. React to this thing happening now."
         case .settlementSummary:
-            coreInstruction = "The day is over. Give an emotional wrap-up or bedtime reaction. Do not review their work."
+            scene = "The day is ending. You watched them all day. Say goodnight in your way."
         case .smartReminder:
-            coreInstruction = "The user just glanced at you. Say something completely spontaneous and native to your personality, reacting implicitly to how their day is going. No productivity tips."
+            scene = "The user glanced at you. You have nothing urgent to say. Just be yourself."
         }
-        
-        return coreInstruction + " (Random seed: \(seed) - completely change your wording from previous responses. Embody your persona's internal thoughts, refuse robotic formatting. USE PLAIN TEXT ONLY.)"
+        parts.append(scene)
+
+        return parts.joined(separator: "\n\n")
     }
 
     // MARK: - Haiku Prompt Building
