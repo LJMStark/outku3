@@ -262,10 +262,19 @@ struct HaikuSectionView: View {
                 // Dialogue / Haiku text from AppState
                 VStack(spacing: 4) {
                     if appState.homeCompanionDisplayMode == .petDialogue && !appState.currentPetDialogue.isEmpty {
+                        #if canImport(UIKit)
+                        BalancedTextView(
+                            appState.currentPetDialogue,
+                            fontSize: 15,
+                            italic: true,
+                            color: theme.colors.primaryText
+                        )
+                        #else
                         Text(appState.currentPetDialogue)
                             .font(.system(size: 15, weight: .regular, design: .serif))
                             .italic()
                             .foregroundStyle(theme.colors.primaryText)
+                        #endif
                     } else {
                         ForEach(Array(appState.currentHaiku.lines.enumerated()), id: \.offset) { index, line in
                             Text(line)
@@ -275,7 +284,6 @@ struct HaikuSectionView: View {
                         }
                     }
                 }
-                .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
                 .frame(height: 68)
 
