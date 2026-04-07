@@ -270,7 +270,7 @@ public actor OpenAIService {
 
 
             <format>
-            - Write 40 to 60 characters. Fill about three short lines.
+            - Write one flowing sentence, 40 to 60 characters total. No line breaks.
             - Plain letters, commas, and periods only. Absolutely no emoji, no quotes, no asterisks, no parentheses, no colons, no exclamation marks, no ellipsis.
             - You are a pet reacting with feelings, not a coach giving advice.
             - The examples above show your voice, not your topics. Never rephrase or echo them. Say something completely new.
