@@ -88,6 +88,7 @@ public struct EventDetailModal: View {
     let event: CalendarEvent
     @Environment(\.dismiss) private var dismiss
     @Environment(ThemeManager.self) private var theme
+    @Environment(AppState.self) private var appState
     @State private var showEditSheet = false
 
     public init(event: CalendarEvent) {
@@ -218,6 +219,8 @@ public struct EventDetailModal: View {
         .background(Color.white)
         .sheet(isPresented: $showEditSheet) {
             EventEditSheet(event: event)
+                .environment(appState)
+                .environment(theme)
         }
     }
 

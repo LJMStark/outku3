@@ -19,6 +19,10 @@ public final class CompanionTextService {
 
     private let openAI = OpenAIService.shared
     private let localStorage = LocalStorage.shared
+    nonisolated private static let dialogueMaxAttempts = 3
+    nonisolated private static let dialogueInvalidBackoffMs: [UInt64] = [250, 700]
+    nonisolated private static let dialogueErrorBackoffMs: [UInt64] = [800, 1800]
+    nonisolated private static let dialogueRateLimitBackoffMs: [UInt64] = [1800, 3600]
 
     private init() {}
 
@@ -200,11 +204,143 @@ public final class CompanionTextService {
         type: AITextType = .smartReminder,
         mode: CompanionTextGenerationMode
     ) async -> String {
-        if let aiText = await generateAIText(type: type, baseContext: baseContext, mode: mode) {
-            return aiText
+        let enrichedBaseContext = await enrichedContext(for: type, baseContext: baseContext)
+        let historyTexts = enrichedBaseContext.recentTexts
+        var rejectedTexts: [String] = []
+
+        for attempt in 0..<Self.dialogueMaxAttempts {
+            let attemptContext = dialogueAttemptContext(
+                from: enrichedBaseContext,
+                historyTexts: historyTexts,
+                rejectedTexts: rejectedTexts
+            )
+
+            do {
+                let aiText = try await openAI.generateCompanionText(type: type, context: attemptContext)
+                let normalized = CompanionDialogueDisplayPolicy.normalized(aiText)
+
+                if CompanionDialogueDisplayPolicy.isValidForDisplay(normalized) {
+                    if mode.shouldPersistInteractions {
+                        await saveInteraction(
+                            type: type,
+                            text: normalized,
+                            petName: attemptContext.petName,
+                            petMood: attemptContext.petMood,
+                            completionRate: attemptContext.recentCompletionRate
+                        )
+                    }
+                    return normalized
+                }
+
+                rejectedTexts.append(normalized)
+
+                if attempt < Self.dialogueMaxAttempts - 1 {
+                    try? await Task.sleep(
+                        for: .milliseconds(Self.dialogueInvalidBackoffMs[attempt])
+                    )
+                }
+            } catch {
+                #if DEBUG
+                print("[CompanionText] Shared dialogue generation failed for \(type.rawValue): \(error.localizedDescription)")
+                #endif
+                guard attempt < Self.dialogueMaxAttempts - 1,
+                      Self.shouldRetrySharedDialogue(after: error) else {
+                    break
+                }
+
+                try? await Task.sleep(
+                    for: .milliseconds(Self.dialogueErrorBackoff(for: error, attempt: attempt))
+                )
+            }
         }
 
-        return sharedPetDialogueFallback(baseContext)
+        let fallback = CompanionDialogueDisplayPolicy.normalized(sharedPetDialogueFallback(baseContext))
+        if CompanionDialogueDisplayPolicy.isValidForDisplay(fallback) {
+            return fallback
+        }
+
+        return "I am right here with you, and this moment can stay gentle."
+    }
+
+    private func dialogueAttemptContext(
+        from baseContext: AIContext,
+        historyTexts: [String],
+        rejectedTexts: [String]
+    ) -> AIContext {
+        let recentTexts = Array((historyTexts + rejectedTexts).suffix(3))
+
+        return AIContext(
+            companionStyle: baseContext.companionStyle,
+            workType: baseContext.workType,
+            primaryGoals: baseContext.primaryGoals,
+            petName: baseContext.petName,
+            petMood: baseContext.petMood,
+            currentTime: baseContext.currentTime,
+            tasksCompletedToday: baseContext.tasksCompletedToday,
+            totalTasksToday: baseContext.totalTasksToday,
+            eventsToday: baseContext.eventsToday,
+            currentStreak: baseContext.currentStreak,
+            recentCompletionRate: baseContext.recentCompletionRate,
+            behaviorSummary: baseContext.behaviorSummary,
+            recentTexts: recentTexts,
+            focusTimeToday: baseContext.focusTimeToday,
+            energyBlocks: baseContext.energyBlocks,
+            currentSceneName: baseContext.currentSceneName,
+            hardwareConnected: baseContext.hardwareConnected,
+            nextAgendaItem: baseContext.nextAgendaItem,
+            activeTaskTitle: baseContext.activeTaskTitle,
+            topTaskTitles: baseContext.topTaskTitles,
+            episodicMemories: baseContext.episodicMemories,
+            dimensionalEmotion: baseContext.dimensionalEmotion,
+            psychologicalObjective: baseContext.psychologicalObjective,
+            userDefinedLearnText: baseContext.userDefinedLearnText
+        )
+    }
+
+    nonisolated static func shouldRetrySharedDialogue(after error: Error) -> Bool {
+        switch error {
+        case let urlError as URLError:
+            switch urlError.code {
+            case .timedOut,
+                 .networkConnectionLost,
+                 .cannotConnectToHost,
+                 .cannotFindHost,
+                 .dnsLookupFailed:
+                return true
+            default:
+                return false
+            }
+        case let networkError as NetworkError:
+            switch networkError {
+            case .rateLimited, .serverError, .invalidResponse:
+                return true
+            default:
+                return false
+            }
+        case let openAIError as OpenAIError:
+            switch openAIError {
+            case .emptyResponse, .rateLimited:
+                return true
+            default:
+                return false
+            }
+        default:
+            return false
+        }
+    }
+
+    nonisolated private static func dialogueErrorBackoff(for error: Error, attempt: Int) -> UInt64 {
+        let clampedAttempt = min(attempt, dialogueErrorBackoffMs.count - 1)
+
+        if case NetworkError.rateLimited = error {
+            return dialogueRateLimitBackoffMs[clampedAttempt]
+        }
+
+        if case OpenAIError.rateLimited = error {
+            return dialogueRateLimitBackoffMs[clampedAttempt]
+        }
+
+        return dialogueErrorBackoffMs[clampedAttempt]
     }
 
     // MARK: - AI Text Generation
@@ -343,23 +479,23 @@ public final class CompanionTextService {
     }
 
     private func sharedPetDialogueFallback(_ context: AIContext) -> String {
-        if let nextAgendaItem = context.nextAgendaItem, !nextAgendaItem.isEmpty {
-            return "*glances over* Next up: \(nextAgendaItem)"
-        }
-
-        if let topTask = context.topTaskTitles.first {
-            return "*nudges your list* Start with \(topTask)"
-        }
-
         if context.totalTasksToday == 0 && context.eventsToday == 0 {
-            return "*stretches* Quiet day. Let's keep it gentle."
+            return "It is a quiet day, and I am happy to stay here with you."
         }
 
         if context.totalTasksToday > 0, context.tasksCompletedToday >= context.totalTasksToday {
-            return "*purrs softly* You cleared the board today."
+            return "You carried today to the end, and I am resting here with you now."
         }
 
-        return "*tilts head* I'm waiting for your next move."
+        if context.nextAgendaItem != nil {
+            return "Something is coming up soon, and I am staying close beside you."
+        }
+
+        if !context.topTaskTitles.isEmpty {
+            return "We can begin with one small step, and I will stay beside you through it."
+        }
+
+        return "I am right here with you, and this moment can stay gentle."
     }
 
     // MARK: - Interaction Persistence

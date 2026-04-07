@@ -25,27 +25,47 @@ public actor NetworkClient {
     public func get<T: Decodable>(
         url: URL,
         headers: [String: String] = [:],
+        requestTimeout: TimeInterval? = nil,
         responseType: T.Type
     ) async throws -> T {
-        try await sendRequest(url: url, method: "GET", headers: headers)
+        try await sendRequest(
+            url: url,
+            method: "GET",
+            headers: headers,
+            requestTimeout: requestTimeout
+        )
     }
 
     public func post<T: Decodable, B: Encodable>(
         url: URL,
         headers: [String: String] = [:],
         body: B,
+        requestTimeout: TimeInterval? = nil,
         responseType: T.Type
     ) async throws -> T {
-        try await sendRequest(url: url, method: "POST", headers: headers, body: body)
+        try await sendRequest(
+            url: url,
+            method: "POST",
+            headers: headers,
+            body: body,
+            requestTimeout: requestTimeout
+        )
     }
 
     public func patch<T: Decodable, B: Encodable>(
         url: URL,
         headers: [String: String] = [:],
         body: B,
+        requestTimeout: TimeInterval? = nil,
         responseType: T.Type
     ) async throws -> T {
-        try await sendRequest(url: url, method: "PATCH", headers: headers, body: body)
+        try await sendRequest(
+            url: url,
+            method: "PATCH",
+            headers: headers,
+            body: body,
+            requestTimeout: requestTimeout
+        )
     }
 
     public func delete(
@@ -61,10 +81,14 @@ public actor NetworkClient {
         url: URL,
         method: String,
         headers: [String: String],
-        body: (any Encodable)? = nil
+        body: (any Encodable)? = nil,
+        requestTimeout: TimeInterval? = nil
     ) async throws -> T {
         var request = URLRequest(url: url)
         request.httpMethod = method
+        if let requestTimeout {
+            request.timeoutInterval = requestTimeout
+        }
 
         for (key, value) in headers {
             request.setValue(value, forHTTPHeaderField: key)

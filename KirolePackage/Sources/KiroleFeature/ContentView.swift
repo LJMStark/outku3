@@ -71,6 +71,7 @@ public struct ContentView: View {
         .sheet(isPresented: $appState.isEventDetailPresented) {
             if let event = appState.selectedEvent {
                 EventDetailModal(event: event)
+                    .environment(appState)
                     .environment(themeManager)
                     .presentationDetents([.medium, .large])
                     .presentationDragIndicator(.hidden) // hidden as we drew our own drag indicator

@@ -264,6 +264,41 @@ public actor GoogleTasksAPI {
 
     // MARK: - Sync Helper
 
+    /// 同步本地任务所有的更改到 Google
+    public func syncTaskUpdate(_ task: TaskItem) async throws {
+        guard let taskListId = task.googleTaskListId,
+              let taskId = task.googleTaskId else {
+            throw GoogleTasksError.missingGoogleIds
+        }
+
+        let accessToken = try await AuthManager.shared.getGoogleAccessToken()
+
+        let encodedListId = taskListId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? taskListId
+        let encodedTaskId = taskId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? taskId
+        guard let url = URL(string: "\(baseURL)/lists/\(encodedListId)/tasks/\(encodedTaskId)") else {
+            throw GoogleTasksError.invalidURL
+        }
+
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        let dueString = task.dueDate.map { formatter.string(from: $0) }
+
+        let updateRequest = GoogleTaskUpdateRequest(
+            title: task.title,
+            notes: task.notes,
+            due: dueString,
+            status: task.isCompleted ? "completed" : "needsAction",
+            completed: task.isCompleted ? formatter.string(from: Date()) : nil
+        )
+
+        _ = try await networkClient.patch(
+            url: url,
+            headers: ["Authorization": "Bearer \(accessToken)"],
+            body: updateRequest,
+            responseType: GoogleTask.self
+        )
+    }
+
     /// 同步本地任务状态到 Google
     public func syncTaskCompletion(_ task: TaskItem) async throws {
         guard let taskListId = task.googleTaskListId,

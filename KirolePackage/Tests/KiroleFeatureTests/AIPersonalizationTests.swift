@@ -78,6 +78,31 @@ import Foundation
     #expect(types.count == 5)
 }
 
+// MARK: - Companion Dialogue Display Policy Tests
+
+@Test func testCompanionDialogueDisplayPolicyRejectsIncompleteSentence() async throws {
+    let text = "I am right here beside you as you face this"
+    #expect(!CompanionDialogueDisplayPolicy.isValidForDisplay(text))
+}
+
+@Test func testCompanionDialogueDisplayPolicyAcceptsCompleteSentence() async throws {
+    let text = "I am right here beside you as you face this, steady and quiet with you every moment."
+    #expect(CompanionDialogueDisplayPolicy.isValidForDisplay(text))
+}
+
+@Test func testSharedDialogueRetryPolicyRetriesTimeouts() async throws {
+    #expect(CompanionTextService.shouldRetrySharedDialogue(after: URLError(.timedOut)))
+    #expect(CompanionTextService.shouldRetrySharedDialogue(after: NetworkError.rateLimited))
+    #expect(CompanionTextService.shouldRetrySharedDialogue(after: NetworkError.serverError(503)))
+    #expect(CompanionTextService.shouldRetrySharedDialogue(after: NetworkError.invalidResponse))
+    #expect(CompanionTextService.shouldRetrySharedDialogue(after: OpenAIError.emptyResponse))
+}
+
+@Test func testSharedDialogueRetryPolicyRejectsHardFailures() async throws {
+    #expect(!CompanionTextService.shouldRetrySharedDialogue(after: OpenAIError.notConfigured))
+    #expect(!CompanionTextService.shouldRetrySharedDialogue(after: NetworkError.forbidden))
+}
+
 // MARK: - Companion Style Tests
 
 @Test func testAllCompanionStylesHaveDistinctDescriptions() async throws {
@@ -342,6 +367,21 @@ import Foundation
         tasksCount: 0, eventsCount: 0, petName: "Waffle"
     )
     #expect(result == "A free day! Time to relax.")
+}
+
+@Test @MainActor func testSharedPetDialogueFallbackIsDisplaySafe() async throws {
+    let longTitle = String(repeating: "planning work ", count: 10)
+    let result = await CompanionTextService.shared.generateSharedPetDialogue(
+        baseContext: AIContext(
+            tasksCompletedToday: 0,
+            totalTasksToday: 3,
+            eventsToday: 1,
+            nextAgendaItem: "Task · \(longTitle)",
+            topTaskTitles: [longTitle]
+        )
+    )
+
+    #expect(CompanionDialogueDisplayPolicy.isValidForDisplay(result))
 }
 
 // MARK: - Work Hour Range Tests

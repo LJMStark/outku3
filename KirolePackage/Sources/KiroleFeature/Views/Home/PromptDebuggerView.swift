@@ -181,13 +181,13 @@ struct PromptDebuggerSheet: View {
                                 .font(.caption.bold())
                                 .foregroundStyle(theme.colors.secondaryText)
                             
-                            Text(state.lastGeneratedDialogue)
-                                .font(.body)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .padding()
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(theme.colors.accent.opacity(0.1))
-                                .cornerRadius(8)
+                            CompanionDialogueView(
+                                state.lastGeneratedDialogue,
+                                color: theme.colors.primaryText
+                            )
+                            .padding()
+                            .background(theme.colors.accent.opacity(0.1))
+                            .cornerRadius(8)
                         }
                         .padding(.top, 8)
                     }

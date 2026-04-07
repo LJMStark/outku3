@@ -119,8 +119,19 @@ public struct GoogleTaskListsResponse: Codable, Sendable {
 // MARK: - Google Task Update Request
 
 public struct GoogleTaskUpdateRequest: Codable, Sendable {
+    public let title: String?
+    public let notes: String?
+    public let due: String?
     public let status: String?
     public let completed: String?
+
+    public init(title: String? = nil, notes: String? = nil, due: String? = nil, status: String? = nil, completed: String? = nil) {
+        self.title = title
+        self.notes = notes
+        self.due = due
+        self.status = status
+        self.completed = completed
+    }
 
     public static func markCompleted() -> GoogleTaskUpdateRequest {
         GoogleTaskUpdateRequest(

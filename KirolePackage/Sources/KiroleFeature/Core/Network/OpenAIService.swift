@@ -5,6 +5,7 @@ import Foundation
 /// AI API client (via OpenRouter) for generating haikus and companion text
 public actor OpenAIService {
     public static let shared = OpenAIService()
+    public static let companionPromptVersion = "2026-04-07-complete-100c-v1"
 
     private let networkClient = NetworkClient.shared
     private let baseURL = "https://openrouter.ai/api/v1"
@@ -125,6 +126,7 @@ public actor OpenAIService {
                 "X-Title": "Kirole"
             ],
             body: request,
+            requestTimeout: 60,
             responseType: ChatCompletionResponse.self
         )
 
@@ -235,7 +237,7 @@ public actor OpenAIService {
 
             Schedule: \(schedule)
 
-            React in one plain text sentence, around 100 characters.
+            React in one complete plain-text sentence (90-120 characters) and end with punctuation.
             """
 
         if let learnText = context.userDefinedLearnText?.trimmingCharacters(in: .whitespacesAndNewlines), !learnText.isEmpty {

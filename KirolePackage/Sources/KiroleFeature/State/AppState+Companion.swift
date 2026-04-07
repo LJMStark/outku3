@@ -39,7 +39,12 @@ extension AppState {
             return nil
         }
 
-        return cached.text
+        let normalized = CompanionDialogueDisplayPolicy.normalized(cached.text)
+        guard CompanionDialogueDisplayPolicy.isValidForDisplay(normalized) else {
+            return nil
+        }
+
+        return normalized
     }
 
     private func shouldShowDailyHaiku(on todayKey: String) async -> Bool {
@@ -54,8 +59,11 @@ extension AppState {
            let cached = try? await localStorage.loadSharedCompanionDialogue(),
            cached.date == todayKey,
            cached.fingerprint == triggerState.fingerprint {
-            currentPetDialogue = cached.text
-            return
+            let normalized = CompanionDialogueDisplayPolicy.normalized(cached.text)
+            if CompanionDialogueDisplayPolicy.isValidForDisplay(normalized) {
+                currentPetDialogue = normalized
+                return
+            }
         }
 
         let phase = resolveCompanionPhase(triggerState: triggerState)
@@ -204,6 +212,7 @@ extension AppState {
             "activeTask=\(activeTaskId)",
             "nextAgenda=\(nextAgendaItem ?? "")",
             "topTasks=\(topTaskTitles.joined(separator: "|"))",
+            "promptVersion=\(OpenAIService.companionPromptVersion)",
             "learn=\(learnText ?? "")"
         ]
 
