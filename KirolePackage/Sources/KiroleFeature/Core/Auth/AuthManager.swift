@@ -205,17 +205,13 @@ public final class AuthManager {
 
     // MARK: - Disconnect Google
 
-    /// 断开 Google 账户连接
+    /// 断开 Google 账户连接（仅清除 Google 相关状态，保留主帐号和其他 integration）
     public func disconnectGoogle() async {
         await googleSignInService.disconnect()
         isGoogleConnected = false
         hasCalendarAccess = false
         hasTasksAccess = false
-
-        // 如果主要认证是 Google，则登出
-        if currentUser?.authProvider == .google {
-            await signOut()
-        }
+        keychainService.clearGoogleTokens()
     }
 
     // MARK: - Notion Sign In

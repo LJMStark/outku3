@@ -23,8 +23,6 @@ extension AppState {
     }
 
     public func updateIntegrationStatus(_ type: IntegrationType, isConnected: Bool) {
-        let hadGoogleIntegration = hasAnyGoogleIntegrationConnected
-
         if isConnected {
             disconnectConflictingIntegration(for: type)
         }
@@ -36,13 +34,6 @@ extension AppState {
         }
 
         reconcileAppleChangeObserver()
-        let hasGoogleIntegration = hasAnyGoogleIntegrationConnected
-
-        if hadGoogleIntegration && !hasGoogleIntegration {
-            Task { @MainActor in
-                await AuthManager.shared.disconnectGoogle()
-            }
-        }
     }
 
     var hasAnyGoogleIntegrationConnected: Bool {

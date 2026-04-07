@@ -10,6 +10,8 @@ public struct SettingsIntegrationSection: View {
     @State private var searchText = ""
     @State private var showComingSoon = false
     @State private var isConnecting = false
+    @State private var isDisconnecting = false
+    @State private var disconnectTarget: IntegrationType?
 
     public init() {}
 
@@ -64,6 +66,24 @@ public struct SettingsIntegrationSection: View {
         } message: {
             Text("This integration will be available in a future update.")
         }
+        .alert("Disconnect Integration", isPresented: Binding(
+            get: { disconnectTarget != nil },
+            set: { if !$0 { disconnectTarget = nil } }
+        )) {
+            Button("Cancel", role: .cancel) {
+                disconnectTarget = nil
+            }
+            Button("Disconnect", role: .destructive) {
+                if let target = disconnectTarget {
+                    Task { await disconnectIntegration(target) }
+                    disconnectTarget = nil
+                }
+            }
+        } message: {
+            if let target = disconnectTarget {
+                Text("Are you sure you want to disconnect \(target.rawValue)?")
+            }
+        }
         .task {
             syncGoogleConnectionStatus()
         }
@@ -90,8 +110,10 @@ public struct SettingsIntegrationSection: View {
         VStack(spacing: 8) {
             ForEach(connectedIntegrations) { integration in
                 ConnectedAppRow(integration: integration) {
-                    disconnectIntegration(integration.type)
+                    disconnectTarget = integration.type
                 }
+                .disabled(isDisconnecting)
+                .opacity(isDisconnecting ? 0.6 : 1.0)
             }
         }
     }
@@ -125,8 +147,8 @@ public struct SettingsIntegrationSection: View {
                     IntegrationAppRow(type: type) {
                         Task { await connectIntegration(type) }
                     }
-                    .disabled(isConnecting)
-                    .opacity(isConnecting ? 0.5 : 1.0)
+                    .disabled(isConnecting || isDisconnecting)
+                    .opacity(isConnecting || isDisconnecting ? 0.5 : 1.0)
 
                     if index < types.count - 1 {
                         Divider().padding(.leading, 52)
@@ -232,10 +254,18 @@ public struct SettingsIntegrationSection: View {
         }
     }
 
-    private func disconnectIntegration(_ type: IntegrationType) {
+    private func disconnectIntegration(_ type: IntegrationType) async {
+        guard !isDisconnecting else { return }
+        isDisconnecting = true
+        defer { isDisconnecting = false }
+
         appState.updateIntegrationStatus(type, isConnected: false)
 
         switch type {
+        case .googleCalendar, .googleTasks:
+            if !appState.hasAnyGoogleIntegrationConnected {
+                await authManager.disconnectGoogle()
+            }
         case .notion:
             authManager.disconnectNotion()
         case .taskade:
