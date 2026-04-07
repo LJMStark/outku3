@@ -197,9 +197,7 @@ public struct SettingsIntegrationSection: View {
     }
 
     private func connectGoogleIntegration(_ type: IntegrationType) async throws {
-        if needsGoogleSignIn(for: type) {
-            try await authManager.signInWithGoogle()
-        }
+        try await authManager.ensureGoogleAccess(for: type)
 
         let hasRequiredAccess = hasGoogleAccess(for: type)
         appState.updateIntegrationStatus(type, isConnected: hasRequiredAccess)

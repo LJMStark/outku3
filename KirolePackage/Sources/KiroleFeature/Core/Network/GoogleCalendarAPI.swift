@@ -8,7 +8,7 @@ private struct CalendarFetchOutcome: Sendable {
     let errorDescription: String?
 }
 
-/// Google Calendar API 客户端（只读）
+/// Google Calendar API 客户端
 public actor GoogleCalendarAPI {
     public static let shared = GoogleCalendarAPI()
 
@@ -140,7 +140,9 @@ public actor GoogleCalendarAPI {
                             timeMin: timeMin,
                             timeMax: timeMax
                         )
-                        let events = (response.items ?? []).compactMap { CalendarEvent.from(googleEvent: $0) }
+                        let events = (response.items ?? []).compactMap {
+                            CalendarEvent.from(googleEvent: $0, googleCalendarId: calendarId)
+                        }
                         return CalendarFetchOutcome(
                             calendarId: calendarId,
                             events: events,
@@ -225,7 +227,7 @@ public actor GoogleCalendarAPI {
     // MARK: - Patch Event
 
     public func patchEvent(
-        calendarId: String = "primary",
+        calendarId: String,
         eventId: String,
         title: String?,
         startTime: Date?,
@@ -233,7 +235,7 @@ public actor GoogleCalendarAPI {
         isAllDay: Bool = false,
         location: String?,
         description: String?
-    ) async throws {
+    ) async throws -> CalendarEvent {
         let accessToken = try await AuthManager.shared.getGoogleAccessToken()
 
         let encodedCalendarId = calendarId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? calendarId
@@ -250,12 +252,21 @@ public actor GoogleCalendarAPI {
             end: endTime.map { isAllDay ? .allDay($0) : .timed($0) }
         )
 
-        _ = try await networkClient.patch(
+        let event: GoogleCalendarEvent = try await networkClient.patch(
             url: url,
             headers: makeAuthorizationHeader(accessToken),
             body: body,
             responseType: GoogleCalendarEvent.self
         )
+
+        guard let mappedEvent = CalendarEvent.from(
+            googleEvent: event,
+            googleCalendarId: calendarId
+        ) else {
+            throw NetworkError.decodingError("Patched Google event could not be mapped")
+        }
+
+        return mappedEvent
     }
 
     // MARK: - Get Calendar List

@@ -15,10 +15,18 @@ public final class AuthManager {
     public private(set) var authState: AuthState = .unauthenticated
     public private(set) var currentUser: User?
     public private(set) var isGoogleConnected: Bool = false
-    public private(set) var hasCalendarAccess: Bool = false
+    public private(set) var googleCalendarAccessLevel: GoogleCalendarAccessLevel = .none
     public private(set) var hasTasksAccess: Bool = false
     public private(set) var isNotionConnected: Bool = false
     public private(set) var isTaskadeConnected: Bool = false
+
+    public var hasCalendarAccess: Bool {
+        googleCalendarAccessLevel.canRead
+    }
+
+    public var hasCalendarWriteAccess: Bool {
+        googleCalendarAccessLevel.canWrite
+    }
 
     // MARK: - Services
 
@@ -49,7 +57,7 @@ public final class AuthManager {
 
     private func applyGoogleSignInResult(_ result: GoogleSignInResult, isRestore: Bool) {
         isGoogleConnected = true
-        hasCalendarAccess = result.hasCalendarAccess
+        googleCalendarAccessLevel = result.calendarAccessLevel
         hasTasksAccess = result.hasTasksAccess
 
         if isRestore && currentUser == nil {
@@ -88,8 +96,8 @@ public final class AuthManager {
         }
 
         isGoogleConnected = true
-        hasCalendarAccess = savedScopes.contains("https://www.googleapis.com/auth/calendar.readonly")
-        hasTasksAccess = savedScopes.contains("https://www.googleapis.com/auth/tasks")
+        googleCalendarAccessLevel = GoogleCalendarAccessLevel.from(grantedScopes: savedScopes)
+        hasTasksAccess = savedScopes.contains(GoogleOAuthScope.tasks)
     }
 
     // MARK: - Apple Sign In
@@ -167,7 +175,7 @@ public final class AuthManager {
             let result = try await googleSignInService.signIn()
 
             isGoogleConnected = true
-            hasCalendarAccess = result.hasCalendarAccess
+            googleCalendarAccessLevel = result.calendarAccessLevel
             hasTasksAccess = result.hasTasksAccess
 
             // 如果是首次登录（不是连接），设置用户
@@ -209,9 +217,31 @@ public final class AuthManager {
     public func disconnectGoogle() async {
         await googleSignInService.disconnect()
         isGoogleConnected = false
-        hasCalendarAccess = false
+        googleCalendarAccessLevel = .none
         hasTasksAccess = false
         keychainService.clearGoogleTokens()
+    }
+
+    public func ensureGoogleAccess(for type: IntegrationType) async throws {
+        if !isGoogleConnected {
+            try await signInWithGoogle()
+            return
+        }
+
+        let needsScopeUpgrade: Bool
+        switch type {
+        case .googleCalendar:
+            needsScopeUpgrade = !hasCalendarWriteAccess
+        case .googleTasks:
+            needsScopeUpgrade = !hasTasksAccess
+        default:
+            needsScopeUpgrade = false
+        }
+
+        guard needsScopeUpgrade else { return }
+
+        let result = try await googleSignInService.requestAdditionalScopes()
+        applyGoogleSignInResult(result, isRestore: false)
     }
 
     // MARK: - Notion Sign In
@@ -259,7 +289,7 @@ public final class AuthManager {
         // 清除 Google
         googleSignInService.signOut()
         isGoogleConnected = false
-        hasCalendarAccess = false
+        googleCalendarAccessLevel = .none
         hasTasksAccess = false
 
         // 清除 Apple

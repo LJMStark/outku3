@@ -90,7 +90,8 @@ public struct TaskItem: Identifiable, Sendable, Codable {
             syncStatus: .synced,
             lastModified: remoteUpdated ?? Date(),
             remoteUpdatedAt: remoteUpdated,
-            remoteEtag: googleTask.etag
+            remoteEtag: googleTask.etag,
+            notes: googleTask.notes
         )
     }
 }

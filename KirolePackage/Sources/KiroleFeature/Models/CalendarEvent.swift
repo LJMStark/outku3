@@ -6,6 +6,7 @@ public struct CalendarEvent: Identifiable, Sendable, Codable {
     public let id: String
     public var localId: UUID
     public var googleEventId: String?
+    public var googleCalendarId: String?
     public var appleEventId: String?
     public var appleCalendarId: String?
     public var title: String
@@ -23,6 +24,7 @@ public struct CalendarEvent: Identifiable, Sendable, Codable {
         id: String = UUID().uuidString,
         localId: UUID = UUID(),
         googleEventId: String? = nil,
+        googleCalendarId: String? = nil,
         appleEventId: String? = nil,
         appleCalendarId: String? = nil,
         title: String,
@@ -39,6 +41,7 @@ public struct CalendarEvent: Identifiable, Sendable, Codable {
         self.id = id
         self.localId = localId
         self.googleEventId = googleEventId
+        self.googleCalendarId = googleCalendarId
         self.appleEventId = appleEventId
         self.appleCalendarId = appleCalendarId
         self.title = title
@@ -66,7 +69,11 @@ public struct CalendarEvent: Identifiable, Sendable, Codable {
     }
 
     // 从 Google API 响应创建
-    public static func from(googleEvent: GoogleCalendarEvent, source: EventSource = .google) -> CalendarEvent? {
+    public static func from(
+        googleEvent: GoogleCalendarEvent,
+        googleCalendarId: String? = nil,
+        source: EventSource = .google
+    ) -> CalendarEvent? {
         guard let startDate = googleEvent.start.asDate,
               let endDate = googleEvent.end.asDate else {
             return nil
@@ -82,6 +89,7 @@ public struct CalendarEvent: Identifiable, Sendable, Codable {
         return CalendarEvent(
             id: googleEvent.id,
             googleEventId: googleEvent.id,
+            googleCalendarId: googleCalendarId,
             title: googleEvent.summary ?? "Untitled Event",
             startTime: startDate,
             endTime: endDate,

@@ -265,7 +265,7 @@ public actor GoogleTasksAPI {
     // MARK: - Sync Helper
 
     /// 同步本地任务所有的更改到 Google
-    public func syncTaskUpdate(_ task: TaskItem) async throws {
+    public func syncTaskUpdate(_ task: TaskItem) async throws -> TaskItem {
         guard let taskListId = task.googleTaskListId,
               let taskId = task.googleTaskId else {
             throw GoogleTasksError.missingGoogleIds
@@ -291,12 +291,14 @@ public actor GoogleTasksAPI {
             completed: task.isCompleted ? formatter.string(from: Date()) : nil
         )
 
-        _ = try await networkClient.patch(
+        let remoteTask: GoogleTask = try await networkClient.patch(
             url: url,
             headers: ["Authorization": "Bearer \(accessToken)"],
             body: updateRequest,
             responseType: GoogleTask.self
         )
+
+        return TaskItem.from(googleTask: remoteTask, taskListId: taskListId)
     }
 
     /// 同步本地任务状态到 Google

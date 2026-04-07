@@ -15,8 +15,8 @@ public final class GoogleSignInService: @unchecked Sendable {
 
     // Google API Scopes
     private let scopes = [
-        "https://www.googleapis.com/auth/calendar.readonly",
-        "https://www.googleapis.com/auth/tasks"
+        GoogleOAuthScope.calendarEvents,
+        GoogleOAuthScope.tasks
     ]
 
     private init() {}
@@ -123,14 +123,18 @@ public final class GoogleSignInService: @unchecked Sendable {
 
     /// 请求额外的权限
     @MainActor
-    public func requestAdditionalScopes() async throws {
+    public func requestAdditionalScopes() async throws -> GoogleSignInResult {
         guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
               let rootViewController = windowScene.windows.first?.rootViewController,
               let currentUser = GIDSignIn.sharedInstance.currentUser else {
             throw GoogleSignInError.notSignedIn
         }
 
-        _ = try await currentUser.addScopes(scopes, presenting: rootViewController)
+        let result = try await currentUser.addScopes(scopes, presenting: rootViewController)
+        let user = result.user
+        try persistTokensIfAvailable(for: user)
+        persistScopesIfAvailable(user.grantedScopes ?? [])
+        return makeSignInResult(from: user)
     }
 
     // MARK: - Sign Out
@@ -210,12 +214,20 @@ public struct GoogleSignInResult: Sendable {
     public let refreshToken: String
     public let grantedScopes: [String]
 
+    public var calendarAccessLevel: GoogleCalendarAccessLevel {
+        GoogleCalendarAccessLevel.from(grantedScopes: grantedScopes)
+    }
+
     public var hasCalendarAccess: Bool {
-        grantedScopes.contains("https://www.googleapis.com/auth/calendar.readonly")
+        calendarAccessLevel.canRead
+    }
+
+    public var hasCalendarWriteAccess: Bool {
+        calendarAccessLevel.canWrite
     }
 
     public var hasTasksAccess: Bool {
-        grantedScopes.contains("https://www.googleapis.com/auth/tasks")
+        grantedScopes.contains(GoogleOAuthScope.tasks)
     }
 }
 
@@ -269,6 +281,9 @@ public final class GoogleSignInService: @unchecked Sendable {
     @MainActor
     public func getValidAccessToken() async throws -> String { throw GoogleSignInError.notSupported }
     
+    @MainActor
+    public func requestAdditionalScopes() async throws -> GoogleSignInResult { throw GoogleSignInError.notSupported }
+    
     public func handle(_ url: URL) -> Bool { return false }
 }
 
@@ -277,7 +292,10 @@ public struct GoogleSignInResult: Sendable {
     public let email: String? = nil
     public let displayName: String? = nil
     public let avatarURL: URL? = nil
+    public let grantedScopes: [String] = []
+    public var calendarAccessLevel: GoogleCalendarAccessLevel = .none
     public var hasCalendarAccess: Bool = false
+    public var hasCalendarWriteAccess: Bool = false
     public var hasTasksAccess: Bool = false
 }
 

@@ -103,7 +103,7 @@ extension AppState {
         endTime: Date,
         location: String?,
         notes: String?
-    ) async {
+    ) async throws {
         guard let index = events.firstIndex(where: { $0.id == event.id }) else { return }
 
         var updatedEvent = events[index]
@@ -114,47 +114,63 @@ extension AppState {
         updatedEvent.description = notes
         updatedEvent.lastModified = Date()
 
-        events[index] = updatedEvent
-        await persistEvents(events, context: "AppState.editEvent")
+        do {
+            let syncedEvent = try await syncEventContentEditToExternalService(updatedEvent)
+            events[index] = syncedEvent
+            await persistEvents(events, context: "AppState.editEvent")
+        } catch {
+            reportSyncError(error, component: event.source.rawValue, context: "AppState.editEvent")
+            throw error
+        }
+    }
 
+    private func syncEventContentEditToExternalService(_ event: CalendarEvent) async throws -> CalendarEvent {
         switch event.source {
         case .apple:
-            if let identifier = event.appleEventId {
-                do {
-                    try await eventKitService.updateEvent(
-                        identifier: identifier,
-                        title: title,
-                        startDate: startTime,
-                        endDate: endTime,
-                        location: location,
-                        notes: notes
-                    )
-                } catch {
-                    reportSyncError(error, component: "Apple Calendar", context: "AppState.editEvent")
-                }
+            guard let identifier = event.appleEventId else {
+                return event
             }
+            try await eventKitService.updateEvent(
+                identifier: identifier,
+                title: event.title,
+                startDate: event.startTime,
+                endDate: event.endTime,
+                location: event.location,
+                notes: event.description
+            )
+            var syncedEvent = event
+            syncedEvent.syncStatus = .synced
+            return syncedEvent
         case .google:
-            if let eventId = event.googleEventId {
-                do {
-                    try await googleCalendarAPI.patchEvent(
-                        eventId: eventId,
-                        title: title,
-                        startTime: startTime,
-                        endTime: endTime,
-                        isAllDay: event.isAllDay,
-                        location: location,
-                        description: notes
-                    )
-                } catch {
-                    reportSyncError(error, component: "Google Calendar", context: "AppState.editEvent")
-                }
+            guard AuthManager.shared.hasCalendarWriteAccess else {
+                throw ExternalEditingError.integrationReadOnly("Google Calendar")
             }
+            guard let eventId = event.googleEventId else {
+                throw ExternalEditingError.missingRemoteIdentifier("Google Calendar")
+            }
+            guard let calendarId = event.googleCalendarId else {
+                throw ExternalEditingError.missingRemoteIdentifier("Google Calendar")
+            }
+
+            var syncedEvent = try await googleCalendarAPI.patchEvent(
+                calendarId: calendarId,
+                eventId: eventId,
+                title: event.title,
+                startTime: event.startTime,
+                endTime: event.endTime,
+                isAllDay: event.isAllDay,
+                location: event.location,
+                description: event.description
+            )
+            syncedEvent.localId = event.localId
+            syncedEvent.syncStatus = .synced
+            return syncedEvent
         case .todoist:
-            break
+            throw ExternalEditingError.integrationReadOnly("Todoist")
         case .notion:
-            break
+            throw ExternalEditingError.integrationReadOnly("Notion")
         case .taskade:
-            break
+            throw ExternalEditingError.integrationReadOnly("Taskade")
         }
     }
 
@@ -210,7 +226,7 @@ extension AppState {
         priority: TaskPriority,
         dueDate: Date?,
         notes: String?
-    ) {
+    ) async throws {
         guard let index = tasks.firstIndex(where: { $0.id == task.id }) else { return }
 
         var updatedTask = tasks[index]
@@ -220,52 +236,45 @@ extension AppState {
         updatedTask.notes = notes
         updatedTask.lastModified = Date()
 
-        tasks = taskManager.withTask(tasks, updatedTask: updatedTask)
-        updateStatistics()
-
-        Task { @MainActor in
+        do {
+            let syncedTask = try await syncTaskContentEditToExternalService(updatedTask)
+            tasks = taskManager.withTask(tasks, updatedTask: syncedTask)
+            updateStatistics()
             await persistTasks(tasks, context: "AppState.editTask")
-            
-            // Sync content edits to external services
-            await syncTaskContentEditToExternalService(updatedTask)
+        } catch {
+            reportSyncError(error, component: task.source.rawValue, context: "AppState.editTask")
+            throw error
         }
     }
 
-    private func syncTaskContentEditToExternalService(_ task: TaskItem) async {
+    private func syncTaskContentEditToExternalService(_ task: TaskItem) async throws -> TaskItem {
         switch task.source {
         case .google:
-            await googleSyncEngine.enqueueChange(task: task, action: .updateTask)
-            do {
-                try await googleTasksAPI.syncTaskUpdate(task)
-            } catch {
-                reportSyncError(error, component: "Google Tasks", context: "AppState.editTask")
-            }
+            let remoteTask = try await googleTasksAPI.syncTaskUpdate(task)
+            var syncedTask = task
+            syncedTask.title = remoteTask.title
+            syncedTask.isCompleted = remoteTask.isCompleted
+            syncedTask.dueDate = remoteTask.dueDate
+            syncedTask.notes = remoteTask.notes
+            syncedTask.remoteUpdatedAt = remoteTask.remoteUpdatedAt
+            syncedTask.remoteEtag = remoteTask.remoteEtag
+            syncedTask.lastModified = remoteTask.remoteUpdatedAt ?? remoteTask.lastModified
+            syncedTask.syncStatus = .synced
+            return syncedTask
         case .apple:
-            do {
+            if task.appleReminderId != nil {
                 try await appleSyncEngine.pushReminderUpdate(task)
-            } catch {
-                reportSyncError(error, component: "Apple Reminders", context: "AppState.editTask")
             }
+            var syncedTask = task
+            syncedTask.remoteUpdatedAt = Date()
+            syncedTask.syncStatus = .synced
+            return syncedTask
         case .notion:
-            do {
-                guard let accessToken = AuthManager.shared.getNotionAccessToken() else {
-                    return
-                }
-                try await notionSyncEngine.pushTaskUpdate(task, accessToken: accessToken)
-            } catch {
-                reportSyncError(error, component: "Notion", context: "AppState.editTask")
-            }
+            throw ExternalEditingError.integrationReadOnly("Notion")
         case .taskade:
-            do {
-                let accessToken = try await AuthManager.shared.getTaskadeAccessToken()
-                if !accessToken.isEmpty {
-                    try await taskadeSyncEngine.pushTaskUpdate(task, accessToken: accessToken)
-                }
-            } catch {
-                reportSyncError(error, component: "Taskade", context: "AppState.editTask")
-            }
+            throw ExternalEditingError.integrationReadOnly("Taskade")
         default:
-            break
+            throw ExternalEditingError.integrationReadOnly(task.source.rawValue)
         }
     }
 
@@ -352,6 +361,11 @@ extension AppState {
     }
 
     func reportSyncError(_ error: Error, component: String, context: String) {
+        if error is ExternalEditingError {
+            lastError = UserFacingErrorMapper.message(for: error)
+            ErrorReporter.log(AppError.unknown(error.localizedDescription), context: context)
+            return
+        }
         let appError = AppError.sync(component: component, underlying: error.localizedDescription)
         lastError = UserFacingErrorMapper.message(for: appError)
         ErrorReporter.log(appError, context: context)

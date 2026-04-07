@@ -6,6 +6,7 @@ public struct EventEditSheet: View {
     let event: CalendarEvent
     @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
+    @Environment(AuthManager.self) private var authManager
     @Environment(\.dismiss) private var dismiss
 
     @State private var title: String
@@ -13,9 +14,14 @@ public struct EventEditSheet: View {
     @State private var endTime: Date
     @State private var location: String
     @State private var notes: String
+    @State private var isSaving = false
+
+    private var editCapabilities: EventEditCapabilities {
+        event.editCapabilities(googleCalendarWriteAccess: authManager.hasCalendarWriteAccess)
+    }
 
     private var isEditableSource: Bool {
-        event.source == .apple || event.source == .google
+        editCapabilities.isEditable
     }
 
     private var isTimeRangeValid: Bool {
@@ -34,9 +40,9 @@ public struct EventEditSheet: View {
     public var body: some View {
         NavigationStack {
             Form {
-                if !isEditableSource {
+                if let guidance = editCapabilities.guidance {
                     Section {
-                        Label("Edit in \(event.source.rawValue)", systemImage: "arrow.up.forward")
+                        Label(guidance, systemImage: "arrow.up.forward")
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -79,23 +85,35 @@ public struct EventEditSheet: View {
                 }
                 if isEditableSource {
                     ToolbarItem(placement: .confirmationAction) {
-                        Button("Save") {
+                        Button(isSaving ? "Saving..." : "Save") {
                             Task {
-                                await appState.editEvent(
-                                    event,
-                                    title: title,
-                                    startTime: startTime,
-                                    endTime: endTime,
-                                    location: location.isEmpty ? nil : location,
-                                    notes: notes.isEmpty ? nil : notes
-                                )
-                                dismiss()
+                                await saveEvent()
                             }
                         }
-                        .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty || !isTimeRangeValid)
+                        .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty || !isTimeRangeValid || isSaving)
                     }
                 }
             }
+        }
+    }
+
+    @MainActor
+    private func saveEvent() async {
+        isSaving = true
+        defer { isSaving = false }
+
+        do {
+            try await appState.editEvent(
+                event,
+                title: title,
+                startTime: startTime,
+                endTime: endTime,
+                location: location.isEmpty ? nil : location,
+                notes: notes.isEmpty ? nil : notes
+            )
+            dismiss()
+        } catch {
+            return
         }
     }
 }

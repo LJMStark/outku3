@@ -73,6 +73,7 @@ public struct ContentView: View {
                 EventDetailModal(event: event)
                     .environment(appState)
                     .environment(themeManager)
+                    .environment(authManager)
                     .presentationDetents([.medium, .large])
                     .presentationDragIndicator(.hidden) // hidden as we drew our own drag indicator
                     .presentationCornerRadius(24)

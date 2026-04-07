@@ -266,11 +266,11 @@ public actor EventKitService {
 
     public func updateReminder(
         identifier: String,
-        title: String?,
+        title: String,
         dueDate: Date?,
-        priority: TaskPriority?,
+        priority: TaskPriority,
         notes: String?,
-        isCompleted: Bool?
+        isCompleted: Bool
     ) async throws {
         guard remindersAuthorizationStatus == .fullAccess else {
             throw EventKitError.notAuthorized
@@ -280,18 +280,19 @@ public actor EventKitService {
             throw EventKitError.reminderNotFound
         }
 
-        if let title { reminder.title = title }
-        if let notes { reminder.notes = notes }
-        if let priority { reminder.priority = toEKPriority(priority) }
-        if let isCompleted {
-            reminder.isCompleted = isCompleted
-            reminder.completionDate = isCompleted ? Date() : nil
-        }
+        reminder.title = title
+        reminder.notes = notes
+        reminder.priority = toEKPriority(priority)
+        reminder.isCompleted = isCompleted
+        reminder.completionDate = isCompleted ? Date() : nil
+
         if let dueDate {
             reminder.dueDateComponents = Calendar.current.dateComponents(
                 [.year, .month, .day, .hour, .minute],
                 from: dueDate
             )
+        } else {
+            reminder.dueDateComponents = nil
         }
 
         try eventStore.save(reminder, commit: true)
