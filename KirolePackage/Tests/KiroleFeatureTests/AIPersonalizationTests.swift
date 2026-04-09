@@ -210,6 +210,33 @@ import Foundation
     #expect(resolved.taskTitle == "Session Snapshot Title")
 }
 
+@Test func testResolveActiveTaskFallsBackToLatestIncompleteTaskWhenSessionTaskMissing() async throws {
+    let activeSession = FocusSession(
+        taskId: "missing-task",
+        taskTitle: "Session Snapshot Title"
+    )
+    let resolved = AppState.resolveActiveTask(
+        activeSession: activeSession,
+        tasks: [
+            TaskItem(
+                id: "old-completed",
+                title: "Old Completed Task",
+                isCompleted: true,
+                lastModified: Date(timeIntervalSince1970: 100)
+            ),
+            TaskItem(
+                id: "latest-incomplete",
+                title: "Latest Incomplete Task",
+                isCompleted: false,
+                lastModified: Date(timeIntervalSince1970: 200)
+            )
+        ]
+    )
+
+    #expect(resolved.taskId == "latest-incomplete")
+    #expect(resolved.taskTitle == "Latest Incomplete Task")
+}
+
 @MainActor
 @Test func testPromptDebuggerTaskEncouragementBackfillsTaskCounts() async throws {
     let resolved = PromptDebuggerState.resolveTaskProgressForMock(
@@ -263,7 +290,7 @@ import Foundation
     #expect(resolved.source == "top-task")
 }
 
-@Test func testPromptDebuggerTaskEncouragementPrefersActiveTaskTitle() async throws {
+@Test func testPromptDebuggerTaskEncouragementPrefersLatestIncompleteOverActiveSnapshot() async throws {
     let resolvedTitle = PromptDebuggerState.resolveTaskDetailsForMock(
         type: .taskEncouragement,
         activeTaskTitle: "Current Focus Task",
@@ -273,7 +300,7 @@ import Foundation
         ]
     ).taskTitle
 
-    #expect(resolvedTitle == "Current Focus Task")
+    #expect(resolvedTitle == "Latest Incomplete Task")
 }
 
 @Test func testPromptDebuggerTaskEncouragementFallsBackToTopTaskTitle() async throws {
@@ -282,7 +309,7 @@ import Foundation
         activeTaskTitle: nil,
         topTaskTitles: ["Top Task A", "Top Task B"],
         allTasks: [
-            TaskItem(title: "Latest Incomplete Task", isCompleted: false, lastModified: Date(timeIntervalSince1970: 200))
+            TaskItem(title: "Completed Task", isCompleted: true, lastModified: Date(timeIntervalSince1970: 200))
         ]
     ).taskTitle
 

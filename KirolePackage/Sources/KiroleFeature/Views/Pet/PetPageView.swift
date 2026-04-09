@@ -311,11 +311,28 @@ private struct TaskItemRow: View {
                 .buttonStyle(.plain)
 
                 // Task title
-                Text(task.title)
-                    .font(.system(size: 15))
-                    .foregroundStyle(task.isCompleted ? theme.colors.secondaryText : theme.colors.primaryText)
-                    .strikethrough(task.isCompleted, color: theme.colors.secondaryText)
-                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(task.title)
+                        .font(.system(size: 15))
+                        .foregroundStyle(task.isCompleted ? theme.colors.secondaryText : theme.colors.primaryText)
+                        .strikethrough(task.isCompleted, color: theme.colors.secondaryText)
+                        .lineLimit(1)
+
+                    if task.syncStatus == .pending {
+                        ProgressView()
+                            .controlSize(.mini)
+                    } else if task.syncStatus == .conflict || task.syncStatus == .error {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(Color(hex: "F59E0B"))
+                    }
+
+                    if task.pendingDeletion {
+                        Text("Deleting")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(theme.colors.secondaryText)
+                    }
+                }
 
                 Spacer()
 
@@ -345,6 +362,14 @@ private struct TaskItemRow: View {
                         showEditSheet = true
                     } label: {
                         Label("Edit", systemImage: "pencil")
+                    }
+
+                    if task.syncStatus == .conflict || task.syncStatus == .error {
+                        Button {
+                            Task { await appState.retryTaskSync(task) }
+                        } label: {
+                            Label(task.pendingDeletion ? "Retry Delete" : "Retry Sync", systemImage: "arrow.clockwise")
+                        }
                     }
 
                     Button(role: .destructive) {

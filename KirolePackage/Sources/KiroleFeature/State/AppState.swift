@@ -98,10 +98,15 @@ public final class AppState {
     let taskManager = TaskManager()
     let integrationCoordinator = IntegrationCoordinator()
 
-    private init() {
+    private init(loadLocalDataOnInit: Bool = true) {
+        guard loadLocalDataOnInit else { return }
         Task { @MainActor in
             await loadLocalData()
         }
+    }
+
+    static func makeForTesting() -> AppState {
+        AppState(loadLocalDataOnInit: false)
     }
 }
 

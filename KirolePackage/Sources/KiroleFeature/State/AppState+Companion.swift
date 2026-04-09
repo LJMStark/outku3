@@ -278,6 +278,10 @@ extension AppState {
             return (activeSession.taskId, taskTitle)
         }
 
+        if let latestIncompleteTask = latestIncompleteTask(in: tasks) {
+            return (latestIncompleteTask.id, latestIncompleteTask.title)
+        }
+
         let taskTitle = activeSession.taskTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         return (activeSession.taskId, taskTitle.isEmpty ? nil : taskTitle)
     }
@@ -297,6 +301,19 @@ extension AppState {
 
     nonisolated static func taskRecency(_ task: TaskItem) -> Date {
         task.remoteUpdatedAt ?? task.lastModified
+    }
+
+    nonisolated static func latestIncompleteTask(in tasks: [TaskItem]) -> TaskItem? {
+        tasks
+            .filter { !$0.isCompleted }
+            .max { lhs, rhs in
+                let lhsRecency = taskRecency(lhs)
+                let rhsRecency = taskRecency(rhs)
+                if lhsRecency == rhsRecency {
+                    return lhs.lastModified < rhs.lastModified
+                }
+                return lhsRecency < rhsRecency
+            }
     }
 
     private static func homeCompanionDateKey(from date: Date) -> String {

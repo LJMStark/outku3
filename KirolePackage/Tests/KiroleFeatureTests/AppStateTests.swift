@@ -4,7 +4,7 @@ import Foundation
 
 // MARK: - AppState Tests
 
-@Suite("AppState Tests")
+@Suite("AppState Tests", .serialized)
 struct AppStateTests {
 
     // MARK: - Navigation Tests
@@ -461,6 +461,40 @@ struct AppStateTests {
             #expect(state.tasks.count == initialTaskCount)
             #expect(state.pet.progress == initialProgress)
         }
+
+        @Test("Toggle completion keeps conflict status when external sync fails")
+        @MainActor
+        func toggleCompletionMarksConflictOnExternalSyncFailure() async {
+            let state = AppState.shared
+
+            let task = TaskItem(
+                id: "google-conflict-\(UUID().uuidString)",
+                title: "Google Conflict Task",
+                isCompleted: false,
+                dueDate: Date(),
+                source: .google
+            )
+
+            state.addTask(task)
+
+            guard let taskInState = state.tasks.first(where: { $0.id == task.id }) else {
+                Issue.record("Task not found")
+                return
+            }
+
+            state.toggleTaskCompletion(taskInState)
+            try? await Task.sleep(for: .milliseconds(120))
+
+            guard let updatedTask = state.tasks.first(where: { $0.id == task.id }) else {
+                Issue.record("Task not found after toggle")
+                return
+            }
+
+            #expect(updatedTask.syncStatus == .conflict)
+
+            state.deleteTask(updatedTask)
+        }
+
     }
 
     // MARK: - Evolution Tests

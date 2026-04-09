@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import KiroleFeature
 
-@Suite("LocalStorageFailure Tests")
+@Suite("LocalStorageFailure Tests", .serialized)
 struct LocalStorageFailureTests {
     private enum MockStorageError: Error {
         case diskFull
@@ -20,7 +20,7 @@ struct LocalStorageFailureTests {
     }
 }
 
-@Suite("GoogleSyncEngineResilience Tests")
+@Suite("GoogleSyncEngineResilience Tests", .serialized)
 struct GoogleSyncEngineResilienceTests {
     @Test("Full sync with no enabled sources keeps current data and returns no warnings")
     func fullSyncWithoutSourcesReturnsCurrentState() async throws {
@@ -48,7 +48,7 @@ struct GoogleSyncEngineResilienceTests {
     }
 }
 
-@Suite("FocusSessionPersistence Tests")
+@Suite("FocusSessionPersistence Tests", .serialized)
 struct FocusSessionPersistenceTests {
     @Test("Ending focus session keeps completed session in memory and updates summary")
     @MainActor
@@ -67,7 +67,7 @@ struct FocusSessionPersistenceTests {
     }
 }
 
-@Suite("ConcurrencyIsolation Tests")
+@Suite("ConcurrencyIsolation Tests", .serialized)
 struct ConcurrencyIsolationTests {
     @Test("AppState and ThemeManager can be safely accessed on MainActor")
     @MainActor

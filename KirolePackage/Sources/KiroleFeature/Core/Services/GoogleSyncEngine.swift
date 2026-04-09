@@ -248,9 +248,35 @@ public actor GoogleSyncEngine {
     // MARK: - Outbox
 
     public func enqueueChange(task: TaskItem, action: OutboxAction) async {
+        if let existingIndex = outbox.lastIndex(where: { $0.taskItem.id == task.id && $0.action == action }) {
+            let existing = outbox[existingIndex]
+            if existing.taskItem.lastModified >= task.lastModified {
+                return
+            }
+            outbox.remove(at: existingIndex)
+        }
         let entry = OutboxEntry(taskItem: task, action: action)
         outbox.append(entry)
         await persistOutbox(context: "GoogleSyncEngine.enqueueChange")
+    }
+
+    public func clearQueuedChanges(
+        for taskId: String,
+        action: OutboxAction,
+        upToLastModified: Date? = nil
+    ) async {
+        let originalCount = outbox.count
+        outbox.removeAll { entry in
+            guard entry.taskItem.id == taskId, entry.action == action else {
+                return false
+            }
+            guard let upToLastModified else {
+                return true
+            }
+            return entry.taskItem.lastModified <= upToLastModified
+        }
+        guard outbox.count != originalCount else { return }
+        await persistOutbox(context: "GoogleSyncEngine.clearQueuedChanges")
     }
 
     private func flushOutbox() async {
@@ -259,6 +285,10 @@ public actor GoogleSyncEngine {
         var remaining: [OutboxEntry] = []
 
         for var entry in outbox {
+            if entry.retryCount > Self.maxRetryCount {
+                remaining.append(entry)
+                continue
+            }
             do {
                 switch entry.action {
                 case .updateStatus:
@@ -283,10 +313,24 @@ public actor GoogleSyncEngine {
                 // Success - entry is consumed
             } catch {
                 entry.retryCount += 1
+                let actionName = entry.action.rawValue
+                let taskId = entry.taskItem.id
+                let context = "GoogleSyncEngine.flushOutbox[\(actionName):\(taskId)]"
                 if entry.retryCount <= Self.maxRetryCount {
                     remaining.append(entry)
+                    let appError = AppError.sync(
+                        component: "Google Tasks Outbox",
+                        underlying: "Action \(actionName) failed (\(entry.retryCount)/\(Self.maxRetryCount)); will retry. \(error.localizedDescription)"
+                    )
+                    ErrorReporter.log(appError, context: context)
+                } else {
+                    remaining.append(entry)
+                    let appError = AppError.sync(
+                        component: "Google Tasks Outbox",
+                        underlying: "Action \(actionName) entered conflict state after max retries; manual retry required. \(error.localizedDescription)"
+                    )
+                    ErrorReporter.log(appError, context: context)
                 }
-                // Discard entries that exceeded max retries
             }
         }
 

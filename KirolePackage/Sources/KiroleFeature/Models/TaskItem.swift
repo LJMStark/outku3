@@ -20,6 +20,7 @@ public struct TaskItem: Identifiable, Sendable, Codable {
     public var source: EventSource
     public var priority: TaskPriority
     public var syncStatus: SyncStatus
+    public var pendingDeletion: Bool
     public var lastModified: Date
     public var microActions: [MicroAction]?
     public var remoteUpdatedAt: Date?
@@ -44,6 +45,7 @@ public struct TaskItem: Identifiable, Sendable, Codable {
         source: EventSource = .apple,
         priority: TaskPriority = .medium,
         syncStatus: SyncStatus = .synced,
+        pendingDeletion: Bool = false,
         lastModified: Date = Date(),
         microActions: [MicroAction]? = nil,
         remoteUpdatedAt: Date? = nil,
@@ -67,6 +69,7 @@ public struct TaskItem: Identifiable, Sendable, Codable {
         self.source = source
         self.priority = priority
         self.syncStatus = syncStatus
+        self.pendingDeletion = pendingDeletion
         self.lastModified = lastModified
         self.microActions = microActions
         self.remoteUpdatedAt = remoteUpdatedAt
@@ -88,6 +91,7 @@ public struct TaskItem: Identifiable, Sendable, Codable {
             source: .google,
             priority: .medium,
             syncStatus: .synced,
+            pendingDeletion: false,
             lastModified: remoteUpdated ?? Date(),
             remoteUpdatedAt: remoteUpdated,
             remoteEtag: googleTask.etag,

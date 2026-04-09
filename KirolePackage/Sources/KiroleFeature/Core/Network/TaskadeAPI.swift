@@ -168,6 +168,23 @@ public actor TaskadeAPI {
         )
     }
 
+    /// Delete task
+    public func deleteTask(
+        projectId: String,
+        taskId: String,
+        accessToken: String
+    ) async throws {
+        let url = "\(baseURL)/projects/\(projectId)/tasks/\(taskId)"
+        try await networkClient.authenticatedRequestNoContent(
+            url: url,
+            method: "DELETE",
+            headers: makeHeaders(accessToken),
+            refreshToken: {
+                try await TaskadeAuthService.shared.forceRefreshAccessToken()
+            }
+        )
+    }
+
     // MARK: - Helpers
 
     private func makeHeaders(_ accessToken: String) -> [String: String] {

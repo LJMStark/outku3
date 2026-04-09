@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import KiroleFeature
 
-@Suite("Sync Scheduler Tests")
+@Suite("Sync Scheduler Tests", .serialized)
 struct SyncSchedulerTests {
     @Suite("Foreground Sync Policy")
     struct ForegroundSyncPolicyTests {

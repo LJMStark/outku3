@@ -48,6 +48,23 @@ public actor TaskadeSyncEngine {
         )
     }
 
+    /// Delete task on Taskade
+    public func pushTaskDelete(
+        _ task: TaskItem,
+        accessToken: String
+    ) async throws {
+        guard let projectId = task.taskadeProjectId,
+              let taskId = task.taskadeTaskId else {
+            throw TaskadeSyncError.missingTaskIds
+        }
+
+        try await taskadeAPI.deleteTask(
+            projectId: projectId,
+            taskId: taskId,
+            accessToken: accessToken
+        )
+    }
+
     // MARK: - Merge Logic
 
     /// Last-Writer-Wins merge by taskadeTaskId

@@ -5,7 +5,7 @@ import SwiftUI
 
 // MARK: - Pet Animation Tests
 
-@Suite("Pet Animation Tests")
+@Suite("Pet Animation Tests", .serialized)
 struct PetAnimationTests {
 
     // MARK: - Mood State Tests

@@ -7,7 +7,7 @@ struct HomeCompanionPresentationTests {
     @Test("New calendar day resets home companion to daily haiku")
     @MainActor
     func newCalendarDayResetsToDailyHaiku() async throws {
-        let state = AppState.shared
+        let state = AppState.makeForTesting()
         let storage = LocalStorage.shared
         let now = makeDate(year: 2026, month: 4, day: 2, hour: 9)
         let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: now)!
@@ -43,7 +43,7 @@ struct HomeCompanionPresentationTests {
     @Test("Same-day revisit stays on pet dialogue and preserves current haiku")
     @MainActor
     func sameDayRevisitStaysOnPetDialogue() async throws {
-        let state = AppState.shared
+        let state = AppState.makeForTesting()
         let storage = LocalStorage.shared
         let now = makeDate(year: 2026, month: 4, day: 2, hour: 14)
         let existingHaiku = Haiku(lines: [

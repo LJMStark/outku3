@@ -139,6 +139,10 @@ public final class PromptDebuggerState {
             return (activeTaskTitle, "current-context")
         }
 
+        if let latestTaskTitle = latestIncompleteTaskTitleForMock(allTasks: allTasks) {
+            return (latestTaskTitle, "latest-incomplete")
+        }
+
         if let activeTaskTitle = nonEmptyTitle(activeTaskTitle) {
             return (activeTaskTitle, "active-task")
         }
@@ -147,25 +151,11 @@ public final class PromptDebuggerState {
             return (topTaskTitle, "top-task")
         }
 
-        if let latestTaskTitle = latestIncompleteTaskTitleForMock(allTasks: allTasks) {
-            return (latestTaskTitle, "latest-incomplete")
-        }
-
         return (activeTaskTitle ?? "写核心代码", "fallback")
     }
 
     nonisolated static func latestIncompleteTaskTitleForMock(allTasks: [TaskItem]) -> String? {
-        allTasks
-            .filter { !$0.isCompleted }
-            .max { lhs, rhs in
-                let lhsRecency = AppState.taskRecency(lhs)
-                let rhsRecency = AppState.taskRecency(rhs)
-                if lhsRecency == rhsRecency {
-                    return lhs.lastModified < rhs.lastModified
-                }
-                return lhsRecency < rhsRecency
-            }?
-            .title
+        AppState.latestIncompleteTask(in: allTasks)?.title
     }
 
     nonisolated private static func nonEmptyTitle(_ title: String?) -> String? {
