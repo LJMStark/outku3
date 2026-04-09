@@ -97,31 +97,34 @@ extension AppState {
 
     private func resolveCompanionPhase(triggerState: CompanionDialogueTriggerState) -> PetDialogueState {
         let context = triggerState.context
-        
-        let activeTaskTitle = FocusSessionService.shared.activeSession?.taskTitle
-        if activeTaskTitle != nil {
+
+        if FocusSessionService.shared.activeSession != nil {
             return .inTask
         }
-        
+
         if let next = context.nextAgendaItem, next.starts(with: "Now · ") {
             return .scheduleEvent
         }
-        
+
         let isEveningOrNight = TimeOfDay.current(at: context.currentTime) == .evening || TimeOfDay.current(at: context.currentTime) == .night
         let allCompleted = context.totalTasksToday > 0 && context.tasksCompletedToday >= context.totalTasksToday
-        
+
         if allCompleted || (isEveningOrNight && context.totalTasksToday > 0) {
             return .daySettled
         }
-        
+
         if TimeOfDay.current(at: context.currentTime) == .morning && context.tasksCompletedToday == 0 {
             return .morningPrep
         }
-        
+
         return .idle
     }
 
     func buildCompanionDialogueTriggerState(at now: Date = Date()) async -> CompanionDialogueTriggerState {
+        let activeTask = Self.resolveActiveTask(
+            activeSession: FocusSessionService.shared.activeSession,
+            tasks: tasks
+        )
         let todayTasks = tasksForToday()
             .sorted { lhs, rhs in
                 if lhs.isCompleted != rhs.isCompleted {
@@ -162,12 +165,12 @@ extension AppState {
             currentSceneName: pet.scene.rawValue,
             hardwareConnected: BLEService.shared.connectionState.isConnected,
             nextAgendaItem: nextAgendaItem,
-            activeTaskTitle: FocusSessionService.shared.activeSession?.taskTitle,
+            activeTaskTitle: activeTask.taskTitle,
             topTaskTitles: topTaskTitles,
             userDefinedLearnText: learnText.isEmpty ? nil : learnText
         )
 
-        let activeTaskId = FocusSessionService.shared.activeSession?.taskId ?? ""
+        let activeTaskId = activeTask.taskId ?? ""
 
         return CompanionDialogueTriggerState(
             fingerprint: companionDialogueFingerprint(
@@ -179,6 +182,7 @@ extension AppState {
                 focusMinutes: focusMinutes,
                 energyBlocks: energyBlocks,
                 activeTaskId: activeTaskId,
+                activeTaskTitle: activeTask.taskTitle,
                 learnText: context.userDefinedLearnText
             ),
             context: context
@@ -194,6 +198,7 @@ extension AppState {
         focusMinutes: Int,
         energyBlocks: Int,
         activeTaskId: String,
+        activeTaskTitle: String?,
         learnText: String?
     ) -> String {
         let todayProgress = Self.companionTaskProgressSnapshot(from: todayTasks)
@@ -213,6 +218,7 @@ extension AppState {
             "focusMinutes=\(focusMinutes)",
             "energyBlocks=\(energyBlocks)",
             "activeTask=\(activeTaskId)",
+            "activeTaskTitle=\(activeTaskTitle ?? "")",
             "nextAgenda=\(nextAgendaItem ?? "")",
             "topTasks=\(topTaskTitles.joined(separator: "|"))",
             "promptVersion=\(OpenAIService.companionPromptVersion)",
@@ -258,6 +264,39 @@ extension AppState {
         let total = todayTasks.count
         let rate = total > 0 ? Double(completed) / Double(total) : 0
         return (completed, total, rate)
+    }
+
+    nonisolated static func resolveActiveTask(
+        activeSession: FocusSession?,
+        tasks: [TaskItem]
+    ) -> (taskId: String?, taskTitle: String?) {
+        guard let activeSession else {
+            return (nil, nil)
+        }
+
+        if let taskTitle = resolveLatestTask(taskId: activeSession.taskId, in: tasks)?.title {
+            return (activeSession.taskId, taskTitle)
+        }
+
+        let taskTitle = activeSession.taskTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (activeSession.taskId, taskTitle.isEmpty ? nil : taskTitle)
+    }
+
+    nonisolated static func resolveLatestTask(taskId: String, in tasks: [TaskItem]) -> TaskItem? {
+        tasks
+            .filter { $0.id == taskId }
+            .max { lhs, rhs in
+                let lhsRecency = taskRecency(lhs)
+                let rhsRecency = taskRecency(rhs)
+                if lhsRecency == rhsRecency {
+                    return lhs.lastModified < rhs.lastModified
+                }
+                return lhsRecency < rhsRecency
+            }
+    }
+
+    nonisolated static func taskRecency(_ task: TaskItem) -> Date {
+        task.remoteUpdatedAt ?? task.lastModified
     }
 
     private static func homeCompanionDateKey(from date: Date) -> String {

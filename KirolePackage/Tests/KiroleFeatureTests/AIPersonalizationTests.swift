@@ -169,6 +169,47 @@ import Foundation
     #expect(progress.rate == 0.5)
 }
 
+@Test func testResolveActiveTaskPrefersLatestTaskSnapshot() async throws {
+    let activeSession = FocusSession(
+        taskId: "focus-task",
+        taskTitle: "Old Session Title"
+    )
+    let resolved = AppState.resolveActiveTask(
+        activeSession: activeSession,
+        tasks: [
+            TaskItem(
+                id: "focus-task",
+                title: "Old Task Snapshot",
+                lastModified: Date(timeIntervalSince1970: 100),
+                remoteUpdatedAt: Date(timeIntervalSince1970: 100)
+            ),
+            TaskItem(
+                id: "focus-task",
+                title: "Latest Synced Task",
+                lastModified: Date(timeIntervalSince1970: 120),
+                remoteUpdatedAt: Date(timeIntervalSince1970: 200)
+            )
+        ]
+    )
+
+    #expect(resolved.taskId == "focus-task")
+    #expect(resolved.taskTitle == "Latest Synced Task")
+}
+
+@Test func testResolveActiveTaskFallsBackToSessionSnapshot() async throws {
+    let activeSession = FocusSession(
+        taskId: "missing-task",
+        taskTitle: "Session Snapshot Title"
+    )
+    let resolved = AppState.resolveActiveTask(
+        activeSession: activeSession,
+        tasks: []
+    )
+
+    #expect(resolved.taskId == "missing-task")
+    #expect(resolved.taskTitle == "Session Snapshot Title")
+}
+
 @MainActor
 @Test func testPromptDebuggerTaskEncouragementBackfillsTaskCounts() async throws {
     let resolved = PromptDebuggerState.resolveTaskProgressForMock(
@@ -201,37 +242,49 @@ import Foundation
         lastModified: Date(timeIntervalSince1970: 200)
     )
 
-    let resolvedTitle = PromptDebuggerState.resolveTaskTitleForMock(
+    let resolvedTitle = PromptDebuggerState.resolveTaskDetailsForMock(
         type: .taskEncouragement,
         activeTaskTitle: nil,
         allTasks: [olderIncompleteTask, latestIncompleteTask, latestCompletedTask]
-    )
+    ).taskTitle
 
     #expect(resolvedTitle == "Latest Incomplete Task")
 }
 
+@Test func testPromptDebuggerTaskDetailsExposeResolutionSource() async throws {
+    let resolved = PromptDebuggerState.resolveTaskDetailsForMock(
+        type: .taskEncouragement,
+        activeTaskTitle: nil,
+        topTaskTitles: ["Top Task A"],
+        allTasks: []
+    )
+
+    #expect(resolved.taskTitle == "Top Task A")
+    #expect(resolved.source == "top-task")
+}
+
 @Test func testPromptDebuggerTaskEncouragementPrefersActiveTaskTitle() async throws {
-    let resolvedTitle = PromptDebuggerState.resolveTaskTitleForMock(
+    let resolvedTitle = PromptDebuggerState.resolveTaskDetailsForMock(
         type: .taskEncouragement,
         activeTaskTitle: "Current Focus Task",
         topTaskTitles: ["Top Task A", "Top Task B"],
         allTasks: [
             TaskItem(title: "Latest Incomplete Task", isCompleted: false, lastModified: Date(timeIntervalSince1970: 200))
         ]
-    )
+    ).taskTitle
 
     #expect(resolvedTitle == "Current Focus Task")
 }
 
 @Test func testPromptDebuggerTaskEncouragementFallsBackToTopTaskTitle() async throws {
-    let resolvedTitle = PromptDebuggerState.resolveTaskTitleForMock(
+    let resolvedTitle = PromptDebuggerState.resolveTaskDetailsForMock(
         type: .taskEncouragement,
         activeTaskTitle: nil,
         topTaskTitles: ["Top Task A", "Top Task B"],
         allTasks: [
             TaskItem(title: "Latest Incomplete Task", isCompleted: false, lastModified: Date(timeIntervalSince1970: 200))
         ]
-    )
+    ).taskTitle
 
     #expect(resolvedTitle == "Top Task A")
 }
@@ -258,11 +311,11 @@ import Foundation
 }
 
 @Test func testPromptDebuggerTaskEncouragementFallsBackWhenNoTaskExists() async throws {
-    let resolvedTitle = PromptDebuggerState.resolveTaskTitleForMock(
+    let resolvedTitle = PromptDebuggerState.resolveTaskDetailsForMock(
         type: .taskEncouragement,
         activeTaskTitle: nil,
         allTasks: []
-    )
+    ).taskTitle
 
     #expect(resolvedTitle == "写核心代码")
 }

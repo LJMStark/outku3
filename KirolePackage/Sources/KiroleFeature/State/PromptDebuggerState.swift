@@ -34,6 +34,14 @@ public final class PromptDebuggerState {
     ) async -> AIContext {
         let triggerState = await AppState.shared.buildCompanionDialogueTriggerState(at: Date())
         let c = triggerState.context
+        let currentTasks = AppState.shared.tasks
+        let activeSession = FocusSessionService.shared.activeSession
+        let resolvedActiveTask = AppState.resolveActiveTask(
+            activeSession: activeSession,
+            tasks: currentTasks
+        )
+        let latestResolvedTask = activeSession.flatMap { AppState.resolveLatestTask(taskId: $0.taskId, in: currentTasks) }
+        let latestIncompleteTask = Self.latestIncompleteTaskTitleForMock(allTasks: currentTasks)
         
         let newStyle = styleOverride ?? selectedMockStyle
         let newLearnText = testLearnText.trimmingCharacters(in: .whitespaces).isEmpty ? c.userDefinedLearnText : testLearnText
@@ -41,17 +49,18 @@ public final class PromptDebuggerState {
         // Actually modify context parameters if needed to SIMULATE the phase cleanly if the user's real schedule doesn't match
         var mockNextAgenda = c.nextAgendaItem
         let mockFocusTime = c.focusTimeToday
-        let mockActiveTask = Self.resolveTaskTitleForMock(
+        let mockTaskDetails = Self.resolveTaskDetailsForMock(
             type: type,
             activeTaskTitle: c.activeTaskTitle,
             topTaskTitles: c.topTaskTitles,
-            allTasks: AppState.shared.tasks
+            allTasks: currentTasks
         )
+        let mockActiveTask = mockTaskDetails.taskTitle
         let mockProgress = Self.resolveTaskProgressForMock(
             type: type,
             baseCompleted: c.tasksCompletedToday,
             baseTotal: c.totalTasksToday,
-            allTasks: AppState.shared.tasks
+            allTasks: currentTasks
         )
         let mockTasksCompleted = mockProgress.completed
         let mockTasksTotal = mockProgress.total
@@ -94,10 +103,11 @@ public final class PromptDebuggerState {
         lastMockSummary = """
         【触发时机】: \(type)
         【时间】: \(timeStr) (真实当前时间)
-        【任务进度】: \(mockTasksCompleted)/\(mockTasksTotal) 任务
+        【任务详情】: 传参任务=\(mockActiveTask ?? "无") | 命中来源=\(mockTaskDetails.source)
+        【真实链路】: taskId=\(resolvedActiveTask.taskId ?? "无") | 会话快照=\(activeSession?.taskTitle ?? "无") | 最新解析=\(resolvedActiveTask.taskTitle ?? "无") | 来源=\(latestResolvedTask == nil ? "focus session snapshot" : "tasks(taskId -> latest snapshot)")
+        【候选任务】: Top1=\(c.topTaskTitles.first ?? "无") | 最新未完成=\(latestIncompleteTask ?? "无") | 完成进度=\(mockTasksCompleted)/\(mockTasksTotal)
         【日程事件】: 今日 \(c.eventsToday) 个事件 (真实数据)
         【日程活动】: \(mockNextAgenda ?? "无")
-        【专注任务】: \(mockActiveTask ?? "没在专注")
         【近期表现】: \(Int(c.recentCompletionRate * 100))% 完成率, \(c.currentStreak)天连读
         【宠物心情】: \(c.petMood.rawValue)
         """
@@ -119,47 +129,43 @@ public final class PromptDebuggerState {
         return (completed, allTasks.count)
     }
 
-    nonisolated static func resolveTaskTitleForMock(
+    nonisolated static func resolveTaskDetailsForMock(
         type: AITextType,
         activeTaskTitle: String?,
         topTaskTitles: [String] = [],
         allTasks: [TaskItem]
-    ) -> String? {
+    ) -> (taskTitle: String?, source: String) {
         guard type == .taskEncouragement else {
-            return activeTaskTitle
+            return (activeTaskTitle, "current-context")
         }
 
         if let activeTaskTitle = nonEmptyTitle(activeTaskTitle) {
-            return activeTaskTitle
+            return (activeTaskTitle, "active-task")
         }
 
         if let topTaskTitle = topTaskTitles.compactMap(nonEmptyTitle).first {
-            return topTaskTitle
+            return (topTaskTitle, "top-task")
         }
 
         if let latestTaskTitle = latestIncompleteTaskTitleForMock(allTasks: allTasks) {
-            return latestTaskTitle
+            return (latestTaskTitle, "latest-incomplete")
         }
 
-        return activeTaskTitle ?? "写核心代码"
+        return (activeTaskTitle ?? "写核心代码", "fallback")
     }
 
     nonisolated static func latestIncompleteTaskTitleForMock(allTasks: [TaskItem]) -> String? {
         allTasks
             .filter { !$0.isCompleted }
             .max { lhs, rhs in
-                let lhsRecency = taskRecencyForMock(lhs)
-                let rhsRecency = taskRecencyForMock(rhs)
+                let lhsRecency = AppState.taskRecency(lhs)
+                let rhsRecency = AppState.taskRecency(rhs)
                 if lhsRecency == rhsRecency {
                     return lhs.lastModified < rhs.lastModified
                 }
                 return lhsRecency < rhsRecency
             }?
             .title
-    }
-
-    nonisolated static func taskRecencyForMock(_ task: TaskItem) -> Date {
-        task.remoteUpdatedAt ?? task.lastModified
     }
 
     nonisolated private static func nonEmptyTitle(_ title: String?) -> String? {
