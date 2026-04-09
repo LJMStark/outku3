@@ -122,6 +122,27 @@ import Foundation
     #expect(CompanionStyle.slacker.rawValue == "Slacker")
 }
 
+@Test func testCompanionModelOptionsUseExpectedOpenRouterIDs() async throws {
+    let modelIDs = OpenAIService.companionModelOptions.map(\.id)
+    #expect(modelIDs.count == 4)
+    #expect(modelIDs == [
+        "openai/gpt-5-chat",
+        "openai/gpt-4o",
+        "openai/gpt-4o-mini",
+        "openai/gpt-5.4"
+    ])
+}
+
+@MainActor
+@Test func testPromptDebuggerCanSwitchCompanionModelID() async throws {
+    let debuggerState = PromptDebuggerState.shared
+    let original = debuggerState.selectedCompanionModelID
+    defer { debuggerState.selectedCompanionModelID = original }
+
+    debuggerState.selectedCompanionModelID = "openai/gpt-4o"
+    #expect(debuggerState.selectedCompanionModelID == "openai/gpt-4o")
+}
+
 @MainActor
 @Test func testPromptDebuggerMockContextHonorsVisibleStyleSelection() async throws {
     let debuggerState = PromptDebuggerState.shared
@@ -187,6 +208,53 @@ import Foundation
     )
 
     #expect(resolvedTitle == "Latest Incomplete Task")
+}
+
+@Test func testPromptDebuggerTaskEncouragementPrefersActiveTaskTitle() async throws {
+    let resolvedTitle = PromptDebuggerState.resolveTaskTitleForMock(
+        type: .taskEncouragement,
+        activeTaskTitle: "Current Focus Task",
+        topTaskTitles: ["Top Task A", "Top Task B"],
+        allTasks: [
+            TaskItem(title: "Latest Incomplete Task", isCompleted: false, lastModified: Date(timeIntervalSince1970: 200))
+        ]
+    )
+
+    #expect(resolvedTitle == "Current Focus Task")
+}
+
+@Test func testPromptDebuggerTaskEncouragementFallsBackToTopTaskTitle() async throws {
+    let resolvedTitle = PromptDebuggerState.resolveTaskTitleForMock(
+        type: .taskEncouragement,
+        activeTaskTitle: nil,
+        topTaskTitles: ["Top Task A", "Top Task B"],
+        allTasks: [
+            TaskItem(title: "Latest Incomplete Task", isCompleted: false, lastModified: Date(timeIntervalSince1970: 200))
+        ]
+    )
+
+    #expect(resolvedTitle == "Top Task A")
+}
+
+@Test func testPromptDebuggerTaskRecencyPrefersRemoteUpdatedAt() async throws {
+    let localNewerButRemoteOlder = TaskItem(
+        title: "Local Timestamp Newer",
+        isCompleted: false,
+        lastModified: Date(timeIntervalSince1970: 300),
+        remoteUpdatedAt: Date(timeIntervalSince1970: 100)
+    )
+    let remoteActuallyNewer = TaskItem(
+        title: "Remote Timestamp Newer",
+        isCompleted: false,
+        lastModified: Date(timeIntervalSince1970: 150),
+        remoteUpdatedAt: Date(timeIntervalSince1970: 400)
+    )
+
+    let resolvedTitle = PromptDebuggerState.latestIncompleteTaskTitleForMock(
+        allTasks: [localNewerButRemoteOlder, remoteActuallyNewer]
+    )
+
+    #expect(resolvedTitle == "Remote Timestamp Newer")
 }
 
 @Test func testPromptDebuggerTaskEncouragementFallsBackWhenNoTaskExists() async throws {

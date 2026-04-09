@@ -1,15 +1,49 @@
 import Foundation
 
+public struct CompanionModelOption: Identifiable, Hashable, Sendable {
+    public let id: String
+    public let displayName: String
+    public let note: String
+
+    public init(id: String, displayName: String, note: String) {
+        self.id = id
+        self.displayName = displayName
+        self.note = note
+    }
+}
+
 // MARK: - OpenAI Service
 
 /// AI API client (via OpenRouter) for generating haikus and companion text
 public actor OpenAIService {
     public static let shared = OpenAIService()
     public static let companionPromptVersion = "2026-04-07-complete-100c-v1"
+    public static let defaultChatModelID = "openai/gpt-5-chat"
+    public static let companionModelOptions: [CompanionModelOption] = [
+        CompanionModelOption(
+            id: "openai/gpt-5-chat",
+            displayName: "GPT-5 Chat (默认主力)",
+            note: "对话能力最稳，适合宠物陪伴语气。"
+        ),
+        CompanionModelOption(
+            id: "openai/gpt-4o",
+            displayName: "GPT-4o (替代 5.4-mini)",
+            note: "语气自然，时延和质量平衡。"
+        ),
+        CompanionModelOption(
+            id: "openai/gpt-4o-mini",
+            displayName: "GPT-4o Mini (替代 5-mini)",
+            note: "响应更快，成本更低。"
+        ),
+        CompanionModelOption(
+            id: "openai/gpt-5.4",
+            displayName: "GPT-5.4 (高质量备选)",
+            note: "复杂语境下输出更稳定。"
+        )
+    ]
 
     private let networkClient = NetworkClient.shared
     private let baseURL = "https://openrouter.ai/api/v1"
-    private let model = "openai/gpt-4.1-mini"
 
     private var apiKey: String = ""
 
@@ -41,12 +75,16 @@ public actor OpenAIService {
 
     /// Generate AI companion text based on type and context
     public func generateCompanionText(type: AITextType, context: AIContext) async throws -> String {
+        let modelID = await MainActor.run {
+            PromptDebuggerState.shared.selectedCompanionModelID
+        }
         let sysPrompt = await buildCompanionSystemPrompt(context: context)
         let content = try await chatCompletion(
             systemPrompt: sysPrompt,
             userPrompt: buildCompanionUserPrompt(type: type, context: context),
             temperature: 0.9,
-            maxTokens: 80
+            maxTokens: 80,
+            model: modelID
         )
         return content.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -111,7 +149,8 @@ public actor OpenAIService {
         systemPrompt: String,
         userPrompt: String,
         temperature: Double,
-        maxTokens: Int
+        maxTokens: Int,
+        model: String = OpenAIService.defaultChatModelID
     ) async throws -> String {
         guard !apiKey.isEmpty else {
             throw OpenAIError.notConfigured

@@ -16,6 +16,9 @@ public final class PromptDebuggerState {
     
     /// User provided phrase/keywords for the AI companion to learn during tests
     public var testLearnText: String = ""
+
+    /// Selected OpenRouter model id for companion dialogue generation.
+    public var selectedCompanionModelID: String = OpenAIService.defaultChatModelID
     
     /// The style currently selected in the debugger UI for editing.
     public var selectedMockStyle: CompanionStyle = .companion
@@ -41,6 +44,7 @@ public final class PromptDebuggerState {
         let mockActiveTask = Self.resolveTaskTitleForMock(
             type: type,
             activeTaskTitle: c.activeTaskTitle,
+            topTaskTitles: c.topTaskTitles,
             allTasks: AppState.shared.tasks
         )
         let mockProgress = Self.resolveTaskProgressForMock(
@@ -118,10 +122,19 @@ public final class PromptDebuggerState {
     nonisolated static func resolveTaskTitleForMock(
         type: AITextType,
         activeTaskTitle: String?,
+        topTaskTitles: [String] = [],
         allTasks: [TaskItem]
     ) -> String? {
         guard type == .taskEncouragement else {
             return activeTaskTitle
+        }
+
+        if let activeTaskTitle = nonEmptyTitle(activeTaskTitle) {
+            return activeTaskTitle
+        }
+
+        if let topTaskTitle = topTaskTitles.compactMap(nonEmptyTitle).first {
+            return topTaskTitle
         }
 
         if let latestTaskTitle = latestIncompleteTaskTitleForMock(allTasks: allTasks) {
@@ -135,9 +148,24 @@ public final class PromptDebuggerState {
         allTasks
             .filter { !$0.isCompleted }
             .max { lhs, rhs in
-                lhs.lastModified < rhs.lastModified
+                let lhsRecency = taskRecencyForMock(lhs)
+                let rhsRecency = taskRecencyForMock(rhs)
+                if lhsRecency == rhsRecency {
+                    return lhs.lastModified < rhs.lastModified
+                }
+                return lhsRecency < rhsRecency
             }?
             .title
+    }
+
+    nonisolated static func taskRecencyForMock(_ task: TaskItem) -> Date {
+        task.remoteUpdatedAt ?? task.lastModified
+    }
+
+    nonisolated private static func nonEmptyTitle(_ title: String?) -> String? {
+        guard let title else { return nil }
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     private init() {}

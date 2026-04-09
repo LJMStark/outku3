@@ -70,6 +70,50 @@ struct PromptDebuggerSheet: View {
                 .onChange(of: selectedPersona) { _, newPersona in
                     loadDraft(for: newPersona)
                 }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("宠物对话模型 (实时生效):")
+                        .font(.caption)
+                        .foregroundStyle(theme.colors.secondaryText)
+
+                    Menu {
+                        ForEach(OpenAIService.companionModelOptions) { option in
+                            Button {
+                                state.selectedCompanionModelID = option.id
+                            } label: {
+                                if option.id == state.selectedCompanionModelID {
+                                    Label("\(option.displayName)（当前）", systemImage: "checkmark")
+                                } else {
+                                    Text(option.displayName)
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                                .font(.system(size: 12, weight: .semibold))
+                            Text("切换模型")
+                                .font(.system(size: 14, weight: .semibold))
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 9)
+                        .background(theme.colors.accent.opacity(0.16))
+                        .foregroundStyle(theme.colors.accent)
+                        .clipShape(Capsule())
+                    }
+
+                    Text("当前模型代号: \(state.selectedCompanionModelID)")
+                        .font(.caption2)
+                        .foregroundStyle(theme.colors.secondaryText)
+                        .textSelection(.enabled)
+
+                    if let selectedModel = OpenAIService.companionModelOptions.first(where: { $0.id == state.selectedCompanionModelID }) {
+                        Text(selectedModel.note)
+                            .font(.caption2)
+                            .foregroundStyle(theme.colors.secondaryText.opacity(0.9))
+                    }
+                }
+                .padding(.horizontal)
                 
                 // 2. Text Editor
                 VStack(alignment: .leading, spacing: 6) {
