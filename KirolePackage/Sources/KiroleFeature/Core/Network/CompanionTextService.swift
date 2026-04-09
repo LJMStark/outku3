@@ -452,6 +452,7 @@ public final class CompanionTextService {
             currentSceneName: baseContext.currentSceneName,
             hardwareConnected: baseContext.hardwareConnected,
             nextAgendaItem: baseContext.nextAgendaItem,
+            activeTaskTitle: baseContext.activeTaskTitle,
             topTaskTitles: baseContext.topTaskTitles,
             episodicMemories: baseContext.episodicMemories,
             dimensionalEmotion: baseContext.dimensionalEmotion,

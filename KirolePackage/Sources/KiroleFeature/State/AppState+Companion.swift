@@ -139,6 +139,7 @@ extension AppState {
             .filter { !$0.isCompleted }
             .prefix(3)
             .map(\.title)
+        let todayProgress = Self.companionTaskProgressSnapshot(from: todayTasks)
         let nextAgendaItem = companionNextAgendaItem(from: todayEvents, fallbackTasks: topTaskTitles, now: now)
         let focusMinutes = Int(FocusSessionService.shared.statistics.todayFocusTime / 60)
         let energyBlocks = await localStorage.loadEnergyBlocks()
@@ -151,11 +152,11 @@ extension AppState {
             petName: pet.name,
             petMood: pet.mood,
             currentTime: now,
-            tasksCompletedToday: statistics.todayCompleted,
-            totalTasksToday: statistics.todayTotal,
+            tasksCompletedToday: todayProgress.completed,
+            totalTasksToday: todayProgress.total,
             eventsToday: todayEvents.count,
             currentStreak: streak.currentStreak,
-            recentCompletionRate: statistics.todayPercentage,
+            recentCompletionRate: todayProgress.rate,
             focusTimeToday: focusMinutes,
             energyBlocks: energyBlocks,
             currentSceneName: pet.scene.rawValue,
@@ -195,6 +196,8 @@ extension AppState {
         activeTaskId: String,
         learnText: String?
     ) -> String {
+        let todayProgress = Self.companionTaskProgressSnapshot(from: todayTasks)
+
         var parts: [String] = [
             "date=\(Self.homeCompanionDateKey(from: now))",
             "bucket=\(TimeOfDay.current(at: now).rawValue)",
@@ -204,8 +207,8 @@ extension AppState {
             "petMood=\(pet.mood.rawValue)",
             "petScene=\(pet.scene.rawValue)",
             "streak=\(streak.currentStreak)",
-            "todayCompleted=\(statistics.todayCompleted)",
-            "todayTotal=\(statistics.todayTotal)",
+            "todayCompleted=\(todayProgress.completed)",
+            "todayTotal=\(todayProgress.total)",
             "eventsToday=\(todayEvents.count)",
             "focusMinutes=\(focusMinutes)",
             "energyBlocks=\(energyBlocks)",
@@ -248,6 +251,13 @@ extension AppState {
         }
 
         return nil
+    }
+
+    static func companionTaskProgressSnapshot(from todayTasks: [TaskItem]) -> (completed: Int, total: Int, rate: Double) {
+        let completed = todayTasks.filter(\.isCompleted).count
+        let total = todayTasks.count
+        let rate = total > 0 ? Double(completed) / Double(total) : 0
+        return (completed, total, rate)
     }
 
     private static func homeCompanionDateKey(from date: Date) -> String {

@@ -39,6 +39,14 @@ public final class PromptDebuggerState {
         var mockNextAgenda = c.nextAgendaItem
         let mockFocusTime = c.focusTimeToday
         var mockActiveTask = c.activeTaskTitle
+        let mockProgress = Self.resolveTaskProgressForMock(
+            type: type,
+            baseCompleted: c.tasksCompletedToday,
+            baseTotal: c.totalTasksToday,
+            allTasks: AppState.shared.tasks
+        )
+        let mockTasksCompleted = mockProgress.completed
+        let mockTasksTotal = mockProgress.total
         
         if type == .taskEncouragement && mockActiveTask == nil {
             mockActiveTask = "写核心代码"
@@ -55,8 +63,8 @@ public final class PromptDebuggerState {
             petName: c.petName,
             petMood: c.petMood,
             currentTime: c.currentTime,
-            tasksCompletedToday: c.tasksCompletedToday,
-            totalTasksToday: c.totalTasksToday,
+            tasksCompletedToday: mockTasksCompleted,
+            totalTasksToday: mockTasksTotal,
             eventsToday: c.eventsToday,
             currentStreak: c.currentStreak,
             recentCompletionRate: c.recentCompletionRate,
@@ -82,7 +90,7 @@ public final class PromptDebuggerState {
         lastMockSummary = """
         【触发时机】: \(type)
         【时间】: \(timeStr) (真实当前时间)
-        【今日进度】: \(c.tasksCompletedToday)/\(c.totalTasksToday) 任务 (真实数据)
+        【任务进度】: \(mockTasksCompleted)/\(mockTasksTotal) 任务
         【日程事件】: 今日 \(c.eventsToday) 个事件 (真实数据)
         【日程活动】: \(mockNextAgenda ?? "无")
         【专注任务】: \(mockActiveTask ?? "没在专注")
@@ -91,6 +99,20 @@ public final class PromptDebuggerState {
         """
         
         return realContext
+    }
+
+    nonisolated static func resolveTaskProgressForMock(
+        type: AITextType,
+        baseCompleted: Int,
+        baseTotal: Int,
+        allTasks: [TaskItem]
+    ) -> (completed: Int, total: Int) {
+        guard type == .taskEncouragement, baseTotal == 0, !allTasks.isEmpty else {
+            return (baseCompleted, baseTotal)
+        }
+
+        let completed = allTasks.filter(\.isCompleted).count
+        return (completed, allTasks.count)
     }
 
     private init() {}

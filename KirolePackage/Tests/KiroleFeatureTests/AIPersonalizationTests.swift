@@ -136,6 +136,34 @@ import Foundation
     #expect(debuggerState.selectedMockStyle == .companion)
 }
 
+@MainActor
+@Test func testCompanionTriggerStateUsesFreshTaskSnapshot() async throws {
+    let progress = AppState.companionTaskProgressSnapshot(from: [
+        TaskItem(title: "Today Pending", isCompleted: false, dueDate: Date()),
+        TaskItem(title: "Today Done", isCompleted: true, dueDate: Date())
+    ])
+
+    #expect(progress.completed == 1)
+    #expect(progress.total == 2)
+    #expect(progress.rate == 0.5)
+}
+
+@MainActor
+@Test func testPromptDebuggerTaskEncouragementBackfillsTaskCounts() async throws {
+    let resolved = PromptDebuggerState.resolveTaskProgressForMock(
+        type: .taskEncouragement,
+        baseCompleted: 0,
+        baseTotal: 0,
+        allTasks: [
+            TaskItem(title: "Backlog Pending", isCompleted: false, dueDate: nil),
+            TaskItem(title: "Backlog Done", isCompleted: true, dueDate: nil)
+        ]
+    )
+
+    #expect(resolved.completed == 1)
+    #expect(resolved.total == 2)
+}
+
 // MARK: - Behavior Analyzer Tests
 
 @Test func testBehaviorAnalyzerEmptyData() async throws {
