@@ -38,7 +38,11 @@ public final class PromptDebuggerState {
         // Actually modify context parameters if needed to SIMULATE the phase cleanly if the user's real schedule doesn't match
         var mockNextAgenda = c.nextAgendaItem
         let mockFocusTime = c.focusTimeToday
-        var mockActiveTask = c.activeTaskTitle
+        let mockActiveTask = Self.resolveTaskTitleForMock(
+            type: type,
+            activeTaskTitle: c.activeTaskTitle,
+            allTasks: AppState.shared.tasks
+        )
         let mockProgress = Self.resolveTaskProgressForMock(
             type: type,
             baseCompleted: c.tasksCompletedToday,
@@ -47,10 +51,6 @@ public final class PromptDebuggerState {
         )
         let mockTasksCompleted = mockProgress.completed
         let mockTasksTotal = mockProgress.total
-        
-        if type == .taskEncouragement && mockActiveTask == nil {
-            mockActiveTask = "写核心代码"
-        }
         
         if type == .scheduleReminder && mockNextAgenda == nil {
             mockNextAgenda = "Now · 拔智齿"
@@ -113,6 +113,31 @@ public final class PromptDebuggerState {
 
         let completed = allTasks.filter(\.isCompleted).count
         return (completed, allTasks.count)
+    }
+
+    nonisolated static func resolveTaskTitleForMock(
+        type: AITextType,
+        activeTaskTitle: String?,
+        allTasks: [TaskItem]
+    ) -> String? {
+        guard type == .taskEncouragement else {
+            return activeTaskTitle
+        }
+
+        if let latestTaskTitle = latestIncompleteTaskTitleForMock(allTasks: allTasks) {
+            return latestTaskTitle
+        }
+
+        return activeTaskTitle ?? "写核心代码"
+    }
+
+    nonisolated static func latestIncompleteTaskTitleForMock(allTasks: [TaskItem]) -> String? {
+        allTasks
+            .filter { !$0.isCompleted }
+            .max { lhs, rhs in
+                lhs.lastModified < rhs.lastModified
+            }?
+            .title
     }
 
     private init() {}

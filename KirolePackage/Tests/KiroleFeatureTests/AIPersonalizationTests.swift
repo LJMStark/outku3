@@ -164,6 +164,41 @@ import Foundation
     #expect(resolved.total == 2)
 }
 
+@Test func testPromptDebuggerTaskEncouragementUsesLatestIncompleteTaskTitle() async throws {
+    let olderIncompleteTask = TaskItem(
+        title: "Older Incomplete Task",
+        lastModified: Date(timeIntervalSince1970: 100)
+    )
+    let latestIncompleteTask = TaskItem(
+        title: "Latest Incomplete Task",
+        isCompleted: false,
+        lastModified: Date(timeIntervalSince1970: 150)
+    )
+    let latestCompletedTask = TaskItem(
+        title: "Latest Completed Task",
+        isCompleted: true,
+        lastModified: Date(timeIntervalSince1970: 200)
+    )
+
+    let resolvedTitle = PromptDebuggerState.resolveTaskTitleForMock(
+        type: .taskEncouragement,
+        activeTaskTitle: "Active Session Task",
+        allTasks: [olderIncompleteTask, latestIncompleteTask, latestCompletedTask]
+    )
+
+    #expect(resolvedTitle == "Latest Incomplete Task")
+}
+
+@Test func testPromptDebuggerTaskEncouragementFallsBackWhenNoTaskExists() async throws {
+    let resolvedTitle = PromptDebuggerState.resolveTaskTitleForMock(
+        type: .taskEncouragement,
+        activeTaskTitle: nil,
+        allTasks: []
+    )
+
+    #expect(resolvedTitle == "写核心代码")
+}
+
 @Test func testTaskEncouragementPayloadPreservesActiveTaskTitle() async throws {
     let payload = CompanionTextService.taskEncouragementPromptPayload(taskTitle: "Review PR #42")
 
