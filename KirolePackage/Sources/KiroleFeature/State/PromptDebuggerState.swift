@@ -41,7 +41,8 @@ public final class PromptDebuggerState {
             tasks: currentTasks
         )
         let latestResolvedTask = activeSession.flatMap { AppState.resolveLatestTask(taskId: $0.taskId, in: currentTasks) }
-        let latestIncompleteTask = Self.latestIncompleteTaskTitleForMock(allTasks: currentTasks)
+        let latestIncompleteTaskItem = AppState.latestIncompleteTask(in: currentTasks)
+        let latestIncompleteTask = latestIncompleteTaskItem?.title
         
         let newStyle = styleOverride ?? selectedMockStyle
         let newLearnText = testLearnText.trimmingCharacters(in: .whitespaces).isEmpty ? c.userDefinedLearnText : testLearnText
@@ -100,12 +101,13 @@ public final class PromptDebuggerState {
         formatter.timeStyle = .short
         let timeStr = formatter.string(from: c.currentTime)
         
+        let isLocal = latestIncompleteTaskItem.map { AppState.isLocallyModified($0) ? "LOCAL" : "SYNC" } ?? "N/A"
         lastMockSummary = """
         【触发时机】: \(type)
         【时间】: \(timeStr) (真实当前时间)
         【任务详情】: 传参任务=\(mockActiveTask ?? "无") | 命中来源=\(mockTaskDetails.source)
         【真实链路】: taskId=\(resolvedActiveTask.taskId ?? "无") | 会话快照=\(activeSession?.taskTitle ?? "无") | 最新解析=\(resolvedActiveTask.taskTitle ?? "无") | 来源=\(latestResolvedTask == nil ? "focus session snapshot" : "tasks(taskId -> latest snapshot)")
-        【候选任务】: Top1=\(c.topTaskTitles.first ?? "无") | 最新未完成=\(latestIncompleteTask ?? "无") | 完成进度=\(mockTasksCompleted)/\(mockTasksTotal)
+        【候选任务】: Top1=\(c.topTaskTitles.first ?? "无") | 最新未完成=\(latestIncompleteTask ?? "无") (\(isLocal)) | 完成进度=\(mockTasksCompleted)/\(mockTasksTotal)
         【日程事件】: 今日 \(c.eventsToday) 个事件 (真实数据)
         【日程活动】: \(mockNextAgenda ?? "无")
         【近期表现】: \(Int(c.recentCompletionRate * 100))% 完成率, \(c.currentStreak)天连读

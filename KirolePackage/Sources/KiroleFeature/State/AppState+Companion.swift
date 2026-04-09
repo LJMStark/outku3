@@ -306,16 +306,32 @@ extension AppState {
         return max(remoteUpdatedAt, task.lastModified)
     }
 
+    /// Returns true if the task was modified locally by the user (not just refreshed by sync).
+    /// When Google/Apple sync runs, it sets `lastModified = remoteUpdatedAt`, making them equal.
+    /// A local user edit sets `lastModified = Date()` which diverges from `remoteUpdatedAt`.
+    nonisolated static func isLocallyModified(_ task: TaskItem) -> Bool {
+        guard let remoteUpdatedAt = task.remoteUpdatedAt else {
+            return true // No remote timestamp means it was created locally
+        }
+        // Allow 1-second tolerance for floating-point date comparison
+        return abs(task.lastModified.timeIntervalSince(remoteUpdatedAt)) > 1.0
+    }
+
+    /// Pick the most relevant incomplete task for encouragement.
+    /// Priority: locally-modified tasks first, then by lastModified desc.
+    /// Filters out completed and pendingDeletion tasks.
     nonisolated static func latestIncompleteTask(in tasks: [TaskItem]) -> TaskItem? {
         tasks
-            .filter { !$0.isCompleted }
+            .filter { !$0.isCompleted && !$0.pendingDeletion }
             .max { lhs, rhs in
-                let lhsRecency = taskRecency(lhs)
-                let rhsRecency = taskRecency(rhs)
-                if lhsRecency == rhsRecency {
-                    return lhs.lastModified < rhs.lastModified
+                let lhsLocal = isLocallyModified(lhs)
+                let rhsLocal = isLocallyModified(rhs)
+                // Locally-modified tasks always rank above sync-only tasks
+                if lhsLocal != rhsLocal {
+                    return !lhsLocal && rhsLocal
                 }
-                return lhsRecency < rhsRecency
+                // Within same category, pick by lastModified (most recent wins)
+                return lhs.lastModified < rhs.lastModified
             }
     }
 

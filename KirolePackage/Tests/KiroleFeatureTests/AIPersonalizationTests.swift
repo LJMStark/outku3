@@ -316,46 +316,73 @@ import Foundation
     #expect(resolvedTitle == "Top Task A")
 }
 
-@Test func testPromptDebuggerTaskRecencyPrefersTheNewerTimestamp() async throws {
-    let localNewerButRemoteOlder = TaskItem(
+@Test func testPromptDebuggerTaskRecencyPrefersLocallyModifiedTask() async throws {
+    // Task A: locally modified (lastModified diverges from remoteUpdatedAt by >1s)
+    let locallyModifiedTask = TaskItem(
         title: "Local Timestamp Newer",
         isCompleted: false,
         lastModified: Date(timeIntervalSince1970: 300),
         remoteUpdatedAt: Date(timeIntervalSince1970: 100)
     )
-    let remoteActuallyNewer = TaskItem(
+    // Task B: sync-only updated (lastModified == remoteUpdatedAt, set by sync engine)
+    let syncOnlyTask = TaskItem(
         title: "Remote Timestamp Newer",
         isCompleted: false,
-        lastModified: Date(timeIntervalSince1970: 150),
+        lastModified: Date(timeIntervalSince1970: 400),
         remoteUpdatedAt: Date(timeIntervalSince1970: 400)
     )
 
     let resolvedTitle = PromptDebuggerState.latestIncompleteTaskTitleForMock(
-        allTasks: [localNewerButRemoteOlder, remoteActuallyNewer]
+        allTasks: [locallyModifiedTask, syncOnlyTask]
     )
 
-    #expect(resolvedTitle == "Remote Timestamp Newer")
+    // Locally-modified task should always win over sync-only task
+    #expect(resolvedTitle == "Local Timestamp Newer")
 }
 
-@Test func testPromptDebuggerTaskRecencyFallsBackToLocalWhenItIsNewerThanRemote() async throws {
-    let staleRemoteTask = TaskItem(
-        title: "Stale Remote Task",
+@Test func testLatestIncompleteTaskFiltersPendingDeletion() async throws {
+    let normalTask = TaskItem(
+        title: "Normal Task",
         isCompleted: false,
-        lastModified: Date(timeIntervalSince1970: 100),
+        lastModified: Date(timeIntervalSince1970: 100)
+    )
+    let deletingTask = TaskItem(
+        title: "Deleting Task",
+        isCompleted: false,
+        pendingDeletion: true,
+        lastModified: Date(timeIntervalSince1970: 200)
+    )
+
+    let result = AppState.latestIncompleteTask(in: [normalTask, deletingTask])
+    #expect(result?.title == "Normal Task")
+}
+
+@Test func testIsLocallyModifiedDetectsUserEdits() async throws {
+    let localOnlyTask = TaskItem(
+        title: "Local Only",
+        isCompleted: false,
+        lastModified: Date(timeIntervalSince1970: 300)
+    )
+    // remoteUpdatedAt is nil -> locally created
+    #expect(AppState.isLocallyModified(localOnlyTask) == true)
+
+    let syncedTask = TaskItem(
+        title: "Synced",
+        isCompleted: false,
+        lastModified: Date(timeIntervalSince1970: 400),
         remoteUpdatedAt: Date(timeIntervalSince1970: 400)
     )
-    let locallyUpdatedTask = TaskItem(
-        title: "Locally Updated Task",
+    // lastModified == remoteUpdatedAt -> set by sync, not local edit
+    #expect(AppState.isLocallyModified(syncedTask) == false)
+
+    let editedAfterSync = TaskItem(
+        title: "Edited After Sync",
         isCompleted: false,
         lastModified: Date(timeIntervalSince1970: 500),
         remoteUpdatedAt: Date(timeIntervalSince1970: 300)
     )
-
-    let resolvedTitle = PromptDebuggerState.latestIncompleteTaskTitleForMock(
-        allTasks: [staleRemoteTask, locallyUpdatedTask]
-    )
-
-    #expect(resolvedTitle == "Locally Updated Task")
+    // lastModified diverges from remoteUpdatedAt -> local edit
+    #expect(AppState.isLocallyModified(editedAfterSync) == true)
 }
 
 @Test func testPromptDebuggerTaskEncouragementFallsBackWhenNoTaskExists() async throws {
