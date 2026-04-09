@@ -16,7 +16,7 @@ public actor HaikuService {
         context: HaikuContext,
         forceRefresh: Bool = false
     ) async -> Haiku {
-        let today = Date()
+        let today = context.currentTime
 
         if !forceRefresh, let cached = try? await localStorage.getCachedHaiku(for: today) {
             return cached

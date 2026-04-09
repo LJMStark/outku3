@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import KiroleFeature
 
-@Suite("Home Companion Presentation")
+@Suite("Home Companion Presentation", .serialized)
 struct HomeCompanionPresentationTests {
     @Test("New calendar day resets home companion to daily haiku")
     @MainActor
