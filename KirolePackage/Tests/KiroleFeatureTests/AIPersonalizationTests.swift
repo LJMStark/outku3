@@ -164,6 +164,14 @@ import Foundation
     #expect(resolved.total == 2)
 }
 
+@Test func testTaskEncouragementPayloadPreservesActiveTaskTitle() async throws {
+    let payload = CompanionTextService.taskEncouragementPromptPayload(taskTitle: "Review PR #42")
+
+    #expect(payload.activeTaskTitle == "Review PR #42")
+    #expect(payload.nextAgendaItem == "Review PR #42")
+    #expect(payload.memory.contains("Review PR #42"))
+}
+
 // MARK: - Behavior Analyzer Tests
 
 @Test func testBehaviorAnalyzerEmptyData() async throws {

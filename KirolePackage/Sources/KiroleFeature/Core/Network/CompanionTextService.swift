@@ -104,13 +104,14 @@ public final class CompanionTextService {
         taskTitle: String, petName: String, petMood: PetMood,
         userProfile: UserProfile = .default
     ) async -> String {
-        let memory = "The user has actively entered the focus task: \(taskTitle)"
+        let payload = Self.taskEncouragementPromptPayload(taskTitle: taskTitle)
         if let aiText = await generateAIText(
             type: .taskEncouragement,
             petName: petName, petMood: petMood,
             userProfile: userProfile,
-            episodicMemories: [memory],
-            nextAgendaItem: taskTitle
+            episodicMemories: [payload.memory],
+            nextAgendaItem: payload.nextAgendaItem,
+            activeTaskTitle: payload.activeTaskTitle
         ) {
             return aiText
         }
@@ -118,6 +119,18 @@ public final class CompanionTextService {
         return ["You can do this!", "Focus and conquer!", "One task at a time.", "Let's get it done!",
                 "Believe in yourself!", "Small steps, big wins.", "Stay focused!", "You're capable of this."]
             .randomElement() ?? "You've got this!"
+    }
+
+    nonisolated static func taskEncouragementPromptPayload(taskTitle: String) -> (
+        memory: String,
+        nextAgendaItem: String,
+        activeTaskTitle: String
+    ) {
+        (
+            memory: "The user has actively entered the focus task: \(taskTitle)",
+            nextAgendaItem: taskTitle,
+            activeTaskTitle: taskTitle
+        )
     }
 
     // MARK: - Settlement Message
@@ -354,6 +367,7 @@ public final class CompanionTextService {
         events: Int = 0, streak: Int = 0,
         episodicMemories: [String] = [],
         nextAgendaItem: String? = nil,
+        activeTaskTitle: String? = nil,
         focusTimeToday: Int = 0,
         energyBlocks: Int = 0
     ) async -> String? {
@@ -382,6 +396,7 @@ public final class CompanionTextService {
             focusTimeToday: focusTimeToday,
             energyBlocks: energyBlocks,
             nextAgendaItem: nextAgendaItem,
+            activeTaskTitle: activeTaskTitle,
             episodicMemories: episodicMemories
         )
 
