@@ -94,14 +94,18 @@ public actor NotionSyncEngine {
             }
 
             if localTask.syncStatus == .synced {
-                result.append(remoteTask)
+                result.append(Self.mergeRemoteTaskPreservingLocalFields(local: localTask, remote: remoteTask))
                 continue
             }
 
             // LWW
             let localTime = localTask.lastModified
             let remoteTime = remoteTask.remoteUpdatedAt ?? remoteTask.lastModified
-            result.append(remoteTime > localTime ? remoteTask : localTask)
+            if remoteTime > localTime {
+                result.append(Self.mergeRemoteTaskPreservingLocalFields(local: localTask, remote: remoteTask))
+            } else {
+                result.append(localTask)
+            }
         }
 
         // Keep remaining local tasks not matched
@@ -110,6 +114,20 @@ public actor NotionSyncEngine {
         }
 
         return result
+    }
+
+    /// Notion pages may not expose full task metadata in our current mapping.
+    /// Preserve local-only fields to avoid wiping user-entered values on sync.
+    nonisolated static func mergeRemoteTaskPreservingLocalFields(local: TaskItem, remote: TaskItem) -> TaskItem {
+        var merged = remote
+        merged.localId = local.localId
+        merged.dueDate = remote.dueDate ?? local.dueDate
+        merged.notes = remote.notes ?? local.notes
+        merged.microActions = remote.microActions ?? local.microActions
+        if remote.priority == .medium {
+            merged.priority = local.priority
+        }
+        return merged
     }
 
     // MARK: - Helpers
