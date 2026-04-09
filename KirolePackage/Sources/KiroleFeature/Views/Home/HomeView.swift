@@ -13,6 +13,18 @@ public struct HomeView: View {
 
     public init() {}
 
+    private var companionTaskRefreshKey: String {
+        let activeSession = FocusSessionService.shared.activeSession
+        let taskSignature = appState.tasks
+            .sorted { $0.id < $1.id }
+            .map { task in
+                let recency = AppState.taskRecency(task).timeIntervalSince1970
+                return "\(task.id)|\(task.title)|\(task.isCompleted ? 1 : 0)|\(task.pendingDeletion ? 1 : 0)|\(recency)"
+            }
+            .joined(separator: "||")
+        return "\(activeSession?.taskId ?? "")||\(activeSession?.taskTitle ?? "")||\(taskSignature)"
+    }
+
     public var body: some View {
         ZStack(alignment: .bottomTrailing) {
             VStack(spacing: 0) {
@@ -103,7 +115,7 @@ public struct HomeView: View {
             guard scenePhase == .active else { return }
             await refreshVisibleHomeCompanion()
         }
-        .onChange(of: FocusSessionService.shared.activeSession?.taskId) { _, _ in
+        .onChange(of: companionTaskRefreshKey) { _, _ in
             Task {
                 await appState.refreshSharedPetDialogueIfNeeded()
                 await appState.refreshHomeCompanionPresentation()

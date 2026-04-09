@@ -316,7 +316,7 @@ import Foundation
     #expect(resolvedTitle == "Top Task A")
 }
 
-@Test func testPromptDebuggerTaskRecencyPrefersRemoteUpdatedAt() async throws {
+@Test func testPromptDebuggerTaskRecencyPrefersTheNewerTimestamp() async throws {
     let localNewerButRemoteOlder = TaskItem(
         title: "Local Timestamp Newer",
         isCompleted: false,
@@ -335,6 +335,27 @@ import Foundation
     )
 
     #expect(resolvedTitle == "Remote Timestamp Newer")
+}
+
+@Test func testPromptDebuggerTaskRecencyFallsBackToLocalWhenItIsNewerThanRemote() async throws {
+    let staleRemoteTask = TaskItem(
+        title: "Stale Remote Task",
+        isCompleted: false,
+        lastModified: Date(timeIntervalSince1970: 100),
+        remoteUpdatedAt: Date(timeIntervalSince1970: 400)
+    )
+    let locallyUpdatedTask = TaskItem(
+        title: "Locally Updated Task",
+        isCompleted: false,
+        lastModified: Date(timeIntervalSince1970: 500),
+        remoteUpdatedAt: Date(timeIntervalSince1970: 300)
+    )
+
+    let resolvedTitle = PromptDebuggerState.latestIncompleteTaskTitleForMock(
+        allTasks: [staleRemoteTask, locallyUpdatedTask]
+    )
+
+    #expect(resolvedTitle == "Locally Updated Task")
 }
 
 @Test func testPromptDebuggerTaskEncouragementFallsBackWhenNoTaskExists() async throws {

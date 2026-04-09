@@ -300,7 +300,10 @@ extension AppState {
     }
 
     nonisolated static func taskRecency(_ task: TaskItem) -> Date {
-        task.remoteUpdatedAt ?? task.lastModified
+        guard let remoteUpdatedAt = task.remoteUpdatedAt else {
+            return task.lastModified
+        }
+        return max(remoteUpdatedAt, task.lastModified)
     }
 
     nonisolated static func latestIncompleteTask(in tasks: [TaskItem]) -> TaskItem? {
