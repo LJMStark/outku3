@@ -699,6 +699,46 @@ struct BLEProtocolTests {
         #expect(event == nil)
     }
 
+    @Test("BLEEventHandler resolves newest task when duplicate IDs exist")
+    func bleEventHandlerResolvesNewestTaskByRecency() {
+        let taskId = "dup-task"
+        let older = TaskItem(
+            id: taskId,
+            title: "Old Title",
+            lastModified: Date(timeIntervalSince1970: 100),
+            remoteUpdatedAt: Date(timeIntervalSince1970: 100)
+        )
+        let newer = TaskItem(
+            id: taskId,
+            title: "New Title",
+            lastModified: Date(timeIntervalSince1970: 110),
+            remoteUpdatedAt: Date(timeIntervalSince1970: 200)
+        )
+
+        let resolved = BLEEventHandler.resolveTask(taskId: taskId, in: [older, newer])
+        #expect(resolved?.title == "New Title")
+    }
+
+    @Test("BLEEventHandler resolves by lastModified when remoteUpdatedAt missing")
+    func bleEventHandlerResolvesByLastModifiedFallback() {
+        let taskId = "dup-task-no-remote"
+        let older = TaskItem(
+            id: taskId,
+            title: "Old Local",
+            lastModified: Date(timeIntervalSince1970: 100),
+            remoteUpdatedAt: nil
+        )
+        let newer = TaskItem(
+            id: taskId,
+            title: "New Local",
+            lastModified: Date(timeIntervalSince1970: 200),
+            remoteUpdatedAt: nil
+        )
+
+        let resolved = BLEEventHandler.resolveTask(taskId: taskId, in: [older, newer])
+        #expect(resolved?.title == "New Local")
+    }
+
     // MARK: - EventLogType rawByte Round-Trip Tests
 
     @Test("EventLogType rawByte round-trip for all types")

@@ -203,7 +203,7 @@ import Foundation
 
     let resolvedTitle = PromptDebuggerState.resolveTaskTitleForMock(
         type: .taskEncouragement,
-        activeTaskTitle: "Active Session Task",
+        activeTaskTitle: nil,
         allTasks: [olderIncompleteTask, latestIncompleteTask, latestCompletedTask]
     )
 

@@ -118,7 +118,7 @@ public enum BLEEventHandler {
     /// EnterTaskIn: 生成 TaskInPage 并发送到设备
     private static func handleEnterTaskIn(_ eventLog: EventLog, service: BLEService) {
         guard let taskId = eventLog.taskId,
-              let task = AppState.shared.tasks.first(where: { $0.id == taskId }) else {
+              let task = resolveTask(taskId: taskId) else {
             return
         }
 
@@ -140,7 +140,7 @@ public enum BLEEventHandler {
     /// CompleteTask: 标记任务为已完成
     private static func handleCompleteTask(_ eventLog: EventLog) {
         guard let taskId = eventLog.taskId,
-              let task = AppState.shared.tasks.first(where: { $0.id == taskId }),
+              let task = resolveTask(taskId: taskId),
               !task.isCompleted else {
             return
         }
@@ -282,7 +282,7 @@ public enum BLEEventHandler {
         switch eventLog.eventType {
         case .enterTaskIn:
             if let taskId = eventLog.taskId {
-                let taskTitle = AppState.shared.tasks.first { $0.id == taskId }?.title ?? "Unknown Task"
+                let taskTitle = resolveTask(taskId: taskId)?.title ?? "Unknown Task"
                 await focusService.startSession(
                     taskId: taskId,
                     taskTitle: taskTitle,
@@ -303,5 +303,22 @@ public enum BLEEventHandler {
         default:
             break
         }
+    }
+
+    nonisolated static func resolveTask(taskId: String, in tasks: [TaskItem]) -> TaskItem? {
+        tasks
+            .filter { $0.id == taskId }
+            .max { lhs, rhs in
+                let lhsRecency = lhs.remoteUpdatedAt ?? lhs.lastModified
+                let rhsRecency = rhs.remoteUpdatedAt ?? rhs.lastModified
+                if lhsRecency == rhsRecency {
+                    return lhs.lastModified < rhs.lastModified
+                }
+                return lhsRecency < rhsRecency
+            }
+    }
+
+    private static func resolveTask(taskId: String) -> TaskItem? {
+        resolveTask(taskId: taskId, in: AppState.shared.tasks)
     }
 }
