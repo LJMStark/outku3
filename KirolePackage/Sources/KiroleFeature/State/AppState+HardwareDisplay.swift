@@ -1,0 +1,171 @@
+import Foundation
+
+extension AppState {
+    func registerUsageActivity(now: Date = Date()) async {
+        let savedConsecutiveDays = await localStorage.loadConsecutiveDays()
+        let savedLastUsageDate = await localStorage.loadLastUsageDate()
+        let resolvedCharacter = CompanionCharacter.fromProductStyle(userProfile.companionStyle) ?? userProfile.companionCharacter
+
+        var overallUsage = ConsecutiveUsageProgress(
+            currentStreak: savedConsecutiveDays,
+            lastUsedDate: savedLastUsageDate
+        )
+        if savedConsecutiveDays > 0, savedLastUsageDate == nil {
+            overallUsage.lastUsedDate = now
+            await localStorage.saveLastUsageDate(now)
+        }
+        let didAdvanceOverallUsage = overallUsage.registerUse(on: now)
+        if didAdvanceOverallUsage {
+            await localStorage.saveConsecutiveDays(overallUsage.currentStreak)
+            await localStorage.saveLastUsageDate(overallUsage.lastUsedDate)
+        }
+
+        var usageState = (try? await localStorage.loadCompanionUsageState()) ?? CompanionUsageState()
+        var characterUsage = usageState.progress(for: resolvedCharacter)
+        let didAdvanceCharacterUsage = characterUsage.registerUse(on: now)
+        if didAdvanceCharacterUsage {
+            usageState.setProgress(characterUsage, for: resolvedCharacter)
+            do {
+                try await localStorage.saveCompanionUsageState(usageState)
+            } catch {
+                reportPersistenceError(error, operation: "save", target: "companion_usage_state.json")
+            }
+        }
+
+        let updatedStage = IntimacyStage.from(bindingDays: characterUsage.totalUsedDays)
+        if userProfile.companionCharacter != resolvedCharacter || userProfile.intimacyStage != updatedStage {
+            var updatedProfile = userProfile
+            updatedProfile.companionCharacter = resolvedCharacter
+            updatedProfile.intimacyStage = updatedStage
+            userProfile = updatedProfile
+            do {
+                try await localStorage.saveUserProfile(updatedProfile)
+            } catch {
+                reportPersistenceError(error, operation: "save", target: "user_profile.json")
+            }
+        }
+    }
+
+    func currentDisplaySceneId(totalEnergyBottles: Int? = nil) async -> String {
+        let bottles: Int
+        if let totalEnergyBottles {
+            bottles = totalEnergyBottles
+        } else {
+            bottles = await localStorage.loadEnergyBottles()
+        }
+        return SceneUnlockService.shared.currentSceneId(energyBottles: bottles)
+    }
+
+    func handleAppDidBecomeActive(now: Date = Date()) async {
+        await registerUsageActivity(now: now)
+        if FocusSessionService.shared.activeSession == nil {
+            await syncIdleHardwareDisplay()
+        } else {
+            await syncFocusHardwareDisplay(session: FocusSessionService.shared.activeSession, now: now)
+        }
+    }
+
+    func handleHardwareWake(now: Date = Date()) async {
+        await registerUsageActivity(now: now)
+        if FocusSessionService.shared.activeSession == nil {
+            await syncIdleHardwareDisplay()
+        } else {
+            await syncFocusHardwareDisplay(session: FocusSessionService.shared.activeSession, now: now)
+        }
+    }
+
+    func handleHardwareSleep(now: Date = Date()) async {
+        let usageDays = await localStorage.loadConsecutiveDays()
+        let sceneId = await currentDisplaySceneId()
+        let topTaskTitles = tasksForToday()
+            .filter { !$0.isCompleted }
+            .prefix(3)
+            .map(\.title)
+        let upcomingEventTitles = events
+            .filter { $0.startTime >= now }
+            .sorted { $0.startTime < $1.startTime }
+            .prefix(2)
+            .map(\.title)
+        let config = await ScreensaverService.shared.getScreensaverConfig(
+            usageDays: usageDays,
+            currentSceneId: sceneId,
+            userProfile: userProfile,
+            topTaskTitles: topTaskTitles,
+            upcomingEventTitles: upcomingEventTitles
+        )
+
+        if BLEService.shared.connectionState.isConnected {
+            try? await BLEService.shared.sendScreensaverConfig(config)
+        }
+
+        #if DEBUG
+        if !SimulatorBridge.shared.isConnected {
+            SimulatorBridge.shared.connect()
+        }
+        SimulatorBridge.shared.sendScreensaver(config: config)
+        #endif
+    }
+
+    func syncFocusHardwareDisplay(session: FocusSession?, now: Date = Date()) async {
+        #if DEBUG
+        if !SimulatorBridge.shared.isConnected {
+            SimulatorBridge.shared.connect()
+        }
+
+        let focusPhase: FocusPhase
+        let focusBottles: Int
+        let elapsedMinutes: Int
+        if let session {
+            elapsedMinutes = max(0, Int(now.timeIntervalSince(session.startTime) / 60))
+            focusPhase = FocusPhase.from(elapsedMinutes: elapsedMinutes)
+            focusBottles = FocusEnergyCalculator.bottlesEarned(minutes: elapsedMinutes)
+        } else {
+            focusPhase = .idle
+            focusBottles = 0
+            elapsedMinutes = 0
+        }
+
+        SimulatorBridge.shared.sendFocusState(
+            session: session,
+            energyBottles: focusBottles,
+            focusPhase: focusPhase,
+            elapsedMinutes: elapsedMinutes,
+            taskTitle: session?.taskTitle
+        )
+        #endif
+    }
+
+    func syncIdleHardwareDisplay(totalEnergyBottles: Int? = nil) async {
+        let sceneId = await currentDisplaySceneId(totalEnergyBottles: totalEnergyBottles)
+        if BLEService.shared.connectionState.isConnected,
+           let displayScene = DisplayScene(rawValue: sceneId) {
+            try? await BLEService.shared.sendDisplayScene(displayScene)
+        }
+
+        #if DEBUG
+        if !SimulatorBridge.shared.isConnected {
+            SimulatorBridge.shared.connect()
+        }
+        SimulatorBridge.shared.sendPetStatus(
+            petName: userProfile.companionCharacter.displayName,
+            petMood: pet.mood.rawValue,
+            sceneId: sceneId,
+            characterId: userProfile.companionCharacter.rawValue
+        )
+        #endif
+    }
+
+    func handleFocusSessionDidEnd(totalEnergyBottles: Int, now: Date = Date()) async {
+        await syncFocusHardwareDisplay(session: nil, now: now)
+
+        #if DEBUG
+        if !SimulatorBridge.shared.isConnected {
+            SimulatorBridge.shared.connect()
+        }
+        let unlocks = SceneUnlockService.shared.fetchAvailableScenes(energyBottles: totalEnergyBottles, now: now)
+        SimulatorBridge.shared.sendSceneUnlocks(unlocks: unlocks)
+        #endif
+
+        await syncIdleHardwareDisplay(totalEnergyBottles: totalEnergyBottles)
+    }
+}

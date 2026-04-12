@@ -85,13 +85,12 @@ public enum BLEEventHandler {
                         context: "BLEEventHandler.deviceWake"
                     )
                 }
+                await AppState.shared.handleHardwareWake(now: eventLog.timestamp)
                 await BLESyncCoordinator.shared.performSync(force: false)
             }
 
         case .deviceSleep:
-            #if DEBUG
-            print("[BLEEventHandler] Device entering sleep mode")
-            #endif
+            await AppState.shared.handleHardwareSleep(now: eventLog.timestamp)
 
         case .lowBattery:
             if let level = eventLog.batteryLevel {
@@ -234,13 +233,17 @@ public enum BLEEventHandler {
     // MARK: - Event Log Handling
 
     /// 处理接收到的事件日志
-    static func handleEventLogs(_ logs: [EventLog], service: BLEService) async {
+    static func handleEventLogs(
+        _ logs: [EventLog],
+        service: BLEService,
+        focusService: FocusSessionService = .shared
+    ) async {
         Task {
             await persistEventLogs(logs)
         }
 
         for log in logs {
-            await handleFocusSessionEvent(log)
+            await handleFocusSessionEvent(log, focusService: focusService)
             service.onEventLogReceived?(log)
         }
     }
@@ -276,9 +279,10 @@ public enum BLEEventHandler {
     // MARK: - Focus Session Events
 
     /// 处理专注会话相关事件
-    private static func handleFocusSessionEvent(_ eventLog: EventLog) async {
-        let focusService = FocusSessionService.shared
-
+    private static func handleFocusSessionEvent(
+        _ eventLog: EventLog,
+        focusService: FocusSessionService
+    ) async {
         switch eventLog.eventType {
         case .enterTaskIn:
             if let taskId = eventLog.taskId {
@@ -286,18 +290,19 @@ public enum BLEEventHandler {
                 await focusService.startSession(
                     taskId: taskId,
                     taskTitle: taskTitle,
-                    mode: AppState.shared.focusEnforcementMode
+                    mode: AppState.shared.focusEnforcementMode,
+                    startTime: eventLog.timestamp
                 )
             }
 
         case .completeTask:
             if let taskId = eventLog.taskId {
-                focusService.completeTask(taskId: taskId)
+                focusService.completeTask(taskId: taskId, endTime: eventLog.timestamp)
             }
 
         case .skipTask:
             if let taskId = eventLog.taskId {
-                focusService.skipTask(taskId: taskId)
+                focusService.skipTask(taskId: taskId, endTime: eventLog.timestamp)
             }
 
         default:

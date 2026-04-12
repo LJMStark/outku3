@@ -30,6 +30,7 @@ public final class FocusSessionService {
     private let persistenceEnabled: Bool
     private var screenActivityTracker: ScreenActivityTracker?
     private var pendingSessionPersistenceTask: Task<Void, Never>?
+    private var focusDisplaySyncTask: Task<Void, Never>?
 
     // MARK: - Constants
 
@@ -82,38 +83,59 @@ public final class FocusSessionService {
         screenActivityTracker?.startTracking()
     }
 
+    private func startFocusDisplaySyncLoop() {
+        focusDisplaySyncTask?.cancel()
+        focusDisplaySyncTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await AppState.shared.syncFocusHardwareDisplay(session: self.activeSession)
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(60))
+                guard !Task.isCancelled else { return }
+                await AppState.shared.syncFocusHardwareDisplay(session: self.activeSession)
+            }
+        }
+    }
+
+    private func stopFocusDisplaySyncLoop() {
+        focusDisplaySyncTask?.cancel()
+        focusDisplaySyncTask = nil
+    }
+
     // MARK: - Session Management
 
     /// 开始新的专注会话（当收到 EnterTaskIn 事件时调用）
     public func startSession(
         taskId: String,
         taskTitle: String,
-        mode requestedMode: FocusEnforcementMode = .standard
+        mode requestedMode: FocusEnforcementMode = .standard,
+        startTime: Date = Date()
     ) async {
         // 如果有活跃会话，先结束它
         if activeSession != nil {
-            endSession(reason: .timeout)
+            endSession(reason: .timeout, endTime: startTime)
         }
 
         let protectionContext = await resolveProtectionContext(requestedMode: requestedMode)
         let session = FocusSession(
             taskId: taskId,
             taskTitle: taskTitle,
-            startTime: Date(),
+            startTime: startTime,
             mode: protectionContext.mode,
             protectionState: protectionContext.protectionState,
             interruptionSource: protectionContext.interruptionSource
         )
 
         activeSession = session
+        startFocusDisplaySyncLoop()
         screenActivityTracker?.markSessionStart()
         await waitForPendingSessionPersistence()
         await persistActiveSessionIfNeeded(session)
     }
 
     /// 结束当前专注会话（当收到 CompleteTask 或 SkipTask 事件时调用）
-    public func endSession(reason: FocusEndReason) {
+    public func endSession(reason: FocusEndReason, endTime: Date = Date()) {
         guard var session = activeSession else { return }
+        stopFocusDisplaySyncLoop()
 
         if session.protectionState == .protected {
             focusGuardService.clearShield()
@@ -124,7 +146,6 @@ public final class FocusSessionService {
             }
         }
 
-        let endTime = Date()
         session.endTime = endTime
         session.endReason = reason
 
@@ -142,31 +163,20 @@ public final class FocusSessionService {
             screenUnlockEvents: unlockEvents
         )
 
-        // 保存会话
-        todaySessions.append(session)
-        activeSession = nil
-
-        // 更新统计
-        updateStatistics()
-
-        // 持久化
-        scheduleSessionPersistence { [weak self] in
-            guard let self else { return }
-            await self.clearPersistedActiveSessionIfNeeded()
-            await self.saveSessions()
-        }
+        session.earnedEnergyBottles = earnedEnergyBottles(for: session.calculatedFocusTime)
+        completeSession(session, endTime: endTime, clearPersistedActiveSession: true)
     }
 
     /// 完成任务（短按滚轮）
-    public func completeTask(taskId: String) {
+    public func completeTask(taskId: String, endTime: Date = Date()) {
         guard let session = activeSession, session.taskId == taskId else { return }
-        endSession(reason: .completed)
+        endSession(reason: .completed, endTime: endTime)
     }
 
     /// 跳过任务（长按滚轮）
-    public func skipTask(taskId: String) {
+    public func skipTask(taskId: String, endTime: Date = Date()) {
         guard let session = activeSession, session.taskId == taskId else { return }
-        endSession(reason: .skipped)
+        endSession(reason: .skipped, endTime: endTime)
     }
 
     /// 设备断开连接时结束会话
@@ -343,6 +353,10 @@ public final class FocusSessionService {
         _ = await pendingSessionPersistenceTask?.result
     }
 
+    func waitForPendingPersistenceForTesting() async {
+        await waitForPendingSessionPersistence()
+    }
+
     private func persistActiveSessionIfNeeded(_ session: FocusSession) async {
         guard persistenceEnabled else { return }
 
@@ -421,15 +435,14 @@ public final class FocusSessionService {
             sessionEnd: endTime,
             screenUnlockEvents: []
         )
+        recovered.earnedEnergyBottles = earnedEnergyBottles(for: recovered.calculatedFocusTime)
         if wasShieldActive || recovered.protectionState == .protected {
             recovered.mode = .standard
             recovered.protectionState = .fallback
             recovered.interruptionSource = .recoveredOnLaunch
         }
 
-        todaySessions.append(recovered)
-        activeSession = nil
-        updateStatistics()
+        completeSession(recovered, endTime: endTime, clearPersistedActiveSession: false)
     }
 
     // MARK: - Protection Resolution
@@ -536,6 +549,43 @@ public final class FocusSessionService {
         }
 
         return focusTime
+    }
+
+    private func earnedEnergyBottles(for focusTime: TimeInterval?) -> Int {
+        let focusMinutes = Int((focusTime ?? 0) / 60)
+        return FocusEnergyCalculator.bottlesEarned(minutes: focusMinutes)
+    }
+
+    private func completeSession(
+        _ session: FocusSession,
+        endTime: Date,
+        clearPersistedActiveSession: Bool
+    ) {
+        todaySessions.append(session)
+        activeSession = nil
+        updateStatistics()
+
+        let bottlesToAdd = session.earnedEnergyBottles
+        scheduleSessionPersistence { [weak self] in
+            guard let self else { return }
+            let totalEnergyBottles = await self.updateStoredEnergyBottles(adding: bottlesToAdd)
+            if clearPersistedActiveSession {
+                await self.clearPersistedActiveSessionIfNeeded()
+            }
+            await self.saveSessions()
+            await AppState.shared.handleFocusSessionDidEnd(totalEnergyBottles: totalEnergyBottles, now: endTime)
+        }
+    }
+
+    private func updateStoredEnergyBottles(adding bottlesToAdd: Int) async -> Int {
+        guard bottlesToAdd > 0 else {
+            return await localStorage.loadEnergyBottles()
+        }
+
+        let current = await localStorage.loadEnergyBottles()
+        let totalEnergyBottles = current + bottlesToAdd
+        await localStorage.saveEnergyBottles(totalEnergyBottles)
+        return totalEnergyBottles
     }
 }
 
