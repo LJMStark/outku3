@@ -25,6 +25,9 @@ public struct ContentView: View {
             await authManager.initialize()
             appState.syncIntegrationStatusFromAuth()
             await configureOpenAI()
+            #if DEBUG
+            SimulatorBridge.shared.connect()
+            #endif
         }
     }
 
@@ -90,6 +93,7 @@ public struct ContentView: View {
             switch newPhase {
             case .active:
                 Task {
+                    await appState.handleAppDidBecomeActive()
                     if appState.hasCompletedInitialHomeLoad {
                         await SyncScheduler.shared.syncOnResume()
                     }

@@ -145,11 +145,14 @@ extension AppState {
         let todayProgress = Self.companionTaskProgressSnapshot(from: todayTasks)
         let nextAgendaItem = companionNextAgendaItem(from: todayEvents, fallbackTasks: topTaskTitles, now: now)
         let focusMinutes = Int(FocusSessionService.shared.statistics.todayFocusTime / 60)
-        let energyBlocks = await localStorage.loadEnergyBlocks()
+        let energyBottles = await localStorage.loadEnergyBottles()
+        let currentSceneName = SceneUnlockService.shared.currentSceneId(energyBottles: energyBottles)
         let learnText = PromptDebuggerState.shared.testLearnText.trimmingCharacters(in: .whitespacesAndNewlines)
 
         let context = AIContext(
             companionStyle: userProfile.companionStyle,
+            companionCharacter: userProfile.companionCharacter,
+            intimacyStage: userProfile.intimacyStage,
             workType: userProfile.workType,
             primaryGoals: userProfile.primaryGoals,
             petName: pet.name,
@@ -161,8 +164,8 @@ extension AppState {
             currentStreak: streak.currentStreak,
             recentCompletionRate: todayProgress.rate,
             focusTimeToday: focusMinutes,
-            energyBlocks: energyBlocks,
-            currentSceneName: pet.scene.rawValue,
+            energyBottles: energyBottles,
+            currentSceneName: currentSceneName,
             hardwareConnected: BLEService.shared.connectionState.isConnected,
             nextAgendaItem: nextAgendaItem,
             activeTaskTitle: activeTask.taskTitle,
@@ -180,7 +183,8 @@ extension AppState {
                 topTaskTitles: topTaskTitles,
                 nextAgendaItem: nextAgendaItem,
                 focusMinutes: focusMinutes,
-                energyBlocks: energyBlocks,
+                energyBottles: energyBottles,
+                sceneId: currentSceneName,
                 activeTaskId: activeTaskId,
                 activeTaskTitle: activeTask.taskTitle,
                 learnText: context.userDefinedLearnText
@@ -196,7 +200,8 @@ extension AppState {
         topTaskTitles: [String],
         nextAgendaItem: String?,
         focusMinutes: Int,
-        energyBlocks: Int,
+        energyBottles: Int,
+        sceneId: String,
         activeTaskId: String,
         activeTaskTitle: String?,
         learnText: String?
@@ -207,16 +212,18 @@ extension AppState {
             "date=\(Self.homeCompanionDateKey(from: now))",
             "bucket=\(TimeOfDay.current(at: now).rawValue)",
             "style=\(userProfile.companionStyle.rawValue)",
+            "character=\(userProfile.companionCharacter.rawValue)",
+            "intimacy=\(userProfile.intimacyStage.rawValue)",
             "work=\(userProfile.workType.rawValue)",
             "goals=\(userProfile.primaryGoals.map(\.rawValue).joined(separator: ","))",
             "petMood=\(pet.mood.rawValue)",
-            "petScene=\(pet.scene.rawValue)",
+            "petScene=\(sceneId)",
             "streak=\(streak.currentStreak)",
             "todayCompleted=\(todayProgress.completed)",
             "todayTotal=\(todayProgress.total)",
             "eventsToday=\(todayEvents.count)",
             "focusMinutes=\(focusMinutes)",
-            "energyBlocks=\(energyBlocks)",
+            "energyBottles=\(energyBottles)",
             "activeTask=\(activeTaskId)",
             "activeTaskTitle=\(activeTaskTitle ?? "")",
             "nextAgenda=\(nextAgendaItem ?? "")",

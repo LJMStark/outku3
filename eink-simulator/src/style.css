@@ -1,0 +1,638 @@
+/* ============================================================
+   Kirole E-ink Display Simulator - Styles
+   ============================================================ */
+
+:root {
+  /* E-ink color palette (Spectra 6 approximate) */
+  --eink-white: #f0ebe3;
+  --eink-black: #1a1a1a;
+  --eink-red: #c44d3c;
+  --eink-green: #4a7c59;
+  --eink-blue: #3b5f8a;
+  --eink-yellow: #d4a843;
+  --eink-warm: #8b6f4e;
+
+  /* UI chrome */
+  --chrome-bg: #1e1e2e;
+  --chrome-surface: #2a2a3e;
+  --chrome-border: #3a3a50;
+  --chrome-text: #cdd6f4;
+  --chrome-accent: #74c7ec;
+  --chrome-muted: #6c7086;
+
+  /* Fonts */
+  --font-eink: 'Patrick Hand', cursive;
+  --font-ui: 'Inter', system-ui, sans-serif;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--font-ui);
+  background: var(--chrome-bg);
+  color: var(--chrome-text);
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 24px;
+}
+
+#app {
+  display: flex;
+  gap: 32px;
+  max-width: 1200px;
+  width: 100%;
+  align-items: flex-start;
+}
+
+/* ============================================================
+   Device Frame
+   ============================================================ */
+
+.device-frame {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.device-bezel {
+  background: #2c2520;
+  border-radius: 16px;
+  padding: 12px;
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.eink-screen {
+  width: 480px;
+  height: 640px;
+  background: var(--eink-white);
+  border-radius: 4px;
+  position: relative;
+  overflow: hidden;
+  font-family: var(--font-eink);
+  color: var(--eink-black);
+}
+
+/* ============================================================
+   Hardware Controls
+   ============================================================ */
+
+.hw-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.hw-btn {
+  background: var(--chrome-surface);
+  border: 1px solid var(--chrome-border);
+  color: var(--chrome-text);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-size: 14px;
+}
+
+.hw-btn:hover {
+  background: var(--chrome-border);
+}
+
+.hw-btn:active {
+  transform: scale(0.93);
+  background: var(--chrome-accent);
+  color: var(--chrome-bg);
+}
+
+.hw-scroll {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hw-scroll-click {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  border: 2px solid var(--chrome-accent);
+}
+
+.hw-power {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 16px;
+  font-size: 18px;
+}
+
+/* ============================================================
+   E-ink Screen Layouts
+   ============================================================ */
+
+/* Status Bar */
+.eink-statusbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 16px;
+  font-size: 14px;
+  color: var(--eink-warm);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.eink-statusbar .weather {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.eink-statusbar .date {
+  font-weight: 500;
+}
+
+/* Main Content Area */
+.eink-main {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  height: calc(100% - 38px);
+  padding: 12px;
+}
+
+/* Left Column - Pet Area */
+.eink-pet-area {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  padding-bottom: 8px;
+}
+
+.eink-scene-bg {
+  position: absolute;
+  inset: 0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.eink-scene-bg canvas {
+  width: 100%;
+  height: 100%;
+}
+
+.eink-pet-sprite {
+  position: relative;
+  z-index: 2;
+  width: 160px;
+  height: 200px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.eink-pet-sprite .pet-body {
+  width: 120px;
+  height: 140px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 48px;
+}
+
+.eink-dialogue {
+  position: relative;
+  z-index: 3;
+  background: var(--eink-yellow);
+  color: var(--eink-black);
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 15px;
+  line-height: 1.4;
+  max-width: 200px;
+  margin-bottom: 4px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06);
+}
+
+.eink-dialogue::after {
+  content: '';
+  position: absolute;
+  bottom: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-top: 8px solid var(--eink-yellow);
+}
+
+/* Right Column - Info Cards */
+.eink-info-area {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+}
+
+/* Progress Bar */
+.eink-progress {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  background: var(--eink-green);
+  border-radius: 20px;
+  font-size: 12px;
+  color: white;
+  width: fit-content;
+}
+
+.eink-progress .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: white;
+}
+
+.eink-progress .dot.empty {
+  background: transparent;
+  border: 1.5px solid rgba(255, 255, 255, 0.6);
+}
+
+/* Event / Task Cards */
+.eink-card {
+  background: rgba(255, 255, 255, 0.85);
+  border-radius: 10px;
+  padding: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.eink-card h3 {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 4px;
+  color: var(--eink-black);
+  font-family: var(--font-ui);
+}
+
+.eink-card p {
+  font-size: 13px;
+  color: var(--eink-warm);
+  line-height: 1.4;
+}
+
+.eink-card .card-time {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--eink-black);
+  font-family: var(--font-ui);
+}
+
+.eink-card .card-tips {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--eink-warm);
+  font-style: italic;
+}
+
+/* Task List */
+.eink-task-list {
+  list-style: none;
+  padding: 0;
+}
+
+.eink-task-list li {
+  font-size: 14px;
+  padding: 3px 0;
+  color: var(--eink-black);
+}
+
+.eink-task-list li::before {
+  content: '\00B7 ';
+  margin-right: 4px;
+}
+
+.eink-task-list li.completed {
+  text-decoration: line-through;
+  color: var(--eink-warm);
+}
+
+/* Energy Bottles */
+.eink-bottles {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  padding: 4px 0;
+}
+
+.energy-bottle {
+  width: 24px;
+  height: 36px;
+  border: 2px solid var(--eink-yellow);
+  border-radius: 4px 4px 8px 8px;
+  position: relative;
+  background: transparent;
+  overflow: hidden;
+}
+
+.energy-bottle.filled {
+  background: linear-gradient(to top, var(--eink-yellow) 80%, transparent 80%);
+  box-shadow: 0 0 8px rgba(212, 168, 67, 0.5);
+}
+
+.energy-bottle .bottle-cap {
+  position: absolute;
+  top: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 14px;
+  height: 6px;
+  background: var(--eink-yellow);
+  border-radius: 2px 2px 0 0;
+}
+
+.energy-bottle.glowing {
+  animation: bottle-glow 1.5s ease-in-out infinite;
+}
+
+@keyframes bottle-glow {
+  0%, 100% { box-shadow: 0 0 4px rgba(212, 168, 67, 0.3); }
+  50% { box-shadow: 0 0 16px rgba(212, 168, 67, 0.8); }
+}
+
+/* ============================================================
+   Screensaver
+   ============================================================ */
+
+.eink-screensaver {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 40px;
+}
+
+.eink-screensaver .quote-text {
+  font-family: var(--font-eink);
+  font-size: 28px;
+  line-height: 1.5;
+  color: var(--eink-black);
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.5);
+  max-width: 380px;
+}
+
+.eink-screensaver .quote-author {
+  font-family: var(--font-eink);
+  font-size: 18px;
+  color: var(--eink-warm);
+  margin-top: 16px;
+}
+
+/* Postcard Style */
+.eink-postcard {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.eink-postcard .postcard-frame {
+  position: absolute;
+  inset: 12px;
+  border: 3px solid var(--eink-warm);
+  border-radius: 8px;
+  z-index: 2;
+}
+
+.eink-postcard .postcard-label {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  background: rgba(240, 235, 227, 0.9);
+  padding: 8px 20px;
+  border-radius: 4px;
+  font-family: var(--font-eink);
+  font-size: 16px;
+  color: var(--eink-warm);
+}
+
+/* ============================================================
+   Scene Backgrounds (drawn via canvas/CSS)
+   ============================================================ */
+
+.scene-harbor {
+  background: linear-gradient(
+    180deg,
+    #b8d4e3 0%,     /* sky */
+    #89b4cc 30%,    /* horizon */
+    #5a9ab5 50%,    /* sea */
+    #c8a882 70%,    /* sand/stone */
+    #a08060 100%    /* ground */
+  );
+}
+
+.scene-forest {
+  background: linear-gradient(
+    180deg,
+    #7fb069 0%,     /* canopy */
+    #5a8a42 25%,
+    #4a7535 50%,
+    #3d6b2e 75%,
+    #2d5520 100%    /* deep forest floor */
+  );
+}
+
+.scene-night-city {
+  background: linear-gradient(
+    180deg,
+    #0f1729 0%,     /* dark sky */
+    #1a2744 30%,
+    #243555 50%,
+    #2c3e6b 70%,
+    #1e2d5a 100%
+  );
+}
+
+/* ============================================================
+   Focus Mode Overlay
+   ============================================================ */
+
+.focus-timer-display {
+  position: absolute;
+  top: 44px;
+  right: 12px;
+  background: rgba(0, 0, 0, 0.08);
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-family: var(--font-ui);
+  color: var(--eink-warm);
+  z-index: 5;
+}
+
+/* ============================================================
+   Dev Panel
+   ============================================================ */
+
+.dev-panel {
+  flex: 1;
+  background: var(--chrome-surface);
+  border-radius: 12px;
+  padding: 20px;
+  border: 1px solid var(--chrome-border);
+  position: sticky;
+  top: 24px;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+}
+
+.dev-panel h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  color: var(--chrome-accent);
+}
+
+.dev-section {
+  margin-bottom: 16px;
+}
+
+.dev-section label {
+  display: block;
+  font-size: 12px;
+  color: var(--chrome-muted);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.dev-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.dev-btn {
+  background: var(--chrome-bg);
+  border: 1px solid var(--chrome-border);
+  color: var(--chrome-text);
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: var(--font-ui);
+}
+
+.dev-btn:hover {
+  border-color: var(--chrome-accent);
+}
+
+.dev-btn.active {
+  background: var(--chrome-accent);
+  color: var(--chrome-bg);
+  border-color: var(--chrome-accent);
+}
+
+.dev-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.dev-row input[type="range"] {
+  flex: 1;
+  accent-color: var(--chrome-accent);
+}
+
+.dev-row input[type="text"] {
+  flex: 1;
+  background: var(--chrome-bg);
+  border: 1px solid var(--chrome-border);
+  color: var(--chrome-text);
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: var(--font-ui);
+}
+
+#focus-time-label {
+  font-size: 13px;
+  color: var(--chrome-accent);
+  min-width: 50px;
+}
+
+.ws-status {
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  margin-top: 6px;
+}
+
+.ws-status.connected {
+  color: #a6e3a1;
+  background: rgba(166, 227, 161, 0.1);
+}
+
+.ws-status.disconnected {
+  color: #f38ba8;
+  background: rgba(243, 139, 168, 0.1);
+}
+
+.ws-log {
+  margin-top: 8px;
+  max-height: 120px;
+  overflow-y: auto;
+  font-size: 11px;
+  font-family: 'SF Mono', monospace;
+  color: var(--chrome-muted);
+  line-height: 1.6;
+}
+
+.ws-log .log-in {
+  color: #a6e3a1;
+}
+
+.ws-log .log-out {
+  color: #89b4fa;
+}
+
+/* ============================================================
+   Responsive
+   ============================================================ */
+
+@media (max-width: 900px) {
+  #app {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .dev-panel {
+    position: static;
+    max-height: none;
+    width: 100%;
+  }
+}

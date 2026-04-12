@@ -16,6 +16,8 @@ public enum AITextType: String, Codable, Sendable {
 
 public struct AIContext: Sendable {
     public let companionStyle: CompanionStyle
+    public let companionCharacter: CompanionCharacter
+    public let intimacyStage: IntimacyStage
     public let workType: WorkType
     public let primaryGoals: [UserGoal]
     public let petName: String
@@ -29,7 +31,7 @@ public struct AIContext: Sendable {
     public let behaviorSummary: UserBehaviorSummary?
     public let recentTexts: [String]
     public let focusTimeToday: Int
-    public let energyBlocks: Int
+    public let energyBottles: Int
     public let currentSceneName: String?
     public let hardwareConnected: Bool
     public let nextAgendaItem: String?
@@ -44,6 +46,8 @@ public struct AIContext: Sendable {
 
     public init(
         companionStyle: CompanionStyle = .companion,
+        companionCharacter: CompanionCharacter = .nook,
+        intimacyStage: IntimacyStage = .acquaintance,
         workType: WorkType = .other,
         primaryGoals: [UserGoal] = [],
         petName: String = "Baby Waffle",
@@ -57,7 +61,7 @@ public struct AIContext: Sendable {
         behaviorSummary: UserBehaviorSummary? = nil,
         recentTexts: [String] = [],
         focusTimeToday: Int = 0,
-        energyBlocks: Int = 0,
+        energyBottles: Int = 0,
         currentSceneName: String? = nil,
         hardwareConnected: Bool = false,
         nextAgendaItem: String? = nil,
@@ -69,6 +73,8 @@ public struct AIContext: Sendable {
         userDefinedLearnText: String? = nil
     ) {
         self.companionStyle = companionStyle
+        self.companionCharacter = companionCharacter
+        self.intimacyStage = intimacyStage
         self.workType = workType
         self.primaryGoals = primaryGoals
         self.petName = petName
@@ -82,7 +88,7 @@ public struct AIContext: Sendable {
         self.behaviorSummary = behaviorSummary
         self.recentTexts = recentTexts
         self.focusTimeToday = focusTimeToday
-        self.energyBlocks = energyBlocks
+        self.energyBottles = energyBottles
         self.currentSceneName = currentSceneName
         self.hardwareConnected = hardwareConnected
         self.nextAgendaItem = nextAgendaItem

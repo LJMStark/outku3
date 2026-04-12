@@ -45,17 +45,14 @@ public enum OnboardingQuestions {
     public static let allQuestions: [OnboardingQuestion] = [
         OnboardingQuestion(
             id: "companionStyle",
-            title: "How should Kirole talk to you?",
-            subtitle: "This shapes how your companion communicates",
+            title: "Choose your companion IP",
+            subtitle: "Each IP maps to a different internal interaction style",
             type: .single,
             category: "Companion Personality",
             options: [
-                QuestionOption(id: "Companion", label: "Warm Companion", sfSymbol: "heart.fill"),
-                QuestionOption(id: "Challenger", label: "Challenger (Roast Mode)", sfSymbol: "flame.fill"),
-                QuestionOption(id: "Corporate", label: "Corporate Boss", sfSymbol: "briefcase.fill"),
-                QuestionOption(id: "Dramatic", label: "Dramatic Soap Opera", sfSymbol: "theatermasks.fill"),
-                QuestionOption(id: "Gen Z", label: "Gen Z Brainrot", sfSymbol: "sparkles"),
-                QuestionOption(id: "Slacker", label: "Slacker (Anti-Hustle)", sfSymbol: "bed.double.fill"),
+                QuestionOption(id: "Companion", label: "Nook · Playful Companion", sfSymbol: "heart.fill"),
+                QuestionOption(id: "Slacker", label: "Silas · Spiritual Companion", sfSymbol: "bed.double.fill"),
+                QuestionOption(id: "Challenger", label: "Nova · Challenge Companion", sfSymbol: "flame.fill"),
             ]
         ),
         OnboardingQuestion(

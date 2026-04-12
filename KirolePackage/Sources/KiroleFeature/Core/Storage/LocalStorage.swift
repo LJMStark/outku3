@@ -19,7 +19,8 @@ public actor LocalStorage {
         static let deepFocusShieldActive = "deepFocusShieldActive"
         static let deepFocusSelectionCount = "deepFocusSelectionCount"
         static let consecutiveDays = "consecutiveDays"
-        static let energyBlocks = "energyBlocks"
+        static let lastUsageDate = "lastUsageDate"
+        static let energyBottles = "energyBottles"
         static let lastHomeHaikuShownDate = "lastHomeHaikuShownDate"
     }
 
@@ -115,6 +116,16 @@ public actor LocalStorage {
 
     public func loadUserProfile() throws -> UserProfile? {
         try load(UserProfile.self, from: "user_profile.json")
+    }
+
+    // MARK: - Companion Usage
+
+    public func saveCompanionUsageState(_ state: CompanionUsageState) throws {
+        try save(state, to: "companion_usage_state.json")
+    }
+
+    public func loadCompanionUsageState() throws -> CompanionUsageState? {
+        try load(CompanionUsageState.self, from: "companion_usage_state.json")
     }
 
     // MARK: - Onboarding Profile
@@ -262,13 +273,21 @@ public actor LocalStorage {
     public func loadConsecutiveDays() -> Int {
         userDefaults.integer(forKey: Keys.consecutiveDays)
     }
-    
-    public func saveEnergyBlocks(_ blocks: Int) {
-        userDefaults.set(blocks, forKey: Keys.energyBlocks)
+
+    public func saveLastUsageDate(_ date: Date?) {
+        userDefaults.set(date, forKey: Keys.lastUsageDate)
+    }
+
+    public func loadLastUsageDate() -> Date? {
+        userDefaults.object(forKey: Keys.lastUsageDate) as? Date
     }
     
-    public func loadEnergyBlocks() -> Int {
-        userDefaults.integer(forKey: Keys.energyBlocks)
+    public func saveEnergyBottles(_ blocks: Int) {
+        userDefaults.set(blocks, forKey: Keys.energyBottles)
+    }
+    
+    public func loadEnergyBottles() -> Int {
+        userDefaults.integer(forKey: Keys.energyBottles)
     }
 
     public func saveLastEventLogTimestamp(_ timestamp: UInt32) {
@@ -409,7 +428,7 @@ public actor LocalStorage {
             "focus_sessions.json", "event_logs.json", "ai_interactions.json",
             "behavior_summary.json", "onboarding_profile.json",
             "deep_focus_selection.json", "focus_session_active.json",
-            "outbox.json", "google_sync_metadata.json",
+            "outbox.json", "google_sync_metadata.json", "companion_usage_state.json",
             "avatar.dat", "avatar_pixels.dat", "shared_companion_dialogue.json"
         ]
         for file in files {
@@ -426,7 +445,8 @@ public actor LocalStorage {
         userDefaults.removeObject(forKey: Keys.deepFocusShieldActive)
         userDefaults.removeObject(forKey: Keys.deepFocusSelectionCount)
         userDefaults.removeObject(forKey: Keys.consecutiveDays)
-        userDefaults.removeObject(forKey: Keys.energyBlocks)
+        userDefaults.removeObject(forKey: Keys.lastUsageDate)
+        userDefaults.removeObject(forKey: Keys.energyBottles)
         userDefaults.removeObject(forKey: Keys.lastHomeHaikuShownDate)
     }
 }

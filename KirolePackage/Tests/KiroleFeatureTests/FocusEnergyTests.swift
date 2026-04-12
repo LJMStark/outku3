@@ -4,13 +4,13 @@ import Testing
 @Suite("Focus Energy Tests")
 struct FocusEnergyTests {
     
-    @Test("Verify energy stage calculation based on minutes focused")
-    func testEnergyStageCalculation() {
-        #expect(FocusEnergyCalculator.blocksEarned(minutes: 4) == 0)
-        #expect(FocusEnergyCalculator.blocksEarned(minutes: 5) == 1)
-        #expect(FocusEnergyCalculator.blocksEarned(minutes: 14) == 1)
-        #expect(FocusEnergyCalculator.blocksEarned(minutes: 15) == 2)
-        #expect(FocusEnergyCalculator.blocksEarned(minutes: 30) == 3)
-        #expect(FocusEnergyCalculator.blocksEarned(minutes: 60) == 3)
+    @Test("Verify energy bottle calculation based on minutes focused (1 bottle per 30 min)")
+    func testEnergyBottleCalculation() {
+        #expect(FocusEnergyCalculator.bottlesEarned(minutes: 0) == 0)
+        #expect(FocusEnergyCalculator.bottlesEarned(minutes: 29) == 0)
+        #expect(FocusEnergyCalculator.bottlesEarned(minutes: 30) == 1)
+        #expect(FocusEnergyCalculator.bottlesEarned(minutes: 59) == 1)
+        #expect(FocusEnergyCalculator.bottlesEarned(minutes: 60) == 2)
+        #expect(FocusEnergyCalculator.bottlesEarned(minutes: 90) == 3)
     }
 }

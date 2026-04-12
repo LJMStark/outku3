@@ -71,6 +71,46 @@ public actor OpenAIService {
         return parseHaiku(content)
     }
 
+    // MARK: - Generate Screensaver Quote
+    
+    /// Generate an AI quote for the screensaver
+    public func generateScreensaverQuote(
+        isPostcard: Bool,
+        usageDays: Int,
+        workContext: String,
+        profileContext: String
+    ) async throws -> String {
+        let systemPrompt = """
+            You are a companion crafting a single short screensaver line.
+            Keep it under 60 characters.
+            Make it poetic, calm, and specific to the user's recent work and companion persona.
+            """
+        let userPrompt: String
+
+        if isPostcard {
+            userPrompt = """
+                The user just reached \(usageDays) consecutive usage days.
+                Companion profile: \(profileContext)
+                Recent work context: \(workContext)
+                Write a celebratory postcard line.
+                """
+        } else {
+            userPrompt = """
+                Companion profile: \(profileContext)
+                Recent work context: \(workContext)
+                Write a short resting screensaver line that feels tied to today's work.
+                """
+        }
+        
+        let content = try await chatCompletion(
+            systemPrompt: systemPrompt,
+            userPrompt: userPrompt,
+            temperature: 0.8,
+            maxTokens: 80
+        )
+        return content.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     // MARK: - Generate Companion Text
 
     /// Generate AI companion text based on type and context
@@ -121,9 +161,9 @@ public actor OpenAIService {
             You are an execution coach using Implementation Intentions theory. \
             Break down tasks into concrete micro-actions with What (specific action, max 40 chars), \
             When (suggested time slot based on schedule), Why (motivation anchor, max 60 chars), \
-            and expected focus energy blocks the user might earn. \
+            and expected focus energy bottles the user might earn. \
             Return 1-3 micro-actions as a JSON array. Each object has keys: \
-            "what" (string), "when" (string or null), "why" (string or null), "estimatedMinutes" (int or null), "expectedEnergyBlocks" (int). \
+            "what" (string), "when" (string or null), "why" (string or null), "estimatedMinutes" (int or null), "expectedEnergyBottles" (int). \
             Respond with ONLY the JSON array, no markdown fences or extra text.
             """
 
@@ -304,6 +344,28 @@ public actor OpenAIService {
         }
     }
 
+    public static func characterPrompt(for character: CompanionCharacter) -> String {
+        switch character {
+        case .nook:
+            return "Physical Form: A golden-brown fox with curious big eyes, a fluffy tail, and a green scarf. Base Persona: Joy, playful, cute, lightly mischievous, and comforting during boring or anxious work moments."
+        case .silas:
+            return "Physical Form: A calm grey-brown companion with wise eyes and a quiet presence. Base Persona: Faith, gentle, spiritual, steady, and softly grounding when work feels empty or disconnected."
+        case .nova:
+            return "Physical Form: A blue-grey wolf with sharp confident eyes and a cool, composed stance. Base Persona: Ambitious, exacting, competitive, and highly rewarding when the user breaks through mediocrity."
+        }
+    }
+
+    public static func intimacyPrompt(for stage: IntimacyStage) -> String {
+        switch stage {
+        case .acquaintance:
+            return "Relationship (Acquaintance): You recently met the user. Be polite, gentle, and observational."
+        case .familiar:
+            return "Relationship (Familiar): You are comfortable with the user. Be casual, friendly, and show you know their routines."
+        case .closeFriend:
+            return "Relationship (Close Friend): You share a deep, unspoken bond. Show profound care, unconditional support, and deep understanding."
+        }
+    }
+
     private func buildCompanionSystemPrompt(context: AIContext) async -> String {
         let styleDescription: String
 
@@ -319,10 +381,17 @@ public actor OpenAIService {
         }
 
         let schedule = Self.buildScheduleDigest(context: context)
+        let characterDescription = Self.characterPrompt(for: context.companionCharacter)
+        let intimacyDescription = Self.intimacyPrompt(for: context.intimacyStage)
 
         var prompt = """
             You are \(context.petName).
+            \(characterDescription)
+            \(intimacyDescription)
+            
+            ---
             \(styleDescription)
+            ---
 
             Schedule: \(schedule)
 

@@ -15,6 +15,7 @@ public struct FocusSession: Identifiable, Codable, Sendable {
     public var mode: FocusEnforcementMode
     public var protectionState: FocusProtectionState
     public var interruptionSource: FocusInterruptionSource?
+    public var earnedEnergyBottles: Int
 
     public init(
         id: UUID = UUID(),
@@ -27,7 +28,8 @@ public struct FocusSession: Identifiable, Codable, Sendable {
         screenUnlockEvents: [ScreenUnlockEvent] = [],
         mode: FocusEnforcementMode = .standard,
         protectionState: FocusProtectionState = .unprotected,
-        interruptionSource: FocusInterruptionSource? = nil
+        interruptionSource: FocusInterruptionSource? = nil,
+        earnedEnergyBottles: Int = 0
     ) {
         self.id = id
         self.taskId = taskId
@@ -40,6 +42,7 @@ public struct FocusSession: Identifiable, Codable, Sendable {
         self.mode = mode
         self.protectionState = protectionState
         self.interruptionSource = interruptionSource
+        self.earnedEnergyBottles = earnedEnergyBottles
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -54,6 +57,7 @@ public struct FocusSession: Identifiable, Codable, Sendable {
         case mode
         case protectionState
         case interruptionSource
+        case earnedEnergyBottles
     }
 
     public init(from decoder: any Decoder) throws {
@@ -69,6 +73,7 @@ public struct FocusSession: Identifiable, Codable, Sendable {
         mode = try container.decodeIfPresent(FocusEnforcementMode.self, forKey: .mode) ?? .standard
         protectionState = try container.decodeIfPresent(FocusProtectionState.self, forKey: .protectionState) ?? .unprotected
         interruptionSource = try container.decodeIfPresent(FocusInterruptionSource.self, forKey: .interruptionSource)
+        earnedEnergyBottles = try container.decodeIfPresent(Int.self, forKey: .earnedEnergyBottles) ?? 0
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -84,6 +89,7 @@ public struct FocusSession: Identifiable, Codable, Sendable {
         try container.encode(mode, forKey: .mode)
         try container.encode(protectionState, forKey: .protectionState)
         try container.encodeIfPresent(interruptionSource, forKey: .interruptionSource)
+        try container.encode(earnedEnergyBottles, forKey: .earnedEnergyBottles)
     }
 
     /// 会话总时长（从进入到退出）

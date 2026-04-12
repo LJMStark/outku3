@@ -121,7 +121,7 @@ public final class DayPackGenerator {
         let total = tasks.count
         let rate = total > 0 ? Double(completed) / Double(total) : 0
         let focusStats = FocusSessionService.shared.statistics
-        let energyBlocks = await LocalStorage.shared.loadEnergyBlocks()
+        let energyBottles = await LocalStorage.shared.loadEnergyBottles()
 
         let aiMessage = await textService.generateSettlementMessage(
             tasksCompleted: completed,
@@ -129,7 +129,7 @@ public final class DayPackGenerator {
             streakDays: streak.currentStreak,
             petName: pet.name,
             focusTimeToday: Int(focusStats.todayFocusTime / 60),
-            energyBlocks: energyBlocks, // Loaded actual energy blocks score
+            energyBottles: energyBottles, // Loaded actual energy bottles score
             userProfile: userProfile
         )
 
@@ -150,7 +150,8 @@ public final class DayPackGenerator {
             totalFocusMinutes: Int(focusStats.todayFocusTime / 60),
             focusSessionCount: focusStats.todaySessions,
             longestFocusMinutes: focusStats.longestSessionMinutes,
-            interruptionCount: focusStats.interruptionCount
+            interruptionCount: focusStats.interruptionCount,
+            totalEnergyBottles: energyBottles
         )
     }
 

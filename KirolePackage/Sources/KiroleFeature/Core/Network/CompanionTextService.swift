@@ -137,7 +137,7 @@ public final class CompanionTextService {
 
     public func generateSettlementMessage(
         tasksCompleted: Int, tasksTotal: Int, streakDays: Int, petName: String,
-        focusTimeToday: Int = 0, energyBlocks: Int = 0,
+        focusTimeToday: Int = 0, energyBottles: Int = 0,
         userProfile: UserProfile = .default
     ) async -> String {
         let memory = "The user has completed their daily work. Settling today's tasks."
@@ -149,7 +149,7 @@ public final class CompanionTextService {
             streak: streakDays,
             episodicMemories: [memory],
             focusTimeToday: focusTimeToday,
-            energyBlocks: energyBlocks
+            energyBottles: energyBottles
         ) {
             return aiText
         }
@@ -284,6 +284,8 @@ public final class CompanionTextService {
 
         return AIContext(
             companionStyle: baseContext.companionStyle,
+            companionCharacter: baseContext.companionCharacter,
+            intimacyStage: baseContext.intimacyStage,
             workType: baseContext.workType,
             primaryGoals: baseContext.primaryGoals,
             petName: baseContext.petName,
@@ -297,7 +299,7 @@ public final class CompanionTextService {
             behaviorSummary: baseContext.behaviorSummary,
             recentTexts: recentTexts,
             focusTimeToday: baseContext.focusTimeToday,
-            energyBlocks: baseContext.energyBlocks,
+            energyBottles: baseContext.energyBottles,
             currentSceneName: baseContext.currentSceneName,
             hardwareConnected: baseContext.hardwareConnected,
             nextAgendaItem: baseContext.nextAgendaItem,
@@ -369,7 +371,7 @@ public final class CompanionTextService {
         nextAgendaItem: String? = nil,
         activeTaskTitle: String? = nil,
         focusTimeToday: Int = 0,
-        energyBlocks: Int = 0
+        energyBottles: Int = 0
     ) async -> String? {
         guard await openAI.isConfigured else { return nil }
 
@@ -394,7 +396,7 @@ public final class CompanionTextService {
             behaviorSummary: behaviorSummary,
             recentTexts: [],
             focusTimeToday: focusTimeToday,
-            energyBlocks: energyBlocks,
+            energyBottles: energyBottles,
             nextAgendaItem: nextAgendaItem,
             activeTaskTitle: activeTaskTitle,
             episodicMemories: episodicMemories
@@ -463,7 +465,7 @@ public final class CompanionTextService {
             behaviorSummary: behaviorSummary,
             recentTexts: recentTexts,
             focusTimeToday: baseContext.focusTimeToday,
-            energyBlocks: baseContext.energyBlocks,
+            energyBottles: baseContext.energyBottles,
             currentSceneName: baseContext.currentSceneName,
             hardwareConnected: baseContext.hardwareConnected,
             nextAgendaItem: baseContext.nextAgendaItem,

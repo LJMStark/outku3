@@ -146,6 +146,20 @@ import Foundation
 @MainActor
 @Test func testPromptDebuggerMockContextHonorsVisibleStyleSelection() async throws {
     let debuggerState = PromptDebuggerState.shared
+    let appState = AppState.shared
+    let originalProfile = appState.userProfile
+    defer { appState.updateUserProfile(originalProfile) }
+
+    appState.updateUserProfile(
+        UserProfile(
+            workType: originalProfile.workType,
+            primaryGoals: originalProfile.primaryGoals,
+            companionStyle: .slacker,
+            companionCharacter: .silas,
+            intimacyStage: .familiar,
+            onboardingCompletedAt: originalProfile.onboardingCompletedAt
+        )
+    )
     debuggerState.selectedMockStyle = .companion
 
     let context = await debuggerState.createMockContext(
@@ -154,6 +168,8 @@ import Foundation
     )
 
     #expect(context.companionStyle == .challenger)
+    #expect(context.companionCharacter == .silas)
+    #expect(context.intimacyStage == .familiar)
     #expect(debuggerState.selectedMockStyle == .companion)
 }
 

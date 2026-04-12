@@ -7,8 +7,8 @@ public struct FocusPetView: View {
     @State private var isBreathing = false
     
     // Derived values based on minutes
-    private var energyBlocks: Int {
-        FocusEnergyCalculator.blocksEarned(minutes: focusMinutes)
+    private var energyBottles: Int {
+        FocusEnergyCalculator.bottlesEarned(minutes: focusMinutes)
     }
     
     public init(focusMinutes: Int) {
@@ -21,17 +21,17 @@ public struct FocusPetView: View {
             HStack(spacing: 16) {
                 ForEach(0..<3, id: \.self) { index in
                     Circle()
-                        .fill(index < energyBlocks ? theme.colors.accent : theme.colors.secondaryText.opacity(0.2))
+                        .fill(index < energyBottles ? theme.colors.accent : theme.colors.secondaryText.opacity(0.2))
                         .frame(width: 16, height: 16)
-                        .shadow(color: index < energyBlocks ? theme.colors.accent.opacity(0.6) : .clear, radius: 8, x: 0, y: 0)
+                        .shadow(color: index < energyBottles ? theme.colors.accent.opacity(0.6) : .clear, radius: 8, x: 0, y: 0)
                 }
             }
-            .animation(.spring(response: 0.5, dampingFraction: 0.7), value: energyBlocks)
+            .animation(.spring(response: 0.5, dampingFraction: 0.7), value: energyBottles)
             
             // Pet with breathing animation
             ZStack {
                 // Background aura based on energy
-                if energyBlocks > 0 {
+                if energyBottles > 0 {
                     Circle()
                         .fill(theme.colors.accent.opacity(0.15))
                         .frame(width: 220, height: 220)

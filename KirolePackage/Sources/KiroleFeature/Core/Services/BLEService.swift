@@ -414,6 +414,16 @@ public final class BLEService: NSObject {
         }
     }
 
+    public func sendDisplayScene(_ scene: DisplayScene) async throws {
+        let packet = BLEPacketizer.buildSceneUnlockPacket(sceneId: scene.commandByte)
+        try await writeCompatibilityDisplayPacket(packet)
+    }
+
+    public func sendScreensaverConfig(_ config: ScreensaverConfig) async throws {
+        let packet = BLEPacketizer.buildScreensaverPacket(config: config)
+        try await writeCompatibilityDisplayPacket(packet)
+    }
+
     // MARK: - Private Methods
 
     private func writeData(type: BLEDataType, data: Data) async throws {
@@ -476,6 +486,20 @@ public final class BLEService: NSObject {
         }
 
         let packet = BLESimpleEncoder.encode(type: type.rawValue, payload: data)
+        try await writePacket(packet, peripheral: peripheral, characteristic: characteristic)
+    }
+
+    private func writeCompatibilityDisplayPacket(_ packet: Data) async throws {
+        guard connectionState.isConnected,
+              let characteristic = writeCharacteristic,
+              let peripheral = connectedPeripheral else {
+            throw BLEError.notConnected
+        }
+
+        guard !requiresSecureChannel else {
+            throw BLEError.securityHandshakeFailed("Custom display commands require compatibility mode")
+        }
+
         try await writePacket(packet, peripheral: peripheral, characteristic: characteristic)
     }
 

@@ -72,6 +72,8 @@ public final class PromptDebuggerState {
         
         let realContext = AIContext(
             companionStyle: newStyle,
+            companionCharacter: c.companionCharacter,
+            intimacyStage: c.intimacyStage,
             workType: c.workType,
             primaryGoals: c.primaryGoals,
             petName: c.petName,
@@ -85,7 +87,7 @@ public final class PromptDebuggerState {
             behaviorSummary: c.behaviorSummary,
             recentTexts: c.recentTexts,
             focusTimeToday: mockFocusTime,
-            energyBlocks: c.energyBlocks,
+            energyBottles: c.energyBottles,
             currentSceneName: c.currentSceneName,
             hardwareConnected: c.hardwareConnected,
             nextAgendaItem: mockNextAgenda,

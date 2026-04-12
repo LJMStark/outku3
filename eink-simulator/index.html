@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Kirole E-ink Display Simulator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <!-- Device Frame -->
+      <div class="device-frame">
+        <div class="device-bezel">
+          <div id="eink-screen" class="eink-screen">
+            <!-- Screen content injected by JS -->
+          </div>
+        </div>
+
+        <!-- Hardware Controls -->
+        <div class="hw-controls">
+          <button id="btn-scroll-up" class="hw-btn hw-scroll" title="Scroll Up">&#9650;</button>
+          <button id="btn-scroll-click" class="hw-btn hw-scroll-click" title="Short Press = Complete | Long Press = Skip">&#9679;</button>
+          <button id="btn-scroll-down" class="hw-btn hw-scroll" title="Scroll Down">&#9660;</button>
+          <button id="btn-power" class="hw-btn hw-power" title="Power / Screensaver Toggle">&#9211;</button>
+        </div>
+      </div>
+
+      <!-- Dev Panel -->
+      <div class="dev-panel">
+        <h3>Developer Controls</h3>
+
+        <div class="dev-section">
+          <label>Display Mode</label>
+          <div class="dev-buttons">
+            <button class="dev-btn active" data-mode="idle">Idle</button>
+            <button class="dev-btn" data-mode="focus-warmup">Focus 0-5m</button>
+            <button class="dev-btn" data-mode="focus-building">Focus 6-15m</button>
+            <button class="dev-btn" data-mode="focus-deep">Focus 16-30m</button>
+            <button class="dev-btn" data-mode="screensaver-normal">Screensaver</button>
+            <button class="dev-btn" data-mode="screensaver-postcard">Postcard</button>
+          </div>
+        </div>
+
+        <div class="dev-section">
+          <label>Scene</label>
+          <div class="dev-buttons">
+            <button class="dev-btn scene-btn active" data-scene="harbor">Harbor</button>
+            <button class="dev-btn scene-btn" data-scene="forest">Forest</button>
+            <button class="dev-btn scene-btn" data-scene="night-city">Night City</button>
+          </div>
+        </div>
+
+        <div class="dev-section">
+          <label>IP Character</label>
+          <div class="dev-buttons">
+            <button class="dev-btn char-btn active" data-char="nook">Nook</button>
+            <button class="dev-btn char-btn" data-char="silas">Silas</button>
+            <button class="dev-btn char-btn" data-char="nova">Nova</button>
+          </div>
+        </div>
+
+        <div class="dev-section">
+          <label>Focus Timer (dev)</label>
+          <div class="dev-row">
+            <input type="range" id="focus-slider" min="0" max="30" value="0" />
+            <span id="focus-time-label">0 min</span>
+          </div>
+        </div>
+
+        <div class="dev-section">
+          <label>Energy Bottles: <span id="bottle-count">0</span></label>
+          <div class="dev-row">
+            <button class="dev-btn" id="btn-add-bottle">+1 Bottle</button>
+            <button class="dev-btn" id="btn-reset-bottles">Reset</button>
+          </div>
+        </div>
+
+        <div class="dev-section">
+          <label>WebSocket</label>
+          <div class="dev-row">
+            <input type="text" id="ws-url" value="ws://localhost:8765" placeholder="ws://host:port" />
+            <button class="dev-btn" id="btn-ws-connect">Connect</button>
+          </div>
+          <div id="ws-status" class="ws-status disconnected">Disconnected</div>
+          <div id="ws-log" class="ws-log"></div>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

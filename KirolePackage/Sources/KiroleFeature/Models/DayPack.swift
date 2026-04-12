@@ -101,7 +101,8 @@ public struct DayPack: Codable, Sendable {
         parts.append("settlement.focusMinutes=\(settlementData.totalFocusMinutes)")
         parts.append("settlement.focusSessions=\(settlementData.focusSessionCount)")
         parts.append("settlement.longestFocus=\(settlementData.longestFocusMinutes)")
-        parts.append("settlement.interruptions=\(settlementData.interruptionCount)")
+        parts.append("settlement.interruptionCount=\(settlementData.interruptionCount)")
+        parts.append("settlement.totalEnergyBottles=\(settlementData.totalEnergyBottles)")
 
         let combined = parts.joined(separator: "|")
         let digest = SHA256.hash(data: Data(combined.utf8))
@@ -200,6 +201,7 @@ public struct SettlementData: Codable, Sendable {
     public let focusSessionCount: Int
     public let longestFocusMinutes: Int
     public let interruptionCount: Int
+    public let totalEnergyBottles: Int
 
     public init(
         tasksCompleted: Int,
@@ -212,7 +214,8 @@ public struct SettlementData: Codable, Sendable {
         totalFocusMinutes: Int = 0,
         focusSessionCount: Int = 0,
         longestFocusMinutes: Int = 0,
-        interruptionCount: Int = 0
+        interruptionCount: Int = 0,
+        totalEnergyBottles: Int = 0
     ) {
         self.tasksCompleted = tasksCompleted
         self.tasksTotal = tasksTotal
@@ -225,6 +228,7 @@ public struct SettlementData: Codable, Sendable {
         self.focusSessionCount = focusSessionCount
         self.longestFocusMinutes = longestFocusMinutes
         self.interruptionCount = interruptionCount
+        self.totalEnergyBottles = totalEnergyBottles
     }
 
     public var completionRate: Double {

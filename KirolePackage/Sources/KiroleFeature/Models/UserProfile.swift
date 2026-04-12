@@ -6,6 +6,8 @@ public struct UserProfile: Sendable, Codable, Equatable {
     public var workType: WorkType
     public var primaryGoals: [UserGoal]
     public var companionStyle: CompanionStyle
+    public var companionCharacter: CompanionCharacter
+    public var intimacyStage: IntimacyStage
     public var motivationStyle: MotivationStyle?
     public var reminderPreference: ReminderPreference?
     public var taskApproach: TaskApproach?
@@ -15,6 +17,8 @@ public struct UserProfile: Sendable, Codable, Equatable {
         workType: WorkType = .other,
         primaryGoals: [UserGoal] = [],
         companionStyle: CompanionStyle = .companion,
+        companionCharacter: CompanionCharacter = .nook,
+        intimacyStage: IntimacyStage = .acquaintance,
         motivationStyle: MotivationStyle? = nil,
         reminderPreference: ReminderPreference? = nil,
         taskApproach: TaskApproach? = nil,
@@ -23,24 +27,64 @@ public struct UserProfile: Sendable, Codable, Equatable {
         self.workType = workType
         self.primaryGoals = primaryGoals
         self.companionStyle = companionStyle
+        self.companionCharacter = companionCharacter
+        self.intimacyStage = intimacyStage
         self.motivationStyle = motivationStyle
         self.reminderPreference = reminderPreference
         self.taskApproach = taskApproach
         self.onboardingCompletedAt = onboardingCompletedAt
     }
 
+    private enum CodingKeys: String, CodingKey {
+        case workType
+        case primaryGoals
+        case companionStyle
+        case companionCharacter
+        case intimacyStage
+        case motivationStyle
+        case reminderPreference
+        case taskApproach
+        case onboardingCompletedAt
+    }
+
     public static var `default`: UserProfile {
         UserProfile()
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let companionStyle = try container.decodeIfPresent(CompanionStyle.self, forKey: .companionStyle) ?? .companion
+        let companionCharacter = try container.decodeIfPresent(CompanionCharacter.self, forKey: .companionCharacter)
+            ?? CompanionCharacter.fromProductStyle(companionStyle)
+            ?? .nook
+
+        self.workType = try container.decodeIfPresent(WorkType.self, forKey: .workType) ?? .other
+        self.primaryGoals = try container.decodeIfPresent([UserGoal].self, forKey: .primaryGoals) ?? []
+        self.companionStyle = companionStyle
+        self.companionCharacter = companionCharacter
+        self.intimacyStage = try container.decodeIfPresent(IntimacyStage.self, forKey: .intimacyStage) ?? .acquaintance
+        self.motivationStyle = try container.decodeIfPresent(MotivationStyle.self, forKey: .motivationStyle)
+        self.reminderPreference = try container.decodeIfPresent(ReminderPreference.self, forKey: .reminderPreference)
+        self.taskApproach = try container.decodeIfPresent(TaskApproach.self, forKey: .taskApproach)
+        self.onboardingCompletedAt = try container.decodeIfPresent(Date.self, forKey: .onboardingCompletedAt)
     }
 
     /// Map onboarding answers into a UserProfile.
     /// Pass the current profile as `merging:` to preserve fields (workType, primaryGoals)
     /// that live outside the onboarding questionnaire.
     public static func from(onboarding profile: OnboardingProfile, merging existing: UserProfile = .default) -> UserProfile {
-        UserProfile(
+        let selectedStyle = profile.companionStyle ?? existing.companionStyle
+        let selectedCharacter = CompanionCharacter.fromProductStyle(selectedStyle) ?? existing.companionCharacter
+        let selectedStage: IntimacyStage = selectedCharacter == existing.companionCharacter
+            ? existing.intimacyStage
+            : .acquaintance
+
+        return UserProfile(
             workType: existing.workType,
             primaryGoals: existing.primaryGoals,
-            companionStyle: profile.companionStyle ?? existing.companionStyle,
+            companionStyle: selectedStyle,
+            companionCharacter: selectedCharacter,
+            intimacyStage: selectedStage,
             motivationStyle: profile.motivationStyle ?? existing.motivationStyle,
             reminderPreference: profile.reminderPreference ?? existing.reminderPreference,
             taskApproach: profile.taskApproach ?? existing.taskApproach,
