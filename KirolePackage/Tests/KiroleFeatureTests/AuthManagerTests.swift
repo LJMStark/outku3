@@ -74,6 +74,48 @@ struct AuthManagerTests {
         #expect(decoded.email == user.email)
     }
 
+    @Test("Canonical user prefers Supabase UUID")
+    func canonicalUserPrefersSupabaseID() {
+        let createdAt = Date(timeIntervalSince1970: 1_710_000_000)
+        let supabaseUser = SupabaseUser(
+            id: "supabase-uuid",
+            email: "supabase@example.com",
+            createdAt: createdAt
+        )
+
+        let user = AuthManager.makeCanonicalUser(
+            providerUserID: "google-sub",
+            email: "google@example.com",
+            displayName: "Kirole",
+            avatarURL: nil,
+            authProvider: .google,
+            supabaseUser: supabaseUser
+        )
+
+        #expect(user.id == "supabase-uuid")
+        #expect(user.email == "supabase@example.com")
+        #expect(user.displayName == "Kirole")
+        #expect(user.authProvider == .google)
+        #expect(user.createdAt == createdAt)
+    }
+
+    @Test("Canonical user falls back to provider identity when Supabase user is missing")
+    func canonicalUserFallsBackWithoutSupabaseUser() {
+        let user = AuthManager.makeCanonicalUser(
+            providerUserID: "apple-user-id",
+            email: "apple@example.com",
+            displayName: "Apple User",
+            avatarURL: nil,
+            authProvider: .apple,
+            supabaseUser: nil
+        )
+
+        #expect(user.id == "apple-user-id")
+        #expect(user.email == "apple@example.com")
+        #expect(user.displayName == "Apple User")
+        #expect(user.authProvider == .apple)
+    }
+
     // MARK: - AuthManager Sign Out
 
     @Test("Sign out clears all state")

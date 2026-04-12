@@ -27,7 +27,7 @@ struct PetAnimationTests {
         @Test("Pet mood can be changed on AppState")
         @MainActor
         func moodCanChange() {
-            let state = AppState.shared
+            let state = AppState.makeForTesting()
             let originalMood = state.pet.mood
 
             state.pet.mood = .sleepy
@@ -59,7 +59,7 @@ struct PetAnimationTests {
         @Test("Pet scene can be changed")
         @MainActor
         func sceneCanChange() {
-            let state = AppState.shared
+            let state = AppState.makeForTesting()
             let originalScene = state.pet.scene
 
             state.pet.scene = .night

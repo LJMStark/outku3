@@ -35,6 +35,7 @@ public final class AuthManager {
     private let notionAuthService = NotionAuthService.shared
     private let taskadeAuthService = TaskadeAuthService.shared
     private let keychainService = KeychainService.shared
+    private let supabaseService = SupabaseService.shared
 
     private init() {}
 
@@ -43,30 +44,74 @@ public final class AuthManager {
     /// 在 App 启动时调用，恢复之前的登录状态
     public func initialize() async {
         googleSignInService.configure()
-        restoreAppleStateFromKeychain()
+        let restoredGoogleResult = try? await googleSignInService.restorePreviousSignIn()
+        let restoredSupabaseUser = await restoredSupabaseUser(from: restoredGoogleResult)
 
-        if let googleResult = try? await googleSignInService.restorePreviousSignIn() {
-            applyGoogleSignInResult(googleResult, isRestore: true)
+        if let googleResult = restoredGoogleResult {
+            applyGoogleSignInResult(
+                googleResult,
+                isRestore: true,
+                restoredSupabaseUser: restoredSupabaseUser
+            )
         } else {
-            restoreGoogleStateFromKeychain()
+            restoreAppleStateFromKeychain(restoredSupabaseUser: restoredSupabaseUser)
+            restoreGoogleStateFromKeychain(restoredSupabaseUser: restoredSupabaseUser)
+        }
+
+        if currentUser == nil, let restoredSupabaseUser {
+            let fallbackProvider: AuthProvider = keychainService.getAppleUserIdentifier() != nil
+                ? .apple
+                : .google
+            let user = Self.makeCanonicalUser(
+                providerUserID: restoredSupabaseUser.id,
+                email: restoredSupabaseUser.email,
+                displayName: nil,
+                avatarURL: nil,
+                authProvider: fallbackProvider,
+                supabaseUser: restoredSupabaseUser
+            )
+            currentUser = user
+            authState = .authenticated(user)
         }
 
         isNotionConnected = notionAuthService.isConnected
         isTaskadeConnected = taskadeAuthService.isConnected
     }
 
-    private func applyGoogleSignInResult(_ result: GoogleSignInResult, isRestore: Bool) {
+    private func restoredSupabaseUser(from googleResult: GoogleSignInResult?) async -> SupabaseUser? {
+        if let currentUser = await supabaseService.getCurrentUser() {
+            return currentUser
+        }
+
+        guard let googleResult else {
+            return nil
+        }
+
+        do {
+            return try await signInToSupabase(withGoogleResult: googleResult)
+        } catch {
+            ErrorReporter.log(error, context: "AuthManager.initialize.restoreSupabaseUser")
+            return nil
+        }
+    }
+
+    private func applyGoogleSignInResult(
+        _ result: GoogleSignInResult,
+        isRestore: Bool,
+        restoredSupabaseUser: SupabaseUser? = nil
+    ) {
         isGoogleConnected = true
         googleCalendarAccessLevel = result.calendarAccessLevel
         hasTasksAccess = result.hasTasksAccess
 
         if isRestore && currentUser == nil {
-            let user = User(
-                id: result.userID,
+            let user = Self.makeCanonicalUser(
+                providerUserID: result.userID,
                 email: result.email,
                 displayName: result.displayName,
                 avatarURL: result.avatarURL,
-                authProvider: .google
+                authProvider: .google,
+                supabaseUser: restoredSupabaseUser
             )
             currentUser = user
             authState = .authenticated(user)
@@ -74,21 +119,26 @@ public final class AuthManager {
     }
 
     /// 从 Keychain 恢复 Apple 登录状态
-    private func restoreAppleStateFromKeychain() {
-        guard let userIdentifier = keychainService.getAppleUserIdentifier() else {
+    private func restoreAppleStateFromKeychain(restoredSupabaseUser: SupabaseUser?) {
+        guard let userIdentifier = keychainService.getAppleUserIdentifier(),
+              let restoredSupabaseUser else {
             return
         }
 
-        let user = User(
-            id: userIdentifier,
-            authProvider: .apple
+        let user = Self.makeCanonicalUser(
+            providerUserID: userIdentifier,
+            email: restoredSupabaseUser.email,
+            displayName: nil,
+            avatarURL: nil,
+            authProvider: .apple,
+            supabaseUser: restoredSupabaseUser
         )
         currentUser = user
         authState = .authenticated(user)
     }
 
     /// 从 Keychain 恢复 Google 连接状态
-    private func restoreGoogleStateFromKeychain() {
+    private func restoreGoogleStateFromKeychain(restoredSupabaseUser: SupabaseUser?) {
         guard keychainService.getGoogleAccessToken() != nil,
               keychainService.getGoogleRefreshToken() != nil,
               let savedScopes = keychainService.getGoogleScopes() else {
@@ -98,6 +148,19 @@ public final class AuthManager {
         isGoogleConnected = true
         googleCalendarAccessLevel = GoogleCalendarAccessLevel.from(grantedScopes: savedScopes)
         hasTasksAccess = savedScopes.contains(GoogleOAuthScope.tasks)
+
+        if currentUser == nil, let restoredSupabaseUser {
+            let user = Self.makeCanonicalUser(
+                providerUserID: restoredSupabaseUser.id,
+                email: restoredSupabaseUser.email,
+                displayName: nil,
+                avatarURL: nil,
+                authProvider: .google,
+                supabaseUser: restoredSupabaseUser
+            )
+            currentUser = user
+            authState = .authenticated(user)
+        }
     }
 
     // MARK: - Apple Sign In
@@ -108,10 +171,12 @@ public final class AuthManager {
 
         do {
             let result = try await appleSignInService.signIn()
+            let supabaseUser = try await signInToSupabase(withAppleIDToken: result.identityTokenString)
             try completeAppleSignIn(
                 userIdentifier: result.userIdentifier,
                 email: result.email,
-                displayName: result.displayName
+                displayName: result.displayName,
+                supabaseUser: supabaseUser
             )
         } catch {
             handleAuthenticationError(error)
@@ -129,10 +194,14 @@ public final class AuthManager {
             }
 
             let displayName = buildDisplayName(from: credential.fullName)
+            let supabaseUser = try await signInToSupabase(
+                withAppleIDToken: String(data: credential.identityToken ?? Data(), encoding: .utf8)
+            )
             try completeAppleSignIn(
                 userIdentifier: credential.user,
                 email: credential.email,
-                displayName: displayName
+                displayName: displayName,
+                supabaseUser: supabaseUser
             )
         } catch {
             authState = .error(error.localizedDescription)
@@ -173,6 +242,9 @@ public final class AuthManager {
 
         do {
             let result = try await googleSignInService.signIn()
+            let supabaseUser = isConnecting
+                ? nil
+                : try await signInToSupabase(withGoogleResult: result)
 
             isGoogleConnected = true
             googleCalendarAccessLevel = result.calendarAccessLevel
@@ -180,12 +252,13 @@ public final class AuthManager {
 
             // 如果是首次登录（不是连接），设置用户
             if !isConnecting {
-                let user = User(
-                    id: result.userID,
+                let user = Self.makeCanonicalUser(
+                    providerUserID: result.userID,
                     email: result.email,
                     displayName: result.displayName,
                     avatarURL: result.avatarURL,
-                    authProvider: .google
+                    authProvider: .google,
+                    supabaseUser: supabaseUser
                 )
                 currentUser = user
                 authState = .authenticated(user)
@@ -286,6 +359,12 @@ public final class AuthManager {
 
     /// 完全登出
     public func signOut() async {
+        do {
+            try await supabaseService.signOut()
+        } catch {
+            ErrorReporter.log(error, context: "AuthManager.signOut.supabase")
+        }
+
         // 清除 Google
         googleSignInService.signOut()
         isGoogleConnected = false
@@ -319,18 +398,57 @@ public final class AuthManager {
     private func completeAppleSignIn(
         userIdentifier: String,
         email: String?,
-        displayName: String?
+        displayName: String?,
+        supabaseUser: SupabaseUser
     ) throws {
         try appleSignInService.saveUserIdentifier(userIdentifier)
 
-        let user = User(
-            id: userIdentifier,
+        let user = Self.makeCanonicalUser(
+            providerUserID: userIdentifier,
             email: email,
             displayName: displayName,
-            authProvider: .apple
+            avatarURL: nil,
+            authProvider: .apple,
+            supabaseUser: supabaseUser
         )
 
         currentUser = user
         authState = .authenticated(user)
+    }
+
+    private func signInToSupabase(withAppleIDToken idToken: String?) async throws -> SupabaseUser {
+        guard let idToken, !idToken.isEmpty else {
+            throw AppleSignInError.invalidCredential
+        }
+        return try await supabaseService.signInWithApple(idToken: idToken)
+    }
+
+    private func signInToSupabase(withGoogleResult result: GoogleSignInResult) async throws -> SupabaseUser {
+        guard let idToken = result.idToken, !idToken.isEmpty else {
+            throw GoogleSignInError.failed("Missing Google ID token")
+        }
+        return try await supabaseService.signInWithGoogle(
+            idToken: idToken,
+            accessToken: result.accessToken
+        )
+    }
+
+    nonisolated static func makeCanonicalUser(
+        providerUserID: String,
+        email: String?,
+        displayName: String?,
+        avatarURL: URL?,
+        authProvider: AuthProvider,
+        supabaseUser: SupabaseUser?
+    ) -> User {
+        User(
+            id: supabaseUser?.id ?? providerUserID,
+            email: supabaseUser?.email ?? email,
+            displayName: displayName,
+            avatarURL: avatarURL,
+            authProvider: authProvider,
+            createdAt: supabaseUser?.createdAt ?? Date(),
+            lastLoginAt: Date()
+        )
     }
 }

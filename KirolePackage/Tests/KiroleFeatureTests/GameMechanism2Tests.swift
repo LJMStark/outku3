@@ -26,28 +26,30 @@ struct GameMechanism2Tests {
     @Test("Legacy streak data keeps the saved streak on first use after migration")
     @MainActor
     func legacyStreakMigrationPreservesSavedStreak() async throws {
-        let storage = LocalStorage.shared
-        let state = AppState.makeForTesting()
-        let now = Date(timeIntervalSince1970: 1_710_000_000)
+        try await SharedPersistenceTestLock.shared.withLock {
+            let storage = LocalStorage.shared
+            let state = AppState.makeForTesting()
+            let now = Date(timeIntervalSince1970: 1_710_000_000)
 
-        let originalDays = await storage.loadConsecutiveDays()
-        let originalLastUsageDate = await storage.loadLastUsageDate()
-        let originalUsageState = try await storage.loadCompanionUsageState()
+            let originalDays = await storage.loadConsecutiveDays()
+            let originalLastUsageDate = await storage.loadLastUsageDate()
+            let originalUsageState = try await storage.loadCompanionUsageState()
 
-        await storage.saveConsecutiveDays(5)
-        await storage.saveLastUsageDate(nil)
+            await storage.saveConsecutiveDays(5)
+            await storage.saveLastUsageDate(nil)
 
-        await state.registerUsageActivity(now: now)
+            await state.registerUsageActivity(now: now)
 
-        #expect(await storage.loadConsecutiveDays() == 5)
-        #expect(await storage.loadLastUsageDate() == now)
+            #expect(await storage.loadConsecutiveDays() == 5)
+            #expect(await storage.loadLastUsageDate() == now)
 
-        await storage.saveConsecutiveDays(originalDays)
-        await storage.saveLastUsageDate(originalLastUsageDate)
-        if let originalUsageState {
-            try await storage.saveCompanionUsageState(originalUsageState)
-        } else {
-            try await storage.deleteFile(named: "companion_usage_state.json")
+            await storage.saveConsecutiveDays(originalDays)
+            await storage.saveLastUsageDate(originalLastUsageDate)
+            if let originalUsageState {
+                try await storage.saveCompanionUsageState(originalUsageState)
+            } else {
+                try await storage.deleteFile(named: "companion_usage_state.json")
+            }
         }
     }
 
@@ -196,7 +198,7 @@ struct GameMechanism2Tests {
     @Test("BLE event replay uses event timestamps for focus session timing")
     @MainActor
     func bleEventReplayUsesEventTimestamps() async {
-        let appState = AppState.shared
+        let appState = AppState.makeForTesting()
         let focusGuardService = GameMechanismMockFocusGuardService()
         let focusService = FocusSessionService.makeForTesting(
             focusGuardService: focusGuardService,

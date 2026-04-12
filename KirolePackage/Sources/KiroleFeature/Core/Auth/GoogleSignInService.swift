@@ -170,6 +170,7 @@ public final class GoogleSignInService: @unchecked Sendable {
             email: user.profile?.email,
             displayName: user.profile?.name,
             avatarURL: user.profile?.imageURL(withDimension: 200),
+            idToken: user.idToken?.tokenString,
             accessToken: user.accessToken.tokenString,
             refreshToken: user.refreshToken.tokenString,
             grantedScopes: user.grantedScopes ?? []
@@ -210,6 +211,7 @@ public struct GoogleSignInResult: Sendable {
     public let email: String?
     public let displayName: String?
     public let avatarURL: URL?
+    public let idToken: String?
     public let accessToken: String
     public let refreshToken: String
     public let grantedScopes: [String]
@@ -292,6 +294,9 @@ public struct GoogleSignInResult: Sendable {
     public let email: String? = nil
     public let displayName: String? = nil
     public let avatarURL: URL? = nil
+    public let idToken: String? = nil
+    public let accessToken: String = ""
+    public let refreshToken: String = ""
     public let grantedScopes: [String] = []
     public var calendarAccessLevel: GoogleCalendarAccessLevel = .none
     public var hasCalendarAccess: Bool = false
@@ -302,12 +307,15 @@ public struct GoogleSignInResult: Sendable {
 public enum GoogleSignInError: LocalizedError, Sendable {
     case notSupported
     case canceled
+    case failed(String)
     public var errorDescription: String? {
         switch self {
         case .notSupported:
             return "Google Sign In not supported on macOS"
         case .canceled:
             return "Sign in was canceled"
+        case .failed(let message):
+            return "Sign in failed: \(message)"
         }
     }
 }

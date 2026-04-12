@@ -7,8 +7,10 @@ import Supabase
 public actor SupabaseService {
     public static let shared = SupabaseService()
 
+    private let keychainService = KeychainService.shared
     private var client: SupabaseClient?
     private var isConfigured = false
+    private var didAttemptSessionRestore = false
 
     private init() {
         // Configuration happens lazily on first use
@@ -84,6 +86,7 @@ public actor SupabaseService {
                 idToken: idToken
             )
         )
+        try persistSession(response)
 
         return SupabaseUser(
             id: response.user.id.uuidString,
@@ -102,6 +105,7 @@ public actor SupabaseService {
                 accessToken: accessToken
             )
         )
+        try persistSession(response)
 
         return SupabaseUser(
             id: response.user.id.uuidString,
@@ -113,12 +117,18 @@ public actor SupabaseService {
     /// 登出
     public func signOut() async throws {
         let client = try requireClient()
+        defer {
+            keychainService.clearSupabaseTokens()
+            didAttemptSessionRestore = false
+        }
         try await client.auth.signOut()
     }
 
     /// 获取当前用户
     public func getCurrentUser() async -> SupabaseUser? {
-        guard let client = client,
+        await restoreSessionIfNeeded()
+
+        guard let client = try? requireClient(),
               let user = try? await client.auth.user() else {
             return nil
         }
@@ -128,6 +138,39 @@ public actor SupabaseService {
             email: user.email,
             createdAt: user.createdAt
         )
+    }
+
+    private func persistSession(_ session: Session) throws {
+        try keychainService.saveSupabaseTokens(
+            accessToken: session.accessToken,
+            refreshToken: session.refreshToken
+        )
+        didAttemptSessionRestore = true
+    }
+
+    private func restoreSessionIfNeeded() async {
+        guard !didAttemptSessionRestore else { return }
+        didAttemptSessionRestore = true
+
+        guard let client = try? requireClient() else { return }
+        guard client.auth.currentSession == nil else { return }
+        guard let accessToken = keychainService.getSupabaseAccessToken(),
+              let refreshToken = keychainService.getSupabaseRefreshToken() else {
+            return
+        }
+
+        do {
+            let session = try await client.auth.setSession(
+                accessToken: accessToken,
+                refreshToken: refreshToken
+            )
+            try persistSession(session)
+        } catch {
+            keychainService.clearSupabaseTokens()
+            #if DEBUG
+            print("[SupabaseService] Failed to restore persisted session: \(error.localizedDescription)")
+            #endif
+        }
     }
 
     // MARK: - Pet Data

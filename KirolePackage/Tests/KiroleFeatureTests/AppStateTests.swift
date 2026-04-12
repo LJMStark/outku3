@@ -15,7 +15,7 @@ struct AppStateTests {
         @Test("Default tab is home")
         @MainActor
         func defaultTabIsHome() {
-            let state = AppState.shared
+            let state = AppState.makeForTesting()
             // Reset to default for test
             state.selectedTab = .home
             #expect(state.selectedTab == .home)
@@ -24,7 +24,7 @@ struct AppStateTests {
         @Test("Can switch between tabs")
         @MainActor
         func canSwitchTabs() {
-            let state = AppState.shared
+            let state = AppState.makeForTesting()
 
             state.selectedTab = .pet
             #expect(state.selectedTab == .pet)
@@ -39,7 +39,7 @@ struct AppStateTests {
         @Test("Event selection updates state")
         @MainActor
         func eventSelectionUpdatesState() {
-            let state = AppState.shared
+            let state = AppState.makeForTesting()
 
             let event = CalendarEvent(
                 title: "Test Event",
@@ -56,7 +56,7 @@ struct AppStateTests {
         @Test("Dismiss event detail clears selection")
         @MainActor
         func dismissEventDetailClearsSelection() {
-            let state = AppState.shared
+            let state = AppState.makeForTesting()
 
             let event = CalendarEvent(
                 title: "Test Event",
@@ -80,7 +80,7 @@ struct AppStateTests {
         @Test("Add task increases task count")
         @MainActor
         func addTaskIncreasesCount() async {
-            let state = AppState.shared
+            let state = AppState.makeForTesting()
             let initialCount = state.tasks.count
 
             let newTask = TaskItem(
@@ -100,7 +100,7 @@ struct AppStateTests {
         @Test("Delete task removes from list")
         @MainActor
         func deleteTaskRemovesFromList() async {
-            let state = AppState.shared
+            let state = AppState.makeForTesting()
 
             let newTask = TaskItem(
                 title: "Task to Delete \(UUID().uuidString)",
@@ -119,7 +119,7 @@ struct AppStateTests {
         @Test("Tasks for today filters correctly")
         @MainActor
         func tasksForTodayFiltersCorrectly() {
-            let state = AppState.shared
+            let state = AppState.makeForTesting()
 
             // Create tasks with different due dates
             let todayTask = TaskItem(
@@ -159,7 +159,7 @@ struct AppStateTests {
         @Test("Completed tasks for today filters correctly")
         @MainActor
         func completedTasksForTodayFiltersCorrectly() {
-            let state = AppState.shared
+            let state = AppState.makeForTesting()
 
             let completedTask = TaskItem(
                 id: "completed-\(UUID().uuidString)",
@@ -197,7 +197,7 @@ struct AppStateTests {
         @Test("Toggle task completion changes state")
         @MainActor
         func toggleTaskCompletionChangesState() {
-            let state = AppState.shared
+            let state = AppState.makeForTesting()
 
             let task = TaskItem(
                 id: "toggle-test-\(UUID().uuidString)",
@@ -232,7 +232,7 @@ struct AppStateTests {
         @Test("Completing task increases pet progress")
         @MainActor
         func completingTaskIncreasesPetProgress() {
-            let state = AppState.shared
+            let state = AppState.makeForTesting()
 
             // Store initial progress
             let initialProgress = state.pet.progress
@@ -267,7 +267,7 @@ struct AppStateTests {
         @Test("Completing task increases pet points")
         @MainActor
         func completingTaskIncreasesPetPoints() {
-            let state = AppState.shared
+            let state = AppState.makeForTesting()
 
             let initialPoints = state.pet.points
 
@@ -300,7 +300,7 @@ struct AppStateTests {
         @Test("Completing task increases adventures count")
         @MainActor
         func completingTaskIncreasesAdventuresCount() {
-            let state = AppState.shared
+            let state = AppState.makeForTesting()
 
             let initialAdventures = state.pet.adventuresCount
 
@@ -332,7 +332,7 @@ struct AppStateTests {
         @Test("Uncompleting task decreases pet stats")
         @MainActor
         func uncompletingTaskDecreasesPetStats() {
-            let state = AppState.shared
+            let state = AppState.makeForTesting()
 
             // First complete a task
             let task = TaskItem(
@@ -375,7 +375,7 @@ struct AppStateTests {
         @Test("Progress is capped at 1.0")
         @MainActor
         func progressIsCappedAtMax() {
-            let state = AppState.shared
+            let state = AppState.makeForTesting()
 
             // Set progress close to max
             state.pet.progress = 0.99
@@ -409,7 +409,7 @@ struct AppStateTests {
         @Test("Progress does not go below 0")
         @MainActor
         func progressDoesNotGoBelowZero() {
-            let state = AppState.shared
+            let state = AppState.makeForTesting()
 
             // Set progress to 0
             state.pet.progress = 0.0
@@ -444,7 +444,7 @@ struct AppStateTests {
         @Test("Toggle non-existent task does nothing")
         @MainActor
         func toggleNonExistentTaskDoesNothing() {
-            let state = AppState.shared
+            let state = AppState.makeForTesting()
 
             let initialTaskCount = state.tasks.count
             let initialProgress = state.pet.progress
@@ -465,7 +465,7 @@ struct AppStateTests {
         @Test("Toggle completion keeps conflict status when external sync fails")
         @MainActor
         func toggleCompletionMarksConflictOnExternalSyncFailure() async {
-            let state = AppState.shared
+            let state = AppState.makeForTesting()
 
             let task = TaskItem(
                 id: "google-conflict-\(UUID().uuidString)",
@@ -505,7 +505,7 @@ struct AppStateTests {
         @Test("Complete evolution advances pet stage")
         @MainActor
         func completeEvolutionAdvancesStage() {
-            let state = AppState.shared
+            let state = AppState.makeForTesting()
 
             // Setup evolution state
             state.pet.stage = .baby
@@ -537,7 +537,7 @@ struct AppStateTests {
         @Test("Complete evolution without target stage does nothing")
         @MainActor
         func completeEvolutionWithoutTargetDoesNothing() {
-            let state = AppState.shared
+            let state = AppState.makeForTesting()
 
             state.pet.stage = .baby
             state.evolutionToStage = nil
@@ -552,7 +552,7 @@ struct AppStateTests {
         @Test("Dismiss evolution clears animation state")
         @MainActor
         func dismissEvolutionClearsState() {
-            let state = AppState.shared
+            let state = AppState.makeForTesting()
 
             state.showEvolutionAnimation = true
             state.evolutionFromStage = .baby
@@ -568,7 +568,7 @@ struct AppStateTests {
         @Test("Evolution multipliers are applied correctly")
         @MainActor
         func evolutionMultipliersAppliedCorrectly() {
-            let state = AppState.shared
+            let state = AppState.makeForTesting()
 
             // Set known values
             state.pet.weight = 100.0
@@ -603,7 +603,7 @@ struct AppStateTests {
         @Test("Set pet form updates state")
         @MainActor
         func setPetFormUpdatesState() {
-            let state = AppState.shared
+            let state = AppState.makeForTesting()
 
             state.setPetForm(.blaze)
             #expect(state.pet.currentForm == .blaze)
@@ -618,7 +618,7 @@ struct AppStateTests {
         @Test("All pet forms are valid")
         @MainActor
         func allPetFormsAreValid() {
-            let state = AppState.shared
+            let state = AppState.makeForTesting()
 
             for form in PetForm.allCases {
                 state.setPetForm(form)
@@ -638,7 +638,7 @@ struct AppStateTests {
         @Test("Update integration status for existing integration")
         @MainActor
         func updateExistingIntegrationStatus() {
-            let state = AppState.shared
+            let state = AppState.makeForTesting()
 
             // Google Calendar should exist in default integrations
             state.updateIntegrationStatus(.googleCalendar, isConnected: true)
@@ -653,7 +653,7 @@ struct AppStateTests {
         @Test("Update integration status adds new integration if connected")
         @MainActor
         func updateIntegrationAddsNewIfConnected() {
-            let state = AppState.shared
+            let state = AppState.makeForTesting()
 
             // Remove tickTick if exists
             state.integrations.removeAll { $0.type == .tickTick }
@@ -672,7 +672,7 @@ struct AppStateTests {
         @Test("Update integration status does not add if disconnected")
         @MainActor
         func updateIntegrationDoesNotAddIfDisconnected() {
-            let state = AppState.shared
+            let state = AppState.makeForTesting()
 
             // Remove notion if exists
             state.integrations.removeAll { $0.type == .notion }
@@ -687,7 +687,7 @@ struct AppStateTests {
         @Test("Connecting Google Calendar disconnects Apple Calendar and clears Apple events")
         @MainActor
         func connectingGoogleCalendarDisconnectsAppleCalendar() {
-            let state = AppState.shared
+            let state = AppState.makeForTesting()
             let originalIntegrations = state.integrations
             let originalEvents = state.events
 
@@ -727,7 +727,7 @@ struct AppStateTests {
         @Test("Connecting Apple Reminders disconnects Google Tasks and clears Google tasks")
         @MainActor
         func connectingAppleRemindersDisconnectsGoogleTasks() {
-            let state = AppState.shared
+            let state = AppState.makeForTesting()
             let originalIntegrations = state.integrations
             let originalTasks = state.tasks
 
@@ -769,7 +769,7 @@ struct AppStateTests {
         @Test("Update user profile changes state")
         @MainActor
         func updateUserProfileChangesState() {
-            let state = AppState.shared
+            let state = AppState.makeForTesting()
 
             let newProfile = UserProfile(
                 workType: .remoteWorker,
@@ -791,7 +791,7 @@ struct AppStateTests {
         @Test("Complete onboarding sets timestamp")
         @MainActor
         func completeOnboardingSetsTimestamp() {
-            let state = AppState.shared
+            let state = AppState.makeForTesting()
 
             // Ensure onboarding is not completed
             var profile = state.userProfile
@@ -814,7 +814,7 @@ struct AppStateTests {
         @Test("isOnboardingCompleted reflects profile state")
         @MainActor
         func isOnboardingCompletedReflectsState() {
-            let state = AppState.shared
+            let state = AppState.makeForTesting()
             state.onboardingProfile = nil
 
             var profile = state.userProfile
@@ -839,7 +839,7 @@ struct AppStateTests {
         @Test("Update events replaces all events")
         @MainActor
         func updateEventsReplacesAll() {
-            let state = AppState.shared
+            let state = AppState.makeForTesting()
 
             let newEvents = [
                 CalendarEvent(
@@ -875,7 +875,7 @@ struct AppStateTests {
         @Test("Statistics update when tasks change")
         @MainActor
         func statisticsUpdateOnTaskChange() {
-            let state = AppState.shared
+            let state = AppState.makeForTesting()
 
             // Clear existing tasks
             let originalTasks = state.tasks
@@ -915,7 +915,7 @@ struct AppStateTests {
         @Test("Default device mode is interactive")
         @MainActor
         func defaultDeviceModeIsInteractive() {
-            let state = AppState.shared
+            let state = AppState.makeForTesting()
             // Note: This tests the default, actual value may differ based on state
             #expect(state.deviceMode == .interactive || state.deviceMode == .focus)
         }
@@ -923,7 +923,7 @@ struct AppStateTests {
         @Test("Demo mode can be toggled")
         @MainActor
         func demoModeCanBeToggled() {
-            let state = AppState.shared
+            let state = AppState.makeForTesting()
 
             let initialDemoMode = state.isDemoMode
 
@@ -943,7 +943,7 @@ struct AppStateTests {
         @Test("Loading state can be set")
         @MainActor
         func loadingStateCanBeSet() {
-            let state = AppState.shared
+            let state = AppState.makeForTesting()
 
             state.isLoading = true
             #expect(state.isLoading == true)
@@ -955,7 +955,7 @@ struct AppStateTests {
         @Test("Error state can be set and cleared")
         @MainActor
         func errorStateCanBeSetAndCleared() {
-            let state = AppState.shared
+            let state = AppState.makeForTesting()
 
             state.lastError = "Test error message"
             #expect(state.lastError == "Test error message")

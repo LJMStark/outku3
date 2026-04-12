@@ -11,7 +11,7 @@ struct LocalStorageFailureTests {
     @Test("Persistence failure updates lastError with user-facing message")
     @MainActor
     func persistenceFailureSetsLastError() {
-        let appState = AppState.shared
+        let appState = AppState.makeForTesting()
         appState.lastError = nil
 
         appState.reportPersistenceError(MockStorageError.diskFull, operation: "save", target: "tasks.json")
@@ -72,7 +72,7 @@ struct ConcurrencyIsolationTests {
     @Test("AppState and ThemeManager can be safely accessed on MainActor")
     @MainActor
     func mainActorIsolatedStateAccess() {
-        let appState = AppState.shared
+        let appState = AppState.makeForTesting()
         let themeManager = ThemeManager.shared
 
         appState.selectedTab = .home

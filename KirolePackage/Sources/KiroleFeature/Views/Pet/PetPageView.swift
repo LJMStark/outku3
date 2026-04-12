@@ -75,7 +75,16 @@ struct PetPageView: View {
     // MARK: - Evolution Helpers
 
     private var evolutionBinding: Binding<Bool> {
-        .constant(appState.showEvolutionAnimation)
+        Binding(
+            get: { appState.showEvolutionAnimation },
+            set: { isPresented in
+                if isPresented {
+                    appState.showEvolutionAnimation = true
+                } else {
+                    appState.dismissEvolution()
+                }
+            }
+        )
     }
 
     @ViewBuilder

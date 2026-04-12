@@ -37,7 +37,7 @@ struct SyncSchedulerTests {
         @Test("Connected targets include all supported external sources")
         @MainActor
         func includesAllSupportedSources() {
-            let state = AppState.shared
+            let state = AppState.makeForTesting()
             let originalIntegrations = state.integrations
             defer { state.integrations = originalIntegrations }
 
@@ -51,7 +51,7 @@ struct SyncSchedulerTests {
         @Test("Google and Apple targets are de-duplicated by provider")
         @MainActor
         func deduplicatesGroupedProviders() {
-            let state = AppState.shared
+            let state = AppState.makeForTesting()
             let originalIntegrations = state.integrations
             defer { state.integrations = originalIntegrations }
 

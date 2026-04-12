@@ -126,6 +126,7 @@ public final class BLEService: NSObject {
     private let securityManager = BLESecurityManager()
     private let deviceIdentityStore = BLEDeviceIdentityStore.shared
     private let rateLimiter = BLERateLimiter.shared
+    private let writeGate = BLEWriteGate()
 
     private var scanCompletion: (([BLEDevice]) -> Void)?
     private var connectCompletion: ((Result<Void, BLEError>) -> Void)?
@@ -524,19 +525,28 @@ public final class BLEService: NSObject {
         peripheral: CBPeripheral,
         characteristic: CBCharacteristic
     ) async throws {
-        await rateLimiter.acquireWritePermit()
+        await writeGate.acquire()
 
-        try await withCheckedThrowingContinuation { continuation in
-            writeCompletion = { result in
-                switch result {
-                case .success:
-                    continuation.resume()
-                case .failure(let error):
-                    continuation.resume(throwing: error)
+        do {
+            await rateLimiter.acquireWritePermit()
+
+            try await withCheckedThrowingContinuation { continuation in
+                writeCompletion = { result in
+                    switch result {
+                    case .success:
+                        continuation.resume()
+                    case .failure(let error):
+                        continuation.resume(throwing: error)
+                    }
                 }
+                peripheral.writeValue(packet, for: characteristic, type: .withResponse)
             }
-            peripheral.writeValue(packet, for: characteristic, type: .withResponse)
+        } catch {
+            await writeGate.release()
+            throw error
         }
+
+        await writeGate.release()
     }
 
     private func startSecurityHandshake(peripheral: CBPeripheral) async {
