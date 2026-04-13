@@ -70,19 +70,6 @@ extension AppState {
         do {
             if let savedOnboardingProfile = try await localStorage.loadOnboardingProfile() {
                 onboardingProfile = savedOnboardingProfile
-
-                // Fallback migration: if onboarding was completed but UserProfile
-                // was never mapped (pre-update users), map now
-                if savedOnboardingProfile.onboardingCompletedAt != nil,
-                   userProfile.onboardingCompletedAt == nil {
-                    let mappedProfile = UserProfile.from(onboarding: savedOnboardingProfile, merging: userProfile)
-                    userProfile = mappedProfile
-                    do {
-                        try await localStorage.saveUserProfile(mappedProfile)
-                    } catch {
-                        reportPersistenceError(error, operation: "save", target: "user_profile.json")
-                    }
-                }
             }
         } catch {
             reportPersistenceError(error, operation: "load", target: "onboarding_profile.json")

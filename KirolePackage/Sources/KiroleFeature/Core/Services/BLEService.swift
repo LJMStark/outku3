@@ -36,13 +36,13 @@ public enum BLEConnectionState: Sendable, Equatable {
 // MARK: - BLE Security Mode
 
 public enum BLESecurityMode: Sendable, Equatable {
-    case compatibility
+    case development
     case secure
 
     public var displayTitle: String {
         switch self {
-        case .compatibility:
-            return "Compatibility Mode"
+        case .development:
+            return "Development Mode"
         case .secure:
             return "Secure Mode"
         }
@@ -50,8 +50,8 @@ public enum BLESecurityMode: Sendable, Equatable {
 
     public var detailText: String {
         switch self {
-        case .compatibility:
-            return "Legacy plaintext protocol is enabled for MVP hardware integration."
+        case .development:
+            return "Unsigned BLE transport is enabled for pre-integration development."
         case .secure:
             return "BLE v2 secure handshake and signed envelopes are enabled."
         }
@@ -59,7 +59,7 @@ public enum BLESecurityMode: Sendable, Equatable {
 
     public var sourceText: String {
         switch self {
-        case .compatibility:
+        case .development:
             return "Source: BLE_SHARED_SECRET not configured"
         case .secure:
             return "Source: BLE_SHARED_SECRET configured"
@@ -152,16 +152,16 @@ public final class BLEService: NSObject {
 
     public nonisolated static var configuredSecurityMode: BLESecurityMode {
         guard let secret = AppSecrets.bleSharedSecret, !secret.isEmpty else {
-            return .compatibility
+            return .development
         }
         return .secure
     }
 
     public var securityMode: BLESecurityMode {
-        requiresSecureChannel ? .secure : .compatibility
+        requiresSecureChannel ? .secure : .development
     }
 
-    /// MVP 兼容模式：未注入共享密钥时，允许旧协议明文联调
+    /// 开发期未注入共享密钥时，允许使用未签名传输做本地联调。
     private var requiresSecureChannel: Bool {
         guard let secret = AppSecrets.bleSharedSecret else { return false }
         return !secret.isEmpty
@@ -417,12 +417,12 @@ public final class BLEService: NSObject {
 
     public func sendDisplayScene(_ scene: DisplayScene) async throws {
         let packet = BLEPacketizer.buildSceneUnlockPacket(sceneId: scene.commandByte)
-        try await writeCompatibilityDisplayPacket(packet)
+        try await writeDevelopmentDisplayPacket(packet)
     }
 
     public func sendScreensaverConfig(_ config: ScreensaverConfig) async throws {
         let packet = BLEPacketizer.buildScreensaverPacket(config: config)
-        try await writeCompatibilityDisplayPacket(packet)
+        try await writeDevelopmentDisplayPacket(packet)
     }
 
     // MARK: - Private Methods
@@ -435,7 +435,7 @@ public final class BLEService: NSObject {
         }
 
         guard requiresSecureChannel else {
-            try await writeLegacyData(type: type, data: data, peripheral: peripheral, characteristic: characteristic)
+            try await writeUnsignedData(type: type, data: data, peripheral: peripheral, characteristic: characteristic)
             return
         }
 
@@ -464,7 +464,7 @@ public final class BLEService: NSObject {
         try await writePacket(packet, peripheral: peripheral, characteristic: characteristic)
     }
 
-    private func writeLegacyData(
+    private func writeUnsignedData(
         type: BLEDataType,
         data: Data,
         peripheral: CBPeripheral,
@@ -490,7 +490,7 @@ public final class BLEService: NSObject {
         try await writePacket(packet, peripheral: peripheral, characteristic: characteristic)
     }
 
-    private func writeCompatibilityDisplayPacket(_ packet: Data) async throws {
+    private func writeDevelopmentDisplayPacket(_ packet: Data) async throws {
         guard connectionState.isConnected,
               let characteristic = writeCharacteristic,
               let peripheral = connectedPeripheral else {
@@ -498,7 +498,7 @@ public final class BLEService: NSObject {
         }
 
         guard !requiresSecureChannel else {
-            throw BLEError.securityHandshakeFailed("Custom display commands require compatibility mode")
+            throw BLEError.securityHandshakeFailed("Custom display commands require development mode")
         }
 
         try await writePacket(packet, peripheral: peripheral, characteristic: characteristic)

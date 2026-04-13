@@ -4,16 +4,12 @@ extension AppState {
     func registerUsageActivity(now: Date = Date()) async {
         let savedConsecutiveDays = await localStorage.loadConsecutiveDays()
         let savedLastUsageDate = await localStorage.loadLastUsageDate()
-        let resolvedCharacter = CompanionCharacter.fromProductStyle(userProfile.companionStyle) ?? userProfile.companionCharacter
+        let currentCharacter = userProfile.companionCharacter
 
         var overallUsage = ConsecutiveUsageProgress(
             currentStreak: savedConsecutiveDays,
             lastUsedDate: savedLastUsageDate
         )
-        if savedConsecutiveDays > 0, savedLastUsageDate == nil {
-            overallUsage.lastUsedDate = now
-            await localStorage.saveLastUsageDate(now)
-        }
         let didAdvanceOverallUsage = overallUsage.registerUse(on: now)
         if didAdvanceOverallUsage {
             await localStorage.saveConsecutiveDays(overallUsage.currentStreak)
@@ -21,10 +17,10 @@ extension AppState {
         }
 
         var usageState = (try? await localStorage.loadCompanionUsageState()) ?? CompanionUsageState()
-        var characterUsage = usageState.progress(for: resolvedCharacter)
+        var characterUsage = usageState.progress(for: currentCharacter)
         let didAdvanceCharacterUsage = characterUsage.registerUse(on: now)
         if didAdvanceCharacterUsage {
-            usageState.setProgress(characterUsage, for: resolvedCharacter)
+            usageState.setProgress(characterUsage, for: currentCharacter)
             do {
                 try await localStorage.saveCompanionUsageState(usageState)
             } catch {
@@ -33,9 +29,8 @@ extension AppState {
         }
 
         let updatedStage = IntimacyStage.from(bindingDays: characterUsage.totalUsedDays)
-        if userProfile.companionCharacter != resolvedCharacter || userProfile.intimacyStage != updatedStage {
+        if userProfile.intimacyStage != updatedStage {
             var updatedProfile = userProfile
-            updatedProfile.companionCharacter = resolvedCharacter
             updatedProfile.intimacyStage = updatedStage
             userProfile = updatedProfile
             do {

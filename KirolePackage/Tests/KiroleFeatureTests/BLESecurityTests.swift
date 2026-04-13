@@ -7,9 +7,9 @@ import Testing
 struct BLESecurityTests {
     private static let sharedSecret = "kirole-ble-security-test-secret"
 
-    @Test("BLE mode falls back to compatibility when shared secret is missing")
+    @Test("BLE mode uses development transport when shared secret is missing")
     @MainActor
-    func compatibilityModeWithoutSecret() {
+    func developmentModeWithoutSecret() {
         AppSecrets.configure(
             supabaseURL: nil,
             supabaseAnonKey: nil,
@@ -17,8 +17,8 @@ struct BLESecurityTests {
             bleSharedSecret: nil
         )
 
-        #expect(BLEService.configuredSecurityMode == .compatibility)
-        #expect(BLEService.shared.securityMode == .compatibility)
+        #expect(BLEService.configuredSecurityMode == .development)
+        #expect(BLEService.shared.securityMode == .development)
     }
 
     @Test("BLE mode becomes secure when shared secret is configured")

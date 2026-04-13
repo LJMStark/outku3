@@ -30,6 +30,13 @@ This file provides guidance to Antigravity, Claude Code, Cursor and other AI cod
   - **AI Backend**: OpenRouter (`openai/gpt-4o-mini`) via `OpenAIService`
   - **Testing**: Swift Testing Framework (`@Test`, `#expect`) - **NO XCTest**
 
+### Current Phase Policy
+- The project is in a rapid development phase. Prefer clean evolution over preserving local caches, local JSON files, or provisional interfaces.
+- `LocalStorage`, `UserDefaults`, and on-device JSON are disposable development state. When their shape changes, prefer resetting local data over adding migration code.
+- BLE payloads, event formats, and firmware-facing interfaces are not frozen until real hardware integration begins. Do not add compatibility branches for hypothetical old firmware.
+- Remove obsolete compatibility shims, migration comments, and migration tests when changing models or payloads.
+- Once hardware integration, shared staging data, TestFlight, or external users depend on a format, document that boundary explicitly before adding compatibility work.
+
 ## 3. Tools & Commands
 
 ### Build & Run
@@ -144,7 +151,7 @@ The AI companion is an **emotional value provider**, NOT a productivity coach or
 - Gate DayPack refresh with `DayPack.stableFingerprint()` and `LocalStorage.lastDayPackHash`.
 - Background sync uses `BLEBackgroundSyncScheduler` and BGTask id `com.kirole.app.ble.sync`.
 - BLE link runs in two modes:
-  - **Compatibility Mode (MVP default)**: when `BLE_SHARED_SECRET` is not configured, legacy plaintext protocol is allowed for hardware integration.
+  - **Development Mode (current default)**: when `BLE_SHARED_SECRET` is not configured, unsigned transport is acceptable for local development. This is not a commitment to support historical firmware variants.
   - **Secure Mode**: when `BLE_SHARED_SECRET` is configured, enforce BLE v2 handshake + signed secure envelope + replay protection.
 - Settings UI must expose current BLE mode using `BLEService.configuredSecurityMode` so firmware/App teams can verify integration state.
 
@@ -155,8 +162,9 @@ The AI companion is an **emotional value provider**, NOT a productivity coach or
 - Never use or expose `service_role` keys in iOS code, app bundles, repo files, or logs.
 - Keep RLS enabled on all business tables and scope policies to `auth.uid()`.
 - Any Supabase model field change in Swift code must update `Config/supabase-schema.sql` in the same patch.
-- Include backward-compatible SQL migration for existing databases (for example: `ALTER TABLE ... ADD COLUMN IF NOT EXISTS ...`).
-- Apply schema/migrations before releasing app code that writes new fields.
+- During the rapid development phase, prefer a clean latest schema over backward-compatible migration shims.
+- Before shared staging data, external testers, or production data rely on the schema, it may change in breaking ways as long as code and `Config/supabase-schema.sql` stay aligned.
+- Once external environments depend on the schema, switch to explicit migrations and preserve existing data intentionally.
 
 ## 5. Code Style & Formatting
 

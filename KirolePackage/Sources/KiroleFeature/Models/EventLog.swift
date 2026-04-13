@@ -104,9 +104,9 @@ public enum EventLogType: String, Codable, Sendable {
         case 0x14: self = .wheelSelect
         case 0x15: self = .viewEventDetail
         case 0x20: self = .requestRefresh
-        case 0x07, 0x30: self = .deviceWake
-        case 0x08, 0x31: self = .deviceSleep
-        case 0x09, 0x40: self = .lowBattery
+        case 0x30: self = .deviceWake
+        case 0x31: self = .deviceSleep
+        case 0x40: self = .lowBattery
         case 0x16: self = .reminderAcknowledged
         case 0x17: self = .reminderDismissed
         default: return nil
@@ -195,27 +195,5 @@ public extension EventLog {
         let id = String(data: idData, encoding: .utf8)
 
         return EventLog(eventType: eventType, taskId: id)
-    }
-}
-
-// MARK: - Legacy Parsing
-
-public extension EventLog {
-    /// Legacy 7-byte fixed format parser (deprecated, kept for backward compatibility)
-    @available(*, deprecated, message: "Use fromBLEPayload(type:payload:) instead")
-    static func parseLegacyFixedRecord(from data: Data) -> EventLog? {
-        guard data.count >= 7 else { return nil }
-        let typeByte = data[0]
-        guard let type = EventLogType(rawByte: typeByte) else { return nil }
-
-        let timestamp = UInt32(data[1]) << 24 | UInt32(data[2]) << 16 | UInt32(data[3]) << 8 | UInt32(data[4])
-        let valueRaw = Int16(bitPattern: UInt16(data[5]) << 8 | UInt16(data[6]))
-
-        return EventLog(
-            eventType: type,
-            taskId: nil,
-            timestamp: Date(timeIntervalSince1970: TimeInterval(timestamp)),
-            value: Int(valueRaw)
-        )
     }
 }

@@ -12,6 +12,7 @@ public actor LocalStorage {
     private let decoder = JSONDecoder()
 
     private enum Keys {
+        static let developmentStorageSchemaVersion = "developmentStorageSchemaVersion"
         static let lastEventLogTimestamp = "lastEventLogTimestamp"
         static let lastDayPackHash = "lastDayPackHash"
         static let lastBleSyncTime = "lastBleSyncTime"
@@ -24,6 +25,42 @@ public actor LocalStorage {
         static let lastHomeHaikuShownDate = "lastHomeHaikuShownDate"
     }
 
+    enum DevelopmentStorageSchema {
+        static let currentVersion = 1
+    }
+
+    private nonisolated static let persistedFiles = [
+        "pet.json", "streak.json", "tasks.json", "events.json",
+        "sync_state.json", "haiku_cache.json", "user_profile.json",
+        "focus_sessions.json", "event_logs.json", "ai_interactions.json",
+        "behavior_summary.json", "onboarding_profile.json",
+        "deep_focus_selection.json", "focus_session_active.json",
+        "outbox.json", "google_sync_metadata.json", "companion_usage_state.json",
+        "avatar.dat", "avatar_pixels.dat", "shared_companion_dialogue.json",
+    ]
+
+    private nonisolated static let resettableUserDefaultKeys = [
+        Keys.developmentStorageSchemaVersion,
+        Keys.lastEventLogTimestamp,
+        Keys.lastDayPackHash,
+        Keys.lastBleSyncTime,
+        Keys.focusEnforcementMode,
+        Keys.deepFocusShieldActive,
+        Keys.deepFocusSelectionCount,
+        Keys.consecutiveDays,
+        Keys.lastUsageDate,
+        Keys.energyBottles,
+        Keys.lastHomeHaikuShownDate,
+    ]
+
+    nonisolated static var developmentStorageSchemaVersionKey: String {
+        Keys.developmentStorageSchemaVersion
+    }
+
+    public nonisolated static var currentDevelopmentStorageSchemaVersion: Int {
+        DevelopmentStorageSchema.currentVersion
+    }
+
     private var documentsDirectory: URL {
         fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
     }
@@ -31,6 +68,59 @@ public actor LocalStorage {
     private init() {
         encoder.dateEncodingStrategy = .iso8601
         decoder.dateDecodingStrategy = .iso8601
+    }
+
+    // MARK: - Rapid Development Reset
+
+    /// During the rapid development phase, local persisted data is disposable.
+    /// Any schema bump clears old on-device state instead of carrying migration code.
+    @discardableResult
+    public nonisolated static func resetForRapidDevelopmentIfNeeded(
+        currentSchemaVersion: Int,
+        userDefaults: UserDefaults = .standard,
+        fileManager: FileManager = .default,
+        documentsDirectory: URL? = nil
+    ) throws -> Bool {
+        let storedVersion = userDefaults.object(forKey: Keys.developmentStorageSchemaVersion) as? Int
+        guard storedVersion == currentSchemaVersion else {
+            let resolvedDocumentsDirectory = documentsDirectory
+                ?? fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            try clearPersistedDevelopmentData(
+                fileManager: fileManager,
+                documentsDirectory: resolvedDocumentsDirectory,
+                userDefaults: userDefaults
+            )
+            userDefaults.set(currentSchemaVersion, forKey: Keys.developmentStorageSchemaVersion)
+            return true
+        }
+        return false
+    }
+
+    @discardableResult
+    public nonisolated static func resetForRapidDevelopmentIfNeeded() throws -> Bool {
+        try resetForRapidDevelopmentIfNeeded(
+            currentSchemaVersion: currentDevelopmentStorageSchemaVersion,
+            userDefaults: .standard,
+            fileManager: .default,
+            documentsDirectory: nil
+        )
+    }
+
+    private nonisolated static func clearPersistedDevelopmentData(
+        fileManager: FileManager,
+        documentsDirectory: URL,
+        userDefaults: UserDefaults
+    ) throws {
+        for file in persistedFiles {
+            let url = documentsDirectory.appendingPathComponent(file)
+            if fileManager.fileExists(atPath: url.path) {
+                try fileManager.removeItem(at: url)
+            }
+        }
+
+        for key in resettableUserDefaultKeys {
+            userDefaults.removeObject(forKey: key)
+        }
     }
 
     // MARK: - Generic File Helpers
@@ -422,32 +512,11 @@ public actor LocalStorage {
 
     /// Remove all persisted local data
     public func clearAll() throws {
-        let files = [
-            "pet.json", "streak.json", "tasks.json", "events.json",
-            "sync_state.json", "haiku_cache.json", "user_profile.json",
-            "focus_sessions.json", "event_logs.json", "ai_interactions.json",
-            "behavior_summary.json", "onboarding_profile.json",
-            "deep_focus_selection.json", "focus_session_active.json",
-            "outbox.json", "google_sync_metadata.json", "companion_usage_state.json",
-            "avatar.dat", "avatar_pixels.dat", "shared_companion_dialogue.json"
-        ]
-        for file in files {
-            let url = documentsDirectory.appendingPathComponent(file)
-            if fileManager.fileExists(atPath: url.path) {
-                try fileManager.removeItem(at: url)
-            }
-        }
-
-        userDefaults.removeObject(forKey: Keys.lastEventLogTimestamp)
-        userDefaults.removeObject(forKey: Keys.lastDayPackHash)
-        userDefaults.removeObject(forKey: Keys.lastBleSyncTime)
-        userDefaults.removeObject(forKey: Keys.focusEnforcementMode)
-        userDefaults.removeObject(forKey: Keys.deepFocusShieldActive)
-        userDefaults.removeObject(forKey: Keys.deepFocusSelectionCount)
-        userDefaults.removeObject(forKey: Keys.consecutiveDays)
-        userDefaults.removeObject(forKey: Keys.lastUsageDate)
-        userDefaults.removeObject(forKey: Keys.energyBottles)
-        userDefaults.removeObject(forKey: Keys.lastHomeHaikuShownDate)
+        try Self.clearPersistedDevelopmentData(
+            fileManager: fileManager,
+            documentsDirectory: documentsDirectory,
+            userDefaults: userDefaults
+        )
     }
 }
 

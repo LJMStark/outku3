@@ -8,6 +8,7 @@ The core project rules, architecture, development commands, and best practices a
 
 1. All responses must begin with **B哥**.
 2. All responses must be in **Chinese** (Simplified).
+3. When the user sounds non-technical or asks for a simple explanation, prefer plain Chinese, explain jargon immediately, and avoid dense technical terms unless they are necessary.
 
 ## Forbidden Patterns
 
@@ -29,6 +30,14 @@ The core project rules, architecture, development commands, and best practices a
 - **UI Framework**: SwiftUI with Model-View (MV) pattern - no ViewModels
 - **AI Backend**: OpenRouter (`openai/gpt-4o-mini`) via `OpenAIService`
 - **Testing**: Swift Testing framework (`@Test`, `#expect`, `#require`)
+
+## Current Phase Policy
+
+- The project is in a rapid development phase. Prefer clean iteration over preserving local caches, local JSON files, or provisional interfaces.
+- `LocalStorage`, `UserDefaults`, and on-device JSON are disposable development state. When their schema changes, reset them instead of adding migration code.
+- BLE payloads, event formats, and firmware-facing interfaces are not frozen until real hardware integration starts. Do not preserve historical firmware compatibility before that point.
+- Remove stale compatibility shims, migration comments, and migration tests when replacing local models or payloads.
+- Only start preserving formats once hardware integration, shared staging data, TestFlight, or external users depend on them.
 
 ## Apple Developer Account
 
@@ -199,8 +208,9 @@ Home page is an infinite-scroll multi-day timeline managed by `TimelineDataSourc
 - Never use or expose `service_role` keys in iOS code, app bundles, repo files, or logs.
 - Keep RLS enabled on all business tables and scope policies to `auth.uid()`.
 - Any Supabase model field change must update `Config/supabase-schema.sql` in the same patch.
-- Include backward-compatible SQL migration for existing databases.
-- Apply schema/migrations before releasing app code that writes new fields.
+- During rapid development, prefer a clean latest schema over backward-compatible migration shims.
+- Before shared staging data, external testers, or production data exist, breaking schema changes are acceptable if code and `Config/supabase-schema.sql` stay aligned.
+- Once external environments depend on the schema, switch to explicit migrations and preserve existing data intentionally.
 
 ## Code Patterns
 
@@ -280,7 +290,7 @@ var body: some View {
 - CRC16-CCITT-FALSE (poly `0x1021`, init `0xFFFF`, xorout `0x0000`, refin/refout `false`)
 - Always send via `BLEPacketizer` and assemble via `BLEPacketAssembler` before parsing payloads.
 - BLE security mode is dual-track:
-  - **Compatibility Mode (MVP default)**: no `BLE_SHARED_SECRET` configured, allows legacy plaintext protocol for firmware integration.
+  - **Development Mode (current default)**: no `BLE_SHARED_SECRET` configured, allows unsigned transport for local development. This does not imply support for historical firmware variants.
   - **Secure Mode**: `BLE_SHARED_SECRET` configured, requires BLE v2 handshake and signed secure envelopes.
 - Event Log record format: `eventType (UInt8)`, `timestamp (UInt32, epoch seconds)`, `value (Int16, big-endian)`
 - BLE data types include `eventLogRequest` and `eventLogBatch` for incremental log sync.
@@ -362,7 +372,7 @@ Key flow: `DayPackGenerator` -> `CompanionTextService` -> `OpenAIService` (optio
 - `BehaviorAnalyzer` is a pure `struct` that computes `UserBehaviorSummary` from tasks/streak data for prompt injection
 - `TimeOfDay.current(at:)` is the shared time-of-day utility (defined on the `TimeOfDay` enum in `DayPackGenerator.swift`) - use this instead of manual hour switches
 - `LocalStorage` uses generic `save<T>`/`load<T>` helpers for all JSON persistence - follow this pattern for new data types
-- All `CompanionTextService` methods accept `userProfile: UserProfile = .default` to maintain backward compatibility
+- All `CompanionTextService` methods accept `userProfile: UserProfile = .default` so call sites can stay concise
 
 ## E-ink Hardware Integration
 

@@ -6,6 +6,12 @@ struct KiroleApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
+        do {
+            try LocalStorage.resetForRapidDevelopmentIfNeeded()
+        } catch {
+            print("Failed to reset local development storage: \(error.localizedDescription)")
+        }
+
         AppSecrets.configure(
             supabaseURL: BuildSecrets.supabaseURL,
             supabaseAnonKey: BuildSecrets.supabaseAnonKey,

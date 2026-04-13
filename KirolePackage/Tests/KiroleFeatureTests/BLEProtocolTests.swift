@@ -756,13 +756,6 @@ struct BLEProtocolTests {
         }
     }
 
-    @Test("EventLogType legacy raw bytes map correctly")
-    func eventLogTypeLegacyRawBytes() {
-        #expect(EventLogType(rawByte: 0x07) == .deviceWake)
-        #expect(EventLogType(rawByte: 0x08) == .deviceSleep)
-        #expect(EventLogType(rawByte: 0x09) == .lowBattery)
-    }
-
     // MARK: - EInkColor Tests
 
     @Test("EInkColor raw values match Spectra 6 index table")

@@ -23,66 +23,96 @@ private final class GameMechanismMockFocusGuardService: FocusGuardService {
 
 @Suite("Game Mechanism 2 Tests", .serialized)
 struct GameMechanism2Tests {
-    @Test("Legacy streak data keeps the saved streak on first use after migration")
-    @MainActor
-    func legacyStreakMigrationPreservesSavedStreak() async throws {
-        try await SharedPersistenceTestLock.shared.withLock {
-            let storage = LocalStorage.shared
-            let state = AppState.makeForTesting()
-            let now = Date(timeIntervalSince1970: 1_710_000_000)
-
-            let originalDays = await storage.loadConsecutiveDays()
-            let originalLastUsageDate = await storage.loadLastUsageDate()
-            let originalUsageState = try await storage.loadCompanionUsageState()
-
-            await storage.saveConsecutiveDays(5)
-            await storage.saveLastUsageDate(nil)
-
-            await state.registerUsageActivity(now: now)
-
-            #expect(await storage.loadConsecutiveDays() == 5)
-            #expect(await storage.loadLastUsageDate() == now)
-
-            await storage.saveConsecutiveDays(originalDays)
-            await storage.saveLastUsageDate(originalLastUsageDate)
-            if let originalUsageState {
-                try await storage.saveCompanionUsageState(originalUsageState)
-            } else {
-                try await storage.deleteFile(named: "companion_usage_state.json")
-            }
-        }
-    }
-
-    @Test("Backward-compatible UserProfile decode derives missing companion fields")
-    func userProfileBackwardCompatibleDecode() throws {
+    @Test("UserProfile decode defaults to nook when no companion fields present")
+    func userProfileDecodeMissingCharacterDefaultsToNook() throws {
         let json = """
         {
           "workType": "Other",
-          "primaryGoals": [],
-          "companionStyle": "Slacker"
+          "primaryGoals": []
         }
         """
         let data = Data(json.utf8)
         let profile = try JSONDecoder().decode(UserProfile.self, from: data)
 
-        #expect(profile.companionStyle == .slacker)
-        #expect(profile.companionCharacter == .silas)
+        #expect(profile.companionCharacter == .nook)
+        #expect(profile.companionStyle == .companion)
         #expect(profile.intimacyStage == .acquaintance)
     }
 
-    @Test("Onboarding profile maps product styles to IPs and resets stage on IP switch")
+    @Test("Rapid development storage reset clears persisted local state on schema change")
+    func rapidDevelopmentStorageResetClearsPersistedData() throws {
+        let fileManager = FileManager.default
+        let documentsDirectory = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let defaultsSuite = "LocalStorageReset-\(UUID().uuidString)"
+        let userDefaults = try #require(UserDefaults(suiteName: defaultsSuite))
+        defer {
+            try? fileManager.removeItem(at: documentsDirectory)
+            userDefaults.removePersistentDomain(forName: defaultsSuite)
+        }
+
+        try fileManager.createDirectory(at: documentsDirectory, withIntermediateDirectories: true)
+        try Data("{}".utf8).write(to: documentsDirectory.appendingPathComponent("user_profile.json"))
+        userDefaults.set(7, forKey: "energyBottles")
+        userDefaults.set(0, forKey: LocalStorage.developmentStorageSchemaVersionKey)
+
+        let didReset = try LocalStorage.resetForRapidDevelopmentIfNeeded(
+            currentSchemaVersion: LocalStorage.currentDevelopmentStorageSchemaVersion,
+            userDefaults: userDefaults,
+            fileManager: fileManager,
+            documentsDirectory: documentsDirectory
+        )
+
+        #expect(didReset)
+        #expect(!fileManager.fileExists(atPath: documentsDirectory.appendingPathComponent("user_profile.json").path))
+        #expect(userDefaults.object(forKey: "energyBottles") == nil)
+        #expect(
+            userDefaults.integer(forKey: LocalStorage.developmentStorageSchemaVersionKey)
+                == LocalStorage.currentDevelopmentStorageSchemaVersion
+        )
+    }
+
+    @Test("Rapid development storage reset keeps data when schema version matches")
+    func rapidDevelopmentStorageResetSkipsMatchingSchema() throws {
+        let fileManager = FileManager.default
+        let documentsDirectory = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let defaultsSuite = "LocalStorageReset-\(UUID().uuidString)"
+        let userDefaults = try #require(UserDefaults(suiteName: defaultsSuite))
+        defer {
+            try? fileManager.removeItem(at: documentsDirectory)
+            userDefaults.removePersistentDomain(forName: defaultsSuite)
+        }
+
+        try fileManager.createDirectory(at: documentsDirectory, withIntermediateDirectories: true)
+        let profileURL = documentsDirectory.appendingPathComponent("user_profile.json")
+        try Data("{}".utf8).write(to: profileURL)
+        userDefaults.set(
+            LocalStorage.currentDevelopmentStorageSchemaVersion,
+            forKey: LocalStorage.developmentStorageSchemaVersionKey
+        )
+
+        let didReset = try LocalStorage.resetForRapidDevelopmentIfNeeded(
+            currentSchemaVersion: LocalStorage.currentDevelopmentStorageSchemaVersion,
+            userDefaults: userDefaults,
+            fileManager: fileManager,
+            documentsDirectory: documentsDirectory
+        )
+
+        #expect(!didReset)
+        #expect(fileManager.fileExists(atPath: profileURL.path))
+    }
+
+    @Test("Onboarding profile maps character selection and resets stage on IP switch")
     func onboardingProfileMapsToProductIPs() {
         let existing = UserProfile(
-            companionStyle: .challenger,
             companionCharacter: .nova,
             intimacyStage: .closeFriend
         )
-        let onboarding = OnboardingProfile(companionStyle: .slacker)
+        let onboarding = OnboardingProfile(companionCharacter: .silas)
 
         let mapped = UserProfile.from(onboarding: onboarding, merging: existing)
 
-        #expect(mapped.companionStyle == .slacker)
         #expect(mapped.companionCharacter == .silas)
+        #expect(mapped.companionStyle == .slacker)
         #expect(mapped.intimacyStage == .acquaintance)
     }
 

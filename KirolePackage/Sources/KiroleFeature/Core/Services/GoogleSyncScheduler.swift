@@ -49,6 +49,3 @@ public final class SyncScheduler {
         await AppState.shared.syncConnectedExternalData()
     }
 }
-
-// Backward compatibility alias
-public typealias GoogleSyncScheduler = SyncScheduler
