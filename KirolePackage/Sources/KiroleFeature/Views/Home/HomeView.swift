@@ -1,5 +1,13 @@
 import SwiftUI
 
+// MARK: - Focus Settlement Data
+
+struct FocusSettlementData {
+    let focusMinutes: Int
+    let earnedBottles: Int
+    let totalBottles: Int
+}
+
 // MARK: - Home View
 
 public struct HomeView: View {
@@ -10,6 +18,8 @@ public struct HomeView: View {
     @State private var scrollOffset: CGFloat = 0
     @State private var isInitialLoading = true
     @State private var dataSource = TimelineDataSource()
+    @State private var showSettlement = false
+    @State private var settlementData: FocusSettlementData?
 
     public init() {}
 
@@ -128,6 +138,31 @@ public struct HomeView: View {
             }
             appState.hasCompletedInitialHomeLoad = true
             await loadInitialData()
+        }
+        .onChange(of: FocusSessionService.shared.todaySessions.count) { oldCount, newCount in
+            guard newCount > oldCount, newCount > 0 else { return }
+            guard let lastSession = FocusSessionService.shared.todaySessions.last else { return }
+            let focusMinutes = Int((lastSession.calculatedFocusTime ?? 0) / 60)
+            guard focusMinutes > 0 else { return }
+            settlementData = FocusSettlementData(
+                focusMinutes: focusMinutes,
+                earnedBottles: lastSession.earnedEnergyBottles,
+                totalBottles: FocusSessionService.shared.todaySessions.map(\.earnedEnergyBottles).reduce(0, +)
+            )
+            showSettlement = true
+        }
+        .sheet(isPresented: $showSettlement) {
+            if let data = settlementData {
+                FocusSettlementSheet(
+                    focusMinutes: data.focusMinutes,
+                    earnedBottles: data.earnedBottles,
+                    totalBottles: data.totalBottles
+                )
+                .environment(theme)
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.hidden)
+                .presentationCornerRadius(24)
+            }
         }
     }
 

@@ -5,7 +5,6 @@ import Foundation
 public struct UserProfile: Sendable, Codable, Equatable {
     public var workType: WorkType
     public var primaryGoals: [UserGoal]
-    public var companionStyle: CompanionStyle
     public var companionCharacter: CompanionCharacter
     public var intimacyStage: IntimacyStage
     public var motivationStyle: MotivationStyle?
@@ -13,10 +12,14 @@ public struct UserProfile: Sendable, Codable, Equatable {
     public var taskApproach: TaskApproach?
     public var onboardingCompletedAt: Date?
 
+    /// Derived from companionCharacter. Character is the single source of truth.
+    public var companionStyle: CompanionStyle {
+        companionCharacter.resolvedStyle
+    }
+
     public init(
         workType: WorkType = .other,
         primaryGoals: [UserGoal] = [],
-        companionStyle: CompanionStyle = .companion,
         companionCharacter: CompanionCharacter = .nook,
         intimacyStage: IntimacyStage = .acquaintance,
         motivationStyle: MotivationStyle? = nil,
@@ -26,7 +29,6 @@ public struct UserProfile: Sendable, Codable, Equatable {
     ) {
         self.workType = workType
         self.primaryGoals = primaryGoals
-        self.companionStyle = companionStyle
         self.companionCharacter = companionCharacter
         self.intimacyStage = intimacyStage
         self.motivationStyle = motivationStyle
@@ -38,7 +40,6 @@ public struct UserProfile: Sendable, Codable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case workType
         case primaryGoals
-        case companionStyle
         case companionCharacter
         case intimacyStage
         case motivationStyle
@@ -53,15 +54,10 @@ public struct UserProfile: Sendable, Codable, Equatable {
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let companionStyle = try container.decodeIfPresent(CompanionStyle.self, forKey: .companionStyle) ?? .companion
-        let companionCharacter = try container.decodeIfPresent(CompanionCharacter.self, forKey: .companionCharacter)
-            ?? CompanionCharacter.fromProductStyle(companionStyle)
-            ?? .nook
 
         self.workType = try container.decodeIfPresent(WorkType.self, forKey: .workType) ?? .other
         self.primaryGoals = try container.decodeIfPresent([UserGoal].self, forKey: .primaryGoals) ?? []
-        self.companionStyle = companionStyle
-        self.companionCharacter = companionCharacter
+        self.companionCharacter = try container.decodeIfPresent(CompanionCharacter.self, forKey: .companionCharacter) ?? .nook
         self.intimacyStage = try container.decodeIfPresent(IntimacyStage.self, forKey: .intimacyStage) ?? .acquaintance
         self.motivationStyle = try container.decodeIfPresent(MotivationStyle.self, forKey: .motivationStyle)
         self.reminderPreference = try container.decodeIfPresent(ReminderPreference.self, forKey: .reminderPreference)
@@ -73,8 +69,7 @@ public struct UserProfile: Sendable, Codable, Equatable {
     /// Pass the current profile as `merging:` to preserve fields (workType, primaryGoals)
     /// that live outside the onboarding questionnaire.
     public static func from(onboarding profile: OnboardingProfile, merging existing: UserProfile = .default) -> UserProfile {
-        let selectedStyle = profile.companionStyle ?? existing.companionStyle
-        let selectedCharacter = CompanionCharacter.fromProductStyle(selectedStyle) ?? existing.companionCharacter
+        let selectedCharacter = profile.companionCharacter ?? existing.companionCharacter
         let selectedStage: IntimacyStage = selectedCharacter == existing.companionCharacter
             ? existing.intimacyStage
             : .acquaintance
@@ -82,7 +77,6 @@ public struct UserProfile: Sendable, Codable, Equatable {
         return UserProfile(
             workType: existing.workType,
             primaryGoals: existing.primaryGoals,
-            companionStyle: selectedStyle,
             companionCharacter: selectedCharacter,
             intimacyStage: selectedStage,
             motivationStyle: profile.motivationStyle ?? existing.motivationStyle,
@@ -92,6 +86,7 @@ public struct UserProfile: Sendable, Codable, Equatable {
         )
     }
 }
+
 
 // MARK: - Work Type
 

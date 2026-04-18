@@ -44,15 +44,15 @@ public struct OnboardingQuestion: Sendable, Identifiable {
 public enum OnboardingQuestions {
     public static let allQuestions: [OnboardingQuestion] = [
         OnboardingQuestion(
-            id: "companionStyle",
+            id: "companionCharacter",
             title: "Choose your companion IP",
             subtitle: "Each IP maps to a different internal interaction style",
             type: .single,
             category: "Companion Personality",
             options: [
-                QuestionOption(id: "Companion", label: "Nook · Playful Companion", sfSymbol: "heart.fill"),
-                QuestionOption(id: "Slacker", label: "Silas · Spiritual Companion", sfSymbol: "bed.double.fill"),
-                QuestionOption(id: "Challenger", label: "Nova · Challenge Companion", sfSymbol: "flame.fill"),
+                QuestionOption(id: "nook", label: "Nook · Playful Companion", sfSymbol: "heart.fill"),
+                QuestionOption(id: "silas", label: "Silas · Spiritual Companion", sfSymbol: "bed.double.fill"),
+                QuestionOption(id: "nova", label: "Nova · Challenge Companion", sfSymbol: "flame.fill"),
             ]
         ),
         OnboardingQuestion(

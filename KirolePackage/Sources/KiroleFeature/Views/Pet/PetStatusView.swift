@@ -150,6 +150,8 @@ private struct PetStatusCard: View {
                         StatRowNew(label: "AGE", value: "\(appState.pet.age) days")
                         StatRowNew(label: "STATUS", value: appState.pet.status.rawValue, icon: "safari.fill")
                         StatRowNew(label: "STAGE", value: appState.pet.stage.rawValue)
+                        StatRowNew(label: "CHARACTER", value: appState.userProfile.companionCharacter.displayName)
+                        IntimacyRow(stage: appState.userProfile.intimacyStage)
                         ProgressRowNew(progress: appState.pet.progress)
                     }
                     .padding(.horizontal, 24)
@@ -246,6 +248,45 @@ private struct ProgressRowNew: View {
             Spacer()
         }
         .onAppear { animatedProgress = true }
+    }
+}
+
+// MARK: - Intimacy Row
+
+private struct IntimacyRow: View {
+    let stage: IntimacyStage
+    @Environment(ThemeManager.self) private var theme
+
+    private var stageIndex: Int {
+        switch stage {
+        case .acquaintance: return 0
+        case .familiar: return 1
+        case .closeFriend: return 2
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Text("INTIMACY")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(theme.colors.secondaryText)
+                .frame(width: 140, alignment: .leading)
+
+            HStack(spacing: 8) {
+                Text(stage.displayName)
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(Color(hex: "1F2937"))
+
+                HStack(spacing: 4) {
+                    ForEach(0..<3, id: \.self) { index in
+                        Circle()
+                            .fill(index <= stageIndex ? Color(hex: "4A6B53") : Color(hex: "C8E6C9"))
+                            .frame(width: 8, height: 8)
+                    }
+                }
+            }
+            Spacer()
+        }
     }
 }
 

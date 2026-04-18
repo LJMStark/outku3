@@ -28,8 +28,8 @@ public final class OnboardingState {
 
     public func setAnswer(questionId: String, value: String) {
         switch questionId {
-        case "companionStyle":
-            profile.companionStyle = CompanionStyle(rawValue: value)
+        case "companionCharacter":
+            profile.companionCharacter = CompanionCharacter(rawValue: value)
         case "motivationStyle":
             profile.motivationStyle = MotivationStyle(rawValue: value)
         case "calendarUsage":
@@ -64,8 +64,8 @@ public final class OnboardingState {
 
     public func selectedOptions(for questionId: String) -> [String] {
         switch questionId {
-        case "companionStyle":
-            return profile.companionStyle.map { [$0.rawValue] } ?? []
+        case "companionCharacter":
+            return profile.companionCharacter.map { [$0.rawValue] } ?? []
         case "motivationStyle":
             return profile.motivationStyle.map { [$0.rawValue] } ?? []
         case "calendarUsage":

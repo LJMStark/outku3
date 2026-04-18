@@ -154,7 +154,6 @@ import Foundation
         UserProfile(
             workType: originalProfile.workType,
             primaryGoals: originalProfile.primaryGoals,
-            companionStyle: .slacker,
             companionCharacter: .silas,
             intimacyStage: .familiar,
             onboardingCompletedAt: originalProfile.onboardingCompletedAt

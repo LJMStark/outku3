@@ -774,7 +774,6 @@ struct AppStateTests {
             let newProfile = UserProfile(
                 workType: .remoteWorker,
                 primaryGoals: [.productivity, .focus],
-                companionStyle: .companion,
                 onboardingCompletedAt: nil
             )
 

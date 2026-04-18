@@ -64,7 +64,7 @@ public enum TaskApproach: String, CaseIterable, Sendable, Codable, Equatable {
 // MARK: - Onboarding Profile
 
 public struct OnboardingProfile: Sendable, Codable, Equatable {
-    public var companionStyle: CompanionStyle?
+    public var companionCharacter: CompanionCharacter?
     public var motivationStyle: MotivationStyle?
     public var calendarUsage: CalendarUsage?
     public var taskTracking: TaskTracking?
@@ -77,7 +77,7 @@ public struct OnboardingProfile: Sendable, Codable, Equatable {
     public var onboardingCompletedAt: Date?
 
     public init(
-        companionStyle: CompanionStyle? = nil,
+        companionCharacter: CompanionCharacter? = nil,
         motivationStyle: MotivationStyle? = nil,
         calendarUsage: CalendarUsage? = nil,
         taskTracking: TaskTracking? = nil,
@@ -89,7 +89,7 @@ public struct OnboardingProfile: Sendable, Codable, Equatable {
         customPhotoData: Data? = nil,
         onboardingCompletedAt: Date? = nil
     ) {
-        self.companionStyle = companionStyle
+        self.companionCharacter = companionCharacter
         self.motivationStyle = motivationStyle
         self.calendarUsage = calendarUsage
         self.taskTracking = taskTracking
@@ -102,3 +102,4 @@ public struct OnboardingProfile: Sendable, Codable, Equatable {
         self.onboardingCompletedAt = onboardingCompletedAt
     }
 }
+

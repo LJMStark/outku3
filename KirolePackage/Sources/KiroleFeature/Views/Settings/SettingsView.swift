@@ -26,6 +26,7 @@ struct SettingsView: View {
     @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
     @State private var appeared = false
+    @State private var showCharacterSwitcher = false
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
@@ -41,6 +42,9 @@ struct SettingsView: View {
 
                 SettingsIntegrationSection()
                     .appearAnimation(delay: 0.2, appeared: appeared)
+
+                companionSection
+                    .appearAnimation(delay: 0.25, appeared: appeared)
 
                 // Other settings moved below
                 SettingsBLESection()
@@ -63,6 +67,51 @@ struct SettingsView: View {
         }
         .background(theme.colors.background)
         .onAppear { appeared = true }
+        .sheet(isPresented: $showCharacterSwitcher) {
+            CharacterSwitcherSheet()
+                .environment(appState)
+                .environment(theme)
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.hidden)
+                .presentationCornerRadius(24)
+        }
+    }
+
+    private var companionSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SettingsSectionHeader(title: "Companion")
+
+            HStack(spacing: 16) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(appState.userProfile.companionCharacter.displayName)
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundStyle(theme.colors.primaryText)
+
+                    Text(appState.userProfile.companionStyle.description)
+                        .font(.system(size: 13))
+                        .foregroundStyle(theme.colors.secondaryText)
+                }
+
+                Spacer()
+
+                Button {
+                    showCharacterSwitcher = true
+                } label: {
+                    Text("Switch")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(theme.colors.accent)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(theme.colors.accentLight)
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(16)
+            .background(Color.white)
+            .clipShape(RoundedRectangle(cornerRadius: 24))
+            .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
+        }
     }
 }
 
