@@ -636,3 +636,123 @@ body {
     width: 100%;
   }
 }
+
+/* ============================================================
+   E-ink Refresh Transitions
+   ============================================================ */
+
+/* Full refresh: flash black overlay */
+.eink-flash-black {
+  position: relative;
+}
+
+.eink-flash-black::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--eink-black);
+  z-index: 100;
+  animation: flash-in 0.15s ease-out forwards;
+}
+
+/* Full refresh: flash white overlay */
+.eink-flash-white {
+  position: relative;
+}
+
+.eink-flash-white::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--eink-white);
+  z-index: 100;
+  animation: flash-fade 0.1s ease-out forwards;
+}
+
+/* Partial refresh: ghosting effect */
+.eink-partial-ghost {
+  opacity: 0.6;
+  filter: contrast(0.8);
+  transition: opacity 0.08s ease, filter 0.08s ease;
+}
+
+@keyframes flash-in {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+@keyframes flash-fade {
+  0% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* ============================================================
+   Scene Unlock Banner
+   ============================================================ */
+
+.unlock-banner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.8);
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  background: rgba(240, 235, 227, 0.95);
+  border: 2px solid var(--eink-warm);
+  border-radius: 12px;
+  padding: 20px 32px;
+  opacity: 0;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.unlock-banner.visible {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+
+.unlock-banner.fade-out {
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.9);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+
+.unlock-banner-icon {
+  font-size: 32px;
+  color: var(--eink-yellow);
+  text-shadow: 0 0 12px rgba(212, 168, 67, 0.6);
+}
+
+.unlock-banner-text {
+  font-family: var(--font-eink);
+  font-size: 20px;
+  color: var(--eink-black);
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+/* ============================================================
+   Bottle Fly-in Animation
+   ============================================================ */
+
+.bottle-fly-in {
+  animation: bottle-enter 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+@keyframes bottle-enter {
+  0% {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.5);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(2px) scale(1.1);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+

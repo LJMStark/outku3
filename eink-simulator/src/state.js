@@ -126,6 +126,9 @@ export class SimulatorState {
 
     // Scene unlocks
     this.sceneUnlocks = [];
+
+    // Animation triggers
+    this.lastUnlockedScene = null;
   }
 
   // Register change listeners
@@ -340,10 +343,18 @@ export class SimulatorState {
       .filter(unlock => unlock?.sceneId)
       .map(unlock => ({ sceneId: this.normalizeSceneId(unlock.sceneId) }));
 
+    // Detect newly unlocked scenes
+    const prevIds = new Set(this.sceneUnlocks.map(u => u.sceneId));
+    const newScene = normalizedUnlocks.find(u => !prevIds.has(u.sceneId));
+
     const updates = { sceneUnlocks: normalizedUnlocks };
     const latestUnlock = normalizedUnlocks.at(-1);
     if (latestUnlock) {
       updates.scene = latestUnlock.sceneId;
+    }
+
+    if (newScene) {
+      updates.lastUnlockedScene = newScene.sceneId;
     }
 
     this.update(updates);

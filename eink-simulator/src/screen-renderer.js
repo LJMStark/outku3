@@ -4,15 +4,52 @@
 
 import { DisplayMode } from './state.js';
 import { PetRenderer } from './pet-renderer.js';
+import { EinkTransition } from './eink-transition.js';
 
 export class ScreenRenderer {
   constructor(screenEl, state) {
     this.el = screenEl;
     this.state = state;
     this.petRenderer = new PetRenderer();
+    this.transition = new EinkTransition(screenEl);
+
+    // Track previous state for change detection
+    this._prevMode = null;
+    this._prevScene = null;
+    this._prevCharacter = null;
   }
 
   render() {
+    const modeChanged = this._prevMode !== this.state.displayMode;
+    const sceneChanged = this._prevScene !== this.state.scene;
+    const characterChanged = this._prevCharacter !== this.state.character;
+
+    const doRender = () => this._renderContent();
+
+    // Decide transition type based on what changed
+    if (modeChanged || sceneChanged || characterChanged) {
+      // Major change: full e-ink refresh
+      this.transition.fullRefresh(doRender);
+    } else {
+      // Minor update: partial refresh (dialogue, task progress)
+      this.transition.partialRefresh(doRender);
+    }
+
+    this._prevMode = this.state.displayMode;
+    this._prevScene = this.state.scene;
+    this._prevCharacter = this.state.character;
+
+    // Check for unlock banner
+    if (this.state.lastUnlockedScene) {
+      const sceneName = this.state.lastUnlockedScene;
+      this.state.lastUnlockedScene = null;
+      this.transition.showUnlockBanner(
+        sceneName.charAt(0).toUpperCase() + sceneName.slice(1)
+      );
+    }
+  }
+
+  _renderContent() {
     const mode = this.state.displayMode;
 
     switch (mode) {

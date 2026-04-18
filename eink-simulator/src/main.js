@@ -20,6 +20,10 @@ const hardware = new HardwareControls(state);
 const devPanel = new DevPanel(state);
 const wsBridge = new WebSocketBridge(state);
 
+// Cross-wire: bridge needs renderer for animations, hardware needs bridge for events
+wsBridge.setScreenRenderer(screen);
+hardware.setWebSocketBridge(wsBridge);
+
 // Wire up state change listener
 state.onChange(() => {
   screen.render();
@@ -27,3 +31,4 @@ state.onChange(() => {
 
 // Initial render
 screen.render();
+

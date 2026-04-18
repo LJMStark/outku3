@@ -8,8 +8,13 @@ export class WebSocketBridge {
     this.ws = null;
     this._statusEl = document.getElementById('ws-status');
     this._logEl = document.getElementById('ws-log');
+    this._screenRenderer = null;
 
     this._bindConnectButton();
+  }
+
+  setScreenRenderer(renderer) {
+    this._screenRenderer = renderer;
   }
 
   _bindConnectButton() {
@@ -44,7 +49,7 @@ export class WebSocketBridge {
       document.getElementById('btn-ws-connect').textContent = 'Connect';
     };
 
-    this.ws.onerror = (err) => {
+    this.ws.onerror = () => {
       this._setStatus('disconnected', 'Connection Error');
       this._log('in', `Error: WebSocket failed`);
     };
@@ -131,13 +136,7 @@ export class WebSocketBridge {
         break;
 
       case 'focus_end':
-        this.state.update({
-          focusPhase: 'idle',
-          displayMode: 'idle',
-          focusElapsedMinutes: 0,
-          currentPhaseBottleProgress: 0,
-          energyBottles: this.state.energyBottles + (msg.payload.bottlesEarned || 0),
-        });
+        this._handleFocusEnd(msg.payload);
         break;
 
       case 'screensaver':
@@ -156,6 +155,42 @@ export class WebSocketBridge {
 
       default:
         this._log('in', `Unknown message type: ${msg.type}`);
+    }
+  }
+
+  // Animated focus end: transition back to idle, then animate bottles one by one
+  async _handleFocusEnd(payload) {
+    const bottlesEarned = payload.bottlesEarned || 0;
+    const prevBottles = this.state.energyBottles;
+
+    // First, transition back to idle without adding bottles yet
+    this.state.update({
+      focusPhase: 'idle',
+      displayMode: 'idle',
+      focusElapsedMinutes: 0,
+      currentPhaseBottleProgress: 0,
+    });
+
+    // If bottles earned, animate them in one by one
+    if (bottlesEarned > 0 && this._screenRenderer) {
+      const targetBottles = prevBottles + bottlesEarned;
+
+      // Wait for idle render to complete
+      await this._wait(500);
+
+      // Animate each bottle
+      this._screenRenderer.transition.animateBottles(
+        prevBottles,
+        targetBottles,
+        (count) => {
+          this.state.update({ energyBottles: count });
+        }
+      );
+    } else {
+      // No animation needed, just update count
+      this.state.update({
+        energyBottles: prevBottles + bottlesEarned,
+      });
     }
   }
 
@@ -211,5 +246,9 @@ export class WebSocketBridge {
     while (this._logEl.children.length > 50) {
       this._logEl.removeChild(this._logEl.lastChild);
     }
+  }
+
+  _wait(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 }
