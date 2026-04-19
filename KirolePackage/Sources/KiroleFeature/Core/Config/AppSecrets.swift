@@ -28,7 +28,7 @@ public enum AppSecrets {
         taskadeClientSecret: String? = nil
     ) {
         queue.sync(flags: .barrier) {
-            storage.supabaseURL = normalize(supabaseURL)
+            storage.supabaseURL = normalizeURL(supabaseURL)
             storage.supabaseAnonKey = normalize(supabaseAnonKey)
             storage.openRouterAPIKey = normalize(openRouterAPIKey)
             storage.bleSharedSecret = normalize(bleSharedSecret)
@@ -80,6 +80,24 @@ public enum AppSecrets {
             return nil
         }
         if trimmed.contains("YOUR_") || trimmed.hasPrefix("$(") {
+            return nil
+        }
+        return trimmed
+    }
+
+    /// Stricter normalization for URL secrets: rejects values whose `URL.host`
+    /// is nil/empty so callers never receive a half-URL like `"https:"`.
+    /// Required because xcconfig's `//` comment rule has, in the past, silently
+    /// truncated `https://x.supabase.co` to `https:` and crashed supabase-swift
+    /// on `supabaseURL.host!`.
+    private static func normalizeURL(_ value: String?) -> String? {
+        guard let trimmed = normalize(value) else { return nil }
+        guard let url = URL(string: trimmed),
+              let host = url.host,
+              !host.isEmpty else {
+            #if DEBUG
+            print("[AppSecrets] Rejected URL with no host: \(trimmed)")
+            #endif
             return nil
         }
         return trimmed
