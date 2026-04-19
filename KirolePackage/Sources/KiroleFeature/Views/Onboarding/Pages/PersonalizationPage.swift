@@ -55,22 +55,22 @@ public struct PersonalizationPage: View {
                             }
                         }
 
-                        // Pet display
+                        // Companion IP selector
                         VStack(spacing: 16) {
                             Text("Meet your companion")
                                 .font(.system(size: 16, design: .rounded))
                                 .foregroundStyle(.white.opacity(0.8))
 
-                            Image(
-                                (onboardingState.profile.companionCharacter ?? .nook)
-                                    .heroAssetName(variant: .main),
-                                bundle: .module
-                            )
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(width: 120, height: 120)
-                            .clipShape(RoundedRectangle(cornerRadius: 24))
-                            .shadow(color: .black.opacity(0.2), radius: 12, y: 6)
+                            HStack(spacing: 12) {
+                                ForEach(CompanionCharacter.allCases, id: \.self) { character in
+                                    CompanionCharacterCard(
+                                        character: character,
+                                        isSelected: onboardingState.profile.companionCharacter == character
+                                    ) {
+                                        onboardingState.profile.companionCharacter = character
+                                    }
+                                }
+                            }
                         }
 
                         // Custom photo upload
@@ -120,6 +120,11 @@ public struct PersonalizationPage: View {
                 .padding(.bottom, 32)
             }
         }
+        .onAppear {
+            if onboardingState.profile.companionCharacter == nil {
+                onboardingState.profile.companionCharacter = .nook
+            }
+        }
         .onChange(of: selectedPhoto) { _, newValue in
             guard let newValue else { return }
             Task {
@@ -133,6 +138,62 @@ public struct PersonalizationPage: View {
                     #endif
                 }
             }
+        }
+    }
+}
+
+// MARK: - Companion Character Card
+
+@MainActor
+private struct CompanionCharacterCard: View {
+    let character: CompanionCharacter
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 6) {
+                Image(character.heroAssetName(variant: .main), bundle: .module)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 72, height: 72)
+                    .padding(8)
+                    .background(.white.opacity(0.15))
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+
+                Text(character.displayName)
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white)
+
+                Text(character.tagline)
+                    .font(.system(size: 11, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.75))
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 18)
+                    .fill(isSelected ? .white.opacity(0.18) : .white.opacity(0.06))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 18)
+                    .stroke(.white, lineWidth: isSelected ? 3 : 0)
+            )
+            .scaleEffect(isSelected ? 1.04 : 1.0)
+            .shadow(color: .black.opacity(isSelected ? 0.2 : 0.1), radius: isSelected ? 10 : 6, y: 4)
+            .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isSelected)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private extension CompanionCharacter {
+    var tagline: String {
+        switch self {
+        case .nook: return "Playful"
+        case .silas: return "Spiritual"
+        case .nova: return "Challenge"
         }
     }
 }

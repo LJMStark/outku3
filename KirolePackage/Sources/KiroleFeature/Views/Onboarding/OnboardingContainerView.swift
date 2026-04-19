@@ -39,9 +39,9 @@ public struct OnboardingContainerView: View {
             TextAnimationPage(onboardingState: onboardingState)
         case 4:
             PersonalizationPage(onboardingState: onboardingState)
-        case 5, 6, 7, 8, 9, 10, 11, 12:
+        case 5, 6, 7, 8, 9, 10, 11:
             QuestionnairePage(onboardingState: onboardingState, questionIndex: page - 5)
-        case 13:
+        case 12:
             SignUpPage(onboardingState: onboardingState)
         default:
             let _ = {

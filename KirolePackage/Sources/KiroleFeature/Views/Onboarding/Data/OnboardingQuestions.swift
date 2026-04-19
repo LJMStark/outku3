@@ -44,18 +44,6 @@ public struct OnboardingQuestion: Sendable, Identifiable {
 public enum OnboardingQuestions {
     public static let allQuestions: [OnboardingQuestion] = [
         OnboardingQuestion(
-            id: "companionCharacter",
-            title: "Choose your companion IP",
-            subtitle: "Each IP maps to a different internal interaction style",
-            type: .single,
-            category: "Companion Personality",
-            options: [
-                QuestionOption(id: "nook", label: "Nook · Playful Companion", sfSymbol: "heart.fill"),
-                QuestionOption(id: "silas", label: "Silas · Spiritual Companion", sfSymbol: "bed.double.fill"),
-                QuestionOption(id: "nova", label: "Nova · Challenge Companion", sfSymbol: "flame.fill"),
-            ]
-        ),
-        OnboardingQuestion(
             id: "motivationStyle",
             title: "When you're falling behind, what helps most?",
             subtitle: "Kirole will adjust its encouragement to match",

@@ -10,7 +10,7 @@ public final class OnboardingState {
     public var profile: OnboardingProfile = OnboardingProfile()
     public var soundEnabled: Bool = true
 
-    private let maxPage = 13
+    private let maxPage = 12
 
     public init() {}
 
