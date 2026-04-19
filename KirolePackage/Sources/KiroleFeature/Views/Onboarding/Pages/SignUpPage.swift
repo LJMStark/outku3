@@ -53,12 +53,15 @@ public struct SignUpPage: View {
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 0) {
                         // Logo
-                        // TODO: Replace with Kirole pet asset
-                        Image("inku-head", bundle: .module)
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(width: 96, height: 96)
-                            .padding(.top, 32)
+                        Image(
+                            (onboardingState.profile.companionCharacter ?? .nook)
+                                .heroAssetName(variant: .head),
+                            bundle: .module
+                        )
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 96, height: 96)
+                        .padding(.top, 32)
 
                         // Title
                         Text("Sign up to Save Progress")

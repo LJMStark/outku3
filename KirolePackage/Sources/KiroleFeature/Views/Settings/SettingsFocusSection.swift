@@ -10,7 +10,9 @@ public struct SettingsFocusSection: View {
     @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
     @State private var guardService = ScreenTimeFocusGuardService.shared
+    #if DEBUG
     @State private var showFocusTest = false
+    #endif
 
     public init() {}
 
@@ -28,7 +30,9 @@ public struct SettingsFocusSection: View {
                 ) {
                     pickerSheet
                 }
+                #if DEBUG
                 .modifier(FocusTestPresentationModifier(isPresented: $showFocusTest))
+                #endif
         }
     }
 
@@ -40,10 +44,11 @@ public struct SettingsFocusSection: View {
                 modeSelector
                 statusCard
                 actionArea
-                
+
+                #if DEBUG
                 Divider()
                     .padding(.vertical, 4)
-                
+
                 Button {
                     showFocusTest = true
                 } label: {
@@ -59,6 +64,7 @@ public struct SettingsFocusSection: View {
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
                 .buttonStyle(.plain)
+                #endif
             }
             .padding(16)
             .background(Color.white)

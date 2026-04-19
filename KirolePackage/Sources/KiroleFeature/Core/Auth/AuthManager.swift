@@ -28,6 +28,17 @@ public final class AuthManager {
         googleCalendarAccessLevel.canWrite
     }
 
+    /// User id safe to use as a cloud (Supabase) write target. Returns `nil`
+    /// while the local identity is still pending Supabase confirmation, so
+    /// callers can skip writes that would otherwise be rejected by RLS or
+    /// land under a transient placeholder id.
+    public var cloudWritableUserId: String? {
+        guard let user = currentUser, !user.isPendingRemoteIdentity else {
+            return nil
+        }
+        return user.id
+    }
+
     // MARK: - Services
 
     private let appleSignInService = AppleSignInService.shared
@@ -41,42 +52,102 @@ public final class AuthManager {
 
     // MARK: - Initialization
 
-    /// 在 App 启动时调用，恢复之前的登录状态
+    /// 在 App 启动时调用，恢复之前的登录状态。
+    ///
+    /// 流程拆三步：
+    ///   - Step A: 从 Keychain 同步恢复本地身份。即使飞行模式 / Supabase 不可达，
+    ///     也能让 currentUser 立刻就位，避免冷启动直接掉登录。
+    ///   - Step B: 尝试 Google SDK 本地恢复（不依赖网络），补全 email / 头像等信息。
+    ///   - Step C: 异步尝试 Supabase session 恢复，把 pending user 升级到 canonical id。
+    ///     失败时静默——currentUser 维持 pending 状态，下一次有网时自然会再升级。
     public func initialize() async {
         googleSignInService.configure()
-        let restoredGoogleResult = try? await googleSignInService.restorePreviousSignIn()
-        let restoredSupabaseUser = await restoredSupabaseUser(from: restoredGoogleResult)
 
+        // Step A: synchronous Keychain restore — works offline.
+        restoreLocalIdentityFromKeychain()
+
+        // Step B: Google SDK local restore (typically offline-safe via cached creds).
+        let restoredGoogleResult = try? await googleSignInService.restorePreviousSignIn()
         if let googleResult = restoredGoogleResult {
-            applyGoogleSignInResult(
-                googleResult,
-                isRestore: true,
-                restoredSupabaseUser: restoredSupabaseUser
-            )
-        } else {
-            restoreAppleStateFromKeychain(restoredSupabaseUser: restoredSupabaseUser)
-            restoreGoogleStateFromKeychain(restoredSupabaseUser: restoredSupabaseUser)
+            applyGoogleSignInResult(googleResult, isRestore: true, restoredSupabaseUser: nil)
         }
 
-        if currentUser == nil, let restoredSupabaseUser {
-            let fallbackProvider: AuthProvider = keychainService.getAppleUserIdentifier() != nil
-                ? .apple
-                : .google
-            let user = Self.makeCanonicalUser(
-                providerUserID: restoredSupabaseUser.id,
-                email: restoredSupabaseUser.email,
-                displayName: nil,
-                avatarURL: nil,
-                authProvider: fallbackProvider,
-                supabaseUser: restoredSupabaseUser
-            )
-            currentUser = user
-            authState = .authenticated(user)
+        // Step C: best-effort Supabase session restore + canonical id upgrade.
+        let restoredSupabaseUser = await restoredSupabaseUser(from: restoredGoogleResult)
+        if let supabaseUser = restoredSupabaseUser {
+            promoteCurrentUser(with: supabaseUser, googleResult: restoredGoogleResult)
         }
 
         isNotionConnected = notionAuthService.isConnected
         isTaskadeConnected = taskadeAuthService.isConnected
     }
+
+    /// Step A: hydrate `currentUser` from Keychain so the UI can show an
+    /// authenticated state without a Supabase round-trip. The user is marked
+    /// `isPendingRemoteIdentity` until Supabase confirms its canonical id.
+    private func restoreLocalIdentityFromKeychain() {
+        // Apple takes precedence: identifier is the source of truth for Apple users.
+        if let appleIdentifier = keychainService.getAppleUserIdentifier() {
+            let user = User(
+                id: appleIdentifier,
+                authProvider: .apple,
+                isPendingRemoteIdentity: true
+            )
+            currentUser = user
+            authState = .authenticated(user)
+            return
+        }
+
+        // Google: presence of access + refresh tokens implies the user previously
+        // signed in. We can't read sub/email from Keychain alone, so the id is a
+        // placeholder that Step B (Google SDK) or Step C (Supabase) will replace.
+        guard keychainService.getGoogleAccessToken() != nil,
+              keychainService.getGoogleRefreshToken() != nil,
+              let savedScopes = keychainService.getGoogleScopes() else {
+            return
+        }
+
+        isGoogleConnected = true
+        googleCalendarAccessLevel = GoogleCalendarAccessLevel.from(grantedScopes: savedScopes)
+        hasTasksAccess = savedScopes.contains(GoogleOAuthScope.tasks)
+
+        let user = User(
+            id: Self.pendingGoogleUserID,
+            authProvider: .google,
+            isPendingRemoteIdentity: true
+        )
+        currentUser = user
+        authState = .authenticated(user)
+    }
+
+    /// Step C helper: replace `currentUser`'s id with the Supabase canonical id
+    /// and clear the `isPendingRemoteIdentity` flag. Preserves any locally-known
+    /// display info (email, displayName, avatar) gathered during Steps A/B.
+    private func promoteCurrentUser(
+        with supabaseUser: SupabaseUser,
+        googleResult: GoogleSignInResult?
+    ) {
+        let existing = currentUser
+        let provider: AuthProvider = existing?.authProvider
+            ?? (keychainService.getAppleUserIdentifier() != nil ? .apple : .google)
+
+        let promoted = User(
+            id: supabaseUser.id,
+            email: supabaseUser.email ?? existing?.email ?? googleResult?.email,
+            displayName: existing?.displayName ?? googleResult?.displayName,
+            avatarURL: existing?.avatarURL ?? googleResult?.avatarURL,
+            authProvider: provider,
+            createdAt: supabaseUser.createdAt,
+            lastLoginAt: Date(),
+            isPendingRemoteIdentity: false
+        )
+        currentUser = promoted
+        authState = .authenticated(promoted)
+    }
+
+    /// Sentinel id used while a Google-only user has tokens in Keychain but
+    /// no canonical Supabase id yet. Always paired with `isPendingRemoteIdentity`.
+    private static let pendingGoogleUserID = "pending-google-identity"
 
     private func restoredSupabaseUser(from googleResult: GoogleSignInResult?) async -> SupabaseUser? {
         if let currentUser = await supabaseService.getCurrentUser() {
@@ -104,8 +175,11 @@ public final class AuthManager {
         googleCalendarAccessLevel = result.calendarAccessLevel
         hasTasksAccess = result.hasTasksAccess
 
-        if isRestore && currentUser == nil {
-            let user = Self.makeCanonicalUser(
+        guard isRestore else { return }
+
+        // No user yet → create one (canonical if Supabase available, else pending).
+        if currentUser == nil {
+            var user = Self.makeCanonicalUser(
                 providerUserID: result.userID,
                 email: result.email,
                 displayName: result.displayName,
@@ -113,53 +187,29 @@ public final class AuthManager {
                 authProvider: .google,
                 supabaseUser: restoredSupabaseUser
             )
+            user.isPendingRemoteIdentity = (restoredSupabaseUser == nil)
             currentUser = user
             authState = .authenticated(user)
-        }
-    }
-
-    /// 从 Keychain 恢复 Apple 登录状态
-    private func restoreAppleStateFromKeychain(restoredSupabaseUser: SupabaseUser?) {
-        guard let userIdentifier = keychainService.getAppleUserIdentifier(),
-              let restoredSupabaseUser else {
             return
         }
 
-        let user = Self.makeCanonicalUser(
-            providerUserID: userIdentifier,
-            email: restoredSupabaseUser.email,
-            displayName: nil,
-            avatarURL: nil,
-            authProvider: .apple,
-            supabaseUser: restoredSupabaseUser
-        )
-        currentUser = user
-        authState = .authenticated(user)
-    }
-
-    /// 从 Keychain 恢复 Google 连接状态
-    private func restoreGoogleStateFromKeychain(restoredSupabaseUser: SupabaseUser?) {
-        guard keychainService.getGoogleAccessToken() != nil,
-              keychainService.getGoogleRefreshToken() != nil,
-              let savedScopes = keychainService.getGoogleScopes() else {
-            return
-        }
-
-        isGoogleConnected = true
-        googleCalendarAccessLevel = GoogleCalendarAccessLevel.from(grantedScopes: savedScopes)
-        hasTasksAccess = savedScopes.contains(GoogleOAuthScope.tasks)
-
-        if currentUser == nil, let restoredSupabaseUser {
-            let user = Self.makeCanonicalUser(
-                providerUserID: restoredSupabaseUser.id,
-                email: restoredSupabaseUser.email,
-                displayName: nil,
-                avatarURL: nil,
+        // Step A left us a Google placeholder; fill in real id/email/displayName.
+        if let existing = currentUser,
+           existing.authProvider == .google,
+           existing.isPendingRemoteIdentity,
+           existing.id == Self.pendingGoogleUserID {
+            let updated = User(
+                id: result.userID,
+                email: result.email ?? existing.email,
+                displayName: result.displayName ?? existing.displayName,
+                avatarURL: result.avatarURL ?? existing.avatarURL,
                 authProvider: .google,
-                supabaseUser: restoredSupabaseUser
+                createdAt: existing.createdAt,
+                lastLoginAt: Date(),
+                isPendingRemoteIdentity: true
             )
-            currentUser = user
-            authState = .authenticated(user)
+            currentUser = updated
+            authState = .authenticated(updated)
         }
     }
 

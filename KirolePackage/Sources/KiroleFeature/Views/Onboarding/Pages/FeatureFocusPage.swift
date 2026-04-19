@@ -15,8 +15,11 @@ public struct FeatureFocusPage: View {
             VStack {
                 HStack {
                     Spacer()
-                    CharacterView(imageName: "blue-monster", size: 80)
-                        .padding(.trailing, 16)
+                    CharacterView(
+                        imageName: CompanionCharacter.nook.heroAssetName(variant: .main),
+                        size: 80
+                    )
+                    .padding(.trailing, 16)
                 }
                 Spacer()
             }

@@ -10,6 +10,10 @@ public struct User: Codable, Sendable, Identifiable, Equatable {
     public var authProvider: AuthProvider
     public var createdAt: Date
     public var lastLoginAt: Date
+    /// True when `id` is a local provider identifier (Apple userIdentifier or
+    /// Google sub) that has not yet been confirmed against Supabase. Cloud
+    /// writes should be skipped until this flips to false.
+    public var isPendingRemoteIdentity: Bool
 
     public init(
         id: String,
@@ -18,7 +22,8 @@ public struct User: Codable, Sendable, Identifiable, Equatable {
         avatarURL: URL? = nil,
         authProvider: AuthProvider,
         createdAt: Date = Date(),
-        lastLoginAt: Date = Date()
+        lastLoginAt: Date = Date(),
+        isPendingRemoteIdentity: Bool = false
     ) {
         self.id = id
         self.email = email
@@ -27,6 +32,7 @@ public struct User: Codable, Sendable, Identifiable, Equatable {
         self.authProvider = authProvider
         self.createdAt = createdAt
         self.lastLoginAt = lastLoginAt
+        self.isPendingRemoteIdentity = isPendingRemoteIdentity
     }
 }
 

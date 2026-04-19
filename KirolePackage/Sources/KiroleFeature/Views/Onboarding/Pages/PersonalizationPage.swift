@@ -61,13 +61,16 @@ public struct PersonalizationPage: View {
                                 .font(.system(size: 16, design: .rounded))
                                 .foregroundStyle(.white.opacity(0.8))
 
-                            // TODO: Replace with Kirole pet asset
-                            Image("inku-main", bundle: .module)
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                                .frame(width: 120, height: 120)
-                                .clipShape(RoundedRectangle(cornerRadius: 24))
-                                .shadow(color: .black.opacity(0.2), radius: 12, y: 6)
+                            Image(
+                                (onboardingState.profile.companionCharacter ?? .nook)
+                                    .heroAssetName(variant: .main),
+                                bundle: .module
+                            )
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 120, height: 120)
+                            .clipShape(RoundedRectangle(cornerRadius: 24))
+                            .shadow(color: .black.opacity(0.2), radius: 12, y: 6)
                         }
 
                         // Custom photo upload

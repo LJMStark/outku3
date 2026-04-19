@@ -83,8 +83,11 @@ public struct QuestionnairePage: View {
 
                         // Character + dialog
                         HStack(alignment: .bottom, spacing: 12) {
-                            // TODO: Replace with Kirole pet asset
-                            CharacterView(imageName: "inku-main", size: 64)
+                            CharacterView(
+                                imageName: (onboardingState.profile.companionCharacter ?? .nook)
+                                    .heroAssetName(variant: .main),
+                                size: 64
+                            )
 
                             OnboardingDialogBubble(
                                 text: localSelections.isEmpty

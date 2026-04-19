@@ -29,4 +29,19 @@ public enum CompanionCharacter: String, CaseIterable, Sendable, Codable {
     public var styleDescription: String {
         resolvedStyle.description
     }
+
+    public enum HeroAssetVariant: Sendable {
+        case main
+        case head
+    }
+
+    /// Returns the asset name to load via `Image(name, bundle: .module)`.
+    /// Maps to per-character `<rawValue>-main` / `<rawValue>-head` images
+    /// shipped under `Resources/Media.xcassets/` (e.g. `nook-main`).
+    public func heroAssetName(variant: HeroAssetVariant) -> String {
+        switch variant {
+        case .main: return "\(rawValue)-main"
+        case .head: return "\(rawValue)-head"
+        }
+    }
 }

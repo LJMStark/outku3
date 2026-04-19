@@ -340,35 +340,38 @@ private struct ConnectedAppRow: View {
     let onDisconnect: () -> Void
 
     @Environment(ThemeManager.self) private var theme
+    @Environment(AuthManager.self) private var authManager
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 IntegrationIcon(type: integration.type)
                     .frame(width: 24, height: 24)
-                
+
                 Text(integration.name)
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(theme.colors.primaryText)
-                
+
                 Spacer()
-                
-                SettingsToggleSwitch(isOn: true)
+
+                SettingsToggleSwitch(isOn: integration.isConnected)
             }
-            
+
             HStack(alignment: .bottom) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(integration.type == .googleCalendar || integration.type == .googleTasks ? "39181726a@gmail.com" : "No username")
+                    Text(usernameDisplay)
                         .font(.system(size: 11))
                         .foregroundStyle(theme.colors.secondaryText)
-                    
-                    Text("last updated 16 minutes ago")
+
+                    // Per-integration sync timestamps aren't tracked yet; show
+                    // a placeholder until Integration gains a lastSyncedAt field.
+                    Text("last updated —")
                         .font(.system(size: 11))
                         .foregroundStyle(theme.colors.secondaryText)
                 }
-                
+
                 Spacer()
-                
+
                 Button("Manage") {
                     onDisconnect()
                 }
@@ -387,6 +390,15 @@ private struct ConnectedAppRow: View {
             RoundedRectangle(cornerRadius: 16)
                 .stroke(Color(hex: "E5E7EB"), lineWidth: 1)
         )
+    }
+
+    private var usernameDisplay: String {
+        switch integration.type {
+        case .googleCalendar, .googleTasks:
+            return authManager.currentUser?.email ?? "—"
+        default:
+            return "—"
+        }
     }
 }
 

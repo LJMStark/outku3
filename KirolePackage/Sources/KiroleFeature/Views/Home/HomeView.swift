@@ -112,11 +112,13 @@ public struct HomeView: View {
                             .transition(.scale.combined(with: .opacity))
                         }
                     }
+                    #if DEBUG
                     .overlay(alignment: .topTrailing) {
                         PromptDebuggerFAB()
                             .padding(.trailing, 16)
                             .padding(.top, 60) // Avoid safe area / notch
                     }
+                    #endif
                 }
             }
         }

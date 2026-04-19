@@ -74,6 +74,27 @@ struct AuthManagerTests {
         #expect(decoded.email == user.email)
     }
 
+    @Test("User defaults isPendingRemoteIdentity to false")
+    func userDefaultsPendingFlagFalse() {
+        let user = User(id: "u1", authProvider: .apple)
+        #expect(user.isPendingRemoteIdentity == false)
+    }
+
+    @Test("User retains pending flag through Codable round-trip")
+    func userPendingFlagRoundTrip() throws {
+        let pending = User(
+            id: "apple-id",
+            authProvider: .apple,
+            isPendingRemoteIdentity: true
+        )
+
+        let data = try JSONEncoder().encode(pending)
+        let decoded = try JSONDecoder().decode(User.self, from: data)
+
+        #expect(decoded.id == "apple-id")
+        #expect(decoded.isPendingRemoteIdentity == true)
+    }
+
     @Test("Canonical user prefers Supabase UUID")
     func canonicalUserPrefersSupabaseID() {
         let createdAt = Date(timeIntervalSince1970: 1_710_000_000)

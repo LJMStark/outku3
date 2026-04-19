@@ -51,36 +51,14 @@ public struct DeviceModeSection: View {
                     .aspectRatio(contentMode: .fit)
                     .frame(width: 100, height: 120)
                     .offset(y: 10) // Push pet slightly down
-                
+
                 VStack(alignment: .trailing, spacing: 12) {
-                    // Battery indicator
-                    HStack(spacing: 4) {
-                        HStack(spacing: 2) {
-                            ForEach(0..<10) { i in
-                                Circle()
-                                    .fill(i < 5 ? Color.white : Color.white.opacity(0.3))
-                                    .frame(width: 6, height: 6)
-                            }
-                        }
-                        Text("50%")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(.white)
-                    }
-                    
-                    // Speech Bubble
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 16)
-                            .fill(Color(hex: "C6D8C8"))
-                        
-                        RoundedRectangle(cornerRadius: 16)
-                            .stroke(Color(hex: "95B19A"), lineWidth: 4)
-                        
-                        Text("Back to back meetings to start the day, an intense morning, I must say.")
-                            .font(.system(size: 13, weight: .medium, design: .rounded))
-                            .foregroundStyle(Color(hex: "374151"))
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 12)
-                            .minimumScaleFactor(0.8)
+                    batteryIndicator
+
+                    if !appState.currentPetDialogue.isEmpty {
+                        speechBubble
+                    } else {
+                        Spacer().frame(height: 0)
                     }
                 }
             }
@@ -90,19 +68,55 @@ public struct DeviceModeSection: View {
         .frame(height: 140)
         .shadow(color: .black.opacity(0.1), radius: 10, y: 5)
     }
-    
-    private var homeScreenHint: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "info.circle")
-                .font(.system(size: 14))
-                .foregroundStyle(theme.colors.secondaryText)
-            
-            Text("How do I add to my home screen?")
-                .font(.system(size: 13))
-                .foregroundStyle(theme.colors.secondaryText)
+
+    /// Battery telemetry isn't centrally stored on BLEService yet (only flows
+    /// through EventLog). Render `—` until a connected device reports a level.
+    private var batteryIndicator: some View {
+        HStack(spacing: 4) {
+            HStack(spacing: 2) {
+                ForEach(0..<10) { _ in
+                    Circle()
+                        .fill(Color.white.opacity(0.3))
+                        .frame(width: 6, height: 6)
+                }
+            }
+            Text("—")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(.white)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 4)
+    }
+
+    private var speechBubble: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color(hex: "C6D8C8"))
+
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color(hex: "95B19A"), lineWidth: 4)
+
+            Text(appState.currentPetDialogue)
+                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .foregroundStyle(Color(hex: "374151"))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .minimumScaleFactor(0.8)
+                .lineLimit(3)
+        }
+    }
+
+    private var homeScreenHint: some View {
+        Link(destination: URL(string: "https://kirole.app/setup")!) {
+            HStack(spacing: 6) {
+                Image(systemName: "info.circle")
+                    .font(.system(size: 14))
+                Text("How do I add to my home screen?")
+                    .font(.system(size: 13))
+            }
+            .foregroundStyle(theme.colors.secondaryText)
+            .frame(maxWidth: .infinity)
+            .padding(.top, 4)
+            .contentShape(Rectangle())
+        }
     }
 }
 

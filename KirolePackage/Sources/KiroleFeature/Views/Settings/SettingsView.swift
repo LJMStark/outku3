@@ -56,8 +56,10 @@ struct SettingsView: View {
                 SoundSettingsSection()
                     .appearAnimation(delay: 0.4, appeared: appeared)
 
+                #if DEBUG
                 DebugSection()
                     .appearAnimation(delay: 0.45, appeared: appeared)
+                #endif
 
                 Spacer()
                     .frame(height: 80)

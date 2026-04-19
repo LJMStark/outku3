@@ -66,8 +66,10 @@ public struct FeatureCalendarPage: View {
                 .frame(maxHeight: .infinity)
 
                 HStack {
-                    // TODO: Replace with Kirole pet asset
-                    CharacterView(imageName: "inku-main", size: 80)
+                    CharacterView(
+                        imageName: CompanionCharacter.nook.heroAssetName(variant: .main),
+                        size: 80
+                    )
                     Spacer()
                 }
                 .padding(.horizontal, 16)
