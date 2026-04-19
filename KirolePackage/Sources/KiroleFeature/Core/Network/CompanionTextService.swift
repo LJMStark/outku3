@@ -384,6 +384,7 @@ public final class CompanionTextService {
 
         let baseContext = AIContext(
             companionStyle: userProfile.companionStyle,
+            companionCharacter: userProfile.companionCharacter,
             workType: userProfile.workType,
             primaryGoals: userProfile.primaryGoals,
             petName: petName,

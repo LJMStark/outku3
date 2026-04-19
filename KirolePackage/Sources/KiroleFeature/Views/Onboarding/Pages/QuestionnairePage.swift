@@ -123,6 +123,7 @@ public struct QuestionnairePage: View {
     private func handleSelect(_ optionId: String) {
         if question.type == .single {
             localSelections = [optionId]
+            onboardingState.setAnswer(questionId: question.id, value: optionId)
         } else {
             if let index = localSelections.firstIndex(of: optionId) {
                 localSelections.remove(at: index)
