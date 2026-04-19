@@ -209,3 +209,8 @@ import Testing // For test files
 ## 8. Interaction Rules (CRITICAL)
 - **Addressing**: Always address the user as **B哥** at the start of every response.
 - **Language**: All responses must be in **Chinese** (Simplified).
+- **Workspace Boundary (STRICT)**:
+  - All commands (`run_command`, `git`, `swift`, etc.) MUST execute within the current workspace root (`/Users/demon/vibecoding/outku3`). NEVER `cd` into or reference directories outside this workspace.
+  - The user may have files from other projects open in the editor. **Ignore them.** Editor open-file metadata is informational only and does NOT change the active workspace.
+  - When the user says "commit", "build", "test", or any development action without specifying a project, it ALWAYS refers to **this workspace** (`outku3` / Kirole).
+  - If an action genuinely requires a different workspace, **ask the user explicitly** before proceeding. Never assume or infer cross-workspace intent.
