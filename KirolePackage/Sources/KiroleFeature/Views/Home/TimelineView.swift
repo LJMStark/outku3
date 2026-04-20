@@ -82,13 +82,12 @@ struct DayTimelineView: View {
             )
         }
         .background(
-            // Vertical timeline line — sits in the gap between time column (64pt)
-            // and icon column (starts at 80), so line hugs the right edge of time text.
+            // Vertical timeline line — centered perfectly in the time column (64pt width)
             HStack {
                 Spacer()
-                    .frame(width: 70)
+                    .frame(width: 31)
                 Rectangle()
-                    .fill(Color(hex: "D1D5DB"))
+                    .fill(theme.colors.timeline)
                     .frame(width: 2)
                 Spacer()
             }
@@ -151,11 +150,13 @@ struct TimelineEventCardRow: View {
                 Text(AppDateFormatters.time.string(from: event.startTime))
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(theme.colors.secondaryText)
-                    .frame(width: 64, alignment: .leading)
+                    .frame(width: 64, alignment: .center)
+                    .padding(.vertical, 4)
+                    .background(theme.colors.background)
 
                 Spacer()
             }
-            .padding(.top, 8)
+            .padding(.top, 4)
 
             // Event card
             HStack(spacing: 0) {
@@ -211,7 +212,9 @@ struct TimelineEventRow: View {
             Text(time)
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(theme.colors.secondaryText)
-                .frame(width: 64, alignment: .leading)
+                .frame(width: 64, alignment: .center)
+                .padding(.vertical, 4)
+                .background(theme.colors.background)
 
             // Icon slot — line doesn't pass through, no mask needed.
             ZStack {
