@@ -225,6 +225,7 @@
 			);
 			inputPaths = (
 				"$(SRCROOT)/Config/scripts-generate-build-secrets.sh",
+				"$(SRCROOT)/Config/Secrets.xcconfig",
 			);
 			name = "Generate Build Secrets";
 			outputPaths = (

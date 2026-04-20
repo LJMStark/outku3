@@ -90,3 +90,5 @@ docs/Outku 硬件产品规格文档*.md
 Config/Secrets.xcconfig
 Kirole/BuildSecrets.generated.swift
 *.xcconfig.local
+docs/UI界面/
+docs/111/
