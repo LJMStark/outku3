@@ -9,7 +9,7 @@ public struct BeforeAfterCard: View {
     public var body: some View {
         VStack(spacing: 0) {
             Button {
-                withAnimation(.easeInOut(duration: 0.3)) {
+                withAnimation(.kiroleGentle) {
                     showAfter.toggle()
                 }
             } label: {

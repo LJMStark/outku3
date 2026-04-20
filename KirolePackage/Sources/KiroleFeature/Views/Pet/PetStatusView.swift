@@ -38,23 +38,25 @@ struct PetStatusView: View {
         NavigationStack {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 24) {
-                    // Pet Status Card
+                    // Pet Status Card — scale-in entrance; the two sibling
+                    // cards below use offset-in, so these are hand-rolled
+                    // rather than sharing one modifier.
                     PetStatusCard()
                         .opacity(appeared ? 1 : 0)
                         .scaleEffect(appeared ? 1 : 0.9)
-                        .animation(.spring(response: 0.5, dampingFraction: 0.8), value: appeared)
+                        .animation(.kiroleGentle, value: appeared)
 
                     // Achievement Card
                     AchievementCard()
                         .opacity(appeared ? 1 : 0)
                         .offset(y: appeared ? 0 : 30)
-                        .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(0.3), value: appeared)
+                        .animation(.kiroleGentle.delay(0.3), value: appeared)
 
                     // Tasks Statistics
                     TasksStatisticsCard()
                         .opacity(appeared ? 1 : 0)
                         .offset(y: appeared ? 0 : 30)
-                        .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(0.5), value: appeared)
+                        .animation(.kiroleGentle.delay(0.5), value: appeared)
 
                     Spacer()
                         .frame(height: 80)
@@ -234,8 +236,7 @@ private struct ProgressRowNew: View {
                         .frame(width: 10, height: 10)
                         .scaleEffect(animatedProgress ? 1 : 0)
                         .animation(
-                            .spring(response: 0.3, dampingFraction: 0.6)
-                            .delay(0.2 + Double(index) * 0.05),
+                            .kiroleBouncy.delay(0.2 + Double(index) * 0.05),
                             value: animatedProgress
                         )
                 }
@@ -343,9 +344,9 @@ private struct AchievementCard: View {
                 .rotationEffect(.degrees(iconRotated ? 10 : -10))
                 .task {
                     try? await Task.sleep(for: .seconds(1.2))
-                    withAnimation(.easeInOut(duration: 0.5)) { iconRotated = true }
+                    withAnimation(.appleEaseOut) { iconRotated = true }
                     try? await Task.sleep(for: .seconds(0.5))
-                    withAnimation(.easeInOut(duration: 0.5)) { iconRotated = false }
+                    withAnimation(.appleEaseOut) { iconRotated = false }
                 }
 
             VStack(alignment: .leading, spacing: 4) {
@@ -475,7 +476,7 @@ private struct TaskStatSection: View {
         }
         .opacity(appeared ? 1 : 0)
         .offset(x: appeared ? 0 : -20)
-        .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(delay), value: appeared)
+        .animation(.kiroleGentle.delay(delay), value: appeared)
         .onAppear { appeared = true }
     }
 }

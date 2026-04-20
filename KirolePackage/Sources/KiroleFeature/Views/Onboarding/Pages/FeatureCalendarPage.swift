@@ -85,7 +85,7 @@ public struct FeatureCalendarPage: View {
             do {
                 for i in 1...dialogBoxes.count {
                     try await Task.sleep(for: .milliseconds(200 + UInt64(i) * 200))
-                    withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
+                    withAnimation(.kiroleGentle) {
                         visibleBoxes = i
                     }
                 }

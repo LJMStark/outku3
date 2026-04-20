@@ -262,8 +262,37 @@ public extension View {
     }
 }
 
+// MARK: - Unified Animation Vocabulary
+//
+// 4 semantic Springs mapped from Apple HIG motion principles. Pick by intent,
+// not by number. Choreography animations (Confetti, Evolution, PixelPet mood
+// loops) intentionally keep their own bespoke timings and bypass this table.
+//
+//   kiroleSnappy — micro-interactions: button press, toggle, small reveal
+//   kiroleGentle — panels / modals / soft expands (default choice)
+//   kiroleBouncy — success feedback, emphasis, celebratory moments
+//   kiroleSmooth — page / tab transitions, large element moves
+//
+// Pair with `kiroleAdaptive(_:reduceMotion:)` at call sites that want to
+// honor the iOS "Reduce Motion" accessibility preference.
 public extension Animation {
-    static let appStandard = Animation.spring(response: 0.3, dampingFraction: 0.7)
+    static let kiroleSnappy = Animation.spring(response: 0.2,  dampingFraction: 0.75)
+    static let kiroleGentle = Animation.spring(response: 0.35, dampingFraction: 0.85)
+    static let kiroleBouncy = Animation.spring(response: 0.3,  dampingFraction: 0.55)
+    static let kiroleSmooth = Animation.spring(response: 0.55, dampingFraction: 0.88)
+
+    // Apple-style timing curves (iOS HIG standard ease-out / decelerate).
+    static let appleEaseOut    = Animation.timingCurve(0.22, 1,   0.36, 1, duration: 0.35)
+    static let appleDecelerate = Animation.timingCurve(0,    0,   0.2,  1, duration: 0.3)
+
+    /// Collapses to a near-instant linear fade when the user has enabled
+    /// iOS's "Reduce Motion" accessibility setting — avoids vestibular strain
+    /// from springs. Note: for `repeatForever` loops this still spins the
+    /// render loop at 0.01s intervals — prefer skipping the `withAnimation`
+    /// entirely at the call site for ambient/perpetual animations.
+    static func kiroleAdaptive(_ full: Animation, reduceMotion: Bool) -> Animation {
+        reduceMotion ? .linear(duration: 0.01) : full
+    }
 }
 
 // MARK: - Toggle Switch Style
@@ -282,7 +311,7 @@ public struct CustomToggleStyle: ToggleStyle {
                         .shadow(radius: 1)
                         .frame(width: 20, height: 20)
                         .offset(x: configuration.isOn ? 10 : -10)
-                        .animation(Animation.appStandard, value: configuration.isOn)
+                        .animation(.kiroleGentle, value: configuration.isOn)
                 )
                 .onTapGesture {
                     configuration.isOn.toggle()

@@ -7,6 +7,7 @@ public struct ContentView: View {
     @State private var themeManager = ThemeManager.shared
     @State private var authManager = AuthManager.shared
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     public var body: some View {
         ZStack {
@@ -55,17 +56,32 @@ public struct ContentView: View {
                 ))
                 .background(themeManager.currentTheme.headerGradient.ignoresSafeArea(edges: .top))
 
-                // Content based on selected tab
-                Group {
-                    switch appState.selectedTab {
-                    case .home:
-                        HomeView()
-                    case .pet:
-                        PetPageView()
-                    case .settings:
-                        SettingsView()
-                    }
+                // All three tab views stay mounted in a ZStack so state —
+                // HomeView's TimelineDataSource, scroll offset, `appeared`
+                // entrance flags — survives tab switches. A switch-on-type
+                // approach (or `.id(tab)`) destroys and recreates the view
+                // tree, losing scroll position and replaying every staggered
+                // entrance animation on every tap. Opacity + hit-testing
+                // emulates the tab swap while the `.animation(...)` on the
+                // parent crossfades the change under the unified motion
+                // vocabulary.
+                ZStack {
+                    HomeView()
+                        .opacity(appState.selectedTab == .home ? 1 : 0)
+                        .allowsHitTesting(appState.selectedTab == .home)
+
+                    PetPageView()
+                        .opacity(appState.selectedTab == .pet ? 1 : 0)
+                        .allowsHitTesting(appState.selectedTab == .pet)
+
+                    SettingsView()
+                        .opacity(appState.selectedTab == .settings ? 1 : 0)
+                        .allowsHitTesting(appState.selectedTab == .settings)
                 }
+                .animation(
+                    .kiroleAdaptive(.kiroleGentle, reduceMotion: reduceMotion),
+                    value: appState.selectedTab
+                )
             }
         }
         .environment(appState)

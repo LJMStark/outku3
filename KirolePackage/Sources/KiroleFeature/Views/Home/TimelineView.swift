@@ -131,7 +131,7 @@ struct TimelineEmptyStateRow: View {
         }
         .opacity(appeared ? 1 : 0)
         .offset(y: appeared ? 0 : 10)
-        .animation(.easeOut(duration: 0.5).delay(delay), value: appeared)
+        .animation(.kiroleGentle.delay(delay), value: appeared)
         .onAppear {
             appeared = true
         }
@@ -181,7 +181,7 @@ struct TimelineEventCardRow: View {
         }
         .opacity(appeared ? 1 : 0)
         .offset(x: appeared ? 0 : -30)
-        .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(delay), value: appeared)
+        .animation(.kiroleGentle.delay(delay), value: appeared)
         .onAppear {
             appeared = true
         }
@@ -235,7 +235,7 @@ struct TimelineEventRow: View {
         .padding(.vertical, 16)
         .opacity(appeared ? 1 : 0)
         .offset(x: appeared ? 0 : -30)
-        .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(delay), value: appeared)
+        .animation(.kiroleGentle.delay(delay), value: appeared)
         .onAppear {
             appeared = true
         }
@@ -249,6 +249,7 @@ struct HaikuSectionView: View {
 
     @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var appeared = false
     @State private var ballOffset: CGFloat = -140
     @State private var ballRotation: Double = -180
@@ -278,13 +279,20 @@ struct HaikuSectionView: View {
                 .frame(maxWidth: .infinity)
                 .frame(minHeight: CompanionDialogueDisplayPolicy.reservedHeight)
 
-                // Pet image with rolling toy ball
+                // Pet image with rolling toy ball. Under Reduce Motion the
+                // ball is omitted entirely — its whole purpose is the
+                // perpetual horizontal roll + rotation. Without that motion
+                // it would otherwise render at its `-140pt / -180°` initial
+                // pose, floating outside the pet container like a visual
+                // glitch. Keeping only the pet image is the right neutral.
                 ZStack {
-                    PetToyBall(size: 46)
-                        .rotationEffect(.degrees(ballRotation))
-                        // The pet image has height 200.
-                        // Setting y to 25 brings the ball up tighter to the pet's sitting baseline
-                        .offset(x: ballOffset, y: 25)
+                    if !reduceMotion {
+                        PetToyBall(size: 46)
+                            .rotationEffect(.degrees(ballRotation))
+                            // The pet image has height 200.
+                            // Setting y to 25 brings the ball up tighter to the pet's sitting baseline
+                            .offset(x: ballOffset, y: 25)
+                    }
 
                     Image("tiko_reading", bundle: .module)
                         .resizable()
@@ -298,11 +306,13 @@ struct HaikuSectionView: View {
         }
         .opacity(appeared ? 1 : 0)
         .offset(y: appeared ? 0 : 20)
-        .animation(.easeOut(duration: 0.6).delay(delay), value: appeared)
+        .animation(.kiroleAdaptive(.appleEaseOut, reduceMotion: reduceMotion).delay(delay), value: appeared)
         .onAppear {
             appeared = true
-            
-            // Rolling Ball Animation
+
+            // Rolling ball idle loop — skipped entirely under Reduce Motion to
+            // avoid vestibular strain from a perpetual rotation.
+            guard !reduceMotion else { return }
             withAnimation(
                 .easeInOut(duration: 4.0)
                 .repeatForever(autoreverses: true)

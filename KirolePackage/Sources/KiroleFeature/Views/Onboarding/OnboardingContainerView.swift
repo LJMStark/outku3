@@ -19,7 +19,7 @@ public struct OnboardingContainerView: View {
                     insertion: .move(edge: onboardingState.direction > 0 ? .trailing : .leading),
                     removal: .move(edge: onboardingState.direction > 0 ? .leading : .trailing)
                 ))
-                .animation(.spring(response: 0.35, dampingFraction: 0.85), value: onboardingState.currentPage)
+                .animation(.kiroleGentle, value: onboardingState.currentPage)
         }
         .environment(themeManager)
         .environment(authManager)

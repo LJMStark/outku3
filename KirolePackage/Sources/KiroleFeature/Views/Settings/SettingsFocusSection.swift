@@ -95,7 +95,7 @@ public struct SettingsFocusSection: View {
 
     private func modeButton(_ mode: FocusEnforcementMode) -> some View {
         Button {
-            withAnimation(Animation.appStandard) {
+            withAnimation(.kiroleGentle) {
                 appState.setFocusEnforcementMode(mode)
             }
         } label: {

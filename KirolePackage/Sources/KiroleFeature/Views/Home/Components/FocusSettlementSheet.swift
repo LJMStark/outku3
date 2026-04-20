@@ -130,15 +130,16 @@ public struct FocusSettlementSheet: View {
         }
         .background(theme.colors.background)
         .task {
-            withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
+            withAnimation(.kiroleSmooth) {
                 showContent = true
             }
 
-            // Animate bottle count from 0 to earned
+            // Animate bottle count from 0 to earned — each bump is a small
+            // celebratory pop, so use the bouncy curve for emphasis.
             if earnedBottles > 0 {
                 try? await Task.sleep(for: .milliseconds(400))
                 for i in 1...earnedBottles {
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                    withAnimation(.kiroleBouncy) {
                         displayedBottles = i
                     }
                     try? await Task.sleep(for: .milliseconds(200))

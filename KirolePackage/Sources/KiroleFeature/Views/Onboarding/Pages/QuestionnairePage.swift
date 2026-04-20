@@ -76,7 +76,7 @@ public struct QuestionnairePage: View {
                                     insertion: .opacity.combined(with: .offset(x: -20)),
                                     removal: .opacity
                                 ))
-                                .animation(.spring(response: 0.3, dampingFraction: 0.8).delay(Double(index) * 0.05), value: localSelections)
+                                .animation(.kiroleSnappy.delay(Double(index) * 0.05), value: localSelections)
                             }
                         }
                         .padding(.top, 24)

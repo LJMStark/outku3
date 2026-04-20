@@ -19,7 +19,7 @@ public struct SettingsThemeSection: View {
                         theme: themeOption,
                         isSelected: themeManager.currentTheme == themeOption
                     ) {
-                        withAnimation(Animation.appStandard) {
+                        withAnimation(.kiroleGentle) {
                             themeManager.setTheme(themeOption)
                         }
                     }

@@ -32,7 +32,7 @@ public struct WelcomePage: View {
                         .font(.system(size: 80))
                         .scaleEffect(showDialog ? 1.0 : 0.0)
                         .opacity(showDialog ? 1.0 : 0.0)
-                        .animation(.spring(response: 0.5, dampingFraction: 0.7), value: showDialog)
+                        .animation(.kiroleBouncy, value: showDialog)
                 }
                 .frame(maxHeight: .infinity)
 
@@ -65,7 +65,7 @@ public struct WelcomePage: View {
         .task {
             do {
                 try await Task.sleep(for: .milliseconds(500))
-                withAnimation(.easeOut(duration: 0.4)) {
+                withAnimation(.appleEaseOut) {
                     showDialog = true
                 }
             } catch { }

@@ -124,19 +124,23 @@ public struct TextAnimationPage: View {
             do {
                 for i in 1...textLines.count {
                     try await Task.sleep(for: .milliseconds(400))
-                    withAnimation(.easeOut(duration: 0.4)) {
+                    withAnimation(.appleEaseOut) {
                         visibleLines = i
                     }
                 }
                 try await Task.sleep(for: .milliseconds(300))
-                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                withAnimation(.kiroleGentle) {
                     showFinal = true
                 }
                 try await Task.sleep(for: .milliseconds(500))
-                withAnimation(.easeOut(duration: 0.4)) {
+                withAnimation(.appleEaseOut) {
                     showFeatures = true
                 }
                 try await Task.sleep(for: .milliseconds(700))
+                // `canTap` reveal uses ease-IN (accelerate) — the tap hint
+                // should feel like it's arriving, not settling. Using the
+                // decelerating appleEaseOut would make it feel like it's
+                // coming to rest. Original intent was an eager reveal.
                 withAnimation(.easeIn(duration: 0.3)) {
                     canTap = true
                 }

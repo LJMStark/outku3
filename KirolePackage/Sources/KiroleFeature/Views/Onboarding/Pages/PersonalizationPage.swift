@@ -182,7 +182,7 @@ private struct CompanionCharacterCard: View {
             )
             .scaleEffect(isSelected ? 1.04 : 1.0)
             .shadow(color: .black.opacity(isSelected ? 0.2 : 0.1), radius: isSelected ? 10 : 6, y: 4)
-            .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isSelected)
+            .animation(.kiroleSnappy, value: isSelected)
         }
         .buttonStyle(.plain)
     }

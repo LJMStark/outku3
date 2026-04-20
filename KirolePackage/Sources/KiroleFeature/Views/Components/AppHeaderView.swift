@@ -57,7 +57,7 @@ public struct AppHeaderView: View {
                     isSelected: selectedTab == .home,
                     primaryColor: theme.colors.primary
                 ) {
-                    withAnimation(Animation.appStandard) {
+                    withAnimation(.kiroleGentle) {
                         selectedTab = .home
                     }
                 }
@@ -66,7 +66,7 @@ public struct AppHeaderView: View {
                     isSelected: selectedTab == .pet,
                     primaryColor: theme.colors.primary
                 ) {
-                    withAnimation(Animation.appStandard) {
+                    withAnimation(.kiroleGentle) {
                         selectedTab = .pet
                     }
                     onPetClick?()
@@ -77,7 +77,7 @@ public struct AppHeaderView: View {
                     isSelected: selectedTab == .settings,
                     primaryColor: theme.colors.primary
                 ) {
-                    withAnimation(Animation.appStandard) {
+                    withAnimation(.kiroleGentle) {
                         selectedTab = .settings
                     }
                 }

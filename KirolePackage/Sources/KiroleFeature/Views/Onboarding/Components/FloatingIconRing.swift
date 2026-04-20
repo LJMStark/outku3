@@ -11,6 +11,7 @@ public struct FloatingIconRing: View {
     ]
 
     @State private var rotation: Double = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     public init() {}
 
@@ -29,6 +30,9 @@ public struct FloatingIconRing: View {
         }
         .frame(width: 288, height: 288)
         .onAppear {
+            // Continuous rotation is a vestibular trigger — hold it still
+            // when the user has asked for reduced motion.
+            guard !reduceMotion else { return }
             withAnimation(.linear(duration: 20).repeatForever(autoreverses: false)) {
                 rotation = 360
             }
@@ -42,6 +46,7 @@ private struct IconBubble: View {
     let bobDelay: Double
 
     @State private var bobOffset: CGFloat = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
@@ -56,6 +61,7 @@ private struct IconBubble: View {
         }
         .offset(y: bobOffset)
         .onAppear {
+            guard !reduceMotion else { return }
             withAnimation(.easeInOut(duration: 2).repeatForever(autoreverses: true).delay(bobDelay)) {
                 bobOffset = -10
             }

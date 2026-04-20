@@ -5,12 +5,16 @@ import SwiftUI
 private struct AppearAnimation: ViewModifier {
     let delay: Double
     let appeared: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
         content
             .opacity(appeared ? 1 : 0)
             .offset(y: appeared ? 0 : 20)
-            .animation(.easeOut(duration: 0.4).delay(delay), value: appeared)
+            .animation(
+                .kiroleAdaptive(.appleEaseOut.delay(delay), reduceMotion: reduceMotion),
+                value: appeared
+            )
     }
 }
 
@@ -149,7 +153,7 @@ struct SettingsToggleSwitch: View {
                 .shadow(color: .black.opacity(0.1), radius: 1, y: 1)
                 .padding(4)
         }
-        .animation(Animation.appStandard, value: isOn)
+        .animation(.kiroleGentle, value: isOn)
     }
 }
 
@@ -179,7 +183,7 @@ private struct SoundSettingsSection: View {
                     Spacer()
 
                     Button {
-                        withAnimation(Animation.appStandard) {
+                        withAnimation(.kiroleGentle) {
                             soundEnabled.toggle()
                             SoundService.shared.isSoundEnabled = soundEnabled
                         }

@@ -43,6 +43,7 @@ struct PixelPetView: View {
 
     @Environment(AppState.self) var appState
     @Environment(ThemeManager.self) var theme
+    @Environment(\.accessibilityReduceMotion) var reduceMotion
 
     @State var animationPhase: Int = 0
     @State var bounceOffset: CGFloat = 0
@@ -170,18 +171,27 @@ struct PixelPetView: View {
                 triggerLoveBubble()
             })
         }
+        // All three timers honor Reduce Motion: the `onAppear` guard only
+        // blocks one-shot initialization; `Timer.publish` keeps firing
+        // independently. Without this extra guard, `moodTimer` would re-seed
+        // `repeatForever` loops every 2s even for users who asked for
+        // reduced motion — a direct violation of the vestibular contract.
         .onReceive(timer) { _ in
-            guard animated else { return }
+            guard animated, !reduceMotion else { return }
             withAnimation(.easeInOut(duration: 0.3)) {
                 animationPhase = (animationPhase + 1) % 4
                 bounceOffset = animationPhase % 2 == 0 ? 0 : -5
             }
         }
         .onReceive(moodTimer) { _ in
-            guard animated else { return }
+            guard animated, !reduceMotion else { return }
             triggerMoodAnimation()
         }
         .onReceive(blinkTimer) { _ in
+            // Blinking is a subtle, non-vestibular tick (150ms eye close).
+            // Under Reduce Motion we keep the discrete state change but let
+            // it feel instant — skipping it entirely makes the pet look
+            // "frozen" which is worse than a crisp blink for this effect.
             guard animated else { return }
             if Int.random(in: 0...3) == 0 && !isBlinking {
                 isBlinking = true
@@ -197,12 +207,16 @@ struct PixelPetView: View {
         }
         .onChange(of: appState.pet.mood) { _, _ in
             resetMoodAnimations()
-            if animated {
+            // Under Reduce Motion we still reset state, but skip the mood
+            // animation which seeds perpetual loops. Discrete tap reactions
+            // elsewhere continue to fire — those are user-initiated and
+            // brief, so they don't violate the accessibility contract.
+            if animated, !reduceMotion {
                 triggerMoodAnimation()
             }
         }
         .onAppear {
-            if animated {
+            if animated, !reduceMotion {
                 triggerMoodAnimation()
                 startIdleAnimations()
                 startSceneAnimations()

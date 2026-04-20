@@ -44,7 +44,7 @@ public struct ThemePreviewCard: View {
             }
             .scaleEffect(isSelected ? 1.05 : 1.0)
             .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
-            .animation(Animation.appStandard, value: isSelected)
+            .animation(.kiroleGentle, value: isSelected)
         }
         .buttonStyle(.plain)
         .confetti(trigger: $confettiTrigger, particleCount: 30, explosionRadius: 150)

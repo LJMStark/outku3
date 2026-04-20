@@ -15,7 +15,7 @@ public struct ProgressDots: View {
                 Capsule()
                     .fill(index == activeIndex ? Color.white : Color.white.opacity(0.3))
                     .frame(width: 32, height: 4)
-                    .animation(.easeInOut(duration: 0.3), value: activeIndex)
+                    .animation(.kiroleSnappy, value: activeIndex)
             }
         }
     }

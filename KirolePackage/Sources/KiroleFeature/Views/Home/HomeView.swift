@@ -83,7 +83,7 @@ public struct HomeView: View {
                     }
                     .coordinateSpace(name: "scroll")
                     .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
-                        withAnimation(.easeInOut(duration: 0.2)) {
+                        withAnimation(.kiroleSnappy) {
                             showScrollToTop = value < -300
                         }
                         scrollOffset = value
@@ -103,7 +103,7 @@ public struct HomeView: View {
                     .overlay(alignment: .bottomTrailing) {
                         if showScrollToTop {
                             ScrollToTopButton {
-                                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                                withAnimation(.kiroleGentle) {
                                     proxy.scrollTo("top", anchor: .top)
                                 }
                             }

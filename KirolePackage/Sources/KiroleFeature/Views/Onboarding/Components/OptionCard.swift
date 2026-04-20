@@ -67,7 +67,7 @@ public struct OptionCard: View {
             }
         }
         .buttonStyle(.plain)
-        .animation(Animation.appStandard, value: isSelected)
+        .animation(.kiroleGentle, value: isSelected)
         .confetti(trigger: $confettiTrigger, particleCount: 30, explosionRadius: 180)
         .onChange(of: isSelected) { oldValue, newValue in
             if newValue && !oldValue {

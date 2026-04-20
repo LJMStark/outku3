@@ -23,7 +23,7 @@ struct PetPageView: View {
                 PetIllustrationSection(onTap: { showPetStatus = true })
                     .opacity(appeared ? 1 : 0)
                     .offset(y: appeared ? 0 : 20)
-                    .animation(.easeOut(duration: 0.6), value: appeared)
+                    .animation(.appleEaseOut, value: appeared)
 
                 // Tasks Section
                 VStack(spacing: 0) {
@@ -134,6 +134,7 @@ private struct PetIllustrationSection: View {
     let onTap: () -> Void
     @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var breathingOffset: CGFloat = 0
     @State private var particleOffsets: [CGFloat] = [0, 0, 0]
 
@@ -183,13 +184,18 @@ private struct PetIllustrationSection: View {
         }
         .buttonStyle(.plain)
         .onAppear {
+            // Pet breathing + floating particles are ambient loops. Under
+            // Reduce Motion we skip them entirely — the illustration stays
+            // static rather than snapping between states.
+            guard !reduceMotion else { return }
+
             withAnimation(
                 .easeInOut(duration: 3)
                 .repeatForever(autoreverses: true)
             ) {
                 breathingOffset = -8
             }
-            
+
             // Staggered particle animations
             for i in 0..<particleOffsets.count {
                 withAnimation(
@@ -275,8 +281,7 @@ private struct TaskSectionView: View {
                         .opacity(appeared ? 1 : 0)
                         .offset(x: appeared ? 0 : -20)
                         .animation(
-                            .spring(response: 0.5, dampingFraction: 0.8)
-                            .delay(delay + Double(index) * 0.1),
+                            .kiroleGentle.delay(delay + Double(index) * 0.1),
                             value: appeared
                         )
                 }
@@ -302,7 +307,7 @@ private struct TaskItemRow: View {
             HStack(spacing: 12) {
                 // Checkbox
                 Button {
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                    withAnimation(.kiroleBouncy) {
                         appState.toggleTaskCompletion(task)
                     }
                 } label: {
@@ -430,7 +435,7 @@ private struct RowScaleButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .scaleEffect(configuration.isPressed ? 0.98 : 1)
-            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: configuration.isPressed)
+            .animation(.kiroleSnappy, value: configuration.isPressed)
             .onChange(of: configuration.isPressed) { _, newValue in
                 isPressed = newValue
             }

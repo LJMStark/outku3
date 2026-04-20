@@ -2,7 +2,8 @@ import SwiftUI
 
 public struct FocusPetView: View {
     @Environment(ThemeManager.self) private var theme
-    
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     let focusMinutes: Int
     @State private var isBreathing = false
     
@@ -26,9 +27,11 @@ public struct FocusPetView: View {
                         .shadow(color: index < energyBottles ? theme.colors.accent.opacity(0.6) : .clear, radius: 8, x: 0, y: 0)
                 }
             }
-            .animation(.spring(response: 0.5, dampingFraction: 0.7), value: energyBottles)
-            
-            // Pet with breathing animation
+            .animation(.kiroleAdaptive(.kiroleGentle, reduceMotion: reduceMotion), value: energyBottles)
+
+            // Pet with breathing animation — skipped entirely under Reduce
+            // Motion so the pet stays at a fixed scale instead of perpetually
+            // pulsing.
             ZStack {
                 // Background aura based on energy
                 if energyBottles > 0 {
@@ -36,18 +39,19 @@ public struct FocusPetView: View {
                         .fill(theme.colors.accent.opacity(0.15))
                         .frame(width: 220, height: 220)
                         .blur(radius: 20)
-                        .scaleEffect(isBreathing ? 1.1 : 0.9)
-                        .animation(.easeInOut(duration: 3.0).repeatForever(autoreverses: true), value: isBreathing)
+                        .scaleEffect(reduceMotion ? 1.0 : (isBreathing ? 1.1 : 0.9))
+                        .animation(reduceMotion ? nil : .easeInOut(duration: 3.0).repeatForever(autoreverses: true), value: isBreathing)
                 }
-                
+
                 Image("tiko_reading")
                     .resizable()
                     .scaledToFit()
                     .frame(width: 200, height: 200)
-                    .scaleEffect(isBreathing ? 1.05 : 0.98)
-                    .animation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true), value: isBreathing)
+                    .scaleEffect(reduceMotion ? 1.0 : (isBreathing ? 1.05 : 0.98))
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 2.0).repeatForever(autoreverses: true), value: isBreathing)
             }
             .onAppear {
+                guard !reduceMotion else { return }
                 isBreathing = true
             }
         }

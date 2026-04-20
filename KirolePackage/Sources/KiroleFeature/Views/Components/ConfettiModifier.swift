@@ -19,7 +19,8 @@ public struct ConfettiModifier: ViewModifier {
     @Binding var trigger: Int
     @State private var particles: [ConfettiParticle] = []
     @State private var fireCount = 0
-    
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     // 可配置参数
     var colors: [Color]
     var particleCount: Int
@@ -65,12 +66,15 @@ public struct ConfettiModifier: ViewModifier {
                 }
             )
             .onChange(of: trigger) { _, newValue in
-                if newValue > 0 {
-                    fireConfetti()
-                }
+                guard newValue > 0 else { return }
+                // Reduce Motion → skip the particle explosion entirely. The
+                // celebration signal is still conveyed by whatever success
+                // UI surrounds this modifier.
+                guard !reduceMotion else { return }
+                fireConfetti()
             }
     }
-    
+
     private func fireConfetti() {
         // 重置/生成新的粒子
         fireCount += 1
