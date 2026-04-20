@@ -161,7 +161,7 @@ struct TimelineEventCardRow: View {
             // Event card
             HStack(spacing: 0) {
                 Spacer()
-                    .frame(width: 80)
+                    .frame(width: 23)
 
                 EventCardView(
                     title: event.title,
@@ -173,8 +173,11 @@ struct TimelineEventCardRow: View {
                         appState.selectEvent(event)
                     }
                 )
+                .padding(.leading, 8)
+                .padding(.vertical, 8)
+                .background(theme.colors.background)
             }
-            .padding(.vertical, 8)
+            .padding(.vertical, 4)
         }
         .opacity(appeared ? 1 : 0)
         .offset(x: appeared ? 0 : -30)
