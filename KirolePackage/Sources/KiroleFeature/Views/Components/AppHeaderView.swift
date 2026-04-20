@@ -131,13 +131,13 @@ private struct TabButton: View {
                     strokeColor: strokeColor
                 ) {
                     Image(systemName: icon)
-                        .font(.system(size: 18, weight: .medium))
+                        .font(.system(size: 16, weight: .medium))
                         .foregroundStyle(strokeColor)
                 }
 
                 if let label {
                     Text(label)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(.white)
                 }
             }
@@ -168,13 +168,13 @@ private struct PetTabButton: View {
                     Image("tiko_head", bundle: .module)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
-                        .frame(width: 44, height: 44)
+                        .frame(width: 38, height: 38)
                         .offset(y: 2)
                 }
 
                 if let label {
                     Text(label)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(.white)
                 }
             }
@@ -192,9 +192,9 @@ private struct StackedTabFrame<Content: View>: View {
     let strokeColor: Color
     @ViewBuilder let content: Content
 
-    private let outerWidth: CGFloat = 46
-    private let outerHeight: CGFloat = 50
-    private let faceSize: CGFloat = 46
+    private let outerWidth: CGFloat = 40
+    private let outerHeight: CGFloat = 44
+    private let faceSize: CGFloat = 40
     private let cornerRadius: CGFloat = 12
     private let strokeWidth: CGFloat = 1.5
 
