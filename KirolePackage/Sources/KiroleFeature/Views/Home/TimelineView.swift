@@ -8,19 +8,17 @@ struct DateDividerView: View {
 
     var body: some View {
         HStack(spacing: 16) {
-            Rectangle()
-                .fill(theme.colors.accent)
-                .frame(height: 4)
-                .clipShape(Capsule())
+            Capsule()
+                .fill(theme.colors.accentDark)
+                .frame(height: 5)
 
             Text(formattedDate)
-                .font(.system(size: 15, weight: .bold))
-                .foregroundStyle(theme.colors.accent)
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(theme.colors.accentDark)
 
-            Rectangle()
-                .fill(theme.colors.accent)
-                .frame(height: 4)
-                .clipShape(Capsule())
+            Capsule()
+                .fill(theme.colors.accentDark)
+                .frame(height: 5)
         }
         .padding(.horizontal, 24)
     }
@@ -48,18 +46,16 @@ struct DayTimelineView: View {
         VStack(spacing: 0) {
             TimelineEventRow(
                 time: AppDateFormatters.time.string(from: sunTimes.sunrise),
-                icon: "sunrise.fill",
+                iconContent: .asset("tiko_sunrise"),
                 title: "Sunrise",
-                delay: 0,
-                isSystemIcon: true
+                delay: 0
             )
 
             TimelineEventRow(
                 time: "9:00 AM",
-                icon: "sun.max.fill",
+                iconContent: .emoji("📬"),
                 title: "Day Start",
-                delay: 0,
-                isSystemIcon: true
+                delay: 0
             )
 
             if events.isEmpty {
@@ -80,17 +76,17 @@ struct DayTimelineView: View {
 
             TimelineEventRow(
                 time: AppDateFormatters.time.string(from: sunTimes.sunset),
-                icon: "sunset.fill",
+                iconContent: .system("sunset.fill"),
                 title: "Sunset",
-                delay: 0,
-                isSystemIcon: true
+                delay: 0
             )
         }
         .background(
-            // Vertical timeline line
+            // Vertical timeline line — sits in the gap between time column (64pt)
+            // and icon column (starts at 80), so line hugs the right edge of time text.
             HStack {
                 Spacer()
-                    .frame(width: 64)
+                    .frame(width: 70)
                 Rectangle()
                     .fill(Color(hex: "D1D5DB"))
                     .frame(width: 2)
@@ -190,15 +186,24 @@ struct TimelineEventCardRow: View {
 
 // MARK: - Timeline Event Row
 
+enum TimelineRowIcon {
+    case system(String)
+    case emoji(String)
+    case asset(String)
+}
+
 struct TimelineEventRow: View {
     let time: String
-    let icon: String
+    let iconContent: TimelineRowIcon
     let title: String
     let delay: Double
-    var isSystemIcon: Bool = false
+    var hasIconCircle: Bool = false
 
     @Environment(ThemeManager.self) private var theme
     @State private var appeared = false
+
+    /// Icon slot width; must match timeline line alignment math in DayTimelineView.
+    static let iconSlotSize: CGFloat = 36
 
     var body: some View {
         HStack(spacing: 16) {
@@ -208,22 +213,18 @@ struct TimelineEventRow: View {
                 .foregroundStyle(theme.colors.secondaryText)
                 .frame(width: 64, alignment: .leading)
 
-            // Icon circle
+            // Icon slot — line doesn't pass through, no mask needed.
             ZStack {
-                Circle()
-                    .fill(Color.white)
-                    .frame(width: 32, height: 32)
-                    .shadow(color: .black.opacity(0.1), radius: 4, y: 2)
-
-                if isSystemIcon {
-                    Image(systemName: icon)
-                        .font(.system(size: 16))
-                        .foregroundStyle(theme.colors.accent)
-                } else {
-                    Text(icon)
-                        .font(.system(size: 18))
+                if hasIconCircle {
+                    Circle()
+                        .fill(Color.white)
+                        .frame(width: 32, height: 32)
+                        .shadow(color: .black.opacity(0.1), radius: 4, y: 2)
                 }
+
+                iconView
             }
+            .frame(width: Self.iconSlotSize, height: Self.iconSlotSize)
 
             // Title
             Text(title)
@@ -232,12 +233,31 @@ struct TimelineEventRow: View {
 
             Spacer()
         }
-        .padding(.vertical, 16)
+        .padding(.vertical, 12)
         .opacity(appeared ? 1 : 0)
         .offset(x: appeared ? 0 : -30)
         .animation(.kiroleGentle.delay(delay), value: appeared)
         .onAppear {
             appeared = true
+        }
+    }
+
+    @ViewBuilder
+    private var iconView: some View {
+        switch iconContent {
+        case .system(let name):
+            Image(systemName: name)
+                .font(.system(size: hasIconCircle ? 16 : 22))
+                .foregroundStyle(theme.colors.accent)
+                .symbolRenderingMode(.hierarchical)
+        case .emoji(let char):
+            Text(char)
+                .font(.system(size: hasIconCircle ? 18 : 24))
+        case .asset(let name):
+            Image(name, bundle: .module)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: Self.iconSlotSize, height: Self.iconSlotSize)
         }
     }
 }

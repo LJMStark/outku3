@@ -51,11 +51,14 @@ public struct AppHeaderView: View {
             Spacer()
 
             // Tab buttons
-            HStack(spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
                 TabButton(
                     icon: "house.fill",
+                    label: "Home",
                     isSelected: selectedTab == .home,
-                    primaryColor: theme.colors.primary
+                    primaryColor: theme.colors.primary,
+                    baseColor: theme.colors.primaryLight,
+                    strokeColor: theme.colors.primaryDark
                 ) {
                     withAnimation(.kiroleGentle) {
                         selectedTab = .home
@@ -63,8 +66,11 @@ public struct AppHeaderView: View {
                 }
 
                 PetTabButton(
+                    label: "Kirole",
                     isSelected: selectedTab == .pet,
-                    primaryColor: theme.colors.primary
+                    primaryColor: theme.colors.primary,
+                    baseColor: theme.colors.primaryLight,
+                    strokeColor: theme.colors.primaryDark
                 ) {
                     withAnimation(.kiroleGentle) {
                         selectedTab = .pet
@@ -74,8 +80,11 @@ public struct AppHeaderView: View {
 
                 TabButton(
                     icon: "gearshape.fill",
+                    label: nil,
                     isSelected: selectedTab == .settings,
-                    primaryColor: theme.colors.primary
+                    primaryColor: theme.colors.primary,
+                    baseColor: theme.colors.primaryLight,
+                    strokeColor: theme.colors.primaryDark
                 ) {
                     withAnimation(.kiroleGentle) {
                         selectedTab = .settings
@@ -105,31 +114,32 @@ public struct AppHeaderView: View {
 
 private struct TabButton: View {
     let icon: String
+    let label: String?
     let isSelected: Bool
     let primaryColor: Color
+    let baseColor: Color
+    let strokeColor: Color
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color.white)
-                    .frame(width: 40, height: 40)
-                    .shadow(color: .black.opacity(0.1), radius: isSelected ? 0 : 4, y: 2)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(isSelected ? Color.white : Color.clear, lineWidth: 2)
-                            .padding(-2)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14)
-                            .stroke(isSelected ? primaryColor : Color.clear, lineWidth: 2)
-                            .padding(-4)
-                    )
+            VStack(spacing: 4) {
+                StackedTabFrame(
+                    isSelected: isSelected,
+                    primaryColor: primaryColor,
+                    baseColor: baseColor,
+                    strokeColor: strokeColor
+                ) {
+                    Image(systemName: icon)
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(strokeColor)
+                }
 
-                Image(systemName: icon)
-                    .font(.system(size: 18, weight: .medium))
-                    .foregroundStyle(primaryColor)
+                if let label {
+                    Text(label)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.white)
+                }
             }
         }
         .buttonStyle(.kiroleIcon)
@@ -139,35 +149,88 @@ private struct TabButton: View {
 // MARK: - Pet Tab Button
 
 private struct PetTabButton: View {
+    let label: String?
     let isSelected: Bool
     let primaryColor: Color
+    let baseColor: Color
+    let strokeColor: Color
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color.white)
-                    .frame(width: 40, height: 40)
-                    .shadow(color: .black.opacity(0.1), radius: isSelected ? 0 : 4, y: 2)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(isSelected ? Color.white : Color.clear, lineWidth: 2)
-                            .padding(-2)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14)
-                            .stroke(isSelected ? primaryColor : Color.clear, lineWidth: 2)
-                            .padding(-4)
-                    )
+            VStack(spacing: 4) {
+                StackedTabFrame(
+                    isSelected: isSelected,
+                    primaryColor: primaryColor,
+                    baseColor: baseColor,
+                    strokeColor: strokeColor
+                ) {
+                    Image("tiko_head", bundle: .module)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 44, height: 44)
+                        .offset(y: 2)
+                }
 
-                Image("tiko_avatar", bundle: .module)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 28, height: 35)
+                if let label {
+                    Text(label)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.white)
+                }
             }
         }
         .buttonStyle(.kiroleIcon)
+    }
+}
+
+// MARK: - Stacked Tab Frame (3D double-layer)
+
+private struct StackedTabFrame<Content: View>: View {
+    let isSelected: Bool
+    let primaryColor: Color
+    let baseColor: Color
+    let strokeColor: Color
+    @ViewBuilder let content: Content
+
+    private let outerWidth: CGFloat = 46
+    private let outerHeight: CGFloat = 50
+    private let faceSize: CGFloat = 46
+    private let cornerRadius: CGFloat = 12
+    private let strokeWidth: CGFloat = 1.5
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            // Back tan layer — taller, reveals curved "shelf" at bottom
+            RoundedRectangle(cornerRadius: cornerRadius)
+                .fill(baseColor)
+                .frame(width: outerWidth, height: outerHeight)
+                .overlay(
+                    RoundedRectangle(cornerRadius: cornerRadius)
+                        .stroke(strokeColor, lineWidth: strokeWidth)
+                )
+
+            // Front white face — top-aligned
+            RoundedRectangle(cornerRadius: cornerRadius)
+                .fill(Color.white)
+                .frame(width: faceSize, height: faceSize)
+                .overlay(
+                    RoundedRectangle(cornerRadius: cornerRadius)
+                        .stroke(strokeColor, lineWidth: strokeWidth)
+                )
+                .overlay { content }
+        }
+        .frame(width: outerWidth, height: outerHeight)
+        .shadow(color: .black.opacity(0.12), radius: isSelected ? 0 : 4, y: 2)
+        .overlay(
+            RoundedRectangle(cornerRadius: cornerRadius + 2)
+                .stroke(isSelected ? Color.white : Color.clear, lineWidth: 2)
+                .padding(-2)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: cornerRadius + 4)
+                .stroke(isSelected ? primaryColor : Color.clear, lineWidth: 2)
+                .padding(-4)
+        )
     }
 }
 

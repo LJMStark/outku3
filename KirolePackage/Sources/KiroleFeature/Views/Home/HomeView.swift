@@ -265,22 +265,35 @@ private struct ScrollToTopButton: View {
     @Environment(ThemeManager.self) private var theme
     let action: () -> Void
 
+    private let faceSize: CGFloat = 52
+    private let outerHeight: CGFloat = 60
+    private let cornerRadius: CGFloat = 16
+    private let strokeWidth: CGFloat = 3.5
+
     var body: some View {
         Button(action: action) {
-            ZStack {
-                Circle()
+            ZStack(alignment: .top) {
+                // Back shelf — solid dark base to create the 3D depth
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(theme.colors.primaryDark)
+                    .frame(width: faceSize, height: outerHeight)
+
+                // Front white face
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .fill(Color.white)
-                    .frame(width: 56, height: 56)
-                    .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 4)
-
-                Circle()
-                    .stroke(theme.colors.primary, lineWidth: 2)
-                    .frame(width: 56, height: 56)
-
-                Image(systemName: "arrow.up")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(theme.colors.primary)
+                    .frame(width: faceSize, height: faceSize)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .stroke(theme.colors.primaryDark, lineWidth: strokeWidth)
+                    )
+                    .overlay(
+                        Image(systemName: "arrow.up.to.line")
+                            .font(.system(size: 21, weight: .bold))
+                            .foregroundStyle(theme.colors.primaryDark)
+                            .offset(y: 1) // optical alignment
+                    )
             }
+            .frame(width: faceSize, height: outerHeight)
         }
         .buttonStyle(.kiroleIcon)
     }
