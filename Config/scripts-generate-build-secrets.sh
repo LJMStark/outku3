@@ -2,6 +2,7 @@
 set -euo pipefail
 
 OUTPUT_FILE="${SRCROOT}/Kirole/BuildSecrets.generated.swift"
+SECRETS_FILE="${SRCROOT}/Config/Secrets.xcconfig"
 
 escape_swift() {
   local value="${1:-}"
@@ -11,8 +12,33 @@ escape_swift() {
   printf '%s' "$value"
 }
 
-SUPABASE_URL_VALUE="$(escape_swift "${SUPABASE_URL:-}")"
-SUPABASE_ANON_KEY_VALUE="$(escape_swift "${SUPABASE_ANON_KEY:-}")"
+# xcconfig treats `//` as a comment delimiter, so `SUPABASE_URL = https://host`
+# gets silently truncated to `https:` before Xcode exports it to this script.
+# The `$()` empty-expansion workaround in the xcconfig survives xcconfig's
+# `$(VAR)` interpolation but is still eaten by xcconfig's comment pass.
+# Fix: when the env var looks truncated, read the raw line from the xcconfig
+# file directly and strip the sentinel.
+recover_from_xcconfig() {
+  local key="$1"
+  if [[ ! -f "${SECRETS_FILE}" ]]; then
+    return
+  fi
+  grep -E "^[[:space:]]*${key}[[:space:]]*=" "${SECRETS_FILE}" \
+    | head -n1 \
+    | sed -E "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*//" \
+    | sed 's/\$()//g' \
+    | sed 's/[[:space:]]*$//'
+}
+
+SUPABASE_URL_RAW="${SUPABASE_URL:-}"
+if [[ "${SUPABASE_URL_RAW}" == "https:" || "${SUPABASE_URL_RAW}" == "http:" || -z "${SUPABASE_URL_RAW}" ]]; then
+  RECOVERED="$(recover_from_xcconfig SUPABASE_URL)"
+  if [[ -n "${RECOVERED}" && "${RECOVERED}" != "https:" && "${RECOVERED}" != "http:" ]]; then
+    SUPABASE_URL_RAW="${RECOVERED}"
+  fi
+fi
+SUPABASE_URL_VALUE="$(escape_swift "${SUPABASE_URL_RAW}")"
+SUPABASE_ANON_KEY_VALUE="$(escape_swift "${SUPABASE_ANON_KEY:-$(recover_from_xcconfig SUPABASE_ANON_KEY)}")"
 OPENROUTER_API_KEY_VALUE="$(escape_swift "${OPENROUTER_API_KEY:-}")"
 BLE_SHARED_SECRET_VALUE="$(escape_swift "${BLE_SHARED_SECRET:-}")"
 DEEP_FOCUS_FEATURE_ENABLED_VALUE="$(escape_swift "${DEEP_FOCUS_FEATURE_ENABLED:-0}")"
