@@ -62,6 +62,9 @@ extension AppState {
         do {
             if let savedProfile = try await localStorage.loadUserProfile() {
                 userProfile = savedProfile
+                if savedProfile.onboardingCompletedAt != nil {
+                    UserDefaults.standard.set(true, forKey: "isOnboardingCompleted")
+                }
             }
         } catch {
             reportPersistenceError(error, operation: "load", target: "user_profile.json")

@@ -23,4 +23,22 @@ final class KiroleUITests: XCTestCase {
         // Use XCTAssert and related functions to verify your tests produce the correct results.
         XCTAssertTrue(true)
     }
+
+    @MainActor
+    func testScrollToTopButtonAppearsAfterScrollingHome() throws {
+        let app = XCUIApplication()
+        app.launchArguments.append("-uiTestSkipOnboarding")
+        app.launch()
+
+        let scrollView = app.scrollViews["home.timelineScrollView"]
+        XCTAssertTrue(scrollView.waitForExistence(timeout: 5))
+
+        let scrollToTopButton = app.buttons["home.scrollToTopButton"]
+        XCTAssertFalse(scrollToTopButton.exists)
+
+        scrollView.swipeUp()
+        scrollView.swipeUp()
+
+        XCTAssertTrue(scrollToTopButton.waitForExistence(timeout: 5))
+    }
 }

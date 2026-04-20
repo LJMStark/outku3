@@ -6,12 +6,17 @@ public struct ContentView: View {
     @State private var appState = AppState.shared
     @State private var themeManager = ThemeManager.shared
     @State private var authManager = AuthManager.shared
+    @AppStorage("isOnboardingCompleted") private var isOnboardingCompleted: Bool = false
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    private var shouldBypassOnboardingForUITests: Bool {
+        ProcessInfo.processInfo.arguments.contains("-uiTestSkipOnboarding")
+    }
+
     public var body: some View {
         ZStack {
-            if appState.isOnboardingCompleted {
+            if isOnboardingCompleted || shouldBypassOnboardingForUITests {
                 mainAppView
             } else {
                 OnboardingContainerView()

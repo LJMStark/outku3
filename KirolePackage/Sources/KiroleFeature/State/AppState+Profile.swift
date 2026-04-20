@@ -17,6 +17,8 @@ extension AppState {
         var completedProfile = profile
         completedProfile.onboardingCompletedAt = Date()
         onboardingProfile = completedProfile
+        
+        UserDefaults.standard.set(true, forKey: "isOnboardingCompleted")
 
         // Map AI-relevant fields into UserProfile
         let mappedProfile = UserProfile.from(onboarding: completedProfile, merging: userProfile)
@@ -41,6 +43,7 @@ extension AppState {
     public func resetOnboarding() async {
         onboardingProfile = nil
         userProfile.onboardingCompletedAt = nil
+        UserDefaults.standard.set(false, forKey: "isOnboardingCompleted")
 
         do {
             try await localStorage.deleteFile(named: "onboarding_profile.json")

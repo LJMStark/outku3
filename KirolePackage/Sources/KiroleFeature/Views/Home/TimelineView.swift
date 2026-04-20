@@ -271,7 +271,7 @@ struct HaikuSectionView: View {
     @Environment(ThemeManager.self) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var appeared = false
-    @State private var ballOffset: CGFloat = -140
+    @State private var ballProgress: CGFloat = -1
     @State private var ballRotation: Double = -180
 
     var body: some View {
@@ -302,25 +302,37 @@ struct HaikuSectionView: View {
                 // Pet image with rolling toy ball. Under Reduce Motion the
                 // ball is omitted entirely — its whole purpose is the
                 // perpetual horizontal roll + rotation. Without that motion
-                // it would otherwise render at its `-140pt / -180°` initial
-                // pose, floating outside the pet container like a visual
+                // it would otherwise render at its initial edge pose and
+                // float outside the pet container like a visual
                 // glitch. Keeping only the pet image is the right neutral.
-                ZStack {
-                    if !reduceMotion {
-                        PetToyBall(size: 46)
-                            .rotationEffect(.degrees(ballRotation))
-                            // The pet image has height 200.
-                            // Setting y to 25 brings the ball up tighter to the pet's sitting baseline
-                            .offset(x: ballOffset, y: 25)
-                    }
+                GeometryReader { geometry in
+                    let ballTravel = HaikuSectionLayout.toyBallHorizontalTravel(
+                        availableWidth: geometry.size.width
+                    )
 
-                    Image("tiko_reading", bundle: .module)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(height: 200)
-                        .clipShape(RoundedRectangle(cornerRadius: 16))
-                        .shadow(color: .black.opacity(0.1), radius: 8, y: 4)
+                    ZStack {
+                        if !reduceMotion {
+                            PetToyBall(size: HaikuSectionLayout.toyBallSize)
+                                .rotationEffect(.degrees(ballRotation))
+                                // Keep the rolling ball inside the visible
+                                // home content width instead of hard-coding a
+                                // travel distance that can spill off-screen.
+                                .offset(
+                                    x: ballProgress * ballTravel,
+                                    y: HaikuSectionLayout.toyBallVerticalOffset
+                                )
+                        }
+
+                        Image("tiko_reading", bundle: .module)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(height: HaikuSectionLayout.petArtworkHeight)
+                            .clipShape(RoundedRectangle(cornerRadius: 16))
+                            .shadow(color: .black.opacity(0.1), radius: 8, y: 4)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
+                .frame(height: HaikuSectionLayout.petArtworkHeight)
             }
             .padding(.vertical, 24)
         }
@@ -337,7 +349,7 @@ struct HaikuSectionView: View {
                 .easeInOut(duration: 4.0)
                 .repeatForever(autoreverses: true)
             ) {
-                ballOffset = 140
+                ballProgress = 1
                 ballRotation = 360 * 2.5
             }
         }

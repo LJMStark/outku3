@@ -105,7 +105,7 @@ struct OnboardingQuestionDataTests {
     }
 
     @Test func questionCount() {
-        #expect(OnboardingQuestions.allQuestions.count == 8)
+        #expect(OnboardingQuestions.allQuestions.count == 7)
     }
 }
 

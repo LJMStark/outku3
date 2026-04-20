@@ -2,7 +2,8 @@ import SwiftUI
 
 // MARK: - Focus Settlement Data
 
-struct FocusSettlementData {
+struct FocusSettlementData: Identifiable {
+    let id = UUID()
     let focusMinutes: Int
     let earnedBottles: Int
     let totalBottles: Int
@@ -15,10 +16,8 @@ public struct HomeView: View {
     @Environment(ThemeManager.self) private var theme
     @Environment(\.scenePhase) private var scenePhase
     @State private var showScrollToTop = false
-    @State private var scrollOffset: CGFloat = 0
     @State private var isInitialLoading = true
     @State private var dataSource = TimelineDataSource()
-    @State private var showSettlement = false
     @State private var settlementData: FocusSettlementData?
 
     public init() {}
@@ -41,9 +40,21 @@ public struct HomeView: View {
                 VStack(spacing: 0) {
                     ScrollView(.vertical, showsIndicators: false) {
                         LazyVStack(spacing: 0) {
+                            // Top anchor: drives both scrollTo target and
+                            // scroll-to-top button visibility via lifecycle.
                             Color.clear
                                 .frame(height: 1)
                                 .id("top")
+                                .onAppear {
+                                    withAnimation(.kiroleSnappy) {
+                                        showScrollToTop = false
+                                    }
+                                }
+                                .onDisappear {
+                                    withAnimation(.kiroleSnappy) {
+                                        showScrollToTop = true
+                                    }
+                                }
 
                             if isInitialLoading {
                                 LoadingIndicatorView()
@@ -71,23 +82,9 @@ public struct HomeView: View {
                             Spacer()
                                 .frame(height: 100)
                         }
-                        .background(
-                            GeometryReader { geo in
-                                Color.clear
-                                    .preference(
-                                        key: ScrollOffsetPreferenceKey.self,
-                                        value: geo.frame(in: .named("scroll")).minY
-                                    )
-                            }
-                        )
                     }
+                    .accessibilityIdentifier("home.timelineScrollView")
                     .coordinateSpace(name: "scroll")
-                    .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
-                        withAnimation(.kiroleSnappy) {
-                            showScrollToTop = value < -200
-                        }
-                        scrollOffset = value
-                    }
                     .onPreferenceChange(VisibleDatePreferenceKey.self) { items in
                         // Pick the topmost section that has scrolled to or past the top
                         if let top = items
@@ -110,6 +107,7 @@ public struct HomeView: View {
                     }
                     .padding(.trailing, 24)
                     .padding(.bottom, 24)
+                    .accessibilityIdentifier("home.scrollToTopButton")
                     .transition(.scale.combined(with: .opacity))
                     .zIndex(2)
                 }
@@ -152,22 +150,19 @@ public struct HomeView: View {
             settlementData = FocusSettlementData(
                 focusMinutes: focusMinutes,
                 earnedBottles: lastSession.earnedEnergyBottles,
-                totalBottles: FocusSessionService.shared.todaySessions.map(\.earnedEnergyBottles).reduce(0, +)
+                totalBottles: FocusSessionService.shared.todaySessions.reduce(0) { $0 + $1.earnedEnergyBottles }
             )
-            showSettlement = true
         }
-        .sheet(isPresented: $showSettlement) {
-            if let data = settlementData {
-                FocusSettlementSheet(
-                    focusMinutes: data.focusMinutes,
-                    earnedBottles: data.earnedBottles,
-                    totalBottles: data.totalBottles
-                )
-                .environment(theme)
-                .presentationDetents([.medium])
-                .presentationDragIndicator(.hidden)
-                .presentationCornerRadius(24)
-            }
+        .sheet(item: $settlementData) { data in
+            FocusSettlementSheet(
+                focusMinutes: data.focusMinutes,
+                earnedBottles: data.earnedBottles,
+                totalBottles: data.totalBottles
+            )
+            .environment(theme)
+            .presentationDetents([.medium])
+            .presentationDragIndicator(.hidden)
+            .presentationCornerRadius(24)
         }
     }
 
@@ -250,15 +245,6 @@ private struct LoadingIndicatorView: View {
         .background(theme.colors.cardBackground)
         .clipShape(Capsule())
         .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
-    }
-}
-
-// MARK: - Scroll Offset Preference Key
-
-private struct ScrollOffsetPreferenceKey: PreferenceKey {
-    nonisolated(unsafe) static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
     }
 }
 
