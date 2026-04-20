@@ -36,9 +36,9 @@ public struct HomeView: View {
     }
 
     public var body: some View {
-        ZStack(alignment: .bottomTrailing) {
-            VStack(spacing: 0) {
-                ScrollViewReader { proxy in
+        ScrollViewReader { proxy in
+            ZStack(alignment: .bottomTrailing) {
+                VStack(spacing: 0) {
                     ScrollView(.vertical, showsIndicators: false) {
                         LazyVStack(spacing: 0) {
                             Color.clear
@@ -84,7 +84,7 @@ public struct HomeView: View {
                     .coordinateSpace(name: "scroll")
                     .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
                         withAnimation(.kiroleSnappy) {
-                            showScrollToTop = value < -300
+                            showScrollToTop = value < -200
                         }
                         scrollOffset = value
                     }
@@ -100,29 +100,32 @@ public struct HomeView: View {
                     .refreshable {
                         await refreshData()
                     }
-                    .overlay(alignment: .bottomTrailing) {
-                        if showScrollToTop {
-                            ScrollToTopButton {
-                                withAnimation(.kiroleGentle) {
-                                    proxy.scrollTo("top", anchor: .top)
-                                }
-                            }
-                            .padding(.trailing, 24)
-                            .padding(.bottom, 24)
-                            .transition(.scale.combined(with: .opacity))
+                } // VStack
+
+                if showScrollToTop {
+                    ScrollToTopButton {
+                        withAnimation(.kiroleGentle) {
+                            proxy.scrollTo("top", anchor: .top)
                         }
                     }
-                    #if DEBUG
-                    .overlay(alignment: .topTrailing) {
-                        PromptDebuggerFAB()
-                            .padding(.trailing, 16)
-                            .padding(.top, 60) // Avoid safe area / notch
-                    }
-                    #endif
+                    .padding(.trailing, 24)
+                    .padding(.bottom, 24)
+                    .transition(.scale.combined(with: .opacity))
+                    .zIndex(2)
                 }
-            }
-        }
-        .background(theme.colors.background)
+
+                #if DEBUG
+                VStack {
+                    PromptDebuggerFAB()
+                        .padding(.trailing, 16)
+                        .padding(.top, 60) // Avoid safe area / notch
+                    Spacer()
+                }
+                .zIndex(3)
+                #endif
+            } // ZStack
+            .background(theme.colors.background)
+        } // ScrollViewReader
         .task(id: scenePhase) {
             guard scenePhase == .active else { return }
             await refreshVisibleHomeCompanion()
