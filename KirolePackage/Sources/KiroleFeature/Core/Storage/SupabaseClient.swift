@@ -42,7 +42,15 @@ public actor SupabaseService {
             return
         }
 
-        client = SupabaseClient(supabaseURL: supabaseURL, supabaseKey: key)
+        client = SupabaseClient(
+            supabaseURL: supabaseURL,
+            supabaseKey: key,
+            options: SupabaseClientOptions(
+                auth: SupabaseClientOptions.AuthOptions(
+                    emitLocalSessionAsInitialSession: true
+                )
+            )
+        )
         isConfigured = true
         #if DEBUG
         print("[SupabaseService] Configured successfully")
@@ -57,7 +65,15 @@ public actor SupabaseService {
             #endif
             return
         }
-        client = SupabaseClient(supabaseURL: supabaseURL, supabaseKey: key)
+        client = SupabaseClient(
+            supabaseURL: supabaseURL,
+            supabaseKey: key,
+            options: SupabaseClientOptions(
+                auth: SupabaseClientOptions.AuthOptions(
+                    emitLocalSessionAsInitialSession: true
+                )
+            )
+        )
         isConfigured = true
     }
 
