@@ -13,13 +13,13 @@ public enum AppTheme: String, CaseIterable, Identifiable {
         switch self {
         case .classicWarm:
             return ThemeColors(
-                primary: Color(hex: "a67c52"),
-                primaryDark: Color(hex: "8b6f47"),
-                primaryLight: Color(hex: "d4a574"),
-                accent: Color(hex: "4a5f4f"),
+                primary: Color(hex: "B07432"),
+                primaryDark: Color(hex: "96602A"),
+                primaryLight: Color(hex: "D4A46A"),
+                accent: Color(hex: "2C4637"),
                 accentLight: Color(hex: "d4e8e0"),
-                accentDark: Color(hex: "3a4f3f"),
-                background: Color(hex: "f5f1e8"),
+                accentDark: Color(hex: "1B3224"),
+                background: Color(hex: "F4F2EC"),
                 cardBackground: Color.white,
                 primaryText: Color(hex: "1f2937"),
                 secondaryText: Color(hex: "6b7280"),

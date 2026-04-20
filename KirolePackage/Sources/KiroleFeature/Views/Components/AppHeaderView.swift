@@ -17,10 +17,10 @@ public struct AppHeaderView: View {
             headerContent
                 .background(theme.currentTheme.headerGradient)
 
-            // Bottom decorative line
+            // Bottom decorative thick line
             Rectangle()
-                .fill(Color.white.opacity(0.2))
-                .frame(height: 1)
+                .fill(Color.black.opacity(0.35))
+                .frame(height: 10)
         }
     }
 
