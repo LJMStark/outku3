@@ -30,14 +30,63 @@ This file provides guidance to Antigravity, Claude Code, Cursor and other AI cod
   - **AI Backend**: OpenRouter (`openai/gpt-4o-mini`) via `OpenAIService`
   - **Testing**: Swift Testing Framework (`@Test`, `#expect`) - **NO XCTest**
 
+### Apple Developer Account
+- **Account Type**: Paid Apple Developer Program ($99/year)
+- **Email**: xiaoyouzi2010@gmail.com
+- **Team ID**: 93SL23NPNG
+- **Team Name**: Jiaming Liang
+- **Status**: Active
+- **Capabilities**: Can publish to TestFlight and App Store
+- **Family Controls**: Distribution version application submitted
+
 ### Current Phase Policy
-- The project is in a rapid development phase. Prefer clean evolution over preserving local caches, local JSON files, or provisional interfaces.
-- `LocalStorage`, `UserDefaults`, and on-device JSON are disposable development state. When their shape changes, prefer resetting local data over adding migration code.
+- The project is in a rapid development phase. Prefer clean iteration over preserving local caches, local JSON files, or provisional interfaces.
+- `LocalStorage`, `UserDefaults`, and on-device JSON are disposable development state. When their shape/schema changes, reset local data instead of adding migration code.
 - BLE payloads, event formats, and firmware-facing interfaces are not frozen until real hardware integration begins. Do not add compatibility branches for hypothetical old firmware.
 - Remove obsolete compatibility shims, migration comments, and migration tests when changing models or payloads.
-- Once hardware integration, shared staging data, TestFlight, or external users depend on a format, document that boundary explicitly before adding compatibility work.
+- Only start preserving formats once hardware integration, shared staging data, TestFlight, or external users depend on them. Provide documentation boundaries explicitly.
 
-## 3. Tools & Commands
+## 3. Architecture & Key Systems
+
+### State Management
+Three singletons injected via `.environment()` from ContentView:
+| Singleton | Purpose |
+|-----------|---------|
+| `AppState` | Pet, tasks, events, navigation, integrations |
+| `ThemeManager` | Current theme colors (3 themes) |
+| `AuthManager` | Authentication state (Apple/Google Sign In) |
+
+**Important**: All three must be injected for any view that might need them to prevent runtime crashes.
+
+### Navigation & Layout
+- Tab-based navigation via `AppState.selectedTab` (`.home`, `.pet`, `.settings`).
+- Custom header (`AppHeaderView`) fixed at top (placed outside `ScrollView` in each main page) - no native `TabView`.
+
+### Home Timeline Architecture
+- Infinite-scroll multi-day timeline managed by `TimelineDataSource`.
+- `HomeView` -> `LazyVStack` with today (offset 0) followed by `ForEach(offset 1+)`.
+- `DaySectionView` -> `DateDividerView` + `DayTimelineView`.
+- Today always has `showPet: true`; subsequent days show pet every 3 days.
+- `HaikuSectionView` renders the daily haiku or shared pet dialogue above the pet image embed. All components live in `Views/Home/TimelineView.swift`.
+
+### Onboarding Flow (14 Screens)
+Fully native SwiftUI implementation managed via `OnboardingState`:
+- 0: `WelcomePage`
+- 1: `FeatureCalendarPage`
+- 2: `FeatureFocusPage`
+- 3: `TextAnimationPage`
+- 4: `PersonalizationPage` (Theme + Avatar selector)
+- 5-12: `QuestionnairePage` (Data-driven from `OnboardingQuestions`)
+- 13: `SignUpPage` (Google Sign In + Apple/Email)
+Images accessed via `Image("name", bundle: .module)` from `Resources/Media.xcassets`.
+
+### Pet System
+- 5 forms: Cat, Dog, Bunny, Bird, Dragon
+- 5 stages: Baby -> Child -> Teen -> Adult -> Elder
+- 5 moods: Happy, Excited, Focused, Sleepy, Missing You
+- 4 scenes: Indoor, Outdoor, Night, Work
+
+## 4. Tools & Commands
 
 ### Build & Run
 Prefer `XcodeBuildMCP` tools when available. Fallback to CLI otherwise.
@@ -51,166 +100,99 @@ build_run_sim_name_ws({
 })
 ```
 
-**CLI Build (Fallback):**
+**CLI Build & Run Fallback:**
 ```bash
-xcodebuild -workspace Kirole.xcworkspace -scheme Kirole -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
-```
-
-**Package-Only Build (Fastest):**
-```bash
+# Package-Only Build (Fastest):
 cd KirolePackage && swift build
+# Full App Build (Simulator):
+xcodebuild -workspace Kirole.xcworkspace -scheme Kirole -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
+# Real device deploy:
+xcrun devicectl device install app --device <DEVICE_ID> ~/Library/Developer/Xcode/DerivedData/Kirole-*/Build/Products/Debug-iphoneos/Kirole.app
 ```
 
 ### Testing
-**Run All Tests (Simulator):**
+**Run All Tests (Simulator via MCP/CLI):**
 ```javascript
-test_sim_name_ws({
-    workspacePath: "/Users/demon/vibecoding/outku3/Kirole.xcworkspace",
-    scheme: "Kirole",
-    simulatorName: "iPhone 17 Pro"
-})
+// MCP
+test_sim_name_ws({ workspacePath: "...", scheme: "Kirole", simulatorName: "iPhone 17 Pro" })
 ```
-
-**Run All Tests (Package - Fast):**
 ```bash
+# Package - Fast
 cd KirolePackage && swift test
-```
-
-**Run Single Test (Package - Fast):**
-```bash
+# Package - Single Test
 cd KirolePackage && swift test --filter "MyTestSuite/testMethod"
+# Simulator - Full
+xcodebuild -workspace Kirole.xcworkspace -scheme Kirole -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test -only-testing:KiroleFeatureTests/MyTestSuite/testMethod
 ```
 
-**Run Single Test (Simulator - Full):**
-```bash
-xcodebuild -workspace Kirole.xcworkspace -scheme Kirole \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
-  test -only-testing:KiroleFeatureTests/MyTestSuite/testMethod
-```
-
-## 4. Critical Architecture Rules
+## 5. Critical Architecture Rules
 
 ### Forbidden Patterns
 - **NO ViewModels**: Use `@Observable` models directly in Views.
 - **NO `Task { }` in `onAppear`**: Use `.task` modifier.
 - **NO deprecated `.onChange(of:perform:)`**: Use `.onChange(of:) { oldValue, newValue in ... }` or `.onChange(of:) { ... }`.
-- **NO CoreData**: Use SwiftData or raw persistence.
+- **NO CoreData or CloudKit**: Use SwiftData, Supabase, or raw persistence.
 - **NO XCTest**: Use Swift Testing (`import Testing`).
+- **NO Combine**: Unless strictly necessary.
 - **NO Manual File Adding**: `KirolePackage` handles file references automatically.
+- **NO secrets in `Info.plist`**: Never place API keys in app plist.
 
 ### Required Patterns
-- **Concurrency**: Use `@MainActor` for UI. Use `actor` for shared state.
-- **Navigation**: Custom `AppHeaderView` fixed at top (outside `ScrollView`).
-- **Dependency Injection**:
-  ```swift
-  @Environment(AppState.self) private var appState
-  @Environment(ThemeManager.self) private var theme
-  ```
+- **Concurrency**: Use `@MainActor` for UI. Use `actor` for shared state. Avoid `@unchecked Sendable` unless absolutely necessary and well-documented.
+- **Dependency Injection**: Use `@Environment(AppState.self)` etc.
 - **Public Access**: View types in `KirolePackage` must be `public` to be visible to App Shell.
-  ```swift
-  public struct MyView: View {
-      public init() {} // Required public init
-      public var body: some View { ... }
-  }
-  ```
-
-### Home Companion Presentation
-- `AppState.refreshHomeCompanionPresentation()` is the single entry point for deciding whether Home shows the daily haiku or the shared pet dialogue.
-- `HaikuSectionView` renders from `currentHaiku`, `currentPetDialogue`, and `homeCompanionDisplayMode`; keep those three values consistent.
-- First display of a new calendar day always shows the daily haiku; subsequent displays fall back to pet dialogue.
-- Never force Home into `petDialogue` from `onDisappear`; refresh presentation on re-entry / scene activation instead so day rollover still shows the next day's haiku.
-- Only persist `LocalStorage.lastHomeHaikuShownDate` after the haiku has actually finished loading.
-- Prompt debugger output must go through a preview-only path (`CompanionTextService.previewSharedPetDialogue()`) and must not be written into production `AIInteraction` history.
 
 ### AI Companion Text System (Inku Paradigm)
 The AI companion is an **emotional value provider**, NOT a productivity coach or life planner.
+- **Architecture**: 
+  1. Persona Layer (`CompanionStyle` + few-shot examples).
+  2. Context Layer (semantic signals, time of day).
+  3. Format Layer (positive directives, NO negation-based rules).
+- **Rules**:
+  - `EMOTIONAL VALUE ONLY`: No advice, no productivity tips.
+  - `MAXIMUM 60 characters`: Extremely brief output.
+  - `SHOW, DON'T TELL`: React via mood, not by reciting raw metrics.
+- Subservices: `TaskDehydrationService` (micro-actions What/When/Why), `SmartReminderService` (context-aware triggers), `FocusSessionService`.
+- **Data flow**: `DayPackGenerator` -> `CompanionTextService` -> `OpenAIService` -> `LocalStorage`. Tests go through `PromptDebuggerView`.
 
-**Architecture (3-layer prompt assembly in `OpenAIService.swift`):**
-1. **Persona Layer** (`CompanionStyle`): 6 personality presets (companion, challenger, corporate, dramatic, genZ, slacker). Each includes a one-line role definition + 5 few-shot example outputs to anchor the style.
-2. **Context Layer** (`<context>` semantic signals): Condensed to 4 signals (time of day, day intensity, mood, trend). Raw metrics are converted to semantic labels to prevent the LLM from reciting stats.
-3. **Format Layer** (`<format>`): 4 positive directives. No negation-based rules.
+### Home Companion Presentation
+- `AppState.refreshHomeCompanionPresentation()` decides between daily haiku or shared pet dialogue.
+- First display of a new day shows haiku; subsequent displays fall back to pet dialogue. Do not force update on `onDisappear`.
+- Only persist `LocalStorage.lastHomeHaikuShownDate` after async load completes.
 
-**Global Rules (enforced on ALL personalities):**
-- `EMOTIONAL VALUE ONLY`: No advice, no productivity tips, no task guidance.
-- `MAXIMUM 60 characters`: Extremely brief output.
-- `SHOW, DON'T TELL`: React via mood/behavior, not by reciting stats.
-- Never act like a reporting analytics device.
+### BLE Protocol & Supabase Data
+- **E-ink Hardware**: 4-inch/7.3-inch, ESP32-S3. Spectra 6 pixel encoding (4bpp).
+- **BLE Payload**: 9-byte header + CRC16-CCITT-FALSE. Ensure `BLEPacketizer` and `BLEPacketAssembler` usage.
+- **Sync**: Configured via `BLESyncCoordinator` (background sync via `com.kirole.app.ble.sync`).
+- **Security Mode**: Development (unsigned local transport) vs Secure (BLE v2 handshake + signed envelope based on `BLE_SHARED_SECRET`).
+- **Supabase**: Keys injected via `AppSecrets.configure(...)` using build-time constants (`Config/Secrets.xcconfig`). Keep RLS enabled and sync schema changes with `Config/supabase-schema.sql`.
 
-**When modifying AI prompts:**
-- Every persona MUST include 5 example outputs (few-shot). Abstract descriptions alone do not work.
-- Context data must be semantic signals ("busy day"), not raw numbers ("72% completion rate").
-- Rules must be phrased as positive directives ("React with mood"), not negations ("DO NOT give advice").
-- Temperature must stay at 0.9, maxTokens at 80.
-- All persona changes must be tested through `PromptDebuggerView` to verify compliance with the Inku paradigm.
+## 6. Code Style & Formatting
+- **Imports**: `import SwiftUI`, `import Testing`. No Combine unless needed.
+- **Naming Conventions**: Views -> PascalCase; Variables/Constants -> camelCase.
+- **Error Handling**: Use `do-catch` blocks within `.task`. Propagate via `throws`. Never suppress via `try!` in critical logic without comments.
 
-**Data flow:** `CompanionTextService` -> `OpenAIService.generateCompanionText()` -> OpenRouter API -> `LocalStorage` (AI interactions)
-
-### BLE Protocol & Sync (Hardware)
-- Always send BLE payloads through `BLEPacketizer` and assemble via `BLEPacketAssembler` (9-byte header + CRC16-CCITT-FALSE).
-- Use `BLESyncCoordinator` for scheduled sync (08:00-23:00 hourly; 23:00-08:00 every 4 hours; 30s window).
-- Gate DayPack refresh with `DayPack.stableFingerprint()` and `LocalStorage.lastDayPackHash`.
-- Background sync uses `BLEBackgroundSyncScheduler` and BGTask id `com.kirole.app.ble.sync`.
-- BLE link runs in two modes:
-  - **Development Mode (current default)**: when `BLE_SHARED_SECRET` is not configured, unsigned transport is acceptable for local development. This is not a commitment to support historical firmware variants.
-  - **Secure Mode**: when `BLE_SHARED_SECRET` is configured, enforce BLE v2 handshake + signed secure envelope + replay protection.
-- Settings UI must expose current BLE mode using `BLEService.configuredSecurityMode` so firmware/App teams can verify integration state.
-
-### Supabase Data & Security
-- Client runtime config must be injected via `AppSecrets.configure(...)` from App shell (`KiroleApp`) using build-time constants.
-- `Info.plist` must not contain `OPENROUTER_API_KEY`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, or `BLE_SHARED_SECRET`.
-- Build-time secret sources (`Config/Secrets.xcconfig`, env vars, generated `Kirole/BuildSecrets.generated.swift`) must never commit real secrets.
-- Never use or expose `service_role` keys in iOS code, app bundles, repo files, or logs.
-- Keep RLS enabled on all business tables and scope policies to `auth.uid()`.
-- Any Supabase model field change in Swift code must update `Config/supabase-schema.sql` in the same patch.
-- During the rapid development phase, prefer a clean latest schema over backward-compatible migration shims.
-- Before shared staging data, external testers, or production data rely on the schema, it may change in breaking ways as long as code and `Config/supabase-schema.sql` stay aligned.
-- Once external environments depend on the schema, switch to explicit migrations and preserve existing data intentionally.
-
-## 5. Code Style & Formatting
-
-### Imports
-```swift
-import SwiftUI
-import Testing // For test files
-// Do NOT import Combine unless strictly necessary
+## 7. Configuration & Environment Variables
+Create `Config/Secrets.xcconfig` (git-ignored) and supply:
+```
+DEVELOPMENT_TEAM = 93SL23NPNG
+GOOGLE_CLIENT_ID = ...
+GOOGLE_REVERSED_CLIENT_ID = ...
+SUPABASE_URL = ...
+SUPABASE_ANON_KEY = ...
 ```
 
-### Naming Conventions
-- **Views**: PascalCase (e.g., `PetStatusView`)
-- **Variables**: camelCase (e.g., `currentMood`)
-- **Constants**: camelCase (e.g., `maxRetries`)
+## 8. Development Workflow
+1. Read `.cursor/rules/` for domain-specific rules.
+2. Develop in `KirolePackage/Sources/KiroleFeature/`.
+3. Verify via tests, strict concurrency check, and regression coverage (`HomeCompanionPresentationTests`, `PromptDebuggerView`).
+4. Follow secret config logic (via build-generated constants, not info.plist). Local dev uses `.env` logic. 
+5. **Always rebuild and open the simulator after modifying frontend/UI code to verify the changes** (每次修改完前端/UI代码后，必须使用相应命令重新构建并打开模拟器进行验证).
 
-### Error Handling
-- Use `do-catch` blocks within `.task`.
-- Propagate errors using `throws`.
-- **Never** suppress errors with `try?` or `try!` in critical logic without comments.
-
-## 6. Development Workflow
-
-1.  **Check Rules**: Read `.cursor/rules/` for specific domain rules (Concurrency, SwiftUI, Testing).
-2.  **Implementation**:
-    -   Modify/Create files in `KirolePackage/Sources/KiroleFeature/`.
-    -   Ensure `public` modifiers if file is referenced by App Shell.
-3.  **Verification**:
-    -   Run tests via `swift test` (fast) or `xcodebuild` (thorough).
-    -   Fix concurrency warnings (Strict Concurrency is ENABLED).
-    -   If you touch Home companion presentation behavior, update/add focused regression coverage in `KirolePackage/Tests/KiroleFeatureTests/HomeCompanionPresentationTests.swift`.
-    -   If you touch AI companion prompts, test through `PromptDebuggerView` to verify no advice/coaching leaks through.
-4.  **Configuration**:
-    -   App shell injects secrets via `AppSecrets.configure(...)` (build-generated constants; no runtime `Info.plist` reads).
-    -   `Kirole/BuildSecrets.generated.swift` is generated by build script and should not contain real secrets in git.
-    -   Capabilities go in `Config/Kirole.entitlements`.
-
-## 7. Reference Files
-- **Claude Code Guide**: `CLAUDE.md` (references this file)
-- **Cursor Rules**: `.cursor/rules/*.mdc`
-- **Copilot Rules**: `.github/copilot-instructions.md`
-
-## 8. Interaction Rules (CRITICAL)
+## 9. Interaction Rules (CRITICAL)
 - **Addressing**: Always address the user as **B哥** at the start of every response.
-- **Language**: All responses must be in **Chinese** (Simplified).
+- **Language**: All responses must be in **Chinese** (Simplified). When the user sounds non-technical, prefer plain Chinese, explain jargon immediately.
 - **Workspace Boundary (STRICT)**:
-  - All commands (`run_command`, `git`, `swift`, etc.) MUST execute within the current workspace root (`/Users/demon/vibecoding/outku3`). NEVER `cd` into or reference directories outside this workspace.
-  - The user may have files from other projects open in the editor. **Ignore them.** Editor open-file metadata is informational only and does NOT change the active workspace.
-  - When the user says "commit", "build", "test", or any development action without specifying a project, it ALWAYS refers to **this workspace** (`outku3` / Kirole).
-  - If an action genuinely requires a different workspace, **ask the user explicitly** before proceeding. Never assume or infer cross-workspace intent.
+  - All commands MUST execute within the current workspace root (`/Users/demon/vibecoding/outku3`). NEVER reference outside directories.
+  - Ignore open files from other projects.
+  - Unspecified actions ("commit", "build") ALWAYS refer to **this workspace**. Ask explicitly if outside access is needed.
