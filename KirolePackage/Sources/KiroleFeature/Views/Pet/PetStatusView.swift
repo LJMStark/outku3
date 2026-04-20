@@ -122,14 +122,18 @@ private struct PetStatusCard: View {
                         .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
 
                         // Pet Info Text
-                        VStack(alignment: .leading, spacing: 8) {
+                        VStack(alignment: .leading, spacing: 6) {
                             Text(appState.pet.name)
-                                .font(.system(size: 26, weight: .bold, design: .serif))
+                                .font(.system(size: 22, weight: .bold, design: .serif))
                                 .foregroundStyle(Color(hex: "1F3A2C"))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
 
                             Text("\(appState.pet.pronouns.rawValue) • \(appState.pet.adventuresCount) Adventures")
-                                .font(.system(size: 15))
+                                .font(.system(size: 13))
                                 .foregroundStyle(theme.colors.secondaryText)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
                         }
                         .padding(.top, 20)
 
@@ -150,10 +154,8 @@ private struct PetStatusCard: View {
                     // Stats Grid Layout
                     VStack(alignment: .leading, spacing: 16) {
                         StatRowNew(label: "AGE", value: "\(appState.pet.age) days")
-                        StatRowNew(label: "STATUS", value: appState.pet.status.rawValue, icon: "safari.fill")
+                        StatRowNew(label: "STATUS", value: appState.pet.status.rawValue, icon: "globe")
                         StatRowNew(label: "STAGE", value: appState.pet.stage.rawValue)
-                        StatRowNew(label: "CHARACTER", value: appState.userProfile.companionCharacter.displayName)
-                        IntimacyRow(stage: appState.userProfile.intimacyStage)
                         ProgressRowNew(progress: appState.pet.progress)
                     }
                     .padding(.horizontal, 24)
@@ -169,7 +171,7 @@ private struct PetStatusCard: View {
                     HStack(spacing: 32) {
                         MeasurementItem(icon: "scalemass", value: String(format: "%.1fg", appState.pet.weight))
                         MeasurementItem(icon: "arrow.up.and.down", value: String(format: "%.1fcm", appState.pet.height))
-                        MeasurementItem(emoji: "🦋", value: String(format: "%.1fcm", appState.pet.tailLength))
+                        MeasurementItem(icon: "bird.fill", value: String(format: "%.1fcm", appState.pet.tailLength))
                         Spacer()
                     }
                     .padding(.horizontal, 24)
@@ -228,15 +230,15 @@ private struct ProgressRowNew: View {
                 .foregroundStyle(theme.colors.secondaryText)
                 .frame(width: 140, alignment: .leading)
 
-            HStack(spacing: 6) {
-                ForEach(0..<10, id: \.self) { index in
-                    let isFilled = Double(index) / 10.0 < progress
+            HStack(spacing: 4) {
+                ForEach(0..<14, id: \.self) { index in
+                    let isFilled = Double(index) / 14.0 < progress
                     Circle()
                         .fill(isFilled ? Color(hex: "4A6B53") : Color(hex: "C8E6C9"))
-                        .frame(width: 10, height: 10)
+                        .frame(width: 8, height: 8)
                         .scaleEffect(animatedProgress ? 1 : 0)
                         .animation(
-                            .kiroleBouncy.delay(0.2 + Double(index) * 0.05),
+                            .kiroleBouncy.delay(0.2 + Double(index) * 0.03),
                             value: animatedProgress
                         )
                 }
@@ -244,7 +246,7 @@ private struct ProgressRowNew: View {
                 Text("\(Int(progress * 100))%")
                     .font(.system(size: 15, weight: .bold))
                     .foregroundStyle(Color(hex: "1F2937"))
-                    .padding(.leading, 8)
+                    .padding(.leading, 6)
             }
             Spacer()
         }
@@ -252,44 +254,7 @@ private struct ProgressRowNew: View {
     }
 }
 
-// MARK: - Intimacy Row
 
-private struct IntimacyRow: View {
-    let stage: IntimacyStage
-    @Environment(ThemeManager.self) private var theme
-
-    private var stageIndex: Int {
-        switch stage {
-        case .acquaintance: return 0
-        case .familiar: return 1
-        case .closeFriend: return 2
-        }
-    }
-
-    var body: some View {
-        HStack(spacing: 0) {
-            Text("INTIMACY")
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(theme.colors.secondaryText)
-                .frame(width: 140, alignment: .leading)
-
-            HStack(spacing: 8) {
-                Text(stage.displayName)
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(Color(hex: "1F2937"))
-
-                HStack(spacing: 4) {
-                    ForEach(0..<3, id: \.self) { index in
-                        Circle()
-                            .fill(index <= stageIndex ? Color(hex: "4A6B53") : Color(hex: "C8E6C9"))
-                            .frame(width: 8, height: 8)
-                    }
-                }
-            }
-            Spacer()
-        }
-    }
-}
 
 // MARK: - Measurement Item
 
@@ -440,8 +405,8 @@ private struct TaskStatSection: View {
                 .foregroundStyle(theme.colors.secondaryText)
                 .tracking(0.5)
 
-            HStack {
-                // Tasks Count
+            HStack(spacing: 0) {
+                // Tasks Column
                 HStack(spacing: 8) {
                     Image(systemName: "doc.plaintext")
                         .font(.system(size: 16))
@@ -451,13 +416,16 @@ private struct TaskStatSection: View {
                         .font(.system(size: 15))
                         .foregroundStyle(theme.colors.secondaryText)
 
+                    Spacer()
+
                     Text("\(tasks)")
                         .font(.system(size: 16, weight: .bold))
                         .foregroundStyle(Color(hex: "1F2937"))
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.trailing, 24)
 
-                // Focus Time
+                // Focus Time Column
                 HStack(spacing: 8) {
                     Image(systemName: "clock")
                         .font(.system(size: 16))
@@ -466,6 +434,8 @@ private struct TaskStatSection: View {
                     Text("Focus Time")
                         .font(.system(size: 15))
                         .foregroundStyle(theme.colors.secondaryText)
+
+                    Spacer()
 
                     Text(focusTime)
                         .font(.system(size: 16, weight: .bold))
