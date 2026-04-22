@@ -15,6 +15,8 @@ public struct EventEditSheet: View {
     @State private var location: String
     @State private var notes: String
     @State private var isSaving = false
+    @State private var showErrorAlert = false
+    @State private var errorMessage = ""
 
     private var editCapabilities: EventEditCapabilities {
         event.editCapabilities(googleCalendarWriteAccess: authManager.hasCalendarWriteAccess)
@@ -94,6 +96,11 @@ public struct EventEditSheet: View {
                     }
                 }
             }
+            .alert("保存失败", isPresented: $showErrorAlert) {
+                Button("确定", role: .cancel) { }
+            } message: {
+                Text(errorMessage)
+            }
         }
     }
 
@@ -113,6 +120,8 @@ public struct EventEditSheet: View {
             )
             dismiss()
         } catch {
+            errorMessage = error.localizedDescription
+            showErrorAlert = true
             return
         }
     }

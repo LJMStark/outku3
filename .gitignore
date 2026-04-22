@@ -16,6 +16,7 @@ xcuserdata/
 .vscode/
 .idea/
 .xcodebuildmcp/
+.zed/
 
 ## Screenshots and temp files
 screenshot*.png
