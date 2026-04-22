@@ -167,8 +167,22 @@ private struct PetIllustrationSection: View {
                         // Pet image
                         Image(petImageName, bundle: .module)
                             .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(width: 320, height: 320)
+                            .aspectRatio(contentMode: .fill)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 340)
+                            .clipped()
+                            .mask(
+                                LinearGradient(
+                                    gradient: Gradient(stops: [
+                                        .init(color: .clear, location: 0),
+                                        .init(color: .black, location: 0.05),
+                                        .init(color: .black, location: 0.95),
+                                        .init(color: .clear, location: 1)
+                                    ]),
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
                             .offset(y: breathingOffset)
                             .shadow(color: theme.colors.primary.opacity(0.1), radius: 20, x: 0, y: 10)
                             
