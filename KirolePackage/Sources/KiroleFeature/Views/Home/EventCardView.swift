@@ -85,17 +85,32 @@ private enum EventDetailFormatters {
 // MARK: - Event Detail Modal
 
 public struct EventDetailModal: View {
-    let event: CalendarEvent
+    let eventId: String
     @Environment(\.dismiss) private var dismiss
     @Environment(ThemeManager.self) private var theme
     @Environment(AppState.self) private var appState
     @State private var showEditSheet = false
 
+    /// Live event looked up from AppState; falls back to dismiss if deleted.
+    private var event: CalendarEvent? {
+        appState.events.first { $0.id == eventId }
+    }
+
     public init(event: CalendarEvent) {
-        self.event = event
+        self.eventId = event.id
     }
 
     public var body: some View {
+        if let event {
+            eventContent(event)
+        } else {
+            // Event was deleted while modal was open
+            Color.clear.onAppear { dismiss() }
+        }
+    }
+
+    @ViewBuilder
+    private func eventContent(_ event: CalendarEvent) -> some View {
         VStack(spacing: 0) {
             // Drag indicator
             Capsule()
@@ -179,7 +194,7 @@ public struct EventDetailModal: View {
                             }
                             Divider().padding(.leading, 48)
                             EventDetailRow(icon: "arrow.left.arrow.right", showPencil: false) {
-                                Text(startStatusText())
+                                Text(startStatusText(event))
                                     .font(.system(size: 14))
                                     .foregroundStyle(theme.colors.primaryText)
                             }
@@ -224,7 +239,7 @@ public struct EventDetailModal: View {
         }
     }
 
-    private func startStatusText() -> String {
+    private func startStatusText(_ event: CalendarEvent) -> String {
         let diff = event.startTime.timeIntervalSinceNow
         if diff <= 0 {
             return "Started"
