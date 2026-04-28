@@ -73,8 +73,12 @@ public final class AppState {
     // Loading State
     public var isLoading: Bool = false
     public var lastError: String?
+    /// Tracks which sync sources are currently in-flight to prevent same-source re-entrancy.
+    var activeSyncs: Set<ExternalSyncTarget> = []
     public var lastGoogleSyncDebug: String = "Not synced yet"
     public var hasCompletedInitialHomeLoad: Bool = false
+    /// Prevents concurrent dialogue generation (multiple sync callbacks triggering at once).
+    var isRefreshingDialogue: Bool = false
 
     // Services
     let syncManager = SyncManager.shared

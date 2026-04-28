@@ -24,7 +24,7 @@ public enum BLEDataEncoder {
         data.appendString(pet.name, maxLength: 20)
         data.append(pet.mood.rawValue.first?.asciiValue ?? 0)
         data.append(pet.stage.rawValue.first?.asciiValue ?? 0)
-        data.append(UInt8(min(Int(pet.progress * 100), 255)))
+        data.append(UInt8(min(pet.percentDisplay, 255)))
         return data
     }
 

@@ -19,14 +19,13 @@ extension PixelPetView {
             starOpacities = PetAnimationEngine.fadeValues(count: 5, to: 0.0)
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
-                bounceOffset = 0
-                celebrationScale = 1.0
-            }
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.6).delay(0.3)) {
+            bounceOffset = 0
+            celebrationScale = 1.0
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(800))
             showStars = false
         }
     }
@@ -36,32 +35,24 @@ extension PixelPetView {
             celebrationRotation = 8
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            withAnimation(.spring(response: 0.15, dampingFraction: 0.3)) {
-                celebrationRotation = -8
-            }
+        withAnimation(.spring(response: 0.15, dampingFraction: 0.3).delay(0.1)) {
+            celebrationRotation = -8
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            withAnimation(.spring(response: 0.15, dampingFraction: 0.3)) {
-                celebrationRotation = 5
-            }
+        withAnimation(.spring(response: 0.15, dampingFraction: 0.3).delay(0.2)) {
+            celebrationRotation = 5
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            withAnimation(.spring(response: 0.2, dampingFraction: 0.5)) {
-                celebrationRotation = 0
-            }
+        withAnimation(.spring(response: 0.2, dampingFraction: 0.5).delay(0.3)) {
+            celebrationRotation = 0
         }
 
         withAnimation(.spring(response: 0.2, dampingFraction: 0.4)) {
             bounceOffset = -10
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
-                bounceOffset = 0
-            }
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.6).delay(0.2)) {
+            bounceOffset = 0
         }
     }
 
@@ -120,7 +111,8 @@ extension PixelPetView {
             for i in 0..<8 {
                 let delay = Double.random(in: 0...2)
                 let duration = Double.random(in: 1.5...3.0)
-                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(delay))
                     withAnimation(.easeInOut(duration: duration).repeatForever(autoreverses: true)) {
                         starTwinkle[i] = Double.random(in: 0.3...1.0)
                     }
@@ -158,7 +150,8 @@ extension PixelPetView {
             heartOpacities = PetAnimationEngine.fadeValues(count: 3, to: 0.0)
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(800))
             showHearts = false
         }
     }
@@ -177,7 +170,8 @@ extension PixelPetView {
             noteOpacities = PetAnimationEngine.fadeValues(count: 3, to: 0.0)
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(800))
             showNotes = false
         }
     }
@@ -187,12 +181,13 @@ extension PixelPetView {
         withAnimation(.easeOut(duration: 0.3)) {
             loveBubbleOpacity = 1.0
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            withAnimation(.easeOut(duration: 0.5)) {
-                loveBubbleOpacity = 0
-            }
+
+        withAnimation(.easeOut(duration: 0.5).delay(1.0)) {
+            loveBubbleOpacity = 0
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(1500))
             showLoveBubble = false
         }
     }

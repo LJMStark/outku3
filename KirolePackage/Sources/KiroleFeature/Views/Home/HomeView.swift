@@ -157,7 +157,7 @@ public struct HomeView: View {
                 earnedBottles: data.earnedBottles,
                 totalBottles: data.totalBottles
             )
-            .environment(theme)
+            .injectAppEnvironment()
             .presentationDetents([.medium])
             .presentationDragIndicator(.hidden)
             .presentationCornerRadius(24)

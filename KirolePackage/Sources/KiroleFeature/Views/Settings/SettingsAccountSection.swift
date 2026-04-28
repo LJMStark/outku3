@@ -52,7 +52,7 @@ public struct SettingsAccountSection: View {
                         showPreview = false
                     }
                 )
-                .environment(theme)
+                .injectAppEnvironment()
                 .presentationDetents([.medium])
                 .presentationDragIndicator(.hidden)
                 .presentationCornerRadius(24)

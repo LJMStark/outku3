@@ -75,8 +75,7 @@ struct SettingsView: View {
         .onAppear { appeared = true }
         .sheet(isPresented: $showCharacterSwitcher) {
             CharacterSwitcherSheet()
-                .environment(appState)
-                .environment(theme)
+                .injectAppEnvironment()
                 .presentationDetents([.medium])
                 .presentationDragIndicator(.hidden)
                 .presentationCornerRadius(24)

@@ -15,7 +15,7 @@ public final class OnboardingState {
     public init() {}
 
     public func goNext() {
-        guard currentPage < maxPage else { return }
+        guard currentPage < maxPage, canAdvance(from: currentPage) else { return }
         direction = 1
         currentPage += 1
     }
@@ -60,6 +60,27 @@ public final class OnboardingState {
         default:
             break
         }
+    }
+
+    public func canAdvance(from page: Int) -> Bool {
+        switch page {
+        case 5: return profile.motivationStyle != nil
+        case 6: return profile.calendarUsage != nil
+        case 7: return profile.taskTracking != nil
+        case 8: return !profile.distractionSources.isEmpty
+        case 9: return profile.reminderPreference != nil
+        case 10: return profile.taskApproach != nil
+        case 11: return profile.timeControl != nil
+        default: return true
+        }
+    }
+
+    public var isProfileComplete: Bool {
+        (5...11).allSatisfy { canAdvance(from: $0) }
+    }
+
+    public var firstIncompletePage: Int? {
+        (5...11).first { !canAdvance(from: $0) }
     }
 
     public func selectedOptions(for questionId: String) -> [String] {

@@ -8,7 +8,9 @@ import AppKit
 
 // MARK: - Notion Auth Service
 
-/// Handles Notion OAuth 2.0 flow using ASWebAuthenticationSession
+/// Handles Notion OAuth 2.0 flow using ASWebAuthenticationSession.
+/// Token exchange is proxied through a Supabase Edge Function so that
+/// client_secret never ships in the binary.
 @MainActor
 public final class NotionAuthService: NSObject, ASWebAuthenticationPresentationContextProviding {
     public static let shared = NotionAuthService()
@@ -22,11 +24,8 @@ public final class NotionAuthService: NSObject, ASWebAuthenticationPresentationC
 
     // MARK: - OAuth Flow
 
-    /// Initiates Notion OAuth authorization flow
-    /// Returns the access token on success
     public func authorize() async throws -> String {
-        guard let clientId = AppSecrets.notionClientId,
-              let clientSecret = AppSecrets.notionClientSecret else {
+        guard let clientId = AppSecrets.notionClientId else {
             throw NotionAuthError.missingCredentials
         }
 
@@ -40,7 +39,7 @@ public final class NotionAuthService: NSObject, ASWebAuthenticationPresentationC
             URLQueryItem(name: "response_type", value: "code"),
             URLQueryItem(name: "owner", value: "user"),
             URLQueryItem(name: "redirect_uri", value: redirectURI),
-            URLQueryItem(name: "state", value: state)
+            URLQueryItem(name: "state", value: state),
         ]
         guard let url = components.url else {
             throw NotionAuthError.invalidURL
@@ -53,12 +52,7 @@ public final class NotionAuthService: NSObject, ASWebAuthenticationPresentationC
             throw NotionAuthError.noAuthorizationCode
         }
 
-        let tokenResponse = try await exchangeCode(
-            code: code,
-            clientId: clientId,
-            clientSecret: clientSecret,
-            redirectURI: redirectURI
-        )
+        let tokenResponse = try await exchangeCodeViaEdgeFunction(code: code, redirectURI: redirectURI)
 
         try keychainService.saveNotionAccessToken(tokenResponse.accessToken)
         if let workspaceId = tokenResponse.workspaceId {
@@ -68,33 +62,22 @@ public final class NotionAuthService: NSObject, ASWebAuthenticationPresentationC
         return tokenResponse.accessToken
     }
 
-    // MARK: - Token Exchange
+    // MARK: - Token Exchange (via Edge Function)
 
-    private func exchangeCode(
-        code: String,
-        clientId: String,
-        clientSecret: String,
-        redirectURI: String
-    ) async throws -> NotionTokenResponse {
-        guard let url = URL(string: "https://api.notion.com/v1/oauth/token") else {
+    private func exchangeCodeViaEdgeFunction(code: String, redirectURI: String) async throws -> NotionTokenResponse {
+        guard let supabase = AppSecrets.supabaseConfig,
+              let url = URL(string: "\(supabase.url)/functions/v1/notion-oauth") else {
             throw NotionAuthError.invalidURL
         }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-        // Notion uses Basic Auth for token exchange
-        let credentials = "\(clientId):\(clientSecret)"
-        let base64Credentials = Data(credentials.utf8).base64EncodedString()
-        request.setValue("Basic \(base64Credentials)", forHTTPHeaderField: "Authorization")
-
-        let body: [String: String] = [
-            "grant_type": "authorization_code",
+        request.setValue("Bearer \(supabase.anonKey)", forHTTPHeaderField: "Authorization")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
             "code": code,
-            "redirect_uri": redirectURI
-        ]
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            "redirect_uri": redirectURI,
+        ])
 
         let (data, response) = try await URLSession.shared.data(for: request)
 
@@ -176,7 +159,6 @@ public final class NotionAuthService: NSObject, ASWebAuthenticationPresentationC
             .queryItems?
             .first(where: { $0.name == "state" })?
             .value
-
         guard returnedState == expected else {
             throw NotionAuthError.invalidState
         }
@@ -208,7 +190,7 @@ public enum NotionAuthError: LocalizedError, Sendable {
     public var errorDescription: String? {
         switch self {
         case .missingCredentials:
-            return "Notion OAuth credentials not configured. Fill NOTION_OAUTH_CLIENT_ID and NOTION_OAUTH_CLIENT_SECRET in Config/Secrets.xcconfig, then rebuild the app."
+            return "Notion OAuth client ID not configured. Fill NOTION_OAUTH_CLIENT_ID in Config/Secrets.xcconfig, then rebuild the app."
         case .invalidURL:
             return "Invalid Notion OAuth URL"
         case .noAuthorizationCode:

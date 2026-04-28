@@ -195,7 +195,8 @@ struct PixelPetView: View {
             guard animated else { return }
             if Int.random(in: 0...3) == 0 && !isBlinking {
                 isBlinking = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(150))
                     isBlinking = false
                 }
             }

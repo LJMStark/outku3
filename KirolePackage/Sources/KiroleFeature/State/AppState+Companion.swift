@@ -52,6 +52,10 @@ extension AppState {
     }
 
     func refreshSharedPetDialogueIfNeeded(force: Bool = false) async {
+        guard !isRefreshingDialogue || force else { return }
+        isRefreshingDialogue = true
+        defer { isRefreshingDialogue = false }
+
         let triggerState = await buildCompanionDialogueTriggerState()
         let todayKey = Self.homeCompanionDateKey(from: triggerState.context.currentTime)
 

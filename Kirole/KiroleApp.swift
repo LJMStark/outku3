@@ -19,9 +19,7 @@ struct KiroleApp: App {
             bleSharedSecret: BuildSecrets.bleSharedSecret,
             deepFocusFeatureEnabled: BuildSecrets.deepFocusFeatureEnabled,
             notionClientId: BuildSecrets.notionClientId,
-            notionClientSecret: BuildSecrets.notionClientSecret,
-            taskadeClientId: BuildSecrets.taskadeClientId,
-            taskadeClientSecret: BuildSecrets.taskadeClientSecret
+            taskadeClientId: BuildSecrets.taskadeClientId
         )
         BLEBackgroundSyncScheduler.shared.register()
     }

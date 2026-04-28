@@ -8,7 +8,9 @@ import AppKit
 
 // MARK: - Taskade Auth Service
 
-/// Handles Taskade OAuth 2.0 flow using ASWebAuthenticationSession
+/// Handles Taskade OAuth 2.0 flow using ASWebAuthenticationSession.
+/// Token exchange and refresh are proxied through a Supabase Edge Function
+/// so that client_secret never ships in the binary.
 @MainActor
 public final class TaskadeAuthService: NSObject, ASWebAuthenticationPresentationContextProviding {
     public static let shared = TaskadeAuthService()
@@ -22,10 +24,8 @@ public final class TaskadeAuthService: NSObject, ASWebAuthenticationPresentation
 
     // MARK: - OAuth Flow
 
-    /// Initiates Taskade OAuth authorization flow
     public func authorize() async throws -> String {
-        guard let clientId = AppSecrets.taskadeClientId,
-              let clientSecret = AppSecrets.taskadeClientSecret else {
+        guard let clientId = AppSecrets.taskadeClientId else {
             throw TaskadeAuthError.missingCredentials
         }
 
@@ -39,7 +39,7 @@ public final class TaskadeAuthService: NSObject, ASWebAuthenticationPresentation
             URLQueryItem(name: "response_type", value: "code"),
             URLQueryItem(name: "redirect_uri", value: redirectURI),
             URLQueryItem(name: "scope", value: "read,write"),
-            URLQueryItem(name: "state", value: state)
+            URLQueryItem(name: "state", value: state),
         ]
         guard let url = components.url else {
             throw TaskadeAuthError.invalidURL
@@ -52,12 +52,11 @@ public final class TaskadeAuthService: NSObject, ASWebAuthenticationPresentation
             throw TaskadeAuthError.noAuthorizationCode
         }
 
-        let tokenResponse = try await exchangeCode(
-            code: code,
-            clientId: clientId,
-            clientSecret: clientSecret,
-            redirectURI: redirectURI
-        )
+        let tokenResponse = try await callEdgeFunction(body: [
+            "action": "exchange",
+            "code": code,
+            "redirect_uri": redirectURI,
+        ])
 
         try keychainService.saveTaskadeTokens(
             accessToken: tokenResponse.accessToken,
@@ -67,31 +66,50 @@ public final class TaskadeAuthService: NSObject, ASWebAuthenticationPresentation
         return tokenResponse.accessToken
     }
 
-    // MARK: - Token Exchange
+    // MARK: - Token Refresh
 
-    private func exchangeCode(
-        code: String,
-        clientId: String,
-        clientSecret: String,
-        redirectURI: String
-    ) async throws -> TaskadeTokenResponse {
-        guard let url = URL(string: "https://www.taskade.com/oauth2/token") else {
+    public func refreshTokenIfNeeded() async throws -> String {
+        if let accessToken = keychainService.getTaskadeAccessToken() {
+            return accessToken
+        }
+        guard let refreshToken = keychainService.getTaskadeRefreshToken() else {
+            throw TaskadeAuthError.tokenExpired
+        }
+        return try await refreshAccessToken(refreshToken: refreshToken)
+    }
+
+    public func forceRefreshAccessToken() async throws -> String {
+        guard let refreshToken = keychainService.getTaskadeRefreshToken() else {
+            throw TaskadeAuthError.tokenExpired
+        }
+        return try await refreshAccessToken(refreshToken: refreshToken)
+    }
+
+    private func refreshAccessToken(refreshToken: String) async throws -> String {
+        let tokenResponse = try await callEdgeFunction(body: [
+            "action": "refresh",
+            "refresh_token": refreshToken,
+        ])
+        try keychainService.saveTaskadeTokens(
+            accessToken: tokenResponse.accessToken,
+            refreshToken: tokenResponse.refreshToken
+        )
+        return tokenResponse.accessToken
+    }
+
+    // MARK: - Edge Function
+
+    private func callEdgeFunction(body: [String: String]) async throws -> TaskadeTokenResponse {
+        guard let supabase = AppSecrets.supabaseConfig,
+              let url = URL(string: "\(supabase.url)/functions/v1/taskade-oauth") else {
             throw TaskadeAuthError.invalidURL
         }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-
-        var components = URLComponents()
-        components.queryItems = [
-            URLQueryItem(name: "grant_type", value: "authorization_code"),
-            URLQueryItem(name: "code", value: code),
-            URLQueryItem(name: "client_id", value: clientId),
-            URLQueryItem(name: "client_secret", value: clientSecret),
-            URLQueryItem(name: "redirect_uri", value: redirectURI)
-        ]
-        request.httpBody = components.percentEncodedQuery?.data(using: .utf8)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(supabase.anonKey)", forHTTPHeaderField: "Authorization")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (data, response) = try await URLSession.shared.data(for: request)
 
@@ -101,79 +119,6 @@ public final class TaskadeAuthService: NSObject, ASWebAuthenticationPresentation
         }
 
         return try JSONDecoder().decode(TaskadeTokenResponse.self, from: data)
-    }
-
-    // MARK: - Token Refresh
-
-    public func refreshTokenIfNeeded() async throws -> String {
-        if let accessToken = keychainService.getTaskadeAccessToken() {
-            return accessToken
-        }
-
-        guard let refreshToken = keychainService.getTaskadeRefreshToken(),
-              let clientId = AppSecrets.taskadeClientId,
-              let clientSecret = AppSecrets.taskadeClientSecret else {
-            throw TaskadeAuthError.tokenExpired
-        }
-
-        return try await refreshAccessToken(
-            refreshToken: refreshToken,
-            clientId: clientId,
-            clientSecret: clientSecret
-        )
-    }
-
-    public func forceRefreshAccessToken() async throws -> String {
-        guard let refreshToken = keychainService.getTaskadeRefreshToken(),
-              let clientId = AppSecrets.taskadeClientId,
-              let clientSecret = AppSecrets.taskadeClientSecret else {
-            throw TaskadeAuthError.tokenExpired
-        }
-
-        return try await refreshAccessToken(
-            refreshToken: refreshToken,
-            clientId: clientId,
-            clientSecret: clientSecret
-        )
-    }
-
-    private func refreshAccessToken(
-        refreshToken: String,
-        clientId: String,
-        clientSecret: String
-    ) async throws -> String {
-        guard let url = URL(string: "https://www.taskade.com/oauth2/token") else {
-            throw TaskadeAuthError.invalidURL
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-
-        var components = URLComponents()
-        components.queryItems = [
-            URLQueryItem(name: "grant_type", value: "refresh_token"),
-            URLQueryItem(name: "refresh_token", value: refreshToken),
-            URLQueryItem(name: "client_id", value: clientId),
-            URLQueryItem(name: "client_secret", value: clientSecret)
-        ]
-        request.httpBody = components.percentEncodedQuery?.data(using: .utf8)
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200...299).contains(httpResponse.statusCode) else {
-            throw TaskadeAuthError.tokenRefreshFailed
-        }
-
-        let tokenResponse = try JSONDecoder().decode(TaskadeTokenResponse.self, from: data)
-
-        try keychainService.saveTaskadeTokens(
-            accessToken: tokenResponse.accessToken,
-            refreshToken: tokenResponse.refreshToken
-        )
-
-        return tokenResponse.accessToken
     }
 
     // MARK: - Token Access
@@ -246,7 +191,6 @@ public final class TaskadeAuthService: NSObject, ASWebAuthenticationPresentation
             .queryItems?
             .first(where: { $0.name == "state" })?
             .value
-
         guard returnedState == expected else {
             throw TaskadeAuthError.invalidState
         }
@@ -280,7 +224,7 @@ public enum TaskadeAuthError: LocalizedError, Sendable {
     public var errorDescription: String? {
         switch self {
         case .missingCredentials:
-            return "Taskade OAuth credentials not configured. Fill TASKADE_OAUTH_CLIENT_ID and TASKADE_OAUTH_CLIENT_SECRET in Config/Secrets.xcconfig, then rebuild the app."
+            return "Taskade OAuth client ID not configured. Fill TASKADE_OAUTH_CLIENT_ID in Config/Secrets.xcconfig, then rebuild the app."
         case .invalidURL:
             return "Invalid Taskade OAuth URL"
         case .noAuthorizationCode:

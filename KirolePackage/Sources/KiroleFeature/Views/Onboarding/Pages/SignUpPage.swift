@@ -78,6 +78,10 @@ public struct SignUpPage: View {
                         VStack(spacing: 12) {
                             // Google Sign In
                             Button {
+                                if let incompletePage = onboardingState.firstIncompletePage {
+                                    onboardingState.currentPage = incompletePage
+                                    return
+                                }
                                 isSigningIn = true
                                 Task { @MainActor in
                                     try? await authManager.signInWithGoogle()
@@ -104,6 +108,10 @@ public struct SignUpPage: View {
 
                             // Apple Sign In
                             Button {
+                                if let incompletePage = onboardingState.firstIncompletePage {
+                                    onboardingState.currentPage = incompletePage
+                                    return
+                                }
                                 isSigningIn = true
                                 Task { @MainActor in
                                     do {
@@ -144,6 +152,10 @@ public struct SignUpPage: View {
 
                         // Skip for now
                         Button {
+                            if let incompletePage = onboardingState.firstIncompletePage {
+                                onboardingState.currentPage = incompletePage
+                                return
+                            }
                             appState.completeOnboarding(with: onboardingState.profile)
                         } label: {
                             Text("Skip for now")

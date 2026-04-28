@@ -22,11 +22,34 @@ Swift/SwiftUI/Testing/Concurrency guidance that applies here too.
 - Views exposed from `KirolePackage` to the app shell must be `public`.
 
 ## Hard Constraints (do not violate)
-- NO ViewModels, NO XCTest (use Swift Testing: `import Testing`, `@Test`, `#expect`), NO CoreData/CloudKit, NO Combine unless strictly required, NO `Task { }` inside `onAppear` (use `.task`).
+- NO ViewModels, NO XCTest (use Swift Testing: `import Testing`, `@Test`, `#expect`), NO CoreData/CloudKit, NO Combine unless strictly required.
+- **NO `Task { }` inside `onAppear`** — use `.task` modifier (auto-cancels with view lifecycle). Replace `DispatchQueue.main.asyncAfter` with `Task { try? await Task.sleep(for: ...) }` inside `.task`.
 - NO secrets in `Info.plist`. Secrets come from `Config/Secrets.xcconfig` (git-ignored) via `AppSecrets.configure(...)`.
 - NO manual file adding to Xcode targets — `KirolePackage` uses buildable folders.
 - Concurrency: `@MainActor` for UI, `actor` for shared state, avoid `@unchecked Sendable`.
 - Accessibility: every interactive element needs `accessibilityLabel` and `accessibilityIdentifier` (add `accessibilityHint` when the action is non-obvious).
+
+## Sheet / FullScreenCover Environment Injection
+`.sheet`, `.fullScreenCover`, and `.popover` create a new SwiftUI environment scope — the three singletons are **not inherited automatically**. Every sheet/cover root view must chain:
+
+```swift
+.environment(AppState.shared)
+.environment(ThemeManager.shared)
+.environment(AuthManager.shared)
+```
+
+The `injectAppEnvironment()` modifier in `Views/Modifiers/InjectAppEnvironment.swift` wraps all three.
+
+## LLM Prompt Safety
+All user-controlled text (task titles, event names, pet names, learn content) **must pass through `PromptSanitizer.sanitize(_:)` before interpolation into any LLM prompt**. Wrap user content in XML delimiters (`<user_event>…</user_event>`) and declare the fence in the system prompt. `PromptSanitizer` lives in `Core/Network/PromptSanitizer.swift`.
+
+## Supabase (Self-Hosted on Zeabur)
+The project uses a **self-hosted Supabase** instance, not Supabase Cloud.
+- **API gateway (Kong 2.8.1)**: `https://outku3.zeabur.app`
+- **Auth (GoTrue v2.180.0)**: `/auth/v1`
+- **REST (PostgREST)**: `/rest/v1` — tables: `pets`, `streaks`, `sync_state`
+- **Schema source of truth**: `Config/supabase-schema.sql` — apply manually to Zeabur PostgreSQL when schema changes.
+- **OAuth proxy**: Notion and Taskade token exchange goes through Supabase Edge Functions (`supabase/functions/notion-oauth/` and `supabase/functions/taskade-oauth/`). `client_secret` is server-side only — never in the binary.
 
 ## Common Commands
 Prefer XcodeBuildMCP tools when available; otherwise use the CLI fallback.

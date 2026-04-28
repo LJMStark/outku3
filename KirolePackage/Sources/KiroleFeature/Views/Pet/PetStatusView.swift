@@ -243,7 +243,7 @@ private struct ProgressRowNew: View {
                         )
                 }
 
-                Text("\(Int(progress * 100))%")
+                Text("\(Int((progress * 100).rounded()))%")
                     .font(.system(size: 15, weight: .bold))
                     .foregroundStyle(Color(hex: "1F2937"))
                     .padding(.leading, 6)

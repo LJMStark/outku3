@@ -59,7 +59,9 @@ public final class NotificationService {
         do {
             try await UNUserNotificationCenter.current().add(request)
         } catch {
+            #if DEBUG
             print("[NotificationService] Failed to schedule notification: \(error.localizedDescription)")
+            #endif
         }
     }
 

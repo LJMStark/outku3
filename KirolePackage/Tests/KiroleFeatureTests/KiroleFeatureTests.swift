@@ -296,6 +296,21 @@ struct PetStateServiceTests {
 @Suite("Model Tests")
 struct ModelTests {
 
+    @Test("Pet percentDisplay rounds correctly")
+    func petPercentDisplayRounds() {
+        // 0.999 should round to 100, not truncate to 99
+        let nearlyFull = Pet(progress: 0.999)
+        #expect(nearlyFull.percentDisplay == 100)
+
+        // 0.505 should round to 51, not truncate to 50
+        let midProgress = Pet(progress: 0.505)
+        #expect(midProgress.percentDisplay == 51)
+
+        // 0.0 → 0, 1.0 → 100 (boundaries)
+        #expect(Pet(progress: 0.0).percentDisplay == 0)
+        #expect(Pet(progress: 1.0).percentDisplay == 100)
+    }
+
     @Test("Pet stage progression")
     func petStageProgression() {
         #expect(PetStage.baby.nextStage == .child)

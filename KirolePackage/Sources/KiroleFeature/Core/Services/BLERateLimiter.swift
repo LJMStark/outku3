@@ -9,7 +9,7 @@ public actor BLERateLimiter {
     private let maxWritesPerSecond = 20
     private let refreshMinimumInterval: TimeInterval = 2.0
 
-    public func acquireWritePermit() async {
+    public func acquireWritePermit() async throws {
         while true {
             let now = Date()
             recentWriteTimestamps = recentWriteTimestamps.filter { now.timeIntervalSince($0) < 1.0 }
@@ -24,7 +24,7 @@ public actor BLERateLimiter {
             }
 
             let waitSeconds = max(0.01, 1.0 - now.timeIntervalSince(earliest))
-            try? await Task.sleep(for: .seconds(waitSeconds))
+            try await Task.sleep(for: .seconds(waitSeconds))
         }
     }
 

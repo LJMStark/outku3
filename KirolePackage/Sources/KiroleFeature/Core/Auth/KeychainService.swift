@@ -26,8 +26,10 @@ public final class KeychainService: @unchecked Sendable {
 
     private init() {
         // 使用 App Bundle ID 作为 Keychain service identifier
+        // .afterFirstUnlockThisDeviceOnly: allows BLE BGAppRefreshTask to read tokens
+        // while device is locked (after first unlock), and prevents iCloud Keychain backup.
         self.keychain = Keychain(service: "com.kirole.app")
-            .accessibility(.afterFirstUnlock)
+            .accessibility(.afterFirstUnlockThisDeviceOnly)
     }
 
     // MARK: - Google Tokens

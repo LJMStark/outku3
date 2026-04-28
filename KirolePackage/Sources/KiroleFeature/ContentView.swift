@@ -95,11 +95,9 @@ public struct ContentView: View {
         .sheet(isPresented: $appState.isEventDetailPresented) {
             if let event = appState.selectedEvent {
                 EventDetailModal(event: event)
-                    .environment(appState)
-                    .environment(themeManager)
-                    .environment(authManager)
+                    .injectAppEnvironment()
                     .presentationDetents([.medium, .large])
-                    .presentationDragIndicator(.hidden) // hidden as we drew our own drag indicator
+                    .presentationDragIndicator(.hidden)
                     .presentationCornerRadius(24)
             }
         }

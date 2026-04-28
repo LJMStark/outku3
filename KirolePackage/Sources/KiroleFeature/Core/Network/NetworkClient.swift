@@ -14,6 +14,7 @@ public actor NetworkClient {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 30
         config.timeoutIntervalForResource = 60
+        config.tlsMinimumSupportedProtocolVersion = .TLSv12
         self.session = URLSession(configuration: config)
 
         self.decoder = JSONDecoder()

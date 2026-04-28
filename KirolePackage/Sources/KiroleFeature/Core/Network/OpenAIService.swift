@@ -80,24 +80,24 @@ public actor OpenAIService {
         workContext: String,
         profileContext: String
     ) async throws -> String {
-        let systemPrompt = """
+        let systemPrompt = PromptSanitizer.systemPrompt(containingUserContent: """
             You are a companion crafting a single short screensaver line.
             Keep it under 60 characters.
             Make it poetic, calm, and specific to the user's recent work and companion persona.
-            """
+            """)
         let userPrompt: String
 
         if isPostcard {
             userPrompt = """
                 The user just reached \(usageDays) consecutive usage days.
-                Companion profile: \(profileContext)
-                Recent work context: \(workContext)
+                Companion profile: \(PromptSanitizer.userContent(profileContext, maxLen: 300))
+                Recent work context: \(PromptSanitizer.userContent(workContext, maxLen: 300))
                 Write a celebratory postcard line.
                 """
         } else {
             userPrompt = """
-                Companion profile: \(profileContext)
-                Recent work context: \(workContext)
+                Companion profile: \(PromptSanitizer.userContent(profileContext, maxLen: 300))
+                Recent work context: \(PromptSanitizer.userContent(workContext, maxLen: 300))
                 Write a short resting screensaver line that feels tied to today's work.
                 """
         }
@@ -133,10 +133,14 @@ public actor OpenAIService {
 
     /// Translate the given companion text into Chinese
     public func translateCompanionText(text: String) async throws -> String {
-        let systemPrompt = "You are a professional translator. Translate the given English text into natural, colloquial Chinese. Do not add any extra explanations or quotes. Just output the translation."
+        let systemPrompt = PromptSanitizer.systemPrompt(containingUserContent: """
+            You are a professional translator. Translate the given English text inside \
+            <user_content> tags into natural, colloquial Chinese. \
+            Do not add any extra explanations or quotes. Just output the translation.
+            """)
         let content = try await chatCompletion(
             systemPrompt: systemPrompt,
-            userPrompt: text,
+            userPrompt: PromptSanitizer.userContent(text, maxLen: 500),
             temperature: 0.3,
             maxTokens: 80
         )
@@ -157,7 +161,7 @@ public actor OpenAIService {
 
         let goalsText = userProfile.primaryGoals.map(\.rawValue).joined(separator: ", ")
 
-        let systemPrompt = """
+        let systemPrompt = PromptSanitizer.systemPrompt(containingUserContent: """
             You are an execution coach using Implementation Intentions theory. \
             Break down tasks into concrete micro-actions with What (specific action, max 40 chars), \
             When (suggested time slot based on schedule), Why (motivation anchor, max 60 chars), \
@@ -165,10 +169,10 @@ public actor OpenAIService {
             Return 1-3 micro-actions as a JSON array. Each object has keys: \
             "what" (string), "when" (string or null), "why" (string or null), "estimatedMinutes" (int or null), "expectedEnergyBottles" (int). \
             Respond with ONLY the JSON array, no markdown fences or extra text.
-            """
+            """)
 
         let userPrompt = """
-            Task: \(taskTitle)
+            Task: \(PromptSanitizer.userContent(taskTitle, maxLen: 200))
             User work type: \(userProfile.workType.rawValue)
             User goals: \(goalsText.isEmpty ? "none specified" : goalsText)
             Available time slots: \(slotsText)
@@ -384,11 +388,12 @@ public actor OpenAIService {
         let characterDescription = Self.characterPrompt(for: context.companionCharacter)
         let intimacyDescription = Self.intimacyPrompt(for: context.intimacyStage)
 
-        var prompt = """
-            You are \(context.petName).
+        let safePetName = PromptSanitizer.userContent(context.petName, maxLen: 50)
+        var prompt = PromptSanitizer.systemPrompt(containingUserContent: """
+            You are named \(safePetName).
             \(characterDescription)
             \(intimacyDescription)
-            
+
             ---
             \(styleDescription)
             ---
@@ -396,10 +401,10 @@ public actor OpenAIService {
             Schedule: \(schedule)
 
             React in one complete plain-text sentence (90-120 characters) and end with punctuation.
-            """
+            """)
 
         if let learnText = context.userDefinedLearnText?.trimmingCharacters(in: .whitespacesAndNewlines), !learnText.isEmpty {
-            prompt += "\nTone hint: \"\(learnText)\""
+            prompt += "\nTone hint: \(PromptSanitizer.userContent(learnText, maxLen: 300))"
         }
 
         return prompt
@@ -410,10 +415,12 @@ public actor OpenAIService {
     private static func buildScheduleDigest(context: AIContext) -> String {
         var lines: [String] = []
 
-        // Upcoming tasks (max 3, titles only)
+        // Upcoming tasks (max 3, titles only) — isolate user-created titles
         let pendingTasks = context.topTaskTitles
         if !pendingTasks.isEmpty {
-            let taskList = pendingTasks.joined(separator: ", ")
+            let taskList = pendingTasks
+                .map { PromptSanitizer.userContent($0, maxLen: 60) }
+                .joined(separator: ", ")
             lines.append("Tasks ahead: \(taskList)")
         }
 
@@ -422,9 +429,9 @@ public actor OpenAIService {
             lines.append("Done: \(context.tasksCompletedToday) of \(context.totalTasksToday)")
         }
 
-        // Next agenda item (event or task with time)
+        // Next agenda item (event or task with time) — isolate user-created names
         if let next = context.nextAgendaItem {
-            lines.append("Next: \(next)")
+            lines.append("Next: \(PromptSanitizer.userContent(next, maxLen: 80))")
         }
 
         return lines.isEmpty ? "Schedule: nothing visible" : lines.joined(separator: "\n")
@@ -434,7 +441,9 @@ public actor OpenAIService {
         // Dedup anchor: place recent outputs at the top so the model avoids them
         var parts: [String] = []
         if !context.recentTexts.isEmpty {
-            let recent = context.recentTexts.prefix(3).joined(separator: " / ")
+            let recent = context.recentTexts.prefix(3)
+                .map { PromptSanitizer.sanitize($0, maxLen: 120) }
+                .joined(separator: " / ")
             parts.append("ALREADY SAID (never repeat): \(recent)")
         }
 
@@ -447,11 +456,11 @@ public actor OpenAIService {
         case .companionPhrase:
             scene = "Nothing specific happened. You're just existing next to them. Say whatever crosses your mind."
         case .taskEncouragement:
-            let taskName = context.activeTaskTitle ?? "a task"
-            scene = "The user just started working on: [\(taskName)]. React to them actually doing it."
+            let rawTaskName = context.activeTaskTitle ?? "a task"
+            scene = "The user just started working on: \(PromptSanitizer.userContent(rawTaskName, maxLen: 80)). React to them actually doing it."
         case .scheduleReminder:
-            let eventName = context.nextAgendaItem?.replacingOccurrences(of: "Now \u{00B7} ", with: "") ?? "an event"
-            scene = "It's time for: [\(eventName)]. React to this thing happening now."
+            let rawEventName = context.nextAgendaItem?.replacingOccurrences(of: "Now \u{00B7} ", with: "") ?? "an event"
+            scene = "It's time for: \(PromptSanitizer.userContent(rawEventName, maxLen: 80)). React to this thing happening now."
         case .settlementSummary:
             scene = "The day is ending. You watched them all day. Say goodnight in your way."
         case .smartReminder:
@@ -521,7 +530,7 @@ public actor OpenAIService {
 
         // Scene
         if let scene = context.currentSceneName {
-            prompt += ". Their E-ink companion display shows the '\(scene)' scene. Use imagery from this scene in the haiku"
+            prompt += ". Their E-ink companion display shows the '\(PromptSanitizer.sanitize(scene, maxLen: 50))' scene. Use imagery from this scene in the haiku"
         }
 
         prompt += "."

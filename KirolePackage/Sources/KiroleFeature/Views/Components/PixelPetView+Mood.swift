@@ -107,16 +107,16 @@ extension PixelPetView {
             bounceOffset = -15
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
-                bounceOffset = 0
-            }
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.6).delay(0.3)) {
+            bounceOffset = 0
         }
 
         withAnimation(.easeInOut(duration: 0.08).repeatCount(6, autoreverses: true)) {
             excitedTremor = 1.5
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(500))
             excitedTremor = 0
         }
 
@@ -133,7 +133,8 @@ extension PixelPetView {
             sparkleOpacities = PetAnimationEngine.fadeValues(count: 4, to: 0.0)
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1))
             excitedSparkles = false
         }
     }
@@ -143,16 +144,12 @@ extension PixelPetView {
             missingLookDirection = -8
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            withAnimation(.easeInOut(duration: 1.0)) {
-                missingLookDirection = 8
-            }
+        withAnimation(.easeInOut(duration: 1.0).delay(1.0)) {
+            missingLookDirection = 8
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-            withAnimation(.easeInOut(duration: 0.5)) {
-                missingLookDirection = 0
-            }
+        withAnimation(.easeInOut(duration: 0.5).delay(2.0)) {
+            missingLookDirection = 0
         }
     }
 
@@ -171,10 +168,8 @@ extension PixelPetView {
                 bounceOffset = -8
             }
 
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
-                    bounceOffset = 0
-                }
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.6).delay(0.2)) {
+                bounceOffset = 0
             }
         }
     }

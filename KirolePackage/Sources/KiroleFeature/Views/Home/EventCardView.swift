@@ -234,8 +234,7 @@ public struct EventDetailModal: View {
         .background(Color.white)
         .sheet(isPresented: $showEditSheet) {
             EventEditSheet(event: event)
-                .environment(appState)
-                .environment(theme)
+                .injectAppEnvironment()
         }
     }
 

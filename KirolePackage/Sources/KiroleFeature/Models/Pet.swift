@@ -17,6 +17,10 @@ public struct Pet: Sendable, Codable {
     public var lastInteraction: Date
     public var points: Int // accumulated points from completing tasks
 
+    public var percentDisplay: Int {
+        Int((progress * 100).rounded())
+    }
+
     public init(
         name: String = "Baby Waffle",
         pronouns: PetPronouns = .theyThem,

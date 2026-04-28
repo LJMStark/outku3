@@ -525,10 +525,26 @@ public final class BLEService: NSObject {
         peripheral: CBPeripheral,
         characteristic: CBCharacteristic
     ) async throws {
-        await writeGate.acquire()
+        try await writeGate.acquire()
 
         do {
-            await rateLimiter.acquireWritePermit()
+            // HIGH-2: acquireWritePermit now throws CancellationError, allowing clean exit
+            try await rateLimiter.acquireWritePermit()
+
+            // HIGH-3: if disconnect fired while we were waiting for the rate-limiter permit,
+            // writeCompletion was cleared and no ACK will ever arrive — bail early.
+            guard connectionState.isConnected else {
+                throw BLEError.disconnected
+            }
+
+            // HIGH-1: strong capture — no retain cycle (@MainActor task, singleton service)
+            let timeoutTask = Task { @MainActor in
+                try await Task.sleep(for: .seconds(5))
+                self.writeCompletion?(.failure(.writeTimeout))
+                self.writeCompletion = nil
+            }
+
+            defer { timeoutTask.cancel() }
 
             try await withCheckedThrowingContinuation { continuation in
                 writeCompletion = { result in
@@ -877,6 +893,7 @@ public enum BLEError: LocalizedError, Sendable {
     case writeFailed(Error?)
     case securityHandshakeFailed(String)
     case disconnected
+    case writeTimeout
 
     public var errorDescription: String? {
         switch self {
@@ -902,6 +919,8 @@ public enum BLEError: LocalizedError, Sendable {
             return "BLE security handshake failed: \(reason)"
         case .disconnected:
             return "Device disconnected"
+        case .writeTimeout:
+            return "BLE write timed out"
         }
     }
 }

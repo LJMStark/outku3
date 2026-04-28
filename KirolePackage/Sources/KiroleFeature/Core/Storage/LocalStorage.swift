@@ -129,7 +129,10 @@ public actor LocalStorage {
     private func save<T: Encodable>(_ value: T, to filename: String) throws {
         let data = try encoder.encode(value)
         let url = documentsDirectory.appendingPathComponent(filename)
-        try data.write(to: url)
+        // .atomic uses temp-file + rename to prevent partial writes on crash.
+        // Sensitive credentials live in Keychain; these JSON files are app data that
+        // BLE BGAppRefreshTask needs to read/write while the device is locked.
+        try data.write(to: url, options: [.atomic])
     }
 
     /// Delete a specific file from the documents directory
@@ -334,11 +337,16 @@ public actor LocalStorage {
         try deleteFile(named: "focus_session_active.json")
     }
 
+    private nonisolated static let dateKeyFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone.current
+        return f
+    }()
+
     private static func dateKey(from date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        return formatter.string(from: date)
+        dateKeyFormatter.string(from: date)
     }
 
     // MARK: - Event Logs
@@ -487,7 +495,7 @@ public actor LocalStorage {
     /// Save original avatar image data
     public func saveAvatarData(_ data: Data) throws {
         let url = documentsDirectory.appendingPathComponent("avatar.dat")
-        try data.write(to: url)
+        try data.write(to: url, options: [.atomic])
     }
 
     /// Load original avatar image data
@@ -499,7 +507,7 @@ public actor LocalStorage {
     /// Save 4bpp encoded pixel data for BLE transmission
     public func saveAvatarPixels(_ data: Data) throws {
         let url = documentsDirectory.appendingPathComponent("avatar_pixels.dat")
-        try data.write(to: url)
+        try data.write(to: url, options: [.atomic])
     }
 
     /// Load 4bpp encoded pixel data

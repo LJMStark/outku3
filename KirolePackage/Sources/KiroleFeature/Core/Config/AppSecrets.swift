@@ -1,20 +1,20 @@
 import Foundation
+import os
 
 public enum AppSecrets {
-    private struct Storage {
+    private struct Storage: Sendable {
         var supabaseURL: String?
         var supabaseAnonKey: String?
         var openRouterAPIKey: String?
         var bleSharedSecret: String?
         var deepFocusFeatureEnabled: Bool
         var notionClientId: String?
-        var notionClientSecret: String?
         var taskadeClientId: String?
-        var taskadeClientSecret: String?
     }
 
-    private nonisolated(unsafe) static var storage = Storage(deepFocusFeatureEnabled: false)
-    private static let queue = DispatchQueue(label: "com.kirole.app.secrets", attributes: .concurrent)
+    private static let lock = OSAllocatedUnfairLock(
+        initialState: Storage(deepFocusFeatureEnabled: false)
+    )
 
     public static func configure(
         supabaseURL: String?,
@@ -23,56 +23,44 @@ public enum AppSecrets {
         bleSharedSecret: String?,
         deepFocusFeatureEnabled: Bool = false,
         notionClientId: String? = nil,
-        notionClientSecret: String? = nil,
-        taskadeClientId: String? = nil,
-        taskadeClientSecret: String? = nil
+        taskadeClientId: String? = nil
     ) {
-        queue.sync(flags: .barrier) {
+        lock.withLock { storage in
             storage.supabaseURL = normalizeURL(supabaseURL)
             storage.supabaseAnonKey = normalize(supabaseAnonKey)
             storage.openRouterAPIKey = normalize(openRouterAPIKey)
             storage.bleSharedSecret = normalize(bleSharedSecret)
             storage.deepFocusFeatureEnabled = deepFocusFeatureEnabled
             storage.notionClientId = normalize(notionClientId)
-            storage.notionClientSecret = normalize(notionClientSecret)
             storage.taskadeClientId = normalize(taskadeClientId)
-            storage.taskadeClientSecret = normalize(taskadeClientSecret)
         }
     }
 
     public static var supabaseConfig: (url: String, anonKey: String)? {
-        queue.sync {
+        lock.withLock { storage in
             guard let url = storage.supabaseURL, let key = storage.supabaseAnonKey else { return nil }
             return (url, key)
         }
     }
 
     public static var openRouterAPIKey: String? {
-        queue.sync { storage.openRouterAPIKey }
+        lock.withLock { $0.openRouterAPIKey }
     }
 
     public static var bleSharedSecret: String? {
-        queue.sync { storage.bleSharedSecret }
+        lock.withLock { $0.bleSharedSecret }
     }
 
     public static var deepFocusFeatureEnabled: Bool {
-        queue.sync { storage.deepFocusFeatureEnabled }
+        lock.withLock { $0.deepFocusFeatureEnabled }
     }
 
     public static var notionClientId: String? {
-        queue.sync { storage.notionClientId }
-    }
-
-    public static var notionClientSecret: String? {
-        queue.sync { storage.notionClientSecret }
+        lock.withLock { $0.notionClientId }
     }
 
     public static var taskadeClientId: String? {
-        queue.sync { storage.taskadeClientId }
-    }
-
-    public static var taskadeClientSecret: String? {
-        queue.sync { storage.taskadeClientSecret }
+        lock.withLock { $0.taskadeClientId }
     }
 
     private static func normalize(_ value: String?) -> String? {
@@ -87,9 +75,6 @@ public enum AppSecrets {
 
     /// Stricter normalization for URL secrets: rejects values whose `URL.host`
     /// is nil/empty so callers never receive a half-URL like `"https:"`.
-    /// Required because xcconfig's `//` comment rule has, in the past, silently
-    /// truncated `https://x.supabase.co` to `https:` and crashed supabase-swift
-    /// on `supabaseURL.host!`.
     private static func normalizeURL(_ value: String?) -> String? {
         guard let trimmed = normalize(value) else { return nil }
         guard let url = URL(string: trimmed),

@@ -109,6 +109,84 @@ struct OnboardingQuestionDataTests {
     }
 }
 
+// MARK: - OnboardingState Validation Tests
+
+@MainActor
+struct OnboardingStateValidationTests {
+    @Test func canAdvanceReturnsTrueForNonQuestionnairePage() {
+        let state = OnboardingState()
+        for page in [0, 1, 2, 3, 4, 12] {
+            #expect(state.canAdvance(from: page), "Page \(page) should always allow advance")
+        }
+    }
+
+    @Test func canAdvanceReturnsFalseWhenAnswerMissing() {
+        let state = OnboardingState()
+        // All questionnaire pages (5-11) start empty
+        for page in 5...11 {
+            #expect(!state.canAdvance(from: page), "Page \(page) should block advance without answer")
+        }
+    }
+
+    @Test func canAdvanceReturnsTrueAfterAnswering() {
+        let state = OnboardingState()
+        state.setAnswer(questionId: "motivationStyle", value: "encouragement")
+        #expect(state.canAdvance(from: 5))
+    }
+
+    @Test func isProfileCompleteIsFalseWithPartialAnswers() {
+        let state = OnboardingState()
+        state.setAnswer(questionId: "motivationStyle", value: "encouragement")
+        #expect(!state.isProfileComplete)
+    }
+
+    @Test func isProfileCompleteIsTrueWithAllAnswers() {
+        let state = OnboardingState()
+        state.setAnswer(questionId: "motivationStyle", value: "encouragement")
+        state.setAnswer(questionId: "calendarUsage", value: "everything")
+        state.setAnswer(questionId: "taskTracking", value: "cant-live")
+        state.toggleMultiAnswer(questionId: "distractionSources", optionId: "notifications")
+        state.setAnswer(questionId: "reminderPreference", value: "gentleNudge")
+        state.setAnswer(questionId: "taskApproach", value: "self-break")
+        state.setAnswer(questionId: "timeControl", value: "in-control")
+        #expect(state.isProfileComplete)
+    }
+
+    @Test func firstIncompletePagePointsToFirstMissingAnswer() {
+        let state = OnboardingState()
+        state.setAnswer(questionId: "motivationStyle", value: "encouragement")
+        // calendarUsage (page 6) is the next missing one
+        #expect(state.firstIncompletePage == 6)
+    }
+
+    @Test func firstIncompletePageIsNilWhenAllAnswered() {
+        let state = OnboardingState()
+        state.setAnswer(questionId: "motivationStyle", value: "encouragement")
+        state.setAnswer(questionId: "calendarUsage", value: "everything")
+        state.setAnswer(questionId: "taskTracking", value: "cant-live")
+        state.toggleMultiAnswer(questionId: "distractionSources", optionId: "notifications")
+        state.setAnswer(questionId: "reminderPreference", value: "gentleNudge")
+        state.setAnswer(questionId: "taskApproach", value: "self-break")
+        state.setAnswer(questionId: "timeControl", value: "in-control")
+        #expect(state.firstIncompletePage == nil)
+    }
+
+    @Test func goNextBlocksOnUnansweredQuestionnairePage() {
+        let state = OnboardingState()
+        state.currentPage = 5 // motivationStyle — unanswered
+        state.goNext()
+        #expect(state.currentPage == 5, "Should not advance past an unanswered questionnaire page")
+    }
+
+    @Test func goNextAllowsAdvanceAfterAnswer() {
+        let state = OnboardingState()
+        state.currentPage = 5
+        state.setAnswer(questionId: "motivationStyle", value: "encouragement")
+        state.goNext()
+        #expect(state.currentPage == 6)
+    }
+}
+
 // MARK: - OnboardingState Answer Tests
 
 @MainActor

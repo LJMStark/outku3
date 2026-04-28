@@ -1,6 +1,6 @@
 import Foundation
 
-enum ExternalSyncTarget: Equatable {
+enum ExternalSyncTarget: Hashable, Sendable {
     case google
     case apple
     case notion
@@ -8,6 +8,12 @@ enum ExternalSyncTarget: Equatable {
 }
 
 extension AppState {
+    /// Re-reads `tasks` at write time so concurrent syncs don't clobber each other's results.
+    func mergeRemoteTasks(from source: EventSource, with synced: [TaskItem]) {
+        tasks = tasks.filter { $0.source != source } + synced
+        updateStatistics()
+    }
+
     public func loadGoogleCalendarEvents() async {
         await syncGoogleData()
     }
@@ -56,6 +62,10 @@ extension AppState {
     }
 
     public func syncGoogleData() async {
+        guard !activeSyncs.contains(.google) else { return }
+        activeSyncs.insert(.google)
+        defer { activeSyncs.remove(.google) }
+
         guard AuthManager.shared.isGoogleConnected else {
             lastGoogleSyncDebug = "Skipped: Google not connected"
             return
@@ -93,9 +103,7 @@ extension AppState {
             }
 
             if syncPlan.tasks {
-                let nonGoogleTasks = tasks.filter { $0.source != .google }
-                tasks = taskManager.mergedTasks(nonGoogleTasks: nonGoogleTasks, syncedTasks: syncedTasks)
-                updateStatistics()
+                mergeRemoteTasks(from: .google, with: syncedTasks)
                 try await localStorage.saveTasks(tasks)
             }
 
@@ -155,10 +163,8 @@ extension AppState {
         do {
             let appleTasks = tasks.filter { $0.source == .apple }
             let syncedTasks = try await appleSyncEngine.syncReminders(currentTasks: appleTasks)
-            let otherTasks = tasks.filter { $0.source != .apple }
-            tasks = otherTasks + syncedTasks
+            mergeRemoteTasks(from: .apple, with: syncedTasks)
             try await localStorage.saveTasks(tasks)
-            updateStatistics()
         } catch {
             let appError = AppError.sync(component: "Apple Reminders", underlying: error.localizedDescription)
             lastError = UserFacingErrorMapper.message(for: appError)
@@ -167,6 +173,10 @@ extension AppState {
     }
 
     public func syncAppleData() async {
+        guard !activeSyncs.contains(.apple) else { return }
+        activeSyncs.insert(.apple)
+        defer { activeSyncs.remove(.apple) }
+
         let shouldSyncCalendar = isIntegrationConnected(.appleCalendar)
         let shouldSyncReminders = isIntegrationConnected(.appleReminders)
 
@@ -220,6 +230,9 @@ extension AppState {
 
     public func syncNotionData() async {
         guard isIntegrationConnected(.notion) else { return }
+        guard !activeSyncs.contains(.notion) else { return }
+        activeSyncs.insert(.notion)
+        defer { activeSyncs.remove(.notion) }
 
         isLoading = true
         defer { isLoading = false }
@@ -233,9 +246,7 @@ extension AppState {
                 currentTasks: notionTasks,
                 accessToken: accessToken
             )
-            let otherTasks = tasks.filter { $0.source != .notion }
-            tasks = otherTasks + syncedTasks
-            updateStatistics()
+            mergeRemoteTasks(from: .notion, with: syncedTasks)
             try await localStorage.saveTasks(tasks)
         } catch {
             let appError = AppError.sync(component: "Notion", underlying: error.localizedDescription)
@@ -250,6 +261,9 @@ extension AppState {
 
     public func syncTaskadeData() async {
         guard isIntegrationConnected(.taskade) else { return }
+        guard !activeSyncs.contains(.taskade) else { return }
+        activeSyncs.insert(.taskade)
+        defer { activeSyncs.remove(.taskade) }
 
         isLoading = true
         defer { isLoading = false }
@@ -261,9 +275,7 @@ extension AppState {
                 currentTasks: taskadeTasks,
                 accessToken: accessToken
             )
-            let otherTasks = tasks.filter { $0.source != .taskade }
-            tasks = otherTasks + syncedTasks
-            updateStatistics()
+            mergeRemoteTasks(from: .taskade, with: syncedTasks)
             try await localStorage.saveTasks(tasks)
         } catch {
             let appError = AppError.sync(component: "Taskade", underlying: error.localizedDescription)

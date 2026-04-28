@@ -28,7 +28,7 @@ public struct SettingsFocusSection: View {
                         set: { guardService.isPickerPresented = $0 }
                     )
                 ) {
-                    pickerSheet
+                    pickerSheet.injectAppEnvironment()
                 }
                 #if DEBUG
                 .modifier(FocusTestPresentationModifier(isPresented: $showFocusTest))
@@ -258,10 +258,12 @@ private struct FocusTestPresentationModifier: ViewModifier {
         #if os(iOS)
         content.fullScreenCover(isPresented: $isPresented) {
             FocusTestOverlayView(isPresented: $isPresented)
+                .injectAppEnvironment()
         }
         #else
         content.sheet(isPresented: $isPresented) {
             FocusTestOverlayView(isPresented: $isPresented)
+                .injectAppEnvironment()
         }
         #endif
     }

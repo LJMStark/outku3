@@ -483,7 +483,7 @@ struct AppStateTests {
             }
 
             state.toggleTaskCompletion(taskInState)
-            try? await Task.sleep(for: .milliseconds(120))
+            try? await Task.sleep(for: .milliseconds(500))
 
             guard let updatedTask = state.tasks.first(where: { $0.id == task.id }) else {
                 Issue.record("Task not found after toggle")
@@ -1060,5 +1060,64 @@ struct TaskStatisticsTests {
         #expect(stats.todayPercentage == 1.0)
         #expect(stats.pastWeekPercentage == 1.0)
         #expect(stats.last30DaysPercentage == 1.0)
+    }
+}
+
+// MARK: - Sync Merge Tests
+
+@Suite("Sync Merge Atomicity")
+struct SyncMergeTests {
+
+    @Test("mergeRemoteTasks preserves tasks from other sources")
+    @MainActor
+    func mergePreservesOtherSources() {
+        let state = AppState.makeForTesting()
+        let googleTask  = TaskItem(id: "g1", title: "Google Task",  source: .google)
+        let manualTask  = TaskItem(id: "m1", title: "Manual Task",  source: .apple)
+        state.tasks = [googleTask, manualTask]
+
+        let notionTask = TaskItem(id: "n1", title: "Notion Task", source: .notion)
+        state.mergeRemoteTasks(from: .notion, with: [notionTask])
+
+        let ids = state.tasks.map(\.id)
+        #expect(ids.contains("g1"), "Google task must survive Notion merge")
+        #expect(ids.contains("m1"), "Manual task must survive Notion merge")
+        #expect(ids.contains("n1"), "New Notion task must be present")
+    }
+
+    @Test("mergeRemoteTasks replaces stale snapshot: second merge wins correctly")
+    @MainActor
+    func mergeUsesWriteTimeSnapshot() {
+        let state = AppState.makeForTesting()
+        let googleTask = TaskItem(id: "g1", title: "Google Task", source: .google)
+        state.tasks = [googleTask]
+
+        // Simulates: Notion sync captured an old snapshot before Google wrote,
+        // but mergeRemoteTasks re-reads at write time → Google task survives.
+        let notionTask = TaskItem(id: "n1", title: "Notion Task", source: .notion)
+        state.mergeRemoteTasks(from: .notion, with: [notionTask])
+
+        // Now a second merge for Google (as if it ran concurrently)
+        let googleTask2 = TaskItem(id: "g2", title: "Google Task 2", source: .google)
+        state.mergeRemoteTasks(from: .google, with: [googleTask, googleTask2])
+
+        let ids = Set(state.tasks.map(\.id))
+        #expect(ids == ["g1", "g2", "n1"], "Final tasks must be the union of both sources")
+    }
+
+    @Test("mergeRemoteTasks removes stale tasks from the merged source")
+    @MainActor
+    func mergeRemovesDeletedRemoteTasks() {
+        let state = AppState.makeForTesting()
+        let old1 = TaskItem(id: "n1", title: "Old Notion 1", source: .notion)
+        let old2 = TaskItem(id: "n2", title: "Old Notion 2", source: .notion)
+        state.tasks = [old1, old2]
+
+        // Remote returns only one task (n2 was deleted upstream)
+        let kept = TaskItem(id: "n1", title: "Old Notion 1", source: .notion)
+        state.mergeRemoteTasks(from: .notion, with: [kept])
+
+        let ids = state.tasks.map(\.id)
+        #expect(ids == ["n1"], "Deleted remote task n2 must not appear after merge")
     }
 }

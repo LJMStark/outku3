@@ -121,9 +121,9 @@ public actor PetStateService {
         var evolvedPet = pet
         evolvedPet.stage = nextStage
         evolvedPet.progress = 0.0
-        evolvedPet.weight *= 1.2
-        evolvedPet.height *= 1.15
-        evolvedPet.tailLength *= 1.1
+        evolvedPet.weight *= EvolutionMultipliers.weight
+        evolvedPet.height *= EvolutionMultipliers.height
+        evolvedPet.tailLength *= EvolutionMultipliers.tailLength
 
         return evolvedPet
     }

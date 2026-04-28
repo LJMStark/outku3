@@ -78,12 +78,10 @@ public final class ScreensaverService {
     }
 
     private func buildWorkDigest(topTaskTitles: [String], upcomingEventTitles: [String]) -> String {
-        let tasksText = topTaskTitles.isEmpty
-            ? "No notable tasks"
-            : "Tasks: \(topTaskTitles.prefix(3).joined(separator: ", "))"
-        let eventsText = upcomingEventTitles.isEmpty
-            ? "No upcoming events"
-            : "Events: \(upcomingEventTitles.prefix(2).joined(separator: ", "))"
+        let safeTasks = topTaskTitles.prefix(3).map { PromptSanitizer.sanitize($0, maxLen: 60) }
+        let safeEvents = upcomingEventTitles.prefix(2).map { PromptSanitizer.sanitize($0, maxLen: 60) }
+        let tasksText = safeTasks.isEmpty ? "No notable tasks" : "Tasks: \(safeTasks.joined(separator: ", "))"
+        let eventsText = safeEvents.isEmpty ? "No upcoming events" : "Events: \(safeEvents.joined(separator: ", "))"
         return "\(tasksText). \(eventsText)."
     }
 

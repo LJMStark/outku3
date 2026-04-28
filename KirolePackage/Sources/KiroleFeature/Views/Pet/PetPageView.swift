@@ -58,8 +58,7 @@ struct PetPageView: View {
         .onAppear { appeared = true }
         .sheet(isPresented: $showPetStatus) {
             PetStatusView()
-                .environment(appState)
-                .environment(theme)
+                .injectAppEnvironment()
         }
         #if os(iOS)
         .fullScreenCover(isPresented: evolutionBinding) {
@@ -98,8 +97,7 @@ struct PetPageView: View {
                     appState.completeEvolution()
                 }
             )
-            .environment(appState)
-            .environment(theme)
+            .injectAppEnvironment()
         }
     }
 
@@ -429,8 +427,7 @@ private struct TaskItemRow: View {
         .opacity(task.isCompleted ? 0.6 : 1.0)
         .sheet(isPresented: $showEditSheet) {
             TaskEditSheet(task: task)
-                .environment(appState)
-                .environment(theme)
+                .injectAppEnvironment()
         }
     }
 

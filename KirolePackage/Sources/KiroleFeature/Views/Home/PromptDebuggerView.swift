@@ -26,6 +26,7 @@ public struct PromptDebuggerFAB: View {
         .buttonStyle(.kiroleIcon)
         .sheet(isPresented: $isShowingDebugger) {
             PromptDebuggerSheet()
+                .injectAppEnvironment()
                 .presentationDetents([.fraction(0.6), .large])
                 .presentationDragIndicator(.visible)
         }
