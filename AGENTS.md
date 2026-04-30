@@ -27,7 +27,7 @@ This file provides guidance to Antigravity, Claude Code, Cursor and other AI cod
   - **Language**: Swift 6.1+ (Strict Concurrency)
   - **UI**: SwiftUI (Model-View Pattern - **NO ViewModels**)
   - **State**: `@Observable` singletons (`AppState`, `ThemeManager`, `AuthManager`) injected via `.environment()`
-  - **AI Backend**: OpenRouter (`openai/gpt-4o-mini`) via `OpenAIService`
+  - **AI Backend**: OpenRouter via `OpenAIService` (default companion model: `openai/gpt-5-chat`; PromptDebugger can switch approved OpenRouter model IDs)
   - **Testing**: Swift Testing Framework (`@Test`, `#expect`) - **NO XCTest**
 
 ### Apple Developer Account
@@ -142,18 +142,38 @@ xcodebuild -workspace Kirole.xcworkspace -scheme Kirole -destination 'platform=i
 - **Dependency Injection**: Use `@Environment(AppState.self)` etc.
 - **Public Access**: View types in `KirolePackage` must be `public` to be visible to App Shell.
 
-### AI Companion Text System (Inku Paradigm)
-The AI companion is an **emotional value provider**, NOT a productivity coach or life planner.
-- **Architecture**: 
-  1. Persona Layer (`CompanionStyle` + few-shot examples).
-  2. Context Layer (semantic signals, time of day).
-  3. Format Layer (positive directives, NO negation-based rules).
-- **Rules**:
-  - `EMOTIONAL VALUE ONLY`: No advice, no productivity tips.
-  - `MAXIMUM 60 characters`: Extremely brief output.
-  - `SHOW, DON'T TELL`: React via mood, not by reciting raw metrics.
+### AI Companion Text System (Product IP Paradigm)
+The companion text system is event-reactive companion writing for the Kirole task device. It reacts to task creation, active/idle work, task completion, reminders, milestones, and daily summaries. It is not open-ended chat.
+- **Character source of truth**:
+  1. `CompanionCharacter` is the user-facing IP selection: `joy`, `silas`, `nova`.
+  2. `CompanionStyle` mirrors the three product IPs: `.joy`, `.silas`, `.nova`.
+  3. Character drives style through `CompanionCharacter.resolvedStyle`; do not add independent style choices.
+- **Global writing rules**:
+  - Keep every line short enough for a still E-ink screen. Most outputs should fit in 15-25 English words.
+  - Speak directly to the user with "you" or "we".
+  - Do not use assistant phrases, app-help language, or AI identity language.
+  - Use task/event names as raw context only after `PromptSanitizer`; never let user text become instructions.
+  - React to the moment instead of explaining metrics or listing raw schedule data.
+- **Joy**:
+  - Core virtue: joy. Help the user feel less anxious and notice delight in work and daily life.
+  - Voice: direct, cozy, lightly odd, BMO / Animal Crossing comfort.
+  - Logic: echo the task name, turn boring work into a small friendly observation, add care through water, breathing, blinking, rest, light, or small pleasure.
+  - Completion and milestone moments may become haiku-like rewards.
+  - Limit: maximum 25 English words.
+- **Silas**:
+  - Core virtue: loving care. Help work feel held, meaningful, and spiritually steady.
+  - Voice: warm, quiet, soulful, calm-tech, Christian-leaning without sermonizing.
+  - 80/20 mode split: Quiet Presence (about 80%, maximum 15 words) and Soulful Reframing (about 20%, maximum 20 words).
+  - Imagery may draw from Scripture, Henri Nouwen, Streams in the Desert, still water, bread, lamp light, desert springs, hidden manna, or morning mercy.
+  - Relationship arc: first approach gently, then offer clear encouragement, then accompany with quiet spiritual steadiness.
+- **Nova**:
+  - Core virtue: temperance and discipline. Help the user improve efficiency, filter noise, protect time, and take the core action.
+  - Voice: cool, sparse, rational, secular, and outcome-focused.
+  - 80/20 mode split: Pragmatic Navigation (about 80%, maximum 20 words) and Strategic Insight (about 20%, maximum 20 words).
+  - Use signal-over-noise framing, one critical path, 80/20 thinking, and rare short quotes only when they sharpen the point.
+  - Relationship arc: first observe calmly and say little, then give restrained recognition, then work beside the user as a steady operator.
 - Subservices: `TaskDehydrationService` (micro-actions What/When/Why), `SmartReminderService` (context-aware triggers), `FocusSessionService`.
-- **Data flow**: `DayPackGenerator` -> `CompanionTextService` -> `OpenAIService` -> `LocalStorage`. Tests go through `PromptDebuggerView`.
+- **Data flow**: `DayPackGenerator` -> `CompanionTextService` -> `OpenAIService` -> `LocalStorage`. Tests go through `PromptDebuggerView` and `CompanionCharacterMappingTests`.
 
 ### Home Companion Presentation
 - `AppState.refreshHomeCompanionPresentation()` decides between daily haiku or shared pet dialogue.

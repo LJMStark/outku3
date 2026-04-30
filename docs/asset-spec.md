@@ -1,108 +1,111 @@
-# Brand Asset Specification (P0.6)
+# Brand Asset Specification
 
-This document defines the AI-generated character art that replaces the
-`inku-main` / `inku-head` / `blue-monster` placeholders currently used in
-onboarding and the pet UI. Output is consumed by SwiftUI via
-`Image(name, bundle: .module)` from `Resources/Media.xcassets/Pets/`.
+This document defines the companion character art consumed by SwiftUI via
+`Image(name, bundle: .module)` from
+`KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/`.
 
 ## Context
 
-Kirole has 3 companion characters defined in
-`KirolePackage/Sources/KiroleFeature/Models/CompanionCharacter.swift`:
+Kirole has three product IP companions defined in
+`KirolePackage/Sources/KiroleFeature/Models/CompanionCharacter.swift`.
+`CompanionCharacter` is the user-facing source of truth, and
+`resolvedStyle` maps each character to the matching `CompanionStyle`.
 
-| Character | Persona (`resolvedStyle`) | Vibe |
-|-----------|---------------------------|------|
-| Nook      | `companion`               | warm, supportive, gentle |
-| Silas     | `slacker`                 | laid-back, sarcastic, dry humor |
-| Nova      | `challenger`              | energetic, motivating, sharp |
+| Character | `resolvedStyle` | Product Role | Voice Anchor |
+|-----------|-----------------|--------------|--------------|
+| Joy | `.joy` | Gladness | Less anxiety, more work delight and daily beauty |
+| Silas | `.silas` | Loving care | Calm-tech presence with Christian-shaped imagery |
+| Nova | `.nova` | Temperance / discipline | Signal over noise, time protection, core action |
 
-Each character needs **two variants**: a full-body `main` (used in onboarding
-hero shots and the home pet view) and a cropped `head` (used as an avatar in
-the sign-up screen and inline dialog bubbles).
+`Nook` and the old `companion` / `slacker` / `challenger` mappings are retired.
+Do not add new assets, fallbacks, tests, or documentation that depend on those
+old names.
+
+Each character needs two variants:
+
+- `main`: full body, used in onboarding hero shots and character cards.
+- `head`: cropped head or head-and-shoulders, used as avatar-style artwork.
 
 ## Deliverables
 
-Six PNG assets, each in its own `.imageset` under
-`KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/Pets/`:
+Six PNG assets, each in its own `.imageset`:
 
 | File | Dimensions | Notes |
 |------|------------|-------|
-| `nook-main.imageset/nook-main.png`   | 512 × 512 px | full body, transparent background |
-| `nook-head.imageset/nook-head.png`   | 256 × 256 px | head + shoulders, transparent background |
-| `silas-main.imageset/silas-main.png` | 512 × 512 px | full body, transparent background |
-| `silas-head.imageset/silas-head.png` | 256 × 256 px | head + shoulders, transparent background |
-| `nova-main.imageset/nova-main.png`   | 512 × 512 px | full body, transparent background |
-| `nova-head.imageset/nova-head.png`   | 256 × 256 px | head + shoulders, transparent background |
+| `joy-main.imageset/joy-main.png` | 512 x 512 px | full body, transparent background |
+| `joy-head.imageset/joy-head.png` | 256 x 256 px | head or head-and-shoulders, transparent background |
+| `silas-main.imageset/silas-main.png` | 512 x 512 px | full body, transparent background |
+| `silas-head.imageset/silas-head.png` | 256 x 256 px | head or head-and-shoulders, transparent background |
+| `nova-main.imageset/nova-main.png` | 512 x 512 px | full body, transparent background |
+| `nova-head.imageset/nova-head.png` | 256 x 256 px | head or head-and-shoulders, transparent background |
 
-Each `Contents.json` should follow the existing `inku-main.imageset` template
-(1x slot only is fine for pixel art; @2x / @3x optional but encouraged for
-crisp scaling on Retina displays).
+Each `Contents.json` should use a universal 1x image slot. Higher-scale variants
+are optional only if the art direction needs crisper Retina scaling.
 
 ## Visual Style
 
-- **Pixel art** matching the existing `inku-main` asset's pixel density
-  (~64-pixel-tall sprite scaled to 512 × 512).
-- **Limited palette**: align with `ThemeManager.colors.accent` family —
-  warm coral / desaturated teal / soft violet are the three theme accents.
-- **Transparent background** — characters composite over theme colors at
-  runtime; do not bake in any backdrop.
-- **No text, logos, or signatures** baked into the art.
-- **Consistent silhouette weight** across the three characters so the pet
-  size never visually jumps between selections.
+- Pixel art that matches the existing companion sprite density.
+- Transparent background; characters composite over app theme colors at runtime.
+- No text, logos, signatures, halos, crosses, labels, UI chrome, or baked-in
+  backdrop.
+- Consistent silhouette weight across the three characters so switching IPs does
+  not visually resize the layout.
+- Character expression should read clearly at small avatar sizes.
 
 ## Per-Character Direction
 
-### Nook (warm companion)
-- Round, plush, mochi-like body. Pale cream + soft coral palette.
-- Cheerful neutral face with subtle blush; closed-eyes "happy" expression
-  acceptable.
-- Reads as the "default safe choice" — the grandparent's-cat energy.
+### Joy
 
-### Silas (slacker)
-- Slouched posture, half-lidded eyes. Cool greys + dusty teal palette.
-- Possibly holding a tiny prop (mug, blanket corner) but optional.
-- Reads as "perpetually unbothered" — never aggressive, just chill.
+- Golden-brown fox with curious big eyes, a fluffy tail, and a green scarf.
+- Friendly, playful, comfortable, lightly odd.
+- Reads as gladness: less anxious, more able to notice pleasure inside ordinary
+  work and daily life.
+- Avoid manic energy, mascot grin overload, or childish toy styling.
 
-### Nova (challenger)
-- Upright, alert posture. Saturated violet + electric yellow accents.
-- Bright eyes, slight smirk — the "your sparring partner" energy.
-- Avoid looking angry; the vibe is competitive, not hostile.
+### Silas
+
+- Calm grey-brown companion with wise eyes and a quiet presence.
+- Warm, grounded, caring, still-screen friendly.
+- Reads as loving care: work feels held, meaningful, and spiritually steady.
+- Christian influence should stay in mood and imagery, not literal religious
+  iconography unless specifically approved.
+- Avoid the retired slacker direction: no sarcastic posture, no lazy trope, no
+  half-lidded boredom.
+
+### Nova
+
+- Blue-grey wolf with sharp confident eyes and a cool, composed stance.
+- Minimal, disciplined, focused, professional.
+- Reads as temperance: filters noise, protects time, and points toward the core
+  action.
+- Avoid hostility or aggression; Nova should feel precise, not angry.
 
 ## Generation Workflow
 
-1. Use `baoyu-image-gen` (or any text-to-image tool capable of pixel art) to
-   generate each variant. Reference the existing `inku-main.png` to match
-   pixel density.
-2. Submit each generated PNG to the user for review **before** committing.
-3. On approval, place the file under the matching imageset directory and
-   update `Contents.json` to reference the filename.
-4. Flip the fallbacks in
-   `CompanionCharacter.heroAssetName(variant:)` from the placeholder
-   `"inku"` base to `"nook"` / `"silas"` / `"nova"`.
+1. Generate or edit each variant with a raster image tool that can match the
+   project pixel-art style.
+2. Keep filenames and imageset names exactly aligned with
+   `CompanionCharacter.heroAssetName(variant:)`.
+3. Submit each generated PNG to the user for review before committing.
+4. Place approved files under `Resources/Media.xcassets/` and update the matching
+   `Contents.json`.
+5. After asset changes, run the package tests and visually check onboarding /
+   character switching in the simulator.
 
-## Wiring Plan (deferred until assets exist)
+## Wiring Notes
 
-Six onboarding files currently hardcode placeholder names. After assets
-land, swap to the helper so character switching propagates everywhere:
-
-- `Views/Onboarding/Pages/WelcomePage.swift:43`
-- `Views/Onboarding/Pages/FeatureCalendarPage.swift:70`
-- `Views/Onboarding/Pages/FeatureFocusPage.swift:18` (currently `blue-monster`)
-- `Views/Onboarding/Pages/QuestionnairePage.swift:87`
-- `Views/Onboarding/Pages/PersonalizationPage.swift:65`
-- `Views/Onboarding/Pages/SignUpPage.swift:57` (uses `inku-head`)
-
-Pre-character-selection pages (Welcome, FeatureCalendar, FeatureFocus,
-TextAnimation) should default to `CompanionCharacter.nook` since Nook is
-positioned as the safe default in `OnboardingProfile`.
+- Onboarding and settings should load character images through
+  `CompanionCharacter.heroAssetName(variant:)`.
+- Pre-selection onboarding pages default to `CompanionCharacter.joy`.
+- Character switching must propagate to later onboarding pages and settings
+  without hardcoded image names.
 
 ## Acceptance Checklist
 
-- [ ] All six `.imageset` directories exist with PNG + Contents.json.
+- [ ] All six `.imageset` directories exist with PNG + `Contents.json`.
+- [ ] Joy, Silas, and Nova match the product IP descriptions above.
 - [ ] User has signed off on each character's visual direction.
-- [ ] `CompanionCharacter.heroAssetName(variant:)` no longer falls back to
-      `"inku"` for any character.
-- [ ] `grep -rn "inku-main\|inku-head\|blue-monster" KirolePackage/Sources/`
-      returns zero hits inside `Views/Onboarding/`.
-- [ ] Walk through onboarding switching characters at the personalization
-      step — the hero asset on every subsequent page reflects the choice.
+- [ ] No active source file references retired `nook-main` or `nook-head` assets.
+- [ ] `CompanionCharacter.allCases` remains exactly `[.joy, .silas, .nova]`.
+- [ ] Walk through onboarding character selection; subsequent pages reflect the
+      selected character.

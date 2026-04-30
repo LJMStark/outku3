@@ -230,11 +230,14 @@ Kirole E-ink companion device — a desk-mounted focus display.
 - OAuth 2.0 authentication flow
 
 #### AI Services
-- **CompanionTextService**: Personalized greetings, summaries, encouragement (4 styles: encouraging/strict/playful/calm)
+- **CompanionTextService**: Event-reactive companion copy for the three product IPs:
+  - Joy: joy, reduced anxiety, task echo, small delight, short haiku-like rewards.
+  - Silas: loving care, calm-tech presence, Christian-shaped imagery, quiet spiritual steadiness.
+  - Nova: temperance, discipline, signal over noise, time protection, one critical path.
 - **TaskDehydrationService**: AI task decomposition into What/When/Why micro-actions
 - **SmartReminderService**: Context-aware reminders (deadline/streakProtect/idle/gentleNudge)
 - **BehaviorAnalyzer**: User behavior summary for prompt injection
-- **OpenAI API** (GPT-4o-mini): Backend for companion text and task dehydration
+- **OpenRouter API** (default companion model: `openai/gpt-5-chat`): Backend for companion text and task dehydration
 - Haiku generation (part of CompanionTextService)
 
 #### Location Services

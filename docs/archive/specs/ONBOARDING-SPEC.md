@@ -51,7 +51,7 @@ The current onboarding flow (15 screens) was scaffolded from the Inku Daily Sche
 | Feature pages | Keep structure, update copy | "Not Just a Calendar" + "Focus, not frenzy" concepts work |
 | Text animation | Keep and rewrite | High emotional tension, rewrite for Kirole narrative |
 | Questionnaire | 8 questions, 4 dimensions | Drives AI personalization (CompanionTextService, SmartReminderService, TaskDehydrationService) |
-| Companion styles | 4: encouraging/strict/playful/calm | Existing CompanionTextService styles |
+| Companion IPs | 3: Joy/Silas/Nova | Supersedes old encouraging/strict/playful/calm style choices |
 | CTA buttons | Personalized per-screen + emoji | Maintains personality and engagement |
 | Registration | Last screen with skip button | Google/Apple/Email, non-blocking |
 | Hardware pairing | Post-onboarding, separate flow | Supports App-only users |
@@ -174,11 +174,10 @@ All questionnaire screens share the same layout: question title, subtitle, optio
 - Subtitle: "This shapes how your companion communicates"
 - Type: Single choice
 - Options:
-  - "Like a supportive friend" → maps to `encouraging`
-  - "Like a no-nonsense coach" → maps to `strict`
-  - "Like a playful buddy" → maps to `playful`
-  - "Like a calm mentor" → maps to `calm`
-- Maps to: `OnboardingProfile.companionStyle` → `CompanionTextService`
+  - Joy -> gladness, reduced anxiety, work delight
+  - Silas -> loving care, calm-tech presence, Christian-shaped imagery
+  - Nova -> temperance, discipline, signal over noise, time protection
+- Maps to: `OnboardingProfile.companionCharacter` -> `UserProfile.companionCharacter` -> `CompanionTextService`
 
 **Screen 6 — Q2: Motivation Style**
 
@@ -302,7 +301,7 @@ Fields to add/modify for the new questionnaire dimensions:
 
 ```swift
 // New fields (replacing old Inku-specific fields)
-public var companionStyle: CompanionStyle    // Q1: encouraging/strict/playful/calm
+public var companionCharacter: CompanionCharacter  // Q1: Joy/Silas/Nova product IP
 public var motivationStyle: MotivationStyle  // Q2: encouragement/reality-check/gamify/space
 public var calendarUsage: CalendarUsage      // Q3: work-only/none/everything
 public var taskTrackingStyle: TaskTracking   // Q4: wing-it/work-only/essential
@@ -316,7 +315,7 @@ public var timeControl: TimeControl          // Q8: barely/overwhelmed/in-contro
 
 | Profile Field | Consuming Service | Effect |
 |---------------|-------------------|--------|
-| companionStyle | CompanionTextService | Prompt personality (4 styles) |
+| companionCharacter | CompanionTextService | Product IP voice (Joy/Silas/Nova) |
 | motivationStyle | SmartReminderService | Reminder tone and framing |
 | calendarUsage | DayPackGenerator | Content density, integration prompts |
 | taskTrackingStyle | TaskDehydrationService | Dehydration aggressiveness |
