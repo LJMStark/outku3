@@ -6,7 +6,7 @@ import Foundation
 
 @Test func testAIContextIncludesAllUserProfileFields() async throws {
     let context = AIContext(
-        companionStyle: .genZ,
+        companionCharacter: .nova,
         workType: .freelancer,
         primaryGoals: [.productivity, .focus],
         petName: "TestPet",
@@ -18,7 +18,8 @@ import Foundation
         recentCompletionRate: 0.85
     )
 
-    #expect(context.companionStyle == .genZ)
+    #expect(context.companionStyle == .nova)
+    #expect(context.companionCharacter == .nova)
     #expect(context.workType == .freelancer)
     #expect(context.primaryGoals.count == 2)
     #expect(context.petName == "TestPet")
@@ -33,7 +34,8 @@ import Foundation
 @Test func testAIContextDefaultValues() async throws {
     let context = AIContext()
 
-    #expect(context.companionStyle == .companion)
+    #expect(context.companionStyle == .joy)
+    #expect(context.companionCharacter == .joy)
     #expect(context.workType == .other)
     #expect(context.primaryGoals.isEmpty)
     #expect(context.petName == "Baby Waffle")
@@ -57,11 +59,13 @@ import Foundation
     )
 
     let context = AIContext(
-        companionStyle: .slacker,
+        companionCharacter: .silas,
         behaviorSummary: summary,
         recentTexts: ["Hello!", "Keep going!"]
     )
 
+    #expect(context.companionStyle == .silas)
+    #expect(context.companionCharacter == .silas)
     #expect(context.behaviorSummary != nil)
     #expect(context.behaviorSummary?.weeklyCompletionRates.count == 4)
     #expect(context.behaviorSummary?.streakRecord == 14)
@@ -107,19 +111,17 @@ import Foundation
 
 @Test func testAllCompanionStylesHaveDistinctDescriptions() async throws {
     let styles = CompanionStyle.allCases
-    #expect(styles.count == 6)
+    #expect(styles.count == 3)
+    #expect(Set(styles) == Set([CompanionStyle.joy, .silas, .nova]))
 
     let descriptions = Set(styles.map(\.description))
-    #expect(descriptions.count == 6)
+    #expect(descriptions.count == 3)
 }
 
 @Test func testCompanionStyleRawValues() async throws {
-    #expect(CompanionStyle.companion.rawValue == "Companion")
-    #expect(CompanionStyle.challenger.rawValue == "Challenger")
-    #expect(CompanionStyle.corporate.rawValue == "Corporate")
-    #expect(CompanionStyle.dramatic.rawValue == "Dramatic")
-    #expect(CompanionStyle.genZ.rawValue == "Gen Z")
-    #expect(CompanionStyle.slacker.rawValue == "Slacker")
+    #expect(CompanionStyle.joy.rawValue == "Joy")
+    #expect(CompanionStyle.silas.rawValue == "Silas")
+    #expect(CompanionStyle.nova.rawValue == "Nova")
 }
 
 @Test func testCompanionModelOptionsUseExpectedOpenRouterIDs() async throws {
@@ -144,11 +146,15 @@ import Foundation
 }
 
 @MainActor
-@Test func testPromptDebuggerMockContextHonorsVisibleStyleSelection() async throws {
+@Test func testPromptDebuggerMockContextHonorsVisibleCharacterSelection() async throws {
     let debuggerState = PromptDebuggerState.shared
     let appState = AppState.shared
     let originalProfile = appState.userProfile
+    let originalCharacter = debuggerState.selectedMockCharacter
+    let originalOverrides = debuggerState.overridePrompts
     defer { appState.updateUserProfile(originalProfile) }
+    defer { debuggerState.selectedMockCharacter = originalCharacter }
+    defer { debuggerState.overridePrompts = originalOverrides }
 
     appState.updateUserProfile(
         UserProfile(
@@ -159,17 +165,17 @@ import Foundation
             onboardingCompletedAt: originalProfile.onboardingCompletedAt
         )
     )
-    debuggerState.selectedMockStyle = .companion
+    debuggerState.selectedMockCharacter = .joy
 
     let context = await debuggerState.createMockContext(
         type: .smartReminder,
-        styleOverride: .challenger
+        characterOverride: .nova
     )
 
-    #expect(context.companionStyle == .challenger)
-    #expect(context.companionCharacter == .silas)
+    #expect(context.companionStyle == .nova)
+    #expect(context.companionCharacter == .nova)
     #expect(context.intimacyStage == .familiar)
-    #expect(debuggerState.selectedMockStyle == .companion)
+    #expect(debuggerState.selectedMockCharacter == .joy)
 }
 
 @MainActor

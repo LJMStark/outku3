@@ -2,14 +2,14 @@ import SwiftUI
 import Observation
 
 /// A state container for the prompt debugger module.
-/// It stores custom prompt overrides for the 6 CompanionStyles.
+/// It stores custom prompt overrides for the 3 product companion styles.
 @Observable
 @MainActor
 public final class PromptDebuggerState {
     public static let shared = PromptDebuggerState()
 
-    /// Custom prompt overrides mapped by CompanionStyle.
-    public var overridePrompts: [CompanionStyle: String] = [:]
+    /// Custom prompt overrides keyed by CompanionStyle (derived from CompanionCharacter.resolvedStyle).
+    public var overridePrompts: [CompanionCharacter: String] = [:]
     
     /// A completely custom overarching prompt that takes precedence over everything
     public var customGlobalOverride: String? = nil
@@ -20,8 +20,8 @@ public final class PromptDebuggerState {
     /// Selected OpenRouter model id for companion dialogue generation.
     public var selectedCompanionModelID: String = OpenAIService.defaultChatModelID
     
-    /// The style currently selected in the debugger UI for editing.
-    public var selectedMockStyle: CompanionStyle = .companion
+    /// The character currently selected in the debugger UI for editing.
+    public var selectedMockCharacter: CompanionCharacter = .joy
     
     public var lastMockSummary: String = ""
     public var lastGeneratedDialogue: String = ""
@@ -30,7 +30,7 @@ public final class PromptDebuggerState {
     /// Fetch real AIContext from AppState and tailor it for testing.
     public func createMockContext(
         type: AITextType,
-        styleOverride: CompanionStyle? = nil
+        characterOverride: CompanionCharacter? = nil
     ) async -> AIContext {
         let triggerState = await AppState.shared.buildCompanionDialogueTriggerState(at: Date())
         let c = triggerState.context
@@ -44,7 +44,7 @@ public final class PromptDebuggerState {
         let latestIncompleteTaskItem = AppState.latestIncompleteTask(in: currentTasks)
         let latestIncompleteTask = latestIncompleteTaskItem?.title
         
-        let newStyle = styleOverride ?? selectedMockStyle
+        let newCharacter = characterOverride ?? selectedMockCharacter
         let newLearnText = testLearnText.trimmingCharacters(in: .whitespaces).isEmpty ? c.userDefinedLearnText : testLearnText
         
         // Actually modify context parameters if needed to SIMULATE the phase cleanly if the user's real schedule doesn't match
@@ -71,8 +71,7 @@ public final class PromptDebuggerState {
         }
         
         let realContext = AIContext(
-            companionStyle: newStyle,
-            companionCharacter: c.companionCharacter,
+            companionCharacter: newCharacter,
             intimacyStage: c.intimacyStage,
             workType: c.workType,
             primaryGoals: c.primaryGoals,

@@ -51,7 +51,7 @@ struct OnboardingStateNavigationTests {
 struct OnboardingProfileCodableTests {
     @Test func profileEncodeDecode() throws {
         let profile = OnboardingProfile(
-            companionCharacter: .nook,
+            companionCharacter: .joy,
             motivationStyle: .encouragement,
             calendarUsage: .everything,
             taskTracking: .cantLive,
@@ -193,8 +193,14 @@ struct OnboardingStateValidationTests {
 struct OnboardingStateAnswerTests {
     @Test func setSingleAnswer() {
         let state = OnboardingState()
+        state.setAnswer(questionId: "companionCharacter", value: "joy")
+        #expect(state.profile.companionCharacter == .joy)
+    }
+
+    @Test func ignoresRemovedLegacyCharacterAnswer() {
+        let state = OnboardingState()
         state.setAnswer(questionId: "companionCharacter", value: "nook")
-        #expect(state.profile.companionCharacter == .nook)
+        #expect(state.profile.companionCharacter == nil)
     }
 
     @Test func toggleMultiAnswer() {

@@ -154,7 +154,6 @@ extension AppState {
         let learnText = PromptDebuggerState.shared.testLearnText.trimmingCharacters(in: .whitespacesAndNewlines)
 
         let context = AIContext(
-            companionStyle: userProfile.companionStyle,
             companionCharacter: userProfile.companionCharacter,
             intimacyStage: userProfile.intimacyStage,
             workType: userProfile.workType,

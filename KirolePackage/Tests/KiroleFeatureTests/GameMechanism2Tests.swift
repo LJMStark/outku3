@@ -23,8 +23,8 @@ private final class GameMechanismMockFocusGuardService: FocusGuardService {
 
 @Suite("Game Mechanism 2 Tests", .serialized)
 struct GameMechanism2Tests {
-    @Test("UserProfile decode defaults to nook when no companion fields present")
-    func userProfileDecodeMissingCharacterDefaultsToNook() throws {
+    @Test("UserProfile decode defaults to joy when no companion fields present")
+    func userProfileDecodeMissingCharacterDefaultsToJoy() throws {
         let json = """
         {
           "workType": "Other",
@@ -34,8 +34,8 @@ struct GameMechanism2Tests {
         let data = Data(json.utf8)
         let profile = try JSONDecoder().decode(UserProfile.self, from: data)
 
-        #expect(profile.companionCharacter == .nook)
-        #expect(profile.companionStyle == .companion)
+        #expect(profile.companionCharacter == .joy)
+        #expect(profile.companionStyle == .joy)
         #expect(profile.intimacyStage == .acquaintance)
     }
 
@@ -112,7 +112,7 @@ struct GameMechanism2Tests {
         let mapped = UserProfile.from(onboarding: onboarding, merging: existing)
 
         #expect(mapped.companionCharacter == .silas)
-        #expect(mapped.companionStyle == .slacker)
+        #expect(mapped.companionStyle == .silas)
         #expect(mapped.intimacyStage == .acquaintance)
     }
 

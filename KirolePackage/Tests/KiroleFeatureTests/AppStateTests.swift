@@ -781,7 +781,7 @@ struct AppStateTests {
 
             #expect(state.userProfile.workType == .remoteWorker)
             #expect(state.userProfile.primaryGoals.contains(.productivity))
-            #expect(state.userProfile.companionStyle == .companion)
+            #expect(state.userProfile.companionStyle == .joy)
 
             // Reset
             state.updateUserProfile(.default)

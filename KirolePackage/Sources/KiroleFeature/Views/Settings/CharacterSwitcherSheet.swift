@@ -130,7 +130,7 @@ private struct CharacterCard: View {
 
     private var characterEmoji: String {
         switch character {
-        case .nook: return "🌿"
+        case .joy: return "🌿"
         case .silas: return "🌙"
         case .nova: return "⚡"
         }
@@ -138,9 +138,9 @@ private struct CharacterCard: View {
 
     private var characterTagline: String {
         switch character {
-        case .nook: return "Warm, gentle, always by your side"
-        case .silas: return "Chill vibes, effortless presence"
-        case .nova: return "Sharp, direct, pushes your limits"
+        case .joy: return "Helps you notice delight in work and daily life"
+        case .silas: return "Helps work feel held with quiet spiritual care"
+        case .nova: return "Filters noise and protects time with discipline"
         }
     }
 }

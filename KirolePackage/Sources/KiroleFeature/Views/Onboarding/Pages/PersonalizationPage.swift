@@ -122,7 +122,7 @@ public struct PersonalizationPage: View {
         }
         .onAppear {
             if onboardingState.profile.companionCharacter == nil {
-                onboardingState.profile.companionCharacter = .nook
+                onboardingState.profile.companionCharacter = .joy
             }
         }
         .onChange(of: selectedPhoto) { _, newValue in
@@ -191,9 +191,9 @@ private struct CompanionCharacterCard: View {
 private extension CompanionCharacter {
     var tagline: String {
         switch self {
-        case .nook: return "Playful"
-        case .silas: return "Spiritual"
-        case .nova: return "Challenge"
+        case .joy: return "Joy"
+        case .silas: return "Care"
+        case .nova: return "Discipline"
         }
     }
 }

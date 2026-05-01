@@ -16,7 +16,7 @@ public struct FeatureFocusPage: View {
                 HStack {
                     Spacer()
                     CharacterView(
-                        imageName: CompanionCharacter.nook.heroAssetName(variant: .main),
+                        imageName: CompanionCharacter.joy.heroAssetName(variant: .main),
                         size: 80
                     )
                     .padding(.trailing, 16)

@@ -51,24 +51,24 @@ public struct CompanionBindingProgress: Sendable, Codable, Equatable {
 }
 
 public struct CompanionUsageState: Sendable, Codable, Equatable {
-    public var nook: CompanionBindingProgress
+    public var joy: CompanionBindingProgress
     public var silas: CompanionBindingProgress
     public var nova: CompanionBindingProgress
 
     public init(
-        nook: CompanionBindingProgress = CompanionBindingProgress(),
+        joy: CompanionBindingProgress = CompanionBindingProgress(),
         silas: CompanionBindingProgress = CompanionBindingProgress(),
         nova: CompanionBindingProgress = CompanionBindingProgress()
     ) {
-        self.nook = nook
+        self.joy = joy
         self.silas = silas
         self.nova = nova
     }
 
     public func progress(for character: CompanionCharacter) -> CompanionBindingProgress {
         switch character {
-        case .nook:
-            return nook
+        case .joy:
+            return joy
         case .silas:
             return silas
         case .nova:
@@ -78,8 +78,8 @@ public struct CompanionUsageState: Sendable, Codable, Equatable {
 
     public mutating func setProgress(_ progress: CompanionBindingProgress, for character: CompanionCharacter) {
         switch character {
-        case .nook:
-            nook = progress
+        case .joy:
+            joy = progress
         case .silas:
             silas = progress
         case .nova:

@@ -283,7 +283,6 @@ public final class CompanionTextService {
         let recentTexts = Array((historyTexts + rejectedTexts).suffix(3))
 
         return AIContext(
-            companionStyle: baseContext.companionStyle,
             companionCharacter: baseContext.companionCharacter,
             intimacyStage: baseContext.intimacyStage,
             workType: baseContext.workType,
@@ -383,8 +382,8 @@ public final class CompanionTextService {
         )
 
         let baseContext = AIContext(
-            companionStyle: userProfile.companionStyle,
             companionCharacter: userProfile.companionCharacter,
+            intimacyStage: userProfile.intimacyStage,
             workType: userProfile.workType,
             primaryGoals: userProfile.primaryGoals,
             petName: petName,
@@ -452,7 +451,8 @@ public final class CompanionTextService {
         )
 
         return AIContext(
-            companionStyle: baseContext.companionStyle,
+            companionCharacter: baseContext.companionCharacter,
+            intimacyStage: baseContext.intimacyStage,
             workType: baseContext.workType,
             primaryGoals: baseContext.primaryGoals,
             petName: baseContext.petName,

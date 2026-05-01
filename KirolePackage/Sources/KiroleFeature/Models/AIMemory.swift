@@ -15,7 +15,7 @@ public enum AITextType: String, Codable, Sendable {
 // MARK: - AI Context
 
 public struct AIContext: Sendable {
-    public let companionStyle: CompanionStyle
+    public var companionStyle: CompanionStyle { companionCharacter.resolvedStyle }
     public let companionCharacter: CompanionCharacter
     public let intimacyStage: IntimacyStage
     public let workType: WorkType
@@ -45,8 +45,7 @@ public struct AIContext: Sendable {
     public let userDefinedLearnText: String?
 
     public init(
-        companionStyle: CompanionStyle = .companion,
-        companionCharacter: CompanionCharacter = .nook,
+        companionCharacter: CompanionCharacter = .joy,
         intimacyStage: IntimacyStage = .acquaintance,
         workType: WorkType = .other,
         primaryGoals: [UserGoal] = [],
@@ -72,7 +71,6 @@ public struct AIContext: Sendable {
         psychologicalObjective: String? = nil,
         userDefinedLearnText: String? = nil
     ) {
-        self.companionStyle = companionStyle
         self.companionCharacter = companionCharacter
         self.intimacyStage = intimacyStage
         self.workType = workType

@@ -26,7 +26,7 @@ public actor LocalStorage {
     }
 
     enum DevelopmentStorageSchema {
-        static let currentVersion = 1
+        static let currentVersion = 2
     }
 
     private nonisolated static let persistedFiles = [
@@ -51,6 +51,7 @@ public actor LocalStorage {
         Keys.lastUsageDate,
         Keys.energyBottles,
         Keys.lastHomeHaikuShownDate,
+        "isOnboardingCompleted",
     ]
 
     nonisolated static var developmentStorageSchemaVersionKey: String {

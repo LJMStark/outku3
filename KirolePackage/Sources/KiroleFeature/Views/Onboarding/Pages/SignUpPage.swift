@@ -54,7 +54,7 @@ public struct SignUpPage: View {
                     VStack(spacing: 0) {
                         // Logo
                         Image(
-                            (onboardingState.profile.companionCharacter ?? .nook)
+                            (onboardingState.profile.companionCharacter ?? .joy)
                                 .heroAssetName(variant: .head),
                             bundle: .module
                         )

@@ -36,12 +36,12 @@ public struct PromptDebuggerFAB: View {
 // MARK: - Debugger Sheet View
 
 enum DebugPersona: Hashable {
-    case style(CompanionStyle)
+    case character(CompanionCharacter)
     case custom
 
     var displayName: String {
         switch self {
-        case .style(let style): return style.displayName
+        case .character(let character): return character.displayName
         case .custom: return "完全自定义 (Custom)"
         }
     }
@@ -51,7 +51,7 @@ struct PromptDebuggerSheet: View {
     @Bindable private var state = PromptDebuggerState.shared
     @Environment(ThemeManager.self) private var theme
     
-    @State private var selectedPersona: DebugPersona = .style(.companion)
+    @State private var selectedPersona: DebugPersona = .character(.joy)
     @State private var editingDraft: String = ""
     @State private var isForceRefreshing: Bool = false
     
@@ -61,8 +61,8 @@ struct PromptDebuggerSheet: View {
                 VStack(spacing: 16) {
                     // 1. Selector
                 Picker("Persona", selection: $selectedPersona) {
-                    ForEach(CompanionStyle.allCases, id: \.self) { style in
-                        Text(style.displayName).tag(DebugPersona.style(style))
+                    ForEach(CompanionCharacter.allCases, id: \.self) { character in
+                        Text(character.displayName).tag(DebugPersona.character(character))
                     }
                     Text("完全自定义 (Custom)").tag(DebugPersona.custom)
                 }
@@ -153,9 +153,9 @@ struct PromptDebuggerSheet: View {
                 .padding(.horizontal)
                 
                 HStack {
-                    if case .style(let style) = selectedPersona {
+                    if case .character(let character) = selectedPersona {
                         Button("Reset to Default") {
-                            editingDraft = OpenAIService.defaultPrompt(for: style)
+                            editingDraft = OpenAIService.defaultPrompt(for: character.resolvedStyle)
                         }
                         .font(.caption)
                         .foregroundStyle(.blue)
@@ -170,10 +170,10 @@ struct PromptDebuggerSheet: View {
                     Spacer()
                     
                     Button("Apply Changes") {
-                        if case .style(let style) = selectedPersona {
-                            state.overridePrompts[style] = editingDraft
+                        if case .character(let character) = selectedPersona {
+                            state.overridePrompts[character] = editingDraft
                             state.customGlobalOverride = nil
-                            state.selectedMockStyle = style
+                            state.selectedMockCharacter = character
                         } else {
                             state.customGlobalOverride = editingDraft
                         }
@@ -267,11 +267,11 @@ struct PromptDebuggerSheet: View {
     
     private func loadDraft(for persona: DebugPersona) {
         switch persona {
-        case .style(let style):
-            if let existingOverride = state.overridePrompts[style], !existingOverride.isEmpty {
+        case .character(let character):
+            if let existingOverride = state.overridePrompts[character], !existingOverride.isEmpty {
                 editingDraft = existingOverride
             } else {
-                editingDraft = OpenAIService.defaultPrompt(for: style)
+                editingDraft = OpenAIService.defaultPrompt(for: character.resolvedStyle)
             }
         case .custom:
             editingDraft = state.customGlobalOverride ?? ""
@@ -283,15 +283,15 @@ struct PromptDebuggerSheet: View {
         await MainActor.run { state.lastGeneratedTranslation = "" }
         
         // Pass the requested type into the context builder so it reflects the phase accurately
-        let styleOverride: CompanionStyle?
+        let characterOverride: CompanionCharacter?
         switch selectedPersona {
-        case .style(let style):
-            styleOverride = style
+        case .character(let character):
+            characterOverride = character
         case .custom:
-            styleOverride = nil
+            characterOverride = nil
         }
 
-        let mockContext = await state.createMockContext(type: type, styleOverride: styleOverride)
+        let mockContext = await state.createMockContext(type: type, characterOverride: characterOverride)
 
         let result = await CompanionTextService.shared.previewSharedPetDialogue(baseContext: mockContext, type: type)
         let translation = (try? await OpenAIService.shared.translateCompanionText(text: result)) ?? "翻译失败"

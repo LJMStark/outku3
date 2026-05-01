@@ -20,7 +20,7 @@ public struct UserProfile: Sendable, Codable, Equatable {
     public init(
         workType: WorkType = .other,
         primaryGoals: [UserGoal] = [],
-        companionCharacter: CompanionCharacter = .nook,
+        companionCharacter: CompanionCharacter = .joy,
         intimacyStage: IntimacyStage = .acquaintance,
         motivationStyle: MotivationStyle? = nil,
         reminderPreference: ReminderPreference? = nil,
@@ -57,7 +57,8 @@ public struct UserProfile: Sendable, Codable, Equatable {
 
         self.workType = try container.decodeIfPresent(WorkType.self, forKey: .workType) ?? .other
         self.primaryGoals = try container.decodeIfPresent([UserGoal].self, forKey: .primaryGoals) ?? []
-        self.companionCharacter = try container.decodeIfPresent(CompanionCharacter.self, forKey: .companionCharacter) ?? .nook
+        let characterRaw = try? container.decodeIfPresent(String.self, forKey: .companionCharacter)
+        self.companionCharacter = characterRaw.flatMap(CompanionCharacter.init(rawValue:)) ?? .joy
         self.intimacyStage = try container.decodeIfPresent(IntimacyStage.self, forKey: .intimacyStage) ?? .acquaintance
         self.motivationStyle = try container.decodeIfPresent(MotivationStyle.self, forKey: .motivationStyle)
         self.reminderPreference = try container.decodeIfPresent(ReminderPreference.self, forKey: .reminderPreference)
@@ -147,34 +148,25 @@ public enum UserGoal: String, CaseIterable, Sendable, Codable {
 // MARK: - Companion Style
 
 public enum CompanionStyle: String, CaseIterable, Sendable, Codable {
-    case companion = "Companion"
-    case challenger = "Challenger"
-    case corporate = "Corporate"
-    case dramatic = "Dramatic"
-    case genZ = "Gen Z"
-    case slacker = "Slacker"
+    case joy = "Joy"
+    case silas = "Silas"
+    case nova = "Nova"
 
     public var displayName: String { rawValue }
 
     public var iconName: String {
         switch self {
-        case .companion: return "heart.fill"
-        case .challenger: return "flame.fill"
-        case .corporate: return "briefcase.fill"
-        case .dramatic: return "theatermasks.fill"
-        case .genZ: return "sparkles"
-        case .slacker: return "bed.double.fill"
+        case .joy: return "sparkles"
+        case .silas: return "heart.fill"
+        case .nova: return "target"
         }
     }
 
     public var description: String {
         switch self {
-        case .companion: return "Empathetic and full of gentle encouragement"
-        case .challenger: return "Lovingly calls out your bad habits and chaotic schedule"
-        case .corporate: return "Treats your life like a fast-paced B2B startup"
-        case .dramatic: return "Overreacts to everything like a dramatic soap opera"
-        case .genZ: return "Speaks fluent internet slang and brainrot"
-        case .slacker: return "Actively encourages you to give up and rest"
+        case .joy: return "Joyful, easygoing, and tuned to the small beauty in work"
+        case .silas: return "Warm spiritual care that makes work feel held and meaningful"
+        case .nova: return "Disciplined focus that filters noise and protects time"
         }
     }
 }
