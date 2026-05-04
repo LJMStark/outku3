@@ -82,10 +82,10 @@ struct DayTimelineView: View {
             )
         }
         .background(
-            // Vertical timeline line — centered perfectly in the time column (64pt width)
+            // Vertical timeline line sits between the time and icon columns.
             HStack {
                 Spacer()
-                    .frame(width: 31)
+                    .frame(width: 70)
                 Rectangle()
                     .fill(theme.colors.timeline)
                     .frame(width: 2)
@@ -150,18 +150,16 @@ struct TimelineEventCardRow: View {
                 Text(AppDateFormatters.time.string(from: event.startTime))
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(theme.colors.secondaryText)
-                    .frame(width: 64, alignment: .center)
-                    .padding(.vertical, 4)
-                    .background(theme.colors.background)
+                    .frame(width: 64, alignment: .leading)
 
                 Spacer()
             }
-            .padding(.top, 4)
+            .padding(.top, 8)
 
             // Event card
             HStack(spacing: 0) {
                 Spacer()
-                    .frame(width: 23)
+                    .frame(width: 80)
 
                 EventCardView(
                     title: event.title,
@@ -173,14 +171,10 @@ struct TimelineEventCardRow: View {
                         appState.selectEvent(event)
                     }
                 )
-                .padding(.leading, 8)
-                .padding(.vertical, 8)
-                .background(theme.colors.background)
             }
-            .padding(.vertical, 4)
+            .padding(.vertical, 8)
         }
         .opacity(appeared ? 1 : 0)
-        .offset(x: appeared ? 0 : -30)
         .animation(.kiroleGentle.delay(delay), value: appeared)
         .onAppear {
             appeared = true
@@ -215,9 +209,7 @@ struct TimelineEventRow: View {
             Text(time)
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(theme.colors.secondaryText)
-                .frame(width: 64, alignment: .center)
-                .padding(.vertical, 4)
-                .background(theme.colors.background)
+                .frame(width: 64, alignment: .leading)
 
             // Icon slot — line doesn't pass through, no mask needed.
             ZStack {
@@ -241,7 +233,6 @@ struct TimelineEventRow: View {
         }
         .padding(.vertical, 12)
         .opacity(appeared ? 1 : 0)
-        .offset(x: appeared ? 0 : -30)
         .animation(.kiroleGentle.delay(delay), value: appeared)
         .onAppear {
             appeared = true

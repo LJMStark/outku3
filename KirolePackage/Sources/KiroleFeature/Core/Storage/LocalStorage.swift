@@ -22,6 +22,7 @@ public actor LocalStorage {
         static let consecutiveDays = "consecutiveDays"
         static let lastUsageDate = "lastUsageDate"
         static let energyBottles = "energyBottles"
+        static let lastCelebratedUnlockCount = "lastCelebratedUnlockCount"
         static let lastHomeHaikuShownDate = "lastHomeHaikuShownDate"
     }
 
@@ -384,9 +385,21 @@ public actor LocalStorage {
     public func saveEnergyBottles(_ blocks: Int) {
         userDefaults.set(blocks, forKey: Keys.energyBottles)
     }
-    
+
     public func loadEnergyBottles() -> Int {
         userDefaults.integer(forKey: Keys.energyBottles)
+    }
+
+    public func saveLastCelebratedUnlockCount(_ count: Int) {
+        userDefaults.set(count, forKey: Keys.lastCelebratedUnlockCount)
+    }
+
+    /// 已庆祝过的累计解锁场景数。默认 1：harbor 是初始解锁，永远不需要"庆祝"。
+    public func loadLastCelebratedUnlockCount() -> Int {
+        if userDefaults.object(forKey: Keys.lastCelebratedUnlockCount) == nil {
+            return 1
+        }
+        return userDefaults.integer(forKey: Keys.lastCelebratedUnlockCount)
     }
 
     public func saveLastEventLogTimestamp(_ timestamp: UInt32) {

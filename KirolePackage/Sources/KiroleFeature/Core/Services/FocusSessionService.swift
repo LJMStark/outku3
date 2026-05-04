@@ -568,24 +568,45 @@ public final class FocusSessionService {
         let bottlesToAdd = session.earnedEnergyBottles
         scheduleSessionPersistence { [weak self] in
             guard let self else { return }
-            let totalEnergyBottles = await self.updateStoredEnergyBottles(adding: bottlesToAdd)
+            let (totalEnergyBottles, newlyUnlocked) = await self.updateStoredEnergyBottles(adding: bottlesToAdd)
             if clearPersistedActiveSession {
                 await self.clearPersistedActiveSessionIfNeeded()
             }
             await self.saveSessions()
-            await AppState.shared.handleFocusSessionDidEnd(totalEnergyBottles: totalEnergyBottles, now: endTime)
+            await AppState.shared.handleFocusSessionDidEnd(
+                totalEnergyBottles: totalEnergyBottles,
+                newlyUnlocked: newlyUnlocked,
+                now: endTime
+            )
         }
     }
 
-    private func updateStoredEnergyBottles(adding bottlesToAdd: Int) async -> Int {
+    /// 累加能量瓶并诊断"这次累加是否跨过了未庆祝的解锁阈值"。
+    /// 返回值的 newlyUnlocked 仅在还未庆祝过的解锁档触发，已庆祝的会被去重过滤。
+    private func updateStoredEnergyBottles(
+        adding bottlesToAdd: Int
+    ) async -> (total: Int, newlyUnlocked: [String]) {
+        let before = await localStorage.loadEnergyBottles()
         guard bottlesToAdd > 0 else {
-            return await localStorage.loadEnergyBottles()
+            return (before, [])
         }
 
-        let current = await localStorage.loadEnergyBottles()
-        let totalEnergyBottles = current + bottlesToAdd
-        await localStorage.saveEnergyBottles(totalEnergyBottles)
-        return totalEnergyBottles
+        let after = before + bottlesToAdd
+        await localStorage.saveEnergyBottles(after)
+
+        let alreadyCelebrated = await localStorage.loadLastCelebratedUnlockCount()
+        let totalUnlockedNow = DisplayScene.unlockedScenes(for: after).count
+        guard totalUnlockedNow > alreadyCelebrated else {
+            return (after, [])
+        }
+
+        let newlyUnlocked = Array(
+            DisplayScene.allCases
+                .dropFirst(alreadyCelebrated)
+                .prefix(totalUnlockedNow - alreadyCelebrated)
+        ).map(\.rawValue)
+        await localStorage.saveLastCelebratedUnlockCount(totalUnlockedNow)
+        return (after, newlyUnlocked)
     }
 }
 

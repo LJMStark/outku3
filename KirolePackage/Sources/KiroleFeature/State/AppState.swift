@@ -20,6 +20,19 @@ public enum HomeCompanionDisplayMode: String, Codable, Sendable {
     case petDialogue
 }
 
+// MARK: - Scene Unlock Celebration Signal
+
+/// 跨阈值即时反馈的"信号包"。AppState 发出，HomeView 监听。
+public struct SceneCelebration: Equatable, Sendable {
+    public let sceneId: String
+    public let presentedAt: Date
+
+    public init(sceneId: String, presentedAt: Date = Date()) {
+        self.sceneId = sceneId
+        self.presentedAt = presentedAt
+    }
+}
+
 // MARK: - App State
 
 @Observable
@@ -69,6 +82,10 @@ public final class AppState {
     public var showEvolutionAnimation: Bool = false
     public var evolutionFromStage: PetStage?
     public var evolutionToStage: PetStage?
+
+    /// 最近一次的"场景解锁庆祝"信号；HomeView onChange 时炸 confetti + 展示横幅，
+    /// ~3s 后由 UI 层置回 nil。nil = 当前没有待展示的庆祝。
+    public var pendingSceneCelebration: SceneCelebration?
 
     // Loading State
     public var isLoading: Bool = false

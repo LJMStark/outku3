@@ -1,4 +1,18 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
+
+private enum AppHeaderLayout {
+    static let horizontalPadding: CGFloat = 28
+    static let tabSpacing: CGFloat = 8
+    static let headerSpacing: CGFloat = 12
+    static let tabOuterWidth: CGFloat = 38
+    static let tabOuterHeight: CGFloat = 42
+    static let tabFaceSize: CGFloat = 38
+    static let tabCornerRadius: CGFloat = 11
+    static let tabStrokeWidth: CGFloat = 1.5
+}
 
 public struct AppHeaderView: View {
     @Environment(ThemeManager.self) private var theme
@@ -9,6 +23,29 @@ public struct AppHeaderView: View {
     public init(selectedTab: Binding<AppTab>, onPetClick: (() -> Void)? = nil) {
         self._selectedTab = selectedTab
         self.onPetClick = onPetClick
+    }
+
+    private var headerWidth: CGFloat? {
+        #if canImport(UIKit)
+        return UIScreen.main.bounds.width
+        #else
+        return nil
+        #endif
+    }
+
+    private var dateInfoWidth: CGFloat? {
+        guard let headerWidth else { return nil }
+        return max(
+            160,
+            headerWidth
+                - AppHeaderLayout.horizontalPadding * 2
+                - AppHeaderLayout.headerSpacing
+                - tabGroupWidth
+        )
+    }
+
+    private var tabGroupWidth: CGFloat {
+        AppHeaderLayout.tabOuterWidth * 3 + AppHeaderLayout.tabSpacing * 2
     }
 
     public var body: some View {
@@ -25,14 +62,16 @@ public struct AppHeaderView: View {
     }
 
     private var headerContent: some View {
-        HStack(alignment: .top) {
+        HStack(alignment: .top, spacing: AppHeaderLayout.headerSpacing) {
             // Date and info
             VStack(alignment: .leading, spacing: 4) {
                 Text(formattedDate)
                     .font(.system(size: 32, weight: .bold))
                     .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
 
-                HStack(spacing: 12) {
+                HStack(spacing: 10) {
                     Text(formattedTime)
                         .font(.system(size: 14))
                         .foregroundStyle(.white.opacity(0.9))
@@ -46,12 +85,12 @@ public struct AppHeaderView: View {
                             .foregroundStyle(.white.opacity(0.9))
                     }
                 }
+                .lineLimit(1)
+                .minimumScaleFactor(0.86)
             }
+            .frame(width: dateInfoWidth, alignment: .leading)
 
-            Spacer()
-
-            // Tab buttons
-            HStack(alignment: .top, spacing: 12) {
+            HStack(alignment: .top, spacing: AppHeaderLayout.tabSpacing) {
                 TabButton(
                     icon: "house.fill",
                     label: "Home",
@@ -91,10 +130,12 @@ public struct AppHeaderView: View {
                     }
                 }
             }
+            .fixedSize(horizontal: true, vertical: false)
         }
-        .padding(.horizontal, 24)
+        .padding(.horizontal, AppHeaderLayout.horizontalPadding)
         .padding(.top, 16)
         .padding(.bottom, 12)
+        .frame(width: headerWidth)
     }
 
     private var formattedDate: String {
@@ -131,13 +172,13 @@ private struct TabButton: View {
                     strokeColor: strokeColor
                 ) {
                     Image(systemName: icon)
-                        .font(.system(size: 16, weight: .medium))
+                        .font(.system(size: 15, weight: .medium))
                         .foregroundStyle(strokeColor)
                 }
 
                 if let label {
                     Text(label)
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: 9.5, weight: .semibold))
                         .foregroundStyle(.white)
                 }
             }
@@ -168,13 +209,13 @@ private struct PetTabButton: View {
                     Image("tiko_head", bundle: .module)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
-                        .frame(width: 38, height: 38)
+                        .frame(width: 36, height: 36)
                         .offset(y: 2)
                 }
 
                 if let label {
                     Text(label)
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: 9.5, weight: .semibold))
                         .foregroundStyle(.white)
                 }
             }
@@ -192,42 +233,36 @@ private struct StackedTabFrame<Content: View>: View {
     let strokeColor: Color
     @ViewBuilder let content: Content
 
-    private let outerWidth: CGFloat = 40
-    private let outerHeight: CGFloat = 44
-    private let faceSize: CGFloat = 40
-    private let cornerRadius: CGFloat = 12
-    private let strokeWidth: CGFloat = 1.5
-
     var body: some View {
         ZStack(alignment: .top) {
             // Back tan layer — taller, reveals curved "shelf" at bottom
-            RoundedRectangle(cornerRadius: cornerRadius)
+            RoundedRectangle(cornerRadius: AppHeaderLayout.tabCornerRadius)
                 .fill(baseColor)
-                .frame(width: outerWidth, height: outerHeight)
+                .frame(width: AppHeaderLayout.tabOuterWidth, height: AppHeaderLayout.tabOuterHeight)
                 .overlay(
-                    RoundedRectangle(cornerRadius: cornerRadius)
-                        .stroke(strokeColor, lineWidth: strokeWidth)
+                    RoundedRectangle(cornerRadius: AppHeaderLayout.tabCornerRadius)
+                        .stroke(strokeColor, lineWidth: AppHeaderLayout.tabStrokeWidth)
                 )
 
             // Front white face — top-aligned
-            RoundedRectangle(cornerRadius: cornerRadius)
+            RoundedRectangle(cornerRadius: AppHeaderLayout.tabCornerRadius)
                 .fill(Color.white)
-                .frame(width: faceSize, height: faceSize)
+                .frame(width: AppHeaderLayout.tabFaceSize, height: AppHeaderLayout.tabFaceSize)
                 .overlay(
-                    RoundedRectangle(cornerRadius: cornerRadius)
-                        .stroke(strokeColor, lineWidth: strokeWidth)
+                    RoundedRectangle(cornerRadius: AppHeaderLayout.tabCornerRadius)
+                        .stroke(strokeColor, lineWidth: AppHeaderLayout.tabStrokeWidth)
                 )
                 .overlay { content }
         }
-        .frame(width: outerWidth, height: outerHeight)
+        .frame(width: AppHeaderLayout.tabOuterWidth, height: AppHeaderLayout.tabOuterHeight)
         .shadow(color: .black.opacity(0.12), radius: isSelected ? 0 : 4, y: 2)
         .overlay(
-            RoundedRectangle(cornerRadius: cornerRadius + 2)
+            RoundedRectangle(cornerRadius: AppHeaderLayout.tabCornerRadius + 2)
                 .stroke(isSelected ? Color.white : Color.clear, lineWidth: 2)
                 .padding(-2)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: cornerRadius + 4)
+            RoundedRectangle(cornerRadius: AppHeaderLayout.tabCornerRadius + 4)
                 .stroke(isSelected ? primaryColor : Color.clear, lineWidth: 2)
                 .padding(-4)
         )
