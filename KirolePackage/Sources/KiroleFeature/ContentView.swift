@@ -9,6 +9,8 @@ public struct ContentView: View {
     @AppStorage("isOnboardingCompleted") private var isOnboardingCompleted: Bool = false
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var sceneCelebrationConfettiTrigger = 0
+    @State private var sceneCelebrationDismissTask: Task<Void, Never>?
 
     private var shouldBypassOnboardingForUITests: Bool {
         ProcessInfo.processInfo.arguments.contains("-uiTestSkipOnboarding")
@@ -88,7 +90,18 @@ public struct ContentView: View {
                     value: appState.selectedTab
                 )
             }
+
+            if let celebration = appState.pendingSceneCelebration {
+                SceneUnlockBanner(
+                    sceneName: DisplayScene(rawValue: celebration.sceneId)?.displayName ?? celebration.sceneId
+                )
+                .padding(.top, 72)
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .zIndex(10)
+            }
         }
+        .confetti(trigger: $sceneCelebrationConfettiTrigger)
+        .animation(.kiroleSnappy, value: appState.pendingSceneCelebration)
         .environment(appState)
         .environment(themeManager)
         .environment(authManager)
@@ -125,9 +138,53 @@ public struct ContentView: View {
                 break
             }
         }
+        .onChange(of: appState.pendingSceneCelebration) { _, celebration in
+            guard celebration != nil else { return }
+            sceneCelebrationConfettiTrigger += 1
+            sceneCelebrationDismissTask?.cancel()
+            sceneCelebrationDismissTask = Task { @MainActor in
+                try? await Task.sleep(for: .seconds(3))
+                guard !Task.isCancelled else { return }
+                appState.pendingSceneCelebration = nil
+            }
+        }
     }
 
     public init() {}
+}
+
+// MARK: - Scene Unlock Banner
+
+private struct SceneUnlockBanner: View {
+    @Environment(ThemeManager.self) private var theme
+    let sceneName: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(theme.colors.accent)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("解锁了新场景")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(theme.colors.secondaryText)
+                Text(sceneName)
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(theme.colors.primaryText)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(
+            Capsule()
+                .fill(theme.colors.cardBackground)
+                .shadow(color: .black.opacity(0.08), radius: 8, y: 4)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("已解锁\(sceneName)")
+        .accessibilityIdentifier("app.sceneUnlockBanner")
+    }
 }
 
 #Preview {

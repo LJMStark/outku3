@@ -22,8 +22,6 @@ public struct HomeView: View {
     @State private var isInitialLoading = true
     @State private var dataSource = TimelineDataSource()
     @State private var settlementData: FocusSettlementData?
-    @State private var confettiTrigger = 0
-    @State private var celebrationDismissTask: Task<Void, Never>?
 
     public init() {}
 
@@ -176,28 +174,6 @@ public struct HomeView: View {
             .presentationDragIndicator(.hidden)
             .presentationCornerRadius(24)
         }
-        .confetti(trigger: $confettiTrigger)
-        .overlay(alignment: .top) {
-            if let celebration = appState.pendingSceneCelebration {
-                SceneUnlockBanner(
-                    sceneName: DisplayScene(rawValue: celebration.sceneId)?.displayName ?? celebration.sceneId
-                )
-                .padding(.top, 12)
-                .transition(.move(edge: .top).combined(with: .opacity))
-                .zIndex(10)
-            }
-        }
-        .animation(.kiroleSnappy, value: appState.pendingSceneCelebration)
-        .onChange(of: appState.pendingSceneCelebration) { _, celebration in
-            guard celebration != nil else { return }
-            confettiTrigger += 1
-            celebrationDismissTask?.cancel()
-            celebrationDismissTask = Task { @MainActor in
-                try? await Task.sleep(for: .seconds(3))
-                guard !Task.isCancelled else { return }
-                appState.pendingSceneCelebration = nil
-            }
-        }
     }
 
     /// Invisible background that reports this section's Y position for date tracking.
@@ -321,43 +297,6 @@ private struct ScrollToTopButton: View {
         .buttonStyle(.kiroleIcon)
     }
 }
-
-
-
-// MARK: - Scene Unlock Banner
-
-private struct SceneUnlockBanner: View {
-    @Environment(ThemeManager.self) private var theme
-    let sceneName: String
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "sparkles")
-                .font(.system(size: 16, weight: .bold))
-                .foregroundStyle(theme.colors.accent)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text("解锁了新场景")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(theme.colors.secondaryText)
-                Text(sceneName)
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(theme.colors.primaryText)
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(
-            Capsule()
-                .fill(theme.colors.cardBackground)
-                .shadow(color: .black.opacity(0.08), radius: 8, y: 4)
-        )
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("已解锁\(sceneName)")
-        .accessibilityIdentifier("home.sceneUnlockBanner")
-    }
-}
-
 #Preview {
     HomeView()
         .environment(AppState.shared)

@@ -51,6 +51,7 @@ public actor LocalStorage {
         Keys.consecutiveDays,
         Keys.lastUsageDate,
         Keys.energyBottles,
+        Keys.lastCelebratedUnlockCount,
         Keys.lastHomeHaikuShownDate,
         "isOnboardingCompleted",
     ]

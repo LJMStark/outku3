@@ -68,4 +68,32 @@ struct CelebrationStorageTests {
             UserDefaults.standard.removeObject(forKey: "lastCelebratedUnlockCount")
         }
     }
+
+    @Test("开发期重置会清掉庆祝计数")
+    @MainActor
+    func resetClearsCelebrationCounter() async throws {
+        let defaults = UserDefaults.standard
+        let schemaKey = LocalStorage.developmentStorageSchemaVersionKey
+        let celebrationKey = "lastCelebratedUnlockCount"
+
+        await SharedPersistenceTestLock.shared.withLock {
+            defaults.set(1, forKey: schemaKey)
+            defaults.set(3, forKey: celebrationKey)
+        }
+
+        defer {
+            defaults.removeObject(forKey: schemaKey)
+            defaults.removeObject(forKey: celebrationKey)
+        }
+
+        let didReset = try LocalStorage.resetForRapidDevelopmentIfNeeded(
+            currentSchemaVersion: LocalStorage.currentDevelopmentStorageSchemaVersion + 1,
+            userDefaults: defaults,
+            fileManager: FileManager.default,
+            documentsDirectory: nil
+        )
+
+        #expect(didReset)
+        #expect(defaults.object(forKey: celebrationKey) == nil)
+    }
 }
