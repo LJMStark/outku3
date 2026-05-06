@@ -63,8 +63,8 @@ Three singletons injected via `.environment()` from ContentView:
 - Custom header (`AppHeaderView`) fixed at top (placed outside `ScrollView` in each main page) - no native `TabView`.
 
 ### Home Timeline Architecture
-- Infinite-scroll multi-day timeline managed by `TimelineDataSource`.
-- `HomeView` -> `LazyVStack` with today (offset 0) followed by `ForEach(offset 1+)`.
+- `TimelineDataSource` (`State/TimelineDataSource.swift`) manages **date offsets only**. It does NOT merge data sources. Multi-source merging happens in `AppState.mergeRemoteTasks()` via `+Sync` extension.
+- `HomeView` (`Views/Home/HomeView.swift`) reads `AppState.tasks` and `AppState.events` directly; uses `LazyVStack` with today (offset 0) followed by `ForEach(offset 1+)`.
 - `DaySectionView` -> `DateDividerView` + `DayTimelineView`.
 - Today always has `showPet: true`; subsequent days show pet every 3 days.
 - `HaikuSectionView` renders the daily haiku or shared pet dialogue above the pet image embed. All components live in `Views/Home/TimelineView.swift`.
@@ -80,11 +80,22 @@ Fully native SwiftUI implementation managed via `OnboardingState`:
 - 13: `SignUpPage` (Google Sign In + Apple/Email)
 Images accessed via `Image("name", bundle: .module)` from `Resources/Media.xcassets`.
 
-### Pet System
-- 5 forms: Cat, Dog, Bunny, Bird, Dragon
-- 5 stages: Baby -> Child -> Teen -> Adult -> Elder
-- 5 moods: Happy, Excited, Focused, Sleepy, Missing You
-- 4 scenes: Indoor, Outdoor, Night, Work
+### Pet / Companion IP System
+**Product spec: there are exactly 3 IP companions — Joy, Silas, Nova. There are no other pets.**
+
+- **IP source of truth**: `CompanionCharacter` enum (`Models/CompanionCharacter.swift`): `joy`, `silas`, `nova`.
+- User selects via `OnboardingProfile.companionCharacter`.
+- Drives both pet identity (image assets `<rawValue>-main` / `<rawValue>-head` under `Resources/Media.xcassets/`) and companion text style via `resolvedStyle`.
+
+Auxiliary pet state in `Models/Pet.swift`:
+- 5 stages (`Stage`): Baby -> Child -> Teen -> Adult -> Elder.
+- 5 moods (`Mood`): Happy, Excited, Focused, Sleepy, Missing You.
+- 4 **Pet scenes** (`Pet.Scene`): Indoor, Outdoor, Night, Work — image background composition.
+
+**Deprecated legacy (DO NOT extend, cleanup pending):**
+- `PetForm` enum with 5 cases (`sprout`/`pup`/`hopper`/`flyer`/`blaze`, mushroom/dog/bunny/bird/dragon assets) is a pre-IP-era system. Still wired into `Pet.currentForm` field, Supabase persistence, `SettingsView:311` switcher, and `PixelArtBody` pixel-art rendering — but **new code must drive identity from `CompanionCharacter`, not `PetForm`**. The two systems currently run in parallel and do not reference each other.
+
+**DO NOT confuse `Pet.Scene` with Focus `DisplayScene`** (3 scenes: harbor / forest / nightCity, gated by energy bottles — see Focus Mode section below). They are independent systems.
 
 ## 4. Tools & Commands
 
@@ -144,10 +155,23 @@ xcodebuild -workspace Kirole.xcworkspace -scheme Kirole -destination 'platform=i
 
 ### AI Companion Text System (Product IP Paradigm)
 The companion text system is event-reactive companion writing for the Kirole task device. It reacts to task creation, active/idle work, task completion, reminders, milestones, and daily summaries. It is not open-ended chat.
+
+**Final product spec (客户最终版，不可漂移)**:
+- **Joy（喜乐）** — 提醒用户不焦虑，多欣赏工作的快乐和生活的美。
+- **Silas（仁爱）** — 让用户工作中感受被关爱，借基督教意向；引用圣经、荒漠甘泉等。关系弧：温和接近 → 明确鼓励 → 陪伴。
+- **Nova（节制 / 自律）** — 提升效率，远离噪音，珍惜时间。关系弧：冷静观察（话少）→ 微弱认可 → 并肩。
+
+**Prompt architecture** (single source: `OpenAIService.swift:239-382`):
+- 1 system-prompt template, parameterized by 3 dimensions (character / intimacy / style). NOT 3 independent prompt files.
+- Per-character `defaultPrompt`: `OpenAIService.swift:242-318` (Joy 242-264, Silas 266-291, Nova 293-318).
+- Composer: `buildCompanionSystemPrompt` (`OpenAIService.swift:344-382`) merges character + intimacy + style.
+- All user-controlled text (task title / event name / pet name / learn content) MUST flow through `PromptSanitizer.sanitize(_:)` — currently 8 injection points. Wrap user content in XML delimiters declared in the system prompt.
+
 - **Character source of truth**:
-  1. `CompanionCharacter` is the user-facing IP selection: `joy`, `silas`, `nova`.
+  1. `CompanionCharacter` is the user-facing IP selection: `joy`, `silas`, `nova` (defined in `Models/CompanionCharacter.swift`).
   2. `CompanionStyle` mirrors the three product IPs: `.joy`, `.silas`, `.nova`.
   3. Character drives style through `CompanionCharacter.resolvedStyle`; do not add independent style choices.
+  4. Naming history: `Nook → Joy` rename happened in commit `63eaa05` (2026-05-02). Do not reintroduce `nook`.
 - **Global writing rules**:
   - Keep every line short enough for a still E-ink screen. Most outputs should fit in 15-25 English words.
   - Speak directly to the user with "you" or "we".
@@ -172,8 +196,11 @@ The companion text system is event-reactive companion writing for the Kirole tas
   - 80/20 mode split: Pragmatic Navigation (about 80%, maximum 20 words) and Strategic Insight (about 20%, maximum 20 words).
   - Use signal-over-noise framing, one critical path, 80/20 thinking, and rare short quotes only when they sharpen the point.
   - Relationship arc: first observe calmly and say little, then give restrained recognition, then work beside the user as a steady operator.
-- Subservices: `TaskDehydrationService` (micro-actions What/When/Why), `SmartReminderService` (context-aware triggers), `FocusSessionService`.
-- **Data flow**: `DayPackGenerator` -> `CompanionTextService` -> `OpenAIService` -> `LocalStorage`. Tests go through `PromptDebuggerView` and `CompanionCharacterMappingTests`.
+- **Subservices**:
+  - `TaskDehydrationService` — generates micro-actions (What/When/Why) for E-ink display. **Currently invoked only for today's top 4-5 high-priority tasks** in `DayPackGenerator.generateDayPack()` (~line 52). All other tasks have `microActions = nil`.
+  - `SmartReminderService` — context-aware reminder triggers.
+  - `FocusSessionService` — see Focus Mode section below.
+- **Data flow**: `DayPackGenerator` -> `CompanionTextService` -> `OpenAIService.generateCompanionText` -> `chatCompletion` -> `DayPack { morningGreeting, dailySummary, companionPhrase }` -> `HaikuSectionView` / `TimelineView`. Tests go through `PromptDebuggerView` and `CompanionCharacterMappingTests`.
 
 ### Home Companion Presentation
 - `AppState.refreshHomeCompanionPresentation()` decides between daily haiku or shared pet dialogue.
@@ -182,10 +209,66 @@ The companion text system is event-reactive companion writing for the Kirole tas
 
 ### BLE Protocol & Supabase Data
 - **E-ink Hardware**: 4-inch/7.3-inch, ESP32-S3. Spectra 6 pixel encoding (4bpp).
-- **BLE Payload**: 9-byte header + CRC16-CCITT-FALSE. Ensure `BLEPacketizer` and `BLEPacketAssembler` usage.
-- **Sync**: Configured via `BLESyncCoordinator` (background sync via `com.kirole.app.ble.sync`).
-- **Security Mode**: Development (unsigned local transport) vs Secure (BLE v2 handshake + signed envelope based on `BLE_SHARED_SECRET`).
+- **Frame structure** (`BLEPacketizer.swift:60-98`):
+  - Packetized: `type(1B) | messageId(2B) | seq(1B) | totalChunks(1B) | chunkLength(2B) | chunkCRC(2B) | payload`.
+  - Simple App→Device: `type(1B) | length(2B BE) | payload`.
+  - Simple Device→App: `type(1B) | length(1B) | payload`.
+- **Frame types** (`BLEService.swift:73-87`): `0x01=petStatus`, `0x02=taskList`, `0x03=schedule`, `0x04=weather`, `0x05=time`, `0x10=dayPack`, `0x11=taskInPage`, `0x12=deviceMode`, `0x13=smartReminder`, `0x20=eventLogRequest`, `0x21=eventLogBatch`, `0x7E=secureData`, `0x7F=securityHandshake`.
+- **Security Mode** (`BLEService.swift:153-168`): `AppSecrets.bleSharedSecret` empty → development (unsigned). Non-empty → secure (HMAC-SHA256 envelope: 16B header + 32B signature, see `BLESecurityManager.swift:99-144`).
+- **Defenses**:
+  - `BLEWriteGate` (`BLEWriteGate.swift:8-29`) — actor-serialized writes.
+  - `BLERateLimiter` (`BLERateLimiter.swift:12-28`) — 20 writes/sec; refresh ≥ 2s interval.
+  - Timeouts (`BLEService.swift:541-544`): write 5s / connect 15s / handshake 5s.
+  - `BLEDeviceIdentityStore` (`BLEDeviceIdentityStore.swift:17-35`) — trust/block lists in UserDefaults; enforced in secure mode at `BLEService.swift:248-255`.
+- **Sync**: `BLESyncCoordinator` (background sync via `com.kirole.app.ble.sync`).
 - **Supabase**: Keys injected via `AppSecrets.configure(...)` using build-time constants (`Config/Secrets.xcconfig`). Keep RLS enabled and sync schema changes with `Config/supabase-schema.sql`.
+
+### Focus Mode State Machine
+- **Source**: `FocusSessionService.swift` (~681 lines), `FocusSession.swift`, `DisplayScene.swift`.
+- **`FocusSession` mutable fields**: `endTime`, `endReason`, `calculatedFocusTime`, `screenUnlockEvents`, `mode`, `protectionState`, `interruptionSource`, `earnedEnergyBottles`. Immutable: `id`, `taskId`, `taskTitle`, `startTime`.
+- **End reasons** (7): `completed`, `skipped`, `timeout`, `disconnected`, `interrupted`, `permissionDenied`, `recoveredOnLaunch`.
+- **Modes** (2): `standard`, `deepFocus`. **Protection states** (3): `unprotected`, `protected`, `fallback`.
+
+**Focus-time formula** (counterintuitive — read carefully):
+```
+calculatedFocusTime = sum(每段连续无屏幕解锁时长 ≥ 30 minutes 的部分)
+earnedEnergyBottles = calculatedFocusTime 分钟数 ÷ 30  (integer division)
+```
+A screen unlock mid-session is treated as a **gap break**: only continuous no-unlock segments ≥ 30 min count. Example: 50-minute session with one unlock at minute 25 → both 25-min halves are below threshold → `calculatedFocusTime = 0` → 0 bottles. Threshold constant: `Constants.focusThresholdSeconds = 1800`.
+
+**`DisplayScene` unlocking** (independent from `Pet.Scene`):
+- 3 scenes: `harbor` (0x00) | `forest` (0x01) | `nightCity` (0x02).
+- `bottlesPerUnlock = 80` (`DisplayScene.swift:8`). Unlocked count = `1 + floor(energyBottles / 80)` → harbor (default), forest at ≥80, nightCity at ≥160 (~80 hours of pure focus).
+- Cross-threshold celebration only triggers for `newlyUnlocked.last` (`AppState+HardwareDisplay.swift:170-172`) — multi-scene jumps celebrate only the highest one.
+
+### Event → Output Dispatch Map
+The single most useful reference when debugging "which event produces which output". All observable side effects of user/system events flow through `AppState`:
+
+| Event | Entry point | AppState fields changed | Output (sound / haptic / view / BLE / banner) |
+|-------|-------------|------------------------|----------------------------------------------|
+| Complete task | `toggleTaskCompletion` (`+Actions:23`) | `tasks[i].isCompleted`, `pet.{progress, points}`, `streak`, `currentHaiku` | `SoundService.playWithHaptic(.taskComplete, .success)`; possible `showEvolutionAnimation`; external-source push; `widgetDataService.updateFromAppState` |
+| Undo complete | same fn (isCompleted=false) | reverse decrement | `SoundService.playWithHaptic(.taskUncomplete, .light)` |
+| Delete task | `deleteTask` (`+Actions:259`) | `tasks` removed / `pendingDeletion` | persist + remote delete (no sound/haptic) |
+| Focus start | `FocusSessionService.startSession` (FSS:107) | FSS.activeSession (NOT in AppState) | `focusDisplaySyncTask` loop → SimulatorBridge / BLE |
+| Focus normal end | `FSS:559 completeSession` → `handleFocusSessionDidEnd` (`+HardwareDisplay:153`) | possibly `pendingSceneCelebration` | `syncFocusHardwareDisplay(nil)` + `syncIdleHardwareDisplay` → BLE `sendDisplayScene` |
+| Focus interrupted (BLE disconnect) | `BLE:750` → `FSS.handleDeviceDisconnected:183` → `endSession(.disconnected)` | same + `interruptionSource` | same path + `focusGuardService.clearShield` |
+| **Scene unlock celebration** | `celebrateSceneUnlock` (`+HardwareDisplay:177`) | `pendingSceneCelebration = SceneCelebration(sceneId, now)` | `SoundService.playWithHaptic(.streakMilestone, .success)`; `SceneUnlockBanner` 3s; confetti via `ContentView:141 onChange`; auto-clear |
+| BLE connect | `BLEService.didConnect` (`BLE:730`) | `connectionState=.connected` (in BLEService, not AppState) | SettingsBLESection observes BLEService directly |
+| BLE disconnect | `BLE:750` | see Focus interrupted | same |
+| Sync complete (Google) | `syncGoogleData` (`+Sync:64`) | `events`, `tasks` (merge), `lastGoogleSyncDebug` | `updatePetState` → `refreshSharedPetDialogueIfNeeded` → `refreshHomeCompanionPresentation` |
+| Sync complete (Apple) | `syncAppleData` (`+Sync:175`) | same subset | same path as Google |
+| Sync complete (Notion / Taskade) | `+Sync:231` / `+Sync:262` | basic fields only | ⚠️ **missing `refreshHomeCompanionPresentation`** — known inconsistency, see below |
+
+### Known Inconsistencies / Dead Paths (verified 2026-05-06)
+Documented honestly so future agents do not waste time chasing ghosts. Treat each as a candidate for either implementation or deletion.
+
+1. **EventLog batch has no AppState consumer.** `BLEEventHandler.handleEventLogBatch` parses 0x21 frames completely but only persists to LocalStorage. The hook `service.onEventLogReceived` (`BLEService.swift:247`) is never registered. Hardware-side completeTask events reach AppState via the *direct* 0x11 path instead. Either wire up a consumer or delete the batch handler.
+2. **`microActions` mostly nil.** Only today's top 4-5 high-priority tasks get dehydrated (`DayPackGenerator.generateDayPack()`). All other `TaskItem.microActions` remain nil. Either expand coverage or remove the field from the model.
+3. **Notion/Taskade sync skips companion presentation refresh.** Google and Apple sync paths call `refreshSharedPetDialogueIfNeeded` + `refreshHomeCompanionPresentation`; Notion (`+Sync:231`) and Taskade (`+Sync:262`) do not. Add the two-line tail call to align.
+4. **`PetForm` legacy parallel system.** Pre-IP-era 5-form enum (`sprout`/`pup`/`hopper`/`flyer`/`blaze`) still wired into `Pet.currentForm`, Supabase, `SettingsView:311`, and `PixelArtBody`, but is **independent from** the IP system that is the actual product spec. Cleanup pending.
+5. **`load*` naming inconsistency.** `loadGoogleCalendarEvents` / `loadGoogleTasks` / `loadAppleCalendarEvents` / `loadAppleReminders` live in `+Sync` while `loadTodayHaiku` / `loadLocalData` live in `+Loading`. Convention should be: remote pull = `sync*`; local read = `load*`.
+6. **`editTask` / `editEvent` embed external sync logic.** `+Actions:144-220, 314-370` (~130 lines of Google/Apple/Notion/Taskade content-edit propagation) belongs in `+Sync` or a dedicated `TaskSyncDispatcher`.
+7. **`persist*` helpers in `+Actions` shared across extensions.** `Actions:573-609` (`persistPet`, `persistTasks`, `persistEvents`) is called from `+Companion`, `+HardwareDisplay`, `+Profile`, `+Sync`. Move to main `AppState.swift` or a `PersistenceCoordinator`.
 
 ## 6. Code Style & Formatting
 - **Imports**: `import SwiftUI`, `import Testing`. No Combine unless needed.
