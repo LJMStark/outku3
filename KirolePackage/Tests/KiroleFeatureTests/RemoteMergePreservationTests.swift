@@ -21,7 +21,6 @@ struct RemoteMergePreservationTests {
             priority: .high,
             syncStatus: .synced,
             lastModified: Date(timeIntervalSince1970: 100),
-            microActions: [MicroAction(what: "Break into steps")],
             remoteUpdatedAt: Date(timeIntervalSince1970: 100),
             notes: "local note"
         )
@@ -36,7 +35,6 @@ struct RemoteMergePreservationTests {
             priority: .medium,
             syncStatus: .synced,
             lastModified: Date(timeIntervalSince1970: 200),
-            microActions: nil,
             remoteUpdatedAt: Date(timeIntervalSince1970: 200),
             notes: nil
         )
@@ -49,7 +47,6 @@ struct RemoteMergePreservationTests {
         #expect(merged.dueDate == preservedDueDate)
         #expect(merged.priority == .high)
         #expect(merged.notes == "local note")
-        #expect(merged.microActions?.first?.what == "Break into steps")
     }
 
     @Test("Notion sparse remote keeps local metadata fields")
@@ -69,7 +66,6 @@ struct RemoteMergePreservationTests {
             priority: .low,
             syncStatus: .synced,
             lastModified: Date(timeIntervalSince1970: 100),
-            microActions: [MicroAction(what: "Preserve note")],
             remoteUpdatedAt: Date(timeIntervalSince1970: 100),
             notes: "local note"
         )
@@ -84,7 +80,6 @@ struct RemoteMergePreservationTests {
             priority: .medium,
             syncStatus: .synced,
             lastModified: Date(timeIntervalSince1970: 200),
-            microActions: nil,
             remoteUpdatedAt: Date(timeIntervalSince1970: 200),
             notes: nil
         )
@@ -97,7 +92,6 @@ struct RemoteMergePreservationTests {
         #expect(merged.dueDate == preservedDueDate)
         #expect(merged.priority == .low)
         #expect(merged.notes == "local note")
-        #expect(merged.microActions?.first?.what == "Preserve note")
     }
 
     @Test("Notion merge honors explicit remote metadata when provided")

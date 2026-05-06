@@ -197,9 +197,9 @@ The companion text system is event-reactive companion writing for the Kirole tas
   - Use signal-over-noise framing, one critical path, 80/20 thinking, and rare short quotes only when they sharpen the point.
   - Relationship arc: first observe calmly and say little, then give restrained recognition, then work beside the user as a steady operator.
 - **Subservices**:
-  - `TaskDehydrationService` — generates micro-actions (What/When/Why) for E-ink display. **Currently invoked only for today's top 4-5 high-priority tasks** in `DayPackGenerator.generateDayPack()` (~line 52). All other tasks have `microActions = nil`.
   - `SmartReminderService` — context-aware reminder triggers.
   - `FocusSessionService` — see Focus Mode section below.
+  - (Removed 2026-05-07: `TaskDehydrationService` and `MicroAction` model — "AI 任务拆解" was deleted as off-product-positioning. See CLAUDE.md "Product Identity": tasks are prompt context, not actionable todos to be broken down.)
 - **Data flow**: `DayPackGenerator` -> `CompanionTextService` -> `OpenAIService.generateCompanionText` -> `chatCompletion` -> `DayPack { morningGreeting, dailySummary, companionPhrase }` -> `HaikuSectionView` / `TimelineView`. Tests go through `PromptDebuggerView` and `CompanionCharacterMappingTests`.
 
 ### Home Companion Presentation
@@ -263,7 +263,7 @@ The single most useful reference when debugging "which event produces which outp
 Documented honestly so future agents do not waste time chasing ghosts. Treat each as a candidate for either implementation or deletion.
 
 1. **EventLog batch has no AppState consumer.** `BLEEventHandler.handleEventLogBatch` parses 0x21 frames completely but only persists to LocalStorage. The hook `service.onEventLogReceived` (`BLEService.swift:247`) is never registered. Hardware-side completeTask events reach AppState via the *direct* 0x11 path instead. Either wire up a consumer or delete the batch handler.
-2. **`microActions` mostly nil.** Only today's top 4-5 high-priority tasks get dehydrated (`DayPackGenerator.generateDayPack()`). All other `TaskItem.microActions` remain nil. Either expand coverage or remove the field from the model.
+2. ~~**`microActions` mostly nil.**~~ **RESOLVED 2026-05-07**: deleted entire dehydration pipeline (TaskDehydrationService + MicroAction model + microActions field + BLE TaskInPage micro-action bytes + LocalStorage dehydration cache helpers). Reason: off-product-positioning. Schema bumped 2→3 to clear stale local data.
 3. **Notion/Taskade sync skips companion presentation refresh.** Google and Apple sync paths call `refreshSharedPetDialogueIfNeeded` + `refreshHomeCompanionPresentation`; Notion (`+Sync:231`) and Taskade (`+Sync:262`) do not. Add the two-line tail call to align.
 4. **`PetForm` legacy parallel system.** Pre-IP-era 5-form enum (`sprout`/`pup`/`hopper`/`flyer`/`blaze`) still wired into `Pet.currentForm`, Supabase, `SettingsView:311`, and `PixelArtBody`, but is **independent from** the IP system that is the actual product spec. Cleanup pending.
 5. **`load*` naming inconsistency.** `loadGoogleCalendarEvents` / `loadGoogleTasks` / `loadAppleCalendarEvents` / `loadAppleReminders` live in `+Sync` while `loadTodayHaiku` / `loadLocalData` live in `+Loading`. Convention should be: remote pull = `sync*`; local read = `load*`.

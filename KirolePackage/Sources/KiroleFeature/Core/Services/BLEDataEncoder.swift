@@ -125,7 +125,6 @@ public enum BLEDataEncoder {
         for task in dayPack.topTasks.prefix(maxTasks) {
             data.appendString(task.id, maxLength: 36)
             data.appendString(task.title, maxLength: 30)
-            data.appendString(task.microActionWhat ?? "", maxLength: 40)
             data.append(task.isCompleted ? 0x01 : 0x00)
             data.append(UInt8(clamping: task.priority))
         }
@@ -155,8 +154,6 @@ public enum BLEDataEncoder {
         var data = Data()
         data.appendString(taskInPage.taskId, maxLength: 36)
         data.appendString(taskInPage.taskTitle, maxLength: 40)
-        data.appendString(taskInPage.microActionWhat ?? "", maxLength: 40)
-        data.appendString(taskInPage.microActionWhy ?? "", maxLength: 60)
         data.appendString(taskInPage.taskDescription ?? "", maxLength: 100)
         data.appendString(taskInPage.encouragement, maxLength: 50)
         data.append(taskInPage.focusChallengeActive ? 0x01 : 0x00)

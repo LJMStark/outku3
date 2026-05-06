@@ -11,6 +11,20 @@ Swift/SwiftUI/Testing/Concurrency guidance that applies here too.
 2. Respond in **Simplified Chinese**. For non-technical questions, keep language plain and explain jargon inline.
 3. Treat `/Users/demon/vibecoding/outku3` as the strict workspace boundary. Unqualified requests ("build", "commit", "run tests") always refer to this repo.
 
+## Product Identity (READ FIRST)
+Kirole 是**宠物陪伴产品**，不是任务管理 App。任务和日历事件主要作为 **prompt 上下文** 驱动宠物对话，**不是给用户管理待办用的**。任何把 task/event 当"待办"来增强（AI 任务拆解、详情页步骤展开、待办清单视图、催促式提醒等）的提议都偏离产品定位，应直接拒绝或反向清理。
+
+三条核心数据流（基于代码事实，2026-05-07 用户与多 agent 调研共同验证）：
+
+1. **任务/事件 → Prompt → 宠物对话**
+   `appState.tasks/events` → `DayPackGenerator` → `CompanionTextService` → `OpenAIService.buildCompanionUserPrompt`（8 个 `PromptSanitizer` 注入点之一是 `taskTitle` / `topTaskTitles` / `nextAgendaItem`）→ 输出 `morningGreeting` / `dailySummary` / `companionPhrase` → 显示在 `HaikuSectionView` / `TimelineView`，并通过 BLE 推送给硬件。
+
+2. **App → 硬件同步有节流，不立刻 push**
+   `BLESyncCoordinator.performSync()` + `BLESyncPolicy` 节流：白天 08-23 每 1 小时一次；夜间 23-08 每 4 小时一次。触发时机：(a) iOS `BGAppRefreshTask` 后台唤醒；(b) 硬件主动发 `0x20 requestRefresh` / `0x30 deviceWake`；(c) DayPack 内容指纹（`stableFingerprint()`）变化或 `force: true`。**用户加一个任务后，硬件不会立刻显示**，要等下一个 sync 时机。
+
+3. **硬件 → App 反向触发专注模式**
+   硬件 E-ink 屏点击进入某任务 → 发 `0x10 enterTaskIn` → `BLEEventHandler.handleSingleEvent` → `handleFocusSessionEvent` → `FocusSessionService.startSession(taskId:, taskTitle:, mode:, startTime:)` → App 自动进入专注模式（30 分钟阈值 / 屏幕解锁监测 / 能量瓶子发放 / 场景解锁庆祝 整套链路自动启动）。同时 `handleEnterTaskIn` 回推 `TaskInPage` 数据让硬件展示任务详情+鼓励语。
+
 ## Development Rules
 1. After any frontend / UI change, rebuild and launch the simulator to visually verify. Do not mark UI work complete without this check.
 2. The project is in rapid iteration: `LocalStorage`, `UserDefaults`, on-device JSON, and BLE payload shapes are disposable. Prefer resetting local data over writing migration shims until hardware/TestFlight consumers exist (see AGENTS.md §2 "Current Phase Policy").

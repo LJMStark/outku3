@@ -123,7 +123,6 @@ public actor NotionSyncEngine {
         merged.localId = local.localId
         merged.dueDate = remote.dueDate ?? local.dueDate
         merged.notes = remote.notes ?? local.notes
-        merged.microActions = remote.microActions ?? local.microActions
         if remote.priority == .medium {
             merged.priority = local.priority
         }

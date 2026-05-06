@@ -22,7 +22,6 @@ public struct TaskItem: Identifiable, Sendable, Codable {
     public var syncStatus: SyncStatus
     public var pendingDeletion: Bool
     public var lastModified: Date
-    public var microActions: [MicroAction]?
     public var remoteUpdatedAt: Date?
     public var remoteEtag: String?
     public var notes: String?
@@ -47,7 +46,6 @@ public struct TaskItem: Identifiable, Sendable, Codable {
         syncStatus: SyncStatus = .synced,
         pendingDeletion: Bool = false,
         lastModified: Date = Date(),
-        microActions: [MicroAction]? = nil,
         remoteUpdatedAt: Date? = nil,
         remoteEtag: String? = nil,
         notes: String? = nil
@@ -71,7 +69,6 @@ public struct TaskItem: Identifiable, Sendable, Codable {
         self.syncStatus = syncStatus
         self.pendingDeletion = pendingDeletion
         self.lastModified = lastModified
-        self.microActions = microActions
         self.remoteUpdatedAt = remoteUpdatedAt
         self.remoteEtag = remoteEtag
         self.notes = notes

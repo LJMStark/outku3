@@ -88,7 +88,6 @@ public struct DayPack: Codable, Sendable {
             parts.append("task.completed=\(task.isCompleted ? 1 : 0)")
             parts.append("task.priority=\(task.priority)")
             parts.append("task.due=\(task.dueTime ?? "")")
-            parts.append("task.microAction=\(task.microActionWhat ?? "")")
         }
 
         parts.append("settlement.completed=\(settlementData.tasksCompleted)")
@@ -152,22 +151,19 @@ public struct TaskSummary: Codable, Sendable, Identifiable {
     public let isCompleted: Bool
     public let priority: Int
     public let dueTime: String?
-    public let microActionWhat: String?
 
     public init(
         id: String,
         title: String,
         isCompleted: Bool,
         priority: Int = 1,
-        dueTime: String? = nil,
-        microActionWhat: String? = nil
+        dueTime: String? = nil
     ) {
         self.id = id
         self.title = title
         self.isCompleted = isCompleted
         self.priority = priority
         self.dueTime = dueTime
-        self.microActionWhat = microActionWhat
     }
 
     public init(from task: TaskItem) {
@@ -182,7 +178,6 @@ public struct TaskSummary: Codable, Sendable, Identifiable {
         } else {
             self.dueTime = nil
         }
-        self.microActionWhat = task.microActions?.first?.what
     }
 }
 
@@ -243,8 +238,6 @@ public struct SettlementData: Codable, Sendable {
 public struct TaskInPageData: Codable, Sendable {
     public let taskId: String
     public let taskTitle: String
-    public let microActionWhat: String?
-    public let microActionWhy: String?
     public let taskDescription: String?
     public let encouragement: String
     public let focusChallengeActive: Bool
@@ -252,16 +245,12 @@ public struct TaskInPageData: Codable, Sendable {
     public init(
         taskId: String,
         taskTitle: String,
-        microActionWhat: String? = nil,
-        microActionWhy: String? = nil,
         taskDescription: String? = nil,
         encouragement: String,
         focusChallengeActive: Bool = false
     ) {
         self.taskId = taskId
         self.taskTitle = taskTitle
-        self.microActionWhat = microActionWhat
-        self.microActionWhy = microActionWhy
         self.taskDescription = taskDescription
         self.encouragement = encouragement
         self.focusChallengeActive = focusChallengeActive

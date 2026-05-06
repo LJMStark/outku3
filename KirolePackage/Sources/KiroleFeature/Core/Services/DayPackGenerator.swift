@@ -23,7 +23,6 @@ public enum TimeOfDay: String, Sendable {
 public final class DayPackGenerator {
     public static let shared = DayPackGenerator()
     private let textService = CompanionTextService.shared
-    private let dehydrationService = TaskDehydrationService.shared
 
     private init() {}
 
@@ -40,25 +39,7 @@ public final class DayPackGenerator {
         async let summary = textService.generateDailySummary(tasksCount: todayTasks.count, eventsCount: todayEvents.count, petName: pet.name, userProfile: userProfile)
         async let phrase = textService.generateCompanionPhrase(petMood: pet.mood, timeOfDay: TimeOfDay.current(), userProfile: userProfile)
 
-        // Dehydrate incomplete tasks to populate microActions before building summaries
-        var hydratedTasks = todayTasks
-        // Sort by priority to match topTasks selection order — ensures the tasks
-        // that will appear in topTasks are the ones that get micro-actions injected.
-        let incompleteSorted = todayTasks.enumerated()
-            .filter { !$0.element.isCompleted }
-            .sorted { $0.element.priority.rawValue > $1.element.priority.rawValue }
-        for (index, task) in incompleteSorted.prefix(screenSize.maxTasks) {
-            if task.microActions == nil {
-                let actions = await dehydrationService.dehydrate(
-                    task: task,
-                    schedule: todayEvents,
-                    userProfile: userProfile
-                )
-                hydratedTasks[index].microActions = actions
-            }
-        }
-
-        let topTasks = hydratedTasks
+        let topTasks = todayTasks
             .filter { !$0.isCompleted }
             .sorted { $0.priority.rawValue > $1.priority.rawValue }
             .prefix(screenSize.maxTasks)
@@ -81,11 +62,8 @@ public final class DayPackGenerator {
 
     public func generateTaskInPage(task: TaskItem, pet: Pet, userProfile: UserProfile = .default) async -> TaskInPageData {
         let encouragement = await textService.generateTaskEncouragement(taskTitle: task.title, petName: pet.name, petMood: pet.mood, userProfile: userProfile)
-        let microAction = task.microActions?.first
         return TaskInPageData(
             taskId: task.id, taskTitle: task.title,
-            microActionWhat: microAction?.what,
-            microActionWhy: microAction?.why,
             encouragement: encouragement
         )
     }

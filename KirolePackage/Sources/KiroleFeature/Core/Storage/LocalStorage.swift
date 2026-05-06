@@ -27,7 +27,7 @@ public actor LocalStorage {
     }
 
     enum DevelopmentStorageSchema {
-        static let currentVersion = 2
+        static let currentVersion = 3
     }
 
     private nonisolated static let persistedFiles = [
@@ -471,18 +471,6 @@ public actor LocalStorage {
 
     public func loadDeepFocusShieldActive() -> Bool {
         userDefaults.bool(forKey: Keys.deepFocusShieldActive)
-    }
-
-    // MARK: - Dehydration Cache
-
-    public func saveDehydrationCache(_ cache: DehydrationCache, taskId: String) throws {
-        let safeId = taskId.filter { $0.isLetter || $0.isNumber || $0 == "-" }
-        try save(cache, to: "dehydration_\(safeId).json")
-    }
-
-    public func loadDehydrationCache(taskId: String) throws -> DehydrationCache? {
-        let safeId = taskId.filter { $0.isLetter || $0.isNumber || $0 == "-" }
-        return try load(DehydrationCache.self, from: "dehydration_\(safeId).json")
     }
 
     // MARK: - Google Sync Outbox

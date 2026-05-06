@@ -147,45 +147,6 @@ public actor OpenAIService {
         return content.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    // MARK: - Task Dehydration
-
-    /// Decompose a task into micro-actions using Implementation Intentions theory
-    public func dehydrateTask(
-        taskTitle: String,
-        availableSlots: [String],
-        userProfile: UserProfile
-    ) async throws -> String {
-        let slotsText = availableSlots.isEmpty
-            ? "No specific time slots available"
-            : availableSlots.joined(separator: ", ")
-
-        let goalsText = userProfile.primaryGoals.map(\.rawValue).joined(separator: ", ")
-
-        let systemPrompt = PromptSanitizer.systemPrompt(containingUserContent: """
-            You are an execution coach using Implementation Intentions theory. \
-            Break down tasks into concrete micro-actions with What (specific action, max 40 chars), \
-            When (suggested time slot based on schedule), Why (motivation anchor, max 60 chars), \
-            and expected focus energy bottles the user might earn. \
-            Return 1-3 micro-actions as a JSON array. Each object has keys: \
-            "what" (string), "when" (string or null), "why" (string or null), "estimatedMinutes" (int or null), "expectedEnergyBottles" (int). \
-            Respond with ONLY the JSON array, no markdown fences or extra text.
-            """)
-
-        let userPrompt = """
-            Task: \(PromptSanitizer.userContent(taskTitle, maxLen: 200))
-            User work type: \(userProfile.workType.rawValue)
-            User goals: \(goalsText.isEmpty ? "none specified" : goalsText)
-            Available time slots: \(slotsText)
-            """
-
-        return try await chatCompletion(
-            systemPrompt: systemPrompt,
-            userPrompt: userPrompt,
-            temperature: 0.7,
-            maxTokens: 300
-        )
-    }
-
     // MARK: - Chat Completion
 
     /// Shared helper that sends a chat completion request and returns the response content
