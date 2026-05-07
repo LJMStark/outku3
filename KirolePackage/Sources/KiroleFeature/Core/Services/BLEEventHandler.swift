@@ -104,8 +104,12 @@ public enum BLEEventHandler {
             print("[BLEEventHandler] Reminder dismissed at \(eventLog.timestamp)")
             #endif
 
-        default:
-            break
+        case .encoderRotateUp, .encoderRotateDown, .encoderShortPress, .encoderLongPress,
+             .powerShortPress, .powerLongPress:
+            // Hardware UI events — no App-side routing needed; already persisted via handleEventLogs.
+            #if DEBUG
+            print("[BLEEventHandler] Hardware UI event: \(eventLog.eventType.rawValue)")
+            #endif
         }
     }
 
