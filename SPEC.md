@@ -185,8 +185,8 @@ Kirole E-ink companion device — a desk-mounted focus display.
 4 pages on E-ink device (via DayPack):
 1. **Start of Day** — Morning greeting, daily summary, first item, weather
 2. **Overview** — Mixed timeline (tasks + events), companion phrase
-3. **Task In** — Task detail with companion encouragement and focus challenge
-4. **Settlement** — Daily stats, focus metrics, points
+3. **Task In** — Task detail with companion encouragement, focus challenge, and energy bottles display (🟡 **已实现**)
+4. **Settlement** — Daily stats, focus metrics, points, energy bottles earned (🟡 **已实现**)
 
 ### Smart Reminders on Device
 - AI-driven context-aware reminders pushed via BLE (0x13 command)

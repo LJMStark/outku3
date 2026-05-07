@@ -1,6 +1,6 @@
 # Kirole BLE 联调前全协议模拟报告
 
-**日期:** 2026-05-07  
+**日期:** 2026-05-08  
 **代码分支:** `codex/ble-protocol-sync`  
 **模拟依据:** App 当前代码里的 `BLEDataEncoder`、`BLESimpleEncoder`、`BLEPacketizer`、`BLEService.decodeReceivedMessageForTesting`  
 **测试文件:** `KirolePackage/Tests/KiroleFeatureTests/BLEProtocolSimulationTests.swift`  
@@ -202,7 +202,22 @@ type(1) + length(1) + payload
 | `0x31` | `DeviceSleep` | 通过 |
 | `0x40` | `LowBattery` | 通过 |
 
-### 4.1 CompleteTask 样例
+---
+
+## 4.1 事件路由和持久化
+
+所有 18 种设备事件现已由 `BLEEventHandler.handleSingleEvent` 穷举路由：
+
+| 事件分类 | 事件类型 | 路由行为 | 备注 |
+|---|---|---|---|
+| 编码器/电源 | `0x01~0x06`、`0x05~0x06` | 持久化 + 调试日志 | 不做 UI 路由，仅记录日志供硬件团队分析 |
+| 任务交互 | `0x10~0x13` | 业务路由 | 如 `enterTaskIn` 触发专注模式、`completeTask` 更新状态 |
+| 提醒交互 | `0x16~0x17` | 业务路由 | 如 `reminderDismissed` 更新提醒状态 |
+| 设备状态 | `0x20`、`0x30~0x31`、`0x40` | 业务路由 | 如 `requestRefresh` 触发同步、`lowBattery` 显示警告 |
+
+---
+
+### 4.2 CompleteTask 样例
 
 输入：任务 ID `task-ble-plan`，时间戳 `1767225600`。
 
@@ -285,7 +300,7 @@ AA 01 02 Type SceneId PostcardDay QuoteLen Quote AuthorLen Author
 
 ---
 
-## 6. 坏包模拟结果
+## 6. 坏包模拟结果和事件穷举
 
 | 场景 | 模拟结果 | 说明 |
 |---|---|---|
@@ -293,6 +308,8 @@ AA 01 02 Type SceneId PostcardDay QuoteLen Quote AuthorLen Author
 | 9 字节分包 CRC 错误 | 拒绝 | 避免坏分包进入组包缓存 |
 | 开发显示命令走标准包解析 | 拒绝 | `0xAA` 必须单独处理 |
 | EventLogBatch 大包 | 通过 | 先分包组包，再业务解析 |
+
+**事件穷举进展**：App 现在正确路由所有 18 种设备事件（见 4.1 节事件分类表）。编码器和电源事件 (`0x01~0x06`) 被持久化到 `LocalStorage.handleEncoderEvent()` 和 `handlePowerEvent()`，并在 Xcode 控制台打印调试日志（可供硬件团队离线分析电源和输入芯片状态）。其余事件按业务逻辑路由（专注模式、任务完成、设备同步等）。
 
 ---
 
@@ -308,6 +325,12 @@ AA 01 02 Type SceneId PostcardDay QuoteLen Quote AuthorLen Author
 6. `DayPack.TopTask` 和 `TaskInPage` 已经没有微行动字段。
 7. 第一轮固件支持 `0xAA` 开发显示命令，并单独解析，不要按标准包解析。
 8. 第一轮固件先支持明文开发模式。安全模式等明文协议跑通后再接。
+9. **新增 `0x14 FocusStatus`（App → Device）**：硬件进入专注模式后会持续收到专注状态推送，格式为：
+   - `phase(1B)`: 0=idle, 1=sessionStarted, 2=sessioning, 3=sessionEnded
+   - `bottles(1B)`: 当前能量瓶子数（0~10）
+   - `elapsedMinutes(2B BE)`: 本会话已用分钟数
+   - `taskTitle(len-prefix)`: 任务名称（可选，sessionEnded 时为空）
+   硬件可在屏幕专注页底部显示能量瓶子进度条和倒计时，或在会话结束时展示庆祝动画。
 
 ---
 
