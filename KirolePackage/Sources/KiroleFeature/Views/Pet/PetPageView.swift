@@ -243,7 +243,7 @@ private struct PetIllustrationSection: View {
     }
 
     private var petImageName: String {
-        appState.userProfile.companionCharacter.heroAssetName(variant: .main)
+        "tiko_mushroom"
     }
 }
 
