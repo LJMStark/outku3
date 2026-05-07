@@ -255,10 +255,7 @@ private struct PetIllustrationSection: View {
     }
 
     private var petImageName: String {
-        // Per-IP Pet visuals pending from client; only tiko_mushroom delivered so far.
-        switch appState.userProfile.companionCharacter {
-        case .joy, .silas, .nova: return "tiko_mushroom"
-        }
+        appState.userProfile.companionCharacter.heroAssetName(variant: .main)
     }
 }
 
