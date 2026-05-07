@@ -23,8 +23,6 @@ public enum BLEDataEncoder {
         var data = Data()
         data.appendString(pet.name, maxLength: 20)
         data.append(pet.mood.rawValue.first?.asciiValue ?? 0)
-        data.append(pet.stage.rawValue.first?.asciiValue ?? 0)
-        data.append(UInt8(min(pet.percentDisplay, 255)))
         data.appendString(companionCharacter.rawValue, maxLength: 10)
         return data
     }

@@ -8,17 +8,8 @@ public struct Pet: Sendable, Codable {
     public var status: PetStatus
     public var mood: PetMood
     public var scene: PetScene
-    public var stage: PetStage
-    public var progress: Double // 0.0 to 1.0
-    public var weight: Double // in grams
-    public var height: Double // in cm
-    public var tailLength: Double // in cm
     public var lastInteraction: Date
     public var points: Int // accumulated points from completing tasks
-
-    public var percentDisplay: Int {
-        Int((progress * 100).rounded())
-    }
 
     public init(
         name: String = "Baby Waffle",
@@ -28,11 +19,6 @@ public struct Pet: Sendable, Codable {
         status: PetStatus = .happy,
         mood: PetMood = .happy,
         scene: PetScene = .indoor,
-        stage: PetStage = .baby,
-        progress: Double = 0.0,
-        weight: Double = 50,
-        height: Double = 5,
-        tailLength: Double = 2,
         lastInteraction: Date = Date(),
         points: Int = 0
     ) {
@@ -43,11 +29,6 @@ public struct Pet: Sendable, Codable {
         self.status = status
         self.mood = mood
         self.scene = scene
-        self.stage = stage
-        self.progress = progress
-        self.weight = weight
-        self.height = height
-        self.tailLength = tailLength
         self.lastInteraction = lastInteraction
         self.points = points
     }
@@ -81,22 +62,3 @@ public enum PetStatus: String, Sendable, Codable {
     case hungry = "Hungry"
     case excited = "Excited"
 }
-
-public enum PetStage: String, Sendable, Codable {
-    case baby = "Baby"
-    case child = "Child"
-    case teen = "Teen"
-    case adult = "Adult"
-    case elder = "Elder"
-
-    public var nextStage: PetStage? {
-        switch self {
-        case .baby: return .child
-        case .child: return .teen
-        case .teen: return .adult
-        case .adult: return .elder
-        case .elder: return nil
-        }
-    }
-}
-

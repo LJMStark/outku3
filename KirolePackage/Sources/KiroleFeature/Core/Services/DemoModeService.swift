@@ -63,8 +63,7 @@ public final class DemoModeService {
 
     public func generateDemoPet() -> Pet {
         Pet(name: "Pixel", pronouns: .theyThem, adventuresCount: 42, age: 30, status: .happy,
-            mood: .happy, scene: .indoor, stage: .teen, progress: 0.65, weight: 120, height: 12,
-            tailLength: 5, lastInteraction: Date(), points: 420)
+            mood: .happy, scene: .indoor, lastInteraction: Date(), points: 420)
     }
 
     public func generateDemoWeather() -> Weather {

@@ -19,8 +19,6 @@ struct BLEProtocolSimulationTests {
         let petStatus = try hardware.receiveSingleAppPacket(petPacket).parsePetStatus()
         #expect(petStatus.name == "Tiko")
         #expect(petStatus.moodByte == Character("H").asciiValue)
-        #expect(petStatus.stageByte == Character("C").asciiValue)
-        #expect(petStatus.progress == 75)
         #expect(petStatus.characterId == "joy")
 
         let taskPacket = BLESimpleEncoder.encode(

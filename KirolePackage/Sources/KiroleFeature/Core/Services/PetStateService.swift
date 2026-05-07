@@ -90,39 +90,6 @@ public actor PetStateService {
         return updatedPet
     }
 
-    // MARK: - Calculate Progress
-
-    public func calculateProgress(
-        currentProgress: Double,
-        taskCompleted: Bool
-    ) -> Double {
-        guard taskCompleted else { return currentProgress }
-
-        let progress = currentProgress + 0.02
-        return min(1.0, max(0.0, progress))
-    }
-
-    // MARK: - Check Evolution
-
-    public func canEvolve(pet: Pet) -> Bool {
-        pet.progress >= 1.0 && pet.stage.nextStage != nil
-    }
-
-    public func evolve(pet: Pet) -> Pet {
-        guard canEvolve(pet: pet), let nextStage = pet.stage.nextStage else {
-            return pet
-        }
-
-        var evolvedPet = pet
-        evolvedPet.stage = nextStage
-        evolvedPet.progress = 0.0
-        evolvedPet.weight *= EvolutionMultipliers.weight
-        evolvedPet.height *= EvolutionMultipliers.height
-        evolvedPet.tailLength *= EvolutionMultipliers.tailLength
-
-        return evolvedPet
-    }
-
     // MARK: - Status Description
 
     public func getStatusDescription(pet: Pet) -> String {

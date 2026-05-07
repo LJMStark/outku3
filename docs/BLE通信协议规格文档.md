@@ -205,9 +205,7 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 |--------|-------------|-------------|------------|--------------------------------|
 | 0      | Name        | 1 + N bytes | 20 chars   | 显示名（长度前缀） |
 | N+1    | Mood        | 1 byte      | -          | 心情首字母 ASCII |
-| N+2    | Stage       | 1 byte      | -          | 成长阶段首字母 ASCII |
-| N+3    | Progress    | 1 byte      | -          | 进度 0-100（上限 255） |
-| N+4    | CharacterId | 1 + N bytes | 10 chars   | 伴侣 IP：`joy` / `silas` / `nova` |
+| N+2    | CharacterId | 1 + N bytes | 10 chars   | 伴侣 IP：`joy` / `silas` / `nova` |
 
 **CharacterId 值：**
 
@@ -226,16 +224,6 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 | `F`   | Focused     |
 | `S`   | Sleepy      |
 | `M`   | Missing You |
-
-**Stage 值：**
-
-| Value | Stage  |
-|-------|--------|
-| `B`   | Baby   |
-| `C`   | Child  |
-| `T`   | Teen   |
-| `A`   | Adult  |
-| `E`   | Elder  |
 
 ---
 

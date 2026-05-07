@@ -229,41 +229,6 @@ struct AppStateTests {
             state.deleteTask(task)
         }
 
-        @Test("Completing task increases pet progress")
-        @MainActor
-        func completingTaskIncreasesPetProgress() {
-            let state = AppState.makeForTesting()
-
-            // Store initial progress
-            let initialProgress = state.pet.progress
-
-            let task = TaskItem(
-                id: "progress-test-\(UUID().uuidString)",
-                title: "Progress Test Task",
-                isCompleted: false,
-                dueDate: Date()
-            )
-
-            state.addTask(task)
-
-            guard let taskInState = state.tasks.first(where: { $0.id == task.id }) else {
-                Issue.record("Task not found")
-                return
-            }
-
-            state.toggleTaskCompletion(taskInState)
-
-            // Progress should increase by 0.02 (2%)
-            #expect(state.pet.progress > initialProgress)
-            #expect(state.pet.progress <= 1.0)
-
-            // Cleanup - toggle back and delete
-            if let updatedTask = state.tasks.first(where: { $0.id == task.id }) {
-                state.toggleTaskCompletion(updatedTask)
-            }
-            state.deleteTask(task)
-        }
-
         @Test("Completing task increases pet points")
         @MainActor
         func completingTaskIncreasesPetPoints() {
@@ -351,12 +316,9 @@ struct AppStateTests {
 
             state.toggleTaskCompletion(taskInState)
 
-            // Store stats after completion
-            let progressAfterComplete = state.pet.progress
             let pointsAfterComplete = state.pet.points
             let adventuresAfterComplete = state.pet.adventuresCount
 
-            // Now uncomplete
             guard let completedTask = state.tasks.first(where: { $0.id == task.id }) else {
                 Issue.record("Task not found after completion")
                 return
@@ -364,7 +326,6 @@ struct AppStateTests {
 
             state.toggleTaskCompletion(completedTask)
 
-            #expect(state.pet.progress < progressAfterComplete)
             #expect(state.pet.points < pointsAfterComplete)
             #expect(state.pet.adventuresCount < adventuresAfterComplete)
 
@@ -372,47 +333,11 @@ struct AppStateTests {
             state.deleteTask(task)
         }
 
-        @Test("Progress is capped at 1.0")
+        @Test("Points do not go below 0")
         @MainActor
-        func progressIsCappedAtMax() {
+        func pointsDoNotGoBelowZero() {
             let state = AppState.makeForTesting()
 
-            // Set progress close to max
-            state.pet.progress = 0.99
-
-            let task = TaskItem(
-                id: "cap-test-\(UUID().uuidString)",
-                title: "Cap Test Task",
-                isCompleted: false,
-                dueDate: Date()
-            )
-
-            state.addTask(task)
-
-            guard let taskInState = state.tasks.first(where: { $0.id == task.id }) else {
-                Issue.record("Task not found")
-                return
-            }
-
-            state.toggleTaskCompletion(taskInState)
-
-            #expect(state.pet.progress <= 1.0)
-
-            // Cleanup
-            if let updatedTask = state.tasks.first(where: { $0.id == task.id }) {
-                state.toggleTaskCompletion(updatedTask)
-            }
-            state.deleteTask(task)
-            state.pet.progress = 0.0
-        }
-
-        @Test("Progress does not go below 0")
-        @MainActor
-        func progressDoesNotGoBelowZero() {
-            let state = AppState.makeForTesting()
-
-            // Set progress to 0
-            state.pet.progress = 0.0
             state.pet.points = 0
             state.pet.adventuresCount = 0
 
@@ -430,10 +355,8 @@ struct AppStateTests {
                 return
             }
 
-            // Uncomplete the task (should try to decrease stats)
             state.toggleTaskCompletion(taskInState)
 
-            #expect(state.pet.progress >= 0)
             #expect(state.pet.points >= 0)
             #expect(state.pet.adventuresCount >= 0)
 
@@ -447,7 +370,7 @@ struct AppStateTests {
             let state = AppState.makeForTesting()
 
             let initialTaskCount = state.tasks.count
-            let initialProgress = state.pet.progress
+            let initialPoints = state.pet.points
 
             let nonExistentTask = TaskItem(
                 id: "non-existent-\(UUID().uuidString)",
@@ -459,7 +382,7 @@ struct AppStateTests {
             state.toggleTaskCompletion(nonExistentTask)
 
             #expect(state.tasks.count == initialTaskCount)
-            #expect(state.pet.progress == initialProgress)
+            #expect(state.pet.points == initialPoints)
         }
 
         @Test("Toggle completion keeps conflict status when external sync fails")
@@ -495,104 +418,6 @@ struct AppStateTests {
             state.deleteTask(updatedTask)
         }
 
-    }
-
-    // MARK: - Evolution Tests
-
-    @Suite("Pet Evolution")
-    struct EvolutionTests {
-
-        @Test("Complete evolution advances pet stage")
-        @MainActor
-        func completeEvolutionAdvancesStage() {
-            let state = AppState.makeForTesting()
-
-            // Setup evolution state
-            state.pet.stage = .baby
-            state.evolutionFromStage = .baby
-            state.evolutionToStage = .child
-            state.showEvolutionAnimation = true
-
-            let initialWeight = state.pet.weight
-            let initialHeight = state.pet.height
-            let initialTailLength = state.pet.tailLength
-
-            state.completeEvolution()
-
-            #expect(state.pet.stage == .child)
-            #expect(state.pet.progress == 0.0)
-            #expect(state.showEvolutionAnimation == false)
-            #expect(state.evolutionFromStage == nil)
-            #expect(state.evolutionToStage == nil)
-
-            // Check multipliers applied (1.2x weight, 1.15x height, 1.1x tail)
-            #expect(state.pet.weight > initialWeight)
-            #expect(state.pet.height > initialHeight)
-            #expect(state.pet.tailLength > initialTailLength)
-
-            // Reset for other tests
-            state.pet.stage = .baby
-        }
-
-        @Test("Complete evolution without target stage does nothing")
-        @MainActor
-        func completeEvolutionWithoutTargetDoesNothing() {
-            let state = AppState.makeForTesting()
-
-            state.pet.stage = .baby
-            state.evolutionToStage = nil
-
-            let initialStage = state.pet.stage
-
-            state.completeEvolution()
-
-            #expect(state.pet.stage == initialStage)
-        }
-
-        @Test("Dismiss evolution clears animation state")
-        @MainActor
-        func dismissEvolutionClearsState() {
-            let state = AppState.makeForTesting()
-
-            state.showEvolutionAnimation = true
-            state.evolutionFromStage = .baby
-            state.evolutionToStage = .child
-
-            state.dismissEvolution()
-
-            #expect(state.showEvolutionAnimation == false)
-            #expect(state.evolutionFromStage == nil)
-            #expect(state.evolutionToStage == nil)
-        }
-
-        @Test("Evolution multipliers are applied correctly")
-        @MainActor
-        func evolutionMultipliersAppliedCorrectly() {
-            let state = AppState.makeForTesting()
-
-            // Set known values
-            state.pet.weight = 100.0
-            state.pet.height = 10.0
-            state.pet.tailLength = 5.0
-            state.pet.stage = .child
-            state.evolutionToStage = .teen
-            state.showEvolutionAnimation = true
-
-            state.completeEvolution()
-
-            // Weight: 100 * 1.2 = 120
-            #expect(abs(state.pet.weight - 120.0) < 0.01)
-            // Height: 10 * 1.15 = 11.5
-            #expect(abs(state.pet.height - 11.5) < 0.01)
-            // Tail: 5 * 1.1 = 5.5
-            #expect(abs(state.pet.tailLength - 5.5) < 0.01)
-
-            // Reset
-            state.pet.stage = .baby
-            state.pet.weight = 50.0
-            state.pet.height = 5.0
-            state.pet.tailLength = 2.0
-        }
     }
 
     // MARK: - Integration Management Tests

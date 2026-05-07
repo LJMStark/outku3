@@ -3,14 +3,7 @@ import SwiftUI
 // MARK: - Constants
 
 enum ProgressConstants {
-    static let taskCompletionIncrement: Double = 0.02
     static let pointsPerTask: Int = 10
-}
-
-enum EvolutionMultipliers {
-    static let weight: Double = 1.2
-    static let height: Double = 1.15
-    static let tailLength: Double = 1.1
 }
 
 // MARK: - Home Companion Display Mode
@@ -78,10 +71,6 @@ public final class AppState {
     // UI State
     public var selectedEvent: CalendarEvent?
     public var isEventDetailPresented: Bool = false
-    public var showEvolutionAnimation: Bool = false
-    public var evolutionFromStage: PetStage?
-    public var evolutionToStage: PetStage?
-
     /// 最近一次的"场景解锁庆祝"信号；HomeView onChange 时炸 confetti + 展示横幅，
     /// ~3s 后由 UI 层置回 nil。nil = 当前没有待展示的庆祝。
     public var pendingSceneCelebration: SceneCelebration?

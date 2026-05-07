@@ -180,124 +180,12 @@ struct PetStateServiceTests {
         #expect(scene == .indoor)
     }
 
-    // MARK: - Evolution Tests
-
-    @Test("Can evolve when progress is 100%")
-    func canEvolveAtFullProgress() async {
-        let service = PetStateService.shared
-
-        let pet = Pet(
-            name: "Test Pet",
-            stage: .baby,
-            progress: 1.0
-        )
-
-        let canEvolve = await service.canEvolve(pet: pet)
-
-        #expect(canEvolve == true)
-    }
-
-    @Test("Cannot evolve when progress is below 100%")
-    func cannotEvolveBeforeFullProgress() async {
-        let service = PetStateService.shared
-
-        let pet = Pet(
-            name: "Test Pet",
-            stage: .baby,
-            progress: 0.5
-        )
-
-        let canEvolve = await service.canEvolve(pet: pet)
-
-        #expect(canEvolve == false)
-    }
-
-    @Test("Cannot evolve at elder stage")
-    func cannotEvolveAtElderStage() async {
-        let service = PetStateService.shared
-
-        let pet = Pet(
-            name: "Test Pet",
-            stage: .elder,
-            progress: 1.0
-        )
-
-        let canEvolve = await service.canEvolve(pet: pet)
-
-        #expect(canEvolve == false)
-    }
-
-    @Test("Evolution advances to next stage")
-    func evolutionAdvancesStage() async {
-        let service = PetStateService.shared
-
-        let pet = Pet(
-            name: "Test Pet",
-            stage: .baby,
-            progress: 1.0
-        )
-
-        let evolvedPet = await service.evolve(pet: pet)
-
-        #expect(evolvedPet.stage == .child)
-        #expect(evolvedPet.progress == 0.0)
-    }
-
-    // MARK: - Progress Calculation Tests
-
-    @Test("Progress increases on task completion")
-    func progressIncreasesOnTaskCompletion() async {
-        let service = PetStateService.shared
-
-        let newProgress = await service.calculateProgress(
-            currentProgress: 0.5,
-            taskCompleted: true
-        )
-
-        #expect(newProgress > 0.5)
-    }
-
-    @Test("Progress capped at 1.0")
-    func progressCappedAtMax() async {
-        let service = PetStateService.shared
-
-        let newProgress = await service.calculateProgress(
-            currentProgress: 0.99,
-            taskCompleted: true
-        )
-
-        #expect(newProgress <= 1.0)
-    }
 }
 
 // MARK: - Model Tests
 
 @Suite("Model Tests")
 struct ModelTests {
-
-    @Test("Pet percentDisplay rounds correctly")
-    func petPercentDisplayRounds() {
-        // 0.999 should round to 100, not truncate to 99
-        let nearlyFull = Pet(progress: 0.999)
-        #expect(nearlyFull.percentDisplay == 100)
-
-        // 0.505 should round to 51, not truncate to 50
-        let midProgress = Pet(progress: 0.505)
-        #expect(midProgress.percentDisplay == 51)
-
-        // 0.0 → 0, 1.0 → 100 (boundaries)
-        #expect(Pet(progress: 0.0).percentDisplay == 0)
-        #expect(Pet(progress: 1.0).percentDisplay == 100)
-    }
-
-    @Test("Pet stage progression")
-    func petStageProgression() {
-        #expect(PetStage.baby.nextStage == .child)
-        #expect(PetStage.child.nextStage == .teen)
-        #expect(PetStage.teen.nextStage == .adult)
-        #expect(PetStage.adult.nextStage == .elder)
-        #expect(PetStage.elder.nextStage == nil)
-    }
 
     @Test("CalendarEvent duration text")
     func calendarEventDurationText() {

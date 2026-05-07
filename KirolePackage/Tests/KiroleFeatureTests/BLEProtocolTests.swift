@@ -320,7 +320,7 @@ struct BLEProtocolTests {
 
     @Test("BLEDataEncoder encodePetStatus produces correct format")
     func encodePetStatusFormat() {
-        let pet = Pet(name: "Tiko", mood: .happy, stage: .baby, progress: 0.75)
+        let pet = Pet(name: "Tiko", mood: .happy)
         let data = BLEDataEncoder.encodePetStatus(pet, companionCharacter: .joy)
 
         let nameLen = Int(data[0])
@@ -331,22 +331,10 @@ struct BLEProtocolTests {
         let moodOffset = 1 + nameLen
         #expect(data[moodOffset] == Character("H").asciiValue!)
 
-        #expect(data[moodOffset + 1] == Character("B").asciiValue!)
-
-        #expect(data[moodOffset + 2] == 75)
-
-        let characterOffset = moodOffset + 3
+        let characterOffset = moodOffset + 1
         let characterLen = Int(data[characterOffset])
         let characterBytes = data.subdata(in: (characterOffset + 1)..<(characterOffset + 1 + characterLen))
         #expect(String(data: characterBytes, encoding: .utf8) == "joy")
-    }
-
-    @Test("BLEDataEncoder encodePetStatus clamps progress to 255")
-    func encodePetStatusClampsProgress() {
-        let pet = Pet(name: "A", progress: 3.0)
-        let data = BLEDataEncoder.encodePetStatus(pet, companionCharacter: .nova)
-        let progressOffset = 1 + 1 + 1 + 1
-        #expect(data[progressOffset] == 255)
     }
 
     @Test("BLEDataEncoder encodeTaskList limits to max 10 tasks")

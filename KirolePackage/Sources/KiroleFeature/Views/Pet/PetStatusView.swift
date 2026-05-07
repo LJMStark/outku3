@@ -161,24 +161,6 @@ private struct PetStatusCard: View {
                     VStack(alignment: .leading, spacing: 16) {
                         StatRowNew(label: "AGE", value: "\(appState.pet.age) days")
                         StatRowNew(label: "STATUS", value: appState.pet.status.rawValue, icon: "globe")
-                        StatRowNew(label: "STAGE", value: appState.pet.stage.rawValue)
-                        ProgressRowNew(progress: appState.pet.progress)
-                    }
-                    .padding(.horizontal, 24)
-
-                    // Divider
-                    Rectangle()
-                        .fill(Color(hex: "E5E7EB"))
-                        .frame(height: 1)
-                        .padding(.horizontal, 24)
-                        .padding(.top, 24)
-
-                    // Pet Measurements
-                    HStack(spacing: 32) {
-                        MeasurementItem(icon: "scalemass", value: String(format: "%.1fg", appState.pet.weight))
-                        MeasurementItem(icon: "arrow.up.and.down", value: String(format: "%.1fcm", appState.pet.height))
-                        MeasurementItem(icon: "bird.fill", value: String(format: "%.1fcm", appState.pet.tailLength))
-                        Spacer()
                     }
                     .padding(.horizontal, 24)
                     .padding(.vertical, 20)
@@ -218,73 +200,6 @@ private struct StatRowNew: View {
                 }
             }
             Spacer()
-        }
-    }
-}
-
-// MARK: - Progress Row New
-
-private struct ProgressRowNew: View {
-    let progress: Double
-    @Environment(ThemeManager.self) private var theme
-    @State private var animatedProgress = false
-
-    var body: some View {
-        HStack(spacing: 0) {
-            Text("PROGRESS BAR")
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(theme.colors.secondaryText)
-                .frame(width: 140, alignment: .leading)
-
-            HStack(spacing: 4) {
-                ForEach(0..<14, id: \.self) { index in
-                    let isFilled = Double(index) / 14.0 < progress
-                    Circle()
-                        .fill(isFilled ? Color(hex: "4A6B53") : Color(hex: "C8E6C9"))
-                        .frame(width: 8, height: 8)
-                        .scaleEffect(animatedProgress ? 1 : 0)
-                        .animation(
-                            .kiroleBouncy.delay(0.2 + Double(index) * 0.03),
-                            value: animatedProgress
-                        )
-                }
-
-                Text("\(Int((progress * 100).rounded()))%")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(Color(hex: "1F2937"))
-                    .padding(.leading, 6)
-            }
-            Spacer()
-        }
-        .onAppear { animatedProgress = true }
-    }
-}
-
-
-
-// MARK: - Measurement Item
-
-private struct MeasurementItem: View {
-    var icon: String? = nil
-    var emoji: String? = nil
-    let value: String
-    @Environment(ThemeManager.self) private var theme
-
-    var body: some View {
-        HStack(spacing: 6) {
-            if let icon = icon {
-                Image(systemName: icon)
-                    .font(.system(size: 16))
-                    .foregroundStyle(theme.colors.secondaryText)
-            } else if let emoji = emoji {
-                Text(emoji)
-                    .font(.system(size: 16))
-                    .grayscale(1.0)
-            }
-
-            Text(value)
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(theme.colors.secondaryText)
         }
     }
 }

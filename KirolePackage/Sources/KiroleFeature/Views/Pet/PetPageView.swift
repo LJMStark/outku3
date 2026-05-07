@@ -72,45 +72,6 @@ struct PetPageView: View {
             PetStatusView()
                 .injectAppEnvironment()
         }
-        #if os(iOS)
-        .fullScreenCover(isPresented: evolutionBinding) {
-            evolutionContent
-        }
-        #else
-        .sheet(isPresented: evolutionBinding) {
-            evolutionContent
-        }
-        #endif
-    }
-
-    // MARK: - Evolution Helpers
-
-    private var evolutionBinding: Binding<Bool> {
-        Binding(
-            get: { appState.showEvolutionAnimation },
-            set: { isPresented in
-                if isPresented {
-                    appState.showEvolutionAnimation = true
-                } else {
-                    appState.dismissEvolution()
-                }
-            }
-        )
-    }
-
-    @ViewBuilder
-    private var evolutionContent: some View {
-        if let fromStage = appState.evolutionFromStage,
-           let toStage = appState.evolutionToStage {
-            EvolutionAnimationView(
-                fromStage: fromStage,
-                toStage: toStage,
-                onComplete: {
-                    appState.completeEvolution()
-                }
-            )
-            .injectAppEnvironment()
-        }
     }
 
     // MARK: - Task Filters

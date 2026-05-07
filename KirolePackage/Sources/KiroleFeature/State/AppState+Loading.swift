@@ -22,11 +22,6 @@ extension AppState {
                     status: .happy,
                     mood: .happy,
                     scene: .indoor,
-                    stage: .baby,
-                    progress: 0,
-                    weight: 50,
-                    height: 5.0,
-                    tailLength: 2.0,
                     lastInteraction: Date(),
                     points: 0
                 )

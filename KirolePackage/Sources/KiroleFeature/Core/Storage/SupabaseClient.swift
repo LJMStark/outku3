@@ -203,11 +203,6 @@ public actor SupabaseService {
             status: pet.status.rawValue,
             mood: pet.mood.rawValue,
             scene: pet.scene.rawValue,
-            stage: pet.stage.rawValue,
-            progress: pet.progress,
-            weight: pet.weight,
-            height: pet.height,
-            tailLength: pet.tailLength,
             lastInteraction: pet.lastInteraction,
             points: pet.points
         )
@@ -241,11 +236,6 @@ public actor SupabaseService {
             status: PetStatus(rawValue: record.status) ?? .happy,
             mood: PetMood(rawValue: record.mood) ?? .happy,
             scene: PetScene(rawValue: record.scene) ?? .indoor,
-            stage: PetStage(rawValue: record.stage) ?? .baby,
-            progress: record.progress,
-            weight: record.weight,
-            height: record.height,
-            tailLength: record.tailLength,
             lastInteraction: record.lastInteraction,
             points: record.points
         )
@@ -328,11 +318,6 @@ private struct PetRecord: Codable {
     let status: String
     let mood: String
     let scene: String
-    let stage: String
-    let progress: Double
-    let weight: Double
-    let height: Double
-    let tailLength: Double
     let lastInteraction: Date
     let points: Int
 
@@ -340,8 +325,7 @@ private struct PetRecord: Codable {
         case userId = "user_id"
         case name, pronouns
         case adventuresCount = "adventures_count"
-        case age, status, mood, scene, stage, progress, weight, height
-        case tailLength = "tail_length"
+        case age, status, mood, scene
         case lastInteraction = "last_interaction"
         case points
     }

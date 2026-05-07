@@ -37,7 +37,7 @@ App → Device 简单包格式：
 
 | Type | 名称 | 模拟结果 | 关键字段 |
 |---|---|---|---|
-| `0x01` | `PetStatus` | 通过 | `Name`、`Mood`、`Stage`、`Progress`、`CharacterId` |
+| `0x01` | `PetStatus` | 通过 | `Name`、`Mood`、`CharacterId` |
 | `0x02` | `TaskList` | 通过 | 只发今日任务，最多 10 条 |
 | `0x03` | `Schedule` | 通过 | 只发今日日程，时间为 `HH:mm` 原始 UTF-8 |
 | `0x04` | `Weather` | 通过 | 温度为 `Int8`，天气字符串是 SF Symbols 名 |
@@ -48,14 +48,12 @@ App → Device 简单包格式：
 
 ### 2.2 PetStatus 样例
 
-输入：`Pet(name: "Tiko", mood: Happy, stage: Child, progress: 75%)`，角色 `joy`。
+输入：`Pet(name: "Tiko", mood: Happy)`，角色 `joy`。
 
 ```text
-01 00 0C
+01 00 0A
 04 54 69 6B 6F
 48
-43
-4B
 03 6A 6F 79
 ```
 
@@ -64,11 +62,9 @@ App → Device 简单包格式：
 | 字节 | 含义 |
 |---|---|
 | `01` | `PetStatus` |
-| `00 0C` | payload 长度 12 |
+| `00 0A` | payload 长度 10 |
 | `04 54 69 6B 6F` | `"Tiko"` |
 | `48` | mood = `H` |
-| `43` | stage = `C` |
-| `4B` | progress = 75 |
 | `03 6A 6F 79` | `CharacterId = "joy"` |
 
 ### 2.3 Weather 样例
@@ -307,10 +303,11 @@ AA 01 02 Type SceneId PostcardDay QuoteLen Quote AuthorLen Author
 1. App → Device 标准包长度是 2 字节大端；Device → App 简单包长度是 1 字节。
 2. 9 字节分包的 CRC16 是 CRC16-CCITT-FALSE，校验对象只包含本分包 payload。
 3. `Weather.Condition` 现在发的是 `sun.max.fill` / `cloud.rain.fill` 这类字符串，不是 `sunny` / `rainy`。
-4. `PetStatus.CharacterId` 必须支持 `joy` / `silas` / `nova`。
-5. `DayPack.TopTask` 和 `TaskInPage` 已经没有微行动字段。
-6. 第一轮固件支持 `0xAA` 开发显示命令，并单独解析，不要按标准包解析。
-7. 第一轮固件先支持明文开发模式。安全模式等明文协议跑通后再接。
+4. `PetStatus` 字段顺序：`Name`（长度前缀）→ `Mood`（1字节 ASCII）→ `CharacterId`（长度前缀）。无 Stage / Progress 字节。
+5. `PetStatus.CharacterId` 必须支持 `joy` / `silas` / `nova`。
+6. `DayPack.TopTask` 和 `TaskInPage` 已经没有微行动字段。
+7. 第一轮固件支持 `0xAA` 开发显示命令，并单独解析，不要按标准包解析。
+8. 第一轮固件先支持明文开发模式。安全模式等明文协议跑通后再接。
 
 ---
 

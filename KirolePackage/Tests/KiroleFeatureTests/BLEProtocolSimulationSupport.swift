@@ -7,7 +7,7 @@ struct ProtocolFixtures {
     let eventId = "event-hw-sync"
 
     var pet: Pet {
-        Pet(name: "Tiko", mood: .happy, stage: .child, progress: 0.75)
+        Pet(name: "Tiko", mood: .happy)
     }
 
     var tasks: [TaskItem] {
@@ -213,15 +213,11 @@ struct SimulatedAppPacket {
         var reader = PayloadReader(data: payload)
         let name = try reader.readString()
         let moodByte = try reader.readByte()
-        let stageByte = try reader.readByte()
-        let progress = try reader.readByte()
         let characterId = try reader.readString()
         try reader.requireEnd()
         return SimulatedPetStatus(
             name: name,
             moodByte: moodByte,
-            stageByte: stageByte,
-            progress: progress,
             characterId: characterId
         )
     }
@@ -465,8 +461,6 @@ enum DevelopmentDisplayCommand: Equatable {
 struct SimulatedPetStatus {
     let name: String
     let moodByte: UInt8?
-    let stageByte: UInt8?
-    let progress: UInt8
     let characterId: String
 }
 

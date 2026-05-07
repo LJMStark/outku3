@@ -38,10 +38,6 @@ extension AppState {
         requestBLESync(reason: "toggleTaskCompletion")
 
         Task { @MainActor in
-            if isCompleted {
-                await checkAndTriggerEvolution()
-            }
-
             await persistTaskAndPetState(
                 tasks: self.tasks,
                 pet: self.pet,
@@ -71,13 +67,11 @@ extension AppState {
         if isCompleted {
             SoundService.shared.playWithHaptic(.taskComplete, haptic: .success)
             updatedPet.adventuresCount += 1
-            updatedPet.progress = min(1.0, updatedPet.progress + ProgressConstants.taskCompletionIncrement)
             updatedPet.points += ProgressConstants.pointsPerTask
             updatedPet.lastInteraction = Date()
         } else {
             SoundService.shared.playWithHaptic(.taskUncomplete, haptic: .light)
             updatedPet.adventuresCount = max(0, updatedPet.adventuresCount - 1)
-            updatedPet.progress = max(0, updatedPet.progress - ProgressConstants.taskCompletionIncrement)
             updatedPet.points = max(0, updatedPet.points - ProgressConstants.pointsPerTask)
             updatedPet.lastInteraction = Date()
         }
@@ -359,36 +353,6 @@ extension AppState {
         Task { @MainActor in
             await persistTasks(tasks, context: "AppState.updateTasks")
         }
-    }
-
-    func checkAndTriggerEvolution() async {
-        guard let nextStage = await petManager.canEvolve(pet: pet, petStateService: petStateService) else {
-            return
-        }
-
-        evolutionFromStage = pet.stage
-        evolutionToStage = nextStage
-        showEvolutionAnimation = true
-    }
-
-    public func completeEvolution() {
-        guard let toStage = evolutionToStage else { return }
-
-        pet = petManager.completeEvolution(from: pet, to: toStage)
-        showEvolutionAnimation = false
-        evolutionFromStage = nil
-        evolutionToStage = nil
-        requestBLESync(reason: "completeEvolution")
-
-        Task { @MainActor in
-            await persistPet(pet, context: "AppState.completeEvolution")
-        }
-    }
-
-    public func dismissEvolution() {
-        showEvolutionAnimation = false
-        evolutionFromStage = nil
-        evolutionToStage = nil
     }
 
     func reportSyncError(_ error: Error, component: String, context: String) {
