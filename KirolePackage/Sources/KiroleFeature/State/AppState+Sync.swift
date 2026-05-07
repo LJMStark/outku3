@@ -14,14 +14,6 @@ extension AppState {
         updateStatistics()
     }
 
-    public func loadGoogleCalendarEvents() async {
-        await syncGoogleData()
-    }
-
-    public func loadGoogleTasks() async {
-        await syncGoogleData()
-    }
-
     func connectedExternalSyncTargets() -> [ExternalSyncTarget] {
         var targets: [ExternalSyncTarget] = []
 
@@ -131,7 +123,7 @@ extension AppState {
         isIntegrationConnected(.appleCalendar) || isIntegrationConnected(.appleReminders)
     }
 
-    public func loadAppleCalendarEvents() async {
+    public func syncAppleCalendarEvents() async {
         guard isIntegrationConnected(.appleCalendar) else { return }
 
         isLoading = true
@@ -148,11 +140,11 @@ extension AppState {
         } catch {
             let appError = AppError.sync(component: "Apple Calendar", underlying: error.localizedDescription)
             lastError = UserFacingErrorMapper.message(for: appError)
-            ErrorReporter.log(appError, context: "AppState.loadAppleCalendarEvents")
+            ErrorReporter.log(appError, context: "AppState.syncAppleCalendarEvents")
         }
     }
 
-    public func loadAppleReminders() async {
+    public func syncAppleReminders() async {
         guard isIntegrationConnected(.appleReminders) else { return }
 
         isLoading = true
@@ -166,7 +158,7 @@ extension AppState {
         } catch {
             let appError = AppError.sync(component: "Apple Reminders", underlying: error.localizedDescription)
             lastError = UserFacingErrorMapper.message(for: appError)
-            ErrorReporter.log(appError, context: "AppState.loadAppleReminders")
+            ErrorReporter.log(appError, context: "AppState.syncAppleReminders")
         }
     }
 
@@ -179,11 +171,11 @@ extension AppState {
         let shouldSyncReminders = isIntegrationConnected(.appleReminders)
 
         if shouldSyncCalendar {
-            await loadAppleCalendarEvents()
+            await syncAppleCalendarEvents()
         }
 
         if shouldSyncReminders {
-            await loadAppleReminders()
+            await syncAppleReminders()
         }
 
         await applyPostSyncHooks()

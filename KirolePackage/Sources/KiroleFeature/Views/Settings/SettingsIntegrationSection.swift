@@ -213,7 +213,7 @@ public struct SettingsIntegrationSection: View {
         let granted = await appState.requestAppleCalendarAccess()
         appState.updateIntegrationStatus(.appleCalendar, isConnected: granted)
         if granted {
-            await appState.loadAppleCalendarEvents()
+            await appState.syncAppleCalendarEvents()
         }
     }
 
@@ -221,7 +221,7 @@ public struct SettingsIntegrationSection: View {
         let granted = await appState.requestAppleRemindersAccess()
         appState.updateIntegrationStatus(.appleReminders, isConnected: granted)
         if granted {
-            await appState.loadAppleReminders()
+            await appState.syncAppleReminders()
         }
     }
 
