@@ -168,16 +168,6 @@ extension AppState {
         selectedEvent = nil
     }
 
-    public func setPetForm(_ form: PetForm) {
-        var updatedPet = pet
-        updatedPet.currentForm = form
-        pet = updatedPet
-
-        Task { @MainActor in
-            await persistPet(updatedPet, context: "AppState.setPetForm")
-        }
-    }
-
     public func setFocusEnforcementMode(_ mode: FocusEnforcementMode) {
         focusEnforcementMode = mode
 

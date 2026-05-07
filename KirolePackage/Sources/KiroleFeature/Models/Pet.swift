@@ -13,7 +13,6 @@ public struct Pet: Sendable, Codable {
     public var weight: Double // in grams
     public var height: Double // in cm
     public var tailLength: Double // in cm
-    public var currentForm: PetForm
     public var lastInteraction: Date
     public var points: Int // accumulated points from completing tasks
 
@@ -34,7 +33,6 @@ public struct Pet: Sendable, Codable {
         weight: Double = 50,
         height: Double = 5,
         tailLength: Double = 2,
-        currentForm: PetForm = .sprout,
         lastInteraction: Date = Date(),
         points: Int = 0
     ) {
@@ -50,7 +48,6 @@ public struct Pet: Sendable, Codable {
         self.weight = weight
         self.height = height
         self.tailLength = tailLength
-        self.currentForm = currentForm
         self.lastInteraction = lastInteraction
         self.points = points
     }
@@ -103,30 +100,3 @@ public enum PetStage: String, Sendable, Codable {
     }
 }
 
-public enum PetForm: String, CaseIterable, Sendable, Codable {
-    case sprout = "Sprout"
-    case pup = "Pup"
-    case hopper = "Hopper"
-    case flyer = "Flyer"
-    case blaze = "Blaze"
-
-    public var iconName: String {
-        switch self {
-        case .sprout: return "leaf.fill"
-        case .pup: return "pawprint.fill"
-        case .hopper: return "hare.fill"
-        case .flyer: return "bird.fill"
-        case .blaze: return "flame.fill"
-        }
-    }
-
-    public var imageName: String {
-        switch self {
-        case .sprout: return "tiko_mushroom"
-        case .pup: return "tiko_dog"
-        case .hopper: return "tiko_bunny"
-        case .flyer: return "tiko_bird"
-        case .blaze: return "tiko_dragon"
-        }
-    }
-}

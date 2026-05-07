@@ -208,7 +208,6 @@ public actor SupabaseService {
             weight: pet.weight,
             height: pet.height,
             tailLength: pet.tailLength,
-            currentForm: pet.currentForm.rawValue,
             lastInteraction: pet.lastInteraction,
             points: pet.points
         )
@@ -247,7 +246,6 @@ public actor SupabaseService {
             weight: record.weight,
             height: record.height,
             tailLength: record.tailLength,
-            currentForm: PetForm(rawValue: record.currentForm) ?? .sprout,
             lastInteraction: record.lastInteraction,
             points: record.points
         )
@@ -375,7 +373,6 @@ private struct PetRecord: Codable {
     let weight: Double
     let height: Double
     let tailLength: Double
-    let currentForm: String
     let lastInteraction: Date
     let points: Int
 
@@ -385,7 +382,6 @@ private struct PetRecord: Codable {
         case adventuresCount = "adventures_count"
         case age, status, mood, scene, stage, progress, weight, height
         case tailLength = "tail_length"
-        case currentForm = "current_form"
         case lastInteraction = "last_interaction"
         case points
     }

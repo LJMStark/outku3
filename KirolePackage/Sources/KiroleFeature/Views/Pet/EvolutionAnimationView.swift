@@ -8,6 +8,7 @@ struct EvolutionAnimationView: View {
     let onComplete: () -> Void
 
     @Environment(ThemeManager.self) private var theme
+    @Environment(AppState.self) private var appState
     @State private var phase: EvolutionPhase = .intro
     @State private var glowOpacity: Double = 0
     @State private var particleOffsets: [CGSize] = []
@@ -71,24 +72,14 @@ struct EvolutionAnimationView: View {
                         .opacity(textOpacity)
                 }
 
-                // Pet display
-                ZStack {
-                    // Old pet (fading out)
-                    if !showNewPet {
-                        PixelPetView(size: .large, animated: false)
-                            .frame(width: 200, height: 200)
-                            .scaleEffect(petScale)
-                            .opacity(petOpacity)
-                    }
-
-                    // New pet (fading in)
-                    if showNewPet {
-                        PixelPetView(size: .large, animated: true)
-                            .frame(width: 200, height: 200)
-                            .scaleEffect(petScale)
-                            .opacity(petOpacity)
-                    }
-                }
+                // Pet display — uses the user's selected IP companion image
+                let assetName = appState.userProfile.companionCharacter.heroAssetName(variant: .main)
+                Image(assetName, bundle: .module)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 200, height: 200)
+                    .scaleEffect(petScale)
+                    .opacity(petOpacity)
 
                 // Evolution text
                 if phase == .complete {

@@ -27,7 +27,7 @@ public actor LocalStorage {
     }
 
     enum DevelopmentStorageSchema {
-        static let currentVersion = 3
+        static let currentVersion = 4
     }
 
     private nonisolated static let persistedFiles = [

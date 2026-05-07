@@ -595,41 +595,6 @@ struct AppStateTests {
         }
     }
 
-    // MARK: - Pet Form Tests
-
-    @Suite("Pet Form")
-    struct PetFormTests {
-
-        @Test("Set pet form updates state")
-        @MainActor
-        func setPetFormUpdatesState() {
-            let state = AppState.makeForTesting()
-
-            state.setPetForm(.blaze)
-            #expect(state.pet.currentForm == .blaze)
-
-            state.setPetForm(.hopper)
-            #expect(state.pet.currentForm == .hopper)
-
-            // Reset
-            state.setPetForm(.sprout)
-        }
-
-        @Test("All pet forms are valid")
-        @MainActor
-        func allPetFormsAreValid() {
-            let state = AppState.makeForTesting()
-
-            for form in PetForm.allCases {
-                state.setPetForm(form)
-                #expect(state.pet.currentForm == form)
-            }
-
-            // Reset
-            state.setPetForm(.sprout)
-        }
-    }
-
     // MARK: - Integration Management Tests
 
     @Suite("Integration Management")
