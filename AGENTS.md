@@ -49,14 +49,15 @@ This file provides guidance to Antigravity, Claude Code, Cursor and other AI cod
 ## 3. Architecture & Key Systems
 
 ### State Management
-Three singletons injected via `.environment()` from ContentView:
-| Singleton | Purpose |
-|-----------|---------|
-| `AppState` | Pet, tasks, events, navigation, integrations |
-| `ThemeManager` | Current theme colors (3 themes) |
-| `AuthManager` | Authentication state (Apple/Google Sign In) |
+Four singletons injected via `.environment()` and `EnvironmentValues` keys from `ContentView`:
+| Singleton | Purpose | Key |
+|-----------|---------|-----|
+| `AppState` | Pet, tasks, events, navigation, integrations | `AppStateKey` |
+| `ThemeManager` | Current theme colors (3 themes) | `ThemeManagerKey` |
+| `AuthManager` | Authentication state (Apple/Google Sign In) | `AuthManagerKey` |
+| `FocusSessionService` | Focus session state, focus enforcement mode | `FocusServiceKey` |
 
-**Important**: All three must be injected for any view that might need them to prevent runtime crashes.
+**Important**: All four must be injected for any view that might need them to prevent runtime crashes. Injection is handled via the `injectAppEnvironment()` modifier which injects both Observable-style (`.environment(AppState.shared)`) and Key-style (`.environment(\.appState, ...)`) simultaneously.
 
 ### Navigation & Layout
 - Tab-based navigation via `AppState.selectedTab` (`.home`, `.pet`, `.settings`).
@@ -224,6 +225,8 @@ The companion text system is event-reactive companion writing for the Kirole tas
 
 ### Focus Mode State Machine
 - **Source**: `FocusSessionService.swift` (~681 lines), `FocusSession.swift`, `DisplayScene.swift`.
+- **`FocusSessionService` properties**: 
+  - `focusEnforcementMode`: Persistent Focus Enforcement mode (moved from `AppState` in Wave 3 refactor, 2026-05-08). Loaded via `loadFocusEnforcementMode()` at init; persisted via `setFocusEnforcementMode(_:)`. `AppState.focusEnforcementMode` is now a computed forwarding property.
 - **`FocusSession` mutable fields**: `endTime`, `endReason`, `calculatedFocusTime`, `screenUnlockEvents`, `mode`, `protectionState`, `interruptionSource`, `earnedEnergyBottles`. Immutable: `id`, `taskId`, `taskTitle`, `startTime`.
 - **End reasons** (7): `completed`, `skipped`, `timeout`, `disconnected`, `interrupted`, `permissionDenied`, `recoveredOnLaunch`.
 - **Modes** (2): `standard`, `deepFocus`. **Protection states** (3): `unprotected`, `protected`, `fallback`.
@@ -257,6 +260,19 @@ The single most useful reference when debugging "which event produces which outp
 | Sync complete (Google) | `syncGoogleData` (`+Sync:64`) | `events`, `tasks` (merge), `lastGoogleSyncDebug` | `updatePetState` → `refreshSharedPetDialogueIfNeeded` → `refreshHomeCompanionPresentation` |
 | Sync complete (Apple) | `syncAppleData` (`+Sync:175`) | same subset | same path as Google |
 | Sync complete (Notion / Taskade) | `+Sync:231` / `+Sync:262` | basic fields only | same path as Google (via shared `applyPostSyncHooks()` since 2026-05-07) |
+
+### Environment Values Keys (Wave 3 DI Infrastructure, 2026-05-08)
+Four typed `EnvironmentKey` types enable compile-safe `.environment(\.keyName, value)` syntax:
+- `AppStateKey` → `EnvironmentValues.appState` (readable as `@Environment(\.appState)`)
+- `ThemeManagerKey` → `EnvironmentValues.themeManager` (readable as `@Environment(\.themeManager)`)
+- `AuthManagerKey` → `EnvironmentValues.authManager` (readable as `@Environment(\.authManager)`)
+- `FocusServiceKey` → `EnvironmentValues.focusService` (readable as `@Environment(\.focusService)`)
+
+All four are defined in `Core/AppEnvironmentValues.swift`. Views that need them can read via either:
+1. **Property access** (older, still works): `@Environment(AppState.self) var appState` (Observable-style)
+2. **Key-based access** (Wave 3+, preferred): `@Environment(\.appState) var appState` (type-safe, refactoring-safe)
+
+Both mechanisms are injected simultaneously by `injectAppEnvironment()` to support incremental migration.
 
 ### Known Inconsistencies / Dead Paths (verified 2026-05-06)
 Documented honestly so future agents do not waste time chasing ghosts. Treat each as a candidate for either implementation or deletion.

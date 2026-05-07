@@ -3,9 +3,10 @@
 ## 当前状态总览
 
 **日期**: 2026-05-08
-**阶段**: 等待 Apple 批准 Family Controls Distribution 权限
+**阶段**: Wave 3 依赖注入基础设施完成；等待 Apple 批准 Family Controls Distribution 权限
 **预计完成**: 2026-03-12 (1-2 周后)
 **最新进展**: 
+- ✅ **Wave 3 完成**: 四个 `EnvironmentKey` 类型添加 + `focusEnforcementMode` 迁移到 `FocusSessionService` (2026-05-08)
 - ✅ 能量瓶子 BLE 推送已在所有构建中实现（之前仅 DEBUG 构建）
 - ✅ 全量测试 298/298 通过
 - ✅ 预存在失败测试 securityHandshakeFailed 已标记 disabled
@@ -13,6 +14,26 @@
 ---
 
 ## ✅ 已完成的工作
+
+### 0. Wave 3 DI 架构重构 (2026-05-08)
+
+**完成的改动**:
+- ✅ 新增 `Core/AppEnvironmentValues.swift` — 定义 `AppStateKey`, `ThemeManagerKey`, `AuthManagerKey`, `FocusServiceKey` 四个类型化 `EnvironmentKey`
+- ✅ `FocusSessionService` 集中管理 `focusEnforcementMode`（持久化、加载、设置）
+- ✅ `AppState.focusEnforcementMode` 改为 computed forwarding property
+- ✅ `BLEEventHandler.enterTaskIn` 从 `AppState.shared.focusEnforcementMode` 改为 `FocusSessionService.shared.focusEnforcementMode`
+- ✅ `injectAppEnvironment()` 现同时注入 Observable-style 和 Key-style 两套
+- ✅ `ContentView` 同时使用两套注入方式，支持渐进式迁移
+- ✅ 文档已更新（AGENTS.md / CLAUDE.md / TESTFLIGHT_PROGRESS.md）
+
+**好处**:
+- 类型安全的环境访问 (`@Environment(\.appState)` 而非 `@Environment(AppState.self)`)
+- 支持 mocking 测试 (`.environment(\.appState, mockState)`)
+- `FocusSessionService` 成为 Focus 相关状态的单一权威来源
+- 为后续功能扩展奠定基础
+
+**技术细节**:
+- 见 AGENTS.md §3 "Environment Values Keys" 和 "Focus Mode State Machine" 小节
 
 ### 1. Screen Time 权限配置 (2026-02-26)
 
