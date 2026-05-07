@@ -1,3 +1,5 @@
+// NOTE: try? is discouraged in this codebase. Use do-try-catch + ErrorReporter.log instead.
+// See: ErrorReporter.swift for logging conventions.
 import Foundation
 
 #if canImport(UIKit)
@@ -400,7 +402,17 @@ public final class FocusSessionService {
             await localStorage.saveDeepFocusShieldActive(false)
         }
 
-        guard let recovered = try? await localStorage.loadActiveFocusSession() else {
+        let recovered: FocusSession?
+        do {
+            recovered = try await localStorage.loadActiveFocusSession()
+        } catch {
+            ErrorReporter.log(
+                .persistence(operation: "load", target: "active_focus_session", underlying: error.localizedDescription),
+                context: "FocusSessionService.recoverSessionOnLaunchIfNeeded"
+            )
+            recovered = nil
+        }
+        guard let recovered else {
             return
         }
 

@@ -18,13 +18,29 @@ public actor HaikuService {
     ) async -> Haiku {
         let today = context.currentTime
 
-        if !forceRefresh, let cached = try? await localStorage.getCachedHaiku(for: today) {
-            return cached
+        if !forceRefresh {
+            do {
+                if let cached = try await localStorage.getCachedHaiku(for: today) {
+                    return cached
+                }
+            } catch {
+                ErrorReporter.log(
+                    .persistence(operation: "load", target: "haiku_cache", underlying: error.localizedDescription),
+                    context: "HaikuService.getTodayHaiku"
+                )
+            }
         }
 
         do {
             let haiku = try await openAIService.generateHaiku(context: context)
-            try? await localStorage.cacheHaiku(haiku, for: today)
+            do {
+                try await localStorage.cacheHaiku(haiku, for: today)
+            } catch {
+                ErrorReporter.log(
+                    .persistence(operation: "save", target: "haiku_cache", underlying: error.localizedDescription),
+                    context: "HaikuService.getTodayHaiku"
+                )
+            }
             return haiku
         } catch {
             return getDefaultHaiku(for: context)

@@ -161,8 +161,22 @@ public struct SettingsAccountSection: View {
         // Persist
         Task {
             let pixelData = BLEDataEncoder.encodePixelData(result.pixels, width: AvatarProcessResult.dimension)
-            try? await LocalStorage.shared.saveAvatarData(result.previewData)
-            try? await LocalStorage.shared.saveAvatarPixels(pixelData)
+            do {
+                try await LocalStorage.shared.saveAvatarData(result.previewData)
+            } catch {
+                ErrorReporter.log(
+                    .persistence(operation: "save", target: "avatar.dat", underlying: error.localizedDescription),
+                    context: "SettingsAccountSection.confirmAvatar"
+                )
+            }
+            do {
+                try await LocalStorage.shared.saveAvatarPixels(pixelData)
+            } catch {
+                ErrorReporter.log(
+                    .persistence(operation: "save", target: "avatar_pixels.dat", underlying: error.localizedDescription),
+                    context: "SettingsAccountSection.confirmAvatar"
+                )
+            }
         }
 
         processResult = nil

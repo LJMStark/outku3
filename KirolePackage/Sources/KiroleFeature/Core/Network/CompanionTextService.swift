@@ -368,7 +368,16 @@ public final class CompanionTextService {
     ) async -> String? {
         guard await openAI.isConfigured else { return nil }
 
-        let behaviorSummary = try? await localStorage.loadBehaviorSummary()
+        let behaviorSummary: UserBehaviorSummary?
+        do {
+            behaviorSummary = try await localStorage.loadBehaviorSummary()
+        } catch {
+            ErrorReporter.log(
+                .persistence(operation: "load", target: "behavior_summary", underlying: error.localizedDescription),
+                context: "CompanionTextService.generateCompanionText"
+            )
+            behaviorSummary = nil
+        }
         let weeklyRate = resolvedWeeklyRate(
             behaviorSummary: behaviorSummary,
             completedTasks: completedTasks,
@@ -434,7 +443,15 @@ public final class CompanionTextService {
         if let existingSummary = baseContext.behaviorSummary {
             behaviorSummary = existingSummary
         } else {
-            behaviorSummary = try? await localStorage.loadBehaviorSummary()
+            do {
+                behaviorSummary = try await localStorage.loadBehaviorSummary()
+            } catch {
+                ErrorReporter.log(
+                    .persistence(operation: "load", target: "behavior_summary", underlying: error.localizedDescription),
+                    context: "CompanionTextService.enrichedContext"
+                )
+                behaviorSummary = nil
+            }
         }
         let weeklyRate = resolvedWeeklyRate(
             behaviorSummary: behaviorSummary,
@@ -512,7 +529,16 @@ public final class CompanionTextService {
     // MARK: - Interaction Persistence
 
     private func loadRecentTexts(type: AITextType) async -> [String] {
-        guard let interactions = try? await localStorage.loadAIInteractions() else { return [] }
+        let interactions: [AIInteraction]
+        do {
+            interactions = (try await localStorage.loadAIInteractions()) ?? []
+        } catch {
+            ErrorReporter.log(
+                .persistence(operation: "load", target: "ai_interactions.json", underlying: error.localizedDescription),
+                context: "CompanionTextService.loadRecentTexts"
+            )
+            return []
+        }
         return interactions
             .filter { $0.type == type }
             .suffix(3)
@@ -534,7 +560,16 @@ public final class CompanionTextService {
         )
 
         do {
-            let existing = (try? await localStorage.loadAIInteractions()) ?? []
+            let existing: [AIInteraction]
+            do {
+                existing = (try await localStorage.loadAIInteractions()) ?? []
+            } catch {
+                ErrorReporter.log(
+                    .persistence(operation: "load", target: "ai_interactions.json", underlying: error.localizedDescription),
+                    context: "CompanionTextService.saveInteraction"
+                )
+                existing = []
+            }
             try await localStorage.saveAIInteractions(existing + [interaction])
         } catch {
             ErrorReporter.log(

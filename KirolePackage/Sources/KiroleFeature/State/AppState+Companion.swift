@@ -1,3 +1,5 @@
+// NOTE: try? is discouraged in this codebase. Use do-try-catch + ErrorReporter.log instead.
+// See: ErrorReporter.swift for logging conventions.
 import Foundation
 
 struct CompanionDialogueTriggerState {
@@ -34,8 +36,17 @@ extension AppState {
     }
 
     private func loadCachedSharedPetDialogue(for todayKey: String) async -> String? {
-        guard let cached = try? await localStorage.loadSharedCompanionDialogue(),
-              cached.date == todayKey else {
+        let cached: SharedCompanionDialogueCache?
+        do {
+            cached = try await localStorage.loadSharedCompanionDialogue()
+        } catch {
+            ErrorReporter.log(
+                .persistence(operation: "load", target: "shared_companion_dialogue", underlying: error.localizedDescription),
+                context: "AppState+Companion.loadCachedSharedPetDialogue"
+            )
+            cached = nil
+        }
+        guard let cached, cached.date == todayKey else {
             return nil
         }
 
@@ -59,8 +70,18 @@ extension AppState {
         let triggerState = await buildCompanionDialogueTriggerState()
         let todayKey = Self.homeCompanionDateKey(from: triggerState.context.currentTime)
 
+        let cachedDialogue: SharedCompanionDialogueCache?
+        do {
+            cachedDialogue = try await localStorage.loadSharedCompanionDialogue()
+        } catch {
+            ErrorReporter.log(
+                .persistence(operation: "load", target: "shared_companion_dialogue", underlying: error.localizedDescription),
+                context: "AppState+Companion.refreshSharedPetDialogueIfNeeded"
+            )
+            cachedDialogue = nil
+        }
         if !force,
-           let cached = try? await localStorage.loadSharedCompanionDialogue(),
+           let cached = cachedDialogue,
            cached.date == todayKey,
            cached.fingerprint == triggerState.fingerprint {
             let normalized = CompanionDialogueDisplayPolicy.normalized(cached.text)

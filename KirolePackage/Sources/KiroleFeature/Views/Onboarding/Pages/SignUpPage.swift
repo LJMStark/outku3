@@ -84,7 +84,14 @@ public struct SignUpPage: View {
                                 }
                                 isSigningIn = true
                                 Task { @MainActor in
-                                    try? await authManager.signInWithGoogle()
+                                    do {
+                                        try await authManager.signInWithGoogle()
+                                    } catch {
+                                        ErrorReporter.log(
+                                            .sync(component: "GoogleSignIn", underlying: error.localizedDescription),
+                                            context: "SignUpPage.signInWithGoogle"
+                                        )
+                                    }
                                     if authManager.isGoogleConnected {
                                         appState.completeOnboarding(with: onboardingState.profile)
                                     }
