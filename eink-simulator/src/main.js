@@ -32,3 +32,7 @@ state.onChange(() => {
 // Initial render
 screen.render();
 
+// Auto-connect to the relay using the default ws-url so the dev flow
+// (relay + iOS app + web sim) doesn't require a manual Connect click.
+wsBridge.connect(document.getElementById('ws-url').value);
+
