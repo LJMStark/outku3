@@ -25,6 +25,12 @@ public final class FocusSessionService {
     /// 专注统计数据
     public private(set) var statistics: FocusStatistics = FocusStatistics()
 
+    // MARK: - Focus Enforcement Mode
+
+    /// Controls how strictly the app enforces focus: .standard (suggestion) or .deepFocus (screen-time block).
+    /// Owned here rather than in AppState so BLEEventHandler can read it without depending on AppState.
+    public var focusEnforcementMode: FocusEnforcementMode = .standard
+
     // MARK: - Private Properties
 
     private let localStorage: LocalStorage
@@ -56,6 +62,7 @@ public final class FocusSessionService {
 
         guard loadOnInit else { return }
         Task { @MainActor in
+            await loadFocusEnforcementMode()
             await loadTodaySessions()
             await recoverSessionOnLaunchIfNeeded()
             setupScreenTracking()
@@ -688,5 +695,28 @@ public final class ScreenActivityTracker {
         unlockEvents.removeLast()
         unlockEvents.append(ScreenUnlockEvent(timestamp: lastEvent.timestamp, duration: duration))
         lastBecameActiveTime = nil
+    }
+}
+
+// MARK: - Focus Enforcement Mode Persistence
+
+extension FocusSessionService {
+    /// Loads the saved focus enforcement mode from UserDefaults and applies ScreenTime guard.
+    func loadFocusEnforcementMode() async {
+        let saved = await localStorage.loadFocusEnforcementMode() ?? .standard
+        if saved == .deepFocus && !ScreenTimeFocusGuardService.shared.canShowDeepFocusEntry {
+            focusEnforcementMode = .standard
+            await localStorage.saveFocusEnforcementMode(.standard)
+        } else {
+            focusEnforcementMode = saved
+        }
+    }
+
+    /// Sets the focus enforcement mode and persists it.
+    public func setFocusEnforcementMode(_ mode: FocusEnforcementMode) {
+        focusEnforcementMode = mode
+        Task {
+            await localStorage.saveFocusEnforcementMode(mode)
+        }
     }
 }

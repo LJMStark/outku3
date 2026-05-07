@@ -65,8 +65,12 @@ public final class AppState {
 
     // Device Mode
     public var deviceMode: DeviceMode = .interactive
-    public var focusEnforcementMode: FocusEnforcementMode = .standard
     public var isDemoMode: Bool = false
+
+    /// Forwards to FocusSessionService — owned there so BLEEventHandler doesn't depend on AppState.
+    public var focusEnforcementMode: FocusEnforcementMode {
+        FocusSessionService.shared.focusEnforcementMode
+    }
 
     // UI State
     public var selectedEvent: CalendarEvent?

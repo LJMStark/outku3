@@ -162,11 +162,7 @@ extension AppState {
     }
 
     public func setFocusEnforcementMode(_ mode: FocusEnforcementMode) {
-        focusEnforcementMode = mode
-
-        Task {
-            await localStorage.saveFocusEnforcementMode(mode)
-        }
+        FocusSessionService.shared.setFocusEnforcementMode(mode)
     }
 
     public func addTask(_ task: TaskItem) {

@@ -65,12 +65,8 @@ extension AppState {
             reportPersistenceError(error, operation: "load", target: "onboarding_profile.json")
         }
 
-        focusEnforcementMode = await localStorage.loadFocusEnforcementMode() ?? .standard
+        // focusEnforcementMode is loaded by FocusSessionService.loadFocusEnforcementMode() on its init.
         await ScreenTimeFocusGuardService.shared.refreshAuthorizationStatus()
-        if focusEnforcementMode == .deepFocus && !ScreenTimeFocusGuardService.shared.canShowDeepFocusEntry {
-            focusEnforcementMode = .standard
-            await localStorage.saveFocusEnforcementMode(.standard)
-        }
 
         await updatePetState()
         updateStatistics()

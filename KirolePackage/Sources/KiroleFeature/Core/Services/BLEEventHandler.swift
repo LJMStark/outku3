@@ -307,7 +307,7 @@ public enum BLEEventHandler {
                 await focusService.startSession(
                     taskId: taskId,
                     taskTitle: taskTitle,
-                    mode: AppState.shared.focusEnforcementMode,
+                    mode: FocusSessionService.shared.focusEnforcementMode,
                     startTime: eventLog.timestamp
                 )
             }
