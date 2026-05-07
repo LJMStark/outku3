@@ -131,6 +131,48 @@ public final class AppState {
     }
 }
 
+// MARK: - Persistence Helpers
+
+extension AppState {
+    func persistTaskAndPetState(tasks: [TaskItem], pet: Pet, streak: Streak, context: String) async {
+        do {
+            try await localStorage.saveTasks(tasks)
+            try await localStorage.savePet(pet)
+            try await localStorage.saveStreak(streak)
+        } catch {
+            reportPersistenceError(error, operation: "save", target: "tasks/pet/streak")
+            ErrorReporter.log(error, context: context)
+        }
+    }
+
+    func persistPet(_ pet: Pet, context: String) async {
+        do {
+            try await localStorage.savePet(pet)
+        } catch {
+            reportPersistenceError(error, operation: "save", target: "pet.json")
+            ErrorReporter.log(error, context: context)
+        }
+    }
+
+    func persistTasks(_ tasks: [TaskItem], context: String) async {
+        do {
+            try await localStorage.saveTasks(tasks)
+        } catch {
+            reportPersistenceError(error, operation: "save", target: "tasks.json")
+            ErrorReporter.log(error, context: context)
+        }
+    }
+
+    func persistEvents(_ events: [CalendarEvent], context: String) async {
+        do {
+            try await localStorage.saveEvents(events)
+        } catch {
+            reportPersistenceError(error, operation: "save", target: "events.json")
+            ErrorReporter.log(error, context: context)
+        }
+    }
+}
+
 // MARK: - Default Integrations
 
 extension Integration {

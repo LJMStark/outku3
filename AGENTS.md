@@ -268,7 +268,7 @@ Documented honestly so future agents do not waste time chasing ghosts. Treat eac
 4. **`PetForm` legacy parallel system.** Pre-IP-era 5-form enum (`sprout`/`pup`/`hopper`/`flyer`/`blaze`) still wired into `Pet.currentForm`, Supabase, `SettingsView:311`, and `PixelArtBody`, but is **independent from** the IP system that is the actual product spec. Cleanup pending.
 5. ~~**`load*` naming inconsistency.**~~ **RESOLVED 2026-05-07**: deleted unused `loadGoogleCalendarEvents` / `loadGoogleTasks` wrappers (no callers); renamed `loadAppleCalendarEvents` → `syncAppleCalendarEvents` and `loadAppleReminders` → `syncAppleReminders`. Convention now enforced: remote pull = `sync*`; local read (in `+Loading`) = `load*`.
 6. **`editTask` / `editEvent` embed external sync logic.** `+Actions:144-220, 314-370` (~130 lines of Google/Apple/Notion/Taskade content-edit propagation) belongs in `+Sync` or a dedicated `TaskSyncDispatcher`.
-7. **`persist*` helpers in `+Actions` shared across extensions.** `Actions:573-609` (`persistPet`, `persistTasks`, `persistEvents`) is called from `+Companion`, `+HardwareDisplay`, `+Profile`, `+Sync`. Move to main `AppState.swift` or a `PersistenceCoordinator`.
+7. ~~**`persist*` helpers in `+Actions` shared across extensions.**~~ **RESOLVED 2026-05-07**: moved `persistTaskAndPetState` / `persistPet` / `persistTasks` / `persistEvents` from `AppState+Actions.swift` to a `// MARK: - Persistence Helpers` extension in `AppState.swift` main file. They are infrastructure shared across `+Companion`, `+HardwareDisplay`, `+Profile`, `+Sync` and now live where they semantically belong.
 
 ## 6. Code Style & Formatting
 - **Imports**: `import SwiftUI`, `import Testing`. No Combine unless needed.
