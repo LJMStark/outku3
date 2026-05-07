@@ -292,13 +292,14 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 
 **Condition 值：**
 
-| Value     | 描述 |
-|-----------|-------------|
-| `sunny`   | 晴天 |
-| `cloudy`  | 多云 |
-| `rainy`   | 雨天 |
-| `snowy`   | 雪天 |
-| `stormy`  | 暴风雨 |
+| Value             | 描述 |
+|-------------------|-------------|
+| `sun.max.fill`    | 晴天 |
+| `cloud.fill`      | 多云 |
+| `cloud.sun.fill`  | 局部多云 |
+| `cloud.rain.fill` | 雨天 |
+| `cloud.snow.fill` | 雪天 |
+| `cloud.bolt.fill` | 暴风雨 |
 
 ---
 
