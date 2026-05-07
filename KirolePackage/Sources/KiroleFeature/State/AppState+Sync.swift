@@ -124,9 +124,7 @@ extension AppState {
             lastGoogleSyncDebug = "Error: \(error.localizedDescription)"
         }
 
-        await updatePetState()
-        await refreshSharedPetDialogueIfNeeded()
-        await refreshHomeCompanionPresentation()
+        await applyPostSyncHooks()
     }
 
     public var isAnyAppleIntegrationConnected: Bool {
@@ -188,9 +186,7 @@ extension AppState {
             await loadAppleReminders()
         }
 
-        await updatePetState()
-        await refreshSharedPetDialogueIfNeeded()
-        await refreshHomeCompanionPresentation()
+        await applyPostSyncHooks()
     }
 
     public func requestAppleCalendarAccess() async -> Bool {
@@ -254,7 +250,7 @@ extension AppState {
             ErrorReporter.log(appError, context: "AppState.syncNotionData")
         }
 
-        await updatePetState()
+        await applyPostSyncHooks()
     }
 
     // MARK: - Taskade Sync
@@ -283,6 +279,16 @@ extension AppState {
             ErrorReporter.log(appError, context: "AppState.syncTaskadeData")
         }
 
+        await applyPostSyncHooks()
+    }
+
+    // MARK: - Post-Sync Hooks
+
+    /// Every public sync* MUST end with this so all external sources trigger
+    /// consistent home companion refresh after data merge.
+    private func applyPostSyncHooks() async {
         await updatePetState()
+        await refreshSharedPetDialogueIfNeeded()
+        await refreshHomeCompanionPresentation()
     }
 }
