@@ -286,6 +286,10 @@ public actor LocalStorage {
 
     // MARK: - Behavior Summary
 
+    // TODO: saveBehaviorSummary has 0 callers — behavior summary pipeline is inactive.
+    // Connect after hardware integration: call saveBehaviorSummary after daily settlement
+    // to give companions genuine memory. Until then, loadBehaviorSummary always returns nil.
+
     /// Save user behavior summary
     public func saveBehaviorSummary(_ summary: UserBehaviorSummary) throws {
         try save(summary, to: "behavior_summary.json")
