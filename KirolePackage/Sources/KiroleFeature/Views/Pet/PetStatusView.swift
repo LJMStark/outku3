@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 // MARK: - Postmark Stamp Decoration
 private struct StampDecoration: View {
@@ -34,6 +37,14 @@ struct PetStatusView: View {
     @Environment(ThemeManager.self) private var theme
     @State private var appeared = false
 
+    private var viewportWidth: CGFloat? {
+        #if canImport(UIKit)
+        return UIScreen.main.bounds.width
+        #else
+        return nil
+        #endif
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView(.vertical, showsIndicators: false) {
@@ -63,6 +74,7 @@ struct PetStatusView: View {
                 }
                 .padding(.horizontal, 24)
                 .padding(.top, 24)
+                .frame(width: viewportWidth)
             }
             .background(theme.colors.background)
             #if os(iOS)
