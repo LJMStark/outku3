@@ -51,12 +51,8 @@ enum ExternalSyncDispatcher {
             syncedTask.remoteUpdatedAt = Date()
             syncedTask.syncStatus = .synced
             return syncedTask
-        case .notion:
-            throw ExternalEditingError.integrationReadOnly("Notion")
-        case .taskade:
-            throw ExternalEditingError.integrationReadOnly("Taskade")
-        default:
-            throw ExternalEditingError.integrationReadOnly(task.source.rawValue)
+        case .notion, .taskade, .todoist:
+            throw ExternalEditingError.integrationReadOnly(componentName(for: task.source))
         }
     }
 
@@ -103,12 +99,8 @@ enum ExternalSyncDispatcher {
             syncedEvent.localId = event.localId
             syncedEvent.syncStatus = .synced
             return syncedEvent
-        case .todoist:
-            throw ExternalEditingError.integrationReadOnly("Todoist")
-        case .notion:
-            throw ExternalEditingError.integrationReadOnly("Notion")
-        case .taskade:
-            throw ExternalEditingError.integrationReadOnly("Taskade")
+        case .todoist, .notion, .taskade:
+            throw ExternalEditingError.integrationReadOnly(componentName(for: event.source))
         }
     }
 
