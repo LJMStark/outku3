@@ -94,6 +94,8 @@ public struct AppHeaderView: View {
                 TabButton(
                     icon: "house.fill",
                     label: "Home",
+                    accessibilityLabel: "Home",
+                    accessibilityIdentifier: "appHeader.homeTab",
                     isSelected: selectedTab == .home,
                     primaryColor: theme.colors.primary,
                     baseColor: theme.colors.primaryLight,
@@ -106,6 +108,8 @@ public struct AppHeaderView: View {
 
                 PetTabButton(
                     label: "Kirole",
+                    accessibilityLabel: "Pet",
+                    accessibilityIdentifier: "appHeader.petTab",
                     isSelected: selectedTab == .pet,
                     primaryColor: theme.colors.primary,
                     baseColor: theme.colors.primaryLight,
@@ -120,6 +124,8 @@ public struct AppHeaderView: View {
                 TabButton(
                     icon: "gearshape.fill",
                     label: nil,
+                    accessibilityLabel: "Settings",
+                    accessibilityIdentifier: "appHeader.settingsTab",
                     isSelected: selectedTab == .settings,
                     primaryColor: theme.colors.primary,
                     baseColor: theme.colors.primaryLight,
@@ -156,6 +162,8 @@ public struct AppHeaderView: View {
 private struct TabButton: View {
     let icon: String
     let label: String?
+    let accessibilityLabel: String
+    let accessibilityIdentifier: String
     let isSelected: Bool
     let primaryColor: Color
     let baseColor: Color
@@ -184,6 +192,9 @@ private struct TabButton: View {
             }
         }
         .buttonStyle(.kiroleIcon)
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityIdentifier(accessibilityIdentifier)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 
@@ -191,6 +202,8 @@ private struct TabButton: View {
 
 private struct PetTabButton: View {
     let label: String?
+    let accessibilityLabel: String
+    let accessibilityIdentifier: String
     let isSelected: Bool
     let primaryColor: Color
     let baseColor: Color
@@ -221,6 +234,9 @@ private struct PetTabButton: View {
             }
         }
         .buttonStyle(.kiroleIcon)
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityIdentifier(accessibilityIdentifier)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 
