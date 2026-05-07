@@ -119,6 +119,9 @@ public final class AppState {
     let taskManager = TaskManager()
     let integrationCoordinator = IntegrationCoordinator()
 
+    // Internal coordination state — debounce handle for BLE sync requests.
+    var pendingBLESyncTask: Task<Void, Never>?
+
     private init(loadLocalDataOnInit: Bool = true) {
         guard loadLocalDataOnInit else { return }
         Task { @MainActor in

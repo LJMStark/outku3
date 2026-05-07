@@ -282,5 +282,26 @@ extension AppState {
         await updatePetState()
         await refreshSharedPetDialogueIfNeeded()
         await refreshHomeCompanionPresentation()
+        requestBLESync(reason: "external-sync", debounce: .seconds(3))
+    }
+
+    // MARK: - BLE Sync Request
+
+    /// Single entry-point used by every write site (and external sync hook)
+    /// to request a BLE push. Multiple calls within `debounce` are coalesced
+    /// to one `BLESyncCoordinator.performSync()` invocation.
+    ///
+    /// `BLESyncPolicy.shouldSync` already returns `true` whenever the
+    /// DayPack fingerprint changed, so we never need `force: true` here.
+    func requestBLESync(reason: String, debounce: Duration = .seconds(1.5)) {
+        pendingBLESyncTask?.cancel()
+        pendingBLESyncTask = Task { @MainActor in
+            try? await Task.sleep(for: debounce)
+            guard !Task.isCancelled else { return }
+            #if DEBUG
+            print("[AppState.requestBLESync] firing performSync (reason=\(reason))")
+            #endif
+            await BLESyncCoordinator.shared.performSync()
+        }
     }
 }

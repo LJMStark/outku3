@@ -35,6 +35,7 @@ extension AppState {
         tasks = taskManager.withTask(tasks, updatedTask: updatedTask)
         updatePetForTaskToggle(isCompleted: isCompleted)
         updateStatistics()
+        requestBLESync(reason: "toggleTaskCompletion")
 
         Task { @MainActor in
             if isCompleted {
@@ -152,6 +153,7 @@ extension AppState {
             let syncedEvent = try await ExternalSyncDispatcher.syncEventContentEdit(updatedEvent)
             events[index] = syncedEvent
             await persistEvents(events, context: "AppState.editEvent")
+            requestBLESync(reason: "editEvent")
         } catch {
             reportSyncError(error, component: event.source.rawValue, context: "AppState.editEvent")
             throw error
@@ -179,6 +181,7 @@ extension AppState {
     public func addTask(_ task: TaskItem) {
         tasks = taskManager.addingTask(tasks, task: task)
         updateStatistics()
+        requestBLESync(reason: "addTask")
 
         Task { @MainActor in
             await persistTasks(tasks, context: "AppState.addTask")
@@ -192,6 +195,7 @@ extension AppState {
         if support == .localOnly {
             tasks = taskManager.removingTask(tasks, taskID: task.id)
             updateStatistics()
+            requestBLESync(reason: "deleteTask.localOnly")
 
             Task { @MainActor in
                 await persistTasks(tasks, context: "AppState.deleteTask.localOnly")
@@ -207,6 +211,7 @@ extension AppState {
 
         tasks = taskManager.withTask(tasks, updatedTask: deletingTask)
         updateStatistics()
+        requestBLESync(reason: "deleteTask.pending")
 
         Task { @MainActor in
             await persistTasks(tasks, context: "AppState.deleteTask.pending")
@@ -238,6 +243,7 @@ extension AppState {
             action: .updateCompletion,
             expectedLastModified: retryVersion
         )
+        requestBLESync(reason: "retryTaskSync")
     }
 
     public func editTask(
@@ -261,6 +267,7 @@ extension AppState {
             tasks = taskManager.withTask(tasks, updatedTask: syncedTask)
             updateStatistics()
             await persistTasks(tasks, context: "AppState.editTask")
+            requestBLESync(reason: "editTask")
         } catch {
             reportSyncError(error, component: task.source.rawValue, context: "AppState.editTask")
             throw error
@@ -374,6 +381,7 @@ extension AppState {
         showEvolutionAnimation = false
         evolutionFromStage = nil
         evolutionToStage = nil
+        requestBLESync(reason: "completeEvolution")
 
         Task { @MainActor in
             await persistPet(pet, context: "AppState.completeEvolution")
