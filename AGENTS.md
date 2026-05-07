@@ -256,7 +256,7 @@ The single most useful reference when debugging "which event produces which outp
 | BLE disconnect | `BLE:750` | see Focus interrupted | same |
 | Sync complete (Google) | `syncGoogleData` (`+Sync:64`) | `events`, `tasks` (merge), `lastGoogleSyncDebug` | `updatePetState` → `refreshSharedPetDialogueIfNeeded` → `refreshHomeCompanionPresentation` |
 | Sync complete (Apple) | `syncAppleData` (`+Sync:175`) | same subset | same path as Google |
-| Sync complete (Notion / Taskade) | `+Sync:231` / `+Sync:262` | basic fields only | ⚠️ **missing `refreshHomeCompanionPresentation`** — known inconsistency, see below |
+| Sync complete (Notion / Taskade) | `+Sync:231` / `+Sync:262` | basic fields only | same path as Google (via shared `applyPostSyncHooks()` since 2026-05-07) |
 
 ### Known Inconsistencies / Dead Paths (verified 2026-05-06)
 Documented honestly so future agents do not waste time chasing ghosts. Treat each as a candidate for either implementation or deletion.
