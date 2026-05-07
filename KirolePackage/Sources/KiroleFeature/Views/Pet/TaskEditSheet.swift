@@ -98,6 +98,7 @@ public struct TaskEditSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .accessibilityIdentifier("TaskEdit_Cancel")
                 }
                 if capabilities.isEditable {
                     ToolbarItem(placement: .confirmationAction) {
@@ -107,6 +108,7 @@ public struct TaskEditSheet: View {
                             }
                         }
                         .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
+                        .accessibilityIdentifier("TaskEdit_Save")
                     }
                 }
             }

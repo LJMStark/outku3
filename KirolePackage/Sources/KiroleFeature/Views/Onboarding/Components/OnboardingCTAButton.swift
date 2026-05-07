@@ -20,9 +20,11 @@ public struct OnboardingCTAButton: View {
                 Text(title)
                 if let emoji = emoji {
                     Text(emoji)
+                        .accessibilityHidden(true)
                 }
                 Image(systemName: "chevron.right")
                     .font(.system(size: 14, weight: .semibold))
+                    .accessibilityHidden(true)
             }
             .font(.system(size: 18, weight: .semibold, design: .rounded))
             .foregroundStyle(isEnabled ? .white : theme.colors.secondaryText)
@@ -36,5 +38,7 @@ public struct OnboardingCTAButton: View {
         }
         .buttonStyle(.kiroleCTA) // Use the new global cta style
         .disabled(!isEnabled)
+        .accessibilityLabel(title)
+        .accessibilityIdentifier("Onboarding_CTA")
     }
 }

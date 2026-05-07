@@ -318,6 +318,7 @@ struct HaikuSectionView: View {
                                     x: ballProgress * ballTravel,
                                     y: HaikuSectionLayout.toyBallVerticalOffset
                                 )
+                                .accessibilityHidden(true)
                         }
 
                         Image("tiko_reading", bundle: .module)
@@ -326,6 +327,8 @@ struct HaikuSectionView: View {
                             .frame(height: HaikuSectionLayout.petArtworkHeight)
                             .clipShape(RoundedRectangle(cornerRadius: 16))
                             .shadow(color: .black.opacity(0.1), radius: 8, y: 4)
+                            .accessibilityLabel("宠物伴侣插图")
+                            .accessibilityIdentifier("Home_PetArtwork")
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }

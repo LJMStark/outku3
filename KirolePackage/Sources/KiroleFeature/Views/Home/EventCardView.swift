@@ -61,6 +61,9 @@ struct EventCardView: View {
             .shadow(color: .black.opacity(0.08), radius: 8, y: 4)
         }
         .buttonStyle(.kiroleCTA)
+        .accessibilityLabel("\(title), \(duration)")
+        .accessibilityIdentifier("Home_EventCard")
+        .accessibilityHint("点击查看活动详情")
     }
 }
 
@@ -153,6 +156,8 @@ public struct EventDetailModal: View {
                             Circle().stroke(Color(hex: "E5E7EB"), lineWidth: 1)
                         )
                 }
+                .accessibilityLabel("关闭")
+                .accessibilityIdentifier("EventDetail_Close")
             }
             .padding(.horizontal, 20)
             .padding(.bottom, 16)
@@ -297,6 +302,8 @@ private struct EventDetailRow<Content: View>: View {
                             .font(.system(size: 14))
                             .foregroundStyle(Color.black.opacity(0.4))
                     }
+                    .accessibilityLabel("编辑")
+                    .accessibilityIdentifier("EventDetail_EditField")
                 }
             }
         }

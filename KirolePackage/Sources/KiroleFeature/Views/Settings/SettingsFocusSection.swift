@@ -64,6 +64,8 @@ public struct SettingsFocusSection: View {
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("测试专注 UI")
+                .accessibilityIdentifier("Debug_TestFocusUI")
                 #endif
             }
             .padding(16)
@@ -116,6 +118,8 @@ public struct SettingsFocusSection: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12))
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("专注模式：\(mode.displayName)")
+        .accessibilityIdentifier("Settings_FocusMode_\(mode.displayName)")
     }
 
     private var statusCard: some View {
@@ -156,6 +160,8 @@ public struct SettingsFocusSection: View {
                             )
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("申请屏幕使用时间权限")
+                        .accessibilityIdentifier("Settings_RequestScreenTime")
                     } else {
                         Button {
                             guardService.presentAppPicker()
@@ -166,6 +172,8 @@ public struct SettingsFocusSection: View {
                             )
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("选择需要屏蔽的 App")
+                        .accessibilityIdentifier("Settings_SelectDistractingApps")
                     }
                 }
             }
@@ -322,6 +330,8 @@ private struct FocusTestOverlayView: View {
                     .foregroundStyle(theme.colors.secondaryText)
                     .padding()
             }
+            .accessibilityLabel("关闭专注测试")
+            .accessibilityIdentifier("FocusTest_Close")
         }
         .onReceive(timer) { _ in
             if isPresented {

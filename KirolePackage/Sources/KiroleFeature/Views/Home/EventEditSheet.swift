@@ -84,6 +84,7 @@ public struct EventEditSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .accessibilityIdentifier("EventEdit_Cancel")
                 }
                 if isEditableSource {
                     ToolbarItem(placement: .confirmationAction) {
@@ -93,6 +94,7 @@ public struct EventEditSheet: View {
                             }
                         }
                         .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty || !isTimeRangeValid || isSaving)
+                        .accessibilityIdentifier("EventEdit_Save")
                     }
                 }
             }

@@ -37,8 +37,11 @@ public struct QuestionnairePage: View {
                             Image(systemName: "chevron.left")
                                 .font(.system(size: 16, weight: .semibold))
                                 .foregroundStyle(theme.colors.secondaryText)
+                                .accessibilityHidden(true)
                         }
                     }
+                    .accessibilityLabel("返回上一步")
+                    .accessibilityIdentifier("Onboarding_Back")
 
                     OnboardingProgressBar(questionIndex: questionIndex)
                 }

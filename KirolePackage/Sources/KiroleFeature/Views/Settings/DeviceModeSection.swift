@@ -51,6 +51,8 @@ public struct DeviceModeSection: View {
                     .aspectRatio(contentMode: .fit)
                     .frame(width: 100, height: 120)
                     .offset(y: 10) // Push pet slightly down
+                    .accessibilityLabel("宠物头像")
+                    .accessibilityIdentifier("Settings_DevicePetAvatar")
 
                 VStack(alignment: .trailing, spacing: 12) {
                     batteryIndicator
@@ -109,6 +111,7 @@ public struct DeviceModeSection: View {
             HStack(spacing: 6) {
                 Image(systemName: "info.circle")
                     .font(.system(size: 14))
+                    .accessibilityHidden(true)
                 Text("How do I add to my home screen?")
                     .font(.system(size: 13))
             }
@@ -117,6 +120,8 @@ public struct DeviceModeSection: View {
             .padding(.top, 4)
             .contentShape(Rectangle())
         }
+        .accessibilityLabel("如何将 Kirole 添加到主屏幕")
+        .accessibilityIdentifier("Settings_HomeScreenHint")
     }
 }
 

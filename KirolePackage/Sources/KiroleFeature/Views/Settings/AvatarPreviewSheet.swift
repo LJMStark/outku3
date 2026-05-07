@@ -55,6 +55,8 @@ struct AvatarPreviewSheet: View {
                         .clipShape(RoundedRectangle(cornerRadius: 16))
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("取消")
+                .accessibilityIdentifier("AvatarPreview_Cancel")
 
                 Button(action: onConfirm) {
                     Text("Confirm")
@@ -66,6 +68,8 @@ struct AvatarPreviewSheet: View {
                         .clipShape(RoundedRectangle(cornerRadius: 16))
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("确认保存头像")
+                .accessibilityIdentifier("AvatarPreview_Confirm")
             }
             .padding(.horizontal, 24)
             .padding(.bottom, 32)

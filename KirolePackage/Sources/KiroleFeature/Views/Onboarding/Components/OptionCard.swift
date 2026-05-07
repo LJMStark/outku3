@@ -30,12 +30,14 @@ public struct OptionCard: View {
                         Image(systemName: sfSymbol)
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(isSelected ? .white : theme.colors.secondaryText)
+                            .accessibilityHidden(true)
                     }
                 } else if let emoji = emoji {
                     Image(systemName: emoji)
                         .font(.system(size: 24))
                         .foregroundStyle(isSelected ? theme.colors.primary : theme.colors.secondaryText)
                         .frame(width: 40, height: 40)
+                        .accessibilityHidden(true)
                 }
 
                 Text(label)
@@ -54,6 +56,7 @@ public struct OptionCard: View {
                             .foregroundStyle(.white)
                     }
                     .transition(.scale.combined(with: .opacity))
+                    .accessibilityHidden(true)
                 }
             }
             .padding(16)
@@ -67,6 +70,8 @@ public struct OptionCard: View {
             }
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(isSelected ? "已选择：\(label)" : label)
+        .accessibilityIdentifier("Onboarding_Option_\(label)")
         .animation(.kiroleGentle, value: isSelected)
         .confetti(trigger: $confettiTrigger, particleCount: 30, explosionRadius: 180)
         .onChange(of: isSelected) { oldValue, newValue in

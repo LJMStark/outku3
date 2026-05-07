@@ -92,6 +92,8 @@ public struct SettingsBLESection: View {
                     .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("扫描并连接设备")
+                .accessibilityIdentifier("Settings_BLEScan")
                 .disabled(isScanInFlight)
             }
         }

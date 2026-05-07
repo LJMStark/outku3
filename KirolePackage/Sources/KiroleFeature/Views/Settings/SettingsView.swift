@@ -123,6 +123,8 @@ struct SettingsView: View {
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("切换伴侣角色")
+                .accessibilityIdentifier("Settings_SwitchCompanion")
             }
             .padding(16)
             .background(Color.white)
@@ -202,6 +204,8 @@ private struct SoundSettingsSection: View {
                         SettingsToggleSwitch(isOn: soundEnabled)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(soundEnabled ? "关闭音效" : "开启音效")
+                    .accessibilityIdentifier("Settings_SoundToggle")
                 }
 
                 if soundEnabled {
@@ -223,6 +227,8 @@ private struct SoundSettingsSection: View {
                             SoundService.shared.volume = Float(volume)
                         }
                         .tint(theme.colors.accent)
+                        .accessibilityLabel("音量")
+                        .accessibilityIdentifier("Settings_VolumeSlider")
                     }
                 }
 
@@ -244,6 +250,8 @@ private struct SoundSettingsSection: View {
                     .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("测试音效")
+                .accessibilityIdentifier("Settings_TestSound")
             }
             .padding(16)
             .background(Color.white)
@@ -328,6 +336,8 @@ private struct DebugSection: View {
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("强制同步 Google 数据")
+                .accessibilityIdentifier("Debug_ForceSyncGoogle")
 
                 Divider()
 
@@ -347,6 +357,8 @@ private struct DebugSection: View {
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("重置引导流程")
+                .accessibilityIdentifier("Debug_ResetOnboarding")
                 .alert("Reset Onboarding?", isPresented: $showResetConfirm) {
                     Button("Cancel", role: .cancel) {}
                     Button("Reset", role: .destructive) {

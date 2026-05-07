@@ -168,6 +168,9 @@ private struct PetIllustrationSection: View {
             }
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("查看宠物状态")
+        .accessibilityIdentifier("Pet_IllustrationButton")
+        .accessibilityHint("点击查看宠物详细信息")
         .onAppear {
             // Pet breathing + floating particles are ambient loops. Under
             // Reduce Motion we skip them entirely — the illustration stays
@@ -201,18 +204,19 @@ private struct PetIllustrationSection: View {
                 .font(.system(size: 14))
                 .foregroundColor(theme.colors.primary.opacity(0.3))
                 .offset(x: -100, y: -40 + particleOffsets[0])
-                
+
             Image(systemName: "leaf.fill")
                 .font(.system(size: 10))
                 .foregroundColor(Color.green.opacity(0.2))
                 .offset(x: 110, y: 20 + particleOffsets[1])
                 .rotationEffect(.degrees(15))
-                
+
             Image(systemName: "sparkle")
                 .font(.system(size: 18))
                 .foregroundColor(theme.colors.primary.opacity(0.2))
                 .offset(x: -80, y: 60 + particleOffsets[2])
         }
+        .accessibilityHidden(true)
     }
 
     private var petImageName: String {
@@ -308,6 +312,8 @@ private struct TaskItemRow: View {
                         }
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(task.isCompleted ? "标记为未完成" : "标记为完成")
+                .accessibilityIdentifier("Pet_TaskCheckbox")
 
                 // Task title
                 HStack(spacing: 6) {
@@ -385,6 +391,8 @@ private struct TaskItemRow: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("更多操作")
+                .accessibilityIdentifier("Pet_TaskMoreMenu")
             }
             .padding(16)
             .background(Color.white)
@@ -397,6 +405,9 @@ private struct TaskItemRow: View {
             )
         }
         .buttonStyle(RowScaleButtonStyle(isPressed: $isPressed))
+        .accessibilityLabel(task.title)
+        .accessibilityIdentifier("Pet_TaskRow")
+        .accessibilityHint("点击编辑任务")
         .opacity(task.isCompleted ? 0.6 : 1.0)
         .sheet(isPresented: $showEditSheet) {
             TaskEditSheet(task: task)

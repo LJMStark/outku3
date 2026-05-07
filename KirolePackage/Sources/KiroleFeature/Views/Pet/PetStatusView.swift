@@ -83,6 +83,8 @@ struct PetStatusView: View {
                             .font(.system(size: 24))
                             .foregroundStyle(theme.colors.secondaryText)
                     }
+                    .accessibilityLabel("关闭")
+                    .accessibilityIdentifier("PetStatus_Close")
                 }
             }
         }

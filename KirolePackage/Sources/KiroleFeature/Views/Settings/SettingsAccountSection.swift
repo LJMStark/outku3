@@ -140,6 +140,8 @@ public struct SettingsAccountSection: View {
                         Color.clear
                     }
                     .disabled(isProcessing)
+                    .accessibilityLabel(isProcessing ? "处理中" : "上传头像图片")
+                    .accessibilityIdentifier("Settings_AvatarUpload")
                 }
                 .frame(maxWidth: .infinity)
                 .aspectRatio(1, contentMode: .fit)

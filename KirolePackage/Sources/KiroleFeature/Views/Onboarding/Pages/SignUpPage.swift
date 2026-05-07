@@ -30,8 +30,11 @@ public struct SignUpPage: View {
                             Image(systemName: "chevron.left")
                                 .font(.system(size: 16, weight: .semibold))
                                 .foregroundStyle(theme.colors.secondaryText)
+                                .accessibilityHidden(true)
                         }
                     }
+                    .accessibilityLabel("返回上一步")
+                    .accessibilityIdentifier("Onboarding_Back")
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Personalization")
@@ -101,6 +104,7 @@ public struct SignUpPage: View {
                                 HStack(spacing: 12) {
                                     Image(systemName: "g.circle.fill")
                                         .font(.system(size: 20))
+                                        .accessibilityHidden(true)
                                     Text("Continue with Google")
                                         .font(.system(size: 16, weight: .semibold, design: .rounded))
                                 }
@@ -112,6 +116,8 @@ public struct SignUpPage: View {
                                 .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
                             }
                             .disabled(isSigningIn)
+                            .accessibilityLabel("使用 Google 账号继续")
+                            .accessibilityIdentifier("Onboarding_SignInGoogle")
 
                             // Apple Sign In
                             Button {
@@ -135,6 +141,7 @@ public struct SignUpPage: View {
                                 HStack(spacing: 12) {
                                     Image(systemName: "apple.logo")
                                         .font(.system(size: 20))
+                                        .accessibilityHidden(true)
                                     Text("Continue with Apple")
                                         .font(.system(size: 16, weight: .semibold, design: .rounded))
                                 }
@@ -146,6 +153,8 @@ public struct SignUpPage: View {
                                 .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
                             }
                             .disabled(isSigningIn)
+                            .accessibilityLabel("使用 Apple ID 继续")
+                            .accessibilityIdentifier("Onboarding_SignInApple")
                         }
                         .padding(.top, 32)
 
@@ -171,6 +180,8 @@ public struct SignUpPage: View {
                                 .padding(.top, 16)
                                 .padding(.bottom, 8)
                         }
+                        .accessibilityLabel("暂时跳过登录")
+                        .accessibilityIdentifier("Onboarding_SkipSignIn")
                     }
                     .padding(.horizontal, 24)
                 }

@@ -98,6 +98,7 @@ public struct PersonalizationPage: View {
                                 HStack(spacing: 8) {
                                     Image(systemName: "photo.on.rectangle.angled")
                                         .font(.system(size: 16))
+                                        .accessibilityHidden(true)
                                     Text(hasPhotoImage ? "Change Photo" : "Choose Photo")
                                         .font(.system(size: 14, weight: .medium, design: .rounded))
                                 }
@@ -107,6 +108,8 @@ public struct PersonalizationPage: View {
                                 .background(.white.opacity(0.2))
                                 .clipShape(Capsule())
                             }
+                            .accessibilityLabel(hasPhotoImage ? "更换自定义图片" : "选择自定义图片")
+                            .accessibilityIdentifier("Onboarding_ChoosePhoto")
                         }
                     }
                     .padding(.horizontal, 24)
@@ -160,6 +163,7 @@ private struct CompanionCharacterCard: View {
                     .padding(8)
                     .background(.white.opacity(0.15))
                     .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .accessibilityHidden(true)
 
                 Text(character.displayName)
                     .font(.system(size: 14, weight: .semibold, design: .rounded))
@@ -185,6 +189,8 @@ private struct CompanionCharacterCard: View {
             .animation(.kiroleSnappy, value: isSelected)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(isSelected ? "当前伴侣：\(character.displayName)" : "选择 \(character.displayName) 作为伴侣")
+        .accessibilityIdentifier("Onboarding_Character_\(character.displayName)")
     }
 }
 

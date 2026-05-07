@@ -330,6 +330,8 @@ private struct IntegrationAppRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.kiroleRow)
+        .accessibilityLabel("连接 \(type.rawValue)")
+        .accessibilityIdentifier("Integration_Connect_\(type.rawValue)")
     }
 }
 
@@ -381,6 +383,8 @@ private struct ConnectedAppRow: View {
                 .padding(.vertical, 6)
                 .background(Color(hex: "F3F4F6"))
                 .clipShape(Capsule())
+                .accessibilityLabel("管理 \(integration.name) 连接")
+                .accessibilityIdentifier("Integration_Manage_\(integration.name)")
             }
         }
         .padding(16)
@@ -415,12 +419,15 @@ private struct IntegrationIcon: View {
             if type == .googleCalendar || type == .googleTasks {
                 GoogleIcon(lineWidth: 3, inset: 3)
                     .frame(width: 18, height: 18)
+                    .accessibilityHidden(true)
             } else {
                 Image(systemName: type.iconName)
                     .font(.system(size: 16))
                     .foregroundStyle(.white)
+                    .accessibilityHidden(true)
             }
         }
+        .accessibilityHidden(true)
     }
 
     private var iconBackground: Color {

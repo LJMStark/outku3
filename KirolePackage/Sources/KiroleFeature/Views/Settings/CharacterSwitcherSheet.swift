@@ -83,6 +83,7 @@ private struct CharacterCard: View {
                     Text(characterEmoji)
                         .font(.system(size: 28))
                         .grayscale(isSelected ? 0 : 0.8)
+                        .accessibilityHidden(true)
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
@@ -126,6 +127,8 @@ private struct CharacterCard: View {
             .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(isSelected ? "当前伴侣：\(character.displayName)" : "选择 \(character.displayName) 作为伴侣")
+        .accessibilityIdentifier("Settings_Character_\(character.displayName)")
     }
 
     private var characterEmoji: String {

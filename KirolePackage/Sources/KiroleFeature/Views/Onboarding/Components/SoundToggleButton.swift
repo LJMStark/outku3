@@ -19,8 +19,11 @@ public struct SoundToggleButton: View {
                 Image(systemName: isEnabled ? "speaker.wave.2.fill" : "speaker.slash.fill")
                     .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(.white)
+                    .accessibilityHidden(true)
             }
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(isEnabled ? "关闭声音" : "开启声音")
+        .accessibilityIdentifier("Onboarding_SoundToggle")
     }
 }

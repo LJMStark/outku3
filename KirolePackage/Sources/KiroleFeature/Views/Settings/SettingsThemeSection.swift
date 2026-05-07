@@ -53,6 +53,7 @@ private struct ThemeOptionRow: View {
                         Circle()
                             .fill(color)
                             .frame(width: 16, height: 16)
+                            .accessibilityHidden(true)
                     }
                 }
             }
@@ -66,5 +67,7 @@ private struct ThemeOptionRow: View {
             )
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(isSelected ? "当前主题：\(theme.rawValue)" : "切换到 \(theme.rawValue) 主题")
+        .accessibilityIdentifier("Settings_Theme_\(theme.rawValue)")
     }
 }

@@ -179,6 +179,8 @@ struct EventDetailView: View {
                             .font(.system(size: 24))
                             .foregroundStyle(theme.colors.secondaryText)
                     }
+                    .accessibilityLabel("关闭")
+                    .accessibilityIdentifier("EventDetail_Close")
                 }
             }
         }
