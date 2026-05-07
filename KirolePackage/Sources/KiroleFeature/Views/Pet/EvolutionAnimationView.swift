@@ -118,12 +118,15 @@ struct EvolutionAnimationView: View {
                 }
             }
         }
-        .onAppear {
-            startEvolutionSequence()
+        .task {
+            await runEvolutionSequence()
         }
     }
 
-    private func startEvolutionSequence() {
+    /// Drives the entire evolution timeline. Bound to the view's `.task`
+    /// modifier so the whole 4.5s sequence is cancelled atomically when
+    /// the user dismisses the view mid-animation.
+    private func runEvolutionSequence() async {
         // Initialize particles
         particleOffsets = Array(repeating: .zero, count: 12)
         particleOpacities = Array(repeating: 0, count: 12)
@@ -133,81 +136,78 @@ struct EvolutionAnimationView: View {
             textOpacity = 1.0
         }
 
-        // Phase 2: Glowing (after 1s)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            phase = .glowing
-            withAnimation(.easeInOut(duration: 1.5)) {
-                glowOpacity = 0.8
-            }
+        // Phase 2: Glowing (1s after start)
+        try? await Task.sleep(for: .seconds(1))
+        if Task.isCancelled { return }
+        phase = .glowing
+        withAnimation(.easeInOut(duration: 1.5)) {
+            glowOpacity = 0.8
+        }
+        async let particles: Void = runParticleAnimation()
 
-            // Start particles
-            startParticleAnimation()
+        // Phase 3: Transforming (2.5s = +1.5s)
+        try? await Task.sleep(for: .milliseconds(1500))
+        if Task.isCancelled { await particles; return }
+        phase = .transforming
+        withAnimation(.easeIn(duration: 0.3)) {
+            textOpacity = 0
+        }
+        withAnimation(.easeInOut(duration: 0.5)) {
+            petScale = 1.3
+            glowOpacity = 1.0
         }
 
-        // Phase 3: Transforming (after 2.5s)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
-            phase = .transforming
-            withAnimation(.easeIn(duration: 0.3)) {
-                textOpacity = 0
-            }
-
-            withAnimation(.easeInOut(duration: 0.5)) {
-                petScale = 1.3
-                glowOpacity = 1.0
-            }
-
-            // Flash and swap
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                withAnimation(.easeOut(duration: 0.2)) {
-                    petOpacity = 0
-                }
-
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                    showNewPet = true
-                    petScale = 0.8
-
-                    withAnimation(.spring(response: 0.5, dampingFraction: 0.6)) {
-                        petOpacity = 1.0
-                        petScale = 1.0
-                    }
-                }
-            }
+        // Flash (3.0s = +0.5s)
+        try? await Task.sleep(for: .milliseconds(500))
+        if Task.isCancelled { await particles; return }
+        withAnimation(.easeOut(duration: 0.2)) {
+            petOpacity = 0
         }
 
-        // Phase 4: Reveal (after 3.5s)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) {
-            phase = .reveal
-            withAnimation(.easeOut(duration: 1.0)) {
-                glowOpacity = 0.3
-            }
-
-            withAnimation(.easeIn(duration: 0.5)) {
-                textOpacity = 1.0
-            }
+        // Swap (3.2s = +0.2s)
+        try? await Task.sleep(for: .milliseconds(200))
+        if Task.isCancelled { await particles; return }
+        showNewPet = true
+        petScale = 0.8
+        withAnimation(.spring(response: 0.5, dampingFraction: 0.6)) {
+            petOpacity = 1.0
+            petScale = 1.0
         }
 
-        // Phase 5: Complete (after 4.5s)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4.5) {
-            phase = .complete
-            SoundService.shared.playWithHaptic(.petEvolution, haptic: .success)
+        // Phase 4: Reveal (3.5s = +0.3s)
+        try? await Task.sleep(for: .milliseconds(300))
+        if Task.isCancelled { await particles; return }
+        phase = .reveal
+        withAnimation(.easeOut(duration: 1.0)) {
+            glowOpacity = 0.3
         }
+        withAnimation(.easeIn(duration: 0.5)) {
+            textOpacity = 1.0
+        }
+
+        // Phase 5: Complete (4.5s = +1.0s)
+        try? await Task.sleep(for: .seconds(1))
+        if Task.isCancelled { await particles; return }
+        phase = .complete
+        SoundService.shared.playWithHaptic(.petEvolution, haptic: .success)
+
+        // Particle animation finished long ago; await for structured concurrency.
+        await particles
     }
 
-    private func startParticleAnimation() {
+    private func runParticleAnimation() async {
         for i in 0..<12 {
+            try? await Task.sleep(for: .milliseconds(50))
+            if Task.isCancelled { return }
             let angle = Double(i) * (360.0 / 12.0) * .pi / 180.0
             let radius: Double = 80
-
-            DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.05) {
-                particleOpacities[i] = 1.0
-
-                withAnimation(.easeOut(duration: 1.5)) {
-                    particleOffsets[i] = CGSize(
-                        width: cos(angle) * radius * 2,
-                        height: sin(angle) * radius * 2
-                    )
-                    particleOpacities[i] = 0
-                }
+            particleOpacities[i] = 1.0
+            withAnimation(.easeOut(duration: 1.5)) {
+                particleOffsets[i] = CGSize(
+                    width: cos(angle) * radius * 2,
+                    height: sin(angle) * radius * 2
+                )
+                particleOpacities[i] = 0
             }
         }
     }

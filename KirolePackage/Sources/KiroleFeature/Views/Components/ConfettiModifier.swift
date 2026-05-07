@@ -94,20 +94,19 @@ public struct ConfettiModifier: ViewModifier {
         
         particles = newParticles
         
-        // 触发动画，先炸开并缩小到 0 消失
-        DispatchQueue.main.async {
+        // Defer to next runloop tick so SwiftUI sees the .zero → final transition
+        // and animates with the spring; then collapse particles to scale 0.
+        Task { @MainActor in
             for i in particles.indices {
                 particles[i].maxOffset = CGSize(
                     width: cos(Double.random(in: 0...(2 * .pi))) * CGFloat.random(in: (explosionRadius / 2)...explosionRadius),
                     height: sin(Double.random(in: 0...(2 * .pi))) * CGFloat.random(in: (explosionRadius / 2)...explosionRadius)
                 )
             }
-            
-            // 稍后将它们缩小并隐藏（重置态）
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                for i in particles.indices {
-                    particles[i].scale = 0.0
-                }
+
+            try? await Task.sleep(for: .milliseconds(100))
+            for i in particles.indices {
+                particles[i].scale = 0.0
             }
         }
     }
