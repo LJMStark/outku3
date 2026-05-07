@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 // MARK: - Private Helpers
 
@@ -15,6 +18,14 @@ struct PetPageView: View {
     @Environment(ThemeManager.self) private var theme
     @State private var showPetStatus = false
     @State private var appeared = false
+
+    private var viewportWidth: CGFloat? {
+        #if canImport(UIKit)
+        return UIScreen.main.bounds.width
+        #else
+        return nil
+        #endif
+    }
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
@@ -53,6 +64,7 @@ struct PetPageView: View {
                 .padding(.horizontal, 24)
                 .padding(.bottom, 80)
             }
+            .frame(width: viewportWidth)
         }
         .background(theme.colors.background)
         .onAppear { appeared = true }
