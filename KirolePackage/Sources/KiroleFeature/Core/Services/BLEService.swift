@@ -321,8 +321,8 @@ public final class BLEService: NSObject {
     // MARK: - Data Transfer
 
     /// 发送宠物状态到 E-ink 设备
-    public func sendPetStatus(_ pet: Pet) async throws {
-        let data = BLEDataEncoder.encodePetStatus(pet)
+    public func sendPetStatus(_ pet: Pet, companionCharacter: CompanionCharacter) async throws {
+        let data = BLEDataEncoder.encodePetStatus(pet, companionCharacter: companionCharacter)
         try await writeData(type: .petStatus, data: data)
     }
 
@@ -351,8 +351,14 @@ public final class BLEService: NSObject {
     }
 
     /// 同步所有数据到 E-ink 设备
-    public func syncAllData(pet: Pet, tasks: [TaskItem], events: [CalendarEvent], weather: Weather) async throws {
-        try await sendPetStatus(pet)
+    public func syncAllData(
+        pet: Pet,
+        companionCharacter: CompanionCharacter,
+        tasks: [TaskItem],
+        events: [CalendarEvent],
+        weather: Weather
+    ) async throws {
+        try await sendPetStatus(pet, companionCharacter: companionCharacter)
         try await sendTaskList(tasks)
         try await sendSchedule(events)
         try await sendWeather(weather)
@@ -621,11 +627,17 @@ public final class BLEService: NSObject {
         await requestEventLogsIfNeeded()
     }
 
+    func decodeReceivedMessageForTesting(_ receivedData: Data) throws -> BLEReceivedMessage? {
+        try decodeReceivedMessage(receivedData)
+    }
+
     private func decodeReceivedMessage(_ receivedData: Data) throws -> BLEReceivedMessage? {
         let decodedMessage: BLEReceivedMessage?
-        if let message = BLESimpleDecoder.decode(receivedData) {
+        if let message = packetAssembler.append(packetData: receivedData) {
             decodedMessage = message
-        } else if let message = packetAssembler.append(packetData: receivedData) {
+        } else if packetAssembler.isPotentialChunk(packetData: receivedData) {
+            decodedMessage = nil
+        } else if let message = BLESimpleDecoder.decode(receivedData) {
             decodedMessage = message
         } else {
             decodedMessage = nil

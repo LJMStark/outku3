@@ -117,6 +117,19 @@ public final class BLEPacketAssembler {
 
     public init() {}
 
+    public func isPotentialChunk(packetData: Data) -> Bool {
+        guard packetData.count >= BLEPacketizer.headerSize else { return false }
+
+        let seq = Int(packetData[3])
+        let total = Int(packetData[4])
+        let chunkLength = UInt16(packetData[5]) << 8 | UInt16(packetData[6])
+        let chunkCRC = UInt16(packetData[7]) << 8 | UInt16(packetData[8])
+        let chunk = packetData.subdata(in: BLEPacketizer.headerSize..<packetData.count)
+
+        guard total > 1, seq < total, chunk.count == Int(chunkLength) else { return false }
+        return CRC16.ccittFalse(chunk) == chunkCRC
+    }
+
     public func append(packetData: Data) -> BLEReceivedMessage? {
         guard packetData.count >= BLEPacketizer.headerSize else { return nil }
 

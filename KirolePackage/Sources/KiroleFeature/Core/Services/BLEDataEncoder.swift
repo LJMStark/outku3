@@ -19,12 +19,13 @@ public enum BLEDataEncoder {
     // MARK: - Pet Status
 
     /// 编码宠物状态数据
-    public static func encodePetStatus(_ pet: Pet) -> Data {
+    public static func encodePetStatus(_ pet: Pet, companionCharacter: CompanionCharacter) -> Data {
         var data = Data()
         data.appendString(pet.name, maxLength: 20)
         data.append(pet.mood.rawValue.first?.asciiValue ?? 0)
         data.append(pet.stage.rawValue.first?.asciiValue ?? 0)
         data.append(UInt8(min(pet.percentDisplay, 255)))
+        data.appendString(companionCharacter.rawValue, maxLength: 10)
         return data
     }
 

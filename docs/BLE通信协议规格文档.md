@@ -1,7 +1,7 @@
 # Kirole BLE 通信协议规格文档
 
-**版本:** v2.0.0
-**更新日期:** 2026-02-21
+**版本:** v2.1.0
+**更新日期:** 2026-05-07
 **状态:** 草稿
 
 ---
@@ -36,9 +36,10 @@
 | v1.0.0  | 2026-01-30 | 初始协议规格 |
 | v1.1.0  | 2026-01-31 | 新增 WheelSelect、ViewEventDetail、LowBattery 事件 |
 | v1.2.0  | 2026-02-12 | 新增 Spectra 6 像素格式、Encoder/Power 按钮事件文档 |
-| v1.3.0  | 2026-02-12 | Message House：新增 SmartReminder (0x13) 命令、DayPack/TaskInPage 中的 microAction 字段、SettlementData 中的专注指标、ReminderAcknowledged/Dismissed 事件 |
+| v1.3.0  | 2026-02-12 | Message House：新增 SmartReminder (0x13) 命令、扩展 DayPack/TaskInPage、SettlementData 专注指标、ReminderAcknowledged/Dismissed 事件 |
 | v1.3.1  | 2026-02-12 | 新增 Section 3.2 九字节分包格式；Spectra 6 部分新增交叉引用至硬件需求文档 |
 | v2.0.0  | 2026-02-21 | 新增安全握手与 SecureEnvelope（HMAC-SHA256）；MVP 默认兼容旧协议（未配置密钥时） |
+| v2.1.0  | 2026-05-07 | 对齐当前 App 协议：PetStatus 增加 CharacterId；DayPack/TaskInPage 删除旧任务拆分字段；标注开发显示命令 |
 
 ### 1.3 术语表
 
@@ -200,12 +201,21 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 
 **Payload 结构：**
 
-| Offset | Field    | Size        | Max Length | 描述 |
-|--------|----------|-------------|------------|--------------------------------|
-| 0      | Name     | 1 + N bytes | 20 chars   | 宠物名称（长度前缀） |
-| N+1    | Mood     | 1 byte      | -          | 心情首字母 ASCII |
-| N+2    | Stage    | 1 byte      | -          | 成长阶段首字母 ASCII |
-| N+3    | Progress | 1 byte      | -          | 进度 0-100（上限 255） |
+| Offset | Field       | Size        | Max Length | 描述 |
+|--------|-------------|-------------|------------|--------------------------------|
+| 0      | Name        | 1 + N bytes | 20 chars   | 显示名（长度前缀） |
+| N+1    | Mood        | 1 byte      | -          | 心情首字母 ASCII |
+| N+2    | Stage       | 1 byte      | -          | 成长阶段首字母 ASCII |
+| N+3    | Progress    | 1 byte      | -          | 进度 0-100（上限 255） |
+| N+4    | CharacterId | 1 + N bytes | 10 chars   | 伴侣 IP：`joy` / `silas` / `nova` |
+
+**CharacterId 值：**
+
+| Value   | 说明 |
+|---------|------|
+| `joy`   | Joy（喜乐） |
+| `silas` | Silas（仁爱） |
+| `nova`  | Nova（节制 / 自律） |
 
 **Mood 值：**
 
@@ -337,7 +347,6 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 |--------|----------------|-------------|------------|--------------------------|
 | 0      | TaskId         | 1 + N bytes | 36 chars   | UUID 字符串 |
 | N+1    | Title          | 1 + N bytes | 30 chars   | 任务标题 |
-| ...    | MicroActionWhat| 1 + N bytes | 40 chars   | 微行动文本（无则为空字符串） |
 | ...    | IsCompleted    | 1 byte      | -          | 0x00=未完成, 0x01=已完成 |
 | ...    | Priority       | 1 byte      | -          | 优先级（1-3） |
 
@@ -368,8 +377,6 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 |--------|----------------------|-------------|------------|--------------------------|
 | 0      | TaskId               | 1 + N bytes | 36 chars   | UUID 字符串 |
 | N+1    | TaskTitle            | 1 + N bytes | 40 chars   | 任务标题 |
-| ...    | MicroActionWhat      | 1 + N bytes | 40 chars   | 微行动：做什么（无则为空） |
-| ...    | MicroActionWhy       | 1 + N bytes | 60 chars   | 动机锚点：为什么做（无则为空） |
 | ...    | TaskDescription      | 1 + N bytes | 100 chars  | 任务描述 |
 | ...    | Encouragement        | 1 + N bytes | 50 chars   | 鼓励消息 |
 | ...    | FocusChallengeActive | 1 byte      | -          | 0x00=未激活, 0x01=已激活 |
@@ -429,6 +436,40 @@ App 请求设备回传增量 Event Log（用于断线重连后补齐事件）。
 **设备行为：**
 - 查询本地环形缓冲中 `timestamp > Since` 的事件
 - 按批次通过 EventLogBatch (0x21) 回传
+
+---
+
+### 4.12 开发显示命令（0xAA 前缀）
+
+以下命令当前仅用于第一轮硬件 bring-up 和开发联调，不属于标准 `Type + Length + Payload` 业务包，也不经过 SecureEnvelope。App 配置 `BLE_SHARED_SECRET` 后，这类开发显示命令会被禁用。
+
+**SceneUnlock / DisplayScene：**
+
+```
+AA 01 01 SceneId
+```
+
+| Field | Size | 描述 |
+|-------|------|------|
+| `AA` | 1 byte | 开发命令前缀 |
+| `01` | 1 byte | 显示命令组 |
+| `01` | 1 byte | 场景显示命令 |
+| SceneId | 1 byte | `0x00=harbor`, `0x01=forest`, `0x02=nightCity` |
+
+**ScreensaverConfig：**
+
+```
+AA 01 02 Type SceneId PostcardDay QuoteLen Quote AuthorLen Author
+```
+
+| Field | Size | 描述 |
+|-------|------|------|
+| `AA 01 02` | 3 bytes | 开发屏保命令头 |
+| Type | 1 byte | `0x00=normal`, `0x01=postcard` |
+| SceneId | 1 byte | 同上 |
+| PostcardDay | 1 byte | 明信片天数，无则为 0 |
+| QuoteLen + Quote | 1 + N bytes | UTF-8 引文 |
+| AuthorLen + Author | 1 + N bytes | UTF-8 作者 |
 
 ---
 
@@ -1038,8 +1079,8 @@ public enum DeviceMode: String, Codable, Sendable {
 
 | 文档 | 版本 | 描述 |
 |------|------|------|
-| 硬件需求文档-Hardware-Requirements-Document.md | v0.3 | 硬件电气需求（SoC、显示、电源、电池） |
-| 固件功能规格文档.md | v1.3.0 | 固件功能规格（页面设计、交互流程、宠物系统） |
+| 硬件需求文档-Hardware-Requirements-Document.md | v0.4 | 硬件电气需求（SoC、显示、电源、电池） |
+| 固件功能规格文档.md | v1.4.0 | 固件功能规格（页面设计、交互流程、伴侣显示系统） |
 
 ---
 

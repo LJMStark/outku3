@@ -5,6 +5,16 @@ import Testing
 @Suite("BLE Protocol Tests")
 struct BLEProtocolTests {
 
+    private func readString(from data: Data, cursor: inout Int) -> String? {
+        guard cursor < data.count else { return nil }
+        let length = Int(data[cursor])
+        cursor += 1
+        guard cursor + length <= data.count else { return nil }
+        let stringData = data.subdata(in: cursor..<(cursor + length))
+        cursor += length
+        return String(data: stringData, encoding: .utf8)
+    }
+
     // MARK: - CRC16 Tests
 
     @Test("CRC16-CCITT-FALSE known vector")
@@ -108,6 +118,29 @@ struct BLEProtocolTests {
         let assembler = BLEPacketAssembler()
         let result = assembler.append(packetData: packet)
         #expect(result == nil)
+    }
+
+    @Test("BLE inbound decode prefers chunked packets over simple packets")
+    @MainActor
+    func inboundDecodePrefersChunkedPackets() throws {
+        let payload = Data("chunked-event-log-batch".utf8)
+        let packets = try BLEPacketizer.packetize(
+            type: BLEDataType.eventLogBatch.rawValue,
+            messageId: 0x0001,
+            payload: payload,
+            maxChunkSize: 8
+        )
+
+        let service = BLEService.shared
+        var decoded: BLEReceivedMessage?
+        for packet in packets {
+            if let message = try service.decodeReceivedMessageForTesting(packet) {
+                decoded = message
+            }
+        }
+
+        #expect(decoded?.type == BLEDataType.eventLogBatch.rawValue)
+        #expect(decoded?.payload == payload)
     }
 
     // MARK: - BLE Sync Policy Tests
@@ -289,7 +322,7 @@ struct BLEProtocolTests {
     @Test("BLEDataEncoder encodePetStatus produces correct format")
     func encodePetStatusFormat() {
         let pet = Pet(name: "Tiko", mood: .happy, stage: .baby, progress: 0.75)
-        let data = BLEDataEncoder.encodePetStatus(pet)
+        let data = BLEDataEncoder.encodePetStatus(pet, companionCharacter: .joy)
 
         let nameLen = Int(data[0])
         #expect(nameLen == 4)
@@ -302,12 +335,17 @@ struct BLEProtocolTests {
         #expect(data[moodOffset + 1] == Character("B").asciiValue!)
 
         #expect(data[moodOffset + 2] == 75)
+
+        let characterOffset = moodOffset + 3
+        let characterLen = Int(data[characterOffset])
+        let characterBytes = data.subdata(in: (characterOffset + 1)..<(characterOffset + 1 + characterLen))
+        #expect(String(data: characterBytes, encoding: .utf8) == "joy")
     }
 
     @Test("BLEDataEncoder encodePetStatus clamps progress to 255")
     func encodePetStatusClampsProgress() {
         let pet = Pet(name: "A", progress: 3.0)
-        let data = BLEDataEncoder.encodePetStatus(pet)
+        let data = BLEDataEncoder.encodePetStatus(pet, companionCharacter: .nova)
         let progressOffset = 1 + 1 + 1 + 1
         #expect(data[progressOffset] == 255)
     }
@@ -405,8 +443,8 @@ struct BLEProtocolTests {
         #expect(decoded == timestamp)
     }
 
-    @Test("BLEDataEncoder encodeDayPack header format")
-    func encodeDayPackHeader() {
+    @Test("BLEDataEncoder encodeDayPack format excludes legacy microAction fields")
+    func encodeDayPackFormatExcludesMicroActionFields() {
         let settlement = SettlementData(
             tasksCompleted: 2, tasksTotal: 5, pointsEarned: 100,
             streakDays: 3, petMood: "happy",
@@ -420,6 +458,10 @@ struct BLEProtocolTests {
             morningGreeting: "Good morning",
             dailySummary: "3 tasks today",
             firstItem: "Write tests",
+            currentScheduleSummary: "1 event",
+            topTasks: [
+                TaskSummary(id: "task-1", title: "Review docs", isCompleted: false, priority: 2)
+            ],
             companionPhrase: "You can do it",
             settlementData: settlement
         )
@@ -431,10 +473,24 @@ struct BLEProtocolTests {
         #expect(data[2] == UInt8(components.day ?? 1))
         #expect(data[3] == 0x00)
         #expect(data[4] == 0x01)
+
+        var cursor = 5
+        #expect(readString(from: data, cursor: &cursor) == "Good morning")
+        #expect(readString(from: data, cursor: &cursor) == "3 tasks today")
+        #expect(readString(from: data, cursor: &cursor) == "Write tests")
+        #expect(readString(from: data, cursor: &cursor) == "1 event")
+        #expect(readString(from: data, cursor: &cursor) == "You can do it")
+        #expect(data[cursor] == 1)
+        cursor += 1
+        #expect(readString(from: data, cursor: &cursor) == "task-1")
+        #expect(readString(from: data, cursor: &cursor) == "Review docs")
+        #expect(data[cursor] == 0x00)
+        cursor += 1
+        #expect(data[cursor] == 0x02)
     }
 
-    @Test("BLEDataEncoder encodeTaskInPage format")
-    func encodeTaskInPageFormat() {
+    @Test("BLEDataEncoder encodeTaskInPage format excludes legacy microAction fields")
+    func encodeTaskInPageFormatExcludesMicroActionFields() {
         let taskInPage = TaskInPageData(
             taskId: "task-1",
             taskTitle: "Write BLE tests",
@@ -443,11 +499,14 @@ struct BLEProtocolTests {
             focusChallengeActive: true
         )
         let data = BLEDataEncoder.encodeTaskInPage(taskInPage)
-        let taskIdData = "task-1".data(using: .utf8)!
-        #expect(data[0] == UInt8(taskIdData.count))
-        let taskIdBytes = data.subdata(in: 1..<(1 + Int(data[0])))
-        #expect(String(data: taskIdBytes, encoding: .utf8) == "task-1")
+
+        var cursor = 0
+        #expect(readString(from: data, cursor: &cursor) == "task-1")
+        #expect(readString(from: data, cursor: &cursor) == "Write BLE tests")
+        #expect(readString(from: data, cursor: &cursor) == "Add comprehensive tests")
+        #expect(readString(from: data, cursor: &cursor) == "Go for it!")
         #expect(data[data.count - 1] == 0x01)
+        #expect(cursor == data.count - 1)
     }
 
     @Test("String truncation at max length in BLE encoding")

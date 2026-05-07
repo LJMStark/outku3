@@ -74,6 +74,10 @@ public final class BLESyncCoordinator {
             guard connected else { throw BLEError.connectionFailed(nil) }
 
             try await bleService.syncTime()
+            try await bleService.sendPetStatus(
+                appState.pet,
+                companionCharacter: appState.userProfile.companionCharacter
+            )
 
             if contentChanged {
                 // Send DayPack with retry: 2 attempts, 500ms/1s backoff
