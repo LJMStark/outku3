@@ -67,25 +67,6 @@ public enum BLESecurityMode: Sendable, Equatable {
     }
 }
 
-// MARK: - BLE Data Types
-
-/// 发送到 E-ink 设备的数据类型
-public enum BLEDataType: UInt8, Sendable {
-    case petStatus = 0x01
-    case taskList = 0x02
-    case schedule = 0x03
-    case weather = 0x04
-    case time = 0x05
-    case dayPack = 0x10
-    case taskInPage = 0x11
-    case deviceMode = 0x12
-    case smartReminder = 0x13
-    case eventLogRequest = 0x20
-    case eventLogBatch = 0x21
-    case secureData = 0x7E
-    case securityHandshake = 0x7F
-}
-
 // MARK: - BLE Service UUIDs
 
 /// Kirole E-ink 设备的 BLE 服务和特征 UUID
@@ -398,6 +379,22 @@ public final class BLEService: NSObject {
     ) async throws {
         let data = BLEDataEncoder.encodeSmartReminder(text: text, urgency: urgency, petMood: petMood)
         try await writeData(type: .smartReminder, data: data)
+    }
+
+    /// 推送专注状态和能量瓶子数到 E-ink 设备（所有构建均执行）
+    public func sendFocusStatus(
+        phase: FocusPhase,
+        energyBottles: Int,
+        elapsedMinutes: Int,
+        taskTitle: String?
+    ) async throws {
+        let payload = BLEDataEncoder.encodeFocusStatus(
+            phase: phase,
+            energyBottles: energyBottles,
+            elapsedMinutes: elapsedMinutes,
+            taskTitle: taskTitle
+        )
+        try await writeData(type: .focusStatus, data: payload)
     }
 
     /// 请求设备回传 Event Log（增量）

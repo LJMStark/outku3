@@ -200,6 +200,36 @@ public enum BLEDataEncoder {
         return data
     }
 
+    // MARK: - Focus Status (0x14)
+
+    /// 编码专注状态，用于实时推送当前专注状态和能量瓶子数给硬件。
+    ///
+    /// Payload 格式：
+    /// - phase      1B  专注阶段（0=idle, 1=warmup, 2=building, 3=deep）
+    /// - bottles    1B  本会话已获得的能量瓶子数（clamp 0-255）
+    /// - elapsed    2B  已专注分钟数（Big Endian，clamp 0-65535）
+    /// - taskTitle  变长 长度前缀 UTF-8，最多 40 字节
+    public static func encodeFocusStatus(
+        phase: FocusPhase,
+        energyBottles: Int,
+        elapsedMinutes: Int,
+        taskTitle: String?
+    ) -> Data {
+        var data = Data()
+        let phaseByte: UInt8 = switch phase {
+        case .idle:     0
+        case .warmup:   1
+        case .building: 2
+        case .deep:     3
+        }
+        data.append(phaseByte)
+        data.append(UInt8(min(energyBottles, 255)))
+        let elapsed = UInt16(min(elapsedMinutes, 65535))
+        data.append(contentsOf: withUnsafeBytes(of: elapsed.bigEndian) { Array($0) })
+        data.appendString(taskTitle ?? "", maxLength: 40)
+        return data
+    }
+
     // MARK: - Pixel Data (Spectra 6, 4bpp)
 
     /// 将 EInkColor 像素数组打包为 4bpp 数据（每字节 2 像素）

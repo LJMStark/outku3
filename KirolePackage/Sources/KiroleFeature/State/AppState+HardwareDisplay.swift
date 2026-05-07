@@ -90,7 +90,14 @@ extension AppState {
         )
 
         if BLEService.shared.connectionState.isConnected {
-            try? await BLEService.shared.sendScreensaverConfig(config)
+            do {
+                try await BLEService.shared.sendScreensaverConfig(config)
+            } catch {
+                ErrorReporter.log(
+                    .sync(component: "BLE ScreensaverConfig", underlying: error.localizedDescription),
+                    context: "AppState.handleHardwareSleep"
+                )
+            }
         }
 
         #if DEBUG
@@ -102,24 +109,41 @@ extension AppState {
     }
 
     func syncFocusHardwareDisplay(session: FocusSession?, now: Date = Date()) async {
-        #if DEBUG
-        if !SimulatorBridge.shared.isConnected {
-            SimulatorBridge.shared.connect()
-        }
-
+        let elapsedMinutes: Int
         let focusPhase: FocusPhase
         let focusBottles: Int
-        let elapsedMinutes: Int
+
         if let session {
             elapsedMinutes = max(0, Int(now.timeIntervalSince(session.startTime) / 60))
             focusPhase = FocusPhase.from(elapsedMinutes: elapsedMinutes)
             focusBottles = FocusEnergyCalculator.bottlesEarned(minutes: elapsedMinutes)
         } else {
+            elapsedMinutes = 0
             focusPhase = .idle
             focusBottles = 0
-            elapsedMinutes = 0
         }
 
+        // Real BLE push (all builds)
+        if BLEService.shared.connectionState.isConnected {
+            do {
+                try await BLEService.shared.sendFocusStatus(
+                    phase: focusPhase,
+                    energyBottles: focusBottles,
+                    elapsedMinutes: elapsedMinutes,
+                    taskTitle: session?.taskTitle
+                )
+            } catch {
+                ErrorReporter.log(
+                    .sync(component: "BLE FocusStatus", underlying: error.localizedDescription),
+                    context: "AppState.syncFocusHardwareDisplay"
+                )
+            }
+        }
+
+        #if DEBUG
+        if !SimulatorBridge.shared.isConnected {
+            SimulatorBridge.shared.connect()
+        }
         SimulatorBridge.shared.sendFocusState(
             session: session,
             energyBottles: focusBottles,
@@ -134,7 +158,14 @@ extension AppState {
         let sceneId = await currentDisplaySceneId(totalEnergyBottles: totalEnergyBottles)
         if BLEService.shared.connectionState.isConnected,
            let displayScene = DisplayScene(rawValue: sceneId) {
-            try? await BLEService.shared.sendDisplayScene(displayScene)
+            do {
+                try await BLEService.shared.sendDisplayScene(displayScene)
+            } catch {
+                ErrorReporter.log(
+                    .sync(component: "BLE DisplayScene", underlying: error.localizedDescription),
+                    context: "AppState.syncIdleHardwareDisplay"
+                )
+            }
         }
 
         #if DEBUG

@@ -40,6 +40,7 @@
 | v1.3.1  | 2026-02-12 | 新增 Section 3.2 九字节分包格式；Spectra 6 部分新增交叉引用至硬件需求文档 |
 | v2.0.0  | 2026-02-21 | 新增安全握手与 SecureEnvelope（HMAC-SHA256）；MVP 默认兼容旧协议（未配置密钥时） |
 | v2.1.0  | 2026-05-07 | 对齐当前 App 协议：PetStatus 增加 CharacterId；DayPack/TaskInPage 删除旧任务拆分字段；标注开发显示命令 |
+| v2.2.0  | 2026-05-08 | 新增 FocusStatus (0x14) 命令（Release 构建实时推送专注状态与能量瓶子数）；BLEDataType enum 已移至 `Core/BLE/BLEProtocol.swift` 单一真相源 |
 
 ### 1.3 术语表
 
@@ -189,6 +190,7 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 | `0x11` | TaskInPage   | 任务详情页数据 |
 | `0x12` | DeviceMode   | 设备运行模式 |
 | `0x13` | SmartReminder| AI 智能提醒推送 |
+| `0x14` | FocusStatus  | App→Device 推送当前专注状态与能量瓶子数（所有构建均执行） |
 | `0x20` | EventLogRequest | 请求指定时间戳之后的事件日志 |
 | `0x7E` | SecureData | 安全业务封装（v2） |
 | `0x7F` | SecurityHandshake | 安全握手（v2） |
@@ -410,7 +412,33 @@ AI 智能提醒，从 App 推送至设备。
 
 ---
 
-### 4.11 EventLogRequest (0x20)
+### 4.11 FocusStatus (0x14)
+
+App→Device 实时推送当前专注状态与能量瓶子数。在所有构建（Debug 和 Release）中，只要 BLE 已连接即执行；Debug 构建同时额外通过 `SimulatorBridge` 发送相同信息供模拟器显示。
+
+`BLEDataType` enum 现已移至 `Core/BLE/BLEProtocol.swift`，该文件为出站协议字节的单一真相源。
+
+**Payload 结构：**
+
+| Offset | Field        | Size        | 描述 |
+|--------|--------------|-------------|------------------------------------------------------|
+| 0      | Phase        | 1 byte      | 专注阶段：0=idle, 1=warmup(0-5m), 2=building(6-15m), 3=deep(16m+) |
+| 1      | Bottles      | 1 byte      | 本会话已获得的能量瓶子数（clamp 0-255） |
+| 2      | ElapsedTime  | 2 bytes BE  | 已专注分钟数（Big Endian UInt16，clamp 0-65535） |
+| 4      | TaskTitle    | 1 + N bytes | 当前任务标题（长度前缀 UTF-8，最多 40 字节） |
+
+**Phase 值：**
+
+| Value | Name     | 说明 |
+|-------|----------|------|
+| `0`   | idle     | 无活跃专注会话 |
+| `1`   | warmup   | 专注 0-5 分钟 |
+| `2`   | building | 专注 6-15 分钟 |
+| `3`   | deep     | 专注 16 分钟以上 |
+
+---
+
+### 4.13 EventLogRequest (0x20)
 
 App 请求设备回传增量 Event Log（用于断线重连后补齐事件）。
 
@@ -426,7 +454,7 @@ App 请求设备回传增量 Event Log（用于断线重连后补齐事件）。
 
 ---
 
-### 4.12 开发显示命令（0xAA 前缀）
+### 4.14 开发显示命令（0xAA 前缀）
 
 以下命令当前仅用于第一轮硬件 bring-up 和开发联调，不属于标准 `Type + Length + Payload` 业务包，也不经过 SecureEnvelope。App 配置 `BLE_SHARED_SECRET` 后，这类开发显示命令会被禁用。
 
@@ -1015,6 +1043,8 @@ Byte layout: [pixel_even (high nibble)] [pixel_odd (low nibble)]
 
 ### A.1 BLEDataType Enum
 
+定义位置：`KirolePackage/Sources/KiroleFeature/Core/BLE/BLEProtocol.swift`（单一真相源）
+
 ```swift
 public enum BLEDataType: UInt8, Sendable {
     case petStatus = 0x01
@@ -1026,8 +1056,11 @@ public enum BLEDataType: UInt8, Sendable {
     case taskInPage = 0x11
     case deviceMode = 0x12
     case smartReminder = 0x13
+    case focusStatus = 0x14   // App→Device: 推送当前专注状态和能量瓶子数
     case eventLogRequest = 0x20
     case eventLogBatch = 0x21
+    case secureData = 0x7E
+    case securityHandshake = 0x7F
 }
 ```
 
