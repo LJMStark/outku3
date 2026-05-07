@@ -22,9 +22,7 @@ public struct ContentView: View {
                 mainAppView
             } else {
                 OnboardingContainerView()
-                    .environment(appState)
-                    .environment(themeManager)
-                    .environment(authManager)
+                    .injectAppEnvironment()
             }
         }
         .task {
@@ -102,9 +100,16 @@ public struct ContentView: View {
         }
         .confetti(trigger: $sceneCelebrationConfettiTrigger)
         .animation(.kiroleSnappy, value: appState.pendingSceneCelebration)
+        // Observable-style injection (for @Environment(Type.self) reads)
         .environment(appState)
         .environment(themeManager)
         .environment(authManager)
+        .environment(FocusSessionService.shared)
+        // Key-style injection (for @Environment(\.key) reads and test overrides)
+        .environment(\.appState, appState)
+        .environment(\.themeManager, themeManager)
+        .environment(\.authManager, authManager)
+        .environment(\.focusService, FocusSessionService.shared)
         .sheet(isPresented: $appState.isEventDetailPresented) {
             if let event = appState.selectedEvent {
                 EventDetailModal(event: event)
