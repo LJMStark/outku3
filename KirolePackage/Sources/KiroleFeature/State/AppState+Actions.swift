@@ -1,20 +1,20 @@
 import Foundation
 
-extension AppState {
-    private enum TaskExternalSyncAction {
-        case updateCompletion
-        case delete
+enum TaskExternalSyncAction {
+    case updateCompletion
+    case delete
 
-        var context: String {
-            switch self {
-            case .updateCompletion:
-                return "AppState.toggleTaskCompletion"
-            case .delete:
-                return "AppState.deleteTask"
-            }
+    var context: String {
+        switch self {
+        case .updateCompletion:
+            return "AppState.toggleTaskCompletion"
+        case .delete:
+            return "AppState.deleteTask"
         }
     }
+}
 
+extension AppState {
     private enum TaskSyncSupport {
         case localOnly
         case remote
@@ -93,18 +93,7 @@ extension AppState {
         expectedLastModified: Date?
     ) async {
         do {
-            switch task.source {
-            case .google:
-                try await syncGoogleTask(task, action: action)
-            case .apple:
-                try await syncAppleTask(task, action: action)
-            case .notion:
-                try await syncNotionTask(task, action: action)
-            case .taskade:
-                try await syncTaskadeTask(task, action: action)
-            case .todoist:
-                throw ExternalEditingError.integrationReadOnly("Todoist")
-            }
+            try await ExternalSyncDispatcher.syncTaskAction(task, action: action)
             switch action {
             case .updateCompletion:
                 await updateTaskSyncStatus(
@@ -137,7 +126,7 @@ extension AppState {
                     context: "AppState.syncTaskToExternalService.deleteConflict"
                 )
             }
-            reportSyncError(error, component: taskSyncComponentName(for: task.source), context: action.context)
+            reportSyncError(error, component: ExternalSyncDispatcher.componentName(for: task.source), context: action.context)
         }
     }
 
@@ -160,62 +149,12 @@ extension AppState {
         updatedEvent.lastModified = Date()
 
         do {
-            let syncedEvent = try await syncEventContentEditToExternalService(updatedEvent)
+            let syncedEvent = try await ExternalSyncDispatcher.syncEventContentEdit(updatedEvent)
             events[index] = syncedEvent
             await persistEvents(events, context: "AppState.editEvent")
         } catch {
             reportSyncError(error, component: event.source.rawValue, context: "AppState.editEvent")
             throw error
-        }
-    }
-
-    private func syncEventContentEditToExternalService(_ event: CalendarEvent) async throws -> CalendarEvent {
-        switch event.source {
-        case .apple:
-            guard let identifier = event.appleEventId else {
-                return event
-            }
-            try await eventKitService.updateEvent(
-                identifier: identifier,
-                title: event.title,
-                startDate: event.startTime,
-                endDate: event.endTime,
-                location: event.location,
-                notes: event.description
-            )
-            var syncedEvent = event
-            syncedEvent.syncStatus = .synced
-            return syncedEvent
-        case .google:
-            guard AuthManager.shared.hasCalendarWriteAccess else {
-                throw ExternalEditingError.integrationReadOnly("Google Calendar")
-            }
-            guard let eventId = event.googleEventId else {
-                throw ExternalEditingError.missingRemoteIdentifier("Google Calendar")
-            }
-            guard let calendarId = event.googleCalendarId else {
-                throw ExternalEditingError.missingRemoteIdentifier("Google Calendar")
-            }
-
-            var syncedEvent = try await googleCalendarAPI.patchEvent(
-                calendarId: calendarId,
-                eventId: eventId,
-                title: event.title,
-                startTime: event.startTime,
-                endTime: event.endTime,
-                isAllDay: event.isAllDay,
-                location: event.location,
-                description: event.description
-            )
-            syncedEvent.localId = event.localId
-            syncedEvent.syncStatus = .synced
-            return syncedEvent
-        case .todoist:
-            throw ExternalEditingError.integrationReadOnly("Todoist")
-        case .notion:
-            throw ExternalEditingError.integrationReadOnly("Notion")
-        case .taskade:
-            throw ExternalEditingError.integrationReadOnly("Taskade")
         }
     }
 
@@ -328,126 +267,13 @@ extension AppState {
         updatedTask.lastModified = Date()
 
         do {
-            let syncedTask = try await syncTaskContentEditToExternalService(updatedTask)
+            let syncedTask = try await ExternalSyncDispatcher.syncTaskContentEdit(updatedTask)
             tasks = taskManager.withTask(tasks, updatedTask: syncedTask)
             updateStatistics()
             await persistTasks(tasks, context: "AppState.editTask")
         } catch {
             reportSyncError(error, component: task.source.rawValue, context: "AppState.editTask")
             throw error
-        }
-    }
-
-    private func syncTaskContentEditToExternalService(_ task: TaskItem) async throws -> TaskItem {
-        switch task.source {
-        case .google:
-            let remoteTask = try await googleTasksAPI.syncTaskUpdate(task)
-            var syncedTask = task
-            syncedTask.title = remoteTask.title
-            syncedTask.isCompleted = remoteTask.isCompleted
-            syncedTask.dueDate = remoteTask.dueDate
-            syncedTask.notes = remoteTask.notes
-            syncedTask.remoteUpdatedAt = remoteTask.remoteUpdatedAt
-            syncedTask.remoteEtag = remoteTask.remoteEtag
-            syncedTask.lastModified = remoteTask.remoteUpdatedAt ?? remoteTask.lastModified
-            syncedTask.syncStatus = .synced
-            return syncedTask
-        case .apple:
-            if task.appleReminderId != nil {
-                try await appleSyncEngine.pushReminderUpdate(task)
-            }
-            var syncedTask = task
-            syncedTask.remoteUpdatedAt = Date()
-            syncedTask.syncStatus = .synced
-            return syncedTask
-        case .notion:
-            throw ExternalEditingError.integrationReadOnly("Notion")
-        case .taskade:
-            throw ExternalEditingError.integrationReadOnly("Taskade")
-        default:
-            throw ExternalEditingError.integrationReadOnly(task.source.rawValue)
-        }
-    }
-
-    private func syncGoogleTask(_ task: TaskItem, action: TaskExternalSyncAction) async throws {
-        switch action {
-        case .updateCompletion:
-            do {
-                try await googleTasksAPI.syncTaskCompletion(task)
-                await googleSyncEngine.clearQueuedChanges(
-                    for: task.id,
-                    action: .updateStatus,
-                    upToLastModified: task.lastModified
-                )
-            } catch {
-                await googleSyncEngine.enqueueChange(task: task, action: .updateStatus)
-                throw error
-            }
-        case .delete:
-            guard let taskListId = task.googleTaskListId,
-                  let taskId = task.googleTaskId else {
-                throw GoogleTasksError.missingGoogleIds
-            }
-
-            do {
-                try await googleTasksAPI.deleteTask(taskListId: taskListId, taskId: taskId)
-                await googleSyncEngine.clearQueuedChanges(
-                    for: task.id,
-                    action: .delete,
-                    upToLastModified: task.lastModified
-                )
-            } catch {
-                await googleSyncEngine.enqueueChange(task: task, action: .delete)
-                throw error
-            }
-        }
-    }
-
-    private func syncAppleTask(_ task: TaskItem, action: TaskExternalSyncAction) async throws {
-        switch action {
-        case .updateCompletion:
-            if task.appleReminderId != nil {
-                try await appleSyncEngine.pushReminderUpdate(task)
-            }
-        case .delete:
-            try await appleSyncEngine.pushReminderDelete(task)
-        }
-    }
-
-    private func syncNotionTask(_ task: TaskItem, action: TaskExternalSyncAction) async throws {
-        switch action {
-        case .updateCompletion:
-            guard let accessToken = AuthManager.shared.getNotionAccessToken() else {
-                throw NotionSyncError.notAuthenticated
-            }
-            try await notionSyncEngine.pushTaskUpdate(task, accessToken: accessToken)
-        case .delete:
-            throw ExternalEditingError.integrationReadOnly("Notion")
-        }
-    }
-
-    private func syncTaskadeTask(_ task: TaskItem, action: TaskExternalSyncAction) async throws {
-        let accessToken = try await AuthManager.shared.getTaskadeAccessToken()
-        switch action {
-        case .updateCompletion:
-            try await taskadeSyncEngine.pushTaskUpdate(task, accessToken: accessToken)
-        case .delete:
-            try await taskadeSyncEngine.pushTaskDelete(task, accessToken: accessToken)
-        }
-    }
-
-    private func taskSyncComponentName(for source: EventSource) -> String {
-        switch source {
-        case .google:
-            return "Google Tasks"
-        case .apple:
-            return "Apple Reminders"
-        case .notion:
-            return "Notion"
-        case .taskade:
-            return "Taskade"
-        case .todoist:
-            return "Todoist"
         }
     }
 
