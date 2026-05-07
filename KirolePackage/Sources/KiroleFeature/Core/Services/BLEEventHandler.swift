@@ -41,11 +41,8 @@ public enum BLEEventHandler {
         case .enterTaskIn:
             handleEnterTaskIn(eventLog, service: service)
 
-        case .completeTask:
-            handleCompleteTask(eventLog)
-
-        case .skipTask:
-            // Focus session already ended via handleFocusSessionEvent; no extra action needed
+        case .completeTask, .skipTask:
+            // State mutation already applied via handleEventLogs (works for both live and replay)
             break
 
         case .selectedTaskChanged:
@@ -233,6 +230,12 @@ public enum BLEEventHandler {
     // MARK: - Event Log Handling
 
     /// 处理接收到的事件日志
+    ///
+    /// State mutations here MUST work for both live single-event delivery and
+    /// batch replay (offline events buffered by hardware while BLE was down).
+    /// Live-only side effects (sending TaskInPage, triggering sync, etc.) live
+    /// in `handleSingleEvent`'s switch — they are intentionally skipped during
+    /// batch replay because those responses are stale by the time logs arrive.
     static func handleEventLogs(
         _ logs: [EventLog],
         service: BLEService,
@@ -244,7 +247,17 @@ public enum BLEEventHandler {
 
         for log in logs {
             await handleFocusSessionEvent(log, focusService: focusService)
-            service.onEventLogReceived?(log)
+            applyEventStateMutation(log)
+        }
+    }
+
+    /// State changes that must apply for both live and replayed events.
+    private static func applyEventStateMutation(_ log: EventLog) {
+        switch log.eventType {
+        case .completeTask:
+            handleCompleteTask(log)
+        default:
+            break
         }
     }
 

@@ -110,9 +110,6 @@ public final class BLEService: NSObject {
     public private(set) var connectedDevice: BLEDevice?
     public private(set) var lastSyncTime: Date?
 
-    /// Callback for handling received event logs from device
-    public var onEventLogReceived: ((EventLog) -> Void)?
-
     // MARK: - Private Properties
 
     private var centralManager: CBCentralManager?

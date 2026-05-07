@@ -12,7 +12,9 @@ Swift/SwiftUI/Testing/Concurrency guidance that applies here too.
 3. Treat `/Users/demon/vibecoding/outku3` as the strict workspace boundary. Unqualified requests ("build", "commit", "run tests") always refer to this repo.
 
 ## Product Identity (READ FIRST)
-Kirole 是**宠物陪伴产品**，不是任务管理 App。任务和日历事件主要作为 **prompt 上下文** 驱动宠物对话，**不是给用户管理待办用的**。任何把 task/event 当"待办"来增强（AI 任务拆解、详情页步骤展开、待办清单视图、催促式提醒等）的提议都偏离产品定位，应直接拒绝或反向清理。
+Kirole 是 **硬件优先的宠物陪伴产品**：硬件 E-ink 设备是用户主要的日常交互入口，App 是给硬件配置数据的工具。任务和日历事件主要作为 **prompt 上下文** 驱动宠物对话，**不是给用户管理待办用的**。任何把 task/event 当"待办"来增强（AI 任务拆解、详情页步骤展开、待办清单视图、催促式提醒等）的提议都偏离产品定位，应直接拒绝或反向清理。
+
+**硬件优先意味着**：硬件离线时用户操作不能丢——硬件本地缓存事件，BLE 重连后通过 `0x21 eventLogBatch` 帧批量回推给 App，App 必须把每条事件应用到 AppState（任务完成状态、专注会话等）。"补传"是核心功能而非可选项。
 
 三条核心数据流（基于代码事实，2026-05-07 用户与多 agent 调研共同验证）：
 
