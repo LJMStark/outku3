@@ -46,7 +46,6 @@ public final class AppState {
 
     // Pet
     public var pet: Pet = Pet()
-    public var streak: Streak = Streak(currentStreak: 0)
 
     // Tasks & Events
     public var events: [CalendarEvent] = []
@@ -137,13 +136,12 @@ public final class AppState {
 // MARK: - Persistence Helpers
 
 extension AppState {
-    func persistTaskAndPetState(tasks: [TaskItem], pet: Pet, streak: Streak, context: String) async {
+    func persistTaskAndPetState(tasks: [TaskItem], pet: Pet, context: String) async {
         do {
             try await localStorage.saveTasks(tasks)
             try await localStorage.savePet(pet)
-            try await localStorage.saveStreak(streak)
         } catch {
-            reportPersistenceError(error, operation: "save", target: "tasks/pet/streak")
+            reportPersistenceError(error, operation: "save", target: "tasks/pet")
             ErrorReporter.log(error, context: context)
         }
     }

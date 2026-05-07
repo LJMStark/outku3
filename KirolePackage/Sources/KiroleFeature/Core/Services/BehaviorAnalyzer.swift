@@ -11,15 +11,13 @@ public struct BehaviorAnalyzer: Sendable {
     /// Generate a behavior summary from user data
     public func generateSummary(
         tasks: [TaskItem],
-        focusSessions: [FocusSession],
-        streak: Streak
+        focusSessions: [FocusSession]
     ) -> UserBehaviorSummary {
         UserBehaviorSummary(
             weeklyCompletionRates: computeWeeklyCompletionRates(tasks: tasks),
             preferredWorkHours: computePreferredWorkHours(tasks: tasks),
             averageDailyTasks: computeAverageDailyTasks(tasks: tasks),
             topTaskCategories: computeTopTaskCategories(tasks: tasks),
-            streakRecord: streak.longestStreak,
             lastUpdated: Date()
         )
     }

@@ -80,7 +80,6 @@ public final class PromptDebuggerState {
             tasksCompletedToday: mockTasksCompleted,
             totalTasksToday: mockTasksTotal,
             eventsToday: c.eventsToday,
-            currentStreak: c.currentStreak,
             recentCompletionRate: c.recentCompletionRate,
             behaviorSummary: c.behaviorSummary,
             recentTexts: c.recentTexts,
@@ -110,7 +109,7 @@ public final class PromptDebuggerState {
         【候选任务】: Top1=\(c.topTaskTitles.first ?? "无") | 最新未完成=\(latestIncompleteTask ?? "无") (\(isLocal)) | 完成进度=\(mockTasksCompleted)/\(mockTasksTotal)
         【日程事件】: 今日 \(c.eventsToday) 个事件 (真实数据)
         【日程活动】: \(mockNextAgenda ?? "无")
-        【近期表现】: \(Int(c.recentCompletionRate * 100))% 完成率, \(c.currentStreak)天连读
+        【近期表现】: \(Int(c.recentCompletionRate * 100))% 完成率
         【宠物心情】: \(c.petMood.rawValue)
         """
         

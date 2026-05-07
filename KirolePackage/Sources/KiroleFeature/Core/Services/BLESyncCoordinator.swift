@@ -34,7 +34,6 @@ public final class BLESyncCoordinator {
             tasks: appState.tasks,
             events: appState.events,
             weather: appState.weather,
-            streak: appState.streak,
             deviceMode: appState.deviceMode
         )
 
@@ -103,7 +102,6 @@ public final class BLESyncCoordinator {
 
             if let reminder = await SmartReminderService.shared.evaluateAndPushReminder(
                 tasks: appState.tasks,
-                streak: appState.streak,
                 pet: appState.pet
             ) {
                 do {

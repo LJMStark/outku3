@@ -75,7 +75,6 @@ struct ProtocolFixtures {
                 tasksCompleted: 1,
                 tasksTotal: 2,
                 pointsEarned: 42,
-                streakDays: 3,
                 petMood: "happy",
                 summaryMessage: "Packets parsed cleanly.",
                 encouragementMessage: "Keep the contract small.",
@@ -304,7 +303,6 @@ struct SimulatedAppPacket {
             tasksCompleted: Int(try reader.readByte()),
             tasksTotal: Int(try reader.readByte()),
             pointsEarned: Int(try reader.readUInt16BE()),
-            streakDays: Int(try reader.readByte()),
             totalFocusMinutes: Int(try reader.readUInt16BE()),
             focusSessionCount: Int(try reader.readByte()),
             longestFocusMinutes: Int(try reader.readUInt16BE()),
@@ -516,7 +514,6 @@ struct SimulatedDayPack {
         let tasksCompleted: Int
         let tasksTotal: Int
         let pointsEarned: Int
-        let streakDays: Int
         let totalFocusMinutes: Int
         let focusSessionCount: Int
         let longestFocusMinutes: Int

@@ -67,13 +67,13 @@ struct BLEProtocolSimulationTests {
             type: BLEDataType.smartReminder.rawValue,
             payload: BLEDataEncoder.encodeSmartReminder(
                 text: "Take one quiet breath.",
-                urgency: .streakProtect,
+                urgency: .gentle,
                 petMood: .focused
             )
         )
         let reminder = try hardware.receiveSingleAppPacket(reminderPacket).parseSmartReminder()
         #expect(reminder.text == "Take one quiet breath.")
-        #expect(reminder.urgency == .streakProtect)
+        #expect(reminder.urgency == .gentle)
         #expect(reminder.petMoodByte == Character("F").asciiValue)
 
         let eventRequestPacket = BLESimpleEncoder.encode(

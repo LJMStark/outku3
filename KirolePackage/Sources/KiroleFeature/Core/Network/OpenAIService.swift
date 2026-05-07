@@ -461,11 +461,6 @@ public actor OpenAIService {
             prompt += ". Their pet companion is feeling \(petMood.rawValue.lowercased())"
         }
 
-        // Streak
-        if context.currentStreak > 0 {
-            prompt += ". They're on a \(context.currentStreak)-day streak"
-        }
-
         // Scene
         if let scene = context.currentSceneName {
             prompt += ". Their E-ink companion display shows the '\(PromptSanitizer.sanitize(scene, maxLen: 50))' scene. Use imagery from this scene in the haiku"
@@ -508,7 +503,6 @@ public struct HaikuContext: Sendable {
     public let tasksCompletedToday: Int
     public let totalTasksToday: Int
     public let petMood: PetMood?
-    public let currentStreak: Int
     public let currentSceneName: String?
 
     public init(
@@ -516,14 +510,12 @@ public struct HaikuContext: Sendable {
         tasksCompletedToday: Int = 0,
         totalTasksToday: Int = 0,
         petMood: PetMood? = nil,
-        currentStreak: Int = 0,
         currentSceneName: String? = nil
     ) {
         self.currentTime = currentTime
         self.tasksCompletedToday = tasksCompletedToday
         self.totalTasksToday = totalTasksToday
         self.petMood = petMood
-        self.currentStreak = currentStreak
         self.currentSceneName = currentSceneName
     }
 }

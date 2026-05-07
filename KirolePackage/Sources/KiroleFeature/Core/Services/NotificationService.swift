@@ -85,8 +85,6 @@ public final class NotificationService {
         switch reason {
         case .deadline:
             return "Task Due Soon"
-        case .streakProtect:
-            return "Protect Your Streak"
         case .idle:
             return "Time to Focus"
         case .gentleNudge:

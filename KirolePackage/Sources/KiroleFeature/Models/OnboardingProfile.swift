@@ -48,7 +48,6 @@ public enum DistractionSource: String, CaseIterable, Sendable, Codable, Equatabl
 public enum ReminderPreference: String, CaseIterable, Sendable, Codable, Equatable {
     case gentleNudge = "gentleNudge"
     case deadline = "deadline"
-    case streakProtect = "streakProtect"
     case minimal = "minimal"
 }
 

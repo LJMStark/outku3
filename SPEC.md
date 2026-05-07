@@ -91,12 +91,7 @@
 - Tail Length
 - (These grow with pet evolution)
 
-#### 3.4 Streak System
-- Current streak counter (consecutive days)
-- Visual streak indicator
-- Streak affects pet growth rate
-
-#### 3.5 Task Statistics
+#### 3.4 Task Statistics
 - Today's completed tasks
 - Past week summary
 - Last 30 days overview
@@ -149,7 +144,6 @@
 - Multi-dimensional weighted calculation
 - Factors include:
   - Task completion rate
-  - Streak maintenance
   - Focus time
   - Consistency across days
 
@@ -192,11 +186,11 @@ Kirole E-ink companion device — a desk-mounted focus display.
 1. **Start of Day** — Morning greeting, daily summary, first item, weather
 2. **Overview** — Mixed timeline (tasks + events), companion phrase
 3. **Task In** — Task detail with companion encouragement and focus challenge
-4. **Settlement** — Daily stats, focus metrics, streak, points
+4. **Settlement** — Daily stats, focus metrics, points
 
 ### Smart Reminders on Device
 - AI-driven context-aware reminders pushed via BLE (0x13 command)
-- 3 types: Gentle, Urgent, Streak Protect
+- 2 types: Gentle, Urgent
 - Banner overlay on current page, auto-dismiss after 10s
 
 ---
@@ -234,7 +228,7 @@ Kirole E-ink companion device — a desk-mounted focus display.
   - Joy: joy, reduced anxiety, task echo, small delight, short haiku-like rewards.
   - Silas: loving care, calm-tech presence, Christian-shaped imagery, quiet spiritual steadiness.
   - Nova: temperance, discipline, signal over noise, time protection, one critical path.
-- **SmartReminderService**: Context-aware reminders (deadline/streakProtect/idle/gentleNudge)
+- **SmartReminderService**: Context-aware reminders (deadline/idle/gentleNudge)
 - **BehaviorAnalyzer**: User behavior summary for prompt injection
 - **OpenRouter API** (default companion model: `openai/gpt-5-chat`): Backend for companion text generation
 - Haiku generation (part of CompanionTextService)
@@ -295,7 +289,6 @@ Kirole E-ink companion device — a desk-mounted focus display.
 ### Content
 - Upcoming tasks
 - Pet status/mood
-- Streak counter
 - Quick glance information
 
 ---
@@ -408,7 +401,7 @@ outku3/
 ### Prototype Images
 1. **Image 1 & 2**: Home page - Timeline with events, haiku, pet
 2. **Image 3**: Pet page - Task categories with pet illustration
-3. **Image 4**: Pet status - Stats, streak, task statistics
+3. **Image 4**: Pet status - Stats, task statistics
 4. **Image 5**: Settings - Widget preview, themes, integrations
 
 ### Hardware Documentation
@@ -423,7 +416,6 @@ outku3/
 ### User Engagement
 - Daily active usage
 - Task completion rate
-- Streak maintenance
 - Pet evolution progress
 
 ### Technical

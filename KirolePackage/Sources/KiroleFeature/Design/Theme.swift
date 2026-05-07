@@ -24,7 +24,6 @@ public enum AppTheme: String, CaseIterable, Identifiable {
                 primaryText: Color(hex: "1f2937"),
                 secondaryText: Color(hex: "6b7280"),
                 taskComplete: Color(hex: "4CAF50"),
-                streakActive: Color(hex: "e8c17f"),
                 timeline: Color(hex: "D1D5DB"),
                 sunrise: Color(hex: "FFD93D"),
                 sunset: Color(hex: "FF8C42")
@@ -42,7 +41,6 @@ public enum AppTheme: String, CaseIterable, Identifiable {
                 primaryText: Color(hex: "1f2937"),
                 secondaryText: Color(hex: "6b7280"),
                 taskComplete: Color(hex: "4CAF50"),
-                streakActive: Color(hex: "c4a7d9"),
                 timeline: Color(hex: "D1D5DB"),
                 sunrise: Color(hex: "FFD93D"),
                 sunset: Color(hex: "FF8C42")
@@ -60,7 +58,6 @@ public enum AppTheme: String, CaseIterable, Identifiable {
                 primaryText: Color(hex: "1f2937"),
                 secondaryText: Color(hex: "6b7280"),
                 taskComplete: Color(hex: "4CAF50"),
-                streakActive: Color(hex: "7ec4d4"),
                 timeline: Color(hex: "D1D5DB"),
                 sunrise: Color(hex: "FFD93D"),
                 sunset: Color(hex: "FF8C42")
@@ -101,7 +98,6 @@ public struct ThemeColors: Sendable {
     public let primaryText: Color
     public let secondaryText: Color
     public let taskComplete: Color
-    public let streakActive: Color
     public let timeline: Color
     public let sunrise: Color
     public let sunset: Color

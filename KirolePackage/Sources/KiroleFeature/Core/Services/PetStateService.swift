@@ -94,16 +94,11 @@ public actor PetStateService {
 
     public func calculateProgress(
         currentProgress: Double,
-        taskCompleted: Bool,
-        streakDays: Int
+        taskCompleted: Bool
     ) -> Double {
         guard taskCompleted else { return currentProgress }
 
-        var progress = currentProgress + 0.02
-
-        if streakDays >= 7 { progress += 0.01 }
-        if streakDays >= 30 { progress += 0.01 }
-
+        let progress = currentProgress + 0.02
         return min(1.0, max(0.0, progress))
     }
 

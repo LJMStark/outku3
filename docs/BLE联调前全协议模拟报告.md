@@ -149,7 +149,6 @@ SettlementData:
   TasksCompleted
   TasksTotal
   PointsEarned(2BE)
-  StreakDays
   TotalFocusMinutes(2BE)
   FocusSessionCount
   LongestFocusMinutes(2BE)

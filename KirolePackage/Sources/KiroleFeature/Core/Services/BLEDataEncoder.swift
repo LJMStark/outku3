@@ -135,7 +135,6 @@ public enum BLEDataEncoder {
         data.append(UInt8(clamping: dayPack.settlementData.tasksTotal))
         let points = UInt16(min(dayPack.settlementData.pointsEarned, 65535))
         data.append(contentsOf: withUnsafeBytes(of: points.bigEndian) { Array($0) })
-        data.append(UInt8(clamping: dayPack.settlementData.streakDays))
         let focusMinutes = UInt16(min(dayPack.settlementData.totalFocusMinutes, 65535))
         data.append(contentsOf: withUnsafeBytes(of: focusMinutes.bigEndian) { Array($0) })
         data.append(UInt8(clamping: dayPack.settlementData.focusSessionCount))

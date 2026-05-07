@@ -175,7 +175,7 @@ extension AppState {
     /// 触发跨阈值庆祝：触觉 + 庆祝音效 + 通过 @Observable 信号唤醒 HomeView。
     /// 多通道并发，单一通道失败不影响其他（静音用户仍有触觉 + 视觉；Reduce Motion 跳过 confetti 但横幅仍展示）。
     private func celebrateSceneUnlock(sceneId: String, at now: Date) {
-        SoundService.shared.playWithHaptic(.streakMilestone, haptic: .success)
+        SoundService.shared.playWithHaptic(.sceneMilestone, haptic: .success)
         pendingSceneCelebration = SceneCelebration(sceneId: sceneId, presentedAt: now)
     }
 }

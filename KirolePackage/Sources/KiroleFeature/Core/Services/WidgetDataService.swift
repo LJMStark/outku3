@@ -15,7 +15,6 @@ public final class WidgetDataService: Sendable {
     public func updateWidgetData(
         petName: String,
         petMood: String,
-        currentStreak: Int,
         todayCompleted: Int,
         todayTotal: Int
     ) {
@@ -23,7 +22,6 @@ public final class WidgetDataService: Sendable {
 
         defaults.set(petName, forKey: "petName")
         defaults.set(petMood, forKey: "petMood")
-        defaults.set(currentStreak, forKey: "currentStreak")
         defaults.set(todayCompleted, forKey: "todayCompleted")
         defaults.set(todayTotal, forKey: "todayTotal")
         defaults.set(Date(), forKey: "lastUpdated")
@@ -31,11 +29,10 @@ public final class WidgetDataService: Sendable {
         WidgetCenter.shared.reloadAllTimelines()
     }
 
-    public func updateFromAppState(pet: Pet, streak: Streak, statistics: TaskStatistics) {
+    public func updateFromAppState(pet: Pet, statistics: TaskStatistics) {
         updateWidgetData(
             petName: pet.name,
             petMood: pet.mood.rawValue,
-            currentStreak: streak.currentStreak,
             todayCompleted: statistics.todayCompleted,
             todayTotal: statistics.todayTotal
         )

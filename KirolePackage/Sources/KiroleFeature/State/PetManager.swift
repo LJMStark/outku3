@@ -25,31 +25,6 @@ final class PetManager {
         return updatedPet
     }
 
-    func updateStreak(_ streak: Streak, calendar: Calendar = .current) -> Streak {
-        var updatedStreak = streak
-        let today = calendar.startOfDay(for: Date())
-
-        if let lastActive = updatedStreak.lastActiveDate {
-            let lastActiveDay = calendar.startOfDay(for: lastActive)
-
-            if calendar.isDate(lastActiveDay, inSameDayAs: today) {
-                return updatedStreak
-            } else if let yesterday = calendar.date(byAdding: .day, value: -1, to: today),
-                      calendar.isDate(lastActiveDay, inSameDayAs: yesterday) {
-                updatedStreak.currentStreak += 1
-            } else {
-                updatedStreak.currentStreak = 1
-            }
-        } else {
-            updatedStreak.currentStreak = 1
-        }
-
-        updatedStreak.lastActiveDate = today
-        updatedStreak.longestStreak = max(updatedStreak.longestStreak, updatedStreak.currentStreak)
-
-        return updatedStreak
-    }
-
     func canEvolve(
         pet: Pet,
         petStateService: PetStateService

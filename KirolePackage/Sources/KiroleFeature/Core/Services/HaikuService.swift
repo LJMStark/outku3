@@ -36,15 +36,13 @@ public actor HaikuService {
     public func generateCompletionHaiku(
         tasksCompleted: Int,
         totalTasks: Int,
-        petMood: PetMood,
-        streak: Int
+        petMood: PetMood
     ) async -> Haiku {
         let context = HaikuContext(
             currentTime: Date(),
             tasksCompletedToday: tasksCompleted,
             totalTasksToday: totalTasks,
-            petMood: petMood,
-            currentStreak: streak
+            petMood: petMood
         )
 
         do {

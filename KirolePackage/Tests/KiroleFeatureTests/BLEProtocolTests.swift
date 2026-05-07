@@ -197,7 +197,6 @@ struct BLEProtocolTests {
             tasksCompleted: 1,
             tasksTotal: 3,
             pointsEarned: 10,
-            streakDays: 2,
             petMood: "happy",
             summaryMessage: "summary",
             encouragementMessage: "encourage"
@@ -447,7 +446,7 @@ struct BLEProtocolTests {
     func encodeDayPackFormatExcludesMicroActionFields() {
         let settlement = SettlementData(
             tasksCompleted: 2, tasksTotal: 5, pointsEarned: 100,
-            streakDays: 3, petMood: "happy",
+            petMood: "happy",
             summaryMessage: "Good day", encouragementMessage: "Keep going"
         )
         let date = Date(timeIntervalSince1970: 1_700_000_000)
@@ -929,7 +928,7 @@ struct BLEProtocolTests {
     func encodeDayPackSevenInchTaskLimit() {
         let settlement = SettlementData(
             tasksCompleted: 0, tasksTotal: 5, pointsEarned: 0,
-            streakDays: 0, petMood: "happy",
+            petMood: "happy",
             summaryMessage: "s", encouragementMessage: "e"
         )
         let tasks = (0..<5).map { i in

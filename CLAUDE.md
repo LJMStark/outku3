@@ -63,7 +63,7 @@ All user-controlled text (task titles, event names, pet names, learn content) **
 The project uses a **self-hosted Supabase** instance, not Supabase Cloud.
 - **API gateway (Kong 2.8.1)**: `https://outku3.zeabur.app`
 - **Auth (GoTrue v2.180.0)**: `/auth/v1`
-- **REST (PostgREST)**: `/rest/v1` — tables: `pets`, `streaks`, `sync_state`
+- **REST (PostgREST)**: `/rest/v1` — tables: `pets`, `sync_state`
 - **Schema source of truth**: `Config/supabase-schema.sql` — apply manually to Zeabur PostgreSQL when schema changes.
 - **OAuth proxy**: Notion and Taskade token exchange goes through Supabase Edge Functions (`supabase/functions/notion-oauth/` and `supabase/functions/taskade-oauth/`). `client_secret` is server-side only — never in the binary.
 

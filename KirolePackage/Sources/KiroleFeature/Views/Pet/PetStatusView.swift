@@ -57,12 +57,6 @@ struct PetStatusView: View {
                         .scaleEffect(appeared ? 1 : 0.9)
                         .animation(.kiroleGentle, value: appeared)
 
-                    // Achievement Card
-                    AchievementCard()
-                        .opacity(appeared ? 1 : 0)
-                        .offset(y: appeared ? 0 : 30)
-                        .animation(.kiroleGentle.delay(0.3), value: appeared)
-
                     // Tasks Statistics
                     TasksStatisticsCard()
                         .opacity(appeared ? 1 : 0)
@@ -292,64 +286,6 @@ private struct MeasurementItem: View {
                 .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(theme.colors.secondaryText)
         }
-    }
-}
-
-// MARK: - Achievement Card
-
-private struct AchievementCard: View {
-    @Environment(AppState.self) private var appState
-    @Environment(ThemeManager.self) private var theme
-    @State private var iconRotated = false
-
-    private var streakSubtitle: String {
-        let streak = appState.streak
-        if streak.currentStreak > 0 && streak.currentStreak >= streak.longestStreak {
-            return "Longest self-care streak ever!"
-        }
-        return "Best: \(streak.longestStreak) days"
-    }
-
-    var body: some View {
-        HStack(spacing: 16) {
-            Image(systemName: "checkmark.seal.fill")
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(width: 52, height: 52)
-                .foregroundStyle(Color(hex: "C48B44"))
-                .background(Circle().fill(Color.white).frame(width: 24, height: 24))
-                .rotationEffect(.degrees(iconRotated ? 10 : -10))
-                .task {
-                    try? await Task.sleep(for: .seconds(1.2))
-                    withAnimation(.appleEaseOut) { iconRotated = true }
-                    try? await Task.sleep(for: .seconds(0.5))
-                    withAnimation(.appleEaseOut) { iconRotated = false }
-                }
-
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text("\(appState.streak.currentStreak)")
-                        .font(.system(size: 28, weight: .bold, design: .serif))
-                        .foregroundStyle(Color(hex: "1F2937"))
-                    Text("day streak")
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundStyle(Color(hex: "1F2937"))
-                }
-
-                Text(streakSubtitle)
-                    .font(.system(size: 15))
-                    .foregroundStyle(theme.colors.secondaryText)
-            }
-
-            Spacer()
-        }
-        .padding(20)
-        .background(Color.white)
-        .clipShape(RoundedRectangle(cornerRadius: 24))
-        .overlay(
-            RoundedRectangle(cornerRadius: 24)
-                .stroke(Color(hex: "1F2937").opacity(0.8), lineWidth: 1)
-        )
     }
 }
 

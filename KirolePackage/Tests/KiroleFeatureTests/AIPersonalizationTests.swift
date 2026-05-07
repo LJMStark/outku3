@@ -14,7 +14,6 @@ import Foundation
         tasksCompletedToday: 3,
         totalTasksToday: 5,
         eventsToday: 2,
-        currentStreak: 7,
         recentCompletionRate: 0.85
     )
 
@@ -27,7 +26,6 @@ import Foundation
     #expect(context.tasksCompletedToday == 3)
     #expect(context.totalTasksToday == 5)
     #expect(context.eventsToday == 2)
-    #expect(context.currentStreak == 7)
     #expect(context.recentCompletionRate == 0.85)
 }
 
@@ -43,7 +41,6 @@ import Foundation
     #expect(context.tasksCompletedToday == 0)
     #expect(context.totalTasksToday == 0)
     #expect(context.eventsToday == 0)
-    #expect(context.currentStreak == 0)
     #expect(context.recentCompletionRate == 0)
     #expect(context.behaviorSummary == nil)
     #expect(context.recentTexts.isEmpty)
@@ -54,8 +51,7 @@ import Foundation
         weeklyCompletionRates: [0.5, 0.6, 0.7, 0.8],
         preferredWorkHours: WorkHourRange(start: 9, end: 17),
         averageDailyTasks: 5,
-        topTaskCategories: ["Review", "Write", "Design"],
-        streakRecord: 14
+        topTaskCategories: ["Review", "Write", "Design"]
     )
 
     let context = AIContext(
@@ -68,7 +64,6 @@ import Foundation
     #expect(context.companionCharacter == .silas)
     #expect(context.behaviorSummary != nil)
     #expect(context.behaviorSummary?.weeklyCompletionRates.count == 4)
-    #expect(context.behaviorSummary?.streakRecord == 14)
     #expect(context.recentTexts.count == 2)
 }
 
@@ -430,30 +425,15 @@ import Foundation
     let analyzer = BehaviorAnalyzer()
     let summary = analyzer.generateSummary(
         tasks: [],
-        focusSessions: [],
-        streak: Streak(currentStreak: 0)
+        focusSessions: []
     )
 
     #expect(summary.weeklyCompletionRates.count == 4)
     #expect(summary.weeklyCompletionRates.allSatisfy { $0 == 0 })
     #expect(summary.averageDailyTasks == 0)
     #expect(summary.topTaskCategories.isEmpty)
-    #expect(summary.streakRecord == 0)
     #expect(summary.preferredWorkHours.start == 9)
     #expect(summary.preferredWorkHours.end == 18)
-}
-
-@Test func testBehaviorAnalyzerStreakRecord() async throws {
-    let analyzer = BehaviorAnalyzer()
-    let streak = Streak(currentStreak: 5, longestStreak: 20)
-
-    let summary = analyzer.generateSummary(
-        tasks: [],
-        focusSessions: [],
-        streak: streak
-    )
-
-    #expect(summary.streakRecord == 20)
 }
 
 @Test func testBehaviorAnalyzerTopCategories() async throws {
@@ -469,8 +449,7 @@ import Foundation
 
     let summary = analyzer.generateSummary(
         tasks: tasks,
-        focusSessions: [],
-        streak: Streak()
+        focusSessions: []
     )
 
     #expect(summary.topTaskCategories.count == 3)
@@ -490,8 +469,7 @@ import Foundation
 
     let summary = analyzer.generateSummary(
         tasks: tasks,
-        focusSessions: [],
-        streak: Streak()
+        focusSessions: []
     )
 
     #expect(summary.averageDailyTasks == 2)
@@ -514,8 +492,7 @@ import Foundation
 
     let summary = analyzer.generateSummary(
         tasks: tasks,
-        focusSessions: [],
-        streak: Streak()
+        focusSessions: []
     )
 
     #expect(summary.preferredWorkHours.start <= 10)
@@ -570,8 +547,7 @@ import Foundation
         weeklyCompletionRates: [0.5, 0.6, 0.7, 0.8],
         preferredWorkHours: WorkHourRange(start: 8, end: 17),
         averageDailyTasks: 5,
-        topTaskCategories: ["Review", "Write"],
-        streakRecord: 14
+        topTaskCategories: ["Review", "Write"]
     )
 
     let encoder = JSONEncoder()
@@ -587,7 +563,6 @@ import Foundation
     #expect(decoded.preferredWorkHours.end == 17)
     #expect(decoded.averageDailyTasks == 5)
     #expect(decoded.topTaskCategories == ["Review", "Write"])
-    #expect(decoded.streakRecord == 14)
 }
 
 @Test func testUserBehaviorSummaryDefaults() async throws {
@@ -598,7 +573,6 @@ import Foundation
     #expect(summary.preferredWorkHours.end == 18)
     #expect(summary.averageDailyTasks == 0)
     #expect(summary.topTaskCategories.isEmpty)
-    #expect(summary.streakRecord == 0)
 }
 
 // MARK: - CompanionTextService Fallback Tests
@@ -639,7 +613,7 @@ import Foundation
 @Test @MainActor func testSettlementMessageFallbackWithoutAPIKey() async throws {
     let service = CompanionTextService.shared
     let result = await service.generateSettlementMessage(
-        tasksCompleted: 5, tasksTotal: 5, streakDays: 3, petName: "Waffle"
+        tasksCompleted: 5, tasksTotal: 5, petName: "Waffle"
     )
     #expect(!result.isEmpty)
     #expect(result.contains("Perfect"))
@@ -648,7 +622,7 @@ import Foundation
 @Test @MainActor func testSettlementMessagePartialCompletion() async throws {
     let service = CompanionTextService.shared
     let result = await service.generateSettlementMessage(
-        tasksCompleted: 4, tasksTotal: 5, streakDays: 3, petName: "Waffle"
+        tasksCompleted: 4, tasksTotal: 5, petName: "Waffle"
     )
     #expect(!result.isEmpty)
     #expect(result.contains("4/5"))
@@ -657,7 +631,7 @@ import Foundation
 @Test @MainActor func testSettlementMessageNoTasks() async throws {
     let service = CompanionTextService.shared
     let result = await service.generateSettlementMessage(
-        tasksCompleted: 0, tasksTotal: 0, streakDays: 0, petName: "Waffle"
+        tasksCompleted: 0, tasksTotal: 0, petName: "Waffle"
     )
     #expect(!result.isEmpty)
     #expect(result.contains("Tomorrow"))

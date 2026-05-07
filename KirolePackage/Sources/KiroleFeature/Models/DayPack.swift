@@ -93,7 +93,6 @@ public struct DayPack: Codable, Sendable {
         parts.append("settlement.completed=\(settlementData.tasksCompleted)")
         parts.append("settlement.total=\(settlementData.tasksTotal)")
         parts.append("settlement.points=\(settlementData.pointsEarned)")
-        parts.append("settlement.streak=\(settlementData.streakDays)")
         parts.append("settlement.mood=\(settlementData.petMood)")
         parts.append("settlement.summary=\(settlementData.summaryMessage)")
         parts.append("settlement.encouragement=\(settlementData.encouragementMessage)")
@@ -188,7 +187,6 @@ public struct SettlementData: Codable, Sendable {
     public let tasksCompleted: Int
     public let tasksTotal: Int
     public let pointsEarned: Int
-    public let streakDays: Int
     public let petMood: String
     public let summaryMessage: String
     public let encouragementMessage: String
@@ -202,7 +200,6 @@ public struct SettlementData: Codable, Sendable {
         tasksCompleted: Int,
         tasksTotal: Int,
         pointsEarned: Int,
-        streakDays: Int,
         petMood: String,
         summaryMessage: String,
         encouragementMessage: String,
@@ -215,7 +212,6 @@ public struct SettlementData: Codable, Sendable {
         self.tasksCompleted = tasksCompleted
         self.tasksTotal = tasksTotal
         self.pointsEarned = pointsEarned
-        self.streakDays = streakDays
         self.petMood = petMood
         self.summaryMessage = summaryMessage
         self.encouragementMessage = encouragementMessage

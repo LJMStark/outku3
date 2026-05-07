@@ -26,7 +26,6 @@ public struct AIContext: Sendable {
     public let tasksCompletedToday: Int
     public let totalTasksToday: Int
     public let eventsToday: Int
-    public let currentStreak: Int
     public let recentCompletionRate: Double
     public let behaviorSummary: UserBehaviorSummary?
     public let recentTexts: [String]
@@ -55,7 +54,6 @@ public struct AIContext: Sendable {
         tasksCompletedToday: Int = 0,
         totalTasksToday: Int = 0,
         eventsToday: Int = 0,
-        currentStreak: Int = 0,
         recentCompletionRate: Double = 0,
         behaviorSummary: UserBehaviorSummary? = nil,
         recentTexts: [String] = [],
@@ -81,7 +79,6 @@ public struct AIContext: Sendable {
         self.tasksCompletedToday = tasksCompletedToday
         self.totalTasksToday = totalTasksToday
         self.eventsToday = eventsToday
-        self.currentStreak = currentStreak
         self.recentCompletionRate = recentCompletionRate
         self.behaviorSummary = behaviorSummary
         self.recentTexts = recentTexts
@@ -140,7 +137,6 @@ public struct UserBehaviorSummary: Codable, Sendable {
     public let preferredWorkHours: WorkHourRange
     public let averageDailyTasks: Int
     public let topTaskCategories: [String]
-    public let streakRecord: Int
     public let lastUpdated: Date
 
     public init(
@@ -148,14 +144,12 @@ public struct UserBehaviorSummary: Codable, Sendable {
         preferredWorkHours: WorkHourRange = WorkHourRange(),
         averageDailyTasks: Int = 0,
         topTaskCategories: [String] = [],
-        streakRecord: Int = 0,
         lastUpdated: Date = Date()
     ) {
         self.weeklyCompletionRates = weeklyCompletionRates
         self.preferredWorkHours = preferredWorkHours
         self.averageDailyTasks = averageDailyTasks
         self.topTaskCategories = topTaskCategories
-        self.streakRecord = streakRecord
         self.lastUpdated = lastUpdated
     }
 }

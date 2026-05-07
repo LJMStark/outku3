@@ -48,13 +48,6 @@ public actor SyncManager {
             failedCount += 1
         }
 
-        do {
-            try await syncStreak(userId: userId)
-            syncedCount += 1
-        } catch {
-            failedCount += 1
-        }
-
         syncState.lastSyncTime = Date()
         syncState.status = failedCount == 0 ? .synced : .pending
         syncState.pendingChanges = 0
@@ -101,25 +94,6 @@ public actor SyncManager {
         }
     }
 
-    private func syncStreak(userId: String) async throws {
-        let localStreak = try await localStorage.loadStreak()
-        let remoteStreak = try await supabaseService.getStreak(userId: userId)
-
-        if let local = localStreak, let remote = remoteStreak {
-            let merged = Streak(
-                currentStreak: max(local.currentStreak, remote.currentStreak),
-                longestStreak: max(local.longestStreak, remote.longestStreak),
-                lastActiveDate: [local.lastActiveDate, remote.lastActiveDate].compactMap { $0 }.max()
-            )
-            try await localStorage.saveStreak(merged)
-            try await supabaseService.saveStreak(merged, userId: userId)
-        } else if let local = localStreak {
-            try await supabaseService.saveStreak(local, userId: userId)
-        } else if let remote = remoteStreak {
-            try await localStorage.saveStreak(remote)
-        }
-    }
-
     // MARK: - Save with Sync
 
     public func savePet(_ pet: Pet, userId: String?) async throws {
@@ -128,20 +102,6 @@ public actor SyncManager {
         if let userId = userId {
             do {
                 try await supabaseService.savePet(pet, userId: userId)
-            } catch {
-                syncState.pendingChanges += 1
-                syncState.status = .pending
-                try await localStorage.saveSyncState(syncState)
-            }
-        }
-    }
-
-    public func saveStreak(_ streak: Streak, userId: String?) async throws {
-        try await localStorage.saveStreak(streak)
-
-        if let userId = userId {
-            do {
-                try await supabaseService.saveStreak(streak, userId: userId)
             } catch {
                 syncState.pendingChanges += 1
                 syncState.status = .pending
@@ -179,38 +139,6 @@ public actor SyncManager {
             ErrorReporter.log(
                 .persistence(operation: "load", target: "pet.json", underlying: error.localizedDescription),
                 context: "SyncManager.loadPet"
-            )
-            return nil
-        }
-    }
-
-    /// 加载 Streak 数据
-    /// - Note: 后台同步是 fire-and-forget 模式，同步失败会记录但不阻塞返回
-    /// - Parameter userId: 云端用户 ID，如果提供则触发后台同步
-    /// - Returns: 本地 Streak 数据，如果加载失败返回 nil
-    public func loadStreak(userId: String?) async -> Streak? {
-        do {
-            let localStreak = try await localStorage.loadStreak()
-
-            // Fire-and-forget background sync: errors are logged but don't block
-            if let userId = userId {
-                Task {
-                    do {
-                        try await syncStreak(userId: userId)
-                    } catch {
-                        ErrorReporter.log(
-                            .sync(component: "Streak", underlying: error.localizedDescription),
-                            context: "SyncManager.loadStreak.backgroundSync"
-                        )
-                    }
-                }
-            }
-
-            return localStreak
-        } catch {
-            ErrorReporter.log(
-                .persistence(operation: "load", target: "streak.json", underlying: error.localizedDescription),
-                context: "SyncManager.loadStreak"
             )
             return nil
         }

@@ -8,7 +8,7 @@ public enum SoundType: Hashable, Sendable {
     case taskUncomplete
     case petEvolution
     case petInteraction
-    case streakMilestone
+    case sceneMilestone
     case buttonTap
     case notification
     case custom(String)
@@ -20,7 +20,7 @@ public enum SoundType: Hashable, Sendable {
         case .taskUncomplete: 1104    // Tock
         case .petEvolution: 1025      // Fanfare
         case .petInteraction: 1054    // Pop
-        case .streakMilestone: 1026   // Celebration
+        case .sceneMilestone: 1026   // Celebration
         case .buttonTap: 1104         // Tock
         case .notification: 1007      // Notification
         case .custom: nil

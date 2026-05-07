@@ -27,11 +27,11 @@ public actor LocalStorage {
     }
 
     enum DevelopmentStorageSchema {
-        static let currentVersion = 4
+        static let currentVersion = 5
     }
 
     private nonisolated static let persistedFiles = [
-        "pet.json", "streak.json", "tasks.json", "events.json",
+        "pet.json", "tasks.json", "events.json",
         "sync_state.json", "haiku_cache.json", "user_profile.json",
         "focus_sessions.json", "event_logs.json", "ai_interactions.json",
         "behavior_summary.json", "onboarding_profile.json",
@@ -172,16 +172,6 @@ public actor LocalStorage {
 
     public func loadPet() throws -> Pet? {
         try load(Pet.self, from: "pet.json")
-    }
-
-    // MARK: - Streak Data
-
-    public func saveStreak(_ streak: Streak) throws {
-        try save(streak, to: "streak.json")
-    }
-
-    public func loadStreak() throws -> Streak? {
-        try load(Streak.self, from: "streak.json")
     }
 
     // MARK: - Tasks

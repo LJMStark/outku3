@@ -930,50 +930,6 @@ struct AppStateTests {
     }
 }
 
-// MARK: - Streak Logic Tests (Isolated)
-
-@Suite("Streak Logic Tests")
-struct StreakLogicTests {
-
-    @Test("Streak model initialization")
-    func streakInitialization() {
-        let streak = Streak(currentStreak: 5, longestStreak: 10, lastActiveDate: Date())
-
-        #expect(streak.currentStreak == 5)
-        #expect(streak.longestStreak == 10)
-        #expect(streak.lastActiveDate != nil)
-    }
-
-    @Test("Streak default values")
-    func streakDefaultValues() {
-        let streak = Streak()
-
-        #expect(streak.currentStreak == 0)
-        #expect(streak.longestStreak == 0)
-        #expect(streak.lastActiveDate == nil)
-    }
-
-    @Test("Longest streak updates correctly")
-    func longestStreakUpdates() {
-        var streak = Streak(currentStreak: 5, longestStreak: 10)
-
-        streak.currentStreak = 12
-        streak.longestStreak = max(streak.longestStreak, streak.currentStreak)
-
-        #expect(streak.longestStreak == 12)
-    }
-
-    @Test("Longest streak does not decrease")
-    func longestStreakDoesNotDecrease() {
-        var streak = Streak(currentStreak: 15, longestStreak: 15)
-
-        streak.currentStreak = 1
-        streak.longestStreak = max(streak.longestStreak, streak.currentStreak)
-
-        #expect(streak.longestStreak == 15)
-    }
-}
-
 // MARK: - TaskStatistics Tests
 
 @Suite("TaskStatistics Tests")

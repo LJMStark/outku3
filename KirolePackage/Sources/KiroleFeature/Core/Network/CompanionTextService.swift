@@ -136,7 +136,7 @@ public final class CompanionTextService {
     // MARK: - Settlement Message
 
     public func generateSettlementMessage(
-        tasksCompleted: Int, tasksTotal: Int, streakDays: Int, petName: String,
+        tasksCompleted: Int, tasksTotal: Int, petName: String,
         focusTimeToday: Int = 0, energyBottles: Int = 0,
         userProfile: UserProfile = .default
     ) async -> String {
@@ -146,7 +146,6 @@ public final class CompanionTextService {
             petName: petName, petMood: .happy,
             userProfile: userProfile,
             completedTasks: tasksCompleted, totalTasks: tasksTotal,
-            streak: streakDays,
             episodicMemories: [memory],
             focusTimeToday: focusTimeToday,
             energyBottles: energyBottles
@@ -170,22 +169,20 @@ public final class CompanionTextService {
         reason: ReminderReason,
         petName: String, petMood: PetMood,
         taskTitle: String?,
-        streakDays: Int,
         userProfile: UserProfile = .default
     ) async -> String {
         if let aiText = await generateAIText(
             type: .smartReminder,
             petName: petName, petMood: petMood,
-            userProfile: userProfile,
-            streak: streakDays
+            userProfile: userProfile
         ) {
             return aiText
         }
 
-        return smartReminderFallback(reason: reason, petName: petName, taskTitle: taskTitle, streakDays: streakDays)
+        return smartReminderFallback(reason: reason, petName: petName, taskTitle: taskTitle)
     }
 
-    private func smartReminderFallback(reason: ReminderReason, petName: String, taskTitle: String?, streakDays: Int) -> String {
+    private func smartReminderFallback(reason: ReminderReason, petName: String, taskTitle: String?) -> String {
         switch reason {
         case .idle:
             return "\(petName) misses you! Time to get back on track."
@@ -194,8 +191,6 @@ public final class CompanionTextService {
                 return "\(title) is due soon. Let's finish it!"
             }
             return "You have a task due soon!"
-        case .streakProtect:
-            return "Your \(streakDays)-day streak is at risk! Do one task."
         case .gentleNudge:
             return "Ready for the next task? \(petName) believes in you."
         }
@@ -293,7 +288,6 @@ public final class CompanionTextService {
             tasksCompletedToday: baseContext.tasksCompletedToday,
             totalTasksToday: baseContext.totalTasksToday,
             eventsToday: baseContext.eventsToday,
-            currentStreak: baseContext.currentStreak,
             recentCompletionRate: baseContext.recentCompletionRate,
             behaviorSummary: baseContext.behaviorSummary,
             recentTexts: recentTexts,
@@ -365,7 +359,7 @@ public final class CompanionTextService {
         userProfile: UserProfile,
         mode: CompanionTextGenerationMode = .live,
         completedTasks: Int = 0, totalTasks: Int = 0,
-        events: Int = 0, streak: Int = 0,
+        events: Int = 0,
         episodicMemories: [String] = [],
         nextAgendaItem: String? = nil,
         activeTaskTitle: String? = nil,
@@ -391,7 +385,6 @@ public final class CompanionTextService {
             tasksCompletedToday: completedTasks,
             totalTasksToday: totalTasks,
             eventsToday: events,
-            currentStreak: streak,
             recentCompletionRate: weeklyRate,
             behaviorSummary: behaviorSummary,
             recentTexts: [],
@@ -461,7 +454,6 @@ public final class CompanionTextService {
             tasksCompletedToday: baseContext.tasksCompletedToday,
             totalTasksToday: baseContext.totalTasksToday,
             eventsToday: baseContext.eventsToday,
-            currentStreak: baseContext.currentStreak,
             recentCompletionRate: weeklyRate,
             behaviorSummary: behaviorSummary,
             recentTexts: recentTexts,

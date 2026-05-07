@@ -251,30 +251,10 @@ struct PetStateServiceTests {
 
         let newProgress = await service.calculateProgress(
             currentProgress: 0.5,
-            taskCompleted: true,
-            streakDays: 0
+            taskCompleted: true
         )
 
         #expect(newProgress > 0.5)
-    }
-
-    @Test("Progress bonus for 7+ day streak")
-    func progressBonusForWeekStreak() async {
-        let service = PetStateService.shared
-
-        let progressWithoutStreak = await service.calculateProgress(
-            currentProgress: 0.5,
-            taskCompleted: true,
-            streakDays: 0
-        )
-
-        let progressWithStreak = await service.calculateProgress(
-            currentProgress: 0.5,
-            taskCompleted: true,
-            streakDays: 7
-        )
-
-        #expect(progressWithStreak > progressWithoutStreak)
     }
 
     @Test("Progress capped at 1.0")
@@ -283,8 +263,7 @@ struct PetStateServiceTests {
 
         let newProgress = await service.calculateProgress(
             currentProgress: 0.99,
-            taskCompleted: true,
-            streakDays: 30
+            taskCompleted: true
         )
 
         #expect(newProgress <= 1.0)
@@ -384,15 +363,6 @@ struct ModelTests {
         #expect(taskItem.isCompleted == false)
     }
 
-    @Test("Streak tracking")
-    func streakTracking() {
-        var streak = Streak(currentStreak: 5, longestStreak: 10)
-
-        streak.currentStreak = 12
-        streak.longestStreak = max(streak.longestStreak, streak.currentStreak)
-
-        #expect(streak.longestStreak == 12)
-    }
 }
 
 // MARK: - HaikuService Tests
@@ -472,7 +442,6 @@ struct ThemeTests {
             _ = colors.sunrise
             _ = colors.sunset
             _ = colors.taskComplete
-            _ = colors.streakActive
         }
     }
 

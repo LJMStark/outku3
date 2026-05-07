@@ -102,7 +102,6 @@ public enum OnboardingQuestions {
             options: [
                 QuestionOption(id: "gentleNudge", label: "Gentle nudges throughout the day", sfSymbol: "bell.fill"),
                 QuestionOption(id: "deadline", label: "Only when deadlines are close", sfSymbol: "clock.fill"),
-                QuestionOption(id: "streakProtect", label: "Protect my streaks at all costs", sfSymbol: "flame.fill"),
                 QuestionOption(id: "minimal", label: "I'll check on my own", sfSymbol: "hand.raised.fill"),
             ]
         ),

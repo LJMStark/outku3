@@ -28,7 +28,7 @@ public final class DayPackGenerator {
 
     public func generateDayPack(
         pet: Pet, tasks: [TaskItem], events: [CalendarEvent],
-        weather: Weather, streak: Streak, deviceMode: DeviceMode,
+        weather: Weather, deviceMode: DeviceMode,
         userProfile: UserProfile = .default,
         screenSize: ScreenSize = .fourInch
     ) async -> DayPack {
@@ -56,7 +56,7 @@ public final class DayPackGenerator {
             currentScheduleSummary: generateScheduleSummary(events: todayEvents),
             topTasks: Array(topTasks),
             companionPhrase: await phrase,
-            settlementData: await generateSettlementData(tasks: todayTasks, pet: pet, streak: streak, userProfile: userProfile)
+            settlementData: await generateSettlementData(tasks: todayTasks, pet: pet, userProfile: userProfile)
         )
     }
 
@@ -94,7 +94,7 @@ public final class DayPackGenerator {
         return "\(count) event\(count == 1 ? "" : "s") remaining"
     }
 
-    private func generateSettlementData(tasks: [TaskItem], pet: Pet, streak: Streak, userProfile: UserProfile = .default) async -> SettlementData {
+    private func generateSettlementData(tasks: [TaskItem], pet: Pet, userProfile: UserProfile = .default) async -> SettlementData {
         let completed = tasks.filter { $0.isCompleted }.count
         let total = tasks.count
         let rate = total > 0 ? Double(completed) / Double(total) : 0
@@ -104,7 +104,6 @@ public final class DayPackGenerator {
         let aiMessage = await textService.generateSettlementMessage(
             tasksCompleted: completed,
             tasksTotal: total,
-            streakDays: streak.currentStreak,
             petName: pet.name,
             focusTimeToday: Int(focusStats.todayFocusTime / 60),
             energyBottles: energyBottles, // Loaded actual energy bottles score
@@ -123,7 +122,7 @@ public final class DayPackGenerator {
 
         return SettlementData(
             tasksCompleted: completed, tasksTotal: total, pointsEarned: completed * 10,
-            streakDays: streak.currentStreak, petMood: pet.mood.rawValue,
+            petMood: pet.mood.rawValue,
             summaryMessage: summary, encouragementMessage: encouragement,
             totalFocusMinutes: Int(focusStats.todayFocusTime / 60),
             focusSessionCount: focusStats.todaySessions,

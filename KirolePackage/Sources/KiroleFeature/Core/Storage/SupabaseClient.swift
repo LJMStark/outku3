@@ -251,46 +251,6 @@ public actor SupabaseService {
         )
     }
 
-    // MARK: - Streak Data
-
-    /// 保存连续打卡数据
-    public func saveStreak(_ streak: Streak, userId: String) async throws {
-        let client = try requireClient()
-        let streakRecord = StreakRecord(
-            userId: userId,
-            currentStreak: streak.currentStreak,
-            longestStreak: streak.longestStreak,
-            lastActiveDate: streak.lastActiveDate
-        )
-
-        try await client
-            .from("streaks")
-            .upsert(streakRecord, onConflict: "user_id")
-            .execute()
-    }
-
-    /// 获取连续打卡数据
-    public func getStreak(userId: String) async throws -> Streak? {
-        let client = try requireClient()
-        let response: [StreakRecord] = try await client
-            .from("streaks")
-            .select()
-            .eq("user_id", value: userId)
-            .limit(1)
-            .execute()
-            .value
-
-        guard let record = response.first else {
-            return nil
-        }
-
-        return Streak(
-            currentStreak: record.currentStreak,
-            longestStreak: record.longestStreak,
-            lastActiveDate: record.lastActiveDate
-        )
-    }
-
     // MARK: - Sync State
 
     /// 保存同步状态
@@ -384,20 +344,6 @@ private struct PetRecord: Codable {
         case tailLength = "tail_length"
         case lastInteraction = "last_interaction"
         case points
-    }
-}
-
-private struct StreakRecord: Codable {
-    let userId: String
-    let currentStreak: Int
-    let longestStreak: Int
-    let lastActiveDate: Date?
-
-    enum CodingKeys: String, CodingKey {
-        case userId = "user_id"
-        case currentStreak = "current_streak"
-        case longestStreak = "longest_streak"
-        case lastActiveDate = "last_active_date"
     }
 }
 

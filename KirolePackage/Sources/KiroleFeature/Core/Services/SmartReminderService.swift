@@ -5,7 +5,6 @@ import Foundation
 public enum ReminderReason: String, Codable, Sendable {
     case idle           // 长时间未互动
     case deadline       // 任务即将到期
-    case streakProtect  // 连续天数保护
     case gentleNudge    // 温和提醒
 }
 
@@ -14,7 +13,6 @@ public enum ReminderReason: String, Codable, Sendable {
 public enum ReminderUrgency: UInt8, Sendable {
     case gentle = 0x00
     case urgent = 0x01
-    case streakProtect = 0x02
 }
 
 // MARK: - Smart Reminder Result
@@ -57,8 +55,6 @@ public final class SmartReminderService {
     private enum Constants {
         static let idleThresholdHours: Int = 2
         static let deadlineThresholdHours: Int = 3
-        static let streakProtectMinDays: Int = 3
-        static let streakProtectHour: Int = 18
         static let nudgeCooldownMinutes: Int = 60
     }
 
@@ -68,7 +64,6 @@ public final class SmartReminderService {
     /// 评估当前状态并在满足条件时生成提醒
     public func evaluateAndPushReminder(
         tasks: [TaskItem],
-        streak: Streak,
         pet: Pet,
         userProfile: UserProfile = .default
     ) async -> SmartReminderResult? {
@@ -78,47 +73,35 @@ public final class SmartReminderService {
         let calendar = Calendar.current
         let currentHour = calendar.component(.hour, from: now)
         let incompleteTasks = tasks.filter { !$0.isCompleted }
-        let completedToday = tasks.filter(\.isCompleted).count
 
         let summary = behaviorAnalyzer.generateSummary(
             tasks: tasks,
-            focusSessions: focusService.todaySessions,
-            streak: streak
+            focusSessions: focusService.todaySessions
         )
         let workHours = summary.preferredWorkHours
         let isWorkHours = currentHour >= workHours.start && currentHour < workHours.end
 
         // 1. Deadline reminder (urgent)
         if let result = await checkDeadline(
-            tasks: incompleteTasks, pet: pet, userProfile: userProfile,
-            streak: streak, now: now
+            tasks: incompleteTasks, pet: pet, userProfile: userProfile, now: now
         ) {
             markReminderSent()
             return result
         }
 
-        // 2. Streak protection
-        if let result = await checkStreakProtect(
-            streak: streak, completedToday: completedToday,
-            currentHour: currentHour, pet: pet, userProfile: userProfile
-        ) {
-            markReminderSent()
-            return result
-        }
-
-        // 3. Idle reminder
+        // 2. Idle reminder
         if let result = await checkIdle(
             isWorkHours: isWorkHours, incompleteTasks: incompleteTasks,
-            pet: pet, userProfile: userProfile, streak: streak
+            pet: pet, userProfile: userProfile
         ) {
             markReminderSent()
             return result
         }
 
-        // 4. Gentle nudge
+        // 3. Gentle nudge
         if let result = await checkGentleNudge(
             isWorkHours: isWorkHours, incompleteTasks: incompleteTasks,
-            pet: pet, userProfile: userProfile, streak: streak
+            pet: pet, userProfile: userProfile
         ) {
             markReminderSent()
             return result
@@ -141,8 +124,7 @@ public final class SmartReminderService {
 
     /// 高优先级任务今天到期且剩余不足3小时
     private func checkDeadline(
-        tasks: [TaskItem], pet: Pet, userProfile: UserProfile,
-        streak: Streak, now: Date
+        tasks: [TaskItem], pet: Pet, userProfile: UserProfile, now: Date
     ) async -> SmartReminderResult? {
         let calendar = Calendar.current
         let thresholdDate = calendar.date(byAdding: .hour, value: Constants.deadlineThresholdHours, to: now) ?? now
@@ -159,33 +141,16 @@ public final class SmartReminderService {
 
         let text = await companionText.generateSmartReminder(
             reason: .deadline, petName: pet.name, petMood: pet.mood,
-            taskTitle: task.title, streakDays: streak.currentStreak,
+            taskTitle: task.title,
             userProfile: userProfile
         )
         return SmartReminderResult(reason: .deadline, urgency: .urgent, text: text, taskTitle: task.title)
     }
 
-    /// 连续天数>3天 且 今天未完成任务 且 18:00后
-    private func checkStreakProtect(
-        streak: Streak, completedToday: Int, currentHour: Int,
-        pet: Pet, userProfile: UserProfile
-    ) async -> SmartReminderResult? {
-        guard streak.currentStreak > Constants.streakProtectMinDays,
-              completedToday == 0,
-              currentHour >= Constants.streakProtectHour else { return nil }
-
-        let text = await companionText.generateSmartReminder(
-            reason: .streakProtect, petName: pet.name, petMood: pet.mood,
-            taskTitle: nil, streakDays: streak.currentStreak,
-            userProfile: userProfile
-        )
-        return SmartReminderResult(reason: .streakProtect, urgency: .streakProtect, text: text)
-    }
-
     /// 工作时间内超过2小时无互动
     private func checkIdle(
         isWorkHours: Bool, incompleteTasks: [TaskItem],
-        pet: Pet, userProfile: UserProfile, streak: Streak
+        pet: Pet, userProfile: UserProfile
     ) async -> SmartReminderResult? {
         guard isWorkHours, !incompleteTasks.isEmpty else { return nil }
 
@@ -206,7 +171,7 @@ public final class SmartReminderService {
 
         let text = await companionText.generateSmartReminder(
             reason: .idle, petName: pet.name, petMood: pet.mood,
-            taskTitle: incompleteTasks.first?.title, streakDays: streak.currentStreak,
+            taskTitle: incompleteTasks.first?.title,
             userProfile: userProfile
         )
         return SmartReminderResult(reason: .idle, urgency: .gentle, text: text)
@@ -215,7 +180,7 @@ public final class SmartReminderService {
     /// 工作时间内有未完成任务且上次专注结束超过1小时
     private func checkGentleNudge(
         isWorkHours: Bool, incompleteTasks: [TaskItem],
-        pet: Pet, userProfile: UserProfile, streak: Streak
+        pet: Pet, userProfile: UserProfile
     ) async -> SmartReminderResult? {
         guard isWorkHours, !incompleteTasks.isEmpty else { return nil }
 
@@ -227,7 +192,7 @@ public final class SmartReminderService {
 
         let text = await companionText.generateSmartReminder(
             reason: .gentleNudge, petName: pet.name, petMood: pet.mood,
-            taskTitle: incompleteTasks.first?.title, streakDays: streak.currentStreak,
+            taskTitle: incompleteTasks.first?.title,
             userProfile: userProfile
         )
         return SmartReminderResult(reason: .gentleNudge, urgency: .gentle, text: text)

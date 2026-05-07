@@ -358,13 +358,12 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 | 0      | TasksCompleted      | 1 byte      | -          | 已完成任务数 |
 | 1      | TasksTotal          | 1 byte      | -          | 总任务数 |
 | 2      | PointsEarned        | 2 bytes     | -          | 积分（Big Endian） |
-| 4      | StreakDays          | 1 byte      | -          | 当前连续天数 |
-| 5      | TotalFocusMinutes   | 2 bytes     | -          | 总专注时间（分钟，Big Endian） |
-| 7      | FocusSessionCount   | 1 byte      | -          | 专注会话次数 |
-| 8      | LongestFocusMinutes | 2 bytes     | -          | 最长单次专注时间（分钟，BE） |
-| 10     | InterruptionCount   | 1 byte      | -          | 专注期间手机解锁次数 |
-| 11     | SummaryMessage      | 1 + N bytes | 50 chars   | 总结文本 |
-| N+12   | EncouragementMessage| 1 + N bytes | 50 chars   | 鼓励文本 |
+| 4      | TotalFocusMinutes   | 2 bytes     | -          | 总专注时间（分钟，Big Endian） |
+| 6      | FocusSessionCount   | 1 byte      | -          | 专注会话次数 |
+| 7      | LongestFocusMinutes | 2 bytes     | -          | 最长单次专注时间（分钟，BE） |
+| 9      | InterruptionCount   | 1 byte      | -          | 专注期间手机解锁次数 |
+| 10     | SummaryMessage      | 1 + N bytes | 50 chars   | 总结文本 |
+| N+11   | EncouragementMessage| 1 + N bytes | 50 chars   | 鼓励文本 |
 
 ---
 
@@ -405,7 +404,7 @@ AI 智能提醒，从 App 推送至设备。
 | Offset | Field        | Size        | Max Length | 描述 |
 |--------|--------------|-------------|------------|--------------------------------------|
 | 0      | ReminderText | 1 + N bytes | 60 chars   | 提醒消息文本 |
-| N+1    | ReminderType | 1 byte      | -          | 0x00=gentle, 0x01=urgent, 0x02=streak_protect |
+| N+1    | ReminderType | 1 byte      | -          | 0x00=gentle, 0x01=urgent |
 | N+2    | PetMoodByte  | 1 byte      | -          | 显示用宠物心情（ASCII: H/E/F/S/M） |
 
 **ReminderType 值：**
@@ -414,7 +413,6 @@ AI 智能提醒，从 App 推送至设备。
 |--------|---------------|------------------------------------------|
 | `0x00` | Gentle        | 普通提醒，标准显示 |
 | `0x01` | Urgent        | 紧急提醒，加粗边框显示 |
-| `0x02` | StreakProtect  | 连续天数保护，宠物显示担忧心情 |
 
 **设备行为：**
 - 在当前页面上显示横幅覆盖层
@@ -821,7 +819,6 @@ Payload:
 03                                    // TasksCompleted: 3
 05                                    // TasksTotal: 5
 00 32                                 // PointsEarned: 50 (Big Endian)
-07                                    // StreakDays: 7
 12 47 72 65 61 74 20 70 72 6F 67 72 65 73 73 21  // "Great progress!" (18 bytes)
 0E 53 65 65 20 79 6F 75 20 74 6F 6D 6F 72 72 6F  // "See you tomorrow" (14 bytes)
 77 21

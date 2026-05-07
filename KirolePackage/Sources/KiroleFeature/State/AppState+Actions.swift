@@ -45,7 +45,6 @@ extension AppState {
             await persistTaskAndPetState(
                 tasks: self.tasks,
                 pet: self.pet,
-                streak: self.streak,
                 context: "AppState.toggleTaskCompletion"
             )
 
@@ -60,8 +59,7 @@ extension AppState {
                 currentHaiku = await haikuService.generateCompletionHaiku(
                     tasksCompleted: statistics.todayCompleted,
                     totalTasks: statistics.todayTotal,
-                    petMood: pet.mood,
-                    streak: streak.currentStreak
+                    petMood: pet.mood
                 )
             }
         }
@@ -76,7 +74,6 @@ extension AppState {
             updatedPet.progress = min(1.0, updatedPet.progress + ProgressConstants.taskCompletionIncrement)
             updatedPet.points += ProgressConstants.pointsPerTask
             updatedPet.lastInteraction = Date()
-            streak = petManager.updateStreak(streak)
         } else {
             SoundService.shared.playWithHaptic(.taskUncomplete, haptic: .light)
             updatedPet.adventuresCount = max(0, updatedPet.adventuresCount - 1)

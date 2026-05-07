@@ -36,14 +36,6 @@ extension AppState {
         }
 
         do {
-            if let savedStreak = try await localStorage.loadStreak() {
-                streak = savedStreak
-            }
-        } catch {
-            reportPersistenceError(error, operation: "load", target: "streak.json")
-        }
-
-        do {
             if let savedTasks = try await localStorage.loadTasks() {
                 tasks = savedTasks
             }
@@ -122,7 +114,7 @@ extension AppState {
 
     func updateStatistics() {
         statistics = taskManager.statistics(tasks: tasks)
-        widgetDataService.updateFromAppState(pet: pet, streak: streak, statistics: statistics)
+        widgetDataService.updateFromAppState(pet: pet, statistics: statistics)
     }
 
     public func loadTodayHaiku(now: Date = Date()) async {
@@ -130,8 +122,7 @@ extension AppState {
             currentTime: now,
             tasksCompletedToday: statistics.todayCompleted,
             totalTasksToday: statistics.todayTotal,
-            petMood: pet.mood,
-            currentStreak: streak.currentStreak
+            petMood: pet.mood
         )
         currentHaiku = await haikuService.getTodayHaiku(context: context)
     }

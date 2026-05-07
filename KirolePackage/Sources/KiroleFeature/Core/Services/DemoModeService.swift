@@ -26,7 +26,7 @@ public final class DemoModeService {
             topTasks: tasks.filter { !$0.isCompleted }.map { TaskSummary(from: $0) },
             companionPhrase: "You've got this!",
             settlementData: SettlementData(
-                tasksCompleted: 1, tasksTotal: 4, pointsEarned: 10, streakDays: 7,
+                tasksCompleted: 1, tasksTotal: 4, pointsEarned: 10,
                 petMood: "Happy", summaryMessage: "Good start today!", encouragementMessage: "Keep up the momentum!"
             )
         )
@@ -67,10 +67,6 @@ public final class DemoModeService {
             tailLength: 5, lastInteraction: Date(), points: 420)
     }
 
-    public func generateDemoStreak() -> Streak {
-        Streak(currentStreak: 7, longestStreak: 14, lastActiveDate: Date())
-    }
-
     public func generateDemoWeather() -> Weather {
         Weather(temperature: 22, highTemp: 26, lowTemp: 18, condition: .partlyCloudy, location: "San Francisco")
     }
@@ -90,7 +86,6 @@ extension AppState {
         pet = demo.generateDemoPet()
         tasks = demo.generateDemoTasks()
         events = demo.generateDemoEvents()
-        streak = demo.generateDemoStreak()
         weather = demo.generateDemoWeather()
     }
 
