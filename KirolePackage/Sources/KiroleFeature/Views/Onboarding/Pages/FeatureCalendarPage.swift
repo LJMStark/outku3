@@ -7,7 +7,7 @@ public struct FeatureCalendarPage: View {
     @State private var visibleBoxes: Int = 0
 
     private let dialogBoxes: [(text: String, style: DialogBubbleStyle)] = [
-        ("You have 'Write project proposal' -- let's start with: Read section 3 and leave inline comments", .light),
+        ("You have 'Write project proposal' -- big day! I'll cheer you on through it.", .light),
         ("Your standup is in 30 min -- want to review yesterday's notes first?", .accent),
         ("You've been crushing it today -- 3 tasks done, 2 to go!", .dark),
     ]
@@ -35,11 +35,11 @@ public struct FeatureCalendarPage: View {
                     .padding(.top, 8)
 
                 VStack(spacing: 8) {
-                    Text("Not Just a Calendar \u{1F604}")
+                    Text("Pet who knows your day")
                         .font(.system(size: 28, weight: .bold, design: .rounded))
                         .foregroundStyle(.white)
 
-                    Text("Kirole breaks down your tasks so you know exactly what to do next")
+                    Text("Kirole sees your tasks and meets you wherever you are in the day")
                         .font(.system(size: 16, design: .rounded))
                         .foregroundStyle(.white.opacity(0.8))
                 }

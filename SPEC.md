@@ -2,10 +2,10 @@
 
 ## Overview
 
-**Kirole** is an iOS companion app for an E-ink hardware device — a focus companion for deep knowledge workers. Through AI-driven task dehydration, attention mirroring, and smart reminders, paired with a pixel pet companion, Kirole helps users transform complex intentions into executable micro-actions.
+**Kirole** is an iOS companion app for an E-ink hardware device — a focus companion for deep knowledge workers. Through AI-driven companion text, attention mirroring, and smart reminders, paired with a pixel pet companion, Kirole turns the user's daily tasks and calendar into living context that the on-desk pet responds to.
 
 ### Vision
-**Unlock the Flow, Make it Happen.** Help users who rely on many productivity tools but struggle with execution — by breaking tasks into clear next steps, reflecting focus patterns, and providing context-aware nudges through both the app and an E-ink companion device.
+**Unlock the Flow, Make it Happen.** Help users who rely on many productivity tools but struggle with execution — by reflecting focus patterns, surfacing context-aware nudges, and pairing every task with a companion presence on the desk.
 
 ### Target Users
 - Deep knowledge workers who use multiple productivity tools but struggle with execution
@@ -190,8 +190,8 @@ Kirole E-ink companion device — a desk-mounted focus display.
 ### Hardware Display Pages
 4 pages on E-ink device (via DayPack):
 1. **Start of Day** — Morning greeting, daily summary, first item, weather
-2. **Overview** — Mixed timeline (tasks + events), companion phrase, micro-actions
-3. **Task In** — Task detail with What/Why micro-actions, encouragement, focus challenge
+2. **Overview** — Mixed timeline (tasks + events), companion phrase
+3. **Task In** — Task detail with companion encouragement and focus challenge
 4. **Settlement** — Daily stats, focus metrics, streak, points
 
 ### Smart Reminders on Device
@@ -234,10 +234,9 @@ Kirole E-ink companion device — a desk-mounted focus display.
   - Joy: joy, reduced anxiety, task echo, small delight, short haiku-like rewards.
   - Silas: loving care, calm-tech presence, Christian-shaped imagery, quiet spiritual steadiness.
   - Nova: temperance, discipline, signal over noise, time protection, one critical path.
-- **TaskDehydrationService**: AI task decomposition into What/When/Why micro-actions
 - **SmartReminderService**: Context-aware reminders (deadline/streakProtect/idle/gentleNudge)
 - **BehaviorAnalyzer**: User behavior summary for prompt injection
-- **OpenRouter API** (default companion model: `openai/gpt-5-chat`): Backend for companion text and task dehydration
+- **OpenRouter API** (default companion model: `openai/gpt-5-chat`): Backend for companion text generation
 - Haiku generation (part of CompanionTextService)
 
 #### Location Services
@@ -361,12 +360,11 @@ Kirole E-ink companion device — a desk-mounted focus display.
 7. CloudKit data sync
 8. Pet mood states and growth system
 9. AI companion text (CompanionTextService)
-10. AI task dehydration (TaskDehydrationService)
-11. Smart reminders (SmartReminderService)
-12. Focus session tracking (FocusSessionService)
-13. iOS widgets (multiple styles)
-14. BLE hardware communication (DayPack, TaskInPage, SmartReminder)
-15. Supabase backend integration
+10. Smart reminders (SmartReminderService)
+11. Focus session tracking (FocusSessionService)
+12. iOS widgets (multiple styles)
+13. BLE hardware communication (DayPack, TaskInPage, SmartReminder)
+14. Supabase backend integration
 16. Story-driven onboarding (see ONBOARDING-SPEC.md)
 17. Full animations and sound effects
 

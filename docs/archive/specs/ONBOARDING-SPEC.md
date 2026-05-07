@@ -12,7 +12,7 @@
 The current onboarding flow (15 screens) was scaffolded from the Inku Daily Schedule Planner prototype. It needs realignment because:
 
 - All copy references "Inku" — Kirole is an independent product
-- Core differentiators (AI Task Dehydration, Attention Mirror, Smart Reminders) are absent
+- Core differentiators (Companion Text, Attention Mirror, Smart Reminders) are absent
 - Kickstarter page shows Inku's crowdfunding data — irrelevant to Kirole
 - Pet system changed: unified form with 5 states (not 5 forms)
 - Questionnaire doesn't collect data needed for AI personalization
@@ -28,7 +28,7 @@ The current onboarding flow (15 screens) was scaffolded from the Inku Daily Sche
 
 **Tagline:** Unlock the Flow, Make it Happen.
 
-**What Kirole is:** A focus companion for deep knowledge workers who use many productivity tools but struggle with execution. Through AI-driven task dehydration, attention mirroring, and smart reminders — paired with a pixel pet companion — Kirole transforms complex intentions into executable micro-actions.
+**What Kirole is:** A focus companion for deep knowledge workers who use many productivity tools but struggle with execution. Through AI-driven companion text, attention mirroring, and smart reminders — paired with a pixel pet companion — Kirole turns the user's daily tasks and calendar into living context for the on-desk pet.
 
 **Target users:** Remote workers, freelancers, and knowledge workers who need focus management.
 
@@ -50,7 +50,7 @@ The current onboarding flow (15 screens) was scaffolded from the Inku Daily Sche
 | Narrative tone | Emotional storytelling (preserved) | Rewritten for Kirole's focus companion positioning |
 | Feature pages | Keep structure, update copy | "Not Just a Calendar" + "Focus, not frenzy" concepts work |
 | Text animation | Keep and rewrite | High emotional tension, rewrite for Kirole narrative |
-| Questionnaire | 8 questions, 4 dimensions | Drives AI personalization (CompanionTextService, SmartReminderService, TaskDehydrationService) |
+| Questionnaire | 8 questions, 4 dimensions | Drives AI personalization (CompanionTextService, SmartReminderService) |
 | Companion IPs | 3: Joy/Silas/Nova | Supersedes old encouraging/strict/playful/calm style choices |
 | CTA buttons | Personalized per-screen + emoji | Maintains personality and engagement |
 | Registration | Last screen with skip button | Google/Apple/Email, non-blocking |
@@ -82,13 +82,13 @@ The current onboarding flow (15 screens) was scaffolded from the Inku Daily Sche
 
 **Layout:** Preserve current staggered DialogBubbles structure with bouncing arrows.
 
-**Concept:** "Not Just a Calendar" → Kirole learns your patterns and breaks tasks into actionable steps.
+**Concept:** "Pet who knows your day" → Kirole reads your tasks and calendar as context for companion presence.
 
 **Copy:**
-- Title: "Not Just a Calendar"
-- Subtitle: "Kirole breaks down your tasks so you know exactly what to do next"
-- Dialog bubbles (3 examples showing AI task dehydration):
-  - "You have 'Write project proposal' — let's start with: Read section 3 and leave inline comments"
+- Title: "Pet who knows your day"
+- Subtitle: "Kirole sees your tasks and meets you wherever you are in the day"
+- Dialog bubbles (3 examples of companion responding to tasks/calendar context):
+  - "You have 'Write project proposal' — big day! I'll cheer you on through it."
   - "Your standup is in 30 min — want to review yesterday's notes first?"
   - "You've been crushing it today — 3 tasks done, 2 to go!"
 - CTA: "Continue"
@@ -215,7 +215,7 @@ All questionnaire screens share the same layout: question title, subtitle, optio
   - "Nope, I wing it"
   - "Only work stuff"
   - "Can't live without my task list"
-- Maps to: `OnboardingProfile.taskTrackingStyle` → task dehydration aggressiveness
+- Maps to: `OnboardingProfile.taskTrackingStyle` → companion proactiveness
 
 ---
 
@@ -259,7 +259,7 @@ All questionnaire screens share the same layout: question title, subtitle, optio
   - "I jump in and figure it out"
   - "I procrastinate until pressure hits"
   - "I need help getting started"
-- Maps to: `OnboardingProfile.taskApproach` → `TaskDehydrationService` aggressiveness (more dehydration for "need help" / "procrastinate")
+- Maps to: `OnboardingProfile.taskApproach` → companion proactiveness (more nudges for "need help" / "procrastinate")
 
 **Screen 12 — Q8: Time Control**
 
@@ -318,10 +318,10 @@ public var timeControl: TimeControl          // Q8: barely/overwhelmed/in-contro
 | companionCharacter | CompanionTextService | Product IP voice (Joy/Silas/Nova) |
 | motivationStyle | SmartReminderService | Reminder tone and framing |
 | calendarUsage | DayPackGenerator | Content density, integration prompts |
-| taskTrackingStyle | TaskDehydrationService | Dehydration aggressiveness |
+| taskTrackingStyle | CompanionTextService | Companion proactiveness |
 | distractionSources | SmartReminderService | Trigger condition weighting |
 | reminderPreference | SmartReminderService | Priority order (deadline/streak/idle/nudge) |
-| taskApproach | TaskDehydrationService | Micro-action detail level |
+| taskApproach | CompanionTextService | Companion proactiveness |
 | timeControl | Global AI calibration | Overall intervention frequency |
 
 ---
