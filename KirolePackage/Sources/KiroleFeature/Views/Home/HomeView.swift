@@ -124,6 +124,7 @@ public struct HomeView: View {
                     .zIndex(2)
                 }
 
+                #if DEBUG
                 VStack {
                     PromptDebuggerFAB()
                         .padding(.trailing, 16)
@@ -131,6 +132,7 @@ public struct HomeView: View {
                     Spacer()
                 }
                 .zIndex(3)
+                #endif
             } // ZStack
             .background(theme.colors.background)
         } // ScrollViewReader

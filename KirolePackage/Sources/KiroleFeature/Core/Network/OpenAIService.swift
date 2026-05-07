@@ -116,7 +116,7 @@ public actor OpenAIService {
     /// Generate AI companion text based on type and context
     public func generateCompanionText(type: AITextType, context: AIContext) async throws -> String {
         let modelID = await MainActor.run {
-            PromptDebuggerState.shared.selectedCompanionModelID
+            CompanionModelPreference.shared.modelID
         }
         let sysPrompt = await buildCompanionSystemPrompt(context: context)
         let content = try await chatCompletion(
@@ -305,16 +305,22 @@ public actor OpenAIService {
     private func buildCompanionSystemPrompt(context: AIContext) async -> String {
         let styleDescription: String
 
+        #if DEBUG
+        // Debug-only prompt overrides. Even in DEBUG we sanitize to defang any
+        // `</user_content>`-style injection a developer might paste while testing.
         let customGlobal = await MainActor.run { PromptDebuggerState.shared.customGlobalOverride }
         let override = await MainActor.run { PromptDebuggerState.shared.overridePrompts[context.companionCharacter] }
 
         if let customGlobal, !customGlobal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            styleDescription = customGlobal
+            styleDescription = PromptSanitizer.sanitize(customGlobal, maxLen: 2000)
         } else if let override, !override.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            styleDescription = override
+            styleDescription = PromptSanitizer.sanitize(override, maxLen: 2000)
         } else {
             styleDescription = Self.defaultPrompt(for: context.companionStyle)
         }
+        #else
+        styleDescription = Self.defaultPrompt(for: context.companionStyle)
+        #endif
 
         let schedule = Self.buildScheduleDigest(context: context)
         let characterDescription = Self.characterPrompt(for: context.companionCharacter)

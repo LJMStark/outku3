@@ -136,13 +136,13 @@ import Foundation
 }
 
 @MainActor
-@Test func testPromptDebuggerCanSwitchCompanionModelID() async throws {
-    let debuggerState = PromptDebuggerState.shared
-    let original = debuggerState.selectedCompanionModelID
-    defer { debuggerState.selectedCompanionModelID = original }
+@Test func testCompanionModelPreferenceCanSwitchModelID() async throws {
+    let preference = CompanionModelPreference.shared
+    let original = preference.modelID
+    defer { preference.modelID = original }
 
-    debuggerState.selectedCompanionModelID = "openai/gpt-4o"
-    #expect(debuggerState.selectedCompanionModelID == "openai/gpt-4o")
+    preference.modelID = "openai/gpt-4o"
+    #expect(preference.modelID == "openai/gpt-4o")
 }
 
 @MainActor

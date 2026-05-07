@@ -151,7 +151,11 @@ extension AppState {
         let focusMinutes = Int(FocusSessionService.shared.statistics.todayFocusTime / 60)
         let energyBottles = await localStorage.loadEnergyBottles()
         let currentSceneName = SceneUnlockService.shared.currentSceneId(energyBottles: energyBottles)
+        #if DEBUG
         let learnText = PromptDebuggerState.shared.testLearnText.trimmingCharacters(in: .whitespacesAndNewlines)
+        #else
+        let learnText = ""
+        #endif
 
         let context = AIContext(
             companionCharacter: userProfile.companionCharacter,

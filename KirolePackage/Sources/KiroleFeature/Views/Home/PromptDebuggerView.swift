@@ -1,5 +1,7 @@
 import SwiftUI
 
+#if DEBUG
+
 // MARK: - Prompt Debugger FAB
 
 public struct PromptDebuggerFAB: View {
@@ -80,9 +82,9 @@ struct PromptDebuggerSheet: View {
                     Menu {
                         ForEach(OpenAIService.companionModelOptions) { option in
                             Button {
-                                state.selectedCompanionModelID = option.id
+                                CompanionModelPreference.shared.modelID = option.id
                             } label: {
-                                if option.id == state.selectedCompanionModelID {
+                                if option.id == CompanionModelPreference.shared.modelID {
                                     Label("\(option.displayName)（当前）", systemImage: "checkmark")
                                 } else {
                                     Text(option.displayName)
@@ -103,12 +105,12 @@ struct PromptDebuggerSheet: View {
                         .clipShape(Capsule())
                     }
 
-                    Text("当前模型代号: \(state.selectedCompanionModelID)")
+                    Text("当前模型代号: \(CompanionModelPreference.shared.modelID)")
                         .font(.caption2)
                         .foregroundStyle(theme.colors.secondaryText)
                         .textSelection(.enabled)
 
-                    if let selectedModel = OpenAIService.companionModelOptions.first(where: { $0.id == state.selectedCompanionModelID }) {
+                    if let selectedModel = OpenAIService.companionModelOptions.first(where: { $0.id == CompanionModelPreference.shared.modelID }) {
                         Text(selectedModel.note)
                             .font(.caption2)
                             .foregroundStyle(theme.colors.secondaryText.opacity(0.9))
@@ -308,3 +310,5 @@ struct PromptDebuggerSheet: View {
         isForceRefreshing = false
     }
 }
+
+#endif

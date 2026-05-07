@@ -3,6 +3,8 @@ import Observation
 
 /// A state container for the prompt debugger module.
 /// It stores custom prompt overrides for the 3 product companion styles.
+#if DEBUG
+
 @Observable
 @MainActor
 public final class PromptDebuggerState {
@@ -10,23 +12,20 @@ public final class PromptDebuggerState {
 
     /// Custom prompt overrides keyed by CompanionStyle (derived from CompanionCharacter.resolvedStyle).
     public var overridePrompts: [CompanionCharacter: String] = [:]
-    
+
     /// A completely custom overarching prompt that takes precedence over everything
     public var customGlobalOverride: String? = nil
-    
+
     /// User provided phrase/keywords for the AI companion to learn during tests
     public var testLearnText: String = ""
 
-    /// Selected OpenRouter model id for companion dialogue generation.
-    public var selectedCompanionModelID: String = OpenAIService.defaultChatModelID
-    
     /// The character currently selected in the debugger UI for editing.
     public var selectedMockCharacter: CompanionCharacter = .joy
-    
+
     public var lastMockSummary: String = ""
     public var lastGeneratedDialogue: String = ""
     public var lastGeneratedTranslation: String = ""
-    
+
     /// Fetch real AIContext from AppState and tailor it for testing.
     public func createMockContext(
         type: AITextType,
@@ -169,3 +168,5 @@ public final class PromptDebuggerState {
 
     private init() {}
 }
+
+#endif
