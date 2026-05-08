@@ -151,7 +151,19 @@ public struct SettingsBLESection: View {
                 scanError = "No Kirole device found nearby."
                 return
             }
-            try await bleService.connect(to: first)
+            var lastError: Error?
+            for attempt in 0..<3 {
+                do {
+                    try await bleService.connect(to: first)
+                    return
+                } catch {
+                    lastError = error
+                    if attempt < 2 {
+                        try? await Task.sleep(for: .seconds(1))
+                    }
+                }
+            }
+            scanError = lastError?.localizedDescription
         } catch {
             scanError = error.localizedDescription
         }
