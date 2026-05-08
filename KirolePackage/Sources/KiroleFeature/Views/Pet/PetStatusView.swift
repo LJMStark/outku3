@@ -227,14 +227,17 @@ private struct TasksStatisticsCard: View {
         return "—"
     }
 
-    private func sumFocusTime(forPastDays count: Int) -> TimeInterval {
+    private func sumFocusTime(forPastDays count: Int) async -> TimeInterval {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
-        return (1...count).reduce(0) { total, offset in
+
+        var total: TimeInterval = 0
+        for offset in 1...count {
             guard let date = calendar.date(byAdding: .day, value: -offset, to: today) else { return total }
-            let sessions = (try? LocalStorage.shared.loadFocusSessionsForDate(date)) ?? []
-            return total + sessions.compactMap(\.calculatedFocusTime).reduce(0, +)
+            let sessions = (try? await LocalStorage.shared.loadFocusSessionsForDate(date)) ?? []
+            total += sessions.compactMap(\.calculatedFocusTime).reduce(0, +)
         }
+        return total
     }
 
     var body: some View {
@@ -265,8 +268,11 @@ private struct TasksStatisticsCard: View {
             )
         }
         .task {
-            pastWeekFocusTimeFormatted = formatFocusTime(sumFocusTime(forPastDays: 7))
-            last30DaysFocusTimeFormatted = formatFocusTime(sumFocusTime(forPastDays: 30))
+            async let pastWeekFocusTime = sumFocusTime(forPastDays: 7)
+            async let last30DaysFocusTime = sumFocusTime(forPastDays: 30)
+
+            pastWeekFocusTimeFormatted = await formatFocusTime(pastWeekFocusTime)
+            last30DaysFocusTimeFormatted = await formatFocusTime(last30DaysFocusTime)
         }
     }
 }
