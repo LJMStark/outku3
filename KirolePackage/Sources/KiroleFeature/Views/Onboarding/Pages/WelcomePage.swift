@@ -25,16 +25,8 @@ public struct WelcomePage: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
 
-                ZStack {
-                    FloatingIconRing()
-
-                    Text("\u{1F60C}")
-                        .font(.system(size: 80))
-                        .scaleEffect(showDialog ? 1.0 : 0.0)
-                        .opacity(showDialog ? 1.0 : 0.0)
-                        .animation(.kiroleBouncy, value: showDialog)
-                }
-                .frame(maxHeight: .infinity)
+                FloatingIconRing()
+                    .frame(maxHeight: .infinity)
 
                 VStack(spacing: 24) {
                     if showDialog {
