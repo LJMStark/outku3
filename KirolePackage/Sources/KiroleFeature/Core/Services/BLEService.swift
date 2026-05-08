@@ -359,8 +359,8 @@ public final class BLEService: NSObject {
         try await writeData(type: .dayPack, data: data)
     }
 
-    /// 发送 Task In 页面数据到 E-ink 设备
-    public func sendTaskInPage(_ taskInPage: TaskInPageData) async throws {
+    /// 发送 Task In 页面数据到 E-ink 设备。只应由 BLEEventHandler 在收到 0x10 EnterTaskIn 事件后调用。
+    func sendTaskInPage(_ taskInPage: TaskInPageData) async throws {
         let data = BLEDataEncoder.encodeTaskInPage(taskInPage)
         try await writeData(type: .taskInPage, data: data)
     }
