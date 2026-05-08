@@ -6,19 +6,38 @@ public struct Weather: Sendable, Codable {
     public var lowTemp: Int
     public var condition: WeatherCondition
     public var location: String
+    /// True only when populated from a successful WeatherKit fetch.
+    /// Drives whether the home header renders the weather chip + Apple Weather attribution (Guideline 5.2.5).
+    public var hasData: Bool
 
     public init(
         temperature: Int = 22,
         highTemp: Int = 85,
         lowTemp: Int = 64,
         condition: WeatherCondition = .sunny,
-        location: String = "San Francisco"
+        location: String = "San Francisco",
+        hasData: Bool = false
     ) {
         self.temperature = temperature
         self.highTemp = highTemp
         self.lowTemp = lowTemp
         self.condition = condition
         self.location = location
+        self.hasData = hasData
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case temperature, highTemp, lowTemp, condition, location, hasData
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.temperature = try c.decodeIfPresent(Int.self, forKey: .temperature) ?? 22
+        self.highTemp = try c.decodeIfPresent(Int.self, forKey: .highTemp) ?? 85
+        self.lowTemp = try c.decodeIfPresent(Int.self, forKey: .lowTemp) ?? 64
+        self.condition = try c.decodeIfPresent(WeatherCondition.self, forKey: .condition) ?? .sunny
+        self.location = try c.decodeIfPresent(String.self, forKey: .location) ?? "San Francisco"
+        self.hasData = try c.decodeIfPresent(Bool.self, forKey: .hasData) ?? false
     }
 }
 

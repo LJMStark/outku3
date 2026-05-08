@@ -76,17 +76,23 @@ public struct AppHeaderView: View {
                         .font(.system(size: 14))
                         .foregroundStyle(.white.opacity(0.9))
 
-                    HStack(spacing: 4) {
-                        Image(systemName: appState.weather.condition.rawValue)
-                            .font(.system(size: 14))
-                            .foregroundStyle(.white.opacity(0.9))
-                        Text("\(appState.weather.highTemp)\u{00B0}/\(appState.weather.lowTemp)\u{00B0}")
-                            .font(.system(size: 14))
-                            .foregroundStyle(.white.opacity(0.9))
+                    if appState.weather.hasData {
+                        HStack(spacing: 4) {
+                            Image(systemName: appState.weather.condition.rawValue)
+                                .font(.system(size: 14))
+                                .foregroundStyle(.white.opacity(0.9))
+                            Text("\(appState.weather.highTemp)\u{00B0}/\(appState.weather.lowTemp)\u{00B0}")
+                                .font(.system(size: 14))
+                                .foregroundStyle(.white.opacity(0.9))
+                        }
                     }
                 }
                 .lineLimit(1)
                 .minimumScaleFactor(0.86)
+
+                if appState.weather.hasData {
+                    WeatherAttributionView()
+                }
             }
             .frame(width: dateInfoWidth, alignment: .leading)
 

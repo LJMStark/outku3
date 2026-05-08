@@ -52,7 +52,8 @@ public final class WeatherService: NSObject {
                 highTemp: dailyForecast.map { Int($0.highTemperature.converted(to: .fahrenheit).value) } ?? 0,
                 lowTemp: dailyForecast.map { Int($0.lowTemperature.converted(to: .fahrenheit).value) } ?? 0,
                 condition: mapCondition(current.condition),
-                location: await reverseGeocode(location)
+                location: await reverseGeocode(location),
+                hasData: true
             )
 
             cachedWeather = weather
