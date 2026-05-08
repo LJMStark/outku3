@@ -46,7 +46,7 @@ struct DayTimelineView: View {
         VStack(spacing: 0) {
             TimelineEventRow(
                 time: AppDateFormatters.time.string(from: sunTimes.sunrise),
-                iconContent: .asset("tiko_sunrise"),
+                iconContent: .system("sunrise.fill"),
                 title: "Sunrise",
                 delay: 0
             )
@@ -321,7 +321,7 @@ struct HaikuSectionView: View {
                                 .accessibilityHidden(true)
                         }
 
-                        Image("tiko_reading", bundle: .module)
+                        Image(appState.userProfile.companionCharacter.heroAssetName(variant: .main), bundle: .module)
                             .resizable()
                             .aspectRatio(contentMode: .fit)
                             .frame(height: HaikuSectionLayout.petArtworkHeight)

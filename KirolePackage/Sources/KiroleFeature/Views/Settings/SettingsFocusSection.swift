@@ -38,7 +38,7 @@ public struct SettingsFocusSection: View {
 
     private var sectionContent: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SettingsSectionHeader(title: "Focus Protection")
+            SettingsSectionHeader(title: "专注保护")
 
             VStack(alignment: .leading, spacing: 12) {
                 modeSelector
@@ -156,7 +156,7 @@ public struct SettingsFocusSection: View {
                         } label: {
                             actionCapsule(
                                 icon: "hand.raised.fill",
-                                title: "Request Screen Time Access"
+                                title: "申请屏幕使用时间授权"
                             )
                         }
                         .buttonStyle(.plain)

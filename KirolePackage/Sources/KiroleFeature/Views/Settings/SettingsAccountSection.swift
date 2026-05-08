@@ -4,6 +4,7 @@ import PhotosUI
 // MARK: - Account Section (Avatar + AI Settings)
 
 public struct SettingsAccountSection: View {
+    @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var avatarImage: Image?
@@ -68,7 +69,7 @@ public struct SettingsAccountSection: View {
     @MainActor
     private var avatarSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Avatar")
+            Text("头像")
                 .font(.system(size: 15, weight: .bold))
                 .foregroundStyle(theme.colors.primaryText)
 
@@ -91,14 +92,14 @@ public struct SettingsAccountSection: View {
                                 .frame(width: 80, height: 80)
                                 .clipShape(Circle())
                         } else {
-                            Image("tiko_avatar", bundle: .module)
+                            Image(appState.userProfile.companionCharacter.heroAssetName(variant: .main), bundle: .module)
                                 .resizable()
                                 .aspectRatio(contentMode: .fit)
                                 .frame(width: 76, height: 95)
                                 .offset(y: 5)
                         }
 
-                        Text("Avatar")
+                        Text("头像")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundStyle(theme.colors.primaryText)
                             .padding(.bottom, 8)
@@ -126,7 +127,7 @@ public struct SettingsAccountSection: View {
                         }
                         .frame(width: 80, height: 80)
 
-                        Text("Upload")
+                        Text("上传")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundStyle(theme.colors.primaryText)
                             .padding(.bottom, 8)

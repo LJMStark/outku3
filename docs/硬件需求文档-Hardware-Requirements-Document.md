@@ -248,7 +248,7 @@ Kirole 是一款面向深度知识工具用户的专注力伴侣设备。iOS App
 - 大数据分包与 CRC16 校验（CRC16-CCITT-FALSE，poly `0x1021`，init `0xFFFF`）
 - 包头格式：type (1B) + messageId (2B BE) + seq (1B) + total (1B) + payloadLen (2B BE) + crc16 (2B BE) = 9 字节
 
-详细协议参考 `BLE通信协议规格文档.md` (v1.3.1)。
+详细协议参考 `BLE通信协议规格文档.md` (v2.1.0)。
 
 ---
 

@@ -2,7 +2,7 @@ import Foundation
 
 public enum AppTab: String, CaseIterable, Identifiable {
     case home = "Home"
-    case pet = "Tiko"
+    case pet = "Kirole"
     case settings = "Settings"
 
     public var id: String { rawValue }
