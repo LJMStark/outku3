@@ -36,7 +36,19 @@ struct BuildSecretsLeakTests {
     }
 
     @Test("AppSecrets ignores placeholder values and preserves valid values")
+    @MainActor
     func appSecretsNormalization() {
+        defer {
+            AppSecrets.configure(
+                supabaseURL: nil,
+                supabaseAnonKey: nil,
+                openRouterAPIKey: nil,
+                bleSharedSecret: nil,
+                notionClientId: nil,
+                taskadeClientId: nil
+            )
+        }
+
         AppSecrets.configure(
             supabaseURL: "  $(SUPABASE_URL)  ",
             supabaseAnonKey: "YOUR_SUPABASE_ANON_KEY",

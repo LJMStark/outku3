@@ -178,13 +178,18 @@ public final class BLEService: NSObject {
 
     /// 扫描附近的 Kirole E-ink 设备
     public func scanForDevices(timeout: TimeInterval = 10) async throws -> [BLEDevice] {
-        initialize()
+        connectionState = .scanning
 
-        guard let manager = centralManager, manager.state == .poweredOn else {
-            throw BLEError.bluetoothNotAvailable
+        let manager: CBCentralManager
+        do {
+            manager = try await poweredOnCentralManager(timeout: 3)
+        } catch {
+            if connectionState == .scanning {
+                connectionState = .error(error.localizedDescription)
+            }
+            throw error
         }
 
-        connectionState = .scanning
         discoveredDevices = []
         peripheralCache = [:]
 
@@ -222,9 +227,7 @@ public final class BLEService: NSObject {
 
     /// 连接到指定设备
     public func connect(to device: BLEDevice) async throws {
-        guard let manager = centralManager, manager.state == .poweredOn else {
-            throw BLEError.bluetoothNotAvailable
-        }
+        let manager = try await poweredOnCentralManager(timeout: 2)
 
         if requiresSecureChannel {
             if await deviceIdentityStore.isBlocked(device.id) {
@@ -300,6 +303,32 @@ public final class BLEService: NSObject {
             return true
         } catch {
             return false
+        }
+    }
+
+    private func poweredOnCentralManager(timeout: TimeInterval) async throws -> CBCentralManager {
+        initialize()
+
+        guard let manager = centralManager else {
+            throw BLEError.bluetoothNotAvailable
+        }
+
+        let deadline = Date().addingTimeInterval(timeout)
+
+        while true {
+            switch manager.state {
+            case .poweredOn:
+                return manager
+            case .poweredOff, .unauthorized, .unsupported:
+                throw BLEError.bluetoothNotAvailable
+            case .resetting, .unknown:
+                if Date() >= deadline {
+                    throw BLEError.bluetoothNotAvailable
+                }
+                try? await Task.sleep(for: .milliseconds(100))
+            @unknown default:
+                throw BLEError.bluetoothNotAvailable
+            }
         }
     }
 
@@ -691,7 +720,7 @@ extension BLEService: CBCentralManagerDelegate {
         Task { @MainActor in
             switch central.state {
             case .poweredOn:
-                if autoReconnect {
+                if autoReconnect, connectionState == .disconnected {
                     _ = await attemptAutoReconnect()
                 }
             case .poweredOff:
