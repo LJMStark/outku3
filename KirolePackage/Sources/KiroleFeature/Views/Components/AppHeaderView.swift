@@ -89,10 +89,6 @@ public struct AppHeaderView: View {
                 }
                 .lineLimit(1)
                 .minimumScaleFactor(0.86)
-
-                if appState.weather.hasData {
-                    WeatherAttributionView()
-                }
             }
             .frame(width: dateInfoWidth, alignment: .leading)
 

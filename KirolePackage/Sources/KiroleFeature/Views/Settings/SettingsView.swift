@@ -71,6 +71,9 @@ struct SettingsView: View {
                 SoundSettingsSection()
                     .appearAnimation(delay: 0.4, appeared: appeared)
 
+                SettingsAboutSection()
+                    .appearAnimation(delay: 0.42, appeared: appeared)
+
                 #if DEBUG
                 DebugSection()
                     .appearAnimation(delay: 0.45, appeared: appeared)
@@ -261,6 +264,51 @@ private struct SoundSettingsSection: View {
         .onAppear {
             soundEnabled = SoundService.shared.isSoundEnabled
             volume = Double(SoundService.shared.volume)
+        }
+    }
+}
+
+// MARK: - About / Data Sources Section
+
+private struct SettingsAboutSection: View {
+    @Environment(ThemeManager.self) private var theme
+    private static let appleWeatherLegalURL = URL(string: "https://weatherkit.apple.com/legal-attribution.html")!
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SettingsSectionHeader(title: "Data Sources")
+
+            Link(destination: Self.appleWeatherLegalURL) {
+                HStack(spacing: 12) {
+                    Image(systemName: "cloud.sun.fill")
+                        .font(.system(size: 16))
+                        .foregroundStyle(theme.colors.accent)
+                        .frame(width: 24)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Weather")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(theme.colors.primaryText)
+                        Text("Provided by \u{F8FF} Weather")
+                            .font(.system(size: 12))
+                            .foregroundStyle(theme.colors.secondaryText)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "arrow.up.right.square")
+                        .font(.system(size: 14))
+                        .foregroundStyle(theme.colors.secondaryText)
+                }
+                .padding(16)
+                .background(Color.white)
+                .clipShape(RoundedRectangle(cornerRadius: 24))
+                .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Apple Weather data source")
+            .accessibilityHint("Opens Apple Weather legal data sources")
+            .accessibilityIdentifier("Settings_WeatherAttribution")
         }
     }
 }
