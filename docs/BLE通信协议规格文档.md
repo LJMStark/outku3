@@ -1,6 +1,6 @@
 # Kirole BLE 通信协议规格文档
 
-**版本:** v2.2.1
+**版本:** v2.3.2
 **更新日期:** 2026-05-08
 **状态:** 草稿
 
@@ -43,6 +43,8 @@
 | v2.2.0  | 2026-05-08 | 新增 FocusStatus (0x14) 命令（Release 构建实时推送专注状态与能量瓶子数）；BLEDataType enum 已移至 `Core/BLE/BLEProtocol.swift` 单一真相源 |
 | v2.2.1  | 2026-05-08 | 新增 8.4 App 侧写入限流说明（20次/秒上限、RequestRefresh 2秒最小间隔）；新增 8.5 TOFU 设备信任模型说明 |
 | v2.3.0  | 2026-05-08 | DeviceWake (0x30) payload 新增 BatteryLevel(1B)；App 侧在 DeviceWake 及 LowBattery 时更新并展示设备电量；旧固件兼容（空 payload 时保留 "—"） |
+| v2.3.1  | 2026-05-08 | 修正：Connection Timeout 文档值 15s → 实际代码 10s；移除页面 4 内容描述中的"当前连续天数"（streak 系统已删除，SettlementData 字段表本就不含此字段） |
+| v2.3.2  | 2026-05-08 | 修正：WheelSelect(0x14) 按当前 App 代码仅记录/调试，不回发详情；TaskInPage 仍只由 EnterTaskIn(0x10) 触发 |
 
 ### 1.3 术语表
 
@@ -77,8 +79,8 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 
 | 参数 | 值 |
 |--------------------|------------|
-| Scan Timeout       | 10 秒 |
-| Connection Timeout | 15 秒 |
+| Scan Timeout       | 10 秒（`BLEService.scanForDevices(timeout:)` 默认） |
+| Connection Timeout | 10 秒（`BLEService.connectToPreferredDevice(timeout:)` 默认） |
 | 自动重连 | 启用 |
 
 ---
@@ -542,7 +544,7 @@ AA 01 02 Type SceneId PostcardDay QuoteLen Quote AuthorLen Author
 | 1+N    | Timestamp | 4 bytes  | Unix Timestamp（Big Endian）（UInt32） |
 
 **App 响应：**
-- 发送 TaskInPage (0x11) 包含任务详情
+- 回发 TaskInPage (0x11) 包含任务详情
 - 记录该任务的专注会话开始时间戳
 
 **专注时间追踪：**
@@ -655,8 +657,8 @@ AA 01 02 Type SceneId PostcardDay QuoteLen Quote AuthorLen Author
 | 1      | ItemId | N bytes     | 选中项 ID（UTF-8） |
 
 **App 响应：**
-- 若选中任务：发送 TaskInPage (0x11) 包含任务详情
-- 若选中事件：发送事件详情数据
+- 当前 App 仅记录/调试该事件，不回发 TaskInPage 或事件详情。
+- 若需要打开任务详情并回发 TaskInPage，设备应发送 EnterTaskIn (0x10)。
 
 ---
 
@@ -796,11 +798,11 @@ AA 01 02 Type SceneId PostcardDay QuoteLen Quote AuthorLen Author
 **内容：**
 - 已完成任务数 / 总任务数
 - 今日获得积分
-- 当前连续天数
+- 总专注时间 / 专注会话次数 / 最长单次专注时间 / 解锁打断次数
 - 总结消息
 - 明日鼓励语
 
-**数据来源：** DayPack.settlementData
+**数据来源：** DayPack.settlementData（详见 4.7 SettlementData 字段表）
 
 ---
 

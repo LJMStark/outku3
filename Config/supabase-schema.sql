@@ -19,27 +19,8 @@ CREATE TABLE IF NOT EXISTS pets (
     weight DOUBLE PRECISION DEFAULT 50,
     height DOUBLE PRECISION DEFAULT 5,
     tail_length DOUBLE PRECISION DEFAULT 2,
-    current_form TEXT DEFAULT 'cat',
     last_interaction TIMESTAMPTZ DEFAULT NOW(),
     points INTEGER DEFAULT 0,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE(user_id)
-);
-
--- Backward-compatible migration for existing databases
-ALTER TABLE pets
-    ADD COLUMN IF NOT EXISTS points INTEGER DEFAULT 0;
-
--- ==========================================
--- Streaks Table
--- ==========================================
-CREATE TABLE IF NOT EXISTS streaks (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
-    current_streak INTEGER DEFAULT 0,
-    longest_streak INTEGER DEFAULT 0,
-    last_active_date DATE,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(user_id)
@@ -66,7 +47,6 @@ CREATE TABLE IF NOT EXISTS sync_state (
 
 -- Enable RLS on all tables
 ALTER TABLE pets ENABLE ROW LEVEL SECURITY;
-ALTER TABLE streaks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sync_state ENABLE ROW LEVEL SECURITY;
 
 -- Pets policies
@@ -80,19 +60,6 @@ CREATE POLICY "Users can update own pets" ON pets
     FOR UPDATE USING (auth.uid() = user_id);
 
 CREATE POLICY "Users can delete own pets" ON pets
-    FOR DELETE USING (auth.uid() = user_id);
-
--- Streaks policies
-CREATE POLICY "Users can view own streaks" ON streaks
-    FOR SELECT USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can insert own streaks" ON streaks
-    FOR INSERT WITH CHECK (auth.uid() = user_id);
-
-CREATE POLICY "Users can update own streaks" ON streaks
-    FOR UPDATE USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can delete own streaks" ON streaks
     FOR DELETE USING (auth.uid() = user_id);
 
 -- Sync state policies
@@ -121,10 +88,5 @@ $$ language 'plpgsql';
 
 CREATE TRIGGER update_pets_updated_at
     BEFORE UPDATE ON pets
-    FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_streaks_updated_at
-    BEFORE UPDATE ON streaks
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();

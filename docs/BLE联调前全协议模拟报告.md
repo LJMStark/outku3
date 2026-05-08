@@ -326,11 +326,11 @@ AA 01 02 Type SceneId PostcardDay QuoteLen Quote AuthorLen Author
 7. 第一轮固件支持 `0xAA` 开发显示命令，并单独解析，不要按标准包解析。
 8. 第一轮固件先支持明文开发模式。安全模式等明文协议跑通后再接。
 9. **新增 `0x14 FocusStatus`（App → Device）**：硬件进入专注模式后会持续收到专注状态推送，格式为：
-   - `phase(1B)`: 0=idle, 1=sessionStarted, 2=sessioning, 3=sessionEnded
-   - `bottles(1B)`: 当前能量瓶子数（0~10）
+   - `phase(1B)`: 0=idle, 1=warmup, 2=building, 3=deep
+   - `bottles(1B)`: 本会话已获得的能量瓶子数（clamp 0-255）
    - `elapsedMinutes(2B BE)`: 本会话已用分钟数
-   - `taskTitle(len-prefix)`: 任务名称（可选，sessionEnded 时为空）
-   硬件可在屏幕专注页底部显示能量瓶子进度条和倒计时，或在会话结束时展示庆祝动画。
+   - `taskTitle(len-prefix)`: 任务名称（可选）
+   硬件可在屏幕专注页底部显示能量瓶子进度条和倒计时。会话结束时 App 会发送 `phase=idle` 的 FocusStatus。
 
 ---
 
