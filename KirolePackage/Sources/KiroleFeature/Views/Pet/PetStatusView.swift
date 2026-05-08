@@ -212,14 +212,29 @@ private struct TasksStatisticsCard: View {
     @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
 
+    @State private var pastWeekFocusTimeFormatted: String = "—"
+    @State private var last30DaysFocusTimeFormatted: String = "—"
+
     private var todayFocusTimeFormatted: String {
-        let totalSeconds = FocusSessionService.shared.statistics.todayFocusTime
-        let hours = Int(totalSeconds) / 3600
-        let minutes = (Int(totalSeconds) % 3600) / 60
-        if hours > 0 {
-            return "\(hours)h \(minutes)m"
+        formatFocusTime(FocusSessionService.shared.statistics.todayFocusTime)
+    }
+
+    private func formatFocusTime(_ seconds: TimeInterval) -> String {
+        let hours = Int(seconds) / 3600
+        let minutes = (Int(seconds) % 3600) / 60
+        if hours > 0 { return "\(hours)h \(minutes)m" }
+        if minutes > 0 { return "\(minutes)m" }
+        return "—"
+    }
+
+    private func sumFocusTime(forPastDays count: Int) -> TimeInterval {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        return (1...count).reduce(0) { total, offset in
+            guard let date = calendar.date(byAdding: .day, value: -offset, to: today) else { return total }
+            let sessions = (try? LocalStorage.shared.loadFocusSessionsForDate(date)) ?? []
+            return total + sessions.compactMap(\.calculatedFocusTime).reduce(0, +)
         }
-        return "\(minutes)m"
     }
 
     var body: some View {
@@ -230,16 +245,16 @@ private struct TasksStatisticsCard: View {
 
             VStack(spacing: 0) {
                 TaskStatSection(title: "TODAY", tasks: appState.statistics.todayCompleted, focusTime: todayFocusTimeFormatted, delay: 0.1)
-                
+
                 Divider()
                     .padding(.vertical, 16)
-                
-                TaskStatSection(title: "PAST WEEK", tasks: appState.statistics.pastWeekCompleted, focusTime: "7h 11m", delay: 0.2) // Simulated for demo layout matching
-                
+
+                TaskStatSection(title: "PAST WEEK", tasks: appState.statistics.pastWeekCompleted, focusTime: pastWeekFocusTimeFormatted, delay: 0.2)
+
                 Divider()
                     .padding(.vertical, 16)
-                
-                TaskStatSection(title: "LAST 30 DAYS", tasks: appState.statistics.last30DaysCompleted, focusTime: "7h 11m", delay: 0.3)
+
+                TaskStatSection(title: "LAST 30 DAYS", tasks: appState.statistics.last30DaysCompleted, focusTime: last30DaysFocusTimeFormatted, delay: 0.3)
             }
             .padding(24)
             .background(Color.white)
@@ -248,6 +263,10 @@ private struct TasksStatisticsCard: View {
                 RoundedRectangle(cornerRadius: 24)
                     .stroke(Color(hex: "1F2937").opacity(0.8), lineWidth: 1)
             )
+        }
+        .task {
+            pastWeekFocusTimeFormatted = formatFocusTime(sumFocusTime(forPastDays: 7))
+            last30DaysFocusTimeFormatted = formatFocusTime(sumFocusTime(forPastDays: 30))
         }
     }
 }
