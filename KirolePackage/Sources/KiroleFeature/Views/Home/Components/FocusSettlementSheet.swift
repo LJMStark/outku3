@@ -113,6 +113,7 @@ public struct FocusSettlementSheet: View {
 
             // Dismiss button
             Button {
+                SoundService.shared.haptic(.success)
                 dismiss()
             } label: {
                 Text("Continue")

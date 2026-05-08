@@ -101,6 +101,7 @@ public struct AppHeaderView: View {
                     baseColor: theme.colors.primaryLight,
                     strokeColor: theme.colors.primaryDark
                 ) {
+                    SoundService.shared.haptic(.light)
                     withAnimation(.kiroleGentle) {
                         selectedTab = .home
                     }
@@ -115,6 +116,7 @@ public struct AppHeaderView: View {
                     baseColor: theme.colors.primaryLight,
                     strokeColor: theme.colors.primaryDark
                 ) {
+                    SoundService.shared.haptic(.light)
                     withAnimation(.kiroleGentle) {
                         selectedTab = .pet
                     }
@@ -131,6 +133,7 @@ public struct AppHeaderView: View {
                     baseColor: theme.colors.primaryLight,
                     strokeColor: theme.colors.primaryDark
                 ) {
+                    SoundService.shared.haptic(.light)
                     withAnimation(.kiroleGentle) {
                         selectedTab = .settings
                     }
