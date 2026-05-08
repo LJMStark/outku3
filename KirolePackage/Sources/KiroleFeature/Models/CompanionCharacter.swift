@@ -46,10 +46,7 @@ public enum CompanionCharacter: String, CaseIterable, Sendable, Codable {
         case .main: return "\(rawValue)-main"
         case .head: return "\(rawValue)-head"
         case .scene:
-            switch self {
-            case .joy: return "joy-scene"
-            default: return "\(rawValue)-main"
-            }
+            return "\(rawValue)-scene"
         }
     }
 }
