@@ -71,21 +71,23 @@ public struct DeviceModeSection: View {
         .shadow(color: .black.opacity(0.1), radius: 10, y: 5)
     }
 
-    /// Battery telemetry isn't centrally stored on BLEService yet (only flows
-    /// through EventLog). Render `—` until a connected device reports a level.
     private var batteryIndicator: some View {
         HStack(spacing: 4) {
+            let level = BLEService.shared.deviceBatteryLevel
+            let filledCount = level.map { Int($0 / 10) } ?? 0
             HStack(spacing: 2) {
-                ForEach(0..<10) { _ in
+                ForEach(0..<10) { i in
                     Circle()
-                        .fill(Color.white.opacity(0.3))
+                        .fill(i < filledCount ? Color.white : Color.white.opacity(0.3))
                         .frame(width: 6, height: 6)
                 }
             }
-            Text("—")
+            Text(level.map { "\($0)%" } ?? "—")
                 .font(.system(size: 10, weight: .bold))
                 .foregroundStyle(.white)
         }
+        .accessibilityLabel(BLEService.shared.deviceBatteryLevel.map { "设备电量 \($0)%" } ?? "设备电量未知")
+        .accessibilityIdentifier("Settings_BatteryIndicator")
     }
 
     private var speechBubble: some View {

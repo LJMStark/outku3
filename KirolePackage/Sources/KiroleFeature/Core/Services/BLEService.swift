@@ -90,6 +90,9 @@ public final class BLEService: NSObject {
     public private(set) var discoveredDevices: [BLEDevice] = []
     public private(set) var connectedDevice: BLEDevice?
     public private(set) var lastSyncTime: Date?
+    /// Last known device battery level (0-100). Updated on DeviceWake and LowBattery events.
+    /// nil until the device reports a level.
+    public internal(set) var deviceBatteryLevel: Int?
 
     // MARK: - Private Properties
 

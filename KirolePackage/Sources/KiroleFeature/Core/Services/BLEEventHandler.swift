@@ -21,6 +21,11 @@ public enum BLEEventHandler {
             return
         }
 
+        // DeviceWake (0x30) v2.3.0+: first payload byte is battery level
+        if message.type == EventLogType.deviceWake.rawByte, !message.payload.isEmpty {
+            service.deviceBatteryLevel = Int(message.payload[0])
+        }
+
         // Try to parse as an individual device event
         guard let eventLog = EventLog.fromBLEPayload(type: message.type, payload: message.payload) else {
             return
@@ -91,6 +96,7 @@ public enum BLEEventHandler {
 
         case .lowBattery:
             if let level = eventLog.batteryLevel {
+                service.deviceBatteryLevel = level
                 postLowBatteryNotification(level: level)
             }
 
@@ -212,8 +218,10 @@ public enum BLEEventHandler {
         let type = payload[offset]
 
         switch type {
-        case 0x01...0x06, 0x20, 0x30, 0x31:
+        case 0x01...0x06, 0x20, 0x31:
             return 1
+        case 0x30:
+            return 2  // type(1B) + BatteryLevel(1B), v2.3.0+
         case 0x40:
             return 2
         case 0x16, 0x17:

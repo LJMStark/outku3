@@ -42,6 +42,7 @@
 | v2.1.0  | 2026-05-07 | 对齐当前 App 协议：PetStatus 增加 CharacterId；DayPack/TaskInPage 删除旧任务拆分字段；标注开发显示命令 |
 | v2.2.0  | 2026-05-08 | 新增 FocusStatus (0x14) 命令（Release 构建实时推送专注状态与能量瓶子数）；BLEDataType enum 已移至 `Core/BLE/BLEProtocol.swift` 单一真相源 |
 | v2.2.1  | 2026-05-08 | 新增 8.4 App 侧写入限流说明（20次/秒上限、RequestRefresh 2秒最小间隔）；新增 8.5 TOFU 设备信任模型说明 |
+| v2.3.0  | 2026-05-08 | DeviceWake (0x30) payload 新增 BatteryLevel(1B)；App 侧在 DeviceWake 及 LowBattery 时更新并展示设备电量；旧固件兼容（空 payload 时保留 "—"） |
 
 ### 1.3 术语表
 
@@ -618,9 +619,17 @@ AA 01 02 Type SceneId PostcardDay QuoteLen Quote AuthorLen Author
 
 设备从睡眠模式唤醒。
 
-**Payload：** 无（Length = 0）
+**Payload：**
 
-**App 响应：** 可选择同步时间并发送更新数据。
+| Offset | Field        | Size   | 描述 |
+|--------|--------------|--------|-------------------------------|
+| 0      | BatteryLevel | 1 byte | 当前电量百分比（0-100） |
+
+> **固件版本要求：** v2.3.0+ 起此 payload 为必填。旧固件若发送空 payload（Length = 0），App 将忽略电量更新，保持上次已知值。
+
+**App 响应：**
+1. 若 payload 非空：更新并显示设备电量。
+2. 同步时间并发送更新数据。
 
 ---
 
@@ -704,7 +713,7 @@ AA 01 02 Type SceneId PostcardDay QuoteLen Quote AuthorLen Author
 |--------|--------------|--------|--------------------------|
 | 0      | BatteryLevel | 1 byte | 电量百分比（0-100） |
 
-**App 响应：** 向用户显示低电量通知。
+**App 响应：** 更新设备电量显示，并向用户推送低电量本地通知。
 
 ---
 
@@ -722,7 +731,8 @@ AA 01 02 Type SceneId PostcardDay QuoteLen Quote AuthorLen Author
 **Record 编码：** `eventType (1B) + eventPayload (NB)`，`eventPayload` 按各事件类型定义（见 5.3 ~ 5.14）。
 
 **解析规则：**
-- `0x01~0x06`, `0x20`, `0x30`, `0x31`：无 payload（记录总长 1B）
+- `0x01~0x06`, `0x20`, `0x31`：无 payload（记录总长 1B）
+- `0x30`：`BatteryLevel(1B)`（记录总长 2B，v2.3.0+）
 - `0x40`：`BatteryLevel`（记录总长 2B）
 - `0x16`, `0x17`：`Timestamp(4B)`（记录总长 5B）
 - `0x10~0x12`：`Length(1B)+TaskId(NB)+Timestamp(4B)`（记录总长 `2+N+4`）
