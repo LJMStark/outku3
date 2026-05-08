@@ -33,15 +33,23 @@ public enum CompanionCharacter: String, CaseIterable, Sendable, Codable {
     public enum HeroAssetVariant: Sendable {
         case main
         case head
+        /// Full-bleed scene illustration used on the Pet page header.
+        /// Only Joy currently has a dedicated scene asset; other characters fall back to `.main`.
+        case scene
     }
 
     /// Returns the asset name to load via `Image(name, bundle: .module)`.
-    /// Maps to per-character `<rawValue>-main` / `<rawValue>-head` images
-    /// shipped under `Resources/Media.xcassets/` (e.g. `joy-main`).
+    /// Maps to per-character `<rawValue>-main` / `<rawValue>-head` / `<rawValue>-scene` images
+    /// shipped under `Resources/Media.xcassets/` (e.g. `joy-main`, `joy-scene`).
     public func heroAssetName(variant: HeroAssetVariant) -> String {
         switch variant {
         case .main: return "\(rawValue)-main"
         case .head: return "\(rawValue)-head"
+        case .scene:
+            switch self {
+            case .joy: return "joy-scene"
+            default: return "\(rawValue)-main"
+            }
         }
     }
 }
