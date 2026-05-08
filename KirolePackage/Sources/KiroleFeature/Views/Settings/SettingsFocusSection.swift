@@ -143,7 +143,7 @@ public struct SettingsFocusSection: View {
     private var actionArea: some View {
         if appState.focusEnforcementMode == .deepFocus {
             if !guardService.canShowDeepFocusEntry {
-                Text("Deep Focus 在当前构建中不可用。")
+                Text("Deep Focus is not available in this build.")
                     .font(.system(size: 12))
                     .foregroundStyle(theme.colors.secondaryText)
             } else {
