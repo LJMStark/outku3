@@ -4,6 +4,7 @@ import PhotosUI
 // MARK: - Account Section (Avatar + AI Settings)
 
 public struct SettingsAccountSection: View {
+    @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var avatarImage: Image?
@@ -91,7 +92,7 @@ public struct SettingsAccountSection: View {
                                 .frame(width: 80, height: 80)
                                 .clipShape(Circle())
                         } else {
-                            Image("tiko_avatar", bundle: .module)
+                            Image(appState.userProfile.companionCharacter.heroAssetName(variant: .main), bundle: .module)
                                 .resizable()
                                 .aspectRatio(contentMode: .fit)
                                 .frame(width: 76, height: 95)

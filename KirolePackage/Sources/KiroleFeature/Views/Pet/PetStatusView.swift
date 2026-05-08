@@ -122,7 +122,7 @@ private struct PetStatusCard: View {
                                 .fill(Color(hex: "E6F4EA")) // Pale green
                                 .frame(width: 128, height: 160)
 
-                            Image("tiko_avatar", bundle: .module)
+                            Image(appState.userProfile.companionCharacter.heroAssetName(variant: .main), bundle: .module)
                                 .resizable()
                                 .aspectRatio(contentMode: .fit)
                                 .frame(width: 120, height: 150)

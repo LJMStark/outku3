@@ -201,6 +201,8 @@ private struct TabButton: View {
 // MARK: - Pet Tab Button
 
 private struct PetTabButton: View {
+    @Environment(AppState.self) private var appState
+
     let label: String?
     let accessibilityLabel: String
     let accessibilityIdentifier: String
@@ -219,7 +221,7 @@ private struct PetTabButton: View {
                     baseColor: baseColor,
                     strokeColor: strokeColor
                 ) {
-                    Image("tiko_head", bundle: .module)
+                    Image(appState.userProfile.companionCharacter.heroAssetName(variant: .head), bundle: .module)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(width: 36, height: 36)

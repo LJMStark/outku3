@@ -36,6 +36,9 @@ public enum CompanionCharacter: String, CaseIterable, Sendable, Codable {
         /// Full-bleed scene illustration used on the Pet page header.
         /// Only Joy currently has a dedicated scene asset; other characters fall back to `.main`.
         case scene
+        /// Reading/idle pose used in Timeline haiku section and Focus mode.
+        /// Silas and Nova use Joy's asset as placeholder until dedicated art ships.
+        case reading
     }
 
     /// Returns the asset name to load via `Image(name, bundle: .module)`.
@@ -45,8 +48,8 @@ public enum CompanionCharacter: String, CaseIterable, Sendable, Codable {
         switch variant {
         case .main: return "\(rawValue)-main"
         case .head: return "\(rawValue)-head"
-        case .scene:
-            return "\(rawValue)-scene"
+        case .scene: return "\(rawValue)-scene"
+        case .reading: return "\(rawValue)-reading"
         }
     }
 }
