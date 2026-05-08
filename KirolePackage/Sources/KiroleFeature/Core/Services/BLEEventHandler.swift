@@ -181,7 +181,7 @@ public enum BLEEventHandler {
     private static func handleEventLogBatch(_ payload: Data, service: BLEService) async {
         let logs = parseEventLogBatchPayload(payload)
         guard !logs.isEmpty else { return }
-        await handleEventLogs(logs, service: service)
+        await handleEventLogs(logs, service: service, isReplay: true)
     }
 
     /// 解析 Event Log 批次 payload:
@@ -240,17 +240,23 @@ public enum BLEEventHandler {
     /// Live-only side effects (sending TaskInPage, triggering sync, etc.) live
     /// in `handleSingleEvent`'s switch — they are intentionally skipped during
     /// batch replay because those responses are stale by the time logs arrive.
+    ///
+    /// `isReplay: true` skips `enterTaskIn` focus session starts: App has no
+    /// screen-activity data for the offline period, so focus time cannot be
+    /// measured correctly. completeTask/skipTask still run to close any
+    /// currently-active session.
     static func handleEventLogs(
         _ logs: [EventLog],
         service: BLEService,
-        focusService: FocusSessionService = .shared
+        focusService: FocusSessionService = .shared,
+        isReplay: Bool = false
     ) async {
         Task {
             await persistEventLogs(logs)
         }
 
         for log in logs {
-            await handleFocusSessionEvent(log, focusService: focusService)
+            await handleFocusSessionEvent(log, focusService: focusService, isReplay: isReplay)
             applyEventStateMutation(log)
         }
     }
@@ -298,10 +304,14 @@ public enum BLEEventHandler {
     /// 处理专注会话相关事件
     private static func handleFocusSessionEvent(
         _ eventLog: EventLog,
-        focusService: FocusSessionService
+        focusService: FocusSessionService,
+        isReplay: Bool = false
     ) async {
         switch eventLog.eventType {
         case .enterTaskIn:
+            // During replay we have no App-side screen data for the offline period,
+            // so we cannot measure focus time. Skip to avoid a stale activeSession.
+            guard !isReplay else { break }
             if let taskId = eventLog.taskId {
                 let taskTitle = resolveTask(taskId: taskId)?.title ?? "Unknown Task"
                 await focusService.startSession(

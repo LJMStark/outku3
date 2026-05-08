@@ -912,6 +912,67 @@ struct BLEProtocolTests {
         #expect(data[4] == 5)
     }
 
+    // MARK: - EventLogBatch Replay → AppState Mutation Tests
+
+    @Test("Batch replay: completeTask marks task completed in AppState")
+    @MainActor
+    func batchReplayCompleteTaskMarksTaskCompleted() async {
+        let taskId = "ble-replay-complete-\(UUID().uuidString)"
+        let task = TaskItem(id: taskId, title: "Replay Complete Test", isCompleted: false, dueDate: nil)
+        AppState.shared.addTask(task)
+        defer { AppState.shared.deleteTask(task) }
+
+        let event = EventLog(eventType: .completeTask, taskId: taskId, timestamp: Date())
+        let focusService = FocusSessionService.makeForTesting(
+            focusGuardService: BLEProtocolMockFocusGuardService(),
+            persistenceEnabled: false
+        )
+        await BLEEventHandler.handleEventLogs(
+            [event], service: BLEService.shared,
+            focusService: focusService, isReplay: true
+        )
+
+        let found = AppState.shared.tasks.first { $0.id == taskId }
+        #expect(found?.isCompleted == true)
+    }
+
+    @Test("Batch replay: enterTaskIn does NOT start a focus session")
+    @MainActor
+    func batchReplayEnterTaskInSkipsFocusSession() async {
+        let taskId = "ble-replay-enter-\(UUID().uuidString)"
+        let event = EventLog(
+            eventType: .enterTaskIn, taskId: taskId,
+            timestamp: Date().addingTimeInterval(-7200)  // 2 hours ago
+        )
+        let focusService = FocusSessionService.makeForTesting(
+            focusGuardService: BLEProtocolMockFocusGuardService(),
+            persistenceEnabled: false
+        )
+        await BLEEventHandler.handleEventLogs(
+            [event], service: BLEService.shared,
+            focusService: focusService, isReplay: true
+        )
+
+        #expect(focusService.activeSession == nil)
+    }
+
+    @Test("Live (non-replay) enterTaskIn starts a focus session")
+    @MainActor
+    func liveEnterTaskInStartsFocusSession() async {
+        let taskId = "ble-live-enter-\(UUID().uuidString)"
+        let event = EventLog(eventType: .enterTaskIn, taskId: taskId, timestamp: Date())
+        let focusService = FocusSessionService.makeForTesting(
+            focusGuardService: BLEProtocolMockFocusGuardService(),
+            persistenceEnabled: false
+        )
+        await BLEEventHandler.handleEventLogs(
+            [event], service: BLEService.shared,
+            focusService: focusService, isReplay: false
+        )
+
+        #expect(focusService.activeSession?.taskId == taskId)
+    }
+
     @Test("BLEDataEncoder encodeDayPack with sevenInch allows 5 tasks")
     func encodeDayPackSevenInchTaskLimit() {
         let settlement = SettlementData(
@@ -945,4 +1006,22 @@ struct BLEProtocolTests {
         let taskCountOffset = headerSize + greetingSize + summarySize + firstItemSize + scheduleSize + phraseSize
         #expect(data[taskCountOffset] == 5)
     }
+}
+
+// MARK: - Shared Mock
+
+@MainActor
+private final class BLEProtocolMockFocusGuardService: FocusGuardService {
+    var authorizationStatus: FocusAuthorizationStatus = .notDetermined
+    var isDeepFocusFeatureEnabled = false
+    var isDeepFocusCapable = false
+    var canShowDeepFocusEntry: Bool { false }
+    var selectedApplicationCount = 0
+    var isPickerPresented = false
+    func refreshAuthorizationStatus() async {}
+    func requestAuthorization() async -> FocusAuthorizationStatus { .notDetermined }
+    func presentAppPicker() {}
+    func applyShield(selection: FocusAppSelection) throws {}
+    func clearShield() {}
+    func currentSelection() -> FocusAppSelection? { nil }
 }
