@@ -219,7 +219,7 @@ The companion text system is event-reactive companion writing for the Kirole tas
 - **Defenses**:
   - `BLEWriteGate` (`BLEWriteGate.swift:8-29`) — actor-serialized writes.
   - `BLERateLimiter` (`BLERateLimiter.swift:12-28`) — 20 writes/sec; refresh ≥ 2s interval.
-  - Timeouts: write 5s (`BLEService.swift:545`) / connect 10s default (`BLEService.swift:281` `timeout: TimeInterval = 10`) / handshake 5s (`BLEService.swift:585`).
+  - Timeouts: write 5s (`BLEService.swift:545`) / scan 10s default (`BLEService.swift:281` `scanForDevices(timeout:)` 默认参数) / connect 15s 硬编码 (`BLEService.swift:262` `Task.sleep(for: .seconds(15))`) / handshake 5s (`BLEService.swift:585`).
   - `BLEDeviceIdentityStore` (`BLEDeviceIdentityStore.swift:17-35`) — trust/block lists in UserDefaults; enforced in secure mode at `BLEService.swift:229-234` (scan filter) and `:715-720` (post-connect gate).
 - **Sync**: `BLESyncCoordinator` (background sync via `com.kirole.app.ble.sync`).
 - **Supabase**: Keys injected via `AppSecrets.configure(...)` using build-time constants (`Config/Secrets.xcconfig`). Keep RLS enabled and sync schema changes with `Config/supabase-schema.sql`. Current schema source is aligned with the post-IP/post-streak code path: no legacy pet-form column and no old streak table.

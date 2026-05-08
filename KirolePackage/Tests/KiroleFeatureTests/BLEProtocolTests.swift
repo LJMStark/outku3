@@ -120,9 +120,45 @@ struct BLEProtocolTests {
         #expect(result == nil)
     }
 
+    @Test("BLEPacketAssembler limits in-flight message count")
+    func assemblerLimitsInFlightMessages() throws {
+        let assembler = BLEPacketAssembler()
+        var packetStreams: [[Data]] = []
+
+        for messageId in 1...9 {
+            let packets = try BLEPacketizer.packetize(
+                type: 0x21,
+                messageId: UInt16(messageId),
+                payload: Data(repeating: UInt8(messageId), count: 3),
+                maxChunkSize: 2
+            )
+            let firstChunk = try #require(packets.first)
+            _ = assembler.append(packetData: firstChunk)
+            packetStreams.append(packets)
+        }
+
+        var assembledCount = 0
+        for packets in packetStreams {
+            for packet in packets.dropFirst() {
+                if assembler.append(packetData: packet) != nil {
+                    assembledCount += 1
+                }
+            }
+        }
+
+        #expect(assembledCount == 8)
+    }
+
     @Test("BLE inbound decode prefers chunked packets over simple packets")
     @MainActor
     func inboundDecodePrefersChunkedPackets() throws {
+        AppSecrets.configure(
+            supabaseURL: nil,
+            supabaseAnonKey: nil,
+            openRouterAPIKey: nil,
+            bleSharedSecret: nil
+        )
+
         let payload = Data("chunked-event-log-batch".utf8)
         let packets = try BLEPacketizer.packetize(
             type: BLEDataType.eventLogBatch.rawValue,
@@ -296,6 +332,12 @@ struct BLEProtocolTests {
     @Test("BLESimpleDecoder rejects truncated payload")
     func simpleDecoderRejectsTruncatedPayload() {
         let data = Data([0x10, 0x05, 0x01])
+        #expect(BLESimpleDecoder.decode(data) == nil)
+    }
+
+    @Test("BLESimpleDecoder rejects trailing bytes")
+    func simpleDecoderRejectsTrailingBytes() {
+        let data = Data([0x10, 0x01, 0xAA, 0xBB])
         #expect(BLESimpleDecoder.decode(data) == nil)
     }
 
@@ -505,6 +547,16 @@ struct BLEProtocolTests {
         #expect(data.count == 51)
     }
 
+    @Test("String truncation does not split UTF-8 scalar")
+    func stringTruncationDoesNotSplitUTF8Scalar() {
+        var data = Data()
+        data.appendString("Hi你", maxLength: 4)
+
+        #expect(data[0] == 2)
+        #expect(data.subdata(in: 1..<data.count) == Data("Hi".utf8))
+        #expect(String(data: data.subdata(in: 1..<data.count), encoding: .utf8) == "Hi")
+    }
+
     @Test("String encoding with empty string")
     func stringEncodingEmpty() {
         var data = Data()
@@ -587,6 +639,20 @@ struct BLEProtocolTests {
         #expect(Int(logs[2].timestamp.timeIntervalSince1970) == Int(timestamp))
     }
 
+    @Test("BLEEventHandler rejects partially malformed EventLog batch payload")
+    @MainActor
+    func parseEventLogBatchPayloadRejectsPartialMalformedBatch() {
+        var payload = Data()
+        payload.append(2)
+        payload.append(0x01)
+        payload.append(0x10)
+        payload.append(10)
+        payload.append(contentsOf: Data("abc".utf8))
+
+        let logs = BLEEventHandler.parseEventLogBatchPayload(payload)
+        #expect(logs.isEmpty)
+    }
+
     // MARK: - EventLog fromBLEPayload Extended Tests
 
     @Test("fromBLEPayload enterTaskIn with taskId and timestamp")
@@ -613,6 +679,13 @@ struct BLEProtocolTests {
         #expect(event != nil)
         #expect(event?.eventType == .lowBattery)
         #expect(event?.batteryLevel == 42)
+    }
+
+    @Test("fromBLEPayload lowBattery clamps level to 100")
+    func fromBLEPayloadLowBatteryClampsLevel() {
+        let event = EventLog.fromBLEPayload(type: 0x40, payload: Data([255]))
+        #expect(event?.eventType == .lowBattery)
+        #expect(event?.batteryLevel == 100)
     }
 
     @Test("fromBLEPayload lowBattery with empty payload defaults to 0")
@@ -692,6 +765,18 @@ struct BLEProtocolTests {
         #expect(event != nil)
         #expect(event?.eventType == .wheelSelect)
         #expect(event?.taskId == "selected-item")
+    }
+
+    @Test("fromBLEPayload id-only event ignores trailing bytes")
+    func fromBLEPayloadIdOnlyEventIgnoresTrailingBytes() {
+        var payload = Data()
+        payload.append(1)
+        payload.append(0x41)
+        payload.append(0x00)
+
+        let event = EventLog.fromBLEPayload(type: 0x14, payload: payload)
+        #expect(event?.eventType == .wheelSelect)
+        #expect(event?.taskId == nil)
     }
 
     @Test("fromBLEPayload viewEventDetail with event ID")
@@ -1005,6 +1090,61 @@ struct BLEProtocolTests {
         let phraseSize = 1 + "go".utf8.count
         let taskCountOffset = headerSize + greetingSize + summarySize + firstItemSize + scheduleSize + phraseSize
         #expect(data[taskCountOffset] == 5)
+    }
+
+    @Test("BLEDataEncoder encodeDayPack clamps negative settlement counters")
+    func encodeDayPackClampsNegativeSettlementCounters() {
+        let settlement = SettlementData(
+            tasksCompleted: -1,
+            tasksTotal: -1,
+            pointsEarned: -10,
+            petMood: "happy",
+            summaryMessage: "s",
+            encouragementMessage: "e",
+            totalFocusMinutes: -20,
+            focusSessionCount: -1,
+            longestFocusMinutes: -30,
+            interruptionCount: -1
+        )
+        let pack = DayPack(
+            date: Date(),
+            deviceMode: .interactive,
+            morningGreeting: "",
+            dailySummary: "",
+            firstItem: "",
+            topTasks: [],
+            companionPhrase: "",
+            settlementData: settlement
+        )
+        let data = BLEDataEncoder.encodeDayPack(pack)
+
+        // Header(5) + five empty strings(5) + task count(1)
+        let cursor = 11
+        #expect(data[cursor] == 0)
+        #expect(data[cursor + 1] == 0)
+        #expect(data[cursor + 2] == 0)
+        #expect(data[cursor + 3] == 0)
+        #expect(data[cursor + 4] == 0)
+        #expect(data[cursor + 5] == 0)
+        #expect(data[cursor + 6] == 0)
+        #expect(data[cursor + 7] == 0)
+        #expect(data[cursor + 8] == 0)
+        #expect(data[cursor + 9] == 0)
+    }
+
+    @Test("FocusStatus clamps negative counters to zero")
+    func focusStatusClampsNegativeCountersToZero() {
+        let data = BLEDataEncoder.encodeFocusStatus(
+            phase: .building,
+            energyBottles: -3,
+            elapsedMinutes: -20,
+            taskTitle: "Task"
+        )
+
+        #expect(data[0] == 2)
+        #expect(data[1] == 0)
+        #expect(data[2] == 0)
+        #expect(data[3] == 0)
     }
 }
 

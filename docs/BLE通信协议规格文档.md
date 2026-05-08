@@ -1,6 +1,6 @@
 # Kirole BLE 通信协议规格文档
 
-**版本:** v2.3.2
+**版本:** v2.3.4
 **更新日期:** 2026-05-08
 **状态:** 草稿
 
@@ -43,8 +43,10 @@
 | v2.2.0  | 2026-05-08 | 新增 FocusStatus (0x14) 命令（Release 构建实时推送专注状态与能量瓶子数）；BLEDataType enum 已移至 `Core/BLE/BLEProtocol.swift` 单一真相源 |
 | v2.2.1  | 2026-05-08 | 新增 8.4 App 侧写入限流说明（20次/秒上限、RequestRefresh 2秒最小间隔）；新增 8.5 TOFU 设备信任模型说明 |
 | v2.3.0  | 2026-05-08 | DeviceWake (0x30) payload 新增 BatteryLevel(1B)；App 侧在 DeviceWake 及 LowBattery 时更新并展示设备电量；旧固件兼容（空 payload 时保留 "—"） |
-| v2.3.1  | 2026-05-08 | 修正：Connection Timeout 文档值 15s → 实际代码 10s；移除页面 4 内容描述中的"当前连续天数"（streak 系统已删除，SettlementData 字段表本就不含此字段） |
+| v2.3.1  | 2026-05-08 | 修正：移除页面 4 内容描述中的"当前连续天数"（streak 系统已删除，SettlementData 字段表本就不含此字段）；~~Connection Timeout 改为 10s~~ 此项 v2.3.3 已撤回 |
 | v2.3.2  | 2026-05-08 | 修正：WheelSelect(0x14) 按当前 App 代码仅记录/调试，不回发详情；TaskInPage 仍只由 EnterTaskIn(0x10) 触发 |
+| v2.3.3  | 2026-05-08 | 撤回 v2.3.1 错误修订：Connection Timeout 仍为 15 秒（`BLEService.swift:262` 硬编码），v2.3.1 误把 `scanForDevices(timeout: 10)` 当成连接超时，已恢复 |
+| v2.3.4  | 2026-05-08 | 收紧包解析边界：简单包和 SecureEnvelope 不允许尾部多余字节；字符串按 UTF-8 字节安全截断；BatteryLevel 和数值字段按代码 clamp；nonce 重放记录跨短期重连保留；App 分包重组限制未完成消息数 |
 
 ### 1.3 术语表
 
@@ -79,8 +81,8 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 
 | 参数 | 值 |
 |--------------------|------------|
-| Scan Timeout       | 10 秒（`BLEService.scanForDevices(timeout:)` 默认） |
-| Connection Timeout | 10 秒（`BLEService.connectToPreferredDevice(timeout:)` 默认） |
+| Scan Timeout       | 10 秒（`BLEService.scanForDevices(timeout:)` 默认参数） |
+| Connection Timeout | 15 秒（`BLEService.swift:262` 硬编码 `Task.sleep(for: .seconds(15))`，连接成功前未收到 didConnect 即视为超时） |
 | 自动重连 | 启用 |
 
 ---
@@ -103,6 +105,8 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 | Type    | 1 byte  | 命令类型标识符（见第 4 节） |
 | Length  | 2 bytes | Payload 长度（Big Endian） |
 | Payload | N bytes | 命令特定数据 |
+
+**长度规则：** App→Device 简单包必须满足 `packet.count == 3 + Length`。Device→App 简单事件包必须满足 `packet.count == 2 + Length`。尾部多余字节视为格式错误，不参与解析。
 
 ### 3.2 分包格式（大 Payload）
 
@@ -138,6 +142,8 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 
 **使用场景：** DayPack (0x10)、TaskInPage (0x11) 及其他大 payload 使用此格式。简单命令（PetStatus、Weather、Time）使用 Section 3.1 的 3 字节头部。
 
+**联调边界：** 分包总数上限为 255。App 侧最多同时保留 8 个未完成 MessageId，单个重组 payload 上限 256 KiB；超过限制的分包会被丢弃。接收端也应做超时和容量上限，避免丢包后长期占用内存；App 侧当前只验证每包 CRC 和完整重组，不发送分包级 ACK。
+
 ### 3.3 安全握手（v2）
 
 当 App 配置了 `BLE_SHARED_SECRET` 时，连接后必须先完成安全握手，握手命令类型为 `0x7F`，未通过握手不得进入业务通信。  
@@ -156,6 +162,8 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 
 - `signature = HMAC-SHA256(version..payload)`  
 - 接收端必须校验签名、时间窗口和 nonce 重放。
+- `payloadLen` 后必须正好是 `payload(NB) + signature(32B)`，尾部多余字节视为格式错误。
+- App 侧 nonce 重放记录会在 ±120 秒窗口内保留，短时间断开重连后仍拒绝刚收到过的 secure payload。
 
 ### 3.5 字符串编码
 
@@ -169,8 +177,9 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 ```
 
 - **编码方式：** UTF-8
-- **最大长度：** 按字段指定（超出则截断）
+- **最大长度：** 按字段指定，单位是 UTF-8 字节，不是字符数
 - **Length 字节：** 实际字节数（非字符数）
+- **截断规则：** App 截断字符串时不会切断 UTF-8 字符；如果最大字节数落在多字节字符中间，会回退到上一个完整 UTF-8 字符边界。
 
 ### 3.6 字节序
 
@@ -209,9 +218,9 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 
 | Offset | Field       | Size        | Max Length | 描述 |
 |--------|-------------|-------------|------------|--------------------------------|
-| 0      | Name        | 1 + N bytes | 20 chars   | 显示名（长度前缀） |
+| 0      | Name        | 1 + N bytes | 20 bytes   | 显示名（长度前缀） |
 | N+1    | Mood        | 1 byte      | -          | 心情首字母 ASCII |
-| N+2    | CharacterId | 1 + N bytes | 10 chars   | 伴侣 IP：`joy` / `silas` / `nova` |
+| N+2    | CharacterId | 1 + N bytes | 10 bytes   | 伴侣 IP：`joy` / `silas` / `nova` |
 
 **CharacterId 值：**
 
@@ -248,7 +257,7 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 
 | Offset | Field       | Size        | Max Length | 描述 |
 |--------|-------------|-------------|------------|--------------------------|
-| 0      | Title       | 1 + N bytes | 30 chars   | 任务标题 |
+| 0      | Title       | 1 + N bytes | 30 bytes   | 任务标题 |
 | N+1    | IsCompleted | 1 byte      | -          | 0x00=未完成, 0x01=已完成 |
 
 ---
@@ -268,7 +277,7 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 
 | Offset | Field     | Size        | Max Length | 描述 |
 |--------|-----------|-------------|------------|--------------------------|
-| 0      | Title     | 1 + N bytes | 25 chars   | 事件标题 |
+| 0      | Title     | 1 + N bytes | 25 bytes   | 事件标题 |
 | N+1    | StartTime | 5 bytes     | -          | "HH:mm" 格式（原始 UTF-8） |
 
 ---
@@ -282,7 +291,7 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 | Offset | Field       | Size        | Max Length | 描述 |
 |--------|-------------|-------------|------------|--------------------------|
 | 0      | Temperature | 1 byte      | -          | 有符号 int8（摄氏度） |
-| 1      | Condition   | 1 + N bytes | 15 chars   | 天气状况字符串 |
+| 1      | Condition   | 1 + N bytes | 15 bytes   | 天气状况字符串 |
 
 **Condition 值：**
 
@@ -327,11 +336,11 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 | 2      | Day                    | 1 byte      | -          | 日期（1-31） |
 | 3      | DeviceMode             | 1 byte      | -          | 0x00=Interactive, 0x01=Focus |
 | 4      | FocusChallengeEnabled  | 1 byte      | -          | 0x00=禁用, 0x01=启用 |
-| 5      | MorningGreeting        | 1 + N bytes | 50 chars   | 页面 1：早安问候 |
-| N+6    | DailySummary           | 1 + N bytes | 60 chars   | 页面 1：每日摘要 |
-| ...    | FirstItem              | 1 + N bytes | 40 chars   | 页面 1：首个任务/事件 |
-| ...    | CurrentScheduleSummary | 1 + N bytes | 30 chars   | 页面 2：日程摘要 |
-| ...    | CompanionPhrase        | 1 + N bytes | 40 chars   | 页面 2：伴侣消息 |
+| 5      | MorningGreeting        | 1 + N bytes | 50 bytes   | 页面 1：早安问候 |
+| N+6    | DailySummary           | 1 + N bytes | 60 bytes   | 页面 1：每日摘要 |
+| ...    | FirstItem              | 1 + N bytes | 40 bytes   | 页面 1：首个任务/事件 |
+| ...    | CurrentScheduleSummary | 1 + N bytes | 30 bytes   | 页面 2：日程摘要 |
+| ...    | CompanionPhrase        | 1 + N bytes | 40 bytes   | 页面 2：伴侣消息 |
 | ...    | TaskCount              | 1 byte      | -          | 置顶任务数量（0-5，取决于屏幕尺寸） |
 | ...    | TopTasks[]             | Variable    | -          | 页面 2：4寸最多 3 条，7.3寸最多 5 条 |
 | ...    | SettlementData         | Variable    | -          | 页面 4：结算数据 |
@@ -340,8 +349,8 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 
 | Offset | Field          | Size        | Max Length | 描述 |
 |--------|----------------|-------------|------------|--------------------------|
-| 0      | TaskId         | 1 + N bytes | 36 chars   | UUID 字符串 |
-| N+1    | Title          | 1 + N bytes | 30 chars   | 任务标题 |
+| 0      | TaskId         | 1 + N bytes | 36 bytes   | UUID 字符串 |
+| N+1    | Title          | 1 + N bytes | 30 bytes   | 任务标题 |
 | ...    | IsCompleted    | 1 byte      | -          | 0x00=未完成, 0x01=已完成 |
 | ...    | Priority       | 1 byte      | -          | 优先级（1-3） |
 
@@ -349,15 +358,15 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 
 | Offset | Field               | Size        | Max Length | 描述 |
 |--------|---------------------|-------------|------------|--------------------------|
-| 0      | TasksCompleted      | 1 byte      | -          | 已完成任务数 |
-| 1      | TasksTotal          | 1 byte      | -          | 总任务数 |
-| 2      | PointsEarned        | 2 bytes     | -          | 积分（Big Endian） |
-| 4      | TotalFocusMinutes   | 2 bytes     | -          | 总专注时间（分钟，Big Endian） |
-| 6      | FocusSessionCount   | 1 byte      | -          | 专注会话次数 |
-| 7      | LongestFocusMinutes | 2 bytes     | -          | 最长单次专注时间（分钟，BE） |
-| 9      | InterruptionCount   | 1 byte      | -          | 专注期间手机解锁次数 |
-| 10     | SummaryMessage      | 1 + N bytes | 50 chars   | 总结文本 |
-| N+11   | EncouragementMessage| 1 + N bytes | 50 chars   | 鼓励文本 |
+| 0      | TasksCompleted      | 1 byte      | -          | 已完成任务数（clamp 0-255） |
+| 1      | TasksTotal          | 1 byte      | -          | 总任务数（clamp 0-255） |
+| 2      | PointsEarned        | 2 bytes     | -          | 积分（Big Endian，clamp 0-65535） |
+| 4      | TotalFocusMinutes   | 2 bytes     | -          | 总专注时间（分钟，Big Endian，clamp 0-65535） |
+| 6      | FocusSessionCount   | 1 byte      | -          | 专注会话次数（clamp 0-255） |
+| 7      | LongestFocusMinutes | 2 bytes     | -          | 最长单次专注时间（分钟，BE，clamp 0-65535） |
+| 9      | InterruptionCount   | 1 byte      | -          | 专注期间手机解锁次数（clamp 0-255） |
+| 10     | SummaryMessage      | 1 + N bytes | 50 bytes   | 总结文本 |
+| N+11   | EncouragementMessage| 1 + N bytes | 50 bytes   | 鼓励文本 |
 
 ---
 
@@ -369,10 +378,10 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 
 | Offset | Field                | Size        | Max Length | 描述 |
 |--------|----------------------|-------------|------------|--------------------------|
-| 0      | TaskId               | 1 + N bytes | 36 chars   | UUID 字符串 |
-| N+1    | TaskTitle            | 1 + N bytes | 40 chars   | 任务标题 |
-| ...    | TaskDescription      | 1 + N bytes | 100 chars  | 任务描述 |
-| ...    | Encouragement        | 1 + N bytes | 50 chars   | 鼓励消息 |
+| 0      | TaskId               | 1 + N bytes | 36 bytes   | UUID 字符串 |
+| N+1    | TaskTitle            | 1 + N bytes | 40 bytes   | 任务标题 |
+| ...    | TaskDescription      | 1 + N bytes | 100 bytes  | 任务描述 |
+| ...    | Encouragement        | 1 + N bytes | 50 bytes   | 鼓励消息 |
 | ...    | FocusChallengeActive | 1 byte      | -          | 0x00=未激活, 0x01=已激活 |
 
 ---
@@ -397,7 +406,7 @@ AI 智能提醒，从 App 推送至设备。
 
 | Offset | Field        | Size        | Max Length | 描述 |
 |--------|--------------|-------------|------------|--------------------------------------|
-| 0      | ReminderText | 1 + N bytes | 60 chars   | 提醒消息文本 |
+| 0      | ReminderText | 1 + N bytes | 60 bytes   | 提醒消息文本 |
 | N+1    | ReminderType | 1 byte      | -          | 0x00=gentle, 0x01=urgent |
 | N+2    | PetMoodByte  | 1 byte      | -          | 显示用宠物心情（ASCII: H/E/F/S/M） |
 
@@ -625,7 +634,7 @@ AA 01 02 Type SceneId PostcardDay QuoteLen Quote AuthorLen Author
 
 | Offset | Field        | Size   | 描述 |
 |--------|--------------|--------|-------------------------------|
-| 0      | BatteryLevel | 1 byte | 当前电量百分比（0-100） |
+| 0      | BatteryLevel | 1 byte | 当前电量百分比（App clamp 0-100） |
 
 > **固件版本要求：** v2.3.0+ 起此 payload 为必填。旧固件若发送空 payload（Length = 0），App 将忽略电量更新，保持上次已知值。
 
@@ -713,7 +722,7 @@ AA 01 02 Type SceneId PostcardDay QuoteLen Quote AuthorLen Author
 
 | Offset | Field        | Size   | 描述 |
 |--------|--------------|--------|--------------------------|
-| 0      | BatteryLevel | 1 byte | 电量百分比（0-100） |
+| 0      | BatteryLevel | 1 byte | 电量百分比（App clamp 0-100） |
 
 **App 响应：** 更新设备电量显示，并向用户推送低电量本地通知。
 
@@ -739,6 +748,7 @@ AA 01 02 Type SceneId PostcardDay QuoteLen Quote AuthorLen Author
 - `0x16`, `0x17`：`Timestamp(4B)`（记录总长 5B）
 - `0x10~0x12`：`Length(1B)+TaskId(NB)+Timestamp(4B)`（记录总长 `2+N+4`）
 - `0x13~0x15`：`Length(1B)+Id(NB)`（记录总长 `2+N`）
+- App 严格校验整批长度：必须正好解析出 `Count` 条记录，且无尾部多余字节；任意一条记录类型未知、长度不足或格式错误时，整批丢弃。
 
 ---
 
@@ -936,8 +946,11 @@ Event: 0x16 (ReminderAcknowledged)
 
 | 校验项 | 规则 |
 |------------------------|-------------------------------------------|
-| 字符串长度 | 截断至最大长度 |
-| 整数溢出 | 限制在有效范围内 |
+| 字符串长度 | 按 UTF-8 字节数截断至最大长度，不切断多字节字符 |
+| 整数溢出 | 限制在有效范围内；负数按 0 处理 |
+| 简单包长度 | 必须正好等于头部长度 + Payload 长度，不允许尾部多余字节 |
+| SecureEnvelope 长度 | 必须正好等于固定头 + payloadLen + 32B signature，不允许尾部多余字节 |
+| EventLogBatch | 必须整批完整解析，否则整批丢弃 |
 | 无效事件类型 | 忽略未知事件类型 |
 | 格式错误的数据包 | 丢弃并记录错误 |
 

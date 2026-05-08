@@ -37,7 +37,7 @@ public enum BLESimpleDecoder {
         let type = data[0]
         let length = Int(data[1])
         let expectedTotal = 2 + length
-        guard data.count >= expectedTotal else { return nil }
+        guard data.count == expectedTotal else { return nil }
         let payload = length > 0 ? data.subdata(in: 2..<expectedTotal) : Data()
         return BLEReceivedMessage(type: type, payload: payload)
     }
@@ -101,15 +101,22 @@ public enum BLEPacketizer {
 // MARK: - BLE Packet Assembler
 
 public final class BLEPacketAssembler {
+    private enum Limits {
+        static let maxInFlightMessages = 8
+        static let maxAssembledPayloadBytes = 256 * 1024
+    }
+
     private struct Assembly {
         let type: UInt8
         let total: UInt8
         var chunks: [Int: Data]
+        var byteCount: Int
 
         init(type: UInt8, total: UInt8) {
             self.type = type
             self.total = total
             self.chunks = [:]
+            self.byteCount = 0
         }
     }
 
@@ -149,12 +156,21 @@ public final class BLEPacketAssembler {
         guard computedChunkCRC == chunkCRC else { return nil }
 
         if messages[messageId] == nil {
+            guard messages.count < Limits.maxInFlightMessages else { return nil }
             messages[messageId] = Assembly(type: type, total: total)
         }
 
         guard var assembly = messages[messageId], assembly.total == total, assembly.type == type else { return nil }
 
+        let previousChunkSize = assembly.chunks[seq]?.count ?? 0
+        let nextByteCount = assembly.byteCount - previousChunkSize + chunk.count
+        guard nextByteCount <= Limits.maxAssembledPayloadBytes else {
+            messages.removeValue(forKey: messageId)
+            return nil
+        }
+
         assembly.chunks[seq] = chunk
+        assembly.byteCount = nextByteCount
         messages[messageId] = assembly
 
         guard assembly.chunks.count == Int(total) else { return nil }

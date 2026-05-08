@@ -139,7 +139,7 @@ public extension EventLog {
             return parseIdOnlyEvent(eventType: eventType, payload: payload)
 
         case .lowBattery:
-            let level = payload.isEmpty ? 0 : Int(payload[0])
+            let level = payload.isEmpty ? 0 : min(Int(payload[0]), 100)
             return EventLog(eventType: eventType, value: level)
 
         case .reminderAcknowledged, .reminderDismissed:
@@ -172,7 +172,7 @@ public extension EventLog {
     }
 
     private static func parseTimestampOnlyEvent(eventType: EventLogType, payload: Data) -> EventLog {
-        guard payload.count >= 4 else {
+        guard payload.count == 4 else {
             return EventLog(eventType: eventType)
         }
         let ts = UInt32(payload[0]) << 24
@@ -187,7 +187,7 @@ public extension EventLog {
             return EventLog(eventType: eventType)
         }
         let idLength = Int(payload[0])
-        guard payload.count >= 1 + idLength else {
+        guard payload.count == 1 + idLength else {
             return EventLog(eventType: eventType)
         }
 

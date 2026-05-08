@@ -112,6 +112,7 @@ public final class BLEService: NSObject {
     private var scanCompletion: (([BLEDevice]) -> Void)?
     private var connectCompletion: ((Result<Void, BLEError>) -> Void)?
     private var writeCompletion: ((Result<Void, BLEError>) -> Void)?
+    private var activeWriteID: UUID?
     private var nextMessageId: UInt16 = 1
     private var pendingConnectedPeripheralID: UUID?
     private var pendingConnectedPeripheralName: String?
@@ -541,10 +542,14 @@ public final class BLEService: NSObject {
             }
 
             // HIGH-1: strong capture — no retain cycle (@MainActor task, singleton service)
+            let writeID = UUID()
+            activeWriteID = writeID
             let timeoutTask = Task { @MainActor in
                 try await Task.sleep(for: .seconds(5))
+                guard self.activeWriteID == writeID else { return }
                 self.writeCompletion?(.failure(.writeTimeout))
                 self.writeCompletion = nil
+                self.activeWriteID = nil
             }
 
             defer { timeoutTask.cancel() }
@@ -665,6 +670,7 @@ public final class BLEService: NSObject {
         handshakeTimeoutTask = nil
         writeCompletion?(.failure(.disconnected))
         writeCompletion = nil
+        activeWriteID = nil
         connectCompletion?(.failure(.connectionFailed(nil)))
         connectCompletion = nil
         securityManager.resetSession()
@@ -842,12 +848,17 @@ extension BLEService: CBPeripheralDelegate {
         error: Error?
     ) {
         Task { @MainActor in
+            guard writeCompletion != nil else {
+                return
+            }
+
             if let error = error {
                 writeCompletion?(.failure(.writeFailed(error)))
             } else {
                 writeCompletion?(.success(()))
             }
             writeCompletion = nil
+            activeWriteID = nil
         }
     }
 
@@ -877,7 +888,9 @@ extension BLEService: CBPeripheralDelegate {
             } catch {
                 ErrorReporter.log(error, context: "BLEService.didUpdateValueFor")
                 connectionState = .error(error.localizedDescription)
-                if requiresSecureChannel, let peripheralID = pendingConnectedPeripheralID {
+                if requiresSecureChannel,
+                   !securityManager.isSessionEstablished,
+                   let peripheralID = pendingConnectedPeripheralID {
                     await deviceIdentityStore.block(peripheralID)
                 }
                 connectCompletion?(.failure(.securityHandshakeFailed(error.localizedDescription)))

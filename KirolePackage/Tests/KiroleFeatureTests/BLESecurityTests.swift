@@ -3,13 +3,14 @@ import Foundation
 import Testing
 @testable import KiroleFeature
 
-@Suite("BLESecurity Tests")
+@Suite("BLESecurity Tests", .serialized)
 struct BLESecurityTests {
     private static let sharedSecret = "kirole-ble-security-test-secret"
 
     @Test("BLE mode uses development transport when shared secret is missing")
     @MainActor
     func developmentModeWithoutSecret() {
+        defer { resetSecret() }
         AppSecrets.configure(
             supabaseURL: nil,
             supabaseAnonKey: nil,
@@ -25,6 +26,7 @@ struct BLESecurityTests {
     @MainActor
     func secureModeWithSecret() {
         configureSecret()
+        defer { resetSecret() }
 
         #expect(BLEService.configuredSecurityMode == .secure)
         #expect(BLEService.shared.securityMode == .secure)
@@ -34,6 +36,7 @@ struct BLESecurityTests {
     @MainActor
     func handshakeAndSecureRoundTrip() throws {
         configureSecret()
+        defer { resetSecret() }
         let manager = BLESecurityManager()
 
         let request = try manager.makeHandshakeRequestPayload()
@@ -54,6 +57,7 @@ struct BLESecurityTests {
     @MainActor
     func forgedSignatureRejected() throws {
         configureSecret()
+        defer { resetSecret() }
         let manager = BLESecurityManager()
 
         let request = try manager.makeHandshakeRequestPayload()
@@ -72,6 +76,7 @@ struct BLESecurityTests {
     @MainActor
     func replayNonceRejected() throws {
         configureSecret()
+        defer { resetSecret() }
         let manager = BLESecurityManager()
 
         let request = try manager.makeHandshakeRequestPayload()
@@ -86,12 +91,64 @@ struct BLESecurityTests {
         }
     }
 
+    @Test("Replay nonce is rejected after session reset")
+    @MainActor
+    func replayNonceRejectedAfterSessionReset() throws {
+        configureSecret()
+        defer { resetSecret() }
+        let manager = BLESecurityManager()
+
+        let request = try manager.makeHandshakeRequestPayload()
+        let response = try makeHandshakeResponse(for: request)
+        try manager.validateHandshakeResponsePayload(response)
+
+        let packet = try manager.securePayload(type: BLEDataType.time.rawValue, payload: Data([0xAA]))
+        _ = try manager.openSecurePayload(packet)
+
+        manager.resetSession()
+        let secondRequest = try manager.makeHandshakeRequestPayload()
+        let secondResponse = try makeHandshakeResponse(for: secondRequest)
+        try manager.validateHandshakeResponsePayload(secondResponse)
+
+        #expect(throws: AppError.self) {
+            _ = try manager.openSecurePayload(packet)
+        }
+    }
+
+    @Test("Secure envelope rejects trailing bytes")
+    @MainActor
+    func secureEnvelopeRejectsTrailingBytes() throws {
+        configureSecret()
+        defer { resetSecret() }
+        let manager = BLESecurityManager()
+
+        let request = try manager.makeHandshakeRequestPayload()
+        let response = try makeHandshakeResponse(for: request)
+        try manager.validateHandshakeResponsePayload(response)
+
+        var packet = try manager.securePayload(type: BLEDataType.weather.rawValue, payload: Data([0x01]))
+        packet.append(0x00)
+
+        #expect(throws: AppError.self) {
+            _ = try BLESecureEnvelope.decode(packet)
+        }
+    }
+
     private func configureSecret() {
         AppSecrets.configure(
             supabaseURL: nil,
             supabaseAnonKey: nil,
             openRouterAPIKey: nil,
             bleSharedSecret: Self.sharedSecret
+        )
+    }
+
+    private func resetSecret() {
+        AppSecrets.configure(
+            supabaseURL: nil,
+            supabaseAnonKey: nil,
+            openRouterAPIKey: nil,
+            bleSharedSecret: nil
         )
     }
 

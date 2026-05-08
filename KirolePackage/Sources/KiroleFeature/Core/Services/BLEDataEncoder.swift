@@ -6,8 +6,27 @@ extension Data {
     /// 追加带长度前缀的字符串数据（截断到指定最大长度）
     mutating func appendString(_ string: String, maxLength: Int) {
         let stringData = string.data(using: .utf8) ?? Data()
-        append(UInt8(Swift.min(stringData.count, maxLength)))
-        append(stringData.prefix(maxLength))
+        let truncatedData = stringData.validUTF8Prefix(maxLength: maxLength)
+        append(UInt8(truncatedData.count))
+        append(truncatedData)
+    }
+}
+
+private extension Data {
+    func validUTF8Prefix(maxLength: Int) -> Data {
+        guard maxLength > 0 else { return Data() }
+        guard count > maxLength else { return self }
+
+        var end = maxLength
+        while end > 0 {
+            let candidate = prefix(end)
+            if String(data: candidate, encoding: .utf8) != nil {
+                return Data(candidate)
+            }
+            end -= 1
+        }
+
+        return Data()
     }
 }
 
@@ -131,12 +150,12 @@ public enum BLEDataEncoder {
         // Page 4: Settlement
         data.append(UInt8(clamping: dayPack.settlementData.tasksCompleted))
         data.append(UInt8(clamping: dayPack.settlementData.tasksTotal))
-        let points = UInt16(min(dayPack.settlementData.pointsEarned, 65535))
+        let points = UInt16(clamping: dayPack.settlementData.pointsEarned)
         data.append(contentsOf: withUnsafeBytes(of: points.bigEndian) { Array($0) })
-        let focusMinutes = UInt16(min(dayPack.settlementData.totalFocusMinutes, 65535))
+        let focusMinutes = UInt16(clamping: dayPack.settlementData.totalFocusMinutes)
         data.append(contentsOf: withUnsafeBytes(of: focusMinutes.bigEndian) { Array($0) })
         data.append(UInt8(clamping: dayPack.settlementData.focusSessionCount))
-        let longestFocus = UInt16(min(dayPack.settlementData.longestFocusMinutes, 65535))
+        let longestFocus = UInt16(clamping: dayPack.settlementData.longestFocusMinutes)
         data.append(contentsOf: withUnsafeBytes(of: longestFocus.bigEndian) { Array($0) })
         data.append(UInt8(clamping: dayPack.settlementData.interruptionCount))
         data.appendString(dayPack.settlementData.summaryMessage, maxLength: 50)
@@ -223,8 +242,8 @@ public enum BLEDataEncoder {
         case .deep:     3
         }
         data.append(phaseByte)
-        data.append(UInt8(min(energyBottles, 255)))
-        let elapsed = UInt16(min(elapsedMinutes, 65535))
+        data.append(UInt8(clamping: energyBottles))
+        let elapsed = UInt16(clamping: elapsedMinutes)
         data.append(contentsOf: withUnsafeBytes(of: elapsed.bigEndian) { Array($0) })
         data.appendString(taskTitle ?? "", maxLength: 40)
         return data

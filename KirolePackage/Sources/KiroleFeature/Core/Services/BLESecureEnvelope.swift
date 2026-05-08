@@ -72,7 +72,7 @@ public struct BLESecureEnvelope: Sendable {
         cursor += 2
 
         let payloadEnd = cursor + Int(payloadLength)
-        guard payloadEnd + signatureLength <= data.count else {
+        guard payloadEnd + signatureLength == data.count else {
             throw AppError.bleSecurity("Secure envelope length mismatch")
         }
 

@@ -23,7 +23,7 @@ public enum BLEEventHandler {
 
         // DeviceWake (0x30) v2.3.0+: first payload byte is battery level
         if message.type == EventLogType.deviceWake.rawByte, !message.payload.isEmpty {
-            service.deviceBatteryLevel = Int(message.payload[0])
+            service.deviceBatteryLevel = min(Int(message.payload[0]), 100)
         }
 
         // Try to parse as an individual device event
@@ -199,17 +199,20 @@ public enum BLEEventHandler {
         var logs: [EventLog] = []
 
         for _ in 0..<count {
-            guard offset < payload.count else { break }
-            guard let recordLength = recordLength(in: payload, offset: offset) else { break }
-            guard payload.count >= offset + recordLength else { break }
+            guard offset < payload.count else { return [] }
+            guard let recordLength = recordLength(in: payload, offset: offset) else { return [] }
+            guard payload.count >= offset + recordLength else { return [] }
 
             let record = payload.subdata(in: offset..<(offset + recordLength))
             if let eventLog = parseEventLogRecord(from: record) {
                 logs.append(eventLog)
+            } else {
+                return []
             }
             offset += recordLength
         }
 
+        guard logs.count == count, offset == payload.count else { return [] }
         return logs
     }
 

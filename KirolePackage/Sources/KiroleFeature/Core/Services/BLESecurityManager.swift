@@ -8,6 +8,7 @@ public final class BLESecurityManager {
         static let responseKind: UInt8 = 0x02
         static let signatureLength = 32
         static let allowedClockSkewSeconds: UInt32 = 120
+        static let maxTrackedIncomingNonces = 512
     }
 
     private var pendingClientNonce: UInt64?
@@ -17,8 +18,8 @@ public final class BLESecurityManager {
 
     public func resetSession() {
         pendingClientNonce = nil
-        seenIncomingNonces.removeAll()
         isSessionEstablished = false
+        pruneExpiredNonces(referenceTimestamp: currentTimestamp())
     }
 
     public func makeHandshakeRequestPayload() throws -> Data {
@@ -118,6 +119,7 @@ public final class BLESecurityManager {
             throw AppError.bleSecurity("Replay packet detected")
         }
         seenIncomingNonces[envelope.nonce] = envelope.issuedAt
+        trimNonceCacheIfNeeded()
 
         return BLEReceivedMessage(type: envelope.payloadType, payload: envelope.payload)
     }
@@ -158,6 +160,21 @@ public final class BLESecurityManager {
             ? referenceTimestamp - Handshake.allowedClockSkewSeconds
             : 0
         seenIncomingNonces = seenIncomingNonces.filter { $0.value >= floor }
+    }
+
+    private func trimNonceCacheIfNeeded() {
+        guard seenIncomingNonces.count > Handshake.maxTrackedIncomingNonces else { return }
+
+        let sortedByTimestamp = seenIncomingNonces.sorted { lhs, rhs in
+            if lhs.value == rhs.value {
+                return lhs.key < rhs.key
+            }
+            return lhs.value < rhs.value
+        }
+        let overflow = seenIncomingNonces.count - Handshake.maxTrackedIncomingNonces
+        for (nonce, _) in sortedByTimestamp.prefix(overflow) {
+            seenIncomingNonces.removeValue(forKey: nonce)
+        }
     }
 
     private func randomNonce() -> UInt64 {
