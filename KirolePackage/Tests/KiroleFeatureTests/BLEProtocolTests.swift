@@ -120,7 +120,7 @@ struct BLEProtocolTests {
         #expect(result == nil)
     }
 
-    @Test("BLE inbound decode prefers chunked packets over simple packets", .disabled("pre-existing failure: securityHandshakeFailed"))
+    @Test("BLE inbound decode prefers chunked packets over simple packets")
     @MainActor
     func inboundDecodePrefersChunkedPackets() throws {
         let payload = Data("chunked-event-log-batch".utf8)
