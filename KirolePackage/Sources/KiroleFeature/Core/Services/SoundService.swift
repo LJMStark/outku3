@@ -54,7 +54,7 @@ public final class SoundService {
     // MARK: - Settings
 
     public var isSoundEnabled: Bool {
-        get { UserDefaults.standard.bool(forKey: Keys.soundEnabled) }
+        get { UserDefaults.standard.object(forKey: Keys.soundEnabled) as? Bool ?? true }
         set {
             UserDefaults.standard.set(newValue, forKey: Keys.soundEnabled)
             if !newValue { stopAll() }
@@ -62,7 +62,10 @@ public final class SoundService {
     }
 
     public var volume: Float {
-        get { min(max(UserDefaults.standard.float(forKey: Keys.soundVolume), 0), 1) }
+        get {
+            let stored = UserDefaults.standard.object(forKey: Keys.soundVolume) as? Float
+            return min(max(stored ?? 0.7, 0), 1)
+        }
         set { UserDefaults.standard.set(min(max(newValue, 0), 1), forKey: Keys.soundVolume) }
     }
 
