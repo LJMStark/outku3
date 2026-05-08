@@ -12,6 +12,7 @@ public struct TaskEditSheet: View {
     @State private var hasDueDate: Bool
     @State private var notes: String
     @State private var isSaving = false
+    @State private var saveError: String?
 
     private var dueDateValue: Binding<Date> {
         Binding(get: { dueDate ?? Date() }, set: { dueDate = $0 })
@@ -95,6 +96,14 @@ public struct TaskEditSheet: View {
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
+            .alert("Save Failed", isPresented: Binding(
+                get: { saveError != nil },
+                set: { if !$0 { saveError = nil } }
+            )) {
+                Button("OK") { saveError = nil }
+            } message: {
+                Text(saveError ?? "")
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -130,7 +139,7 @@ public struct TaskEditSheet: View {
             )
             dismiss()
         } catch {
-            return
+            saveError = error.localizedDescription
         }
     }
 }
