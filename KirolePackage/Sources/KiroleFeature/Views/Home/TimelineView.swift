@@ -46,7 +46,7 @@ struct DayTimelineView: View {
         VStack(spacing: 0) {
             TimelineEventRow(
                 time: AppDateFormatters.time.string(from: sunTimes.sunrise),
-                iconContent: .system("sunrise.fill"),
+                iconContent: .asset("tiko_sunrise"),
                 title: "Sunrise",
                 delay: 0
             )
@@ -76,7 +76,7 @@ struct DayTimelineView: View {
 
             TimelineEventRow(
                 time: AppDateFormatters.time.string(from: sunTimes.sunset),
-                iconContent: .system("sunset.fill"),
+                iconContent: .asset("tiko_sunset"),
                 title: "Sunset",
                 delay: 0
             )
