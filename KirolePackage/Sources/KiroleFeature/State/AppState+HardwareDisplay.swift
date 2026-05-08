@@ -53,6 +53,11 @@ extension AppState {
 
     func handleAppDidBecomeActive(now: Date = Date()) async {
         await registerUsageActivity(now: now)
+        // Re-fetch weather so users who granted location after first launch,
+        // or recovered network after a failed cold-start fetch, see the chip
+        // without having to fully relaunch. WeatherService's 15-minute cache
+        // prevents frequent re-hits to WeatherKit when toggling foreground.
+        await refreshWeather()
         if FocusSessionService.shared.activeSession == nil {
             await syncIdleHardwareDisplay()
         } else {
