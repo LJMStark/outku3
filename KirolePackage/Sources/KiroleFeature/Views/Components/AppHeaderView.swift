@@ -108,7 +108,6 @@ public struct AppHeaderView: View {
 
                 PetTabButton(
                     label: "Kirole",
-                    imageName: appState.userProfile.companionCharacter.heroAssetName(variant: .head),
                     accessibilityLabel: "Pet",
                     accessibilityIdentifier: "appHeader.petTab",
                     isSelected: selectedTab == .pet,
@@ -203,7 +202,6 @@ private struct TabButton: View {
 
 private struct PetTabButton: View {
     let label: String?
-    let imageName: String
     let accessibilityLabel: String
     let accessibilityIdentifier: String
     let isSelected: Bool
@@ -221,7 +219,7 @@ private struct PetTabButton: View {
                     baseColor: baseColor,
                     strokeColor: strokeColor
                 ) {
-                    Image(imageName, bundle: .module)
+                    Image("tiko_head", bundle: .module)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(width: 36, height: 36)

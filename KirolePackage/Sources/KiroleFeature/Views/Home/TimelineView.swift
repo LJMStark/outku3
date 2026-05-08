@@ -321,7 +321,7 @@ struct HaikuSectionView: View {
                                 .accessibilityHidden(true)
                         }
 
-                        Image(appState.userProfile.companionCharacter.heroAssetName(variant: .main), bundle: .module)
+                        Image("tiko_reading", bundle: .module)
                             .resizable()
                             .aspectRatio(contentMode: .fit)
                             .frame(height: HaikuSectionLayout.petArtworkHeight)

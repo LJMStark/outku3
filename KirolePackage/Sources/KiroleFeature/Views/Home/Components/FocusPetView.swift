@@ -1,7 +1,6 @@
 import SwiftUI
 
 public struct FocusPetView: View {
-    @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -44,7 +43,7 @@ public struct FocusPetView: View {
                         .animation(reduceMotion ? nil : .easeInOut(duration: 3.0).repeatForever(autoreverses: true), value: isBreathing)
                 }
 
-                Image(appState.userProfile.companionCharacter.heroAssetName(variant: .main), bundle: .module)
+                Image("tiko_reading")
                     .resizable()
                     .scaledToFit()
                     .frame(width: 200, height: 200)

@@ -18,7 +18,7 @@ public struct CharacterSwitcherSheet: View {
                 .padding(.top, 12)
                 .padding(.bottom, 20)
 
-            Text("切换伙伴")
+            Text("Switch Companion")
                 .font(.system(size: 22, weight: .bold, design: .serif))
                 .foregroundStyle(theme.colors.primaryText)
                 .padding(.bottom, 24)

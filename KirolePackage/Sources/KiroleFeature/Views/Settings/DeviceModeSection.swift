@@ -46,7 +46,7 @@ public struct DeviceModeSection: View {
 
             HStack(spacing: 8) {
                 // Pet Image
-                Image(appState.userProfile.companionCharacter.heroAssetName(variant: .main), bundle: .module)
+                Image("tiko_avatar", bundle: .module)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .frame(width: 100, height: 120)
