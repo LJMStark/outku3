@@ -101,7 +101,6 @@ public final class AppState {
     let appleSyncEngine = AppleSyncEngine.shared
     let notionSyncEngine = NotionSyncEngine.shared
     let taskadeSyncEngine = TaskadeSyncEngine.shared
-    let widgetDataService = WidgetDataService.shared
     #if os(iOS)
     let weatherService = WeatherService.shared
     #endif

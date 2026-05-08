@@ -105,7 +105,6 @@ extension AppState {
 
     func updateStatistics() {
         statistics = taskManager.statistics(tasks: tasks)
-        widgetDataService.updateFromAppState(pet: pet, statistics: statistics)
     }
 
     public func loadTodayHaiku(now: Date = Date()) async {
