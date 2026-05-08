@@ -1,8 +1,8 @@
 # Kirole BLE 通信协议规格文档
 
-**版本:** v2.3.4
+**版本:** v2.3.5
 **更新日期:** 2026-05-08
-**状态:** 草稿
+**状态:** 联调冻结版（完整协议参考）
 
 ---
 
@@ -16,6 +16,9 @@
 6. [页面数据结构](#6-页面数据结构)
 7. [示例数据](#7-示例数据)
 8. [错误处理](#8-错误处理)
+9. [专注时间计算](#9-专注时间计算)
+10. [Spectra 6 像素数据格式](#10-spectra-6-像素数据格式)
+11. [附录 A：Swift 类型参考](#附录-aswift-类型参考)
 
 ---
 
@@ -29,7 +32,13 @@
 - 从设备向 App 接收用户交互事件
 - 实时任务状态同步
 
-### 1.2 修订历史
+### 1.2 阅读顺序
+
+第一次硬件联调请先阅读 `BLE初次联调指南.md`。本文是完整协议参考，不代表第一轮联调要全部实现。
+
+第一轮联调只验证 BLE 广播、连接、基础收发、简单包和 DayPack 分包接收。安全握手、离线批量日志、图片帧、智能提醒、专注状态、TaskInPage 细节页可以后续逐项加入。
+
+### 1.3 修订历史
 
 | 版本 | 日期 | 变更内容 |
 |---------|------------|----------------------------------|
@@ -47,8 +56,9 @@
 | v2.3.2  | 2026-05-08 | 修正：WheelSelect(0x14) 按当前 App 代码仅记录/调试，不回发详情；TaskInPage 仍只由 EnterTaskIn(0x10) 触发 |
 | v2.3.3  | 2026-05-08 | 撤回 v2.3.1 错误修订：Connection Timeout 仍为 15 秒（`BLEService.swift:262` 硬编码），v2.3.1 误把 `scanForDevices(timeout: 10)` 当成连接超时，已恢复 |
 | v2.3.4  | 2026-05-08 | 收紧包解析边界：简单包和 SecureEnvelope 不允许尾部多余字节；字符串按 UTF-8 字节安全截断；BatteryLevel 和数值字段按代码 clamp；nonce 重放记录跨短期重连保留；App 分包重组限制未完成消息数 |
+| v2.3.5  | 2026-05-08 | 补充第一次联调阅读入口、BLE 广播要求、Type 按方向解释规则、分包无 ACK 边界、坏包处理建议、WheelSelect / EnterTaskIn 用户动作边界；标明 Spectra 6 图片帧不属于第一轮联调 |
 
-### 1.3 术语表
+### 1.4 术语表
 
 | 术语 | 定义 |
 |---------------|------------------------------------------------------|
@@ -70,6 +80,8 @@
 Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 ```
 
+**广播要求：** 设备广播包必须包含 Service UUID `0000FFE0-0000-1000-8000-00805F9B34FB`。App 当前只扫描带这个 Service UUID 的外设；如果固件只广播设备名、不广播该 Service UUID，App 将搜不到设备。
+
 ### 2.2 Characteristics
 
 | Characteristic | UUID                                   | 方向 | 属性 |
@@ -84,6 +96,27 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 | Scan Timeout       | 10 秒（`BLEService.scanForDevices(timeout:)` 默认参数） |
 | Connection Timeout | 15 秒（`BLEService.swift:262` 硬编码 `Task.sleep(for: .seconds(15))`，连接成功前未收到 didConnect 即视为超时） |
 | 自动重连 | 启用 |
+
+### 2.4 Type 字节按方向解释
+
+`Type` 字节必须先看方向，再解释含义。固件不能只按 `Type` 判断业务含义。
+
+| 方向 | Characteristic | 解释规则 |
+|------|----------------|----------|
+| App → Device | `FFE1` Write | 使用第 4 节 App → Device 命令表 |
+| Device → App | `FFE2` Notify | 使用第 5 节 Device → App 事件表 |
+
+容易混淆的复用值：
+
+| Type | App → Device | Device → App |
+|------|--------------|--------------|
+| `0x10` | DayPack | EnterTaskIn |
+| `0x11` | TaskInPage | CompleteTask |
+| `0x12` | DeviceMode | SkipTask |
+| `0x13` | SmartReminder | SelectedTaskChanged |
+| `0x14` | FocusStatus | WheelSelect |
+| `0x20` | EventLogRequest | RequestRefresh |
+| `0x21` | 暂无 App 出站业务使用 | EventLogBatch |
 
 ---
 
@@ -144,10 +177,14 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 
 **联调边界：** 分包总数上限为 255。App 侧最多同时保留 8 个未完成 MessageId，单个重组 payload 上限 256 KiB；超过限制的分包会被丢弃。接收端也应做超时和容量上限，避免丢包后长期占用内存；App 侧当前只验证每包 CRC 和完整重组，不发送分包级 ACK。
 
+**丢包处理：** 当前 App 不支持分包 ACK，也不支持单个分包重传。固件接收 App 分包时，如果 CRC 错、长度错、超时或缺包，应丢弃整条未完成消息，等待 App 后续重新发送完整消息。
+
 ### 3.3 安全握手（v2）
 
 当 App 配置了 `BLE_SHARED_SECRET` 时，连接后必须先完成安全握手，握手命令类型为 `0x7F`，未通过握手不得进入业务通信。  
 当未配置密钥时，App 进入 MVP 兼容模式，可直接使用旧协议明文通信用于联调。
+
+第一次硬件联调使用的 App 包如果未配置 `BLE_SHARED_SECRET`，固件先实现明文协议，不需要实现 HMAC 握手。安全握手作为第二阶段联调内容。
 
 - `ClientHello`：`kind(0x01) + clientNonce(8B) + timestamp(4B) + hmac(32B)`
 - `ServerHello`：`kind(0x02) + clientNonce(8B) + serverNonce(8B) + timestamp(4B) + hmac(32B)`
@@ -666,8 +703,9 @@ AA 01 02 Type SceneId PostcardDay QuoteLen Quote AuthorLen Author
 | 1      | ItemId | N bytes     | 选中项 ID（UTF-8） |
 
 **App 响应：**
+- 第一轮联调不要用 `WheelSelect` 打开任务详情。
 - 当前 App 仅记录/调试该事件，不回发 TaskInPage 或事件详情。
-- 若需要打开任务详情并回发 TaskInPage，设备应发送 EnterTaskIn (0x10)。
+- 用户在设备上选中任务并进入详情页时，固件必须发送 EnterTaskIn (0x10)，App 才会回发 TaskInPage (0x11)。
 
 ---
 
@@ -752,6 +790,20 @@ AA 01 02 Type SceneId PostcardDay QuoteLen Quote AuthorLen Author
 
 ---
 
+### 5.16 用户动作与事件映射
+
+| 用户在设备上的动作 | 固件应发送 | App 当前行为 |
+|------------------|------------|--------------|
+| 设备唤醒 | `DeviceWake(0x30)`，payload 带 `BatteryLevel(1B)` | 更新电量，发送 Time，并按需同步数据 |
+| 用户手动刷新 | `RequestRefresh(0x20)` | 触发一次数据同步；2 秒内重复请求会被忽略 |
+| 在任务列表中进入任务详情 | `EnterTaskIn(0x10)`，payload 带 TaskId 和时间戳 | 回发 `TaskInPage(0x11)`，并启动专注会话 |
+| 在任务详情页完成任务 | `CompleteTask(0x11)`，payload 带 TaskId 和时间戳 | App 标记任务完成，结束对应专注会话 |
+| 在任务详情页跳过任务 | `SkipTask(0x12)`，payload 带 TaskId 和时间戳 | 结束对应专注会话，不标记完成 |
+| 普通旋钮确认但不进入任务详情 | `WheelSelect(0x14)` | 只记录/调试，不回发页面数据 |
+| 查看日程详情 | `ViewEventDetail(0x15)` | 当前不回发详情 |
+
+---
+
 ## 6. 页面数据结构
 
 ### 6.1 页面 1：每日开始
@@ -818,50 +870,41 @@ AA 01 02 Type SceneId PostcardDay QuoteLen Quote AuthorLen Author
 
 ## 7. 示例数据
 
-### 7.1 DayPack 示例（Hex）
+### 7.1 DayPack 最小测试向量（Hex）
+
+以下测试向量用于验证字段顺序和长度解析，可作为固件解析器的第一条样例。它不是产品真实文案，只覆盖最小字段。
 
 ```
 Command: 0x10 (DayPack)
 
 Full Packet:
-10 00 C8                              // Type=0x10, Length=200 (example)
+10 00 3A                              // Type=0x10, Length=58
 
 Payload:
-1A 01 1E                              // Date: 2026-01-30
+1A 05 08                              // Date: 2026-05-08
 00                                    // DeviceMode: Interactive
 00                                    // FocusChallengeEnabled: false
 
-// Page 1: Start of Day
-0F 47 6F 6F 64 20 6D 6F 72 6E 69 6E 67 21 20 F0  // "Good morning! " (15 bytes)
-1A 59 6F 75 20 68 61 76 65 20 35 20 74 61 73 6B  // "You have 5 task" (26 bytes)
-73 20 74 6F 64 61 79 2E
-0E 39 3A 30 30 20 54 65 61 6D 20 63 61 6C 6C     // "9:00 Team call" (14 bytes)
-
-// Page 2: Overview
-0C 4E 65 78 74 3A 20 31 30 3A 30 30              // "Next: 10:00" (12 bytes)
-0F 4B 65 65 70 20 67 6F 69 6E 67 21 20 F0 9F 92  // "Keep going! " (15 bytes)
-
-// Top Tasks (3 tasks)
-03                                    // TaskCount: 3
-
-// Task 1
-24 61 62 63 64 65 66 67 68 2D 31 32 33 34 2D 35  // TaskId (36 bytes UUID)
-36 37 38 2D 39 30 61 62 2D 63 64 65 66 67 68 69
-6A 6B 6C 6D
-0C 52 65 76 69 65 77 20 50 52 73                 // "Review PRs" (12 bytes)
-00                                    // IsCompleted: false
-01                                    // Priority: 1
-
-// ... (Task 2, Task 3 similar)
+02 48 69                              // MorningGreeting: "Hi"
+08 4F 6E 65 20 74 61 73 6B            // DailySummary: "One task"
+05 46 6F 63 75 73                     // FirstItem: "Focus"
+00                                    // CurrentScheduleSummary: ""
+06 53 74 61 72 74 2E                  // CompanionPhrase: "Start."
+00                                    // TaskCount: 0
 
 // Page 4: Settlement
-03                                    // TasksCompleted: 3
-05                                    // TasksTotal: 5
-00 32                                 // PointsEarned: 50 (Big Endian)
-12 47 72 65 61 74 20 70 72 6F 67 72 65 73 73 21  // "Great progress!" (18 bytes)
-0E 53 65 65 20 79 6F 75 20 74 6F 6D 6F 72 72 6F  // "See you tomorrow" (14 bytes)
-77 21
+00                                    // TasksCompleted: 0
+01                                    // TasksTotal: 1
+00 00                                 // PointsEarned: 0
+00 00                                 // TotalFocusMinutes: 0
+00                                    // FocusSessionCount: 0
+00 00                                 // LongestFocusMinutes: 0
+00                                    // InterruptionCount: 0
+05 44 6F 6E 65 2E                     // SummaryMessage: "Done."
+09 54 6F 6D 6F 72 72 6F 77 2E         // EncouragementMessage: "Tomorrow."
 ```
+
+如果该 payload 通过分包发送，单包 CRC16-CCITT-FALSE 为 `0x0F50`。
 
 ### 7.2 Event Log 示例（Hex）
 
@@ -954,7 +997,19 @@ Event: 0x16 (ReminderAcknowledged)
 | 无效事件类型 | 忽略未知事件类型 |
 | 格式错误的数据包 | 丢弃并记录错误 |
 
-### 8.3 重试策略
+### 8.3 固件侧建议处理
+
+| 场景 | 固件建议行为 |
+|------|--------------|
+| 收到未知 App→Device type | 忽略该包，不刷新屏幕 |
+| 简单包长度不等于 `3 + Length` | 丢弃该包 |
+| 分包 CRC 错 | 丢弃该分包；如果无法补齐整条消息，超时后丢弃整条消息 |
+| 分包缺包或超时 | 丢弃该 MessageId 下所有已缓存分包 |
+| 分包总数超过 255 | 丢弃 |
+| 明文联调包里收到 `SecureData(0x7E)` | 忽略，除非本轮已启用安全模式 |
+| 安全模式下收到非 `0x7E` / `0x7F` 业务包 | 忽略或断开连接；正式策略以后续安全联调为准 |
+
+### 8.4 重试策略
 
 | 操作 | 最大重试次数 | 退避间隔 |
 |------------------------|-------------|------------------------|
@@ -962,7 +1017,7 @@ Event: 0x16 (ReminderAcknowledged)
 | Connect                | 3           | 1s, 2s, 4s             |
 | Write                  | 2           | 500ms, 1s              |
 
-### 8.4 App 侧写入限流
+### 8.5 App 侧写入限流
 
 App 内置写入速率限制，固件联调时需注意：
 
@@ -973,7 +1028,7 @@ App 内置写入速率限制，固件联调时需注意：
 
 **调试建议**：若发现 App 长时间无响应，可检查是否触发了限流（设备发送频率过高）。
 
-### 8.5 设备信任模型（TOFU）
+### 8.6 设备信任模型（TOFU）
 
 App 采用 **首次连接即信任（Trust On First Use）** 策略：
 
@@ -1036,6 +1091,7 @@ Total Focus Time: 68 minutes
 - 需要用户授权 Screen Time 访问权限
 - 本地存储专注会话数据以支持离线计算
 - 连接时将专注数据同步至云端
+- 离线回放事件只保证任务完成状态能补记；离线期间的专注时间不保证完整计算，因为 App 没有当时的手机解锁数据。
 
 ---
 
@@ -1046,6 +1102,8 @@ Total Focus Time: 68 minutes
 ### 10.1 概述
 
 E-ink 显示屏使用 E Ink Spectra 6 技术，支持 6 种颜色。像素数据采用 4bpp（每像素 4 位）格式编码，每字节打包 2 个像素。
+
+本节仅保留像素编码定义。当前 iOS App 没有正式图片帧业务命令，第一轮 BLE 联调不要求固件实现图片帧接收。
 
 ### 10.2 颜色索引表
 
@@ -1146,7 +1204,7 @@ public enum DeviceMode: String, Codable, Sendable {
 | 文档 | 版本 | 描述 |
 |------|------|------|
 | 硬件需求文档-Hardware-Requirements-Document.md | v0.4 | 硬件电气需求（SoC、显示、电源、电池） |
-| 固件功能规格文档.md | v1.4.0 | 固件功能规格（页面设计、交互流程、伴侣显示系统） |
+| 固件功能规格文档.md | v1.4.1 | 固件功能规格（页面设计、交互流程、伴侣显示系统） |
 
 ---
 
