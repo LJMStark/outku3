@@ -196,37 +196,37 @@ public struct SettingsFocusSection: View {
 
     private var statusTitle: String {
         if appState.focusEnforcementMode == .standard {
-            return "Standard 模式"
+            return "Standard Mode"
         }
         if guardService.authorizationStatus == .approved, guardService.selectedApplicationCount > 0 {
-            return "Deep Focus 已启用"
+            return "Deep Focus Enabled"
         }
-        return "Deep Focus 未启用保护"
+        return "Deep Focus Not Active"
     }
 
     private var statusDescription: String {
         if appState.focusEnforcementMode == .standard {
-            return "基于 BLE 和前后台事件统计专注时长，不会拦截 App。"
+            return "Tracks focus duration via BLE and app state events. No app blocking."
         }
 
         if !guardService.canShowDeepFocusEntry {
-            return "系统能力不可用，已自动回退标准专注。"
+            return "Deep Focus is unavailable on this system. Falling back to Standard."
         }
 
         switch guardService.authorizationStatus {
         case .approved:
             if guardService.selectedApplicationCount > 0 {
-                return "会话期间将屏蔽 \(guardService.selectedApplicationCount) 个分心 App，结束后自动恢复。"
+                return "Blocks \(guardService.selectedApplicationCount) distracting app(s) during sessions. Restored automatically when done."
             }
-            return "请先选择需要屏蔽的分心 App，未选择时会自动回退标准专注。"
+            return "Select distracting apps to block. Without a selection, Standard mode is used."
         case .denied:
-            return "未授予 Screen Time 权限，已自动回退标准专注。"
+            return "Screen Time access was denied. Falling back to Standard mode."
         case .notDetermined:
-            return "请先授予 Screen Time 权限，未授权时会自动回退标准专注。"
+            return "Grant Screen Time access to enable Deep Focus. Standard mode is used until then."
         case .unavailable:
-            return "当前签名未开通 Family Controls 能力，已自动回退标准专注。"
+            return "Family Controls entitlement is not active on this build. Falling back to Standard."
         case .unsupported:
-            return "当前系统不支持 Deep Focus，已自动回退标准专注。"
+            return "Deep Focus is not supported on this system. Falling back to Standard."
         }
     }
 

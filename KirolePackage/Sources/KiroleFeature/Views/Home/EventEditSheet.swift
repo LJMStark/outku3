@@ -98,8 +98,8 @@ public struct EventEditSheet: View {
                     }
                 }
             }
-            .alert("保存失败", isPresented: $showErrorAlert) {
-                Button("确定", role: .cancel) { }
+            .alert("Save Failed", isPresented: $showErrorAlert) {
+                Button("OK", role: .cancel) { }
             } message: {
                 Text(errorMessage)
             }
