@@ -112,6 +112,5 @@ xcrun devicectl device install app --device <DEVICE_ID> \
 
 ## Where to Look Next
 - `AGENTS.md` — full rules, BLE protocol, Joy/Silas/Nova companion IP paradigm, onboarding detail.
-- `SPEC.md` — product specification.
 - `.cursor/rules/*.mdc` — Swift / SwiftUI / Testing / Concurrency / XcodeBuildMCP guidance.
 - `TESTFLIGHT_GUIDE.md`, `TESTFLIGHT_PROGRESS.md` — release workflow state.
