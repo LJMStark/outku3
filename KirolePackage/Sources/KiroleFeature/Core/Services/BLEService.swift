@@ -281,6 +281,20 @@ public final class BLEService: NSObject {
         cleanup()
     }
 
+    public func clearTrustedDevices() async {
+        if connectionState.isConnected {
+            disconnect()
+        } else {
+            cleanup()
+        }
+
+        await deviceIdentityStore.clearDeviceIdentities()
+        lastConnectedDeviceID = nil
+        discoveredDevices = []
+        peripheralCache = [:]
+        packetAssembler = BLEPacketAssembler()
+    }
+
     /// 扫描并连接上次连接的设备，若不可用则连接第一个设备
     public func connectToPreferredDevice(timeout: TimeInterval = 10) async throws {
         let devices = try await scanForDevices(timeout: timeout)

@@ -8,7 +8,15 @@ public actor BLEDeviceIdentityStore {
         static let blockedDeviceIDs = "ble.blocked.device.ids"
     }
 
-    private let defaults = UserDefaults.standard
+    private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
+
+    init(defaultsSuiteName: String) {
+        self.defaults = UserDefaults(suiteName: defaultsSuiteName) ?? .standard
+    }
 
     public func hasTrustedDevices() -> Bool {
         !trustedDeviceIDs().isEmpty
@@ -24,6 +32,10 @@ public actor BLEDeviceIdentityStore {
         defaults.set(Array(trusted), forKey: Keys.trustedDeviceIDs)
     }
 
+    public func trustedDeviceCount() -> Int {
+        trustedDeviceIDs().count
+    }
+
     public func isBlocked(_ id: UUID) -> Bool {
         blockedDeviceIDs().contains(id.uuidString)
     }
@@ -32,6 +44,15 @@ public actor BLEDeviceIdentityStore {
         var blocked = blockedDeviceIDs()
         blocked.insert(id.uuidString)
         defaults.set(Array(blocked), forKey: Keys.blockedDeviceIDs)
+    }
+
+    public func blockedDeviceCount() -> Int {
+        blockedDeviceIDs().count
+    }
+
+    public func clearDeviceIdentities() {
+        defaults.removeObject(forKey: Keys.trustedDeviceIDs)
+        defaults.removeObject(forKey: Keys.blockedDeviceIDs)
     }
 
     private func trustedDeviceIDs() -> Set<String> {
