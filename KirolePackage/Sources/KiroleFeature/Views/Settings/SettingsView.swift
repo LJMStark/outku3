@@ -61,6 +61,9 @@ struct SettingsView: View {
                 companionSection
                     .appearAnimation(delay: 0.25, appeared: appeared)
 
+                SettingsScenesSection()
+                    .appearAnimation(delay: 0.28, appeared: appeared)
+
                 // Other settings moved below
                 SettingsBLESection()
                     .appearAnimation(delay: 0.3, appeared: appeared)
