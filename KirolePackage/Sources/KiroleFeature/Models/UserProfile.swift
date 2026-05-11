@@ -11,6 +11,9 @@ public struct UserProfile: Sendable, Codable, Equatable {
     public var reminderPreference: ReminderPreference?
     public var taskApproach: TaskApproach?
     public var onboardingCompletedAt: Date?
+    /// User's currently picked hardware DisplayScene (e.g. "harbor"). nil → default to harbor on first read.
+    /// Decoupled from `currentScene(for: energyBottles)`: bottles only unlock scenes; this stores the explicit pick.
+    public var selectedSceneId: String?
 
     /// Derived from companionCharacter. Character is the single source of truth.
     public var companionStyle: CompanionStyle {
@@ -25,7 +28,8 @@ public struct UserProfile: Sendable, Codable, Equatable {
         motivationStyle: MotivationStyle? = nil,
         reminderPreference: ReminderPreference? = nil,
         taskApproach: TaskApproach? = nil,
-        onboardingCompletedAt: Date? = nil
+        onboardingCompletedAt: Date? = nil,
+        selectedSceneId: String? = nil
     ) {
         self.workType = workType
         self.primaryGoals = primaryGoals
@@ -35,6 +39,7 @@ public struct UserProfile: Sendable, Codable, Equatable {
         self.reminderPreference = reminderPreference
         self.taskApproach = taskApproach
         self.onboardingCompletedAt = onboardingCompletedAt
+        self.selectedSceneId = selectedSceneId
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -46,6 +51,7 @@ public struct UserProfile: Sendable, Codable, Equatable {
         case reminderPreference
         case taskApproach
         case onboardingCompletedAt
+        case selectedSceneId
     }
 
     public static var `default`: UserProfile {
@@ -64,6 +70,7 @@ public struct UserProfile: Sendable, Codable, Equatable {
         self.reminderPreference = try container.decodeIfPresent(ReminderPreference.self, forKey: .reminderPreference)
         self.taskApproach = try container.decodeIfPresent(TaskApproach.self, forKey: .taskApproach)
         self.onboardingCompletedAt = try container.decodeIfPresent(Date.self, forKey: .onboardingCompletedAt)
+        self.selectedSceneId = try container.decodeIfPresent(String.self, forKey: .selectedSceneId)
     }
 
     /// Map onboarding answers into a UserProfile.
@@ -83,7 +90,8 @@ public struct UserProfile: Sendable, Codable, Equatable {
             motivationStyle: profile.motivationStyle ?? existing.motivationStyle,
             reminderPreference: profile.reminderPreference ?? existing.reminderPreference,
             taskApproach: profile.taskApproach ?? existing.taskApproach,
-            onboardingCompletedAt: profile.onboardingCompletedAt
+            onboardingCompletedAt: profile.onboardingCompletedAt,
+            selectedSceneId: existing.selectedSceneId
         )
     }
 }
