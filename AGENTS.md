@@ -239,10 +239,11 @@ earnedEnergyBottles = calculatedFocusTime 分钟数 ÷ 30  (integer division)
 ```
 A screen unlock mid-session is treated as a **gap break**: only continuous no-unlock segments ≥ 30 min count. Example: 50-minute session with one unlock at minute 25 → both 25-min halves are below threshold → `calculatedFocusTime = 0` → 0 bottles. Threshold constant: `Constants.focusThresholdSeconds = 1800`.
 
-**`DisplayScene` unlocking** (independent from `Pet.Scene`):
+**`DisplayScene` unlocking & manual apply** (independent from `Pet.Scene`):
 - 3 scenes: `harbor` (0x00) | `forest` (0x01) | `nightCity` (0x02).
 - `bottlesPerUnlock = 80` (`DisplayScene.swift:8`). Unlocked count = `1 + floor(energyBottles / 80)` → harbor (default), forest at ≥80, nightCity at ≥160 (~80 hours of pure focus).
-- Cross-threshold celebration only triggers for `newlyUnlocked.last` (`AppState+HardwareDisplay.swift:170-172`) — multi-scene jumps celebrate only the highest one.
+- **Bottles unlock scenes for selection only — hardware does NOT auto-apply.** The user must tap an unlocked tile in `Settings → Scenes` to push it via BLE. The pick persists as `UserProfile.selectedSceneId` and is read by `AppState.currentDisplaySceneId(...)` on every subsequent idle sync (foreground / hardware-wake / focus end). Default when nil is `harbor`.
+- Cross-threshold celebration (`SceneUnlockBanner` 3s + confetti) only triggers for `newlyUnlocked.last` (`AppState+HardwareDisplay.swift:170-172`) — multi-scene jumps celebrate only the highest one. Banner copy says "新场景已解锁 · 去 Settings 应用" to direct the user to apply it.
 
 ### Event → Output Dispatch Map
 The single most useful reference when debugging "which event produces which output". All observable side effects of user/system events flow through `AppState`:

@@ -171,7 +171,7 @@ private struct SceneUnlockBanner: View {
                 .foregroundStyle(theme.colors.accent)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("解锁了新场景")
+                Text("新场景已解锁 · 去 Settings 应用")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(theme.colors.secondaryText)
                 Text(sceneName)

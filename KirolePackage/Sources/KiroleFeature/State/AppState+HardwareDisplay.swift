@@ -42,13 +42,12 @@ extension AppState {
     }
 
     func currentDisplaySceneId(totalEnergyBottles: Int? = nil) async -> String {
-        let bottles: Int
-        if let totalEnergyBottles {
-            bottles = totalEnergyBottles
-        } else {
-            bottles = await localStorage.loadEnergyBottles()
-        }
-        return SceneUnlockService.shared.currentSceneId(energyBottles: bottles)
+        // User's explicit pick from Settings → Scenes wins. nil → harbor (always-unlocked default).
+        // Energy bottles only gate which scenes the Settings UI unlocks for selection — bottles
+        // never auto-apply a scene to hardware. The `totalEnergyBottles` parameter is retained
+        // for call-site compatibility but is intentionally unused.
+        _ = totalEnergyBottles
+        return userProfile.selectedSceneId ?? DisplayScene.harbor.rawValue
     }
 
     func handleAppDidBecomeActive(now: Date = Date()) async {
