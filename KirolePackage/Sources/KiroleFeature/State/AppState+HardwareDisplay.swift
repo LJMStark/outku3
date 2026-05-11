@@ -47,7 +47,19 @@ extension AppState {
         // never auto-apply a scene to hardware. The `totalEnergyBottles` parameter is retained
         // for call-site compatibility but is intentionally unused.
         _ = totalEnergyBottles
-        return userProfile.selectedSceneId ?? DisplayScene.harbor.rawValue
+        guard let stored = userProfile.selectedSceneId else {
+            return DisplayScene.harbor.rawValue
+        }
+        if DisplayScene(rawValue: stored) != nil {
+            return stored
+        }
+        // Stored value doesn't match any known DisplayScene (stale data / version mismatch).
+        // Fall back to harbor so the hardware always gets a valid scene, log so this surfaces.
+        ErrorReporter.log(
+            .sync(component: "DisplayScene", underlying: "unknown selectedSceneId '\(stored)', falling back to harbor"),
+            context: "AppState.currentDisplaySceneId"
+        )
+        return DisplayScene.harbor.rawValue
     }
 
     func handleAppDidBecomeActive(now: Date = Date()) async {
