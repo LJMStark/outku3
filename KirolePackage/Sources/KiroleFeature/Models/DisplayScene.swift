@@ -47,6 +47,13 @@ public enum DisplayScene: String, CaseIterable, Sendable, Codable {
         }
     }
 
+    /// Energy bottles required to unlock this scene. Derived from order in `allCases`
+    /// so it stays in sync with `unlockedScenes(for:)` — adding a 4th scene only requires
+    /// adding the case, no formula updates.
+    public var unlockThreshold: Int {
+        (Self.allCases.firstIndex(of: self) ?? 0) * Self.bottlesPerUnlock
+    }
+
     public var displayName: String {
         switch self {
         case .harbor: return "港湾"

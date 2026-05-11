@@ -55,9 +55,7 @@ public struct SettingsScenesSection: View {
     }
 
     private func progress(for scene: DisplayScene) -> SceneTileProgress {
-        let idx = DisplayScene.allCases.firstIndex(of: scene) ?? 0
-        let threshold = idx * DisplayScene.bottlesPerUnlock
-        return SceneTileProgress(current: energyBottles, threshold: threshold)
+        SceneTileProgress(current: energyBottles, threshold: scene.unlockThreshold)
     }
 
     @MainActor
