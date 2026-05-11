@@ -320,6 +320,7 @@ private struct DebugSection: View {
     @Environment(AuthManager.self) private var authManager
     @Environment(ThemeManager.self) private var theme
     @State private var showResetConfirm = false
+    @State private var energyBottles: Int = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -389,6 +390,10 @@ private struct DebugSection: View {
 
                 Divider()
 
+                forceDisplaySceneBlock
+
+                Divider()
+
                 // Reset Onboarding
                 Button {
                     showResetConfirm = true
@@ -426,6 +431,74 @@ private struct DebugSection: View {
                     .stroke(Color(hex: "FFE69C"), lineWidth: 1)
             )
         }
+        .task {
+            energyBottles = await LocalStorage.shared.loadEnergyBottles()
+        }
+    }
+
+    private var forceDisplaySceneBlock: some View {
+        let currentScene = DisplayScene.currentScene(for: energyBottles)
+
+        return VStack(alignment: .leading, spacing: 8) {
+            Text("Force Display Scene")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(theme.colors.primaryText)
+
+            Text("Current: \(englishLabel(for: currentScene)) · \(energyBottles) bottles")
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(Color(hex: "6B7280"))
+
+            HStack(spacing: 8) {
+                ForEach(DisplayScene.allCases, id: \.self) { scene in
+                    Button {
+                        Task { await debugForceScene(scene) }
+                    } label: {
+                        Text(englishLabel(for: scene))
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(scene == currentScene ? theme.colors.accent : Color(hex: "9CA3AF"))
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("强制切换到 \(englishLabel(for: scene)) 场景")
+                    .accessibilityIdentifier("Debug_ForceScene_\(scene.rawValue)")
+                }
+            }
+        }
+    }
+
+    private func englishLabel(for scene: DisplayScene) -> String {
+        switch scene {
+        case .harbor: return "Harbor"
+        case .forest: return "Forest"
+        case .nightCity: return "Night City"
+        }
+    }
+
+    @MainActor
+    private func debugForceScene(_ scene: DisplayScene) async {
+        if BLEService.shared.connectionState.isConnected {
+            do {
+                try await BLEService.shared.sendDisplayScene(scene)
+                appState.lastError = nil
+            } catch {
+                appState.lastError = "Force scene failed: \(error.localizedDescription)"
+            }
+        } else {
+            appState.lastError = "Force scene: BLE not connected (Simulator only)"
+        }
+
+        if !SimulatorBridge.shared.isConnected {
+            SimulatorBridge.shared.connect()
+        }
+        SimulatorBridge.shared.sendPetStatus(
+            petName: appState.userProfile.companionCharacter.displayName,
+            petMood: appState.pet.mood.rawValue,
+            sceneId: scene.rawValue,
+            characterId: appState.userProfile.companionCharacter.rawValue
+        )
     }
 }
 
