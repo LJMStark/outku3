@@ -218,6 +218,8 @@ public struct AttentionSummary: Codable, Sendable {
 /// 专注时间统计
 public struct FocusStatistics: Codable, Sendable {
     public var todayFocusTime: TimeInterval
+    public var pastWeekFocusTime: TimeInterval
+    public var last30DaysFocusTime: TimeInterval
     public var todaySessions: Int
     public var protectedSessionCount: Int
     public var averageSessionMinutes: Int
@@ -228,6 +230,8 @@ public struct FocusStatistics: Codable, Sendable {
 
     public init(
         todayFocusTime: TimeInterval = 0,
+        pastWeekFocusTime: TimeInterval = 0,
+        last30DaysFocusTime: TimeInterval = 0,
         todaySessions: Int = 0,
         protectedSessionCount: Int = 0,
         averageSessionMinutes: Int = 0,
@@ -237,6 +241,8 @@ public struct FocusStatistics: Codable, Sendable {
         focusTrendDirection: TrendDirection = .stable
     ) {
         self.todayFocusTime = todayFocusTime
+        self.pastWeekFocusTime = pastWeekFocusTime
+        self.last30DaysFocusTime = last30DaysFocusTime
         self.todaySessions = todaySessions
         self.protectedSessionCount = protectedSessionCount
         self.averageSessionMinutes = averageSessionMinutes

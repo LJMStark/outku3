@@ -249,8 +249,30 @@ public final class FocusSessionService {
         )
 
         Task {
-            let trend = await computeTrendDirection()
-            statistics.focusTrendDirection = trend
+            async let trend = computeTrendDirection()
+            async let historicalTimes = computeHistoricalFocusTimes()
+            let (resolvedTrend, (week, month)) = await (trend, historicalTimes)
+            statistics.focusTrendDirection = resolvedTrend
+            statistics.pastWeekFocusTime = week
+            statistics.last30DaysFocusTime = month
+        }
+    }
+
+    private func computeHistoricalFocusTimes() async -> (week: TimeInterval, month: TimeInterval) {
+        guard persistenceEnabled else { return (0, 0) }
+        do {
+            let monthSessions = try await localStorage.loadFocusSessionsForPastDays(30)
+            let cutoff7 = Calendar.current.date(byAdding: .day, value: -7, to: Calendar.current.startOfDay(for: Date())) ?? .distantPast
+            let week = monthSessions
+                .filter { $0.startTime >= cutoff7 }
+                .compactMap(\.calculatedFocusTime)
+                .reduce(0, +)
+            let month = monthSessions
+                .compactMap(\.calculatedFocusTime)
+                .reduce(0, +)
+            return (week, month)
+        } catch {
+            return (0, 0)
         }
     }
 

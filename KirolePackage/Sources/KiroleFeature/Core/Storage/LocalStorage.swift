@@ -322,6 +322,19 @@ public actor LocalStorage {
         return try load([FocusSession].self, from: "focus_sessions_\(dateKey).json")
     }
 
+    /// Loads sessions for the past `count` days (day -1 through day -count) in one actor call.
+    public func loadFocusSessionsForPastDays(_ count: Int) throws -> [FocusSession] {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        var result: [FocusSession] = []
+        for offset in 1...count {
+            guard let date = calendar.date(byAdding: .day, value: -offset, to: today) else { continue }
+            let sessions = (try? loadFocusSessionsForDate(date)) ?? []
+            result.append(contentsOf: sessions)
+        }
+        return result
+    }
+
     public func saveActiveFocusSession(_ session: FocusSession) throws {
         try save(session, to: "focus_session_active.json")
     }
