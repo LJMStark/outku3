@@ -46,7 +46,7 @@ public enum CompanionCharacter: String, CaseIterable, Sendable, Codable {
         /// Joy and Nova currently reuse the legacy tiko_sunset art as placeholder.
         case sunset
         /// Profile card pose used exclusively in PetStatusView.
-        /// Only Joy has dedicated art; Silas and Nova fall back to `.main`.
+        /// All characters share joy-profile until dedicated per-character art ships.
         case profile
     }
 
@@ -61,7 +61,7 @@ public enum CompanionCharacter: String, CaseIterable, Sendable, Codable {
         case .reading: return "\(rawValue)-reading"
         case .sunrise: return "\(rawValue)-sunrise"
         case .sunset: return "\(rawValue)-sunset"
-        case .profile: return self == .joy ? "joy-profile" : "\(rawValue)-main"
+        case .profile: return "joy-profile"
         }
     }
 }
