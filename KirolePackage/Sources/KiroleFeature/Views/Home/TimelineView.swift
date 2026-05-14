@@ -36,6 +36,7 @@ struct DayTimelineView: View {
     var showPet: Bool = false
 
     @Environment(ThemeManager.self) private var theme
+    @Environment(AppState.self) private var appState
 
     private var sunTimes: SunTimes { .forDate(date) }
 
@@ -43,10 +44,11 @@ struct DayTimelineView: View {
     private let petInsertAfter = 4
 
     var body: some View {
+        let companion = appState.userProfile.companionCharacter
         VStack(spacing: 0) {
             TimelineEventRow(
                 time: AppDateFormatters.time.string(from: sunTimes.sunrise),
-                iconContent: .asset("tiko_sunrise"),
+                iconContent: .asset(companion.heroAssetName(variant: .sunrise)),
                 title: "Sunrise",
                 delay: 0
             )
@@ -76,7 +78,7 @@ struct DayTimelineView: View {
 
             TimelineEventRow(
                 time: AppDateFormatters.time.string(from: sunTimes.sunset),
-                iconContent: .asset("tiko_sunset"),
+                iconContent: .asset(companion.heroAssetName(variant: .sunset)),
                 title: "Sunset",
                 delay: 0
             )

@@ -39,6 +39,12 @@ public enum CompanionCharacter: String, CaseIterable, Sendable, Codable {
         /// Reading/idle pose used in Timeline haiku section and Focus mode.
         /// Silas and Nova use Joy's asset as placeholder until dedicated art ships.
         case reading
+        /// Sunrise marker icon used in the Timeline header row.
+        /// Joy and Nova currently reuse the legacy tiko_sunrise art as placeholder.
+        case sunrise
+        /// Sunset marker icon used in the Timeline footer row.
+        /// Joy and Nova currently reuse the legacy tiko_sunset art as placeholder.
+        case sunset
     }
 
     /// Returns the asset name to load via `Image(name, bundle: .module)`.
@@ -50,6 +56,8 @@ public enum CompanionCharacter: String, CaseIterable, Sendable, Codable {
         case .head: return "\(rawValue)-head"
         case .scene: return "\(rawValue)-scene"
         case .reading: return "\(rawValue)-reading"
+        case .sunrise: return "\(rawValue)-sunrise"
+        case .sunset: return "\(rawValue)-sunset"
         }
     }
 }
