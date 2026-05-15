@@ -78,12 +78,20 @@ SwiftUI with **Model-View only** — no ViewModels. Tab-based nav via `AppState.
 ### CompanionCharacter Image Asset Naming
 Assets live in `Resources/Media.xcassets/<name>.imageset/`. Naming convention: `<rawValue>-<variant>` where `rawValue` is `joy` / `silas` / `nova`.
 
-Current variants: `main`, `head`, `profile`, `reading`, `sunrise`, `sunset`, `scene`.
+Variants: `main`, `head`, `reading`, `profile`, `sunrise`, `sunset`, `scene`.
 
-- Each character has its own imageset per variant: `joy-reading`, `silas-reading`, `nova-reading`.
-- Assign art to the correct character. Do not place Silas art in `joy-*.imageset` or vice versa.
-- Joy's `.reading` variant currently falls back to `joy-main` (no dedicated reading art yet).
-- Joy's `.profile` variant uses `joy-profile` (shared by all characters until per-character art ships).
+**Always assign art to the correct character's imageset. Never place Silas art in `joy-*` or vice versa — this has caused multiple rollback commits.**
+
+Current per-variant state (source of truth: `CompanionCharacter.heroAssetName(variant:)`):
+
+| Variant | Joy | Silas | Nova |
+|---------|-----|-------|------|
+| `.reading` | `joy-reading-2.png` (575KB) — timeline & focus pose | `silas-reading.png` (754KB) | `nova-reading.png` |
+| `.profile` | falls back to `joy-main` (no dedicated art yet) | `silas-profile.png` (46KB) | falls back to `nova-main` |
+| `.main` | `joy-main.png` — standing pose; **not** used on the home timeline | `silas-main.png` | `nova-main.png` |
+| `.sunrise`/`.sunset` | `joy-sunrise/sunset.png` | `silas-sunrise/sunset.png` | `nova-sunrise/sunset.png` |
+
+The home timeline pet embed and Focus mode both use `.reading`. PetStatusView uses `.profile`.
 
 ## Hard Constraints (do not violate)
 - NO ViewModels, NO XCTest (use Swift Testing: `import Testing`, `@Test`, `#expect`), NO CoreData/CloudKit, NO Combine unless strictly required.
