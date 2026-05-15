@@ -148,12 +148,23 @@ xcodebuild -workspace Kirole.xcworkspace -scheme Kirole \
   -only-testing:KiroleFeatureTests/MyTestSuite/testMethod
 ```
 
-### TestFlight Release Notes
+### TestFlight Release (Full Pipeline)
 ```bash
-# Update "What to Test" for the latest build (credentials in fastlane/.env)
+# Full release: auto-increment build → archive → upload → set notes → distribute external group
+# /release slash command (auto-generates English notes from git log, uses Haiku model)
+/release
+
+# Or via fastlane directly (English notes required; zh_text optional)
+fastlane ios release text:"Bug fixes and UI improvements"
+fastlane ios release text:"English notes" zh_text:"中文说明"
+
+# Notes-only update (no build, no distribution)
 fastlane ios notes text:"说明内容"
-fastlane ios notes file:fastlane/release_notes.txt
 ```
+
+Pipeline steps (automated): `increment_build_number` → `gym` (archive ~3 min) → `upload_to_testflight` (processing ~5 min) → set en-US + zh-Hans notes → distribute to external group **kirole**.
+
+Credentials: `fastlane/.env` (git-ignored) — copy from `fastlane/.env.template` and fill `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_PATH`.
 
 ### Real Device Install
 ```bash

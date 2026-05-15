@@ -5,10 +5,56 @@ default_platform(:ios)
 BUNDLE_ID = "com.kirole.app"
 
 platform :ios do
-  # Usage:
-  #   bundle exec fastlane ios notes text:"说明内容"
-  #   bundle exec fastlane ios notes file:fastlane/release_notes.txt
-  desc "Update TestFlight What to Test for the latest build"
+  desc "Full pipeline: increment build → archive → upload → set notes → distribute to external groups"
+  lane :release do |options|
+    en_text = resolve_notes(options)
+
+    # 1. Bump build number
+    new_build = increment_build_number(xcodeproj: "Kirole.xcodeproj")
+    UI.message("▶ Build number → #{new_build}")
+
+    # 2. Archive + export IPA (Automatic Signing switches to Distribution cert)
+    gym(
+      workspace:     "Kirole.xcworkspace",
+      scheme:        "Kirole",
+      export_method: "app-store"
+    )
+
+    # 3. Upload to TestFlight and wait for Apple processing
+    api_key = app_store_connect_api_key(
+      key_id:       ENV.fetch("ASC_KEY_ID")   { UI.user_error!("ASC_KEY_ID not set") },
+      issuer_id:    ENV.fetch("ASC_ISSUER_ID") { UI.user_error!("ASC_ISSUER_ID not set") },
+      key_filepath: ENV.fetch("ASC_KEY_PATH")  { UI.user_error!("ASC_KEY_PATH not set") }
+    )
+    upload_to_testflight(
+      api_key:                           api_key,
+      skip_waiting_for_build_processing: false,
+      distribute_external:               false
+    )
+
+    # 4. Set localized notes + distribute via Spaceship
+    Spaceship::ConnectAPI.token = asc_token
+    app   = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
+    build = latest_build(app)
+
+    upsert_localization(build, "en-US", en_text)
+    UI.message("✓ English notes set")
+
+    zh_text = options[:zh_text]
+    if zh_text.nil? && options[:zh_file]
+      path = File.expand_path(options[:zh_file])
+      zh_text = File.read(path).strip if File.exist?(path)
+    end
+    if zh_text && !zh_text.empty?
+      upsert_localization(build, "zh-Hans", zh_text)
+      UI.message("✓ Chinese notes set")
+    end
+
+    distribute_to_external_groups(app, build)
+    UI.success("Done — build #{new_build} released to external testers")
+  end
+
+  desc "Update TestFlight What to Test notes only (zh-Hans)"
   lane :notes do |options|
     text = resolve_notes(options)
 
@@ -20,7 +66,7 @@ platform :ios do
 
     app_version = build.pre_release_version ? build.pre_release_version.version : "?"
     UI.message("Updating notes for v#{app_version} (build #{build.version})")
-    update_localizations(build, text)
+    upsert_localization(build, "zh-Hans", text)
     UI.success("Done — v#{app_version}(#{build.version}) notes updated")
   end
 end
@@ -43,7 +89,7 @@ def asc_token
   Spaceship::ConnectAPI::Token.create(
     key_id:    ENV.fetch("ASC_KEY_ID")   { UI.user_error!("ASC_KEY_ID not set") },
     issuer_id: ENV.fetch("ASC_ISSUER_ID") { UI.user_error!("ASC_ISSUER_ID not set") },
-    filepath:  ENV.fetch("ASC_KEY_PATH") { UI.user_error!("ASC_KEY_PATH not set") }
+    filepath:  ENV.fetch("ASC_KEY_PATH")  { UI.user_error!("ASC_KEY_PATH not set") }
   )
 end
 
@@ -57,15 +103,14 @@ def latest_build(app)
   builds.first
 end
 
-def update_localizations(build, text)
+def upsert_localization(build, locale, text)
   client = Spaceship::ConnectAPI
-  locs = client.get_beta_build_localizations(filter: { build: build.id, locale: "zh-Hans" })
-            .all_pages.flat_map(&:to_models)
-
+  locs = client.get_beta_build_localizations(filter: { build: build.id, locale: locale })
+               .all_pages.flat_map(&:to_models)
   if locs.empty?
     client.post_beta_build_localizations(
       build_id:   build.id,
-      attributes: { locale: "zh-Hans", whatsNew: text }
+      attributes: { locale: locale, whatsNew: text }
     )
   else
     client.patch_beta_build_localizations(
@@ -73,4 +118,23 @@ def update_localizations(build, text)
       attributes:      { whatsNew: text }
     )
   end
+end
+
+def distribute_to_external_groups(app, build)
+  client     = Spaceship::ConnectAPI
+  all_groups = client.get_beta_groups(filter: { app: app.id })
+                     .all_pages.flat_map(&:to_models)
+  external   = all_groups.reject(&:is_internal_group)
+
+  if external.empty?
+    UI.important("No external beta groups found — skipping distribution")
+    return
+  end
+
+  UI.message("Adding to external groups: #{external.map(&:name).join(', ')}")
+  client.add_beta_groups_to_build(
+    build_id:       build.id,
+    beta_group_ids: external.map(&:id)
+  )
+  UI.message("✓ Distribution submitted (external review starts if needed)")
 end
