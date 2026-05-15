@@ -1,0 +1,69 @@
+require "spaceship"
+
+default_platform(:ios)
+
+BUNDLE_ID = "com.kirole.app"
+
+platform :ios do
+  # Usage:
+  #   bundle exec fastlane ios notes text:"说明内容"
+  #   bundle exec fastlane ios notes file:fastlane/release_notes.txt
+  desc "Update TestFlight What to Test for the latest build"
+  lane :notes do |options|
+    text = resolve_notes(options)
+
+    token = asc_token
+    Spaceship::ConnectAPI.token = token
+
+    app   = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
+    build = latest_build(app)
+
+    UI.message("Updating notes for #{build.version} (#{build.build_number})")
+    update_localizations(build, text)
+    UI.success("Done — build #{build.version}(#{build.build_number}) notes updated")
+  end
+end
+
+# ── helpers ──────────────────────────────────────────────────────────────────
+
+def resolve_notes(options)
+  if options[:file]
+    path = File.expand_path(options[:file])
+    UI.user_error!("File not found: #{path}") unless File.exist?(path)
+    File.read(path).strip
+  elsif options[:text]
+    options[:text].strip
+  else
+    UI.user_error!('Pass text:"..." or file:"path/to/notes.txt"')
+  end
+end
+
+def asc_token
+  Spaceship::ConnectAPI::Token.create(
+    key_id:    ENV.fetch("ASC_KEY_ID")      { UI.user_error!("ASC_KEY_ID not set") },
+    issuer_id: ENV.fetch("ASC_ISSUER_ID")   { UI.user_error!("ASC_ISSUER_ID not set") },
+    key:       ENV.fetch("ASC_KEY_CONTENT") { UI.user_error!("ASC_KEY_CONTENT not set") }
+  )
+end
+
+def latest_build(app)
+  builds = Spaceship::ConnectAPI::Build.all(
+    filter: { app: app.id, expired: false },
+    sort:   "-uploadedDate"
+  )
+  UI.user_error!("No builds found for #{BUNDLE_ID}") if builds.empty?
+  builds.first
+end
+
+def update_localizations(build, text)
+  locs = build.get_beta_build_localizations(filter: { locale: "zh-Hans" })
+  if locs.empty?
+    Spaceship::ConnectAPI::BetaBuildLocalization.create(
+      build_id:  build.id,
+      locale:    "zh-Hans",
+      whats_new: text
+    )
+  else
+    locs.first.update(attributes: { whatsNew: text })
+  end
+end
