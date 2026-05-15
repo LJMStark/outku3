@@ -37,7 +37,6 @@ public enum CompanionCharacter: String, CaseIterable, Sendable, Codable {
         /// Only Joy currently has a dedicated scene asset; other characters fall back to `.main`.
         case scene
         /// Reading/idle pose used in Timeline haiku section and Focus mode.
-        /// Silas and Nova use Joy's asset as placeholder until dedicated art ships.
         case reading
         /// Sunrise marker icon used in the Timeline header row.
         /// Joy and Nova currently reuse the legacy tiko_sunrise art as placeholder.
@@ -46,7 +45,6 @@ public enum CompanionCharacter: String, CaseIterable, Sendable, Codable {
         /// Joy and Nova currently reuse the legacy tiko_sunset art as placeholder.
         case sunset
         /// Profile card pose used exclusively in PetStatusView.
-        /// All characters share joy-profile until dedicated per-character art ships.
         case profile
     }
 
@@ -58,10 +56,14 @@ public enum CompanionCharacter: String, CaseIterable, Sendable, Codable {
         case .main: return "\(rawValue)-main"
         case .head: return "\(rawValue)-head"
         case .scene: return "\(rawValue)-scene"
-        case .reading: return self == .joy ? "\(rawValue)-main" : "\(rawValue)-reading"
+        case .reading: return "\(rawValue)-reading"
         case .sunrise: return "\(rawValue)-sunrise"
         case .sunset: return "\(rawValue)-sunset"
-        case .profile: return "joy-profile"
+        case .profile:
+            switch self {
+            case .silas: return "silas-profile"
+            default: return "\(rawValue)-main"
+            }
         }
     }
 }
