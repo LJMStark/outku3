@@ -58,7 +58,7 @@ public enum CompanionCharacter: String, CaseIterable, Sendable, Codable {
         case .main: return "\(rawValue)-main"
         case .head: return "\(rawValue)-head"
         case .scene: return "\(rawValue)-scene"
-        case .reading: return "\(rawValue)-reading"
+        case .reading: return self == .joy ? "\(rawValue)-main" : "\(rawValue)-reading"
         case .sunrise: return "\(rawValue)-sunrise"
         case .sunset: return "\(rawValue)-sunset"
         case .profile: return "joy-profile"
