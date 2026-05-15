@@ -18,9 +18,10 @@ platform :ios do
     app   = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
     build = latest_build(app)
 
-    UI.message("Updating notes for #{build.version} (#{build.build_number})")
+    app_version = build.pre_release_version ? build.pre_release_version.version : "?"
+    UI.message("Updating notes for v#{app_version} (build #{build.version})")
     update_localizations(build, text)
-    UI.success("Done — build #{build.version}(#{build.build_number}) notes updated")
+    UI.success("Done — v#{app_version}(#{build.version}) notes updated")
   end
 end
 
@@ -40,30 +41,36 @@ end
 
 def asc_token
   Spaceship::ConnectAPI::Token.create(
-    key_id:    ENV.fetch("ASC_KEY_ID")      { UI.user_error!("ASC_KEY_ID not set") },
-    issuer_id: ENV.fetch("ASC_ISSUER_ID")   { UI.user_error!("ASC_ISSUER_ID not set") },
-    key:       ENV.fetch("ASC_KEY_CONTENT") { UI.user_error!("ASC_KEY_CONTENT not set") }
+    key_id:    ENV.fetch("ASC_KEY_ID")   { UI.user_error!("ASC_KEY_ID not set") },
+    issuer_id: ENV.fetch("ASC_ISSUER_ID") { UI.user_error!("ASC_ISSUER_ID not set") },
+    filepath:  ENV.fetch("ASC_KEY_PATH") { UI.user_error!("ASC_KEY_PATH not set") }
   )
 end
 
 def latest_build(app)
   builds = Spaceship::ConnectAPI::Build.all(
-    filter: { app: app.id, expired: false },
-    sort:   "-uploadedDate"
+    app_id: app.id,
+    sort:   "-uploadedDate",
+    limit:  1
   )
   UI.user_error!("No builds found for #{BUNDLE_ID}") if builds.empty?
   builds.first
 end
 
 def update_localizations(build, text)
-  locs = build.get_beta_build_localizations(filter: { locale: "zh-Hans" })
+  client = Spaceship::ConnectAPI
+  locs = client.get_beta_build_localizations(filter: { build: build.id, locale: "zh-Hans" })
+            .all_pages.flat_map(&:to_models)
+
   if locs.empty?
-    Spaceship::ConnectAPI::BetaBuildLocalization.create(
-      build_id:  build.id,
-      locale:    "zh-Hans",
-      whats_new: text
+    client.post_beta_build_localizations(
+      build_id:   build.id,
+      attributes: { locale: "zh-Hans", whatsNew: text }
     )
   else
-    locs.first.update(attributes: { whatsNew: text })
+    client.patch_beta_build_localizations(
+      localization_id: locs.first.id,
+      attributes:      { whatsNew: text }
+    )
   end
 end
