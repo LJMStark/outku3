@@ -15,13 +15,21 @@ For _fastlane_ installation instructions, see [Installing _fastlane_](https://do
 
 ## iOS
 
+### ios release
+
+```sh
+[bundle exec] fastlane ios release
+```
+
+Full pipeline: increment build → archive → upload → set notes → distribute to external groups
+
 ### ios notes
 
 ```sh
 [bundle exec] fastlane ios notes
 ```
 
-Update TestFlight What to Test for the latest build
+Update TestFlight What to Test notes only (zh-Hans)
 
 ----
 
