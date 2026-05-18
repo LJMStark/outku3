@@ -95,6 +95,47 @@ public struct AIContext: Sendable {
         self.psychologicalObjective = psychologicalObjective
         self.userDefinedLearnText = userDefinedLearnText
     }
+
+    func replacing(recentTexts: [String]) -> AIContext {
+        replacing(
+            recentCompletionRate: recentCompletionRate,
+            behaviorSummary: behaviorSummary,
+            recentTexts: recentTexts
+        )
+    }
+
+    func replacing(
+        recentCompletionRate: Double,
+        behaviorSummary: UserBehaviorSummary?,
+        recentTexts: [String]
+    ) -> AIContext {
+        AIContext(
+            companionCharacter: companionCharacter,
+            intimacyStage: intimacyStage,
+            workType: workType,
+            primaryGoals: primaryGoals,
+            petName: petName,
+            petMood: petMood,
+            currentTime: currentTime,
+            tasksCompletedToday: tasksCompletedToday,
+            totalTasksToday: totalTasksToday,
+            eventsToday: eventsToday,
+            recentCompletionRate: recentCompletionRate,
+            behaviorSummary: behaviorSummary,
+            recentTexts: recentTexts,
+            focusTimeToday: focusTimeToday,
+            energyBottles: energyBottles,
+            currentSceneName: currentSceneName,
+            hardwareConnected: hardwareConnected,
+            nextAgendaItem: nextAgendaItem,
+            activeTaskTitle: activeTaskTitle,
+            topTaskTitles: topTaskTitles,
+            episodicMemories: episodicMemories,
+            dimensionalEmotion: dimensionalEmotion,
+            psychologicalObjective: psychologicalObjective,
+            userDefinedLearnText: userDefinedLearnText
+        )
+    }
 }
 
 // MARK: - AI Interaction

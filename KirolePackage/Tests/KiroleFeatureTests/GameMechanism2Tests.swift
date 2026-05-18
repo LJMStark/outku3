@@ -101,6 +101,44 @@ struct GameMechanism2Tests {
         #expect(fileManager.fileExists(atPath: profileURL.path))
     }
 
+    @Test("Rapid development storage reset clears core persisted files")
+    func rapidDevelopmentStorageResetClearsCoreFiles() throws {
+        let fileManager = FileManager.default
+        let documentsDirectory = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let defaultsSuite = "LocalStorageReset-\(UUID().uuidString)"
+        let userDefaults = try #require(UserDefaults(suiteName: defaultsSuite))
+        let fileNames = [
+            "tasks.json",
+            "events.json",
+            "ai_interactions.json",
+            "focus_session_active.json",
+            "shared_companion_dialogue.json",
+            "avatar.dat",
+            "avatar_pixels.dat",
+        ]
+        defer {
+            try? fileManager.removeItem(at: documentsDirectory)
+            userDefaults.removePersistentDomain(forName: defaultsSuite)
+        }
+
+        try fileManager.createDirectory(at: documentsDirectory, withIntermediateDirectories: true)
+        for fileName in fileNames {
+            try Data("fixture".utf8).write(to: documentsDirectory.appendingPathComponent(fileName))
+        }
+
+        let didReset = try LocalStorage.resetForRapidDevelopmentIfNeeded(
+            currentSchemaVersion: LocalStorage.currentDevelopmentStorageSchemaVersion,
+            userDefaults: userDefaults,
+            fileManager: fileManager,
+            documentsDirectory: documentsDirectory
+        )
+
+        #expect(didReset)
+        for fileName in fileNames {
+            #expect(!fileManager.fileExists(atPath: documentsDirectory.appendingPathComponent(fileName).path))
+        }
+    }
+
     @Test("Onboarding profile maps character selection and resets stage on IP switch")
     func onboardingProfileMapsToProductIPs() {
         let existing = UserProfile(

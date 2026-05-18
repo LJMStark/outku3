@@ -67,6 +67,78 @@ import Foundation
     #expect(context.recentTexts.count == 2)
 }
 
+@Test func testAIContextReplacingOnlyUpdatesRequestedFields() async throws {
+    let originalSummary = UserBehaviorSummary(
+        weeklyCompletionRates: [0.3],
+        preferredWorkHours: WorkHourRange(start: 8, end: 16),
+        averageDailyTasks: 4,
+        topTaskCategories: ["Write"]
+    )
+    let updatedSummary = UserBehaviorSummary(
+        weeklyCompletionRates: [0.9],
+        preferredWorkHours: WorkHourRange(start: 10, end: 18),
+        averageDailyTasks: 7,
+        topTaskCategories: ["Review"]
+    )
+    let original = AIContext(
+        companionCharacter: .nova,
+        intimacyStage: .closeFriend,
+        workType: .freelancer,
+        primaryGoals: [.focus, .productivity],
+        petName: "Nova",
+        petMood: .focused,
+        currentTime: Date(timeIntervalSince1970: 1_000),
+        tasksCompletedToday: 2,
+        totalTasksToday: 5,
+        eventsToday: 3,
+        recentCompletionRate: 0.4,
+        behaviorSummary: originalSummary,
+        recentTexts: ["old"],
+        focusTimeToday: 45,
+        energyBottles: 8,
+        currentSceneName: "forest",
+        hardwareConnected: true,
+        nextAgendaItem: "10:00 · Planning",
+        activeTaskTitle: "Draft",
+        topTaskTitles: ["Draft", "Review"],
+        episodicMemories: ["Entered focus"],
+        dimensionalEmotion: "steady",
+        psychologicalObjective: "protect attention",
+        userDefinedLearnText: "custom tone"
+    )
+
+    let updated = original.replacing(
+        recentCompletionRate: 0.8,
+        behaviorSummary: updatedSummary,
+        recentTexts: ["new", "latest"]
+    )
+
+    #expect(updated.companionCharacter == original.companionCharacter)
+    #expect(updated.intimacyStage == original.intimacyStage)
+    #expect(updated.workType == original.workType)
+    #expect(updated.primaryGoals == original.primaryGoals)
+    #expect(updated.petName == original.petName)
+    #expect(updated.petMood == original.petMood)
+    #expect(updated.currentTime == original.currentTime)
+    #expect(updated.tasksCompletedToday == original.tasksCompletedToday)
+    #expect(updated.totalTasksToday == original.totalTasksToday)
+    #expect(updated.eventsToday == original.eventsToday)
+    #expect(updated.focusTimeToday == original.focusTimeToday)
+    #expect(updated.energyBottles == original.energyBottles)
+    #expect(updated.currentSceneName == original.currentSceneName)
+    #expect(updated.hardwareConnected == original.hardwareConnected)
+    #expect(updated.nextAgendaItem == original.nextAgendaItem)
+    #expect(updated.activeTaskTitle == original.activeTaskTitle)
+    #expect(updated.topTaskTitles == original.topTaskTitles)
+    #expect(updated.episodicMemories == original.episodicMemories)
+    #expect(updated.dimensionalEmotion == original.dimensionalEmotion)
+    #expect(updated.psychologicalObjective == original.psychologicalObjective)
+    #expect(updated.userDefinedLearnText == original.userDefinedLearnText)
+    #expect(updated.recentCompletionRate == 0.8)
+    #expect(updated.behaviorSummary?.weeklyCompletionRates == [0.9])
+    #expect(updated.recentTexts == ["new", "latest"])
+}
+
 // MARK: - AI Text Type Tests
 
 @Test func testAITextTypeAllCases() async throws {

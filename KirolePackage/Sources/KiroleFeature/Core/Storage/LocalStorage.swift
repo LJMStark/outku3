@@ -26,19 +26,41 @@ public actor LocalStorage {
         static let lastHomeHaikuShownDate = "lastHomeHaikuShownDate"
     }
 
+    private enum Files {
+        static let pet = "pet.json"
+        static let tasks = "tasks.json"
+        static let events = "events.json"
+        static let syncState = "sync_state.json"
+        static let haikuCache = "haiku_cache.json"
+        static let userProfile = "user_profile.json"
+        static let focusSessions = "focus_sessions.json"
+        static let eventLogs = "event_logs.json"
+        static let aiInteractions = "ai_interactions.json"
+        static let behaviorSummary = "behavior_summary.json"
+        static let onboardingProfile = "onboarding_profile.json"
+        static let deepFocusSelection = "deep_focus_selection.json"
+        static let activeFocusSession = "focus_session_active.json"
+        static let outbox = "outbox.json"
+        static let googleSyncMetadata = "google_sync_metadata.json"
+        static let companionUsageState = "companion_usage_state.json"
+        static let avatarData = "avatar.dat"
+        static let avatarPixels = "avatar_pixels.dat"
+        static let sharedCompanionDialogue = "shared_companion_dialogue.json"
+
+        static let persisted = [
+            pet, tasks, events,
+            syncState, haikuCache, userProfile,
+            focusSessions, eventLogs, aiInteractions,
+            behaviorSummary, onboardingProfile,
+            deepFocusSelection, activeFocusSession,
+            outbox, googleSyncMetadata, companionUsageState,
+            avatarData, avatarPixels, sharedCompanionDialogue,
+        ]
+    }
+
     enum DevelopmentStorageSchema {
         static let currentVersion = 5
     }
-
-    private nonisolated static let persistedFiles = [
-        "pet.json", "tasks.json", "events.json",
-        "sync_state.json", "haiku_cache.json", "user_profile.json",
-        "focus_sessions.json", "event_logs.json", "ai_interactions.json",
-        "behavior_summary.json", "onboarding_profile.json",
-        "deep_focus_selection.json", "focus_session_active.json",
-        "outbox.json", "google_sync_metadata.json", "companion_usage_state.json",
-        "avatar.dat", "avatar_pixels.dat", "shared_companion_dialogue.json",
-    ]
 
     private nonisolated static let resettableUserDefaultKeys = [
         Keys.developmentStorageSchemaVersion,
@@ -114,7 +136,7 @@ public actor LocalStorage {
         documentsDirectory: URL,
         userDefaults: UserDefaults
     ) throws {
-        for file in persistedFiles {
+        for file in Files.persisted {
             let url = documentsDirectory.appendingPathComponent(file)
             if fileManager.fileExists(atPath: url.path) {
                 try fileManager.removeItem(at: url)
@@ -167,71 +189,71 @@ public actor LocalStorage {
     // MARK: - Pet Data
 
     public func savePet(_ pet: Pet) throws {
-        try save(pet, to: "pet.json")
+        try save(pet, to: Files.pet)
     }
 
     public func loadPet() throws -> Pet? {
-        try load(Pet.self, from: "pet.json")
+        try load(Pet.self, from: Files.pet)
     }
 
     // MARK: - Tasks
 
     public func saveTasks(_ tasks: [TaskItem]) throws {
-        try save(tasks, to: "tasks.json")
+        try save(tasks, to: Files.tasks)
     }
 
     public func loadTasks() throws -> [TaskItem]? {
-        try load([TaskItem].self, from: "tasks.json")
+        try load([TaskItem].self, from: Files.tasks)
     }
 
     // MARK: - Events
 
     public func saveEvents(_ events: [CalendarEvent]) throws {
-        try save(events, to: "events.json")
+        try save(events, to: Files.events)
     }
 
     public func loadEvents() throws -> [CalendarEvent]? {
-        try load([CalendarEvent].self, from: "events.json")
+        try load([CalendarEvent].self, from: Files.events)
     }
 
     // MARK: - User Profile
 
     public func saveUserProfile(_ profile: UserProfile) throws {
-        try save(profile, to: "user_profile.json")
+        try save(profile, to: Files.userProfile)
     }
 
     public func loadUserProfile() throws -> UserProfile? {
-        try load(UserProfile.self, from: "user_profile.json")
+        try load(UserProfile.self, from: Files.userProfile)
     }
 
     // MARK: - Companion Usage
 
     public func saveCompanionUsageState(_ state: CompanionUsageState) throws {
-        try save(state, to: "companion_usage_state.json")
+        try save(state, to: Files.companionUsageState)
     }
 
     public func loadCompanionUsageState() throws -> CompanionUsageState? {
-        try load(CompanionUsageState.self, from: "companion_usage_state.json")
+        try load(CompanionUsageState.self, from: Files.companionUsageState)
     }
 
     // MARK: - Onboarding Profile
 
     public func saveOnboardingProfile(_ profile: OnboardingProfile) throws {
-        try save(profile, to: "onboarding_profile.json")
+        try save(profile, to: Files.onboardingProfile)
     }
 
     public func loadOnboardingProfile() throws -> OnboardingProfile? {
-        try load(OnboardingProfile.self, from: "onboarding_profile.json")
+        try load(OnboardingProfile.self, from: Files.onboardingProfile)
     }
 
     // MARK: - Sync State
 
     public func saveSyncState(_ state: SyncState) throws {
-        try save(state, to: "sync_state.json")
+        try save(state, to: Files.syncState)
     }
 
     public func loadSyncState() throws -> SyncState? {
-        try load(SyncState.self, from: "sync_state.json")
+        try load(SyncState.self, from: Files.syncState)
     }
 
     // MARK: - Haiku Cache
@@ -240,12 +262,12 @@ public actor LocalStorage {
     public func cacheHaiku(_ haiku: Haiku, for date: Date) throws {
         let dateString = ISO8601DateFormatter().string(from: date)
         let cacheEntry = HaikuCache(haiku: haiku, date: dateString)
-        try save(cacheEntry, to: "haiku_cache.json")
+        try save(cacheEntry, to: Files.haikuCache)
     }
 
     /// Retrieve the cached haiku if it was generated today
     public func getCachedHaiku(for date: Date) throws -> Haiku? {
-        guard let cache = try load(HaikuCache.self, from: "haiku_cache.json") else {
+        guard let cache = try load(HaikuCache.self, from: Files.haikuCache) else {
             return nil
         }
 
@@ -264,11 +286,11 @@ public actor LocalStorage {
     // MARK: - Companion Dialogue Cache
 
     public func saveSharedCompanionDialogue(_ cache: SharedCompanionDialogueCache) throws {
-        try save(cache, to: "shared_companion_dialogue.json")
+        try save(cache, to: Files.sharedCompanionDialogue)
     }
 
     public func loadSharedCompanionDialogue() throws -> SharedCompanionDialogueCache? {
-        try load(SharedCompanionDialogueCache.self, from: "shared_companion_dialogue.json")
+        try load(SharedCompanionDialogueCache.self, from: Files.sharedCompanionDialogue)
     }
 
     // MARK: - AI Interactions
@@ -276,12 +298,12 @@ public actor LocalStorage {
     /// Save AI interaction history (capped at 100 most recent)
     public func saveAIInteractions(_ interactions: [AIInteraction]) throws {
         let capped = Array(interactions.suffix(100))
-        try save(capped, to: "ai_interactions.json")
+        try save(capped, to: Files.aiInteractions)
     }
 
     /// Load AI interaction history
     public func loadAIInteractions() throws -> [AIInteraction]? {
-        try load([AIInteraction].self, from: "ai_interactions.json")
+        try load([AIInteraction].self, from: Files.aiInteractions)
     }
 
     // MARK: - Behavior Summary
@@ -292,22 +314,22 @@ public actor LocalStorage {
 
     /// Save user behavior summary
     public func saveBehaviorSummary(_ summary: UserBehaviorSummary) throws {
-        try save(summary, to: "behavior_summary.json")
+        try save(summary, to: Files.behaviorSummary)
     }
 
     /// Load user behavior summary
     public func loadBehaviorSummary() throws -> UserBehaviorSummary? {
-        try load(UserBehaviorSummary.self, from: "behavior_summary.json")
+        try load(UserBehaviorSummary.self, from: Files.behaviorSummary)
     }
 
     // MARK: - Focus Sessions
 
     public func saveFocusSessions(_ sessions: [FocusSession]) throws {
-        try save(sessions, to: "focus_sessions.json")
+        try save(sessions, to: Files.focusSessions)
     }
 
     public func loadFocusSessions() throws -> [FocusSession]? {
-        try load([FocusSession].self, from: "focus_sessions.json")
+        try load([FocusSession].self, from: Files.focusSessions)
     }
 
     /// Save focus sessions for a specific date (YYYY-MM-DD key)
@@ -336,15 +358,15 @@ public actor LocalStorage {
     }
 
     public func saveActiveFocusSession(_ session: FocusSession) throws {
-        try save(session, to: "focus_session_active.json")
+        try save(session, to: Files.activeFocusSession)
     }
 
     public func loadActiveFocusSession() throws -> FocusSession? {
-        try load(FocusSession.self, from: "focus_session_active.json")
+        try load(FocusSession.self, from: Files.activeFocusSession)
     }
 
     public func clearActiveFocusSession() throws {
-        try deleteFile(named: "focus_session_active.json")
+        try deleteFile(named: Files.activeFocusSession)
     }
 
     private nonisolated static let dateKeyFormatter: DateFormatter = {
@@ -363,11 +385,11 @@ public actor LocalStorage {
 
     public func saveEventLogs(_ logs: [EventLog]) throws {
         let cappedLogs = Array(logs.suffix(1000))
-        try save(cappedLogs, to: "event_logs.json")
+        try save(cappedLogs, to: Files.eventLogs)
     }
 
     public func loadEventLogs() throws -> [EventLog]? {
-        try load([EventLog].self, from: "event_logs.json")
+        try load([EventLog].self, from: Files.eventLogs)
     }
 
     // MARK: - UserDefaults Accessors
@@ -459,16 +481,16 @@ public actor LocalStorage {
     }
 
     public func saveDeepFocusSelection(_ selection: FocusAppSelection) throws {
-        try save(selection, to: "deep_focus_selection.json")
+        try save(selection, to: Files.deepFocusSelection)
         userDefaults.set(selection.selectedApplicationCount, forKey: Keys.deepFocusSelectionCount)
     }
 
     public func loadDeepFocusSelection() throws -> FocusAppSelection? {
-        try load(FocusAppSelection.self, from: "deep_focus_selection.json")
+        try load(FocusAppSelection.self, from: Files.deepFocusSelection)
     }
 
     public func clearDeepFocusSelection() throws {
-        try deleteFile(named: "deep_focus_selection.json")
+        try deleteFile(named: Files.deepFocusSelection)
         userDefaults.removeObject(forKey: Keys.deepFocusSelectionCount)
     }
 
@@ -483,46 +505,46 @@ public actor LocalStorage {
     // MARK: - Google Sync Outbox
 
     public func saveOutbox(_ entries: [OutboxEntry]) throws {
-        try save(entries, to: "outbox.json")
+        try save(entries, to: Files.outbox)
     }
 
     public func loadOutbox() throws -> [OutboxEntry] {
-        try load([OutboxEntry].self, from: "outbox.json") ?? []
+        try load([OutboxEntry].self, from: Files.outbox) ?? []
     }
 
     // MARK: - Google Sync Metadata
 
     public func saveGoogleSyncMetadata(_ metadata: GoogleSyncMetadata) throws {
-        try save(metadata, to: "google_sync_metadata.json")
+        try save(metadata, to: Files.googleSyncMetadata)
     }
 
     public func loadGoogleSyncMetadata() throws -> GoogleSyncMetadata? {
-        try load(GoogleSyncMetadata.self, from: "google_sync_metadata.json")
+        try load(GoogleSyncMetadata.self, from: Files.googleSyncMetadata)
     }
 
     // MARK: - Avatar Data
 
     /// Save original avatar image data
     public func saveAvatarData(_ data: Data) throws {
-        let url = documentsDirectory.appendingPathComponent("avatar.dat")
+        let url = documentsDirectory.appendingPathComponent(Files.avatarData)
         try data.write(to: url, options: [.atomic])
     }
 
     /// Load original avatar image data
     public func loadAvatarData() -> Data? {
-        let url = documentsDirectory.appendingPathComponent("avatar.dat")
+        let url = documentsDirectory.appendingPathComponent(Files.avatarData)
         return try? Data(contentsOf: url)
     }
 
     /// Save 4bpp encoded pixel data for BLE transmission
     public func saveAvatarPixels(_ data: Data) throws {
-        let url = documentsDirectory.appendingPathComponent("avatar_pixels.dat")
+        let url = documentsDirectory.appendingPathComponent(Files.avatarPixels)
         try data.write(to: url, options: [.atomic])
     }
 
     /// Load 4bpp encoded pixel data
     public func loadAvatarPixels() -> Data? {
-        let url = documentsDirectory.appendingPathComponent("avatar_pixels.dat")
+        let url = documentsDirectory.appendingPathComponent(Files.avatarPixels)
         return try? Data(contentsOf: url)
     }
 

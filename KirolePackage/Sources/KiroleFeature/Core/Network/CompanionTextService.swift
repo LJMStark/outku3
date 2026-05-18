@@ -42,14 +42,7 @@ public final class CompanionTextService {
             return aiText
         }
 
-        let greetings: [PetMood: [String]] = [
-            .happy: ["Good morning! Ready for today?", "Rise and shine! Let's go!", "Morning! Today will be great!"],
-            .excited: ["Good morning! So excited!", "Let's make today amazing!", "Can't wait to start the day!"],
-            .focused: ["Morning. Let's get to work.", "Ready to tackle today's tasks.", "Time to focus and achieve."],
-            .sleepy: ["Morning... still waking up...", "Good morning... yawn...", "Let's ease into today..."],
-            .missing: ["Good morning! Missed you!", "So glad you're here today!", "Morning! Let's catch up!"]
-        ]
-        return (greetings[petMood] ?? greetings[.happy]!).randomElement() ?? "Good morning!"
+        return FallbackText.morningGreeting(for: petMood)
     }
 
     // MARK: - Daily Summary
@@ -67,12 +60,7 @@ public final class CompanionTextService {
             return aiText
         }
 
-        switch (tasksCount, eventsCount) {
-        case (0, 0): return "A free day! Time to relax."
-        case (0, _): return "\(eventsCount) event\(eventsCount == 1 ? "" : "s") today."
-        case (_, 0): return "\(tasksCount) task\(tasksCount == 1 ? "" : "s") to tackle today."
-        default: return "\(tasksCount) task\(tasksCount == 1 ? "" : "s"), \(eventsCount) event\(eventsCount == 1 ? "" : "s") today."
-        }
+        return FallbackText.dailySummary(tasksCount: tasksCount, eventsCount: eventsCount)
     }
 
     // MARK: - Companion Phrase
@@ -89,13 +77,7 @@ public final class CompanionTextService {
             return aiText
         }
 
-        let phrases: [TimeOfDay: [String]] = [
-            .morning: ["You've got this today!", "One step at a time.", "Let's make it count!"],
-            .afternoon: ["Keep going, you're doing great!", "Halfway there!", "Stay focused, stay strong."],
-            .evening: ["Almost done for today!", "Great work today!", "Time to wind down."],
-            .night: ["Rest well tonight.", "Tomorrow is a new day.", "Sweet dreams ahead."]
-        ]
-        return (phrases[timeOfDay] ?? phrases[.morning]!).randomElement() ?? "You've got this!"
+        return FallbackText.companionPhrase(for: timeOfDay)
     }
 
     // MARK: - Task Encouragement
@@ -116,9 +98,7 @@ public final class CompanionTextService {
             return aiText
         }
 
-        return ["You can do this!", "Focus and conquer!", "One task at a time.", "Let's get it done!",
-                "Believe in yourself!", "Small steps, big wins.", "Stay focused!", "You're capable of this."]
-            .randomElement() ?? "You've got this!"
+        return FallbackText.taskEncouragement()
     }
 
     nonisolated static func taskEncouragementPromptPayload(taskTitle: String) -> (
@@ -153,14 +133,7 @@ public final class CompanionTextService {
             return aiText
         }
 
-        let rate = tasksTotal > 0 ? Double(tasksCompleted) / Double(tasksTotal) : 0
-        switch rate {
-        case 1.0...: return "Perfect! All \(tasksTotal) tasks done!"
-        case 0.7..<1.0: return "Great job! \(tasksCompleted)/\(tasksTotal) completed."
-        case 0.3..<0.7: return "Good effort! \(tasksCompleted)/\(tasksTotal) done."
-        case 0.0..<0.3 where tasksCompleted > 0: return "You started! \(tasksCompleted)/\(tasksTotal) tasks."
-        default: return "Tomorrow is a fresh start!"
-        }
+        return FallbackText.settlementMessage(tasksCompleted: tasksCompleted, tasksTotal: tasksTotal)
     }
 
     // MARK: - Smart Reminder
@@ -179,21 +152,7 @@ public final class CompanionTextService {
             return aiText
         }
 
-        return smartReminderFallback(reason: reason, petName: petName, taskTitle: taskTitle)
-    }
-
-    private func smartReminderFallback(reason: ReminderReason, petName: String, taskTitle: String?) -> String {
-        switch reason {
-        case .idle:
-            return "\(petName) misses you! Time to get back on track."
-        case .deadline:
-            if let title = taskTitle {
-                return "\(title) is due soon. Let's finish it!"
-            }
-            return "You have a task due soon!"
-        case .gentleNudge:
-            return "Ready for the next task? \(petName) believes in you."
-        }
+        return FallbackText.smartReminder(reason: reason, petName: petName, taskTitle: taskTitle)
     }
 
     public func generateSharedPetDialogue(
@@ -277,32 +236,7 @@ public final class CompanionTextService {
     ) -> AIContext {
         let recentTexts = Array((historyTexts + rejectedTexts).suffix(3))
 
-        return AIContext(
-            companionCharacter: baseContext.companionCharacter,
-            intimacyStage: baseContext.intimacyStage,
-            workType: baseContext.workType,
-            primaryGoals: baseContext.primaryGoals,
-            petName: baseContext.petName,
-            petMood: baseContext.petMood,
-            currentTime: baseContext.currentTime,
-            tasksCompletedToday: baseContext.tasksCompletedToday,
-            totalTasksToday: baseContext.totalTasksToday,
-            eventsToday: baseContext.eventsToday,
-            recentCompletionRate: baseContext.recentCompletionRate,
-            behaviorSummary: baseContext.behaviorSummary,
-            recentTexts: recentTexts,
-            focusTimeToday: baseContext.focusTimeToday,
-            energyBottles: baseContext.energyBottles,
-            currentSceneName: baseContext.currentSceneName,
-            hardwareConnected: baseContext.hardwareConnected,
-            nextAgendaItem: baseContext.nextAgendaItem,
-            activeTaskTitle: baseContext.activeTaskTitle,
-            topTaskTitles: baseContext.topTaskTitles,
-            episodicMemories: baseContext.episodicMemories,
-            dimensionalEmotion: baseContext.dimensionalEmotion,
-            psychologicalObjective: baseContext.psychologicalObjective,
-            userDefinedLearnText: baseContext.userDefinedLearnText
-        )
+        return baseContext.replacing(recentTexts: recentTexts)
     }
 
     nonisolated static func shouldRetrySharedDialogue(after error: Error) -> Bool {
@@ -460,31 +394,10 @@ public final class CompanionTextService {
             preferredRate: baseContext.recentCompletionRate
         )
 
-        return AIContext(
-            companionCharacter: baseContext.companionCharacter,
-            intimacyStage: baseContext.intimacyStage,
-            workType: baseContext.workType,
-            primaryGoals: baseContext.primaryGoals,
-            petName: baseContext.petName,
-            petMood: baseContext.petMood,
-            currentTime: baseContext.currentTime,
-            tasksCompletedToday: baseContext.tasksCompletedToday,
-            totalTasksToday: baseContext.totalTasksToday,
-            eventsToday: baseContext.eventsToday,
+        return baseContext.replacing(
             recentCompletionRate: weeklyRate,
             behaviorSummary: behaviorSummary,
-            recentTexts: recentTexts,
-            focusTimeToday: baseContext.focusTimeToday,
-            energyBottles: baseContext.energyBottles,
-            currentSceneName: baseContext.currentSceneName,
-            hardwareConnected: baseContext.hardwareConnected,
-            nextAgendaItem: baseContext.nextAgendaItem,
-            activeTaskTitle: baseContext.activeTaskTitle,
-            topTaskTitles: baseContext.topTaskTitles,
-            episodicMemories: baseContext.episodicMemories,
-            dimensionalEmotion: baseContext.dimensionalEmotion,
-            psychologicalObjective: baseContext.psychologicalObjective,
-            userDefinedLearnText: baseContext.userDefinedLearnText
+            recentTexts: recentTexts
         )
     }
 
@@ -507,23 +420,7 @@ public final class CompanionTextService {
     }
 
     private func sharedPetDialogueFallback(_ context: AIContext) -> String {
-        if context.totalTasksToday == 0 && context.eventsToday == 0 {
-            return "It is a quiet day, and I am happy to stay here with you."
-        }
-
-        if context.totalTasksToday > 0, context.tasksCompletedToday >= context.totalTasksToday {
-            return "You carried today to the end, and I am resting here with you now."
-        }
-
-        if context.nextAgendaItem != nil {
-            return "Something is coming up soon, and I am staying close beside you."
-        }
-
-        if !context.topTaskTitles.isEmpty {
-            return "We can begin with one small step, and I will stay beside you through it."
-        }
-
-        return "I am right here with you, and this moment can stay gentle."
+        FallbackText.sharedPetDialogue(context: context)
     }
 
     // MARK: - Interaction Persistence
