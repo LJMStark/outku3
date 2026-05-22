@@ -62,6 +62,7 @@ public enum CompanionCharacter: String, CaseIterable, Sendable, Codable {
         case .profile:
             switch self {
             case .silas: return "silas-profile"
+            case .nova: return "nova-profile"
             default: return "\(rawValue)-main"
             }
         }
