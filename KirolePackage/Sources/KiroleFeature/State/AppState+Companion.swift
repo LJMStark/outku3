@@ -178,12 +178,17 @@ extension AppState {
         let learnText = ""
         #endif
 
+        // Active custom companion drives both the prompt (via AIContext.customCompanion)
+        // and the dialogue cache fingerprint — without the fingerprint bit, switching
+        // between custom companions would silently reuse the previous companion's dialogue.
+        let activeCustom = activeCustomCompanion
+
         let context = AIContext(
             companionCharacter: userProfile.companionCharacter,
             intimacyStage: userProfile.intimacyStage,
             workType: userProfile.workType,
             primaryGoals: userProfile.primaryGoals,
-            petName: pet.name,
+            petName: activeCustom?.name ?? pet.name,
             petMood: pet.mood,
             currentTime: now,
             tasksCompletedToday: todayProgress.completed,
@@ -197,7 +202,8 @@ extension AppState {
             nextAgendaItem: nextAgendaItem,
             activeTaskTitle: activeTask.taskTitle,
             topTaskTitles: topTaskTitles,
-            userDefinedLearnText: learnText.isEmpty ? nil : learnText
+            userDefinedLearnText: learnText.isEmpty ? nil : learnText,
+            customCompanion: activeCustom
         )
 
         let activeTaskId = activeTask.taskId ?? ""
@@ -214,7 +220,8 @@ extension AppState {
                 sceneId: currentSceneName,
                 activeTaskId: activeTaskId,
                 activeTaskTitle: activeTask.taskTitle,
-                learnText: context.userDefinedLearnText
+                learnText: context.userDefinedLearnText,
+                customCompanion: activeCustom
             ),
             context: context
         )
@@ -231,15 +238,26 @@ extension AppState {
         sceneId: String,
         activeTaskId: String,
         activeTaskTitle: String?,
-        learnText: String?
+        learnText: String?,
+        customCompanion: CustomCompanion?
     ) -> String {
         let todayProgress = Self.companionTaskProgressSnapshot(from: todayTasks)
+
+        // Custom companion contributes id + roast toggle + persona voice to the
+        // fingerprint. id alone would miss the case where the user edits an
+        // existing companion (same id, new persona) — including the dials
+        // forces cache invalidation on persona edits too.
+        let customKey: String = {
+            guard let custom = customCompanion else { return "none" }
+            return "\(custom.id.uuidString):\(custom.personaVoice.rawValue):\(custom.roastModeEnabled ? "roast" : "warm")"
+        }()
 
         var parts: [String] = [
             "date=\(Self.homeCompanionDateKey(from: now))",
             "bucket=\(TimeOfDay.current(at: now).rawValue)",
             "style=\(userProfile.companionStyle.rawValue)",
             "character=\(userProfile.companionCharacter.rawValue)",
+            "custom=\(customKey)",
             "intimacy=\(userProfile.intimacyStage.rawValue)",
             "work=\(userProfile.workType.rawValue)",
             "goals=\(userProfile.primaryGoals.map(\.rawValue).joined(separator: ","))",
