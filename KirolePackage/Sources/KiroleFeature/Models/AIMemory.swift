@@ -43,6 +43,10 @@ public struct AIContext: Sendable {
     public let psychologicalObjective: String?
     public let userDefinedLearnText: String?
 
+    /// When set, the active companion is user-created. Prompt assembly should use this
+    /// in place of the built-in `companionCharacter` style description.
+    public let customCompanion: CustomCompanion?
+
     public init(
         companionCharacter: CompanionCharacter = .joy,
         intimacyStage: IntimacyStage = .acquaintance,
@@ -67,7 +71,8 @@ public struct AIContext: Sendable {
         episodicMemories: [String] = [],
         dimensionalEmotion: String? = nil,
         psychologicalObjective: String? = nil,
-        userDefinedLearnText: String? = nil
+        userDefinedLearnText: String? = nil,
+        customCompanion: CustomCompanion? = nil
     ) {
         self.companionCharacter = companionCharacter
         self.intimacyStage = intimacyStage
@@ -94,6 +99,7 @@ public struct AIContext: Sendable {
         self.dimensionalEmotion = dimensionalEmotion
         self.psychologicalObjective = psychologicalObjective
         self.userDefinedLearnText = userDefinedLearnText
+        self.customCompanion = customCompanion
     }
 
     func replacing(recentTexts: [String]) -> AIContext {
@@ -133,7 +139,8 @@ public struct AIContext: Sendable {
             episodicMemories: episodicMemories,
             dimensionalEmotion: dimensionalEmotion,
             psychologicalObjective: psychologicalObjective,
-            userDefinedLearnText: userDefinedLearnText
+            userDefinedLearnText: userDefinedLearnText,
+            customCompanion: customCompanion
         )
     }
 }

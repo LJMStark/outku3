@@ -318,6 +318,14 @@ public final class CompanionTextService {
             totalTasks: totalTasks
         )
 
+        // Resolve the active custom companion (if any) so prompt assembly can use it.
+        // An orphaned id (custom deleted while still selected) silently falls back to built-in.
+        let activeCustomCompanion: CustomCompanion? = await {
+            guard let id = userProfile.customCompanionId else { return nil }
+            let all = (try? await localStorage.loadCustomCompanions()) ?? []
+            return all.first { $0.id == id }
+        }()
+
         let baseContext = AIContext(
             companionCharacter: userProfile.companionCharacter,
             intimacyStage: userProfile.intimacyStage,
@@ -335,7 +343,8 @@ public final class CompanionTextService {
             energyBottles: energyBottles,
             nextAgendaItem: nextAgendaItem,
             activeTaskTitle: activeTaskTitle,
-            episodicMemories: episodicMemories
+            episodicMemories: episodicMemories,
+            customCompanion: activeCustomCompanion
         )
 
         return await generateAIText(type: type, baseContext: baseContext, mode: mode)

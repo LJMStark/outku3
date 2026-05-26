@@ -302,6 +302,24 @@ public actor OpenAIService {
         }
     }
 
+    /// Persona prompt fragment for a user-created companion.
+    /// Built from structured fields only — `name` is the lone user-typed string and is
+    /// passed through PromptSanitizer.userContent so `</user_content>` style tricks are
+    /// neutralized before they reach the model.
+    static func customCompanionPersonaPrompt(_ companion: CustomCompanion) -> String {
+        let safeName = PromptSanitizer.userContent(companion.name, maxLen: 30)
+        let roastClause = companion.roastModeEnabled
+            ? "Roast Mode is on: you may lovingly call out the user's bad habits, but every jab lands with affection."
+            : "Be warm and supportive — never sarcastic in a way that stings."
+        return """
+            Physical Form: A small pixel-art companion modeled after a photo the user uploaded.
+            Base Persona: \(safeName), the user's \(companion.relationship.rawValue.lowercased()).
+            \(companion.relationship.promptDescription)
+            \(companion.personaVoice.promptDescription)
+            \(roastClause)
+            """
+    }
+
     private func buildCompanionSystemPrompt(context: AIContext) async -> String {
         let styleDescription: String
 
@@ -315,18 +333,30 @@ public actor OpenAIService {
             styleDescription = PromptSanitizer.sanitize(customGlobal, maxLen: 2000)
         } else if let override, !override.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             styleDescription = PromptSanitizer.sanitize(override, maxLen: 2000)
+        } else if let custom = context.customCompanion {
+            styleDescription = Self.customCompanionPersonaPrompt(custom)
         } else {
             styleDescription = Self.defaultPrompt(for: context.companionStyle)
         }
         #else
-        styleDescription = Self.defaultPrompt(for: context.companionStyle)
+        if let custom = context.customCompanion {
+            styleDescription = Self.customCompanionPersonaPrompt(custom)
+        } else {
+            styleDescription = Self.defaultPrompt(for: context.companionStyle)
+        }
         #endif
 
         let schedule = Self.buildScheduleDigest(context: context)
-        let characterDescription = Self.characterPrompt(for: context.companionCharacter)
+        // For custom companions the persona prompt already carries identity and form,
+        // so skip the built-in character description (it would otherwise inject Joy/Silas/Nova lore).
+        let characterDescription = context.customCompanion == nil
+            ? Self.characterPrompt(for: context.companionCharacter)
+            : ""
         let intimacyDescription = Self.intimacyPrompt(for: context.intimacyStage)
 
-        let safePetName = PromptSanitizer.userContent(context.petName, maxLen: 50)
+        // Custom companions use their own name; built-ins use the user's pet name field.
+        let identityName = context.customCompanion?.name ?? context.petName
+        let safePetName = PromptSanitizer.userContent(identityName, maxLen: 50)
         var prompt = PromptSanitizer.systemPrompt(containingUserContent: """
             You are named \(safePetName).
             \(characterDescription)
