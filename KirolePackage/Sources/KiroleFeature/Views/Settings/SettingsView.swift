@@ -106,11 +106,11 @@ struct SettingsView: View {
 
             HStack(spacing: 16) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(appState.userProfile.companionCharacter.displayName)
+                    Text(activeCompanionName)
                         .font(.system(size: 17, weight: .bold))
                         .foregroundStyle(theme.colors.primaryText)
 
-                    Text(appState.userProfile.companionStyle.description)
+                    Text(activeCompanionSubtitle)
                         .font(.system(size: 13))
                         .foregroundStyle(theme.colors.secondaryText)
                 }
@@ -137,6 +137,18 @@ struct SettingsView: View {
             .clipShape(RoundedRectangle(cornerRadius: 24))
             .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
         }
+    }
+
+    private var activeCompanionName: String {
+        appState.activeCustomCompanion?.name
+            ?? appState.userProfile.companionCharacter.displayName
+    }
+
+    private var activeCompanionSubtitle: String {
+        if let custom = appState.activeCustomCompanion {
+            return "\(custom.relationship.displayName) · \(custom.personaVoice.displayName)"
+        }
+        return appState.userProfile.companionStyle.description
     }
 }
 
