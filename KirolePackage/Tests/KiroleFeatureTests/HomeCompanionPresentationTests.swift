@@ -78,6 +78,44 @@ struct HomeCompanionPresentationTests {
         }
     }
 
+    @Test("Custom companion fingerprint preserves sub-second updatedAt changes")
+    @MainActor
+    func customCompanionFingerprintPreservesSubsecondUpdatedAt() async throws {
+        try await SharedPersistenceTestLock.shared.withLock {
+            let state = AppState.makeForTesting()
+            let storage = LocalStorage.shared
+            let now = makeDate(year: 2026, month: 4, day: 2, hour: 15)
+            let companionId = UUID()
+
+            try await storage.clearAll()
+            let baseUpdatedAt = Date(timeIntervalSince1970: 1_800_000_000.10)
+            let baseCompanion = customCompanion(
+                id: companionId,
+                name: "Mochi",
+                updatedAt: baseUpdatedAt
+            )
+            state.customCompanions = [baseCompanion]
+            var profile = state.userProfile
+            profile.customCompanionId = companionId
+            state.userProfile = profile
+
+            let first = await state.buildCompanionDialogueTriggerState(at: now)
+
+            var editedCompanion = customCompanion(
+                id: companionId,
+                name: "Mochi II",
+                updatedAt: baseUpdatedAt.addingTimeInterval(0.20)
+            )
+            editedCompanion.relationship = .friend
+            state.customCompanions = [editedCompanion]
+
+            let second = await state.buildCompanionDialogueTriggerState(at: now)
+
+            #expect(Int(baseUpdatedAt.timeIntervalSince1970) == Int(editedCompanion.updatedAt.timeIntervalSince1970))
+            #expect(first.fingerprint != second.fingerprint)
+        }
+    }
+
     private func makeDate(year: Int, month: Int, day: Int, hour: Int) -> Date {
         var components = DateComponents()
         components.calendar = Calendar(identifier: .gregorian)
@@ -97,5 +135,18 @@ struct HomeCompanionPresentationTests {
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = TimeZone(secondsFromGMT: 0)
         return formatter.string(from: date)
+    }
+
+    private func customCompanion(id: UUID, name: String, updatedAt: Date) -> CustomCompanion {
+        CustomCompanion(
+            id: id,
+            name: name,
+            relationship: .pet,
+            personaVoice: .companion,
+            avatarPreviewFileName: LocalStorage.customCompanionPreviewFileName(for: id),
+            avatarPixelsFileName: LocalStorage.customCompanionPixelsFileName(for: id),
+            createdAt: updatedAt,
+            updatedAt: updatedAt
+        )
     }
 }

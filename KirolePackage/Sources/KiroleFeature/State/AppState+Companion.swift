@@ -248,7 +248,7 @@ extension AppState {
         // updateCustomCompanion is the mutation entry point (it bumps updatedAt).
         let customKey: String = {
             guard let custom = customCompanion else { return "none" }
-            return "\(custom.id.uuidString):\(Int(custom.updatedAt.timeIntervalSince1970))"
+            return "\(custom.id.uuidString):\(custom.updatedAt.timeIntervalSinceReferenceDate.bitPattern)"
         }()
 
         var parts: [String] = [
