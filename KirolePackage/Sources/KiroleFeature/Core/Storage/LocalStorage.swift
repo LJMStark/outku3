@@ -43,8 +43,6 @@ public actor LocalStorage {
         static let outbox = "outbox.json"
         static let googleSyncMetadata = "google_sync_metadata.json"
         static let companionUsageState = "companion_usage_state.json"
-        static let avatarData = "avatar.dat"
-        static let avatarPixels = "avatar_pixels.dat"
         static let sharedCompanionDialogue = "shared_companion_dialogue.json"
         static let customCompanions = "custom_companions.json"
         /// Prefix for per-companion pixel/preview blobs.
@@ -58,8 +56,17 @@ public actor LocalStorage {
             behaviorSummary, onboardingProfile,
             deepFocusSelection, activeFocusSession,
             outbox, googleSyncMetadata, companionUsageState,
-            avatarData, avatarPixels, sharedCompanionDialogue,
+            sharedCompanionDialogue,
             customCompanions,
+        ]
+
+        /// Filenames the app no longer writes but that may still exist on disk from
+        /// prior installs. Reset/clearAll continues to sweep these so removed-feature
+        /// data doesn't linger forever after a user upgrades. Add an entry here when
+        /// retiring a persisted file — never delete from this list.
+        static let legacy = [
+            "avatar.dat",
+            "avatar_pixels.dat",
         ]
     }
 
@@ -141,7 +148,7 @@ public actor LocalStorage {
         documentsDirectory: URL,
         userDefaults: UserDefaults
     ) throws {
-        for file in Files.persisted {
+        for file in Files.persisted + Files.legacy {
             let url = documentsDirectory.appendingPathComponent(file)
             if fileManager.fileExists(atPath: url.path) {
                 try fileManager.removeItem(at: url)
@@ -532,32 +539,6 @@ public actor LocalStorage {
 
     public func loadGoogleSyncMetadata() throws -> GoogleSyncMetadata? {
         try load(GoogleSyncMetadata.self, from: Files.googleSyncMetadata)
-    }
-
-    // MARK: - Avatar Data
-
-    /// Save original avatar image data
-    public func saveAvatarData(_ data: Data) throws {
-        let url = documentsDirectory.appendingPathComponent(Files.avatarData)
-        try data.write(to: url, options: [.atomic])
-    }
-
-    /// Load original avatar image data
-    public func loadAvatarData() -> Data? {
-        let url = documentsDirectory.appendingPathComponent(Files.avatarData)
-        return try? Data(contentsOf: url)
-    }
-
-    /// Save 4bpp encoded pixel data for BLE transmission
-    public func saveAvatarPixels(_ data: Data) throws {
-        let url = documentsDirectory.appendingPathComponent(Files.avatarPixels)
-        try data.write(to: url, options: [.atomic])
-    }
-
-    /// Load 4bpp encoded pixel data
-    public func loadAvatarPixels() -> Data? {
-        let url = documentsDirectory.appendingPathComponent(Files.avatarPixels)
-        return try? Data(contentsOf: url)
     }
 
     // MARK: - Custom Companions

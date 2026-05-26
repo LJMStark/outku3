@@ -1,202 +1,173 @@
 import SwiftUI
-import PhotosUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
-// MARK: - Account Section (Avatar + AI Settings)
+// MARK: - Companion Section (Switch + Create entries)
 
+/// Two-card grid that owns the companion identity controls:
+/// - Left card: shows the active companion image + name, taps into CharacterSwitcherSheet
+///   to switch among built-in IPs or already-created custom companions.
+/// - Right card: taps into CreateCustomCompanionSheet to upload + persona-configure a new one.
+///
+/// Replaces the prior "user avatar" upload that quantized photos to disk but never wired them
+/// to the hardware — see git history for the dead path.
 public struct SettingsAccountSection: View {
     @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
-    @State private var selectedPhoto: PhotosPickerItem?
-    @State private var avatarImage: Image?
-    @State private var showPreview = false
-    @State private var processResult: AvatarProcessResult?
-    @State private var isProcessing = false
+
+    @State private var showCharacterSwitcher = false
+    @State private var showCreateCustom = false
+    @State private var customPreviewData: Data?
 
     public init() {}
 
     @MainActor
     public var body: some View {
-        VStack(spacing: 24) {
-            avatarSection
-        }
-        .onChange(of: selectedPhoto) { _, newValue in
-            guard let newValue else { return }
-            isProcessing = true
-            Task {
-                guard let data = try? await newValue.loadTransferable(type: Data.self) else {
-                    await MainActor.run { isProcessing = false }
-                    return
-                }
-                await MainActor.run {
-                    #if canImport(UIKit)
-                    if let uiImage = UIImage(data: data),
-                       let result = AvatarImageProcessor.process(image: uiImage) {
-                        processResult = result
-                        showPreview = true
-                    }
-                    #endif
-                    isProcessing = false
-                }
-            }
-        }
-        .sheet(isPresented: $showPreview) {
-            if let result = processResult {
-                AvatarPreviewSheet(
-                    originalImageData: result.originalData,
-                    previewImageData: result.previewData,
-                    onConfirm: {
-                        confirmAvatar(result)
-                        showPreview = false
-                    },
-                    onCancel: {
-                        processResult = nil
-                        showPreview = false
-                    }
-                )
-                .injectAppEnvironment()
-                .presentationDetents([.medium])
-                .presentationDragIndicator(.hidden)
-                .presentationCornerRadius(24)
-            }
-        }
-        .task {
-            loadSavedAvatar()
-        }
-    }
-
-    // MARK: - Avatar
-
-    @MainActor
-    private var avatarSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Avatar")
+            Text("Companion")
                 .font(.system(size: 15, weight: .bold))
                 .foregroundStyle(theme.colors.primaryText)
 
             HStack(spacing: 16) {
-                // Avatar Card
-                ZStack {
-                    RoundedRectangle(cornerRadius: 20)
-                        .stroke(Color(hex: "374151"), lineWidth: 1) // Dark border from mockup
-                        .background(
-                            RoundedRectangle(cornerRadius: 20)
-                                .fill(Color(hex: "F3F4F6"))
-                        )
+                avatarCard
+                createCard
+            }
+        }
+        .sheet(isPresented: $showCharacterSwitcher) {
+            CharacterSwitcherSheet()
+                .injectAppEnvironment()
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.hidden)
+                .presentationCornerRadius(24)
+        }
+        .sheet(isPresented: $showCreateCustom) {
+            CreateCustomCompanionSheet()
+                .injectAppEnvironment()
+                .presentationDetents([.large])
+                .presentationDragIndicator(.hidden)
+                .presentationCornerRadius(24)
+        }
+        .task(id: appState.userProfile.customCompanionId) {
+            await refreshCustomPreview()
+        }
+    }
 
-                    VStack(spacing: 8) {
-                        if let avatarImage {
-                            avatarImage
-                                .resizable()
-                                .interpolation(.none)
-                                .aspectRatio(contentMode: .fill)
-                                .frame(width: 80, height: 80)
-                                .clipShape(Circle())
-                        } else {
-                            Image(appState.userProfile.companionCharacter.heroAssetName(variant: .main), bundle: .module)
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                                .frame(width: 76, height: 95)
-                                .offset(y: 5)
-                        }
+    // MARK: - Left: active companion card
 
-                        Text("Avatar")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(theme.colors.primaryText)
-                            .padding(.bottom, 8)
-                    }
-                    .padding(.top, 16)
+    @MainActor
+    private var avatarCard: some View {
+        Button {
+            showCharacterSwitcher = true
+        } label: {
+            ZStack {
+                RoundedRectangle(cornerRadius: 20)
+                    .stroke(Color(hex: "374151"), lineWidth: 1)
+                    .background(
+                        RoundedRectangle(cornerRadius: 20)
+                            .fill(Color(hex: "F3F4F6"))
+                    )
+
+                VStack(spacing: 8) {
+                    activeAvatarImage
+
+                    Text(activeName)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(theme.colors.primaryText)
+                        .lineLimit(1)
+                        .padding(.horizontal, 8)
+                        .padding(.bottom, 8)
                 }
-                .frame(maxWidth: .infinity)
-                .aspectRatio(1, contentMode: .fit)
+                .padding(.top, 16)
+            }
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity)
+        .aspectRatio(1, contentMode: .fit)
+        .accessibilityLabel("切换伴侣，当前是 \(activeName)")
+        .accessibilityIdentifier("Settings_SwitchCompanion")
+    }
 
-                // Upload Card
-                ZStack {
-                    RoundedRectangle(cornerRadius: 20)
-                        .fill(Color(hex: "F3F4F6")) // Light borderless card
+    /// Shows the custom companion preview when one is active; otherwise the built-in hero art.
+    /// `customPreviewData` is loaded by `.task(id:)` whenever `customCompanionId` changes,
+    /// so switching companions refreshes the image without a manual reload call.
+    @ViewBuilder
+    @MainActor
+    private var activeAvatarImage: some View {
+        #if canImport(UIKit)
+        if let customPreviewData,
+           let uiImage = UIImage(data: customPreviewData) {
+            Image(uiImage: uiImage)
+                .resizable()
+                .interpolation(.none)
+                .aspectRatio(contentMode: .fill)
+                .frame(width: 80, height: 80)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+        } else {
+            builtInArtwork
+        }
+        #else
+        builtInArtwork
+        #endif
+    }
 
-                    VStack(spacing: 8) {
-                        ZStack {
-                            if isProcessing {
-                                ProgressView()
-                                    .scaleEffect(1.2)
-                            } else {
-                                Image(systemName: "icloud.and.arrow.up")
-                                    .font(.system(size: 40, weight: .medium))
-                                    .foregroundStyle(Color(hex: "6B7280"))
-                            }
-                        }
+    @ViewBuilder
+    @MainActor
+    private var builtInArtwork: some View {
+        Image(
+            appState.userProfile.companionCharacter.heroAssetName(variant: .main),
+            bundle: .module
+        )
+        .resizable()
+        .aspectRatio(contentMode: .fit)
+        .frame(width: 76, height: 95)
+        .offset(y: 5)
+    }
+
+    // MARK: - Right: create custom card
+
+    @MainActor
+    private var createCard: some View {
+        Button {
+            showCreateCustom = true
+        } label: {
+            ZStack {
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(Color(hex: "F3F4F6"))
+
+                VStack(spacing: 8) {
+                    Image(systemName: "icloud.and.arrow.up")
+                        .font(.system(size: 40, weight: .medium))
+                        .foregroundStyle(Color(hex: "6B7280"))
                         .frame(width: 80, height: 80)
 
-                        Text("Upload")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(theme.colors.primaryText)
-                            .padding(.bottom, 8)
-                    }
-                    .padding(.top, 16)
-
-                    PhotosPicker(
-                        selection: $selectedPhoto,
-                        matching: .images
-                    ) {
-                        Color.clear
-                    }
-                    .disabled(isProcessing)
-                    .accessibilityLabel(isProcessing ? "处理中" : "上传头像图片")
-                    .accessibilityIdentifier("Settings_AvatarUpload")
+                    Text("Create")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(theme.colors.primaryText)
+                        .padding(.bottom, 8)
                 }
-                .frame(maxWidth: .infinity)
-                .aspectRatio(1, contentMode: .fit)
+                .padding(.top, 16)
             }
         }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity)
+        .aspectRatio(1, contentMode: .fit)
+        .accessibilityLabel("创建自定义伴侣")
+        .accessibilityIdentifier("Settings_CompanionCreateCard")
     }
 
+    // MARK: - Helpers
 
-
-    // MARK: - Private Helpers
-
-    private func confirmAvatar(_ result: AvatarProcessResult) {
-        #if canImport(UIKit)
-        if let uiImage = UIImage(data: result.previewData) {
-            avatarImage = Image(uiImage: uiImage)
-        }
-        #endif
-
-        // Persist
-        Task {
-            let pixelData = BLEDataEncoder.encodePixelData(result.pixels, width: AvatarProcessResult.dimension)
-            do {
-                try await LocalStorage.shared.saveAvatarData(result.previewData)
-            } catch {
-                ErrorReporter.log(
-                    .persistence(operation: "save", target: "avatar.dat", underlying: error.localizedDescription),
-                    context: "SettingsAccountSection.confirmAvatar"
-                )
-            }
-            do {
-                try await LocalStorage.shared.saveAvatarPixels(pixelData)
-            } catch {
-                ErrorReporter.log(
-                    .persistence(operation: "save", target: "avatar_pixels.dat", underlying: error.localizedDescription),
-                    context: "SettingsAccountSection.confirmAvatar"
-                )
-            }
-        }
-
-        processResult = nil
+    private var activeName: String {
+        appState.activeCustomCompanion?.name
+            ?? appState.userProfile.companionCharacter.displayName
     }
 
-    private func loadSavedAvatar() {
-        Task {
-            guard let data = await LocalStorage.shared.loadAvatarData() else { return }
-            await MainActor.run {
-                #if canImport(UIKit)
-                if let uiImage = UIImage(data: data) {
-                    avatarImage = Image(uiImage: uiImage)
-                }
-                #endif
-            }
+    private func refreshCustomPreview() async {
+        guard let id = appState.userProfile.customCompanionId else {
+            customPreviewData = nil
+            return
         }
+        customPreviewData = await LocalStorage.shared.loadCustomCompanionPreview(id: id)
     }
 }
-
-// Removed UploadButtonView as it's now inline

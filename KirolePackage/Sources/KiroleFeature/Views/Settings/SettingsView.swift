@@ -33,7 +33,6 @@ struct SettingsView: View {
     @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
     @State private var appeared = false
-    @State private var showCharacterSwitcher = false
 
     private var viewportWidth: CGFloat? {
         #if canImport(UIKit)
@@ -57,9 +56,6 @@ struct SettingsView: View {
 
                 SettingsIntegrationSection()
                     .appearAnimation(delay: 0.2, appeared: appeared)
-
-                companionSection
-                    .appearAnimation(delay: 0.25, appeared: appeared)
 
                 SettingsScenesSection()
                     .appearAnimation(delay: 0.28, appeared: appeared)
@@ -91,64 +87,6 @@ struct SettingsView: View {
         }
         .background(theme.colors.background)
         .onAppear { appeared = true }
-        .sheet(isPresented: $showCharacterSwitcher) {
-            CharacterSwitcherSheet()
-                .injectAppEnvironment()
-                .presentationDetents([.medium])
-                .presentationDragIndicator(.hidden)
-                .presentationCornerRadius(24)
-        }
-    }
-
-    private var companionSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SettingsSectionHeader(title: "Companion")
-
-            HStack(spacing: 16) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(activeCompanionName)
-                        .font(.system(size: 17, weight: .bold))
-                        .foregroundStyle(theme.colors.primaryText)
-
-                    Text(activeCompanionSubtitle)
-                        .font(.system(size: 13))
-                        .foregroundStyle(theme.colors.secondaryText)
-                }
-
-                Spacer()
-
-                Button {
-                    showCharacterSwitcher = true
-                } label: {
-                    Text("Switch")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(theme.colors.accent)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .background(theme.colors.accentLight)
-                        .clipShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("切换伴侣角色")
-                .accessibilityIdentifier("Settings_SwitchCompanion")
-            }
-            .padding(16)
-            .background(Color.white)
-            .clipShape(RoundedRectangle(cornerRadius: 24))
-            .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
-        }
-    }
-
-    private var activeCompanionName: String {
-        appState.activeCustomCompanion?.name
-            ?? appState.userProfile.companionCharacter.displayName
-    }
-
-    private var activeCompanionSubtitle: String {
-        if let custom = appState.activeCustomCompanion {
-            return "\(custom.relationship.displayName) · \(custom.personaVoice.displayName)"
-        }
-        return appState.userProfile.companionStyle.description
     }
 }
 

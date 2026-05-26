@@ -132,12 +132,23 @@ public struct CreateCustomCompanionSheet: View {
                     placeholderArtwork
                 }
                 #endif
-            }
 
-            photoPickerButton
+                // Transparent overlay makes the entire 200×200 tile the tap target —
+                // matches SettingsAccountSection avatar upload pattern. Without this,
+                // the placeholder "Tap to choose photo" lies: tap is bound to the
+                // text link below instead of the obvious visual target.
+                PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                    Color.clear
+                }
+                .disabled(isProcessing)
+                .frame(width: 200, height: 200)
+                .accessibilityLabel(processResult == nil ? "选择伴侣照片" : "更换伴侣照片")
+                .accessibilityIdentifier("CreateCompanion_PickPhoto")
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 24))
 
             if processResult != nil {
-                Text("This is how your companion will look on the E-ink display.")
+                Text("Tap photo to change · this is how it'll appear on the E-ink display.")
                     .font(.system(size: 12))
                     .foregroundStyle(theme.colors.secondaryText)
                     .multilineTextAlignment(.center)
@@ -409,19 +420,6 @@ public struct CreateCustomCompanionSheet: View {
                 isProcessing = false
             }
         }
-    }
-
-    @ViewBuilder
-    private var photoPickerButton: some View {
-        let accent = theme.colors.accent
-        let label = processResult == nil ? "Choose Photo" : "Pick a Different Photo"
-        PhotosPicker(selection: $selectedPhoto, matching: .images) {
-            Text(label)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(accent)
-        }
-        .accessibilityLabel("选择伴侣照片")
-        .accessibilityIdentifier("CreateCompanion_PickPhoto")
     }
 
     @ViewBuilder
