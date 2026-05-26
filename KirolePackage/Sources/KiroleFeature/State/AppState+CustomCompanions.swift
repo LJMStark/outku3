@@ -84,17 +84,28 @@ extension AppState {
 
     // MARK: - Selection
 
+    /// Switching to a new companion identity resets intimacy back to acquaintance —
+    /// staying at "close friend" while meeting a brand-new persona would make the AI
+    /// open with an unearned tone. Selecting the same companion again is a no-op for intimacy.
     public func selectBuiltInCompanion(_ character: CompanionCharacter) {
+        let isDifferentIdentity = userProfile.currentSelection != .builtIn(character)
         var profile = userProfile
         profile.companionCharacter = character
         profile.customCompanionId = nil
+        if isDifferentIdentity {
+            profile.intimacyStage = .acquaintance
+        }
         updateUserProfile(profile)
     }
 
     public func selectCustomCompanion(id: UUID) {
         guard customCompanions.contains(where: { $0.id == id }) else { return }
+        let isDifferentIdentity = userProfile.currentSelection != .custom(id)
         var profile = userProfile
         profile.customCompanionId = id
+        if isDifferentIdentity {
+            profile.intimacyStage = .acquaintance
+        }
         updateUserProfile(profile)
 
         // Re-push the pixel frame so the device shows the newly active avatar.
