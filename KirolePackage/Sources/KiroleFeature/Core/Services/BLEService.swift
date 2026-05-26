@@ -467,6 +467,14 @@ public final class BLEService: NSObject {
         try await writeDevelopmentDisplayPacket(packet)
     }
 
+    /// 推送用户自定义伴侣的像素帧到 E-ink 设备。
+    /// pixelData 应为 4bpp packed 数据（通常 96×96 → 4608 字节），由 BLEDataEncoder.encodePixelData 生成。
+    /// 注意：硬件端的接收/渲染逻辑待与硬件团队对齐 0x15 customAvatarFrame 协议后启用。
+    public func sendCustomAvatarFrame(pixelData: Data) async throws {
+        let payload = BLEDataEncoder.encodeCustomAvatarFrame(pixelData: pixelData)
+        try await writeData(type: .customAvatarFrame, data: payload)
+    }
+
     public func sendScreensaverConfig(_ config: ScreensaverConfig) async throws {
         let packet = BLEPacketizer.buildScreensaverPacket(config: config)
         try await writeDevelopmentDisplayPacket(packet)
@@ -554,7 +562,7 @@ public final class BLEService: NSObject {
     private func shouldUseChunkedPacket(type: BLEDataType, payloadSize: Int, maxWriteLength: Int) -> Bool {
         if payloadSize + 3 > maxWriteLength { return true }
         switch type {
-        case .dayPack, .taskInPage:
+        case .dayPack, .taskInPage, .customAvatarFrame:
             return true
         default:
             return false

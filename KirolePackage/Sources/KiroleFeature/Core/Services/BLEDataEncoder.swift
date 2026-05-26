@@ -228,4 +228,23 @@ public enum BLEDataEncoder {
         }
         return data
     }
+
+    // MARK: - Custom Avatar Frame (0x15)
+
+    /// 编码自定义伴侣的像素帧。
+    /// Payload 布局（与硬件团队待对齐，目前以 sub-version 0x01 标记）：
+    ///   subVersion(1B) | width(1B) | height(1B) | 4bpp pixels(N)
+    /// pixelData 已是 4bpp packed 数据（通常 96×96 → 4608B）。
+    public static func encodeCustomAvatarFrame(
+        pixelData: Data,
+        width: Int = AvatarProcessResult.dimension,
+        height: Int = AvatarProcessResult.dimension
+    ) -> Data {
+        var data = Data()
+        data.append(0x01)
+        data.appendClampedUInt8(width)
+        data.appendClampedUInt8(height)
+        data.append(pixelData)
+        return data
+    }
 }

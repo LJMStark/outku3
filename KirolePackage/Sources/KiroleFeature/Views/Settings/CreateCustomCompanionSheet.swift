@@ -132,13 +132,7 @@ public struct CreateCustomCompanionSheet: View {
                 #endif
             }
 
-            PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                Text(processResult == nil ? "Choose Photo" : "Pick a Different Photo")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(theme.colors.accent)
-            }
-            .accessibilityLabel("选择伴侣照片")
-            .accessibilityIdentifier("CreateCompanion_PickPhoto")
+            photoPickerButton
 
             if processResult != nil {
                 Text("This is how your companion will look on the E-ink display.")
@@ -392,6 +386,19 @@ public struct CreateCustomCompanionSheet: View {
                 isProcessing = false
             }
         }
+    }
+
+    @ViewBuilder
+    private var photoPickerButton: some View {
+        let accent = theme.colors.accent
+        let label = processResult == nil ? "Choose Photo" : "Pick a Different Photo"
+        PhotosPicker(selection: $selectedPhoto, matching: .images) {
+            Text(label)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(accent)
+        }
+        .accessibilityLabel("选择伴侣照片")
+        .accessibilityIdentifier("CreateCompanion_PickPhoto")
     }
 
     @ViewBuilder

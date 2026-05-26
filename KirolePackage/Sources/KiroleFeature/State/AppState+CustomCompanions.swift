@@ -46,6 +46,7 @@ extension AppState {
         }
 
         selectCustomCompanion(id: id)
+        await pushCustomAvatarFrame(pixelData: pixelData, companionId: id)
         return companion
     }
 
@@ -94,6 +95,12 @@ extension AppState {
         var profile = userProfile
         profile.customCompanionId = id
         updateUserProfile(profile)
+
+        // Re-push the pixel frame so the device shows the newly active avatar.
+        Task { @MainActor in
+            guard let pixels = await localStorage.loadCustomCompanionPixels(id: id) else { return }
+            await pushCustomAvatarFrame(pixelData: pixels, companionId: id)
+        }
     }
 
     // MARK: - Helpers
@@ -111,6 +118,19 @@ extension AppState {
             } catch {
                 reportPersistenceError(error, operation: "save", target: "custom_companions.json")
             }
+        }
+    }
+
+    /// Best-effort BLE push. Failures (device offline, secure handshake pending, etc.)
+    /// only log — the user-visible UI state already reflects the choice.
+    private func pushCustomAvatarFrame(pixelData: Data, companionId: UUID) async {
+        do {
+            try await BLEService.shared.sendCustomAvatarFrame(pixelData: pixelData)
+        } catch {
+            ErrorReporter.log(
+                .sync(component: "BLE CustomAvatarFrame", underlying: error.localizedDescription),
+                context: "AppState.pushCustomAvatarFrame id=\(companionId)"
+            )
         }
     }
 }
