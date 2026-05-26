@@ -46,6 +46,10 @@ public actor LocalStorage {
         static let avatarData = "avatar.dat"
         static let avatarPixels = "avatar_pixels.dat"
         static let sharedCompanionDialogue = "shared_companion_dialogue.json"
+        static let customCompanions = "custom_companions.json"
+        /// Prefix for per-companion pixel/preview blobs.
+        /// Actual filenames are built from CustomCompanion.avatarPixelsFileName / avatarPreviewFileName.
+        static let customCompanionAssetPrefix = "custom_companion_"
 
         static let persisted = [
             pet, tasks, events,
@@ -55,6 +59,7 @@ public actor LocalStorage {
             deepFocusSelection, activeFocusSession,
             outbox, googleSyncMetadata, companionUsageState,
             avatarData, avatarPixels, sharedCompanionDialogue,
+            customCompanions,
         ]
     }
 
@@ -141,6 +146,13 @@ public actor LocalStorage {
             if fileManager.fileExists(atPath: url.path) {
                 try fileManager.removeItem(at: url)
             }
+        }
+
+        // Custom companion assets use dynamic per-uuid filenames, so sweep them by prefix.
+        let contents = (try? fileManager.contentsOfDirectory(atPath: documentsDirectory.path)) ?? []
+        for name in contents where name.hasPrefix(Files.customCompanionAssetPrefix) {
+            let url = documentsDirectory.appendingPathComponent(name)
+            try? fileManager.removeItem(at: url)
         }
 
         for key in resettableUserDefaultKeys {
@@ -546,6 +558,61 @@ public actor LocalStorage {
     public func loadAvatarPixels() -> Data? {
         let url = documentsDirectory.appendingPathComponent(Files.avatarPixels)
         return try? Data(contentsOf: url)
+    }
+
+    // MARK: - Custom Companions
+
+    public func saveCustomCompanions(_ companions: [CustomCompanion]) throws {
+        try save(companions, to: Files.customCompanions)
+    }
+
+    public func loadCustomCompanions() throws -> [CustomCompanion] {
+        try load([CustomCompanion].self, from: Files.customCompanions) ?? []
+    }
+
+    /// Filenames are derived from the companion id so they're stable across renames and
+    /// safe to share between code that only holds the id (e.g. BLE push) and code that
+    /// holds the full struct.
+    public nonisolated static func customCompanionPreviewFileName(for id: UUID) -> String {
+        "\(Files.customCompanionAssetPrefix)\(id.uuidString)_preview.png"
+    }
+
+    public nonisolated static func customCompanionPixelsFileName(for id: UUID) -> String {
+        "\(Files.customCompanionAssetPrefix)\(id.uuidString)_pixels.dat"
+    }
+
+    public func saveCustomCompanionAssets(
+        id: UUID,
+        previewData: Data,
+        pixelData: Data
+    ) throws {
+        let previewURL = documentsDirectory.appendingPathComponent(
+            Self.customCompanionPreviewFileName(for: id)
+        )
+        let pixelsURL = documentsDirectory.appendingPathComponent(
+            Self.customCompanionPixelsFileName(for: id)
+        )
+        try previewData.write(to: previewURL, options: [.atomic])
+        try pixelData.write(to: pixelsURL, options: [.atomic])
+    }
+
+    public func loadCustomCompanionPreview(id: UUID) -> Data? {
+        let url = documentsDirectory.appendingPathComponent(
+            Self.customCompanionPreviewFileName(for: id)
+        )
+        return try? Data(contentsOf: url)
+    }
+
+    public func loadCustomCompanionPixels(id: UUID) -> Data? {
+        let url = documentsDirectory.appendingPathComponent(
+            Self.customCompanionPixelsFileName(for: id)
+        )
+        return try? Data(contentsOf: url)
+    }
+
+    public func deleteCustomCompanionAssets(id: UUID) throws {
+        try deleteFile(named: Self.customCompanionPreviewFileName(for: id))
+        try deleteFile(named: Self.customCompanionPixelsFileName(for: id))
     }
 
     // MARK: - Clear All
