@@ -53,11 +53,15 @@ extension AppState {
 
     /// Replace an existing custom companion's metadata (name / relationship / voice / roast).
     /// Avatar assets are immutable here — re-upload requires deleting and recreating.
+    /// Bumps `updatedAt` so downstream caches (e.g. home dialogue fingerprint) invalidate
+    /// even if the caller forgot to set it.
     public func updateCustomCompanion(_ updated: CustomCompanion) {
         guard let index = customCompanions.firstIndex(where: { $0.id == updated.id }) else {
             return
         }
-        customCompanions[index] = updated
+        var bumped = updated
+        bumped.updatedAt = Date()
+        customCompanions[index] = bumped
         persistCustomCompanionsList()
     }
 

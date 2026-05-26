@@ -243,13 +243,12 @@ extension AppState {
     ) -> String {
         let todayProgress = Self.companionTaskProgressSnapshot(from: todayTasks)
 
-        // Custom companion contributes id + roast toggle + persona voice to the
-        // fingerprint. id alone would miss the case where the user edits an
-        // existing companion (same id, new persona) — including the dials
-        // forces cache invalidation on persona edits too.
+        // id + updatedAt covers every prompt-relevant mutation: name,
+        // relationship, voice, roast — and any field added later, as long as
+        // updateCustomCompanion is the mutation entry point (it bumps updatedAt).
         let customKey: String = {
             guard let custom = customCompanion else { return "none" }
-            return "\(custom.id.uuidString):\(custom.personaVoice.rawValue):\(custom.roastModeEnabled ? "roast" : "warm")"
+            return "\(custom.id.uuidString):\(Int(custom.updatedAt.timeIntervalSince1970))"
         }()
 
         var parts: [String] = [

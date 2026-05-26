@@ -13,6 +13,10 @@ public struct CustomCompanion: Sendable, Codable, Identifiable, Equatable {
     public var avatarPreviewFileName: String
     public var avatarPixelsFileName: String
     public var createdAt: Date
+    /// Bumped on every mutation that affects prompt assembly (name / relationship / voice / roast).
+    /// Cache fingerprints reference `id + updatedAt` so any future mutable field invalidates
+    /// downstream caches automatically, without revisiting fingerprint construction.
+    public var updatedAt: Date
 
     public init(
         id: UUID = UUID(),
@@ -22,7 +26,8 @@ public struct CustomCompanion: Sendable, Codable, Identifiable, Equatable {
         roastModeEnabled: Bool = false,
         avatarPreviewFileName: String,
         avatarPixelsFileName: String,
-        createdAt: Date = Date()
+        createdAt: Date = Date(),
+        updatedAt: Date = Date()
     ) {
         self.id = id
         self.name = name
@@ -32,6 +37,25 @@ public struct CustomCompanion: Sendable, Codable, Identifiable, Equatable {
         self.avatarPreviewFileName = avatarPreviewFileName
         self.avatarPixelsFileName = avatarPixelsFileName
         self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+}
+
+extension CustomCompanion {
+    /// Decoding tolerates pre-updatedAt JSON by falling back to createdAt.
+    /// Keeps existing on-disk companions readable without forcing a migration step.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(UUID.self, forKey: .id)
+        self.name = try container.decode(String.self, forKey: .name)
+        self.relationship = try container.decode(CompanionRelationship.self, forKey: .relationship)
+        self.personaVoice = try container.decode(CompanionPersonaVoice.self, forKey: .personaVoice)
+        self.roastModeEnabled = try container.decode(Bool.self, forKey: .roastModeEnabled)
+        self.avatarPreviewFileName = try container.decode(String.self, forKey: .avatarPreviewFileName)
+        self.avatarPixelsFileName = try container.decode(String.self, forKey: .avatarPixelsFileName)
+        let created = try container.decode(Date.self, forKey: .createdAt)
+        self.createdAt = created
+        self.updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? created
     }
 }
 
