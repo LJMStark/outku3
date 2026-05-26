@@ -82,11 +82,14 @@ Fully native SwiftUI implementation managed via `OnboardingState`:
 Images accessed via `Image("name", bundle: .module)` from `Resources/Media.xcassets`.
 
 ### Pet / Companion IP System
-**Product spec: there are exactly 3 IP companions — Joy, Silas, Nova. There are no other pets.**
+**Product spec: 3 built-in IP companions (Joy, Silas, Nova) + user-created custom companions (added 2026-05-26, Inku-inspired).**
 
-- **IP source of truth**: `CompanionCharacter` enum (`Models/CompanionCharacter.swift`): `joy`, `silas`, `nova`.
-- User selects via `OnboardingProfile.companionCharacter`.
-- Drives both pet identity (image assets `<rawValue>-main` / `<rawValue>-head` under `Resources/Media.xcassets/`) and companion text style via `resolvedStyle`.
+- **Built-in IP source of truth**: `CompanionCharacter` enum (`Models/CompanionCharacter.swift`): `joy`, `silas`, `nova`. Still the only `String`-backed cases; do not add new built-in cases here without a product decision.
+- **Custom companions**: `CustomCompanion` struct (`Models/CustomCompanion.swift`) — user uploads a photo, names the companion, picks a `CompanionRelationship` (Pet/Child/Partner/Friend/Mentor/Self/Other) and a `CompanionPersonaVoice` (Companion/Challenger/Zen/Playful) + optional Roast Mode. Persona prompt is template-driven from these structured fields; the user never writes free-form prompt text.
+- **Active companion = `UserProfile.currentSelection`**: returns `.builtIn(character)` when `customCompanionId == nil`, else `.custom(id)`. Most call sites can keep reading `userProfile.companionCharacter` directly; only branch on `currentSelection` when the built-in / custom distinction actually matters (prompt assembly, hero artwork, BLE pixel push).
+- User initially selects via `OnboardingProfile.companionCharacter`; later switches via `CharacterSwitcherSheet` (Joy/Silas/Nova + custom list + "Create Your Own" CTA).
+- Drives pet identity (image assets `<rawValue>-main` / `<rawValue>-head` under `Resources/Media.xcassets/` for built-ins, on-disk 96×96 Spectra 6 pixels for custom) and companion text style via `resolvedStyle` (built-in) or `CompanionPersonaVoice.promptDescription` (custom).
+- **BLE for custom avatars**: 0x15 `customAvatarFrame` (App→Device), payload `subVersion(1B) | width(1B) | height(1B) | 4bpp pixels`. Hardware-side rendering still pending alignment with the firmware team.
 
 Auxiliary pet state in `Models/Pet.swift`:
 - 5 stages (`Stage`): Baby -> Child -> Teen -> Adult -> Elder.
@@ -168,10 +171,11 @@ The companion text system is event-reactive companion writing for the Kirole tas
 - All user-controlled text (task title / event name / pet name / learn content) MUST flow through `PromptSanitizer.sanitize(_:)` — currently 8 injection points. Wrap user content in XML delimiters declared in the system prompt.
 
 - **Character source of truth**:
-  1. `CompanionCharacter` is the user-facing IP selection: `joy`, `silas`, `nova` (defined in `Models/CompanionCharacter.swift`).
+  1. `CompanionCharacter` is the **built-in** IP selection: `joy`, `silas`, `nova` (defined in `Models/CompanionCharacter.swift`).
   2. `CompanionStyle` mirrors the three product IPs: `.joy`, `.silas`, `.nova`.
-  3. Character drives style through `CompanionCharacter.resolvedStyle`; do not add independent style choices.
-  4. Naming history: `Nook → Joy` rename happened in commit `63eaa05` (2026-05-02). Do not reintroduce `nook`.
+  3. Character drives style through `CompanionCharacter.resolvedStyle`; do not add independent style choices for built-ins.
+  4. **Custom companions take precedence**: when `UserProfile.customCompanionId != nil`, prompt assembly uses `OpenAIService.customCompanionPersonaPrompt(_:)` and skips the built-in `characterPrompt`. The active `CustomCompanion` flows through `AIContext.customCompanion` from both `CompanionTextService.generateAIText` and `AppState+Companion.buildCompanionDialogueTriggerState`. The dialogue cache fingerprint includes the custom id + voice + roast toggle.
+  5. Naming history: `Nook → Joy` rename happened in commit `63eaa05` (2026-05-02). Do not reintroduce `nook`.
 - **Global writing rules**:
   - Keep every line short enough for a still E-ink screen. Most outputs should fit in 15-25 English words.
   - Speak directly to the user with "you" or "we".
