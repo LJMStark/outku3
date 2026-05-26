@@ -28,6 +28,14 @@ extension AppState {
             }
         }
 
+        // Binding-day driven intimacy escalation is a 3-IP-only mechanic: there is no
+        // designed progression model for custom companions yet, and `userProfile.companionCharacter`
+        // still points at the user's last built-in pick (so we can snap back on switch).
+        // Without this guard, switching to a custom companion and backgrounding the app would
+        // immediately re-apply the prior built-in's closeFriend stage and overwrite the
+        // acquaintance reset that selectCustomCompanion just performed.
+        guard userProfile.customCompanionId == nil else { return }
+
         let updatedStage = IntimacyStage.from(bindingDays: characterUsage.totalUsedDays)
         if userProfile.intimacyStage != updatedStage {
             var updatedProfile = userProfile
