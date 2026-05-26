@@ -31,10 +31,9 @@ public struct BLESecureEnvelope: Sendable {
         var data = Data()
         data.append(version)
         data.append(payloadType)
-        data.append(contentsOf: withUnsafeBytes(of: nonce.bigEndian) { Array($0) })
-        data.append(contentsOf: withUnsafeBytes(of: issuedAt.bigEndian) { Array($0) })
-        let payloadLength = UInt16(payload.count)
-        data.append(contentsOf: withUnsafeBytes(of: payloadLength.bigEndian) { Array($0) })
+        data.appendBigEndian(nonce)
+        data.appendBigEndian(issuedAt)
+        data.appendBigEndian(UInt16(payload.count))
         data.append(payload)
         return data
     }
@@ -59,16 +58,13 @@ public struct BLESecureEnvelope: Sendable {
         let payloadType = data[cursor]
         cursor += 1
 
-        let nonceData = data.subdata(in: cursor..<(cursor + 8))
-        let nonce = nonceData.reduce(UInt64(0)) { ($0 << 8) | UInt64($1) }
+        let nonce = data.bigEndianUInt64(at: cursor)
         cursor += 8
 
-        let issuedAtData = data.subdata(in: cursor..<(cursor + 4))
-        let issuedAt = issuedAtData.reduce(UInt32(0)) { ($0 << 8) | UInt32($1) }
+        let issuedAt = data.bigEndianUInt32(at: cursor)
         cursor += 4
 
-        let payloadLenData = data.subdata(in: cursor..<(cursor + 2))
-        let payloadLength = payloadLenData.reduce(UInt16(0)) { ($0 << 8) | UInt16($1) }
+        let payloadLength = data.bigEndianUInt16(at: cursor)
         cursor += 2
 
         let payloadEnd = cursor + Int(payloadLength)

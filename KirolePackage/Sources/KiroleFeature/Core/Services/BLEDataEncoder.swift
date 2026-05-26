@@ -1,35 +1,5 @@
 import Foundation
 
-// MARK: - Data Extension for BLE Encoding
-
-extension Data {
-    /// 追加带长度前缀的字符串数据（截断到指定最大长度）
-    mutating func appendString(_ string: String, maxLength: Int) {
-        let stringData = string.data(using: .utf8) ?? Data()
-        let truncatedData = stringData.validUTF8Prefix(maxLength: maxLength)
-        append(UInt8(truncatedData.count))
-        append(truncatedData)
-    }
-}
-
-private extension Data {
-    func validUTF8Prefix(maxLength: Int) -> Data {
-        guard maxLength > 0 else { return Data() }
-        guard count > maxLength else { return self }
-
-        var end = maxLength
-        while end > 0 {
-            let candidate = prefix(end)
-            if String(data: candidate, encoding: .utf8) != nil {
-                return Data(candidate)
-            }
-            end -= 1
-        }
-
-        return Data()
-    }
-}
-
 // MARK: - BLE Data Encoder
 
 /// BLE 数据编码器，负责将应用数据编码为 E-ink 设备可识别的二进制格式
@@ -139,25 +109,22 @@ public enum BLEDataEncoder {
 
         // Top tasks (dynamic limit based on screen size)
         let maxTasks = screenSize.maxTasks
-        data.append(UInt8(min(dayPack.topTasks.count, maxTasks)))
+        data.appendClampedUInt8(min(dayPack.topTasks.count, maxTasks))
         for task in dayPack.topTasks.prefix(maxTasks) {
             data.appendString(task.id, maxLength: 36)
             data.appendString(task.title, maxLength: 30)
             data.append(task.isCompleted ? 0x01 : 0x00)
-            data.append(UInt8(clamping: task.priority))
+            data.appendClampedUInt8(task.priority)
         }
 
         // Page 4: Settlement
-        data.append(UInt8(clamping: dayPack.settlementData.tasksCompleted))
-        data.append(UInt8(clamping: dayPack.settlementData.tasksTotal))
-        let points = UInt16(clamping: dayPack.settlementData.pointsEarned)
-        data.append(contentsOf: withUnsafeBytes(of: points.bigEndian) { Array($0) })
-        let focusMinutes = UInt16(clamping: dayPack.settlementData.totalFocusMinutes)
-        data.append(contentsOf: withUnsafeBytes(of: focusMinutes.bigEndian) { Array($0) })
-        data.append(UInt8(clamping: dayPack.settlementData.focusSessionCount))
-        let longestFocus = UInt16(clamping: dayPack.settlementData.longestFocusMinutes)
-        data.append(contentsOf: withUnsafeBytes(of: longestFocus.bigEndian) { Array($0) })
-        data.append(UInt8(clamping: dayPack.settlementData.interruptionCount))
+        data.appendClampedUInt8(dayPack.settlementData.tasksCompleted)
+        data.appendClampedUInt8(dayPack.settlementData.tasksTotal)
+        data.appendBigEndian(UInt16(clamping: dayPack.settlementData.pointsEarned))
+        data.appendBigEndian(UInt16(clamping: dayPack.settlementData.totalFocusMinutes))
+        data.appendClampedUInt8(dayPack.settlementData.focusSessionCount)
+        data.appendBigEndian(UInt16(clamping: dayPack.settlementData.longestFocusMinutes))
+        data.appendClampedUInt8(dayPack.settlementData.interruptionCount)
         data.appendString(dayPack.settlementData.summaryMessage, maxLength: 50)
         data.appendString(dayPack.settlementData.encouragementMessage, maxLength: 50)
 
@@ -202,7 +169,7 @@ public enum BLEDataEncoder {
     /// 编码 Event Log 请求
     public static func encodeEventLogRequest(since timestamp: UInt32) -> Data {
         var data = Data()
-        data.append(contentsOf: withUnsafeBytes(of: timestamp.bigEndian) { Array($0) })
+        data.appendBigEndian(timestamp)
         return data
     }
 
@@ -211,11 +178,9 @@ public enum BLEDataEncoder {
     /// 编码屏幕配置信息
     public static func encodeScreenConfig(_ screenSize: ScreenSize) -> Data {
         var data = Data()
-        let widthBE = UInt16(screenSize.width).bigEndian
-        let heightBE = UInt16(screenSize.height).bigEndian
-        data.append(contentsOf: withUnsafeBytes(of: widthBE) { Array($0) })
-        data.append(contentsOf: withUnsafeBytes(of: heightBE) { Array($0) })
-        data.append(UInt8(screenSize.maxTasks))
+        data.appendBigEndian(UInt16(screenSize.width))
+        data.appendBigEndian(UInt16(screenSize.height))
+        data.appendClampedUInt8(screenSize.maxTasks)
         return data
     }
 
@@ -242,9 +207,8 @@ public enum BLEDataEncoder {
         case .deep:     3
         }
         data.append(phaseByte)
-        data.append(UInt8(clamping: energyBottles))
-        let elapsed = UInt16(clamping: elapsedMinutes)
-        data.append(contentsOf: withUnsafeBytes(of: elapsed.bigEndian) { Array($0) })
+        data.appendClampedUInt8(energyBottles)
+        data.appendBigEndian(UInt16(clamping: elapsedMinutes))
         data.appendString(taskTitle ?? "", maxLength: 40)
         return data
     }

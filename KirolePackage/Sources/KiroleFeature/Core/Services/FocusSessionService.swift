@@ -566,30 +566,12 @@ public final class FocusSessionService {
         sessionEnd: Date,
         screenUnlockEvents: [ScreenUnlockEvent]
     ) -> TimeInterval {
-        guard !screenUnlockEvents.isEmpty else {
-            return sessionEnd.timeIntervalSince(sessionStart)
-        }
-
-        let sortedEvents = screenUnlockEvents.sorted { $0.timestamp < $1.timestamp }
-        var focusTime: TimeInterval = 0
-        var lastEventEnd = sessionStart
-
-        for event in sortedEvents {
-            let gapDuration = event.timestamp.timeIntervalSince(lastEventEnd)
-            if gapDuration >= Constants.focusThresholdSeconds {
-                focusTime += gapDuration
-            }
-
-            let duration = event.duration ?? 60
-            lastEventEnd = event.timestamp.addingTimeInterval(duration)
-        }
-
-        let finalGap = sessionEnd.timeIntervalSince(lastEventEnd)
-        if finalGap >= Constants.focusThresholdSeconds {
-            focusTime += finalGap
-        }
-
-        return focusTime
+        FocusTimeCalculator.countableFocusTime(
+            sessionStart: sessionStart,
+            sessionEnd: sessionEnd,
+            screenUnlockEvents: screenUnlockEvents,
+            thresholdSeconds: Constants.focusThresholdSeconds
+        )
     }
 
     private func earnedEnergyBottles(for focusTime: TimeInterval?) -> Int {

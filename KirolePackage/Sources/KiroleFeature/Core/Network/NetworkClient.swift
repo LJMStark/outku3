@@ -73,7 +73,7 @@ public actor NetworkClient {
         url: URL,
         headers: [String: String] = [:]
     ) async throws {
-        let _: EmptyResponse = try await sendRequest(url: url, method: "DELETE", headers: headers)
+        try await sendNoContentRequest(url: url, method: "DELETE", headers: headers)
     }
 
     // MARK: - Core Request
@@ -85,6 +85,39 @@ public actor NetworkClient {
         body: (any Encodable)? = nil,
         requestTimeout: TimeInterval? = nil
     ) async throws -> T {
+        let data = try await responseData(
+            url: url,
+            method: method,
+            headers: headers,
+            body: body,
+            requestTimeout: requestTimeout
+        )
+        return try decoder.decode(T.self, from: data)
+    }
+
+    private func sendNoContentRequest(
+        url: URL,
+        method: String,
+        headers: [String: String],
+        body: (any Encodable)? = nil,
+        requestTimeout: TimeInterval? = nil
+    ) async throws {
+        _ = try await responseData(
+            url: url,
+            method: method,
+            headers: headers,
+            body: body,
+            requestTimeout: requestTimeout
+        )
+    }
+
+    private func responseData(
+        url: URL,
+        method: String,
+        headers: [String: String],
+        body: (any Encodable)? = nil,
+        requestTimeout: TimeInterval? = nil
+    ) async throws -> Data {
         var request = URLRequest(url: url)
         request.httpMethod = method
         if let requestTimeout {
@@ -102,11 +135,7 @@ public actor NetworkClient {
 
         let (data, response) = try await session.data(for: request)
         try validateResponse(response, data: data)
-
-        if T.self == EmptyResponse.self {
-            return EmptyResponse() as! T
-        }
-        return try decoder.decode(T.self, from: data)
+        return data
     }
 
     // MARK: - Authenticated Request with 401 Retry
@@ -142,13 +171,19 @@ public actor NetworkClient {
         headers: [String: String] = [:],
         refreshToken: @Sendable () async throws -> String
     ) async throws {
-        let _: EmptyResponse = try await authenticatedRequest(
-            url: url,
-            method: method,
-            headers: headers,
-            responseType: EmptyResponse.self,
-            refreshToken: refreshToken
-        )
+        do {
+            try await executeNoContentRequest(url: url, method: method, headers: headers)
+        } catch let error as NetworkError {
+            guard error.isUnauthorized else {
+                throw error
+            }
+            try await retryAuthenticatedNoContentRequest(
+                url: url,
+                method: method,
+                headers: headers,
+                refreshToken: refreshToken
+            )
+        }
     }
 
     private func executeRequest<T: Decodable>(
@@ -162,6 +197,18 @@ public actor NetworkClient {
             throw NetworkError.invalidResponse
         }
         return try await sendRequest(url: url, method: method, headers: headers, body: body)
+    }
+
+    private func executeNoContentRequest(
+        url urlString: String,
+        method: String,
+        headers: [String: String],
+        body: (any Encodable)? = nil
+    ) async throws {
+        guard let url = URL(string: urlString) else {
+            throw NetworkError.invalidResponse
+        }
+        try await sendNoContentRequest(url: url, method: method, headers: headers, body: body)
     }
 
     private func retryAuthenticatedRequest<T: Decodable>(
@@ -182,6 +229,18 @@ public actor NetworkClient {
             body: body,
             responseType: responseType
         )
+    }
+
+    private func retryAuthenticatedNoContentRequest(
+        url: String,
+        method: String,
+        headers: [String: String],
+        refreshToken: @Sendable () async throws -> String
+    ) async throws {
+        let newToken = try await refreshToken()
+        var updatedHeaders = headers
+        updatedHeaders["Authorization"] = "Bearer \(newToken)"
+        try await executeNoContentRequest(url: url, method: method, headers: updatedHeaders)
     }
 
     // MARK: - Validation
@@ -221,13 +280,8 @@ public actor NetworkClient {
         guard !data.isEmpty else { return nil }
 
         if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            if let error = object["error"] as? [String: Any] {
-                if let message = error["message"] as? String, !message.isEmpty {
-                    if let status = error["status"] as? String, !status.isEmpty {
-                        return "\(status): \(message)"
-                    }
-                    return message
-                }
+            if let errorDetail = extractNestedErrorDetail(from: object) {
+                return errorDetail
             }
             if let message = object["message"] as? String, !message.isEmpty {
                 return message
@@ -242,11 +296,17 @@ public actor NetworkClient {
 
         return nil
     }
+
+    private func extractNestedErrorDetail(from object: [String: Any]) -> String? {
+        guard let error = object["error"] as? [String: Any] else { return nil }
+        guard let message = error["message"] as? String, !message.isEmpty else { return nil }
+
+        if let status = error["status"] as? String, !status.isEmpty {
+            return "\(status): \(message)"
+        }
+        return message
+    }
 }
-
-// MARK: - EmptyResponse
-
-private struct EmptyResponse: Decodable {}
 
 // MARK: - AnyEncodable
 

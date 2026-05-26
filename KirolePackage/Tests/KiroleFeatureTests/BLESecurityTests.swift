@@ -165,7 +165,7 @@ struct BLESecurityTests {
         signedData.append(0x02)
         signedData.append(clientNonce)
         signedData.append(serverNonce)
-        signedData.append(contentsOf: withUnsafeBytes(of: issuedAt.bigEndian) { Array($0) })
+        signedData.appendBigEndian(issuedAt)
 
         var response = signedData
         response.append(signature(for: signedData))

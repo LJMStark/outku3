@@ -6,8 +6,8 @@ import { Character } from './state.js';
 
 // Character visual configs
 const CHARACTER_VISUALS = {
-  [Character.NOOK]: {
-    // Nook: fox-like creature with green bandana
+  [Character.JOY]: {
+    // Joy: fox-like creature with green bandana
     bodyColor: '#c8a060',
     accentColor: '#e8c88a',
     bandanaColor: '#3d6b2e',
@@ -40,7 +40,7 @@ const CHARACTER_VISUALS = {
 
 export class PetRenderer {
   render(character, mood = 'idle') {
-    const v = CHARACTER_VISUALS[character] || CHARACTER_VISUALS[Character.NOOK];
+    const v = CHARACTER_VISUALS[character] || CHARACTER_VISUALS[Character.JOY];
     const eyeOpen = mood === 'idle' || mood === 'postcard';
     const isDeep = mood === 'deep' || mood === 'building';
 
@@ -127,7 +127,7 @@ export class PetRenderer {
       `;
     }
 
-    // Nook: big round curious (default)
+    // Joy: big round curious (default)
     return `
       <circle cx="50" cy="54" r="6" fill="white" />
       <circle cx="51" cy="55" r="4" fill="#3a2a1a" />

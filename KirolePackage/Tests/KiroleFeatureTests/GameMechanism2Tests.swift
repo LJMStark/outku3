@@ -243,6 +243,23 @@ struct GameMechanism2Tests {
         #expect(service.todaySessions.last?.earnedEnergyBottles == 2)
     }
 
+    @Test("Screen unlock breaks countable focus segments below 30 minute threshold")
+    func screenUnlockBreaksCountableFocusSegments() {
+        let startTime = Date(timeIntervalSince1970: 1_700_000_000)
+        let unlockTime = startTime.addingTimeInterval(25 * 60)
+        let endTime = startTime.addingTimeInterval(50 * 60)
+
+        let focusTime = FocusTimeCalculator.countableFocusTime(
+            sessionStart: startTime,
+            sessionEnd: endTime,
+            screenUnlockEvents: [ScreenUnlockEvent(timestamp: unlockTime, duration: 0)],
+            thresholdSeconds: 30 * 60
+        )
+
+        #expect(focusTime == 0)
+        #expect(FocusEnergyCalculator.bottlesEarned(minutes: Int(focusTime / 60)) == 0)
+    }
+
     @Test("Recovered focus session also computes earned energy bottles")
     @MainActor
     func recoveredFocusSessionAccumulatesEnergyBottles() {

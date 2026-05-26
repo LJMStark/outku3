@@ -20,8 +20,7 @@ public enum BLESimpleEncoder {
     public static func encode(type: UInt8, payload: Data) -> Data {
         var packet = Data()
         packet.append(type)
-        let length = UInt16(payload.count)
-        packet.append(contentsOf: withUnsafeBytes(of: length.bigEndian) { Array($0) })
+        packet.appendBigEndian(UInt16(payload.count))
         packet.append(payload)
         return packet
     }
@@ -79,16 +78,15 @@ public enum BLEPacketizer {
             let start = index * maxChunkSize
             let end = min(start + maxChunkSize, payload.count)
             let chunk = payload.subdata(in: start..<end)
-            let chunkLength = UInt16(chunk.count)
             let chunkCRC = CRC16.ccittFalse(chunk)
 
             var packet = Data()
             packet.append(type)
-            packet.append(contentsOf: withUnsafeBytes(of: messageId.bigEndian) { Array($0) })
+            packet.appendBigEndian(messageId)
             packet.append(UInt8(index))
             packet.append(UInt8(totalChunks))
-            packet.append(contentsOf: withUnsafeBytes(of: chunkLength.bigEndian) { Array($0) })
-            packet.append(contentsOf: withUnsafeBytes(of: chunkCRC.bigEndian) { Array($0) })
+            packet.appendBigEndian(UInt16(chunk.count))
+            packet.appendBigEndian(chunkCRC)
             packet.append(chunk)
 
             packets.append(packet)
@@ -129,8 +127,8 @@ public final class BLEPacketAssembler {
 
         let seq = Int(packetData[3])
         let total = Int(packetData[4])
-        let chunkLength = UInt16(packetData[5]) << 8 | UInt16(packetData[6])
-        let chunkCRC = UInt16(packetData[7]) << 8 | UInt16(packetData[8])
+        let chunkLength = packetData.bigEndianUInt16(at: 5)
+        let chunkCRC = packetData.bigEndianUInt16(at: 7)
         let chunk = packetData.subdata(in: BLEPacketizer.headerSize..<packetData.count)
 
         guard total > 1, seq < total, chunk.count == Int(chunkLength) else { return false }
@@ -141,11 +139,11 @@ public final class BLEPacketAssembler {
         guard packetData.count >= BLEPacketizer.headerSize else { return nil }
 
         let type = packetData[0]
-        let messageId = UInt16(packetData[1]) << 8 | UInt16(packetData[2])
+        let messageId = packetData.bigEndianUInt16(at: 1)
         let seq = Int(packetData[3])
         let total = packetData[4]
-        let chunkLength = UInt16(packetData[5]) << 8 | UInt16(packetData[6])
-        let chunkCRC = UInt16(packetData[7]) << 8 | UInt16(packetData[8])
+        let chunkLength = packetData.bigEndianUInt16(at: 5)
+        let chunkCRC = packetData.bigEndianUInt16(at: 7)
 
         guard total > 0, seq < Int(total) else { return nil }
 
@@ -198,10 +196,10 @@ public enum BLEPacketError: Error {
 extension BLEPacketizer {
     public static func buildSceneUnlockPacket(sceneId: UInt8) -> Data {
         var data = Data()
-        data.append(contentsOf: [0xAA, 0x01, 0x01, sceneId]) 
+        data.append(contentsOf: [0xAA, 0x01, 0x01, sceneId])
         return data
     }
-    
+
     public static func buildScreensaverPacket(config: ScreensaverConfig) -> Data {
         let sceneByte = DisplayScene(rawValue: config.sceneId)?.commandByte ?? DisplayScene.harbor.commandByte
         let postcardDay = UInt8(clamping: config.postcardDay ?? 0)
@@ -211,8 +209,7 @@ extension BLEPacketizer {
         data.append(0xAA)
         data.append(0x01)
         data.append(0x02)
-        let typeByte: UInt8 = config.type == .postcard ? 0x01 : 0x00
-        data.append(typeByte)
+        data.append(config.type == .postcard ? 0x01 : 0x00)
         data.append(sceneByte)
         data.append(postcardDay)
         data.append(UInt8(quoteData.count))

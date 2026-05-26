@@ -21,7 +21,7 @@ export const Scene = Object.freeze({
 
 // IP Characters
 export const Character = Object.freeze({
-  NOOK: 'nook',
+  JOY: 'joy',
   SILAS: 'silas',
   NOVA: 'nova',
 });
@@ -35,7 +35,8 @@ const SCENE_ALIASES = Object.freeze({
 });
 
 const CHARACTER_ALIASES = Object.freeze({
-  nook: Character.NOOK,
+  joy: Character.JOY,
+  nook: Character.JOY,
   silas: Character.SILAS,
   nova: Character.NOVA,
 });
@@ -87,8 +88,8 @@ export class SimulatorState {
     // Display
     this.displayMode = DisplayMode.IDLE;
     this.scene = Scene.HARBOR;
-    this.character = Character.NOOK;
-    this.petName = 'Nook';
+    this.character = Character.JOY;
+    this.petName = 'Joy';
     this.petMood = 'idle';
 
     // Weather
@@ -370,11 +371,11 @@ export class SimulatorState {
   // Get character display info
   getCharacterInfo() {
     const chars = {
-      [Character.NOOK]: { name: 'Nook', emoji: '\uD83E\uDD8A', color: '#c8a060' },
+      [Character.JOY]: { name: 'Joy', emoji: '\uD83E\uDD8A', color: '#c8a060' },
       [Character.SILAS]: { name: 'Silas', emoji: '\uD83E\uDDD9', color: '#6b8cae' },
       [Character.NOVA]: { name: 'Nova', emoji: '\u2604\uFE0F', color: '#8b5cf6' },
     };
-    return chars[this.character] || chars[Character.NOOK];
+    return chars[this.character] || chars[Character.JOY];
   }
 
   // Get scene class name

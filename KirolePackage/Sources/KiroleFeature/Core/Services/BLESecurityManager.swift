@@ -29,8 +29,8 @@ public final class BLESecurityManager {
 
         var data = Data()
         data.append(Handshake.requestKind)
-        data.append(contentsOf: withUnsafeBytes(of: nonce.bigEndian) { Array($0) })
-        data.append(contentsOf: withUnsafeBytes(of: issuedAt.bigEndian) { Array($0) })
+        data.appendBigEndian(nonce)
+        data.appendBigEndian(issuedAt)
         data.append(try signature(for: data))
         return data
     }
@@ -57,14 +57,12 @@ public final class BLESecurityManager {
             throw AppError.bleSecurity("Handshake signature mismatch")
         }
 
-        let clientNonceData = payload.subdata(in: 1..<9)
-        let clientNonce = clientNonceData.reduce(UInt64(0)) { ($0 << 8) | UInt64($1) }
+        let clientNonce = payload.bigEndianUInt64(at: 1)
         guard clientNonce == expectedClientNonce else {
             throw AppError.bleSecurity("Handshake nonce mismatch")
         }
 
-        let timestampData = payload.subdata(in: 17..<21)
-        let timestamp = timestampData.reduce(UInt32(0)) { ($0 << 8) | UInt32($1) }
+        let timestamp = payload.bigEndianUInt32(at: 17)
 
         try validateTimestamp(timestamp)
 

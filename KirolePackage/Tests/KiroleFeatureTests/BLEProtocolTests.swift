@@ -69,7 +69,7 @@ struct BLEProtocolTests {
         #expect(first[5] == 0x00)
         #expect(first[6] == 0x04)
         let firstPayload = first.subdata(in: BLEPacketizer.headerSize..<first.count)
-        let firstCRC = UInt16(first[7]) << 8 | UInt16(first[8])
+        let firstCRC = first.bigEndianUInt16(at: 7)
         #expect(firstCRC == CRC16.ccittFalse(firstPayload))
 
         let third = packets[2]
@@ -78,7 +78,7 @@ struct BLEProtocolTests {
         #expect(third[5] == 0x00)
         #expect(third[6] == 0x02)
         let thirdPayload = third.subdata(in: BLEPacketizer.headerSize..<third.count)
-        let thirdCRC = UInt16(third[7]) << 8 | UInt16(third[8])
+        let thirdCRC = third.bigEndianUInt16(at: 7)
         #expect(thirdCRC == CRC16.ccittFalse(thirdPayload))
     }
 
@@ -353,7 +353,7 @@ struct BLEProtocolTests {
         let payload = Data([0xDE, 0xAD, 0xBE, 0xEF])
         let encoded = BLESimpleEncoder.encode(type: 0x01, payload: payload)
         #expect(encoded[0] == 0x01)
-        let length = UInt16(encoded[1]) << 8 | UInt16(encoded[2])
+        let length = encoded.bigEndianUInt16(at: 1)
         #expect(length == 4)
         #expect(encoded.subdata(in: 3..<7) == payload)
     }
@@ -576,7 +576,7 @@ struct BLEProtocolTests {
         var payload = Data()
         payload.append(UInt8(taskIdData.count))
         payload.append(taskIdData)
-        payload.append(contentsOf: withUnsafeBytes(of: timestamp.bigEndian) { Array($0) })
+        payload.appendBigEndian(timestamp)
 
         let log = EventLog.fromBLEPayload(type: EventLogType.completeTask.rawByte, payload: payload)
         #expect(log?.eventType == .completeTask)
@@ -627,7 +627,7 @@ struct BLEProtocolTests {
         payload.append(0x10) // enterTaskIn
         payload.append(UInt8(taskId.count))
         payload.append(taskId)
-        payload.append(contentsOf: withUnsafeBytes(of: timestamp.bigEndian) { Array($0) })
+        payload.appendBigEndian(timestamp)
 
         let logs = BLEEventHandler.parseEventLogBatchPayload(payload)
         #expect(logs.count == 3)
@@ -663,7 +663,7 @@ struct BLEProtocolTests {
         payload.append(UInt8(taskIdData.count))
         payload.append(taskIdData)
         let timestamp: UInt32 = 1_700_000_000
-        payload.append(contentsOf: withUnsafeBytes(of: timestamp.bigEndian) { Array($0) })
+        payload.appendBigEndian(timestamp)
 
         let event = EventLog.fromBLEPayload(type: 0x10, payload: payload)
         #expect(event != nil)
@@ -731,7 +731,7 @@ struct BLEProtocolTests {
         payload.append(UInt8(taskIdData.count))
         payload.append(taskIdData)
         let timestamp: UInt32 = 1_700_001_000
-        payload.append(contentsOf: withUnsafeBytes(of: timestamp.bigEndian) { Array($0) })
+        payload.appendBigEndian(timestamp)
 
         let event = EventLog.fromBLEPayload(type: 0x12, payload: payload)
         #expect(event != nil)

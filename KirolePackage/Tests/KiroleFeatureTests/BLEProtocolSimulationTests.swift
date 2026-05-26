@@ -346,7 +346,7 @@ struct BLEProtocolSimulationTests {
 
     private static func timestampPayload(_ timestamp: UInt32) -> Data {
         var data = Data()
-        data.append(contentsOf: withUnsafeBytes(of: timestamp.bigEndian) { Array($0) })
+        data.appendBigEndian(timestamp)
         return data
     }
 
@@ -363,7 +363,7 @@ struct BLEProtocolSimulationTests {
         signedData.append(0x02)
         signedData.append(clientNonce)
         signedData.append(serverNonce)
-        signedData.append(contentsOf: withUnsafeBytes(of: issuedAt.bigEndian) { Array($0) })
+        signedData.appendBigEndian(issuedAt)
 
         var response = signedData
         response.append(signature(for: signedData))
