@@ -65,6 +65,12 @@ extension AppState {
             reportPersistenceError(error, operation: "load", target: "onboarding_profile.json")
         }
 
+        do {
+            customCompanions = try await localStorage.loadCustomCompanions()
+        } catch {
+            reportPersistenceError(error, operation: "load", target: "custom_companions.json")
+        }
+
         // focusEnforcementMode is loaded by FocusSessionService.loadFocusEnforcementMode() on its init.
         await ScreenTimeFocusGuardService.shared.refreshAuthorizationStatus()
 

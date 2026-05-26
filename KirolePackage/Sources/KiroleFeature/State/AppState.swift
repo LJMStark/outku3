@@ -59,6 +59,9 @@ public final class AppState {
 
     // User Profile
     public var userProfile: UserProfile = .default
+    /// User-created companions (4th option alongside Joy/Silas/Nova).
+    /// Loaded from disk on app start; mutated through AppState+Companion methods.
+    public var customCompanions: [CustomCompanion] = []
 
     // Onboarding Profile
     public var onboardingProfile: OnboardingProfile?
