@@ -6,7 +6,9 @@ extension AppState {
     // MARK: - Lifecycle
 
     /// Create a new custom companion, persist its metadata + assets, and make it active.
-    /// Returns the created companion so the UI can immediately reflect it.
+    /// Throws on persistence failure so the UI can surface the error and the user can retry —
+    /// silently swallowing the error here used to leave a customCompanionId pointing at a
+    /// companion that had never been written to disk.
     @discardableResult
     public func addCustomCompanion(
         name: String,
@@ -15,7 +17,7 @@ extension AppState {
         roastModeEnabled: Bool,
         previewData: Data,
         pixelData: Data
-    ) async -> CustomCompanion {
+    ) async throws -> CustomCompanion {
         let id = UUID()
         let companion = CustomCompanion(
             id: id,
@@ -27,26 +29,25 @@ extension AppState {
             avatarPixelsFileName: LocalStorage.customCompanionPixelsFileName(for: id)
         )
 
-        customCompanions.append(companion)
+        // Persist assets first; if this fails we never touch in-memory or selection state.
+        try await localStorage.saveCustomCompanionAssets(
+            id: id,
+            previewData: previewData,
+            pixelData: pixelData
+        )
 
+        // Build the would-be list and try to persist before mutating shared state. If list
+        // persistence fails, roll back the asset write so we don't leak orphan files.
+        let updatedList = customCompanions + [companion]
         do {
-            try await localStorage.saveCustomCompanionAssets(
-                id: id,
-                previewData: previewData,
-                pixelData: pixelData
-            )
+            try await localStorage.saveCustomCompanions(updatedList)
         } catch {
-            reportPersistenceError(error, operation: "save", target: "custom_companion_assets")
+            try? await localStorage.deleteCustomCompanionAssets(id: id)
+            throw error
         }
 
-        do {
-            try await localStorage.saveCustomCompanions(customCompanions)
-        } catch {
-            reportPersistenceError(error, operation: "save", target: "custom_companions.json")
-        }
-
+        customCompanions = updatedList
         selectCustomCompanion(id: id)
-        await pushCustomAvatarFrame(pixelData: pixelData, companionId: id)
         return companion
     }
 

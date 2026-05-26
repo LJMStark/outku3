@@ -25,6 +25,8 @@ public struct CreateCustomCompanionSheet: View {
     @State private var relationship: CompanionRelationship = .pet
     @State private var personaVoice: CompanionPersonaVoice = .companion
     @State private var roastMode: Bool = false
+    @State private var isSaving = false
+    @State private var saveError: String?
 
     public init() {}
 
@@ -269,6 +271,14 @@ public struct CreateCustomCompanionSheet: View {
             )
             .padding(.top, 4)
             .accessibilityIdentifier("CreateCompanion_RoastToggle")
+
+            if let saveError {
+                Text(saveError)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Color.red)
+                    .padding(.top, 4)
+                    .accessibilityIdentifier("CreateCompanion_SaveError")
+            }
         }
     }
 
@@ -290,18 +300,24 @@ public struct CreateCustomCompanionSheet: View {
             .accessibilityIdentifier("CreateCompanion_Back")
 
             Button(action: handleNext) {
-                Text(step == .voice ? "Create" : "Next")
-                    .font(.system(size: 16, weight: .semibold))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(canAdvance
-                                ? theme.colors.accent
-                                : Color.gray.opacity(0.35))
-                    .foregroundStyle(.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                Group {
+                    if isSaving {
+                        ProgressView().tint(.white)
+                    } else {
+                        Text(step == .voice ? "Create" : "Next")
+                            .font(.system(size: 16, weight: .semibold))
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(canAdvance && !isSaving
+                            ? theme.colors.accent
+                            : Color.gray.opacity(0.35))
+                .foregroundStyle(.white)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
             }
             .buttonStyle(.plain)
-            .disabled(!canAdvance)
+            .disabled(!canAdvance || isSaving)
             .accessibilityIdentifier("CreateCompanion_Next")
         }
         .padding(.horizontal, 24)
@@ -352,23 +368,30 @@ public struct CreateCustomCompanionSheet: View {
     }
 
     private func createAndDismiss() {
-        guard let result = processResult else { return }
+        guard let result = processResult, !isSaving else { return }
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let pixelData = BLEDataEncoder.encodePixelData(
             result.pixels,
             width: AvatarProcessResult.dimension
         )
+        isSaving = true
+        saveError = nil
         Task {
-            _ = await appState.addCustomCompanion(
-                name: trimmedName,
-                relationship: relationship,
-                personaVoice: personaVoice,
-                roastModeEnabled: roastMode,
-                previewData: result.previewData,
-                pixelData: pixelData
-            )
+            do {
+                _ = try await appState.addCustomCompanion(
+                    name: trimmedName,
+                    relationship: relationship,
+                    personaVoice: personaVoice,
+                    roastModeEnabled: roastMode,
+                    previewData: result.previewData,
+                    pixelData: pixelData
+                )
+                dismiss()
+            } catch {
+                saveError = "Save failed. Please try again."
+                isSaving = false
+            }
         }
-        dismiss()
     }
 
     private func handlePhotoSelection(_ item: PhotosPickerItem?) {
