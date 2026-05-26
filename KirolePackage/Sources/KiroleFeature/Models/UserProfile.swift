@@ -14,10 +14,25 @@ public struct UserProfile: Sendable, Codable, Equatable {
     /// User's currently picked hardware DisplayScene (e.g. "harbor"). nil → default to harbor on first read.
     /// Decoupled from `currentScene(for: energyBottles)`: bottles only unlock scenes; this stores the explicit pick.
     public var selectedSceneId: String?
+    /// If set, the active companion is a user-created CustomCompanion (looked up by id).
+    /// When nil, the active companion is the built-in `companionCharacter`.
+    /// Keeping `companionCharacter` populated even when a custom is active lets us snap back
+    /// to the user's last built-in pick without a second persisted field.
+    public var customCompanionId: UUID?
 
     /// Derived from companionCharacter. Character is the single source of truth.
     public var companionStyle: CompanionStyle {
         companionCharacter.resolvedStyle
+    }
+
+    /// Current selection — either a built-in character or a custom companion id.
+    /// Use this at the few sites that need to branch on "is custom or not"; everywhere else
+    /// keep reading `companionCharacter` directly to avoid churn.
+    public var currentSelection: CompanionSelection {
+        if let id = customCompanionId {
+            return .custom(id)
+        }
+        return .builtIn(companionCharacter)
     }
 
     public init(
@@ -29,7 +44,8 @@ public struct UserProfile: Sendable, Codable, Equatable {
         reminderPreference: ReminderPreference? = nil,
         taskApproach: TaskApproach? = nil,
         onboardingCompletedAt: Date? = nil,
-        selectedSceneId: String? = nil
+        selectedSceneId: String? = nil,
+        customCompanionId: UUID? = nil
     ) {
         self.workType = workType
         self.primaryGoals = primaryGoals
@@ -40,6 +56,7 @@ public struct UserProfile: Sendable, Codable, Equatable {
         self.taskApproach = taskApproach
         self.onboardingCompletedAt = onboardingCompletedAt
         self.selectedSceneId = selectedSceneId
+        self.customCompanionId = customCompanionId
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -52,6 +69,7 @@ public struct UserProfile: Sendable, Codable, Equatable {
         case taskApproach
         case onboardingCompletedAt
         case selectedSceneId
+        case customCompanionId
     }
 
     public static var `default`: UserProfile {
@@ -71,6 +89,7 @@ public struct UserProfile: Sendable, Codable, Equatable {
         self.taskApproach = try container.decodeIfPresent(TaskApproach.self, forKey: .taskApproach)
         self.onboardingCompletedAt = try container.decodeIfPresent(Date.self, forKey: .onboardingCompletedAt)
         self.selectedSceneId = try container.decodeIfPresent(String.self, forKey: .selectedSceneId)
+        self.customCompanionId = try container.decodeIfPresent(UUID.self, forKey: .customCompanionId)
     }
 
     /// Map onboarding answers into a UserProfile.
@@ -91,7 +110,8 @@ public struct UserProfile: Sendable, Codable, Equatable {
             reminderPreference: profile.reminderPreference ?? existing.reminderPreference,
             taskApproach: profile.taskApproach ?? existing.taskApproach,
             onboardingCompletedAt: profile.onboardingCompletedAt,
-            selectedSceneId: existing.selectedSceneId
+            selectedSceneId: existing.selectedSceneId,
+            customCompanionId: existing.customCompanionId
         )
     }
 }
