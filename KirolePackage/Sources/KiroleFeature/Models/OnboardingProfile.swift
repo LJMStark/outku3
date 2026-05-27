@@ -72,8 +72,20 @@ public struct OnboardingProfile: Sendable, Codable, Equatable {
     public var taskApproach: TaskApproach?
     public var timeControl: TimeControl?
     public var selectedTheme: String?
-    public var customPhotoData: Data?
     public var onboardingCompletedAt: Date?
+
+    // MARK: - Custom Companion (B-plan)
+    /// Filled when the user uploads + names a custom companion on PersonalizationPage.
+    /// Consumed in completeOnboarding to call `addCustomCompanion`. When any required
+    /// piece is missing the onboarding flow falls back to the built-in 3-IP selection.
+    public var customCompanionName: String?
+    public var customCompanionRelationship: CompanionRelationship?
+    public var customCompanionVoice: CompanionPersonaVoice?
+    public var customCompanionRoast: Bool
+    /// PNG preview produced by AvatarImageProcessor.process — feeds Settings avatar art.
+    public var customAvatarPreviewData: Data?
+    /// BLE-encoded pixel payload (BLEDataEncoder.encodePixelData) for the E-ink display.
+    public var customAvatarPixelData: Data?
 
     public init(
         companionCharacter: CompanionCharacter? = nil,
@@ -85,8 +97,13 @@ public struct OnboardingProfile: Sendable, Codable, Equatable {
         taskApproach: TaskApproach? = nil,
         timeControl: TimeControl? = nil,
         selectedTheme: String? = nil,
-        customPhotoData: Data? = nil,
-        onboardingCompletedAt: Date? = nil
+        onboardingCompletedAt: Date? = nil,
+        customCompanionName: String? = nil,
+        customCompanionRelationship: CompanionRelationship? = nil,
+        customCompanionVoice: CompanionPersonaVoice? = nil,
+        customCompanionRoast: Bool = false,
+        customAvatarPreviewData: Data? = nil,
+        customAvatarPixelData: Data? = nil
     ) {
         self.companionCharacter = companionCharacter
         self.motivationStyle = motivationStyle
@@ -97,8 +114,26 @@ public struct OnboardingProfile: Sendable, Codable, Equatable {
         self.taskApproach = taskApproach
         self.timeControl = timeControl
         self.selectedTheme = selectedTheme
-        self.customPhotoData = customPhotoData
         self.onboardingCompletedAt = onboardingCompletedAt
+        self.customCompanionName = customCompanionName
+        self.customCompanionRelationship = customCompanionRelationship
+        self.customCompanionVoice = customCompanionVoice
+        self.customCompanionRoast = customCompanionRoast
+        self.customAvatarPreviewData = customAvatarPreviewData
+        self.customAvatarPixelData = customAvatarPixelData
+    }
+
+    /// True when PersonalizationPage has captured a complete custom companion definition
+    /// (photo processed + name filled). Used by completeOnboarding to decide whether to
+    /// create a CustomCompanion.
+    public var hasCustomCompanionDraft: Bool {
+        guard let name = customCompanionName?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !name.isEmpty,
+              customAvatarPreviewData != nil,
+              customAvatarPixelData != nil else {
+            return false
+        }
+        return true
     }
 }
 
