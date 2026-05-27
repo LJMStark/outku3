@@ -131,7 +131,10 @@ private struct PetStatusCard: View {
 
                         // Pet Info Text
                         VStack(alignment: .leading, spacing: 6) {
-                            Text(appState.pet.name)
+                            // Custom IP keeps the built-in artwork above (client decision)
+                            // but takes over the displayed identity name — so what hardware
+                            // / prompts call the companion matches what App shows.
+                            Text(appState.activeCustomCompanion?.name ?? appState.pet.name)
                                 .font(.system(size: 22, weight: .bold, design: .serif))
                                 .foregroundStyle(Color(hex: "1F3A2C"))
                                 .lineLimit(1)
