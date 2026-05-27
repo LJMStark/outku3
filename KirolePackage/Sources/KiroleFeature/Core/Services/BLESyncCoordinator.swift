@@ -34,7 +34,8 @@ public final class BLESyncCoordinator {
             tasks: appState.tasks,
             events: appState.events,
             weather: appState.weather,
-            deviceMode: appState.deviceMode
+            deviceMode: appState.deviceMode,
+            userProfile: appState.userProfile
         )
 
         let fingerprint = dayPack.stableFingerprint()
