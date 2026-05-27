@@ -135,5 +135,51 @@ public struct OnboardingProfile: Sendable, Codable, Equatable {
         }
         return true
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case companionCharacter
+        case motivationStyle
+        case calendarUsage
+        case taskTracking
+        case distractionSources
+        case reminderPreference
+        case taskApproach
+        case timeControl
+        case selectedTheme
+        case onboardingCompletedAt
+        case customCompanionName
+        case customCompanionRelationship
+        case customCompanionVoice
+        case customCompanionRoast
+        case customAvatarPreviewData
+        case customAvatarPixelData
+    }
+
+    /// Hand-written decoder tolerates pre-B-plan onboarding_profile.json shapes:
+    /// old TestFlight files lack the customCompanion* keys entirely, and any
+    /// legacy `customPhotoData` key is silently ignored (Swift's default
+    /// behavior for keys absent from CodingKeys). Without this, synthesized
+    /// Codable would throw the moment it reached the non-optional
+    /// `customCompanionRoast: Bool`, AppState+Loading would discard the file,
+    /// and mid-onboarding users would lose their progress on upgrade.
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.companionCharacter = try c.decodeIfPresent(CompanionCharacter.self, forKey: .companionCharacter)
+        self.motivationStyle = try c.decodeIfPresent(MotivationStyle.self, forKey: .motivationStyle)
+        self.calendarUsage = try c.decodeIfPresent(CalendarUsage.self, forKey: .calendarUsage)
+        self.taskTracking = try c.decodeIfPresent(TaskTracking.self, forKey: .taskTracking)
+        self.distractionSources = (try c.decodeIfPresent([DistractionSource].self, forKey: .distractionSources)) ?? []
+        self.reminderPreference = try c.decodeIfPresent(ReminderPreference.self, forKey: .reminderPreference)
+        self.taskApproach = try c.decodeIfPresent(TaskApproach.self, forKey: .taskApproach)
+        self.timeControl = try c.decodeIfPresent(TimeControl.self, forKey: .timeControl)
+        self.selectedTheme = try c.decodeIfPresent(String.self, forKey: .selectedTheme)
+        self.onboardingCompletedAt = try c.decodeIfPresent(Date.self, forKey: .onboardingCompletedAt)
+        self.customCompanionName = try c.decodeIfPresent(String.self, forKey: .customCompanionName)
+        self.customCompanionRelationship = try c.decodeIfPresent(CompanionRelationship.self, forKey: .customCompanionRelationship)
+        self.customCompanionVoice = try c.decodeIfPresent(CompanionPersonaVoice.self, forKey: .customCompanionVoice)
+        self.customCompanionRoast = (try c.decodeIfPresent(Bool.self, forKey: .customCompanionRoast)) ?? false
+        self.customAvatarPreviewData = try c.decodeIfPresent(Data.self, forKey: .customAvatarPreviewData)
+        self.customAvatarPixelData = try c.decodeIfPresent(Data.self, forKey: .customAvatarPixelData)
+    }
 }
 
