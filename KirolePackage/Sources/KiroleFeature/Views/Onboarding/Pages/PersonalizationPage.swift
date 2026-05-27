@@ -52,7 +52,11 @@ public struct PersonalizationPage: View {
                     .padding(.bottom, 24)
                 }
 
-                OnboardingCTAButton(title: "I'll Make It Mine", emoji: "\u{1F3A8}") {
+                OnboardingCTAButton(
+                    title: "I'll Make It Mine",
+                    emoji: "\u{1F3A8}",
+                    isEnabled: canAdvance
+                ) {
                     onboardingState.goNext()
                 }
                 .padding(.horizontal, 24)
@@ -155,9 +159,46 @@ public struct PersonalizationPage: View {
                     .foregroundStyle(Color.red.opacity(0.9))
                     .accessibilityIdentifier("Onboarding_CustomCompanion_Error")
             }
+
+            if shouldShowNameHint {
+                // Without this hint, users who uploaded a photo + picked
+                // relationship/voice but forgot to type a name would silently
+                // lose their custom companion: completeOnboarding's
+                // hasCustomCompanionDraft check requires a non-empty name, so
+                // the whole upload would just be discarded with no UI feedback.
+                Text("Give your companion a name to save them.")
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.9))
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+                    .accessibilityIdentifier("Onboarding_CustomCompanion_NameHint")
+            }
         }
         .animation(.kiroleSnappy, value: onboardingState.profile.customAvatarPreviewData != nil)
         .padding(.top, 8)
+    }
+
+    // MARK: - Advance gating
+
+    private var hasCustomPhoto: Bool {
+        onboardingState.profile.customAvatarPreviewData != nil
+    }
+
+    private var hasCustomName: Bool {
+        let trimmed = (onboardingState.profile.customCompanionName ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return !trimmed.isEmpty
+    }
+
+    /// Users on the built-in 3-IP track (no photo) are free to advance.
+    /// Users on the custom-IP track (photo uploaded) must also fill in a name,
+    /// otherwise the upload silently drops on completeOnboarding.
+    private var canAdvance: Bool {
+        !hasCustomPhoto || hasCustomName
+    }
+
+    private var shouldShowNameHint: Bool {
+        hasCustomPhoto && !hasCustomName
     }
 
     @ViewBuilder
