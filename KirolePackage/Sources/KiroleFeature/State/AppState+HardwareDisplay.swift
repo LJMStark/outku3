@@ -110,7 +110,8 @@ extension AppState {
             currentSceneId: sceneId,
             userProfile: userProfile,
             topTaskTitles: topTaskTitles,
-            upcomingEventTitles: upcomingEventTitles
+            upcomingEventTitles: upcomingEventTitles,
+            customCompanion: activeCustomCompanion
         )
 
         if BLEService.shared.connectionState.isConnected {

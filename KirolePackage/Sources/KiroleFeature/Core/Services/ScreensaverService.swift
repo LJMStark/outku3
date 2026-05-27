@@ -10,13 +10,16 @@ public final class ScreensaverService {
         self.openAIService = openAIService
     }
     
-    /// Generates or fetches the screensaver config for the current day
+    /// Generates or fetches the screensaver config for the current day.
+    /// `customCompanion`, when set, replaces the built-in character as the quote's author
+    /// and rewrites the persona digest fed to the AI quote generator.
     public func getScreensaverConfig(
         usageDays: Int,
         currentSceneId: String,
         userProfile: UserProfile,
         topTaskTitles: [String],
-        upcomingEventTitles: [String]
+        upcomingEventTitles: [String],
+        customCompanion: CustomCompanion? = nil
     ) async -> ScreensaverConfig {
         let isPostcardDay = Self.isPostcardDay(usageDays: usageDays)
         let quote = await fetchScreensaverQuote(
@@ -24,13 +27,14 @@ public final class ScreensaverService {
             usageDays: usageDays,
             userProfile: userProfile,
             topTaskTitles: topTaskTitles,
-            upcomingEventTitles: upcomingEventTitles
+            upcomingEventTitles: upcomingEventTitles,
+            customCompanion: customCompanion
         )
 
         return ScreensaverConfig(
             type: isPostcardDay ? .postcard : .normal,
             quote: quote,
-            author: userProfile.companionCharacter.displayName,
+            author: customCompanion?.name ?? userProfile.companionCharacter.displayName,
             sceneId: currentSceneId,
             postcardDay: isPostcardDay ? usageDays : nil
         )
@@ -45,7 +49,8 @@ public final class ScreensaverService {
         usageDays: Int,
         userProfile: UserProfile,
         topTaskTitles: [String],
-        upcomingEventTitles: [String]
+        upcomingEventTitles: [String],
+        customCompanion: CustomCompanion?
     ) async -> String {
         // Fallback static quotes
         let defaultQuotes = [
@@ -63,7 +68,7 @@ public final class ScreensaverService {
             topTaskTitles: topTaskTitles,
             upcomingEventTitles: upcomingEventTitles
         )
-        let profileDigest = buildProfileDigest(userProfile: userProfile)
+        let profileDigest = buildProfileDigest(userProfile: userProfile, customCompanion: customCompanion)
 
         do {
             return try await openAIService.generateScreensaverQuote(
@@ -85,11 +90,23 @@ public final class ScreensaverService {
         return "\(tasksText). \(eventsText)."
     }
 
-    private func buildProfileDigest(userProfile: UserProfile) -> String {
+    private func buildProfileDigest(userProfile: UserProfile, customCompanion: CustomCompanion?) -> String {
         let goals = userProfile.primaryGoals.map(\.displayName).joined(separator: ", ")
         let goalsText = goals.isEmpty ? "No explicit goals" : goals
+        let characterBlock: String
+        if let custom = customCompanion {
+            let safeName = PromptSanitizer.sanitize(custom.name, maxLen: 60)
+            let roastSuffix = custom.roastModeEnabled ? " · Roast Mode" : ""
+            characterBlock = """
+                Character: \(safeName) (custom companion)
+                Relationship: \(custom.relationship.displayName)
+                Voice: \(custom.personaVoice.displayName)\(roastSuffix)
+                """
+        } else {
+            characterBlock = "Character: \(userProfile.companionCharacter.displayName)"
+        }
         return """
-            Character: \(userProfile.companionCharacter.displayName)
+            \(characterBlock)
             Stage: \(userProfile.intimacyStage.displayName)
             Work type: \(userProfile.workType.displayName)
             Goals: \(goalsText)
