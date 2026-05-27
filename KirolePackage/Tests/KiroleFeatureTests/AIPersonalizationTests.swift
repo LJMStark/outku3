@@ -193,13 +193,8 @@ import Foundation
 
 @Test func testCompanionModelOptionsUseExpectedOpenRouterIDs() async throws {
     let modelIDs = OpenAIService.companionModelOptions.map(\.id)
-    #expect(modelIDs.count == 4)
-    #expect(modelIDs == [
-        "openai/gpt-5-chat",
-        "openai/gpt-4o",
-        "openai/gpt-4o-mini",
-        "openai/gpt-5.4"
-    ])
+    #expect(modelIDs == ["openai/gpt-oss-120b:free"])
+    #expect(OpenAIService.defaultChatModelID == "openai/gpt-oss-120b:free")
 }
 
 @MainActor
@@ -208,8 +203,8 @@ import Foundation
     let original = preference.modelID
     defer { preference.modelID = original }
 
-    preference.modelID = "openai/gpt-4o"
-    #expect(preference.modelID == "openai/gpt-4o")
+    preference.modelID = "openai/gpt-oss-120b:free"
+    #expect(preference.modelID == "openai/gpt-oss-120b:free")
 }
 
 @MainActor

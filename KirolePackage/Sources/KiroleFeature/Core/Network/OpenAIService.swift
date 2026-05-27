@@ -18,27 +18,12 @@ public struct CompanionModelOption: Identifiable, Hashable, Sendable {
 public actor OpenAIService {
     public static let shared = OpenAIService()
     public static let companionPromptVersion = "2026-04-29-product-ip-v1"
-    public static let defaultChatModelID = "openai/gpt-5-chat"
+    public static let defaultChatModelID = "openai/gpt-oss-120b:free"
     public static let companionModelOptions: [CompanionModelOption] = [
         CompanionModelOption(
-            id: "openai/gpt-5-chat",
-            displayName: "GPT-5 Chat (默认主力)",
-            note: "对话能力最稳，适合宠物陪伴语气。"
-        ),
-        CompanionModelOption(
-            id: "openai/gpt-4o",
-            displayName: "GPT-4o (替代 5.4-mini)",
-            note: "语气自然，时延和质量平衡。"
-        ),
-        CompanionModelOption(
-            id: "openai/gpt-4o-mini",
-            displayName: "GPT-4o Mini (替代 5-mini)",
-            note: "响应更快，成本更低。"
-        ),
-        CompanionModelOption(
-            id: "openai/gpt-5.4",
-            displayName: "GPT-5.4 (高质量备选)",
-            note: "复杂语境下输出更稳定。"
+            id: "openai/gpt-oss-120b:free",
+            displayName: "GPT-OSS 120B (Free)",
+            note: "OpenRouter 免费层 120B 开源模型；速率与可用性受限。"
         )
     ]
 

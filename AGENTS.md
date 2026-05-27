@@ -27,7 +27,7 @@ This file provides guidance to Antigravity, Claude Code, Cursor and other AI cod
   - **Language**: Swift 6.1+ (Strict Concurrency)
   - **UI**: SwiftUI (Model-View Pattern - **NO ViewModels**)
   - **State**: `@Observable` singletons (`AppState`, `ThemeManager`, `AuthManager`) injected via `.environment()`
-  - **AI Backend**: OpenRouter via `OpenAIService` (default companion model: `openai/gpt-5-chat`; PromptDebugger can switch approved OpenRouter model IDs)
+  - **AI Backend**: OpenRouter via `OpenAIService` (single approved model: `openai/gpt-oss-120b:free`; PromptDebugger 仅展示该模型，不再提供切换)
   - **Testing**: Swift Testing Framework (`@Test`, `#expect`) - **NO XCTest**
 
 ### Apple Developer Account

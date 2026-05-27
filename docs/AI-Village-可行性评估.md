@@ -24,7 +24,7 @@
 | BLE 带宽 | DayPack 200-500 bytes，每日同步 ~17 次 | **不能传输图像像素数据**（120KB-192KB 一帧） |
 | E-ink 刷新 | 全刷 12-36 秒，6 色 4bpp | 不适合频繁动态内容 |
 | 设备渲染 | 固件本地渲染预置资产（宠物已是这个模式） | **必须走"参数指令 → 固件渲染"路径** |
-| AI 服务 | OpenRouter，默认陪伴文案模型为 `openai/gpt-5-chat`，已有 CompanionTextService | 可复用现有 AI 管道 |
+| AI 服务 | OpenRouter，唯一陪伴文案模型为 `openai/gpt-oss-120b:free`（免费层），已有 CompanionTextService | 可复用现有 AI 管道；免费层有限速 |
 | 用户数据 | BehaviorAnalyzer 已有完成率/专注时长/连续天数 | 可直接作为 AI 输入 |
 
 ---
