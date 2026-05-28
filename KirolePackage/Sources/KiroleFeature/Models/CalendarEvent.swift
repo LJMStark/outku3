@@ -19,6 +19,9 @@ public struct CalendarEvent: Identifiable, Sendable, Codable {
     public var isAllDay: Bool
     public var syncStatus: SyncStatus
     public var lastModified: Date
+    /// Detected video-conferencing deeplink (Zoom, Meet, Teams, Lync).
+    /// Populated from description/location at sync time; nil for events with no meeting link.
+    public var videoMeetingURL: URL?
 
     public init(
         id: String = UUID().uuidString,
@@ -36,7 +39,8 @@ public struct CalendarEvent: Identifiable, Sendable, Codable {
         location: String? = nil,
         isAllDay: Bool = false,
         syncStatus: SyncStatus = .synced,
-        lastModified: Date = Date()
+        lastModified: Date = Date(),
+        videoMeetingURL: URL? = nil
     ) {
         self.id = id
         self.localId = localId
@@ -54,6 +58,7 @@ public struct CalendarEvent: Identifiable, Sendable, Codable {
         self.isAllDay = isAllDay
         self.syncStatus = syncStatus
         self.lastModified = lastModified
+        self.videoMeetingURL = videoMeetingURL
     }
 
     public var duration: TimeInterval {
@@ -99,7 +104,11 @@ public struct CalendarEvent: Identifiable, Sendable, Codable {
             location: googleEvent.location,
             isAllDay: googleEvent.start.date != nil,
             syncStatus: .synced,
-            lastModified: remoteUpdated ?? Date()
+            lastModified: remoteUpdated ?? Date(),
+            videoMeetingURL: VideoMeetingURLDetector.detect(
+                description: googleEvent.description,
+                location: googleEvent.location
+            )
         )
     }
 }
