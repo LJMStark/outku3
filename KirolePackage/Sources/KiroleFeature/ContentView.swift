@@ -31,6 +31,9 @@ public struct ContentView: View {
             await authManager.initialize()
             appState.syncIntegrationStatusFromAuth()
             await configureOpenAI()
+            TimezoneObserver.shared.startObserving { [appState] newZone in
+                appState.pendingTimezoneChangeName = newZone.localizedName(for: .generic, locale: .current) ?? newZone.identifier
+            }
             #if DEBUG
             SimulatorBridge.shared.connect()
             #endif
@@ -107,10 +110,27 @@ public struct ContentView: View {
                 .transition(.move(edge: .top).combined(with: .opacity))
                 .zIndex(9)
             }
+
+            if let zoneName = appState.pendingTimezoneChangeName {
+                TimezoneChangeBanner(
+                    zoneName: zoneName,
+                    onAdjust: {
+                        appState.pendingTimezoneChangeName = nil
+                        Task { await appState.syncConnectedExternalData() }
+                    },
+                    onKeep: {
+                        appState.pendingTimezoneChangeName = nil
+                    }
+                )
+                .padding(.top, 176)
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .zIndex(8)
+            }
         }
         .confetti(trigger: $sceneCelebrationConfettiTrigger)
         .animation(.kiroleSnappy, value: appState.pendingSceneCelebration)
         .animation(.kiroleSnappy, value: appState.remoteSyncErrors.count)
+        .animation(.kiroleSnappy, value: appState.pendingTimezoneChangeName != nil)
         // Observable-style injection (for @Environment(Type.self) reads)
         .environment(appState)
         .environment(themeManager)
@@ -200,6 +220,53 @@ private struct SceneUnlockBanner: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel("已解锁\(sceneName)")
         .accessibilityIdentifier("app.sceneUnlockBanner")
+    }
+}
+
+// MARK: - Timezone Change Banner
+
+private struct TimezoneChangeBanner: View {
+    @Environment(ThemeManager.self) private var theme
+    let zoneName: String
+    let onAdjust: () -> Void
+    let onKeep: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "globe")
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(theme.colors.accent)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Timezone changed · \(zoneName)")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(theme.colors.secondaryText)
+                HStack(spacing: 8) {
+                    Button("Update Events", action: onAdjust)
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(theme.colors.accent)
+                        .accessibilityIdentifier("timezone.updateButton")
+                    Text("·")
+                        .foregroundStyle(theme.colors.secondaryText)
+                    Button("Keep", action: onKeep)
+                        .font(.system(size: 13))
+                        .foregroundStyle(theme.colors.secondaryText)
+                        .accessibilityIdentifier("timezone.keepButton")
+                }
+            }
+
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(
+            Capsule()
+                .fill(theme.colors.cardBackground)
+                .shadow(color: .black.opacity(0.08), radius: 8, y: 4)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Timezone changed to \(zoneName). Update events or keep current.")
+        .accessibilityIdentifier("app.timezoneChangeBanner")
     }
 }
 

@@ -91,6 +91,9 @@ public final class AppState {
     /// True when the active custom companion's pixel frame failed to reach the hardware
     /// and is queued for re-delivery on the next BLE reconnect.
     public var isCustomAvatarPendingBLEPush: Bool = false
+    /// Set when the device timezone changes at runtime. UI shows a banner asking the user
+    /// whether to re-sync events. Cleared on user action (adjust or keep).
+    public var pendingTimezoneChangeName: String? = nil
     /// Tracks which sync sources are currently in-flight to prevent same-source re-entrancy.
     var activeSyncs: Set<ExternalSyncTarget> = []
     public var lastGoogleSyncDebug: String = "Not synced yet"
