@@ -185,21 +185,22 @@ public final class CompanionTextService {
             do {
                 let aiText = try await openAI.generateCompanionText(type: type, context: attemptContext)
                 let normalized = CompanionDialogueDisplayPolicy.normalized(aiText)
+                let budgeted = CompanionTextService.enforceByteBudget(normalized, maxBytes: 120)
 
-                if CompanionDialogueDisplayPolicy.isValidForDisplay(normalized) {
+                if CompanionDialogueDisplayPolicy.isValidForDisplay(budgeted) {
                     if mode.shouldPersistInteractions {
                         await saveInteraction(
                             type: type,
-                            text: normalized,
+                            text: budgeted,
                             petName: attemptContext.petName,
                             petMood: attemptContext.petMood,
                             completionRate: attemptContext.recentCompletionRate
                         )
                     }
-                    return normalized
+                    return budgeted
                 }
 
-                rejectedTexts.append(normalized)
+                rejectedTexts.append(budgeted)
 
                 if attempt < Self.dialogueMaxAttempts - 1 {
                     try? await Task.sleep(
@@ -360,16 +361,17 @@ public final class CompanionTextService {
 
         do {
             let text = try await openAI.generateCompanionText(type: type, context: context)
+            let enforced = CompanionTextService.enforceByteBudget(text, maxBytes: 120)
             if mode.shouldPersistInteractions {
                 await saveInteraction(
                     type: type,
-                    text: text,
+                    text: enforced,
                     petName: context.petName,
                     petMood: context.petMood,
                     completionRate: context.recentCompletionRate
                 )
             }
-            return text
+            return enforced
         } catch {
             #if DEBUG
             print("[CompanionText] AI generation failed for \(type.rawValue): \(error.localizedDescription)")
@@ -430,6 +432,34 @@ public final class CompanionTextService {
 
     private func sharedPetDialogueFallback(_ context: AIContext) -> String {
         FallbackText.sharedPetDialogue(context: context)
+    }
+
+    // MARK: - Byte Budget Enforcement
+
+    /// Trims `text` to fit within `maxBytes` UTF-8 bytes, cutting at the last
+    /// sentence-ending punctuation (.  !  ?  。  ！  ？) to preserve readability.
+    /// Falls back to a hard byte-boundary cut when no sentence end is found.
+    nonisolated static func enforceByteBudget(_ text: String, maxBytes: Int) -> String {
+        guard text.utf8.count > maxBytes else { return text }
+
+        let sentenceEnders: Set<Character> = [".", "!", "?", "。", "！", "？"]
+        var byteCount = 0
+        var lastSentenceEndIndex: String.Index? = nil
+        var endIndex = text.startIndex
+
+        for index in text.indices {
+            let char = text[index]
+            let charBytes = char.utf8.count
+            guard byteCount + charBytes <= maxBytes else { break }
+            byteCount += charBytes
+            endIndex = text.index(after: index)
+            if sentenceEnders.contains(char) {
+                lastSentenceEndIndex = endIndex
+            }
+        }
+
+        let cutIndex = lastSentenceEndIndex ?? endIndex
+        return String(text[..<cutIndex])
     }
 
     // MARK: - Interaction Persistence
