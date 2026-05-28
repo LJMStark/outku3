@@ -85,6 +85,9 @@ public final class AppState {
     // Loading State
     public var isLoading: Bool = false
     public var lastError: String?
+    /// Remote sync error per provider ("Google", "Notion", "Taskade", "Apple Calendar", "Apple Reminders").
+    /// Set on failure, cleared on next successful sync for that provider.
+    public var remoteSyncErrors: [String: String] = [:]
     /// Tracks which sync sources are currently in-flight to prevent same-source re-entrancy.
     var activeSyncs: Set<ExternalSyncTarget> = []
     public var lastGoogleSyncDebug: String = "Not synced yet"
