@@ -268,10 +268,34 @@ public enum BLEEventHandler {
             await persistEventLogs(logs)
         }
 
-        for log in logs {
+        let lastTimestamp = await localStorage.loadLastEventLogTimestamp() ?? 0
+        let processable = BLEEventHandler.filterAndSortForMutation(logs, since: lastTimestamp)
+
+        for log in processable {
             await handleFocusSessionEvent(log, focusService: focusService, isReplay: isReplay)
             applyEventStateMutation(log)
         }
+    }
+
+    /// Filters to events newer than `lastTimestamp`, sorts ascending by timestamp,
+    /// and removes duplicates by (eventType, taskId, second-precision timestamp).
+    ///
+    /// EventLog.id is regenerated on every BLE parse and cannot serve as a stable
+    /// identifier, so deduplication uses the content triplet instead.
+    nonisolated static func filterAndSortForMutation(
+        _ logs: [EventLog],
+        since lastTimestamp: UInt32
+    ) -> [EventLog] {
+        var seen = Set<String>()
+        return logs
+            .filter { UInt32($0.timestamp.timeIntervalSince1970) > lastTimestamp }
+            .sorted { $0.timestamp < $1.timestamp }
+            .filter { seen.insert(eventContentKey($0)).inserted }
+    }
+
+    /// A stable deduplication key derived from event content rather than EventLog.id.
+    nonisolated static func eventContentKey(_ log: EventLog) -> String {
+        "\(log.eventType.rawValue)|\(log.taskId ?? "")|\(UInt32(log.timestamp.timeIntervalSince1970))"
     }
 
     /// State changes that must apply for both live and replayed events.
