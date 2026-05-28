@@ -111,6 +111,7 @@ extension AppState {
             profile.intimacyStage = .acquaintance
         }
         updateUserProfile(profile)
+        requestBLESync(reason: "selectCustomCompanion")
 
         // Re-push the pixel frame so the device shows the newly active avatar.
         Task { @MainActor in
