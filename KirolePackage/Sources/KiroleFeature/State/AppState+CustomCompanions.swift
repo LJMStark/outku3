@@ -14,7 +14,12 @@ extension AppState {
         name: String,
         relationship: CompanionRelationship,
         personaVoice: CompanionPersonaVoice,
-        roastModeEnabled: Bool,
+        curiosityLevel: Double = 0.5,
+        humorLevel: Double = 0.5,
+        strictnessLevel: Double = 0.3,
+        backstory: String = "",
+        sensitiveBoundary: String = "",
+        roastModeEnabled: Bool = false,
         previewData: Data,
         pixelData: Data
     ) async throws -> CustomCompanion {
@@ -24,6 +29,11 @@ extension AppState {
             name: name,
             relationship: relationship,
             personaVoice: personaVoice,
+            curiosityLevel: curiosityLevel,
+            humorLevel: humorLevel,
+            strictnessLevel: strictnessLevel,
+            backstory: backstory,
+            sensitiveBoundary: sensitiveBoundary,
             roastModeEnabled: roastModeEnabled,
             avatarPreviewFileName: LocalStorage.customCompanionPreviewFileName(for: id),
             avatarPixelsFileName: LocalStorage.customCompanionPixelsFileName(for: id)
