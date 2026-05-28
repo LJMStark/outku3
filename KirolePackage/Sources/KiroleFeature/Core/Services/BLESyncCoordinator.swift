@@ -101,6 +101,8 @@ public final class BLESyncCoordinator {
                 }
             }
 
+            await appState.flushPendingCustomCompanionPushIfNeeded()
+
             if let reminder = await SmartReminderService.shared.evaluateAndPushReminder(
                 tasks: appState.tasks,
                 pet: appState.pet

@@ -78,6 +78,20 @@ public struct CharacterSwitcherSheet: View {
                         appState.deleteCustomCompanion(id: companion.id)
                     }
                 }
+
+                if appState.isCustomAvatarPendingBLEPush {
+                    HStack(spacing: 6) {
+                        Image(systemName: "wifi.slash")
+                            .font(.system(size: 11))
+                            .foregroundStyle(theme.colors.secondaryText)
+                        Text("Hardware will show default companion until next sync")
+                            .font(.system(size: 11))
+                            .foregroundStyle(theme.colors.secondaryText)
+                    }
+                    .padding(.top, 4)
+                    .accessibilityLabel("Custom avatar pending hardware sync")
+                    .accessibilityIdentifier("companion.pendingHardwareSync")
+                }
             }
             .padding(.horizontal, 24)
         }

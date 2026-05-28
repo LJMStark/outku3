@@ -88,6 +88,9 @@ public final class AppState {
     /// Remote sync error per provider ("Google", "Notion", "Taskade", "Apple Calendar", "Apple Reminders").
     /// Set on failure, cleared on next successful sync for that provider.
     public var remoteSyncErrors: [String: String] = [:]
+    /// True when the active custom companion's pixel frame failed to reach the hardware
+    /// and is queued for re-delivery on the next BLE reconnect.
+    public var isCustomAvatarPendingBLEPush: Bool = false
     /// Tracks which sync sources are currently in-flight to prevent same-source re-entrancy.
     var activeSyncs: Set<ExternalSyncTarget> = []
     public var lastGoogleSyncDebug: String = "Not synced yet"
