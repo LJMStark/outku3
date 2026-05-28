@@ -19,7 +19,6 @@ extension AppState {
         strictnessLevel: Double = 0.3,
         backstory: String = "",
         sensitiveBoundary: String = "",
-        roastModeEnabled: Bool = false,
         previewData: Data,
         pixelData: Data
     ) async throws -> CustomCompanion {
@@ -34,7 +33,6 @@ extension AppState {
             strictnessLevel: strictnessLevel,
             backstory: backstory,
             sensitiveBoundary: sensitiveBoundary,
-            roastModeEnabled: roastModeEnabled,
             avatarPreviewFileName: LocalStorage.customCompanionPreviewFileName(for: id),
             avatarPixelsFileName: LocalStorage.customCompanionPixelsFileName(for: id)
         )

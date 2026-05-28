@@ -251,13 +251,19 @@ public enum BLEEventHandler {
         _ logs: [EventLog],
         service: BLEService,
         focusService: FocusSessionService = .shared,
-        isReplay: Bool = false
+        isReplay: Bool = false,
+        lastTimestampOverride: UInt32? = nil
     ) async {
         Task {
             await persistEventLogs(logs)
         }
 
-        let lastTimestamp = await localStorage.loadLastEventLogTimestamp() ?? 0
+        let lastTimestamp: UInt32
+        if let override = lastTimestampOverride {
+            lastTimestamp = override
+        } else {
+            lastTimestamp = await localStorage.loadLastEventLogTimestamp() ?? 0
+        }
         let processable = BLEEventHandler.filterAndSortForMutation(logs, since: lastTimestamp)
 
         for log in processable {

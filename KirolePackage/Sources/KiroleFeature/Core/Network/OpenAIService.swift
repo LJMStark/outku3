@@ -314,8 +314,6 @@ public actor OpenAIService {
         if !companion.sensitiveBoundary.isEmpty {
             let safeBoundary = PromptSanitizer.userContent(companion.sensitiveBoundary, maxLen: 120)
             boundaryClause = "Topic boundary set by user: \(safeBoundary)"
-        } else if companion.roastModeEnabled {
-            boundaryClause = "Roast Mode: you may lovingly call out the user's bad habits, but every jab lands with affection."
         } else {
             boundaryClause = "Be warm and supportive — never sarcastic in a way that stings."
         }

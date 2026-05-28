@@ -25,8 +25,6 @@ public struct CreateCustomCompanionSheet: View {
     @State private var name: String = ""
     @State private var relationship: CompanionRelationship = .pet
     @State private var personaVoice: CompanionPersonaVoice = .companion
-    @State private var roastMode: Bool = false
-    @State private var showRoastEducation = false
     @State private var curiosityLevel: Double = 0.5
     @State private var humorLevel: Double = 0.5
     @State private var strictnessLevel: Double = 0.3

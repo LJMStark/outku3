@@ -23,10 +23,6 @@ public struct CustomCompanion: Sendable, Codable, Identifiable, Equatable {
     /// Supersedes roastModeEnabled — richer and safer than a boolean toggle.
     public var sensitiveBoundary: String
 
-    /// Kept for JSON backward-compatibility. No longer surfaced in the creation UI;
-    /// sensitiveBoundary carries intent for new companions.
-    public var roastModeEnabled: Bool
-
     public var avatarPreviewFileName: String
     public var avatarPixelsFileName: String
     public var createdAt: Date
@@ -45,7 +41,6 @@ public struct CustomCompanion: Sendable, Codable, Identifiable, Equatable {
         strictnessLevel: Double = 0.3,
         backstory: String = "",
         sensitiveBoundary: String = "",
-        roastModeEnabled: Bool = false,
         avatarPreviewFileName: String,
         avatarPixelsFileName: String,
         createdAt: Date = Date(),
@@ -60,7 +55,6 @@ public struct CustomCompanion: Sendable, Codable, Identifiable, Equatable {
         self.strictnessLevel = strictnessLevel
         self.backstory = backstory
         self.sensitiveBoundary = sensitiveBoundary
-        self.roastModeEnabled = roastModeEnabled
         self.avatarPreviewFileName = avatarPreviewFileName
         self.avatarPixelsFileName = avatarPixelsFileName
         self.createdAt = createdAt
@@ -83,7 +77,6 @@ extension CustomCompanion {
         self.strictnessLevel = try container.decodeIfPresent(Double.self, forKey: .strictnessLevel) ?? 0.3
         self.backstory = try container.decodeIfPresent(String.self, forKey: .backstory) ?? ""
         self.sensitiveBoundary = try container.decodeIfPresent(String.self, forKey: .sensitiveBoundary) ?? ""
-        self.roastModeEnabled = try container.decodeIfPresent(Bool.self, forKey: .roastModeEnabled) ?? false
         self.avatarPreviewFileName = try container.decode(String.self, forKey: .avatarPreviewFileName)
         self.avatarPixelsFileName = try container.decode(String.self, forKey: .avatarPixelsFileName)
         let created = try container.decode(Date.self, forKey: .createdAt)

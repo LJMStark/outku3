@@ -264,15 +264,6 @@ private struct CustomCompanionCard: View {
                             .foregroundStyle(theme.colors.primaryText)
                             .lineLimit(1)
 
-                        if companion.roastModeEnabled {
-                            Text("Roast")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(Color.orange)
-                                .padding(.horizontal, 7)
-                                .padding(.vertical, 2)
-                                .background(Color.orange.opacity(0.12))
-                                .clipShape(Capsule())
-                        }
                     }
 
                     Text("\(companion.relationship.displayName) · \(companion.personaVoice.displayName)")

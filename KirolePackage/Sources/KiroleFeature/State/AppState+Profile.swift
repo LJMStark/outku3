@@ -69,7 +69,6 @@ extension AppState {
                 name: trimmedName,
                 relationship: relationship,
                 personaVoice: voice,
-                roastModeEnabled: profile.customCompanionRoast,
                 previewData: preview,
                 pixelData: pixels
             )

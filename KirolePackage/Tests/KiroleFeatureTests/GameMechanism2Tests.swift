@@ -294,21 +294,14 @@ struct GameMechanism2Tests {
         let startTime = Date(timeIntervalSince1970: 1_700_000_000)
         let endTime = startTime.addingTimeInterval(3600)
 
-        // Reset lastEventLogTimestamp so filterAndSortForMutation does not discard
-        // events whose timestamps pre-date the real device's last known timestamp.
-        let savedTimestamp = await LocalStorage.shared.loadLastEventLogTimestamp() ?? 0
-        await LocalStorage.shared.saveLastEventLogTimestamp(0)
-        defer {
-            Task { @MainActor in await LocalStorage.shared.saveLastEventLogTimestamp(savedTimestamp) }
-        }
-
         appState.tasks = [TaskItem(id: taskId, title: "Replay Task")]
 
         let startLog = EventLog(eventType: .enterTaskIn, taskId: taskId, timestamp: startTime)
         await BLEEventHandler.handleEventLogs(
             [startLog],
             service: BLEService.shared,
-            focusService: focusService
+            focusService: focusService,
+            lastTimestampOverride: 0
         )
         #expect(focusService.activeSession?.startTime == startTime)
 
@@ -316,7 +309,8 @@ struct GameMechanism2Tests {
         await BLEEventHandler.handleEventLogs(
             [completeLog],
             service: BLEService.shared,
-            focusService: focusService
+            focusService: focusService,
+            lastTimestampOverride: 0
         )
         await focusService.waitForPendingPersistenceForTesting()
 

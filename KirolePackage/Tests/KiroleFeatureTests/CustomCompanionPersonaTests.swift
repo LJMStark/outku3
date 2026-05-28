@@ -15,8 +15,7 @@ struct CustomCompanionPersonaTests {
         humor: Double = 0.5,
         strictness: Double = 0.3,
         backstory: String = "",
-        sensitiveBoundary: String = "",
-        roastMode: Bool = false
+        sensitiveBoundary: String = ""
     ) -> CustomCompanion {
         CustomCompanion(
             name: "Mochi",
@@ -27,7 +26,6 @@ struct CustomCompanionPersonaTests {
             strictnessLevel: strictness,
             backstory: backstory,
             sensitiveBoundary: sensitiveBoundary,
-            roastModeEnabled: roastMode,
             avatarPreviewFileName: "test-preview.png",
             avatarPixelsFileName: "test-pixels.bin"
         )
@@ -37,13 +35,14 @@ struct CustomCompanionPersonaTests {
 
     @Test("given pre-Kindroid JSON without new fields, decoding uses defaults")
     func givenPreKindroidJSON_decodesWithDefaults() throws {
+        // Old JSON may contain roastModeEnabled — decoder silently ignores unknown keys
         let json = """
         {
             "id": "00000000-0000-0000-0000-000000000001",
             "name": "Legacy",
             "relationship": "Friend",
             "personaVoice": "Companion",
-            "roastModeEnabled": false,
+            "roastModeEnabled": true,
             "avatarPreviewFileName": "prev.png",
             "avatarPixelsFileName": "pix.bin",
             "createdAt": 0
@@ -90,29 +89,18 @@ struct CustomCompanionPersonaTests {
         #expect(!prompt.contains("Backstory:"))
     }
 
-    @Test("given sensitiveBoundary set, prompt uses boundary text instead of roast clause")
+    @Test("given sensitiveBoundary set, prompt uses boundary text")
     func givenSensitiveBoundary_promptUsesBoundary() {
-        let companion = makeCompanion(sensitiveBoundary: "No work stress please.", roastMode: true)
+        let companion = makeCompanion(sensitiveBoundary: "No work stress please.")
         let prompt = OpenAIService.customCompanionPersonaPrompt(companion)
 
         #expect(prompt.contains("Topic boundary set by user:"))
         #expect(prompt.contains("No work stress please."))
-        // Roast Mode clause should NOT appear when boundary overrides it
-        #expect(!prompt.contains("Roast Mode:"))
     }
 
-    @Test("given roastMode true and no boundary, prompt uses roast clause")
-    func givenRoastModeTrue_noBoundary_promptUsesRoastClause() {
-        let companion = makeCompanion(sensitiveBoundary: "", roastMode: true)
-        let prompt = OpenAIService.customCompanionPersonaPrompt(companion)
-
-        #expect(prompt.contains("Roast Mode:"))
-        #expect(!prompt.contains("Topic boundary set by user:"))
-    }
-
-    @Test("given roastMode false and no boundary, prompt uses warm supportive clause")
-    func givenRoastModeFalse_noBoundary_promptIsWarm() {
-        let companion = makeCompanion(sensitiveBoundary: "", roastMode: false)
+    @Test("given no boundary, prompt uses warm supportive default")
+    func givenNoBoundary_promptIsWarm() {
+        let companion = makeCompanion(sensitiveBoundary: "")
         let prompt = OpenAIService.customCompanionPersonaPrompt(companion)
 
         #expect(prompt.contains("warm and supportive"))

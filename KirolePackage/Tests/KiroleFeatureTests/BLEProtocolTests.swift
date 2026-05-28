@@ -1014,7 +1014,8 @@ struct BLEProtocolTests {
         )
         await BLEEventHandler.handleEventLogs(
             [event], service: BLEService.shared,
-            focusService: focusService, isReplay: true
+            focusService: focusService, isReplay: true,
+            lastTimestampOverride: 0
         )
 
         let found = AppState.shared.tasks.first { $0.id == taskId }

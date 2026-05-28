@@ -96,11 +96,10 @@ public final class ScreensaverService {
         let characterBlock: String
         if let custom = customCompanion {
             let safeName = PromptSanitizer.sanitize(custom.name, maxLen: 60)
-            let roastSuffix = custom.roastModeEnabled ? " · Roast Mode" : ""
             characterBlock = """
                 Character: \(safeName) (custom companion)
                 Relationship: \(custom.relationship.displayName)
-                Voice: \(custom.personaVoice.displayName)\(roastSuffix)
+                Voice: \(custom.personaVoice.displayName)
                 """
         } else {
             characterBlock = "Character: \(userProfile.companionCharacter.displayName)"
