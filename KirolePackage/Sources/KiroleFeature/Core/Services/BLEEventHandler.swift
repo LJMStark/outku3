@@ -145,17 +145,6 @@ public enum BLEEventHandler {
         }
     }
 
-    /// CompleteTask: 标记任务为已完成
-    private static func handleCompleteTask(_ eventLog: EventLog) {
-        guard let taskId = eventLog.taskId,
-              let task = resolveTask(taskId: taskId),
-              !task.isCompleted else {
-            return
-        }
-
-        AppState.shared.toggleTaskCompletion(task)
-    }
-
     /// 低电量本地通知
     private static func postLowBatteryNotification(level: Int) {
         #if canImport(UserNotifications)
@@ -300,12 +289,11 @@ public enum BLEEventHandler {
 
     /// State changes that must apply for both live and replayed events.
     private static func applyEventStateMutation(_ log: EventLog) {
-        switch log.eventType {
-        case .completeTask:
-            handleCompleteTask(log)
-        default:
-            break
-        }
+        guard log.eventType == .completeTask,
+              let taskId = log.taskId,
+              let task = resolveTask(taskId: taskId),
+              !task.isCompleted else { return }
+        AppState.shared.toggleTaskCompletion(task)
     }
 
     /// 持久化事件日志
