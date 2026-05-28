@@ -25,6 +25,7 @@ public struct CreateCustomCompanionSheet: View {
     @State private var relationship: CompanionRelationship = .pet
     @State private var personaVoice: CompanionPersonaVoice = .companion
     @State private var roastMode: Bool = false
+    @State private var showRoastEducation = false
     @State private var isSaving = false
     @State private var saveError: String?
 
@@ -264,12 +265,21 @@ public struct CreateCustomCompanionSheet: View {
                 }
             }
 
-            Toggle(isOn: $roastMode) {
+            Toggle(isOn: Binding(
+                get: { roastMode },
+                set: { newValue in
+                    if newValue {
+                        showRoastEducation = true
+                    } else {
+                        roastMode = false
+                    }
+                }
+            )) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Roast Mode")
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(theme.colors.primaryText)
-                    Text("Lovingly call out your bad habits.")
+                    Text("Your companion will tease your habits. You can turn it off anytime.")
                         .font(.system(size: 12))
                         .foregroundStyle(theme.colors.secondaryText)
                 }
@@ -282,6 +292,12 @@ public struct CreateCustomCompanionSheet: View {
             )
             .padding(.top, 4)
             .accessibilityIdentifier("CreateCompanion_RoastToggle")
+            .alert("Enable Roast Mode?", isPresented: $showRoastEducation) {
+                Button("Enable") { roastMode = true }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Your companion will playfully tease your habits. This is meant to be affectionate, not harsh. You can turn it off anytime from Settings.")
+            }
 
             if let saveError {
                 Text(saveError)
