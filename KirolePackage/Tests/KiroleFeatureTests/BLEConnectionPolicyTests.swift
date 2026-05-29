@@ -82,3 +82,52 @@ struct BLERateLimiterSyncThrottleTests {
         #expect(bFirst == true)
     }
 }
+
+// MARK: - BLERateLimiter refresh throttle (H4)
+
+/// H4 回归护栏：硬件物理刷新键 0x20(requestRefresh) 必须有独立于 deviceWake 0x30 的节流闸。
+/// 否则频繁的设备唤醒会吃掉共享配额、饿死用户的显式刷新——联调时表现为"按了刷新没反应"。
+@Suite("BLERateLimiter refresh throttle")
+struct BLERateLimiterRefreshThrottleTests {
+
+    @Test("given fresh limiter, when first refresh trigger, then allowed")
+    func givenFresh_whenFirstRefresh_thenAllowed() async {
+        let limiter = BLERateLimiter()
+
+        #expect(await limiter.allowRefreshTrigger() == true)
+    }
+
+    @Test("given a refresh just allowed, when immediate second refresh, then throttled")
+    func givenRefreshAllowed_whenImmediateSecond_thenThrottled() async {
+        let limiter = BLERateLimiter()
+
+        let first = await limiter.allowRefreshTrigger()
+        let second = await limiter.allowRefreshTrigger()
+
+        #expect(first == true)
+        #expect(second == false)
+    }
+
+    @Test("given deviceWake throttle consumed, when requestRefresh checks its gate, then not starved")
+    func givenWakeConsumed_whenRefresh_thenNotStarved() async {
+        // H4 核心契约：0x20 与 0x30 用各自独立的闸。设备唤醒吃掉 sync 配额后，
+        // 用户的物理刷新键仍必须能触发——绝不能被唤醒饿死。
+        let limiter = BLERateLimiter()
+
+        _ = await limiter.allowSyncTrigger()                // deviceWake(0x30) 消费 sync 闸
+        let refresh = await limiter.allowRefreshTrigger()   // requestRefresh(0x20) 独立闸
+
+        #expect(refresh == true)
+    }
+
+    @Test("given a refresh consumed, when deviceWake checks its gate, then not starved")
+    func givenRefreshConsumed_whenWake_thenNotStarved() async {
+        // 反向同理：刷新闸与唤醒闸互不挤占。
+        let limiter = BLERateLimiter()
+
+        _ = await limiter.allowRefreshTrigger()
+        let wake = await limiter.allowSyncTrigger()
+
+        #expect(wake == true)
+    }
+}

@@ -1,5 +1,6 @@
 @preconcurrency import CoreBluetooth
 import Foundation
+import os
 
 // MARK: - BLE Device
 
@@ -83,6 +84,7 @@ private enum KiroleBLEUUIDs {
 @MainActor
 public final class BLEService: NSObject {
     public static let shared = BLEService()
+    private static let bleLogger = Logger(subsystem: "com.kirole.app", category: "BLE")
 
     // MARK: - Published State
 
@@ -127,6 +129,7 @@ public final class BLEService: NSObject {
     /// 扫描代次。每次发起扫描自增；扫描超时任务只在仍是本轮扫描时才结束扫描，
     /// 避免上一轮已提前结束的超时任务误停下一轮扫描。
     private var scanGeneration: UInt64 = 0
+    private var connectGeneration: UInt64 = 0
 
     // MARK: - UserDefaults Keys
 
@@ -307,6 +310,8 @@ public final class BLEService: NSObject {
         // 同步占位（@MainActor 串行保证原子）。新连接周期开始，清除主动断开标记。
         connectionState = .connecting
         isIntentionalDisconnect = false
+        connectGeneration &+= 1
+        let generation = connectGeneration
 
         if requiresSecureChannel {
             do {
@@ -337,6 +342,7 @@ public final class BLEService: NSObject {
             // 连接超时
             Task { @MainActor in
                 try? await Task.sleep(for: Timing.connectTimeout)
+                guard self.connectGeneration == generation else { return }
                 if self.connectionState == .connecting {
                     self.connectCompletion?(.failure(.connectionTimeout))
                     self.connectCompletion = nil
@@ -462,6 +468,7 @@ public final class BLEService: NSObject {
 
         connectionState = .connecting
         isIntentionalDisconnect = false
+        connectGeneration &+= 1
         securityManager.resetSession()
         pendingConnectedPeripheralID = nil
         pendingConnectedPeripheralName = nil
@@ -732,9 +739,10 @@ public final class BLEService: NSObject {
         peripheral: CBPeripheral,
         characteristic: CBCharacteristic
     ) async throws {
-        #if DEBUG
-        print("[BLE TX] type=0x\(packet.isEmpty ? "??" : String(packet[0], radix: 16)) \(packet.count) bytes")
-        #endif
+        if AppBuildEnvironment.showsHardwareDebugTools {
+            let typeText = packet.first.map { String(format: "%02X", $0) } ?? "??"
+            Self.bleLogger.notice("BLE TX type=0x\(typeText, privacy: .public) len=\(packet.count, privacy: .public)")
+        }
         try await writeGate.acquire()
 
         do {
@@ -1098,9 +1106,10 @@ extension BLEService: CBPeripheralDelegate {
                 return
             }
             guard let receivedData = data else { return }
-            #if DEBUG
-            print("[BLE RX] \(receivedData.count) bytes" + (receivedData.isEmpty ? "" : " firstByte=0x\(String(receivedData[0], radix: 16))"))
-            #endif
+            if AppBuildEnvironment.showsHardwareDebugTools {
+                let firstByteText = receivedData.first.map { String(format: "%02X", $0) } ?? "??"
+                Self.bleLogger.notice("BLE RX len=\(receivedData.count, privacy: .public) firstByte=0x\(firstByteText, privacy: .public)")
+            }
             do {
                 guard let message = try decodeReceivedMessage(receivedData) else { return }
 

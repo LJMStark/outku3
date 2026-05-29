@@ -67,9 +67,11 @@ public enum BLEEventHandler {
 
         case .requestRefresh:
             Task { @MainActor in
-                guard await BLERateLimiter.shared.allowSyncTrigger() else {
+                // 0x20 用独立的 refresh 闸（非 deviceWake 的 10s 闸），不被频繁唤醒饿死；
+                // 2s 下限防固件把 0x20 当心跳狂发导致背靠背整轮 sync。
+                guard await BLERateLimiter.shared.allowRefreshTrigger() else {
                     ErrorReporter.log(
-                        .bleSecurity("Dropped refresh request due to sync throttle"),
+                        .sync(component: "BLE RequestRefresh", underlying: "throttled (min 2s)"),
                         context: "BLEEventHandler.requestRefresh"
                     )
                     return
@@ -89,7 +91,13 @@ public enum BLEEventHandler {
                 }
                 await AppState.shared.handleHardwareWake(now: eventLog.timestamp)
                 // 整轮 sync 经退避节流，避免硬件频繁唤醒触发连接风暴。
-                guard await BLERateLimiter.shared.allowSyncTrigger() else { return }
+                guard await BLERateLimiter.shared.allowSyncTrigger() else {
+                    ErrorReporter.log(
+                        .sync(component: "BLE DeviceWake", underlying: "throttled"),
+                        context: "BLEEventHandler.deviceWake"
+                    )
+                    return
+                }
                 await BLESyncCoordinator.shared.performSync(force: false)
             }
 
