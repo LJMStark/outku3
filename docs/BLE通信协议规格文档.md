@@ -1,7 +1,7 @@
 # Kirole BLE 通信协议规格文档
 
-**版本:** v2.4.0
-**更新日期:** 2026-05-29
+**版本:** v2.4.1
+**更新日期:** 2026-05-30
 **状态:** 联调冻结版（完整协议参考）
 
 ---
@@ -58,6 +58,7 @@
 | v2.3.4  | 2026-05-08 | 收紧包解析边界：简单包和 SecureEnvelope 不允许尾部多余字节；字符串按 UTF-8 字节安全截断；BatteryLevel 和数值字段按代码 clamp；nonce 重放记录跨短期重连保留；App 分包重组限制未完成消息数 |
 | v2.3.5  | 2026-05-08 | 补充第一次联调阅读入口、BLE 广播要求、Type 按方向解释规则、分包无 ACK 边界、坏包处理建议、WheelSelect / EnterTaskIn 用户动作边界；标明 Spectra 6 图片帧不属于第一轮联调 |
 | v2.4.0  | 2026-05-29 | 联调修订（基于 `ble_log` 真机日志）：Sync 触发节流由「RequestRefresh 2s」改为「RequestRefresh/DeviceWake 共用 10s」（§8.5）；自动重连改用 CoreBluetooth pending connection 并区分主动/意外断开（§8.1）；新增 §8.7 记录固件实现偏差（DayPack 字符串字段被当作定长数值解析、`0x01`/`0x20` 入站命令未实现）。**协议规格本身未变，§8.7 为固件需对照修正项** |
+| v2.4.1  | 2026-05-30 | 修正 Sync 触发节流（§8.5）：`RequestRefresh`(`0x20`) 改用**独立 2 秒闸**，`DeviceWake`(`0x30`) 继续用**独立 10 秒闸**；两者不再互相消耗配额（0x20 不再被频繁 0x30 饿死），被节流时均记录日志。撤回 v2.4.0 的「共用 10s」。协议字节不变 |
 
 ### 1.4 术语表
 
@@ -833,7 +834,7 @@ AA 01 02 Type SceneId PostcardDay QuoteLen Quote AuthorLen Author
 | 用户在设备上的动作 | 固件应发送 | App 当前行为 |
 |------------------|------------|--------------|
 | 设备唤醒 | `DeviceWake(0x30)`，payload 带 `BatteryLevel(1B)` | 更新电量，发送 Time，并按需同步数据 |
-| 用户手动刷新 | `RequestRefresh(0x20)` | 触发一次数据同步；10 秒内重复请求会被忽略（与 DeviceWake 共用节流，见 §8.5）|
+| 用户手动刷新 | `RequestRefresh(0x20)` | 触发一次数据同步；2 秒内重复 `RequestRefresh` 会被忽略并记录日志；**不**与 `DeviceWake(0x30)` 的 10 秒节流共用（见 §8.5）|
 | 在任务列表中进入任务详情 | `EnterTaskIn(0x10)`，payload 带 TaskId 和时间戳 | 回发 `TaskInPage(0x11)`，并启动专注会话 |
 | 在任务详情页完成任务 | `CompleteTask(0x11)`，payload 带 TaskId 和时间戳 | App 标记任务完成，结束对应专注会话 |
 | 在任务详情页跳过任务 | `SkipTask(0x12)`，payload 带 TaskId 和时间戳 | 结束对应专注会话，不标记完成 |
@@ -1066,9 +1067,12 @@ App 内置写入速率限制，固件联调时需注意：
 | 限制项 | 规则 |
 |------------------------|-------------------------------------------|
 | 最大写入速率 | 20 次/秒，超出时 App 自动排队等待 |
-| Sync 触发最小间隔 | 10 秒；硬件事件 RequestRefresh(`0x20`) 与 DeviceWake(`0x30`) **共用**此节流。10 秒内重复触发整轮 sync 时，App 只响应第一条，其余静默忽略，以避免「连上 → wake/refresh → sync → 断开 → 重连 → wake」的连接风暴 |
+| DeviceWake sync 触发最小间隔 | 10 秒，**仅** DeviceWake(`0x30`) 触发的整轮 sync 适用。10 秒内重复 DeviceWake 时，App 仍会处理电量、发送 Time、记录硬件唤醒，但整轮 sync 会被节流并记录日志，以避免「连上 → wake → sync → 断开 → 重连 → wake」的连接风暴 |
+| RequestRefresh sync 触发最小间隔 | 2 秒，**仅** RequestRefresh(`0x20`) 触发的整轮 sync 适用。使用**独立**闸，不消耗 DeviceWake 的 10 秒配额、也不会被频繁 DeviceWake 饿死；2 秒内重复 RequestRefresh 会被节流并记录日志 |
 
-**调试建议**：若发现 App 长时间无响应或未按预期刷新，可检查是否触发了限流（设备在 10 秒内重复发送 `0x20`/`0x30`，或写入频率超过 20 次/秒）。
+**调试建议**：若发现 App 长时间无响应或未按预期刷新，可检查是否触发了限流——`0x20` 在 2 秒内重复发送会被忽略、`0x30` 在 10 秒内重复触发整轮 sync 会被忽略（两者互不占用配额），或写入频率超过 20 次/秒被排队。
+
+**帧可见性（联调）**：DEBUG 包与 TestFlight 包可用 Console.app 过滤 `subsystem:com.kirole.app category:BLE` 查看 App 收发帧摘要——TX 记录 `type/len`、RX 记录 `len/firstByte`；正式 App Store 包关闭，且不记录完整 payload。
 
 ### 8.6 设备信任模型（TOFU）
 
@@ -1082,7 +1086,7 @@ App 采用 **首次连接即信任（Trust On First Use）** 策略：
 
 ### 8.7 联调实测：固件实现偏差（2026-05-29 `ble_log`）
 
-本节记录一次真机联调日志（`ble_log`）中观察到的**固件实现与本规格不一致**的问题。**本规格各章节经核对与 App 代码一致、无需修改**；以下是固件需对照修正的点。
+本节记录一次真机联调日志（`ble_log`）中观察到的**固件实现与本规格不一致**的问题；以下是固件需对照修正的点。（App 侧节流策略已于 v2.4.1 调整，以 §8.5 最新版本为准。）
 
 **问题 1：DayPack(0x10) payload 字段错位（最严重）**
 
