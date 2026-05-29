@@ -194,11 +194,12 @@ xcodebuild -workspace Kirole.xcworkspace \
    - Feedback Email: 接收反馈的邮箱
    - Marketing URL: 可选
    - Privacy Policy URL: 可选
-8. 点击 **Submit for Review**
-9. 等待审核(1-2 天)
+8. **处理出口合规**:若 build 卡在「准备提交 / Ready to Submit」,先回答加密合规问题(Kirole 选"仅豁免 / 否")。本项目自 build 567 起已在 `Config/Info.plist` 声明 `ITSAppUsesNonExemptEncryption=false`,自动免询问;更早的 build 需手动答这一步。
+9. 点击 **Submit for Review**
+10. 等待审核:**仅该版本号(如 2.0)首次提交外部测试**才需要,现在通常几小时(首次可能一天内)。**同一版本号下的后续 build 通常免审或秒过**,无需重等。
 
 **外部测试特点**:
-- ⚠️ 需要 Apple 审核(1-2 天)
+- ⚠️ 仅版本号首次需 Apple 审核;同版本号(如 2.0)后续 build 通常免审或秒过
 - ✅ 最多 10,000 名测试员
 - ✅ 测试员无需是团队成员
 - ✅ 通过公开链接邀请
@@ -264,6 +265,18 @@ xcodebuild -workspace Kirole.xcworkspace \
 3. Provisioning Profile 包含 Family Controls
 4. 测试设备 iOS 版本 >= 15.0
 
+### Q6: 外部测试员收不到更新 / 构建一直显示「准备提交」?
+
+**A**: 最常见原因是**出口合规未回答**,build 卡在「准备提交 / Ready to Submit」、无法提交外部审核,外部测试员(含公开链接用户)就停留在旧版本。处理:
+1. App Store Connect → TestFlight → 该 build → 回答加密合规问题(Kirole 选"仅豁免 / 否")。
+2. 确认「测试信息」已填(反馈邮箱等,外部测试必需)。
+3. 提交外部审核;状态从黄色「准备提交」变绿「正在测试」后,外部测试员才可见。
+4. 测试员在 TestFlight App 里**下拉刷新**(不一定有推送通知)。
+
+**根治**:已在 `Config/Info.plist` 声明 `ITSAppUsesNonExemptEncryption=false`(commit c2da95f),build 567 起自动免合规询问、不再卡。前提是 App 仅用 Apple 豁免的标准加密(HTTPS/TLS、标准 HMAC),Kirole 符合。
+
+> 注意:这与"审核排队"无关。卡「准备提交」是没答合规、压根没进审核队列;别误以为是在等 1-2 天审核。
+
 ## 时间线估算
 
 | 步骤 | 预计时间 |
@@ -276,7 +289,7 @@ xcodebuild -workspace Kirole.xcworkspace \
 | Apple 处理构建 | 10-30 分钟 |
 | 配置 TestFlight | 5 分钟 |
 | 内部测试员安装 | 立即 |
-| 外部测试审核 | 1-2 天 |
+| 外部测试审核 | 仅版本号首次需要,通常几小时;同版本号后续 build 免审或秒过 |
 
 **总计**: 从开始到内部测试员可以安装,预计 **30-60 分钟**
 
@@ -311,9 +324,10 @@ xcodebuild -workspace Kirole.xcworkspace \
 ### 外部测试(可选)
 - [ ] 创建外部测试组
 - [ ] 填写 Test Information
-- [ ] 提交审核
-- [ ] 审核通过
-- [ ] 外部测试员可以安装
+- [ ] 回答出口合规(若卡「准备提交」) — build 567 起已由 Info.plist 自动免除
+- [ ] 提交审核(仅版本号首次需要)
+- [ ] 审核通过(状态变绿「正在测试」)
+- [ ] 外部测试员可以安装(让其在 TestFlight 下拉刷新)
 
 ## 下一步
 
