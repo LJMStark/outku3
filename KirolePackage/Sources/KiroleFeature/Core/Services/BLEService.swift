@@ -133,6 +133,7 @@ public final class BLEService: NSObject {
     private enum Keys {
         static let lastConnectedDeviceID = "lastConnectedBLEDeviceID"
         static let autoReconnect = "bleAutoReconnect"
+        static let keepAliveDebugMode = "bleKeepAliveDebugMode"
     }
 
     // MARK: - Timing
@@ -151,6 +152,26 @@ public final class BLEService: NSObject {
     public var autoReconnect: Bool {
         get { UserDefaults.standard.bool(forKey: Keys.autoReconnect) }
         set { UserDefaults.standard.set(newValue, forKey: Keys.autoReconnect) }
+    }
+
+    /// 固件联调专用：开启后 App **不**在同步收尾 / 超时看门狗 / 后台到期时主动断连，
+    /// 保持长连接供硬件团队调试固件；意外掉线时也强制尝试自动重连。
+    ///
+    /// 生产安全：getter 以 `AppBuildEnvironment.showsHardwareDebugTools` 为闸门——
+    /// App Store 正式包恒返回 `false`，即使本地残留了 `true` 也不会启用，确保正式包始终是
+    /// 省电的脉冲式同步（连一下→同步→断开）。开关仅在 DEBUG / TestFlight 包暴露。
+    public var keepAliveDebugMode: Bool {
+        get {
+            guard AppBuildEnvironment.showsHardwareDebugTools else { return false }
+            return UserDefaults.standard.bool(forKey: Keys.keepAliveDebugMode)
+        }
+        set { UserDefaults.standard.set(newValue, forKey: Keys.keepAliveDebugMode) }
+    }
+
+    /// 实际生效的自动重连开关：用户设置为准，但 keep-alive 调试模式下强制开启，
+    /// 以便固件重启 / 信号抖动导致的意外掉线能立刻恢复调试连接。
+    private var autoReconnectEffective: Bool {
+        autoReconnect || keepAliveDebugMode
     }
 
     public nonisolated static var configuredSecurityMode: BLESecurityMode {
@@ -409,7 +430,7 @@ public final class BLEService: NSObject {
     /// 返回是否成功发起了重连尝试。
     @discardableResult
     public func attemptAutoReconnect() async -> Bool {
-        guard autoReconnect else { return false }
+        guard autoReconnectEffective else { return false }
         return await beginPendingReconnect()
     }
 
@@ -706,6 +727,9 @@ public final class BLEService: NSObject {
         peripheral: CBPeripheral,
         characteristic: CBCharacteristic
     ) async throws {
+        #if DEBUG
+        print("[BLE TX] type=0x\(packet.isEmpty ? "??" : String(packet[0], radix: 16)) \(packet.count) bytes")
+        #endif
         try await writeGate.acquire()
 
         do {
@@ -868,7 +892,7 @@ extension BLEService: CBCentralManagerDelegate {
         Task { @MainActor in
             switch central.state {
             case .poweredOn:
-                if autoReconnect, connectionState == .disconnected {
+                if autoReconnectEffective, connectionState == .disconnected {
                     _ = await attemptAutoReconnect()
                 }
             case .poweredOff:
@@ -954,7 +978,7 @@ extension BLEService: CBCentralManagerDelegate {
 
             guard BLEConnectionPolicy.shouldAutoReconnect(
                 isIntentional: wasIntentional,
-                autoReconnectEnabled: autoReconnect
+                autoReconnectEnabled: autoReconnectEffective
             ) else { return }
 
             // Apple 警告：不要在 didDisconnect 回调里立刻 connect（会卡 bad state），延迟后再发起。
@@ -1059,7 +1083,19 @@ extension BLEService: CBPeripheralDelegate {
         let data = characteristic.value
 
         Task { @MainActor in
-            guard error == nil, let receivedData = data else { return }
+            // notify 层错误（ATT error / 加密失败 / 断连时 pending value 清空）原先被静默丢弃，
+            // 硬件团队看来像 App 完全没收到。拆分 guard 单独上报，区分链路层错误与解析失败。
+            if let error {
+                ErrorReporter.log(
+                    .sync(component: "BLE Notify", underlying: error.localizedDescription),
+                    context: "BLEService.didUpdateValueFor"
+                )
+                return
+            }
+            guard let receivedData = data else { return }
+            #if DEBUG
+            print("[BLE RX] \(receivedData.count) bytes" + (receivedData.isEmpty ? "" : " firstByte=0x\(String(receivedData[0], radix: 16))"))
+            #endif
             do {
                 guard let message = try decodeReceivedMessage(receivedData) else { return }
 

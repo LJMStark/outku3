@@ -9,6 +9,7 @@ public struct SettingsBLESection: View {
     @State private var trustedDeviceCount: Int = 0
     @State private var blockedDeviceCount: Int = 0
     @State private var showClearIdentityConfirmation = false
+    @State private var keepAliveEnabled = false
 
     public init() {}
 
@@ -26,12 +27,18 @@ public struct SettingsBLESection: View {
             trustedDevicesCard
             currentSceneCard
 
+            // 固件联调开关：DEBUG 包恒显示；Release 包仅 TestFlight 显示；正式上架包隐藏。
+            if AppBuildEnvironment.showsHardwareDebugTools {
+                keepAliveCard
+            }
+
             #if DEBUG
             simulatorStatusCard
             #endif
         }
         .task {
             energyBottles = await LocalStorage.shared.loadEnergyBottles()
+            keepAliveEnabled = bleService.keepAliveDebugMode
             await refreshIdentityCounts()
         }
         .alert("Clear Trusted Devices?", isPresented: $showClearIdentityConfirmation) {
@@ -187,6 +194,45 @@ public struct SettingsBLESection: View {
         .background(Color.white)
         .clipShape(RoundedRectangle(cornerRadius: 24))
         .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
+    }
+
+    @MainActor
+    private var keepAliveCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: "link")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(keepAliveEnabled ? Color.orange : theme.colors.secondaryText)
+
+                Text("Keep BLE Connected")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(theme.colors.primaryText)
+
+                Spacer()
+
+                Toggle("", isOn: $keepAliveEnabled)
+                    .labelsHidden()
+                    .tint(Color.orange)
+                    .accessibilityLabel("保持 BLE 连接用于固件调试")
+                    .accessibilityIdentifier("Settings_BLEKeepAliveDebugToggle")
+            }
+
+            Text("Firmware debug aid. Keeps the BLE link open instead of dropping it after each sync, so hardware debugging sessions stay connected. Turn OFF for normal battery-saving sync.")
+                .font(.system(size: 12))
+                .foregroundStyle(theme.colors.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(16)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 24))
+        .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
+        .onChange(of: keepAliveEnabled) { _, newValue in
+            bleService.keepAliveDebugMode = newValue
+            // 打开时若当前未连接，立刻尝试重连到上次设备，让调试连接尽快建立。
+            if newValue, !bleService.connectionState.isConnected {
+                Task { await bleService.attemptAutoReconnect() }
+            }
+        }
     }
 
     private var trustedDeviceDescription: String {

@@ -127,6 +127,26 @@ public enum BLEEventHandler {
     private static func handleEnterTaskIn(_ eventLog: EventLog, service: BLEService) {
         guard let taskId = eventLog.taskId,
               let task = resolveTask(taskId: taskId) else {
+            // 设备已进入任务详情页、正等 TaskInPage。App 找不到该 task（clean install / 任务被删 /
+            // 本地数据被 reset，而硬件仍持旧 DayPack 缓存）时不能静默——设备会永久卡在详情页“像死机”。
+            // 记日志 + 发 DeviceMode(.interactive) 把设备退回交互概览解卡。
+            ErrorReporter.log(
+                .sync(
+                    component: "BLE EnterTaskIn",
+                    underlying: "task not found (taskId=\(eventLog.taskId ?? "nil"), \(AppState.shared.tasks.count) local tasks) — recovering device to interactive mode"
+                ),
+                context: "BLEEventHandler.handleEnterTaskIn"
+            )
+            Task { @MainActor in
+                do {
+                    try await service.sendDeviceMode(.interactive)
+                } catch {
+                    ErrorReporter.log(
+                        .sync(component: "BLE EnterTaskIn recovery", underlying: error.localizedDescription),
+                        context: "BLEEventHandler.handleEnterTaskIn"
+                    )
+                }
+            }
             return
         }
 
@@ -179,7 +199,27 @@ public enum BLEEventHandler {
     /// 处理 Event Log 批次数据
     private static func handleEventLogBatch(_ payload: Data, service: BLEService) async {
         let logs = parseEventLogBatchPayload(payload)
-        guard !logs.isEmpty else { return }
+        guard !logs.isEmpty else {
+            // count>0 却一条都没解析出来 = 真正的解析失败。补传是核心功能：若静默丢弃，硬件下次还发
+            // 同一批，时间戳不前进 → 死循环重发、任务状态永不更新，且硬件团队完全无法排查。
+            let declaredCount = payload.first.map(Int.init) ?? 0
+            if declaredCount > 0 {
+                let hexPrefix = payload.prefix(24).map { String(format: "%02x", $0) }.joined(separator: " ")
+                ErrorReporter.log(
+                    .sync(component: "BLE EventLogBatch", underlying: "parse failed: declaredCount=\(declaredCount) payloadBytes=\(payload.count) hex=[\(hexPrefix)]"),
+                    context: "BLEEventHandler.handleEventLogBatch"
+                )
+            }
+            return
+        }
+        // 补传路径补回电量：实时路径在 handleReceivedPayload 已处理电量，但批量重放的
+        // deviceWake/lowBattery 原先会丢掉电量字节。取本批最新一条带电量的事件应用。
+        if let latestBattery = logs
+            .filter({ $0.eventType == .deviceWake || $0.eventType == .lowBattery })
+            .max(by: { $0.timestamp < $1.timestamp })?
+            .batteryLevel {
+            service.deviceBatteryLevel = latestBattery
+        }
         await handleEventLogs(logs, service: service, isReplay: true)
     }
 
@@ -256,6 +296,12 @@ public enum BLEEventHandler {
         isReplay: Bool = false,
         lastTimestampOverride: UInt32? = nil
     ) async {
+        // 持久化在后台进行，不阻塞状态变更。
+        //
+        // 已知 advisory 竞态（codex review P2）：两个真正并发到达的批次可能都先读到同一旧高水位再过滤，
+        // 重复处理重叠事件。当前 applyEventStateMutation 仅处理 completeTask 且带 !isCompleted 幂等保护，
+        // 故无可见危害。完整消除需把 persistEventLogs 的“存日志”与“推进高水位”解耦后做原子 claim——
+        // 留作单独带测试的改动（全局串行化会破坏共享 AppState.shared 的并行测试隔离）。
         Task {
             await persistEventLogs(logs)
         }
