@@ -44,15 +44,17 @@ KiroleFeature/
 ├── Core/
 │   ├── AppEnvironmentValues.swift   # EnvironmentKey definitions for all 4 singletons
 │   ├── Auth/                        # Google/Apple sign-in
-│   ├── BLE/                         # BLEService, BLEPacketizer, BLESyncCoordinator…
+│   ├── BLE/                         # BLEProtocol.swift ONLY — App→Device/Device→App byte definitions (source of truth)
 │   ├── Network/                     # OpenAIService, PromptSanitizer, SupabaseService
-│   ├── Services/                    # FocusSessionService, CompanionTextService, DayPackGenerator…
+│   ├── Services/                    # BLE runtime lives here (BLEService, BLESyncCoordinator, BLEEventHandler, BLEPacketizer, BLEConnectionPolicy, BLESecurityManager…) + FocusSessionService, CompanionTextService, DayPackGenerator…
 │   └── Storage/                     # LocalStorage, AppSecrets
 ├── Models/                          # AppState+*.swift extensions, CompanionCharacter, Pet, Task…
 ├── State/                           # TimelineDataSource, OnboardingState
 ├── Views/                           # Home/, Pet/, Settings/, Onboarding/, Modifiers/
 └── Resources/                       # Media.xcassets (image assets)
 ```
+
+> **BLE byte namespaces are direction-split.** `Core/BLE/BLEProtocol.swift` (`BLEDataType`) defines App→Device bytes; Device→App bytes live in `Models/EventLog.swift` (`EventLogType.rawByte`). The **same byte value can mean different things by direction** — e.g. `0x15` is CustomAvatarFrame (outbound) vs ViewEventDetail (inbound). This is intentional and not an on-wire conflict; don't flag it as one.
 
 ### State Management
 Four `@Observable` singletons injected at `ContentView` via `.environment()`:
@@ -70,6 +72,7 @@ Four `@Observable` singletons injected at `ContentView` via `.environment()`:
 - Initial data loading → `AppState+Loading.swift`
 - BLE / DisplayScene / hardware push → `AppState+HardwareDisplay.swift`
 - Profile and companion text → `AppState+Profile.swift` / `AppState+Companion.swift`
+- Custom companion avatar BLE push → `AppState+CustomCompanions.swift`
 - Persistence helpers (`persistTasks`, `persistPet`) → `AppState.swift` main file
 
 ### UI Stack
@@ -165,6 +168,8 @@ fastlane ios notes text:"说明内容"
 Pipeline steps (automated): `increment_build_number` → `gym` (archive ~3 min) → `upload_to_testflight` (processing ~5 min) → set en-US + zh-Hans notes → distribute to external group **kirole**.
 
 Credentials: `fastlane/.env` (git-ignored) — copy from `fastlane/.env.template` and fill `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_PATH`.
+
+**Verify the build actually landed.** `upload_to_testflight` can be killed mid-upload (process timeout / transient `SSL_read` EOF), leaving the build number bumped locally + an archive on disk but **nothing on App Store Connect** — a "Done" line or local archive is not proof. Confirm via the ASC API (latest build number + `processing_state` + beta-review state). Run the release detached/in background so one timeout can't kill the upload; transient SSL errors are retryable.
 
 ### Real Device Install
 ```bash
