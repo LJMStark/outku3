@@ -265,17 +265,22 @@ xcodebuild -workspace Kirole.xcworkspace \
 3. Provisioning Profile 包含 Family Controls
 4. 测试设备 iOS 版本 >= 15.0
 
-### Q6: 外部测试员收不到更新 / 构建一直显示「准备提交」?
+### Q6: 外部测试员收不到更新 / 公开链接只显示旧版本?
 
-**A**: 最常见原因是**出口合规未回答**,build 卡在「准备提交 / Ready to Submit」、无法提交外部审核,外部测试员(含公开链接用户)就停留在旧版本。处理:
-1. App Store Connect → TestFlight → 该 build → 回答加密合规问题(Kirole 选"仅豁免 / 否")。
-2. 确认「测试信息」已填(反馈邮箱等,外部测试必需)。
-3. 提交外部审核;状态从黄色「准备提交」变绿「正在测试」后,外部测试员才可见。
-4. 测试员在 TestFlight App 里**下拉刷新**(不一定有推送通知)。
+**A**: 根本原因(本项目用 ASC API 实测确认):新 build **没有提交 Beta App Review**。公开链接 / 外部组只显示**已通过审核(APPROVED)**的 build,所以会一直停在最后一个过审的旧版本(本项目曾长期停在 543——它是唯一 APPROVED 的近期 build,555–567 全是 NO_SUBMISSION)。**次因**:出口合规未答会让 build 先卡「准备提交」,连提交审核都做不了。
 
-**根治**:已在 `Config/Info.plist` 声明 `ITSAppUsesNonExemptEncryption=false`(commit c2da95f),build 567 起自动免合规询问、不再卡。前提是 App 仅用 Apple 豁免的标准加密(HTTPS/TLS、标准 HMAC),Kirole 符合。
+手动处理某个 build:
+1. App Store Connect → TestFlight → 该 build。
+2. (若卡「准备提交」)回答出口合规(Kirole 选"仅豁免 / 否")。
+3. 确认「测试信息」已填(反馈邮箱等,外部测试必需)。
+4. **提交 Beta App Review**(关键!仅"加入外部组"不够)。同一版本号(如 2.0)已有 build 过审时,后续 build 通常**秒过**(自动 APPROVED)。
+5. 测试员在 TestFlight App **下拉刷新**(不一定有推送通知)。
 
-> 注意:这与"审核排队"无关。卡「准备提交」是没答合规、压根没进审核队列;别误以为是在等 1-2 天审核。
+**根治(均已完成)**:
+- `fastlane release` 现在分发后**自动提交 Beta App Review**(`submit_for_beta_review`,幂等);
+- `Config/Info.plist` 已声明 `ITSAppUsesNonExemptEncryption=false`,build 567 起自动免出口合规询问。
+
+> 区分两件事:① **没提交审核** = 外部永远看不到(主因,fastlane 旧版漏了这步);② 卡「准备提交」= 没答合规(次因,挡在提交之前)。两者现已分别根治。
 
 ## 时间线估算
 
