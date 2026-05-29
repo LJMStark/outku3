@@ -4,10 +4,12 @@ public actor BLERateLimiter {
     public static let shared = BLERateLimiter()
 
     private var recentWriteTimestamps: [Date] = []
-    private var lastRefreshRequestAt: Date?
+    private var lastSyncTriggerAt: Date?
 
     private let maxWritesPerSecond = 20
-    private let refreshMinimumInterval: TimeInterval = 2.0
+    /// 硬件事件（deviceWake / requestRefresh）触发整轮 sync 的最小间隔，
+    /// 用于掐断"连上 → wake → sync → 断开 → 重连 → wake"的连接风暴。
+    private let syncTriggerMinimumInterval: TimeInterval = 10.0
 
     public func acquireWritePermit() async throws {
         while true {
@@ -28,13 +30,15 @@ public actor BLERateLimiter {
         }
     }
 
-    public func allowRefreshRequest() -> Bool {
+    /// 节流硬件事件触发的 performSync。requestRefresh / deviceWake 共用此闸：
+    /// 在 syncTriggerMinimumInterval 内最多放行一次整轮 sync。
+    public func allowSyncTrigger() -> Bool {
         let now = Date()
-        if let lastRefreshRequestAt, now.timeIntervalSince(lastRefreshRequestAt) < refreshMinimumInterval {
+        if let lastSyncTriggerAt, now.timeIntervalSince(lastSyncTriggerAt) < syncTriggerMinimumInterval {
             return false
         }
 
-        lastRefreshRequestAt = now
+        lastSyncTriggerAt = now
         return true
     }
 }

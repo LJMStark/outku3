@@ -67,9 +67,9 @@ public enum BLEEventHandler {
 
         case .requestRefresh:
             Task { @MainActor in
-                guard await BLERateLimiter.shared.allowRefreshRequest() else {
+                guard await BLERateLimiter.shared.allowSyncTrigger() else {
                     ErrorReporter.log(
-                        .bleSecurity("Dropped refresh request due to rate limit"),
+                        .bleSecurity("Dropped refresh request due to sync throttle"),
                         context: "BLEEventHandler.requestRefresh"
                     )
                     return
@@ -88,6 +88,8 @@ public enum BLEEventHandler {
                     )
                 }
                 await AppState.shared.handleHardwareWake(now: eventLog.timestamp)
+                // 整轮 sync 经退避节流，避免硬件频繁唤醒触发连接风暴。
+                guard await BLERateLimiter.shared.allowSyncTrigger() else { return }
                 await BLESyncCoordinator.shared.performSync(force: false)
             }
 
