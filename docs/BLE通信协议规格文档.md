@@ -1,7 +1,7 @@
 # Kirole BLE 通信协议规格文档
 
-**版本:** v2.3.5
-**更新日期:** 2026-05-08
+**版本:** v2.4.0
+**更新日期:** 2026-05-29
 **状态:** 联调冻结版（完整协议参考）
 
 ---
@@ -57,6 +57,7 @@
 | v2.3.3  | 2026-05-08 | 撤回 v2.3.1 错误修订：Connection Timeout 仍为 15 秒（`BLEService.swift:262` 硬编码），v2.3.1 误把 `scanForDevices(timeout: 10)` 当成连接超时，已恢复 |
 | v2.3.4  | 2026-05-08 | 收紧包解析边界：简单包和 SecureEnvelope 不允许尾部多余字节；字符串按 UTF-8 字节安全截断；BatteryLevel 和数值字段按代码 clamp；nonce 重放记录跨短期重连保留；App 分包重组限制未完成消息数 |
 | v2.3.5  | 2026-05-08 | 补充第一次联调阅读入口、BLE 广播要求、Type 按方向解释规则、分包无 ACK 边界、坏包处理建议、WheelSelect / EnterTaskIn 用户动作边界；标明 Spectra 6 图片帧不属于第一轮联调 |
+| v2.4.0  | 2026-05-29 | 联调修订（基于 `ble_log` 真机日志）：Sync 触发节流由「RequestRefresh 2s」改为「RequestRefresh/DeviceWake 共用 10s」（§8.5）；自动重连改用 CoreBluetooth pending connection 并区分主动/意外断开（§8.1）；新增 §8.7 记录固件实现偏差（DayPack 字符串字段被当作定长数值解析、`0x01`/`0x20` 入站命令未实现）。**协议规格本身未变，§8.7 为固件需对照修正项** |
 
 ### 1.4 术语表
 
@@ -404,6 +405,16 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 | 9      | InterruptionCount   | 1 byte      | -          | 专注期间手机解锁次数（clamp 0-255） |
 | 10     | SummaryMessage      | 1 + N bytes | 50 bytes   | 总结文本 |
 | N+11   | EncouragementMessage| 1 + N bytes | 50 bytes   | 鼓励文本 |
+
+**解析说明（重要，固件必读）：**
+
+- **Offset 列的 `N+6` / `...` 表示偏移随变长字段累积，不是固定偏移。** `N` 不是常量，指紧邻前一个变长字符串的实际内容字节数；从 `MorningGreeting`(offset 5) 起整个 payload 都是变长流。
+- 固件**必须顺序流式解析**：读 1 字节长度 → 读对应字节数内容 → 指针前进；**不能 seek 到硬编码偏移**。（§8.7「问题 1」的字段错位正源于此。）
+- 上表所有字段在每个 DayPack 中**按序存在、无条件写入**；"空"只是长度为 0、仍占位，不会被省略或跳过：
+  - 空字符串 = 单字节 `0x00`（例如无日程时 `CurrentScheduleSummary`，见 §7.1 测试向量）。
+  - `TopTasks` 为 0 条时 `TaskCount = 0x00`，其后**没有**任何 TopTask 子结构。
+  - `SettlementData` 的定长字段恒在，`SummaryMessage` / `EncouragementMessage` 可为空串。
+- **关键**：不能因为某字段值为空，就不读它的长度字节 / 计数字节——那 1 个字节始终占位，少读一字节即整体错位。
 
 ---
 
@@ -795,7 +806,7 @@ AA 01 02 Type SceneId PostcardDay QuoteLen Quote AuthorLen Author
 | 用户在设备上的动作 | 固件应发送 | App 当前行为 |
 |------------------|------------|--------------|
 | 设备唤醒 | `DeviceWake(0x30)`，payload 带 `BatteryLevel(1B)` | 更新电量，发送 Time，并按需同步数据 |
-| 用户手动刷新 | `RequestRefresh(0x20)` | 触发一次数据同步；2 秒内重复请求会被忽略 |
+| 用户手动刷新 | `RequestRefresh(0x20)` | 触发一次数据同步；10 秒内重复请求会被忽略（与 DeviceWake 共用节流，见 §8.5）|
 | 在任务列表中进入任务详情 | `EnterTaskIn(0x10)`，payload 带 TaskId 和时间戳 | 回发 `TaskInPage(0x11)`，并启动专注会话 |
 | 在任务详情页完成任务 | `CompleteTask(0x11)`，payload 带 TaskId 和时间戳 | App 标记任务完成，结束对应专注会话 |
 | 在任务详情页跳过任务 | `SkipTask(0x12)`，payload 带 TaskId 和时间戳 | 结束对应专注会话，不标记完成 |
@@ -872,37 +883,39 @@ AA 01 02 Type SceneId PostcardDay QuoteLen Quote AuthorLen Author
 
 ### 7.1 DayPack 最小测试向量（Hex）
 
-以下测试向量用于验证字段顺序和长度解析，可作为固件解析器的第一条样例。它不是产品真实文案，只覆盖最小字段。
+以下测试向量用于验证字段顺序和长度解析，可作为固件解析器的第一条样例。它不是产品真实文案，只覆盖最小字段。左侧 `@N` 为该字段在 **payload 内的起始字节偏移**（十进制），供固件逐字段对位——注意偏移随变长字符串累积，**不是固定值**。
 
 ```
 Command: 0x10 (DayPack)
 
 Full Packet:
-10 00 3A                              // Type=0x10, Length=58
+10 00 3A                              // Type=0x10, Length=58 (payload 共 58 字节)
 
-Payload:
-1A 05 08                              // Date: 2026-05-08
-00                                    // DeviceMode: Interactive
-00                                    // FocusChallengeEnabled: false
-
-02 48 69                              // MorningGreeting: "Hi"
-08 4F 6E 65 20 74 61 73 6B            // DailySummary: "One task"
-05 46 6F 63 75 73                     // FirstItem: "Focus"
-00                                    // CurrentScheduleSummary: ""
-06 53 74 61 72 74 2E                  // CompanionPhrase: "Start."
-00                                    // TaskCount: 0
-
-// Page 4: Settlement
-00                                    // TasksCompleted: 0
-01                                    // TasksTotal: 1
-00 00                                 // PointsEarned: 0
-00 00                                 // TotalFocusMinutes: 0
-00                                    // FocusSessionCount: 0
-00 00                                 // LongestFocusMinutes: 0
-00                                    // InterruptionCount: 0
-05 44 6F 6E 65 2E                     // SummaryMessage: "Done."
-09 54 6F 6D 6F 72 72 6F 77 2E         // EncouragementMessage: "Tomorrow."
+Payload (58 bytes):
+@0   1A 05 08                         // Date: 2026-05-08 (year=0x1A=26→2026, month=5, day=8)
+@3   00                               // DeviceMode: Interactive
+@4   00                               // FocusChallengeEnabled: false
+@5   02 48 69                         // MorningGreeting: len=2 "Hi"
+@8   08 4F 6E 65 20 74 61 73 6B       // DailySummary: len=8 "One task"
+@17  05 46 6F 63 75 73                // FirstItem: len=5 "Focus"
+@23  00                               // ★ CurrentScheduleSummary: len=0 → 空串，仅此 1 字节、无内容
+@24  06 53 74 61 72 74 2E             // CompanionPhrase: len=6 "Start."
+@31  00                               // ★ TaskCount: 0 → 其后无任何 TopTask 子结构，直接进入 Settlement
+// Page 4: Settlement (@32 起)
+@32  00                               // TasksCompleted: 0
+@33  01                               // TasksTotal: 1
+@34  00 00                            // PointsEarned: 0 (u16 BE)
+@36  00 00                            // TotalFocusMinutes: 0 (u16 BE)
+@38  00                               // FocusSessionCount: 0
+@39  00 00                            // LongestFocusMinutes: 0 (u16 BE)
+@41  00                               // InterruptionCount: 0
+@42  05 44 6F 6E 65 2E                // SummaryMessage: len=5 "Done."
+@48  09 54 6F 6D 6F 72 72 6F 77 2E    // EncouragementMessage: len=9 "Tomorrow." (@48..@57 = payload 末尾)
 ```
+
+**两个 `★` 是固件最容易错位的点**：`@23` 的 `00` 是空字符串（长度 0、没有内容字节），`@31` 的 `00` 是零任务（TaskCount=0、其后没有 TopTask）。固件必须照样消费这 1 个字节再前进；少读这一字节就会从此处整体错位，正是 §8.7「问题 1」把字符串当数值读的现象。
+
+**自检通过标准**：解析后应得到 `MorningGreeting="Hi"`、`DailySummary="One task"`、`FirstItem="Focus"`、`CurrentScheduleSummary=""`、`CompanionPhrase="Start."`、`TaskCount=0`、`SummaryMessage="Done."`、`EncouragementMessage="Tomorrow."`，且解析指针**恰好停在第 58 字节**（无剩余字节、无越界读取）。
 
 如果该 payload 通过分包发送，单包 CRC16-CCITT-FALSE 为 `0x0F50`。
 
@@ -983,7 +996,9 @@ Event: 0x16 (ReminderAcknowledged)
 | 权限被拒绝 | 显示设置跳转引导 |
 | 未找到设备 | 重试扫描，显示"未找到设备" |
 | 连接超时 | 重试连接（最多 3 次） |
-| 意外断开 | 若已启用则自动重连 |
+| 意外断开 | 若已启用则自动重连：采用 CoreBluetooth pending connection（`retrievePeripherals` 取回已知设备 + 不超时 connect，不再循环扫描），等待设备回到范围后自动重连 |
+
+**主动断开不重连**：App 主动断开（sync 收尾、用户点击断开、后台任务到期、连接超时取消）**不会**触发自动重连，会等待下一个同步窗口或用户操作。固件无需为此场景做特殊处理，正常保持广播即可——下一个同步窗口 App 会重新发起连接。
 
 ### 8.2 数据校验
 
@@ -1024,9 +1039,9 @@ App 内置写入速率限制，固件联调时需注意：
 | 限制项 | 规则 |
 |------------------------|-------------------------------------------|
 | 最大写入速率 | 20 次/秒，超出时 App 自动排队等待 |
-| RequestRefresh 最小间隔 | 2 秒；设备在 2 秒内重复发送 `0x20` 时，App 只响应第一条，其余静默忽略 |
+| Sync 触发最小间隔 | 10 秒；硬件事件 RequestRefresh(`0x20`) 与 DeviceWake(`0x30`) **共用**此节流。10 秒内重复触发整轮 sync 时，App 只响应第一条，其余静默忽略，以避免「连上 → wake/refresh → sync → 断开 → 重连 → wake」的连接风暴 |
 
-**调试建议**：若发现 App 长时间无响应，可检查是否触发了限流（设备发送频率过高）。
+**调试建议**：若发现 App 长时间无响应或未按预期刷新，可检查是否触发了限流（设备在 10 秒内重复发送 `0x20`/`0x30`，或写入频率超过 20 次/秒）。
 
 ### 8.6 设备信任模型（TOFU）
 
@@ -1037,6 +1052,32 @@ App 采用 **首次连接即信任（Trust On First Use）** 策略：
 - 如需连接新的测试设备，须先在 App 设置中清除已记录的设备信任记录
 
 **联调注意**：更换测试硬件时，如果 App 扫描不到新设备，通常是此机制导致，清除信任记录后重新扫描即可。
+
+### 8.7 联调实测：固件实现偏差（2026-05-29 `ble_log`）
+
+本节记录一次真机联调日志（`ble_log`）中观察到的**固件实现与本规格不一致**的问题。**本规格各章节经核对与 App 代码一致、无需修改**；以下是固件需对照修正的点。
+
+**问题 1：DayPack(0x10) payload 字段错位（最严重）**
+
+固件日志打印 `Schedules: 18287, Tasks: 28516`，但 §4.7 的 DayPack 在 Header(5B) 之后是**变长字符串**（MorningGreeting…），不存在「Schedules / Tasks 计数」这类定长数值字段。
+
+定位证据：`18287 = 0x476F = "Go"`、`28516 = 0x6F64 = "od"`，正是 MorningGreeting = `"Good morning…"` 的 UTF-8 字节被当成了两个 16 位整数。说明固件解析器停留在某个**旧版 DayPack 布局**，把字符串区当成了定长字段，从此处开始整体错位。
+
+→ 固件须严格按 §4.7 + §3.5 解析 Header(5B) 之后的字段：**先读 1 字节长度、再读对应字节数**的变长字符串，依次 MorningGreeting / DailySummary / FirstItem / CurrentScheduleSummary / CompanionPhrase，然后才是 TaskCount + TopTasks[] + SettlementData。请用 §7.1 的最小测试向量自检解析器。
+
+附 `Date` 异常（日志 `6661-29-00`，其中 day=29 正确）：按 §4.7，Header 为 `Year(=年-2000) / Month / Day` 各 1 字节单字节，请确认固件未把年份当成多字节、且做了 `+2000`。
+
+**问题 2：入站命令 `0x01` / `0x20` 报 `Unknown cmd type`**
+
+固件对 App 发来的 `0x01`(PetStatus) 与 `0x20`(EventLogRequest) 打印 `Unknown cmd type`。根因见 §2.4：这些字节在 Device→App 方向另有含义（`0x01`=EncoderRotateUp、`0x20`=RequestRefresh），固件用了「发送方向」的定义去解释「收到」的字节。
+
+→ 固件分发必须**按方向**：从 `FFE1`(Write) 收到的字节查 §4「App→Device 命令表」，自己经 `FFE2`(Notify) 发出的字节查 §5「Device→App 事件表」，两张表不可共用。需补齐 §4 中 App→Device 命令的接收实现（至少 PetStatus `0x01`、EventLogRequest `0x20`）。
+
+**问题 3：`0xAA` 开发显示命令报 `Unknown cmd type`**
+
+固件对 `AA 01 01 …` 打印 Unknown。这是 §4.14 的开发期显示命令（非标准业务包）。若本轮不需要远程触发场景/屏保，固件可安全忽略 `0xAA`，并建议把它从错误日志降级为 debug 以减少噪音。
+
+> **帧层经本次联调验证正常，无需改动**：App 的 Time(`05 00 06 1A 05 1D 09 2A 28`) 被固件正确解析为 `2026-05-29 09:42:40`；设备的 DeviceWake(`30 01 64`) 被 App 正确解析为电量 100%。问题集中在 DayPack payload 结构与命令字节的方向分发，不在分包 / CRC / 长度宽度。
 
 ---
 
