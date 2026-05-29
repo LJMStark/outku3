@@ -12,6 +12,10 @@ public final class BLESyncCoordinator {
     private let policy = BLESyncPolicy()
 
     private var lastSyncSucceeded = true
+    /// In-flight 守卫：防止并发 performSync 重复发整轮（keep-alive 常驻连接后更易触发）。
+    private var isSyncing = false
+    /// 在途同步期间被丢弃的 force:true 请求；当前同步收尾后补跑一次，避免硬件 requestRefresh 被吞。
+    private var pendingForceSync = false
 
     /// Connection timeout in seconds. Configurable for larger screen sizes
     /// that require longer refresh times (e.g., 7.3寸 full refresh ~12s).
@@ -25,6 +29,23 @@ public final class BLESyncCoordinator {
     }
 
     public func performSync(force: Bool = false) async {
+        // 并发守卫：keep-alive 默认开后连接常驻，多触发源（后台刷新 / 硬件 0x20·0x30 / 指纹变化）可能并发进入。
+        // 以前靠"已连接→.connectionInProgress"意外串行；连接跳过后需显式守卫，否则会重复发整轮 + 帧交错。
+        // @MainActor 下在首个 await 前同步置位，保证原子。被丢弃的 force:true 记下、收尾后补跑一次——
+        // 否则在途的 force:false 若随后被 shouldSync 拦下，硬件的强制刷新就丢了。
+        guard !isSyncing else {
+            if force { pendingForceSync = true }
+            return
+        }
+        isSyncing = true
+        defer {
+            isSyncing = false
+            if pendingForceSync {
+                pendingForceSync = false
+                Task { @MainActor in await self.performSync(force: true) }
+            }
+        }
+
         let now = Date()
         let lastSync = await localStorage.loadLastBleSyncTime()
 

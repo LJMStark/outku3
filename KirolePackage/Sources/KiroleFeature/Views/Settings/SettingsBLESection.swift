@@ -227,6 +227,9 @@ public struct SettingsBLESection: View {
         .clipShape(RoundedRectangle(cornerRadius: 24))
         .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
         .onChange(of: keepAliveEnabled) { _, newValue in
+            // 仅在与当前生效值不同时落库，避免 .task 初始化把"未设置的默认值"写成"用户显式设置"
+            // （否则以后改默认策略就区分不出这个用户是默认还是手动）。
+            guard newValue != bleService.keepAliveDebugMode else { return }
             bleService.keepAliveDebugMode = newValue
             // 打开时若当前未连接，立刻尝试重连到上次设备，让调试连接尽快建立。
             if newValue, !bleService.connectionState.isConnected {

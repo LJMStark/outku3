@@ -213,7 +213,11 @@ public enum BLEEventHandler {
             return
         }
         // 补传路径补回电量：实时路径在 handleReceivedPayload 已处理电量，但批量重放的
-        // deviceWake/lowBattery 原先会丢掉电量字节。取本批最新一条带电量的事件应用。
+        // deviceWake/lowBattery 原先会丢掉电量字节，这里取本批最新一条带电量的应用。
+        //
+        // best-effort：deviceWake/lowBattery 的 BLE payload 不含设备时间戳（EventLog 用 Date() 兜底），
+        // 故无法用 lastEventLogTimestamp 高水位可靠区分"过期电量"。正常增量批次取到的即最新；极端下
+        // 设备重发旧批次可能短暂回退，会被下一条实时 deviceWake 纠正。电量仅展示用途，可接受。
         if let latestBattery = logs
             .filter({ $0.eventType == .deviceWake || $0.eventType == .lowBattery })
             .max(by: { $0.timestamp < $1.timestamp })?
