@@ -28,13 +28,12 @@ public enum AppBuildEnvironment {
 
     /// 是否应暴露面向硬件 / 固件联调的开发者开关。
     ///
-    /// DEBUG 构建恒为 `true`；Release 构建仅当通过 TestFlight 分发时为 `true`；
-    /// App Store 正式上架包恒为 `false`。
+    /// **测试阶段：恒 `true`、全包可见。** 尚无 App Store 正式包，硬件 / 固件调试工具应随时可用。
+    /// 原先用 `DEBUG || isTestFlight` 门控，但 `isTestFlight` 在真机 TestFlight 上不可靠——
+    /// 新版 iOS 的 `appStoreReceiptURL` 收据文件常不落地（StoreKit 2 不再写旧收据），导致门控
+    /// 误判为 false、把调试开关与 keep-alive 默认值一并藏掉。联调阶段不值得纠结。
+    /// **上架 App Store 前恢复门控**：改回 `#if DEBUG return true #else return isTestFlight #endif`。
     public static var showsHardwareDebugTools: Bool {
-        #if DEBUG
-        return true
-        #else
-        return isTestFlight
-        #endif
+        true
     }
 }

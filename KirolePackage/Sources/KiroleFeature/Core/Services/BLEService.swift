@@ -160,18 +160,17 @@ public final class BLEService: NSObject {
     /// 固件联调专用：开启后 App **不**在同步收尾 / 超时看门狗 / 后台到期时主动断连，
     /// 保持长连接供硬件团队调试固件；意外掉线时也强制尝试自动重连。
     ///
-    /// 默认值：**TestFlight 包默认开启**（硬件团队拿到即用，无需手动开）；DEBUG 本地与单元测试
-    /// 默认关闭（`isTestFlight` 在模拟器/测试恒为 false，避免改变"同步后断连"等测试行为与本地正常流程）；
-    /// 用户在设置里手动改过则永远以其选择为准。
-    /// 生产安全：getter 以 `AppBuildEnvironment.showsHardwareDebugTools` 为闸门——App Store 正式包
-    /// 恒返回 `false`，即使本地残留 `true` 也不启用，确保正式包始终是省电脉冲式同步。
+    /// 默认值：**测试阶段全包默认开启**（硬件团队拿到即用，无需手动开）；用户在设置里手动改过则
+    /// 永远以其选择为准。getter 仍以 `AppBuildEnvironment.showsHardwareDebugTools` 为闸门——当前
+    /// 测试阶段该闸恒 `true`；上架 App Store 前恢复门控后，正式包会自动回到省电脉冲式同步
+    /// （即使本地残留 `true` 也不启用）。
     public var keepAliveDebugMode: Bool {
         get {
             guard AppBuildEnvironment.showsHardwareDebugTools else { return false }
             if let stored = UserDefaults.standard.object(forKey: Keys.keepAliveDebugMode) as? Bool {
                 return stored
             }
-            return AppBuildEnvironment.isTestFlight
+            return true
         }
         set { UserDefaults.standard.set(newValue, forKey: Keys.keepAliveDebugMode) }
     }
