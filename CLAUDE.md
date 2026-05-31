@@ -9,6 +9,7 @@ Read it before any non-trivial change. `.cursor/rules/*.mdc` adds Swift/SwiftUI/
 1. Every response must begin with **B哥**.
 2. Respond in **Simplified Chinese**. For non-technical questions, keep language plain and explain jargon inline.
 3. Treat `/Users/demon/vibecoding/outku3` as the strict workspace boundary. Unqualified requests ("build", "commit", "run tests") always refer to this repo.
+4. **English-only product UI (CRITICAL).** This is an English-language product. ALL user-facing copy — companion dialogue, notification titles/bodies, banners, button labels, on-device E-ink text — must be English. Chinese is allowed ONLY in code comments and assistant↔user chat. Never introduce Chinese into a displayed string (this is why AI output is never localized to the user's language). Pre-existing Chinese UI strings are tech debt to clean up, not a pattern to follow.
 
 ## Product Identity (READ FIRST)
 Kirole 是 **硬件优先的宠物陪伴产品**：硬件 E-ink 设备是用户主要的日常交互入口，App 是给硬件配置数据的工具。任务和日历事件主要作为 **prompt 上下文** 驱动宠物对话，**不是给用户管理待办用的**。任何把 task/event 当"待办"来增强（AI 任务拆解、详情页步骤展开、催促式提醒等）的提议都偏离产品定位，应直接拒绝或反向清理。

@@ -83,14 +83,15 @@ public final class NotificationService {
 
     /// Titles stay in the pet's caring voice — never a task-manager "Due Soon" nudge.
     /// The body already comes from CompanionTextService, so this only sets the tone.
+    /// English only: this is an English-language product (see CLAUDE.md Interaction Rule 4).
     private func notificationTitle(for reason: ReminderReason) -> String {
         switch reason {
         case .deadline:
-            return "有件事想轻声提醒你"
+            return "A gentle heads-up"
         case .idle:
-            return "好久没一起专注啦"
+            return "Shall we focus?"
         case .gentleNudge:
-            return "来陪你一下下"
+            return "Just checking in"
         }
     }
 }
