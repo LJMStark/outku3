@@ -88,8 +88,6 @@ public struct DayPack: Codable, Sendable {
         parts.append("settlement.total=\(settlementData.tasksTotal)")
         parts.append("settlement.points=\(settlementData.pointsEarned)")
         parts.append("settlement.mood=\(settlementData.petMood)")
-        parts.append("settlement.summary=\(settlementData.summaryMessage)")
-        parts.append("settlement.encouragement=\(settlementData.encouragementMessage)")
         parts.append("settlement.focusMinutes=\(settlementData.totalFocusMinutes)")
         parts.append("settlement.focusSessions=\(settlementData.focusSessionCount)")
         parts.append("settlement.longestFocus=\(settlementData.longestFocusMinutes)")
