@@ -37,9 +37,13 @@ CREATE TABLE IF NOT EXISTS sync_state (
     tasks_sync_token TEXT,
     pending_changes INTEGER DEFAULT 0,
     status TEXT DEFAULT 'synced',
+    energy_bottles INTEGER DEFAULT 0,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(user_id)
 );
+
+-- Migration for existing deployments (run once on Zeabur PostgreSQL):
+--   ALTER TABLE sync_state ADD COLUMN IF NOT EXISTS energy_bottles INTEGER DEFAULT 0;
 
 -- ==========================================
 -- Row Level Security (RLS)

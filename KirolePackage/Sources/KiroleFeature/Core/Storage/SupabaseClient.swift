@@ -252,7 +252,8 @@ public actor SupabaseService {
             calendarSyncToken: state.calendarSyncToken,
             tasksSyncToken: state.tasksSyncToken,
             pendingChanges: state.pendingChanges,
-            status: state.status.rawValue
+            status: state.status.rawValue,
+            energyBottles: state.energyBottles
         )
 
         try await client
@@ -281,7 +282,8 @@ public actor SupabaseService {
             calendarSyncToken: record.calendarSyncToken,
             tasksSyncToken: record.tasksSyncToken,
             pendingChanges: record.pendingChanges,
-            status: SyncStatus(rawValue: record.status) ?? .synced
+            status: SyncStatus(rawValue: record.status) ?? .synced,
+            energyBottles: record.energyBottles ?? 0
         )
     }
 }
@@ -338,6 +340,9 @@ private struct SyncStateRecord: Codable {
     let tasksSyncToken: String?
     let pendingChanges: Int
     let status: String
+    // Optional so decode tolerates deployments where the energy_bottles column
+    // hasn't been added yet (graceful no-op until the Zeabur migration is run).
+    let energyBottles: Int?
 
     enum CodingKeys: String, CodingKey {
         case userId = "user_id"
@@ -346,5 +351,6 @@ private struct SyncStateRecord: Codable {
         case tasksSyncToken = "tasks_sync_token"
         case pendingChanges = "pending_changes"
         case status
+        case energyBottles = "energy_bottles"
     }
 }
