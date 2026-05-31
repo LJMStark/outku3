@@ -31,6 +31,13 @@ public struct ContentView: View {
             await authManager.initialize()
             appState.syncIntegrationStatusFromAuth()
             await configureOpenAI()
+            // Ask for notification permission only after onboarding — it powers the offline
+            // fallback reminder (the one channel that reaches the user when the companion
+            // device is out of range). Requesting before onboarding would prompt before the
+            // product is understood; UI-test runs skip onboarding via flag so they are excluded.
+            if isOnboardingCompleted {
+                await NotificationService.shared.requestAuthorization()
+            }
             TimezoneObserver.shared.startObserving { [appState] newZone in
                 appState.pendingTimezoneChangeName = newZone.localizedName(for: .generic, locale: .current) ?? newZone.identifier
             }

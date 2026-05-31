@@ -141,24 +141,6 @@ public final class BLESyncCoordinator {
 
             await appState.flushPendingCustomCompanionPushIfNeeded()
 
-            if let reminder = await SmartReminderService.shared.evaluateAndPushReminder(
-                tasks: appState.tasks,
-                pet: appState.pet
-            ) {
-                do {
-                    try await bleService.sendSmartReminder(
-                        text: reminder.text,
-                        urgency: reminder.urgency,
-                        petMood: appState.pet.mood
-                    )
-                } catch {
-                    ErrorReporter.log(
-                        .sync(component: "BLE SmartReminder", underlying: error.localizedDescription),
-                        context: "BLESyncCoordinator.performSync"
-                    )
-                }
-            }
-
             await bleService.requestEventLogsIfNeeded()
             let completedAt = Date()
             await localStorage.saveLastBleSyncTime(completedAt)
@@ -174,10 +156,44 @@ public final class BLESyncCoordinator {
             )
         }
 
+        // 智能提醒在断连前统一投递：硬件可达 → 只推 E-ink（手机保持安静）；硬件离线 → 落 iOS 本地通知，
+        // 否则离线用户这条温和提醒就彻底丢了（NotificationService 此前完全没有调用方）。
+        await deliverSmartReminder(appState: appState)
+
         // 同步收尾默认主动断连（省电脉冲式同步）；keep-alive 调试模式下保持连接不断。
         if bleService.connectionState.isConnected, !bleService.keepAliveDebugMode {
             bleService.disconnect()
         }
+    }
+
+    /// 路由一条到期的智能提醒：硬件可达就推设备，否则落本地通知，让离线用户也收得到。
+    /// 每轮同步只评估一次（限流逻辑在 SmartReminderService 内）。
+    private func deliverSmartReminder(appState: AppState) async {
+        guard let reminder = await SmartReminderService.shared.evaluateAndPushReminder(
+            tasks: appState.tasks,
+            pet: appState.pet
+        ) else { return }
+
+        if bleService.connectionState.isConnected {
+            do {
+                try await bleService.sendSmartReminder(
+                    text: reminder.text,
+                    urgency: reminder.urgency,
+                    petMood: appState.pet.mood
+                )
+                return
+            } catch {
+                ErrorReporter.log(
+                    .sync(component: "BLE SmartReminder", underlying: error.localizedDescription),
+                    context: "BLESyncCoordinator.deliverSmartReminder"
+                )
+                // 已连接却写失败：落本地通知兜底，别让提醒丢了。
+            }
+        }
+
+        // 硬件离线（或 BLE 写失败）：E-ink 显示不了，回退到 iOS 本地通知。
+        await NotificationService.shared.refreshAuthorizationStatus()
+        await NotificationService.shared.scheduleLocalNotification(from: reminder)
     }
 }
 
