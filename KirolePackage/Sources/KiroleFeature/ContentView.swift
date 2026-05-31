@@ -116,7 +116,14 @@ public struct ContentView: View {
                     zoneName: zoneName,
                     onAdjust: {
                         appState.pendingTimezoneChangeName = nil
-                        Task { await appState.syncConnectedExternalData() }
+                        Task {
+                            // Refetch external data first so events re-resolve in the new
+                            // time zone, then force-push so the hardware DayPack stops
+                            // showing the old zone's schedule instead of waiting for the
+                            // next throttled sync window.
+                            await appState.syncConnectedExternalData()
+                            await BLESyncCoordinator.shared.performSync(force: true)
+                        }
                     },
                     onKeep: {
                         appState.pendingTimezoneChangeName = nil
