@@ -155,7 +155,7 @@ public struct CreateCustomCompanionSheet: View {
             .contentShape(RoundedRectangle(cornerRadius: 24))
 
             if processResult != nil {
-                Text("Tap photo to change · this is how it'll appear on the E-ink display.")
+                Text("Tap photo to change. Kirole's 6-color E-ink screen shows it softer and more muted than your photo — that's expected.")
                     .font(.system(size: 12))
                     .foregroundStyle(theme.colors.secondaryText)
                     .multilineTextAlignment(.center)
