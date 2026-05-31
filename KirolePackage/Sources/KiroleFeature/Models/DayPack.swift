@@ -164,6 +164,7 @@ public struct TaskSummary: Codable, Sendable, Identifiable {
         self.priority = task.priority.rawValue
         if let dueDate = task.dueDate {
             let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
             formatter.dateFormat = "HH:mm"
             self.dueTime = formatter.string(from: dueDate)
         } else {
@@ -191,6 +192,7 @@ public struct EventSummary: Codable, Sendable {
             self.time = ""
         } else {
             let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
             formatter.dateFormat = "HH:mm"
             self.time = formatter.string(from: event.startTime)
         }
