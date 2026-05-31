@@ -124,6 +124,7 @@ extension AppState {
         // Re-push the pixel frame so the device shows the newly active avatar.
         Task { @MainActor in
             guard let pixels = await localStorage.loadCustomCompanionPixels(id: id) else { return }
+            customAvatarFlushAttempts = 0  // fresh retry budget for the newly selected avatar
             await pushCustomAvatarFrame(pixelData: pixels, companionId: id)
         }
     }
@@ -153,6 +154,7 @@ extension AppState {
             try await BLEService.shared.sendCustomAvatarFrame(pixelData: pixelData)
             await localStorage.clearPendingCustomCompanionPush()
             isCustomAvatarPendingBLEPush = false
+            customAvatarFlushAttempts = 0
         } catch {
             await localStorage.savePendingCustomCompanionPush(id: companionId)
             isCustomAvatarPendingBLEPush = true
@@ -165,12 +167,18 @@ extension AppState {
 
     /// Called by BLESyncCoordinator after establishing a connection.
     /// Re-sends the avatar frame for the active custom companion when a previous push failed.
+    /// Max consecutive failed flush attempts before we stop re-pushing every sync (firmware may
+    /// not accept the 0x15 frame yet). Reset on a new companion selection or a successful push.
+    private static let maxCustomAvatarFlushAttempts = 5
+
     public func flushPendingCustomCompanionPushIfNeeded() async {
         guard isCustomAvatarPendingBLEPush,
+              customAvatarFlushAttempts < Self.maxCustomAvatarFlushAttempts,
               let id = userProfile.customCompanionId,
               let pixels = await localStorage.loadCustomCompanionPixels(id: id) else {
             return
         }
+        customAvatarFlushAttempts += 1
         await pushCustomAvatarFrame(pixelData: pixels, companionId: id)
     }
 }
