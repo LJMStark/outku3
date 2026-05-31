@@ -30,14 +30,21 @@ public final class DayPackGenerator {
         pet: Pet, tasks: [TaskItem], events: [CalendarEvent],
         weather: Weather, deviceMode: DeviceMode,
         userProfile: UserProfile = .default,
-        screenSize: ScreenSize = .fourInch
+        screenSize: ScreenSize = .fourInch,
+        petDialogue: String = ""
     ) async -> DayPack {
         let todayTasks = tasks.filter { $0.dueDate.map { Calendar.current.isDateInToday($0) } ?? false }
-        let todayEvents = events.filter { Calendar.current.isDateInToday($0.startTime) }
+        let todayEvents = events
+            .filter { Calendar.current.isDateInToday($0.startTime) }
+            .sorted { $0.startTime < $1.startTime }
 
-        async let greeting = textService.generateMorningGreeting(petName: pet.name, petMood: pet.mood, weather: weather, userProfile: userProfile)
-        async let summary = textService.generateDailySummary(tasksCount: todayTasks.count, eventsCount: todayEvents.count, petName: pet.name, userProfile: userProfile)
-        async let phrase = textService.generateCompanionPhrase(petMood: pet.mood, timeOfDay: TimeOfDay.current(), userProfile: userProfile)
+        // v2.5.0: one pet bubble, sourced from the App's currentPetDialogue (the same line the
+        // App home shows). Fall back to a phase-appropriate companion line if not yet computed.
+        let bubble = petDialogue.isEmpty
+            ? await textService.generateCompanionPhrase(petMood: pet.mood, timeOfDay: TimeOfDay.current(), userProfile: userProfile)
+            : petDialogue
+
+        let eventSummaries = todayEvents.prefix(8).map { EventSummary(from: $0) }
 
         let topTasks = todayTasks
             .filter { !$0.isCompleted }
@@ -50,12 +57,9 @@ public final class DayPackGenerator {
             weather: WeatherInfo(from: weather),
             deviceMode: deviceMode,
             focusChallengeEnabled: false,
-            morningGreeting: await greeting,
-            dailySummary: await summary,
-            firstItem: generateFirstItem(tasks: todayTasks, events: todayEvents),
-            currentScheduleSummary: generateScheduleSummary(events: todayEvents),
+            petDialogue: bubble,
+            events: Array(eventSummaries),
             topTasks: Array(topTasks),
-            companionPhrase: await phrase,
             settlementData: await generateSettlementData(tasks: todayTasks, pet: pet, userProfile: userProfile)
         )
     }
@@ -69,30 +73,6 @@ public final class DayPackGenerator {
     }
 
     // MARK: - Private Helpers
-
-    private func generateFirstItem(tasks: [TaskItem], events: [CalendarEvent]) -> String {
-        let now = Date()
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm"
-
-        // Check for upcoming events in the next hour
-        if let event = events.first(where: { $0.startTime > now && $0.startTime < now.addingTimeInterval(3600) }) {
-            return "\(formatter.string(from: event.startTime)) - \(event.title)"
-        }
-
-        // Otherwise, show first incomplete task
-        if let task = tasks.filter({ !$0.isCompleted }).sorted(by: { $0.priority.rawValue > $1.priority.rawValue }).first {
-            return task.title
-        }
-
-        return "No tasks for today"
-    }
-
-    private func generateScheduleSummary(events: [CalendarEvent]) -> String? {
-        let count = events.filter { $0.startTime > Date() }.count
-        guard count > 0 else { return nil }
-        return "\(count) event\(count == 1 ? "" : "s") remaining"
-    }
 
     private func generateSettlementData(tasks: [TaskItem], pet: Pet, userProfile: UserProfile = .default) async -> SettlementData {
         let completed = tasks.filter { $0.isCompleted }.count

@@ -50,13 +50,17 @@ public final class BLESyncCoordinator {
         let lastSync = await localStorage.loadLastBleSyncTime()
 
         let appState = AppState.shared
+        // v2.5.0: the hardware bubble shows the SAME line as the App home. Refresh it, then
+        // feed currentPetDialogue into the DayPack so both surfaces stay in sync.
+        await appState.refreshSharedPetDialogueIfNeeded()
         let dayPack = await dayPackGenerator.generateDayPack(
             pet: appState.pet,
             tasks: appState.tasks,
             events: appState.events,
             weather: appState.weather,
             deviceMode: appState.deviceMode,
-            userProfile: appState.userProfile
+            userProfile: appState.userProfile,
+            petDialogue: appState.currentPetDialogue
         )
 
         let fingerprint = dayPack.stableFingerprint()

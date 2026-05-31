@@ -98,14 +98,17 @@ public enum BLEDataEncoder {
         // Focus challenge flag
         data.append(dayPack.focusChallengeEnabled ? 0x01 : 0x00)
 
-        // Page 1: Start of Day
-        data.appendString(dayPack.morningGreeting, maxLength: 50)
-        data.appendString(dayPack.dailySummary, maxLength: 60)
-        data.appendString(dayPack.firstItem, maxLength: 40)
+        // Pet dialogue bubble (v2.5.0: single line, = App currentPetDialogue)
+        data.appendString(dayPack.petDialogue, maxLength: 120)
 
-        // Page 2: Overview
-        data.appendString(dayPack.currentScheduleSummary ?? "", maxLength: 30)
-        data.appendString(dayPack.companionPhrase, maxLength: 40)
+        // Events[] (time / title / description)
+        let maxEvents = 8
+        data.appendClampedUInt8(min(dayPack.events.count, maxEvents))
+        for event in dayPack.events.prefix(maxEvents) {
+            data.appendString(event.time, maxLength: 8)
+            data.appendString(event.title, maxLength: 40)
+            data.appendString(event.description, maxLength: 120)
+        }
 
         // Top tasks (dynamic limit based on screen size)
         let maxTasks = screenSize.maxTasks
@@ -125,8 +128,8 @@ public enum BLEDataEncoder {
         data.appendClampedUInt8(dayPack.settlementData.focusSessionCount)
         data.appendBigEndian(UInt16(clamping: dayPack.settlementData.longestFocusMinutes))
         data.appendClampedUInt8(dayPack.settlementData.interruptionCount)
-        data.appendString(dayPack.settlementData.summaryMessage, maxLength: 50)
-        data.appendString(dayPack.settlementData.encouragementMessage, maxLength: 50)
+        // v2.5.0: SummaryMessage / EncouragementMessage removed from the wire — the pet voice
+        // is unified in PetDialogue; energy bottles ship via 0x14 FocusStatus.
 
         return data
     }

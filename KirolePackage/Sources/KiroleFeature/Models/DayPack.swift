@@ -12,19 +12,17 @@ public struct DayPack: Codable, Sendable {
     public let deviceMode: DeviceMode
     public let focusChallengeEnabled: Bool
 
-    // Page 1: Start of Day
-    public let morningGreeting: String
-    public let dailySummary: String
-    public let firstItem: String
+    // Pet dialogue bubble (v2.5.0: single line, sourced from App currentPetDialogue —
+    // phase-aware, so it's a morning greeting in the morning and a settlement line at night).
+    public let petDialogue: String
 
-    // Page 2: Overview
-    public let currentScheduleSummary: String?
+    // Overview panel data
+    public let events: [EventSummary]
     public let topTasks: [TaskSummary]
-    public let companionPhrase: String
 
-    // Page 3: Task In (动态生成，不在 DayPack 中)
+    // Task detail (态 C) is dynamic via TaskInPage (0x11) + FocusStatus (0x14), not in DayPack.
 
-    // Page 4: Daily Settlement
+    // Settlement numeric data (progress bar + focus stats)
     public let settlementData: SettlementData
 
     public init(
@@ -33,12 +31,9 @@ public struct DayPack: Codable, Sendable {
         weather: WeatherInfo? = nil,
         deviceMode: DeviceMode = .interactive,
         focusChallengeEnabled: Bool = false,
-        morningGreeting: String,
-        dailySummary: String,
-        firstItem: String,
-        currentScheduleSummary: String? = nil,
+        petDialogue: String,
+        events: [EventSummary] = [],
         topTasks: [TaskSummary] = [],
-        companionPhrase: String,
         settlementData: SettlementData
     ) {
         self.id = id
@@ -46,12 +41,9 @@ public struct DayPack: Codable, Sendable {
         self.weather = weather
         self.deviceMode = deviceMode
         self.focusChallengeEnabled = focusChallengeEnabled
-        self.morningGreeting = morningGreeting
-        self.dailySummary = dailySummary
-        self.firstItem = firstItem
-        self.currentScheduleSummary = currentScheduleSummary
+        self.petDialogue = petDialogue
+        self.events = events
         self.topTasks = topTasks
-        self.companionPhrase = companionPhrase
         self.settlementData = settlementData
     }
 
@@ -75,11 +67,13 @@ public struct DayPack: Codable, Sendable {
             parts.append("weather=none")
         }
 
-        parts.append("morningGreeting=\(morningGreeting)")
-        parts.append("dailySummary=\(dailySummary)")
-        parts.append("firstItem=\(firstItem)")
-        parts.append("currentScheduleSummary=\(currentScheduleSummary ?? "")")
-        parts.append("companionPhrase=\(companionPhrase)")
+        parts.append("petDialogue=\(petDialogue)")
+        parts.append("events.count=\(events.count)")
+        for event in events {
+            parts.append("event.time=\(event.time)")
+            parts.append("event.title=\(event.title)")
+            parts.append("event.desc=\(event.description)")
+        }
 
         parts.append("topTasks.count=\(topTasks.count)")
         for task in topTasks {
@@ -177,6 +171,33 @@ public struct TaskSummary: Codable, Sendable, Identifiable {
         } else {
             self.dueTime = nil
         }
+    }
+}
+
+// MARK: - Event Summary
+
+/// 事件摘要（用于 DayPack 概览面板的事件卡：时间 + 标题 + 描述）
+public struct EventSummary: Codable, Sendable {
+    public let time: String          // "HH:mm"，全天事件为空串
+    public let title: String
+    public let description: String
+
+    public init(time: String, title: String, description: String) {
+        self.time = time
+        self.title = title
+        self.description = description
+    }
+
+    public init(from event: CalendarEvent) {
+        if event.isAllDay {
+            self.time = ""
+        } else {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "HH:mm"
+            self.time = formatter.string(from: event.startTime)
+        }
+        self.title = event.title
+        self.description = event.description ?? ""
     }
 }
 

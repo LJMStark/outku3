@@ -243,12 +243,9 @@ struct BLEProtocolTests {
             weather: WeatherInfo(temperature: 20, highTemp: 25, lowTemp: 15, condition: "Clear", iconName: "Clear"),
             deviceMode: .interactive,
             focusChallengeEnabled: false,
-            morningGreeting: "hello",
-            dailySummary: "summary",
-            firstItem: "task",
-            currentScheduleSummary: "2 events",
+            petDialogue: "phrase",
+            events: [EventSummary(time: "09:00", title: "Sync", description: "team")],
             topTasks: [TaskSummary(id: "1", title: "A", isCompleted: false, priority: 1, dueTime: "09:00")],
-            companionPhrase: "phrase",
             settlementData: settlement
         )
 
@@ -257,12 +254,9 @@ struct BLEProtocolTests {
             weather: WeatherInfo(temperature: 20, highTemp: 25, lowTemp: 15, condition: "Clear", iconName: "Clear"),
             deviceMode: .interactive,
             focusChallengeEnabled: false,
-            morningGreeting: "hello",
-            dailySummary: "summary",
-            firstItem: "task",
-            currentScheduleSummary: "2 events",
+            petDialogue: "phrase-updated",
+            events: [EventSummary(time: "09:00", title: "Sync", description: "team")],
             topTasks: [TaskSummary(id: "1", title: "A", isCompleted: false, priority: 1, dueTime: "09:00")],
-            companionPhrase: "phrase-updated",
             settlementData: settlement
         )
 
@@ -484,14 +478,13 @@ struct BLEProtocolTests {
             date: date,
             deviceMode: .interactive,
             focusChallengeEnabled: true,
-            morningGreeting: "Good morning",
-            dailySummary: "3 tasks today",
-            firstItem: "Write tests",
-            currentScheduleSummary: "1 event",
+            petDialogue: "Good morning",
+            events: [
+                EventSummary(time: "09:00", title: "Standup", description: "Sync")
+            ],
             topTasks: [
                 TaskSummary(id: "task-1", title: "Review docs", isCompleted: false, priority: 2)
             ],
-            companionPhrase: "You can do it",
             settlementData: settlement
         )
         let data = BLEDataEncoder.encodeDayPack(pack)
@@ -504,12 +497,13 @@ struct BLEProtocolTests {
         #expect(data[4] == 0x01)
 
         var cursor = 5
-        #expect(readString(from: data, cursor: &cursor) == "Good morning")
-        #expect(readString(from: data, cursor: &cursor) == "3 tasks today")
-        #expect(readString(from: data, cursor: &cursor) == "Write tests")
-        #expect(readString(from: data, cursor: &cursor) == "1 event")
-        #expect(readString(from: data, cursor: &cursor) == "You can do it")
-        #expect(data[cursor] == 1)
+        #expect(readString(from: data, cursor: &cursor) == "Good morning")   // PetDialogue
+        #expect(data[cursor] == 1)                                           // EventCount
+        cursor += 1
+        #expect(readString(from: data, cursor: &cursor) == "09:00")          // Event.time
+        #expect(readString(from: data, cursor: &cursor) == "Standup")        // Event.title
+        #expect(readString(from: data, cursor: &cursor) == "Sync")           // Event.description
+        #expect(data[cursor] == 1)                                           // TaskCount
         cursor += 1
         #expect(readString(from: data, cursor: &cursor) == "task-1")
         #expect(readString(from: data, cursor: &cursor) == "Review docs")
@@ -1072,24 +1066,19 @@ struct BLEProtocolTests {
         let pack = DayPack(
             date: Date(),
             deviceMode: .interactive,
-            morningGreeting: "hi",
-            dailySummary: "sum",
-            firstItem: "first",
+            petDialogue: "hi",
+            events: [],
             topTasks: tasks,
-            companionPhrase: "go",
             settlementData: settlement
         )
         let data = BLEDataEncoder.encodeDayPack(pack, screenSize: .sevenInch)
 
-        // Find task count byte: after header(5) + morningGreeting + dailySummary + firstItem + scheduleSummary + companionPhrase
-        // The task count should be 5
+        // Find task count byte: after header(5) + PetDialogue + EventCount(0 events → no bodies)
+        // The task count should be 5 (7.3" allows up to 5)
         let headerSize = 5
-        let greetingSize = 1 + "hi".utf8.count
-        let summarySize = 1 + "sum".utf8.count
-        let firstItemSize = 1 + "first".utf8.count
-        let scheduleSize = 1 + 0 // empty string
-        let phraseSize = 1 + "go".utf8.count
-        let taskCountOffset = headerSize + greetingSize + summarySize + firstItemSize + scheduleSize + phraseSize
+        let dialogueSize = 1 + "hi".utf8.count
+        let eventCountSize = 1
+        let taskCountOffset = headerSize + dialogueSize + eventCountSize
         #expect(data[taskCountOffset] == 5)
     }
 
@@ -1110,17 +1099,15 @@ struct BLEProtocolTests {
         let pack = DayPack(
             date: Date(),
             deviceMode: .interactive,
-            morningGreeting: "",
-            dailySummary: "",
-            firstItem: "",
+            petDialogue: "",
+            events: [],
             topTasks: [],
-            companionPhrase: "",
             settlementData: settlement
         )
         let data = BLEDataEncoder.encodeDayPack(pack)
 
-        // Header(5) + five empty strings(5) + task count(1)
-        let cursor = 11
+        // Header(5) + PetDialogue empty(1) + EventCount=0(1) + TaskCount=0(1) = 8
+        let cursor = 8
         #expect(data[cursor] == 0)
         #expect(data[cursor + 1] == 0)
         #expect(data[cursor + 2] == 0)
