@@ -65,6 +65,32 @@ public final class NotificationService {
         }
     }
 
+    /// 设备低电量提醒：带权限检查，避免未授权时静默失败（旧实现直接调 UNUserNotificationCenter）。
+    /// 文案英文（全英文产品，见 CLAUDE.md Interaction Rule 4）。
+    public func scheduleLowBatteryNotification(level: Int) async {
+        await refreshAuthorizationStatus()
+        guard isAuthorized else { return }
+
+        let content = UNMutableNotificationContent()
+        content.title = "Your buddy is running low"
+        content.body = "Your Kirole's battery is at \(level)%. A little charge would keep it company."
+        content.sound = .default
+
+        let request = UNNotificationRequest(
+            identifier: "kirole-low-battery",
+            content: content,
+            trigger: nil
+        )
+
+        do {
+            try await UNUserNotificationCenter.current().add(request)
+        } catch {
+            #if DEBUG
+            print("[NotificationService] Failed to schedule low-battery notification: \(error.localizedDescription)")
+            #endif
+        }
+    }
+
     /// 清除所有已投递的通知
     public func clearDeliveredNotifications() {
         UNUserNotificationCenter.current().removeAllDeliveredNotifications()

@@ -1,7 +1,4 @@
 import Foundation
-#if canImport(UserNotifications)
-import UserNotifications
-#endif
 
 // MARK: - BLE Event Handler
 
@@ -107,7 +104,7 @@ public enum BLEEventHandler {
         case .lowBattery:
             if let level = eventLog.batteryLevel {
                 service.deviceBatteryLevel = level
-                postLowBatteryNotification(level: level)
+                await NotificationService.shared.scheduleLowBatteryNotification(level: level)
             }
 
         case .reminderAcknowledged:
@@ -173,22 +170,6 @@ public enum BLEEventHandler {
                 )
             }
         }
-    }
-
-    /// 低电量本地通知
-    private static func postLowBatteryNotification(level: Int) {
-        #if canImport(UserNotifications)
-        let content = UNMutableNotificationContent()
-        content.title = "Kirole Device Low Battery"
-        content.body = "Your Kirole device battery is at \(level)%. Please charge it soon."
-        content.sound = .default
-        let request = UNNotificationRequest(
-            identifier: "kirole-low-battery",
-            content: content,
-            trigger: nil
-        )
-        UNUserNotificationCenter.current().add(request)
-        #endif
     }
 
     // MARK: - Event Log Parsing
