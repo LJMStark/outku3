@@ -378,8 +378,13 @@ public enum BLEEventHandler {
     ) async {
         switch eventLog.eventType {
         case .enterTaskIn:
-            // During replay we have no App-side screen data for the offline period,
-            // so we cannot measure focus time. Skip to avoid a stale activeSession.
+            // INTENTIONAL — do not "fix" this into a back-fill. Product requirement:
+            // focus must be judged live inside the App, never reconstructed from
+            // hardware timestamps. During replay there is no App-side screen-activity
+            // data for the offline period, so focus time cannot be measured and we do
+            // NOT fabricate it. Skipping also avoids a stale activeSession. The Inku
+            // competitive review's "back-fill offline focus" suggestion was rejected
+            // for this reason. (See memory: project_focus_app_authoritative.)
             guard !isReplay else { break }
             if let taskId = eventLog.taskId {
                 let taskTitle = resolveTask(taskId: taskId)?.title ?? "Unknown Task"
