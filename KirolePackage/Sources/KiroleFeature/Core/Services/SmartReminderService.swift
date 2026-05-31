@@ -85,7 +85,6 @@ public final class SmartReminderService {
         if let result = await checkDeadline(
             tasks: incompleteTasks, pet: pet, userProfile: userProfile, now: now
         ) {
-            markReminderSent()
             return result
         }
 
@@ -94,7 +93,6 @@ public final class SmartReminderService {
             isWorkHours: isWorkHours, incompleteTasks: incompleteTasks,
             pet: pet, userProfile: userProfile
         ) {
-            markReminderSent()
             return result
         }
 
@@ -103,7 +101,6 @@ public final class SmartReminderService {
             isWorkHours: isWorkHours, incompleteTasks: incompleteTasks,
             pet: pet, userProfile: userProfile
         ) {
-            markReminderSent()
             return result
         }
 
@@ -117,7 +114,9 @@ public final class SmartReminderService {
         return Date().timeIntervalSince(last) >= minimumInterval
     }
 
-    private func markReminderSent() {
+    /// 标记一次提醒已成功投递，启动 30 分钟冷却。由投递方（BLESyncCoordinator）在 BLE 或本地通知
+    /// 确实送达后调用——而非在评估时调用，避免投递失败也白白消耗冷却。
+    public func markReminderSent() {
         lastReminderTime = Date()
     }
 

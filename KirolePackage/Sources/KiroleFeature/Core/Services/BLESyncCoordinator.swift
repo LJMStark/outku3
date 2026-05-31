@@ -185,6 +185,7 @@ public final class BLESyncCoordinator {
                     urgency: reminder.urgency,
                     petMood: appState.pet.mood
                 )
+                SmartReminderService.shared.markReminderSent()
                 return
             } catch {
                 ErrorReporter.log(
@@ -197,7 +198,11 @@ public final class BLESyncCoordinator {
 
         // 硬件离线（或 BLE 写失败）：E-ink 显示不了，回退到 iOS 本地通知。
         await NotificationService.shared.refreshAuthorizationStatus()
-        await NotificationService.shared.scheduleLocalNotification(from: reminder)
+        let delivered = await NotificationService.shared.scheduleLocalNotification(from: reminder)
+        // 只有确实投递了才消耗 30 分钟冷却；BLE 与通知都失败时留待下轮重试。
+        if delivered {
+            SmartReminderService.shared.markReminderSent()
+        }
     }
 }
 
