@@ -907,6 +907,64 @@ AA 01 02 Type SceneId PostcardDay QuoteLen Quote AuthorLen Author
 
 ---
 
+### 6.5 提案：显示模型对齐到「1 宠物气泡 + 可换数据面板」（待硬件团队确认，**未采纳**）
+
+> 状态：**提案 / 待确认**。本节**不改变** §4.7 / §6.1–6.4 的现行契约，只记录一个与产品实机 UI 对齐的重设方向，供 App + 固件团队评审后再决定是否落地（落地需协议版本号 +1 并同步固件）。
+
+**背景 / 问题**
+
+现行 §6 把硬件建模成「4 个独立页面，每页各有一句宠物文案」：页面 1 `morningGreeting`、页面 2 `companionPhrase`、页面 4 `settlementData.summaryMessage`/`encouragementMessage`——共约 4 处宠物口吻文本，分散在不同页面。
+
+但产品最新实机 UI（设计稿三态）并非「多页各说一句」，而是一个**常驻框架 + 可换右侧面板**：
+
+- 顶栏：天气 + 日期（常驻）
+- 左侧：宠物形象 + **一个常驻对话气泡**（三态中文案一致，是宠物当前的「一句话」）
+- 右侧：随场景切换的**数据面板**：
+  - 态 A（日程）：今日事件列表（时间 + 标题 + 描述）+ 进度条
+  - 态 B（日程 + 任务）：事件 + 任务清单（bullet）
+  - 态 C（专注）：当前任务详情（标题 + Tips）+ 能量瓶
+
+即：**宠物口吻文本只有一处（气泡）**，其余皆为结构化事实数据。现行协议里的 `morningGreeting` / `dailySummary` / `companionPhrase` / settlement 双消息，属于旧「多页多句」模型的冗余。
+
+**提案要点**
+
+1. **宠物文本收敛为单字段 `PetDialogue`**（气泡），数据源 = App 首页 `currentPetDialogue`（与 App 宠物头顶同一句，真正同源、人格一致）。废弃 `MorningGreeting` / `CompanionPhrase` 作为独立宠物文案。
+2. **右侧面板改由结构化字段驱动**：
+   - 事件：现协议只有 `FirstItem`（单行）+ `CurrentScheduleSummary`（计数），**不足以渲染设计稿的事件卡（含描述）**。提案新增 `Events[]`（每条：time + title + description）。App 侧 `CalendarEvent` 已含 description，可直接喂。
+   - 任务清单：复用现有 `TopTasks[]`。
+   - 进度条：复用 `SettlementData.TasksCompleted/TasksTotal`。
+   - 专注详情（态 C）：仍走 `TaskInPage(0x11)`，不变。
+   - 能量瓶（态 C）：复用 `SettlementData.TotalEnergyBottles`。
+3. **面板态由谁决定**：建议 App 依上下文（有/无日程、是否专注中）置一个 `PanelMode` 字节，固件据此渲染，而非固件自行判断（保持「App 是显示决策方」）。← 开放问题。
+
+**UI 元素 → 数据字段 映射（提案）**
+
+| 设计稿元素 | 数据来源（提案） | 现状 |
+|---|---|---|
+| 顶栏 天气/日期 | Weather + Year/Month/Day | 已有 |
+| 宠物气泡（三态一致） | **PetDialogue（= App currentPetDialogue）** | 旧：morningGreeting / companionPhrase 分散 |
+| 事件卡（时间 + 标题 + 描述） | **Events[]（新增 description）** | 缺（仅 firstItem / scheduleSummary） |
+| 任务清单 | TopTasks[] | 已有 |
+| 进度条（如 50%） | SettlementData.completed/total | 已有 |
+| 专注任务详情 | TaskInPage(0x11) | 已有 |
+| 能量瓶 | SettlementData.totalEnergyBottles | 已有 |
+
+**开放问题（需产品 + 硬件确认）**
+
+- 气泡那句的「时机/语气」：用 App 同一句（可能是「专注中」的话），还是硬件按「日程态」另取一句？若要完全等于 App，需接受其阶段语气。
+- 面板态切换是 App 决定（加 `PanelMode` 字节）还是固件按数据有无自行决定？
+- 事件描述长度上限（设计稿描述较长，需定 maxLength + 截断策略，沿用 §4.7 流式变长解析）。
+- `SettlementData` 的双消息并入 `PetDialogue`，还是保留为结算态专用（结算可能是独立态）？
+- 进度条 / 能量瓶单列字段，还是复用 settlement。
+
+**迁移 / 兼容**
+
+- 这是**破坏性协议变更** → 采纳后协议版本号 +1，§4.7 / §6 整体改写，App `DayPack` 结构体同步精简。
+- 时机较好：固件 §8.7 正在修 DayPack 解析（当前把字符串当定长数值、整体错位）；趁这次解析重写**一并对齐新布局**，避免改两次。
+- 落地前本提案**不影响现行 §4.7 契约**，App 侧不动代码。
+
+---
+
 ## 7. 示例数据
 
 ### 7.1 DayPack 最小测试向量（Hex）
