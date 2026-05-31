@@ -1,8 +1,8 @@
 # Kirole BLE 通信协议规格文档
 
-**版本:** v2.4.1
-**更新日期:** 2026-05-30
-**状态:** 联调冻结版（完整协议参考）
+**版本:** v2.5.0
+**更新日期:** 2026-05-31
+**状态:** DayPack 显示模型重写（1 气泡 + 数据面板）。**破坏性变更：固件需按新 §4.7 / §6 重写 DayPack 解析（与 §8.7 修复一并做）。**
 
 ---
 
@@ -59,6 +59,7 @@
 | v2.3.5  | 2026-05-08 | 补充第一次联调阅读入口、BLE 广播要求、Type 按方向解释规则、分包无 ACK 边界、坏包处理建议、WheelSelect / EnterTaskIn 用户动作边界；标明 Spectra 6 图片帧不属于第一轮联调 |
 | v2.4.0  | 2026-05-29 | 联调修订（基于 `ble_log` 真机日志）：Sync 触发节流由「RequestRefresh 2s」改为「RequestRefresh/DeviceWake 共用 10s」（§8.5）；自动重连改用 CoreBluetooth pending connection 并区分主动/意外断开（§8.1）；新增 §8.7 记录固件实现偏差（DayPack 字符串字段被当作定长数值解析、`0x01`/`0x20` 入站命令未实现）。**协议规格本身未变，§8.7 为固件需对照修正项** |
 | v2.4.1  | 2026-05-30 | 修正 Sync 触发节流（§8.5）：`RequestRefresh`(`0x20`) 改用**独立 2 秒闸**，`DeviceWake`(`0x30`) 继续用**独立 10 秒闸**；两者不再互相消耗配额（0x20 不再被频繁 0x30 饿死），被节流时均记录日志。撤回 v2.4.0 的「共用 10s」。协议字节不变 |
+| v2.5.0  | 2026-05-31 | **DayPack 显示模型重写（破坏性）**：硬件实机 UI 实为「常驻宠物气泡 + 可换数据面板」，而非旧「4 页各说一句」。§4.7 将宠物文本收敛为单字段 `PetDialogue`（= App `currentPetDialogue` 同源，按时段自动变脸，早上即早安、傍晚即结算语），删除 `MorningGreeting / DailySummary / FirstItem / CurrentScheduleSummary / CompanionPhrase` 及 `SettlementData` 的 `SummaryMessage / EncouragementMessage`；新增带描述的 `Events[]`（旧协议缺）。§6 重写为「1 框架 + 面板」。固件需按新布局重写解析（与 §8.7 一并做）。设计论证见 §6.5 |
 
 ### 1.4 术语表
 
@@ -365,9 +366,9 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 
 ### 4.7 DayPack (0x10)
 
-包含全部 4 个页面的完整每日数据包。
+设备「概览」帧的完整每日数据包（对应 §6 的常驻框架 + 数据面板）。专注态（态 C）**不在此包内**，由 `0x11 TaskInPage` + `0x14 FocusStatus` 驱动。
 
-**Payload 结构：**
+**Payload 结构（v2.5.0 重写 — 破坏性，见 §6.5）：**
 
 | Offset | Field                  | Size        | Max Length | 描述 |
 |--------|------------------------|-------------|------------|--------------------------------|
@@ -376,14 +377,22 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 | 2      | Day                    | 1 byte      | -          | 日期（1-31） |
 | 3      | DeviceMode             | 1 byte      | -          | 0x00=Interactive, 0x01=Focus |
 | 4      | FocusChallengeEnabled  | 1 byte      | -          | 0x00=禁用, 0x01=启用 |
-| 5      | MorningGreeting        | 1 + N bytes | 50 bytes   | 页面 1：早安问候 |
-| N+6    | DailySummary           | 1 + N bytes | 60 bytes   | 页面 1：每日摘要 |
-| ...    | FirstItem              | 1 + N bytes | 40 bytes   | 页面 1：首个任务/事件 |
-| ...    | CurrentScheduleSummary | 1 + N bytes | 30 bytes   | 页面 2：日程摘要 |
-| ...    | CompanionPhrase        | 1 + N bytes | 40 bytes   | 页面 2：伴侣消息 |
-| ...    | TaskCount              | 1 byte      | -          | 置顶任务数量（0-5，取决于屏幕尺寸） |
-| ...    | TopTasks[]             | Variable    | -          | 页面 2：4寸最多 3 条，7.3寸最多 5 条 |
-| ...    | SettlementData         | Variable    | -          | 页面 4：结算数据 |
+| 5      | PetDialogue            | 1 + N bytes | 120 bytes  | **宠物气泡**：= App `currentPetDialogue`（阶段感知，早安/陪伴/结算同一句变脸，见 §6.5）|
+| ...    | EventCount             | 1 byte      | -          | 今日事件数（0-N）|
+| ...    | Events[]               | Variable    | -          | 事件列表（见下「Event 条目」）|
+| ...    | TaskCount              | 1 byte      | -          | 置顶任务数量（0-5，取决于屏幕尺寸）|
+| ...    | TopTasks[]             | Variable    | -          | 置顶任务（见下，4寸≤3 / 7.3寸≤5）|
+| ...    | SettlementData         | Variable    | -          | 进度/专注数值（见下，**已无文本消息**）|
+
+> **v2.5.0 破坏性变更**：删除旧字段 `MorningGreeting / DailySummary / FirstItem / CurrentScheduleSummary / CompanionPhrase`，收敛为单字段 `PetDialogue`；新增带描述的 `Events[]`（旧协议缺此能力）。固件解析器须按本表重写。
+
+**Event 条目：**
+
+| Offset | Field       | Size        | Max Length | 描述 |
+|--------|-------------|-------------|------------|--------------------------|
+| 0      | Time        | 1 + N bytes | 8 bytes    | 起始时间 "HH:mm"（全天事件为空串）|
+| ...    | Title       | 1 + N bytes | 40 bytes   | 事件标题 |
+| ...    | Description | 1 + N bytes | 120 bytes  | 事件描述（设计稿事件卡正文）|
 
 **TopTask 条目：**
 
@@ -405,12 +414,12 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 | 6      | FocusSessionCount   | 1 byte      | -          | 专注会话次数（clamp 0-255） |
 | 7      | LongestFocusMinutes | 2 bytes     | -          | 最长单次专注时间（分钟，BE，clamp 0-65535） |
 | 9      | InterruptionCount   | 1 byte      | -          | 专注期间手机解锁次数（clamp 0-255） |
-| 10     | SummaryMessage      | 1 + N bytes | 50 bytes   | 总结文本 |
-| N+11   | EncouragementMessage| 1 + N bytes | 50 bytes   | 鼓励文本 |
+
+> **v2.5.0**：删除 `SummaryMessage` / `EncouragementMessage`——宠物口吻统一由顶层 `PetDialogue` 承载。SettlementData 现仅含上述定长数值字段（供进度条与专注指标展示）。能量瓶子数经 `0x14 FocusStatus` 实时推送，不在 DayPack 内。
 
 **解析说明（重要，固件必读）：**
 
-- **Offset 列的 `N+6` / `...` 表示偏移随变长字段累积，不是固定偏移。** `N` 不是常量，指紧邻前一个变长字符串的实际内容字节数；从 `MorningGreeting`(offset 5) 起整个 payload 都是变长流。
+- **Offset 列的 `...` 表示偏移随变长字段累积，不是固定偏移。** `N` 不是常量，指紧邻前一个变长字符串的实际内容字节数；从 `PetDialogue`(offset 5) 起整个 payload 都是变长流（含 `Events[]` / `TopTasks[]` 子结构）。
 - 固件**必须顺序流式解析**：读 1 字节长度 → 读对应字节数内容 → 指针前进；**不能 seek 到硬编码偏移**。（§8.7「问题 1」的字段错位正源于此。）
 - 上表所有字段在每个 DayPack 中**按序存在、无条件写入**；"空"只是长度为 0、仍占位，不会被省略或跳过：
   - 空字符串 = 单字节 `0x00`（例如无日程时 `CurrentScheduleSummary`，见 §7.1 测试向量）。
@@ -845,71 +854,47 @@ AA 01 02 Type SceneId PostcardDay QuoteLen Quote AuthorLen Author
 
 ## 6. 页面数据结构
 
-### 6.1 页面 1：每日开始
+> **v2.5.0 重写**：设备 UI 是「常驻框架 + 可换数据面板」，不再是「4 页各说一句」。旧 §6.1–6.4（每页一句宠物文案）已废弃，论证见 §6.5。
 
-用户早晨首次与设备交互时显示。
+### 6.1 常驻框架
 
-**内容：**
-- 早安问候（个性化）
-- 每日摘要（天气、任务数、首个事件）
-- 首项预览（下一个事件或置顶任务）
+设备主界面是一个**常驻框架**，不随内容翻页：
 
-**数据来源：** DayPack 字段：
-- `morningGreeting`
-- `dailySummary`
-- `firstItem`
+- **顶栏**：天气（来自 `0x04 Weather`）+ 日期（DayPack `Year/Month/Day`）
+- **左侧**：宠物形象 + **常驻对话气泡**（始终在场，三态一致）
+
+**数据来源：** DayPack.`PetDialogue`（= App `currentPetDialogue`，阶段感知；早上即早安、傍晚即结算语，见 §6.5）。
 
 ---
 
-### 6.2 页面 2：概览
+### 6.2 概览面板（默认）
 
-显示今日概览的主仪表盘。
+框架右侧的默认数据面板：
 
-**内容：**
-- 当前/下一个日程项
-- 前 N 个任务及完成状态（4寸 3 条，7.3寸 5 条）
-- 伴侣短语（鼓励语）
+- 今日**事件卡**（时间 + 标题 + 描述）
+- **置顶任务清单** + 完成状态（4寸 ≤3 条，7.3寸 ≤5 条）
+- **进度**（已完成 / 总数）
 
-**数据来源：** DayPack 字段：
-- `currentScheduleSummary`
-- `topTasks[]`
-- `companionPhrase`
+**数据来源：** DayPack.`Events[]` / `TopTasks[]` / `SettlementData`（数值字段）。
+
+⚠️ 「进度条 vs 任务清单」二选一或并列的具体布局，由固件 / 产品在重写时定（App 两者都发）。
 
 ---
 
-### 6.3 页面 3：任务详情
+### 6.3 专注详情面板
 
-用户选择任务时显示的任务详情页。
+用户在设备上选中任务进入专注时显示：
 
-**内容：**
-- 任务标题和描述
-- 鼓励消息
-- 专注挑战指示器
+- 任务标题 + 描述 + Tips（鼓励）
+- 能量瓶
 
-**数据来源：** TaskInPage 命令 (0x11)
-
-**触发条件：** 来自设备的 EnterTaskIn 事件 (0x10)
+**数据来源：** `0x11 TaskInPage`（由设备 `0x10 EnterTaskIn` 触发）+ `0x14 FocusStatus`（专注状态与能量瓶实时推送）。**不在 DayPack 内。**
 
 ---
 
-### 6.4 页面 4：每日结算
+### 6.5 设计论证：显示模型对齐到「1 宠物气泡 + 可换数据面板」（v2.5.0 已采纳）
 
-每日结算总结页。
-
-**内容：**
-- 已完成任务数 / 总任务数
-- 今日获得积分
-- 总专注时间 / 专注会话次数 / 最长单次专注时间 / 解锁打断次数
-- 总结消息
-- 明日鼓励语
-
-**数据来源：** DayPack.settlementData（详见 4.7 SettlementData 字段表）
-
----
-
-### 6.5 提案：显示模型对齐到「1 宠物气泡 + 可换数据面板」（待硬件团队确认，**未采纳**）
-
-> 状态：**提案 / 待确认**。本节**不改变** §4.7 / §6.1–6.4 的现行契约，只记录一个与产品实机 UI 对齐的重设方向，供 App + 固件团队评审后再决定是否落地（落地需协议版本号 +1 并同步固件）。
+> 状态：**已采纳（产品确认）**。自 v2.5.0 起 §4.7 / §6 已按本节重写。本节保留为设计论证与决策记录；仍以 ⚠️ 标注需固件在重写时确认的实现细节。
 
 **背景 / 问题**
 
@@ -925,6 +910,12 @@ AA 01 02 Type SceneId PostcardDay QuoteLen Quote AuthorLen Author
   - 态 C（专注）：当前任务详情（标题 + Tips）+ 能量瓶
 
 即：**宠物口吻文本只有一处（气泡）**，其余皆为结构化事实数据。现行协议里的 `morningGreeting` / `dailySummary` / `companionPhrase` / settlement 双消息，属于旧「多页多句」模型的冗余。
+
+**关键论证：App 那句本就按时段「变脸」，硬件直接同步即可，无需多句**
+
+App 首页宠物头顶只有**一个**对话槽 `currentPetDialogue`，由阶段状态机（`AppState+Companion.resolveCompanionPhase`）按上下文自动选型：`.morningPrep → .morningGreeting`（早安）、`.inTask → .taskEncouragement`、`.daySettled → .settlementSummary`（结算语）、`.idle → .smartReminder`（陪伴）。也就是说——**「早安 / 陪伴 / 结算」这些口吻 App 本来就都有，只是同一个槽在不同时段说不同的话**，不是三块常驻文本。
+
+而旧 DayPack 的 `morningGreeting / companionPhrase / settlement 双消息`，是 `DayPackGenerator` **另外单独生成**的（仅供硬件用，App 界面从不显示），与 App 那句**各算各的、内容可能不一致**。结论：硬件气泡**不该自己再造一套**，直接同步 App 的 `currentPetDialogue` 即可——早上同步时它自然是早安、傍晚同步时它自然是结算语。这既消除了重复 LLM 生成，又保证「宠物在 App 和硬件上是同一个、说同样的话」。
 
 **提案要点**
 
@@ -949,25 +940,27 @@ AA 01 02 Type SceneId PostcardDay QuoteLen Quote AuthorLen Author
 | 专注任务详情 | TaskInPage(0x11) | 已有 |
 | 能量瓶 | SettlementData.totalEnergyBottles | 已有 |
 
-**开放问题（需产品 + 硬件确认）**
+**已定决策（v2.5.0）**
 
-- 气泡那句的「时机/语气」：用 App 同一句（可能是「专注中」的话），还是硬件按「日程态」另取一句？若要完全等于 App，需接受其阶段语气。
-- 面板态切换是 App 决定（加 `PanelMode` 字节）还是固件按数据有无自行决定？
-- 事件描述长度上限（设计稿描述较长，需定 maxLength + 截断策略，沿用 §4.7 流式变长解析）。
-- `SettlementData` 的双消息并入 `PetDialogue`，还是保留为结算态专用（结算可能是独立态）？
-- 进度条 / 能量瓶单列字段，还是复用 settlement。
+- **气泡语气**：直接用 App 的 `currentPetDialogue`（阶段感知），接受其按时段变脸的语气。不在硬件侧另取一句。
+- **面板态**：DayPack 只承载「概览」数据（PetDialogue + Events[] + TopTasks[] + 进度/能量来自 SettlementData）；**不引入 `PanelMode` 字节**，设备按现有数据渲染。专注态（态 C）仍由 `0x10 EnterTaskIn → 0x11 TaskInPage` + `0x14 FocusStatus` 独立驱动，不在 DayPack 内。⚠️ 设备端「进度条 vs 任务清单」二选一的布局规则需固件/产品在重写时定，App 两者都发。
+- **事件描述**：`Events[]` 每条 `Time(≤8B) / Title(≤40B) / Description(≤120B)`，沿用 §4.7 流式变长 + 按 UTF-8 字节边界截断。
+- **结算双消息**：删除 `SummaryMessage / EncouragementMessage`——宠物口吻统一由 `PetDialogue` 承载；`SettlementData` 仅保留数值字段（完成/总数、积分、专注指标、能量瓶），用于进度条与能量瓶展示。
+- **进度/能量**：复用 `SettlementData` 数值，不单列新字段。
 
 **迁移 / 兼容**
 
 - 这是**破坏性协议变更** → 采纳后协议版本号 +1，§4.7 / §6 整体改写，App `DayPack` 结构体同步精简。
 - 时机较好：固件 §8.7 正在修 DayPack 解析（当前把字符串当定长数值、整体错位）；趁这次解析重写**一并对齐新布局**，避免改两次。
-- 落地前本提案**不影响现行 §4.7 契约**，App 侧不动代码。
+- v2.5.0：App 侧 `DayPack` 结构体与 `BLEDataEncoder` 已按新 §4.7 落地；**固件需对照新 §4.7 实现解析后双方才能联通**（在此之前硬件 DayPack 显示本就不工作，无回归）。
 
 ---
 
 ## 7. 示例数据
 
 ### 7.1 DayPack 最小测试向量（Hex）
+
+> ⚠️ **v2.5.0 待重生成**：以下向量基于**旧** DayPack 布局（MorningGreeting/DailySummary/…），与重写后的 §4.7 不符。固件按新 §4.7（PetDialogue + Events[] + TopTasks[] + SettlementData）实现解析后，需由 App 侧重新导出一条新向量替换此处。下表仅作流式变长解析的格式示意，**字段语义已过时**。
 
 以下测试向量用于验证字段顺序和长度解析，可作为固件解析器的第一条样例。它不是产品真实文案，只覆盖最小字段。左侧 `@N` 为该字段在 **payload 内的起始字节偏移**（十进制），供固件逐字段对位——注意偏移随变长字符串累积，**不是固定值**。
 
