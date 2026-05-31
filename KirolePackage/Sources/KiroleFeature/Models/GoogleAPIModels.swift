@@ -50,6 +50,24 @@ public struct GoogleDateTime: Codable, Sendable {
         }
 
         if let date = date {
+            // All-day events carry a floating `yyyy-MM-dd` with no time or zone. Build the
+            // Date from components via `Calendar.current` (read fresh on every access) rather
+            // than a cached `DateFormatter`, whose time zone is snapshotted at creation and
+            // would resolve the wrong calendar day after the user changes time zones.
+            let parts = date.split(separator: "-")
+            if parts.count == 3,
+               let year = Int(parts[0]),
+               let month = Int(parts[1]),
+               let day = Int(parts[2]) {
+                var components = DateComponents()
+                components.year = year
+                components.month = month
+                components.day = day
+                if let resolved = Calendar.current.date(from: components) {
+                    return resolved
+                }
+            }
+            // Fallback for unexpected formats.
             return CachedFormatters.dateOnly.date(from: date)
         }
 
