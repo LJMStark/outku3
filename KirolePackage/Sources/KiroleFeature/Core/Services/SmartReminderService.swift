@@ -120,6 +120,13 @@ public final class SmartReminderService {
     private func markReminderSent() {
         lastReminderTime = Date()
     }
+
+    /// 硬件回报用户已查看/忽略提醒——以该交互时间重启 30 分钟冷却，避免紧接着又推一条。
+    /// 用 max 防止补传(replay)的旧事件把冷却往回拨、反而提前放行下一条提醒。
+    public func registerHardwareReminderInteraction(at time: Date) {
+        let current = lastReminderTime ?? .distantPast
+        lastReminderTime = max(current, time)
+    }
     // MARK: - Trigger Checks
 
     /// 高优先级任务今天到期且剩余不足3小时

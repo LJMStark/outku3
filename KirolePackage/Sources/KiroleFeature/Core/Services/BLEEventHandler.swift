@@ -107,14 +107,11 @@ public enum BLEEventHandler {
                 await NotificationService.shared.scheduleLowBatteryNotification(level: level)
             }
 
-        case .reminderAcknowledged:
+        case .reminderAcknowledged, .reminderDismissed:
+            // 用户在硬件上已查看/忽略提醒：联动 App 端限流冷却，避免紧接着又推一条。
+            SmartReminderService.shared.registerHardwareReminderInteraction(at: eventLog.timestamp)
             #if DEBUG
-            print("[BLEEventHandler] Reminder acknowledged at \(eventLog.timestamp)")
-            #endif
-
-        case .reminderDismissed:
-            #if DEBUG
-            print("[BLEEventHandler] Reminder dismissed at \(eventLog.timestamp)")
+            print("[BLEEventHandler] Reminder \(eventLog.eventType.rawValue) at \(eventLog.timestamp)")
             #endif
 
         case .encoderRotateUp, .encoderRotateDown, .encoderShortPress, .encoderLongPress,
