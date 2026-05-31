@@ -8,6 +8,7 @@ struct EventCardView: View {
     let participants: Int
     let description: String
     let source: EventSource
+    var videoMeetingURL: URL? = nil
     var onTap: (() -> Void)? = nil
 
     @Environment(ThemeManager.self) private var theme
@@ -38,6 +39,25 @@ struct EventCardView: View {
                         Text("\(participants)")
                             .font(.system(size: 14))
                             .foregroundStyle(theme.colors.secondaryText)
+                    }
+
+                    if let meetingURL = videoMeetingURL {
+                        Spacer()
+                        Link(destination: meetingURL) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "video.fill")
+                                    .font(.system(size: 11))
+                                Text("Join")
+                                    .font(.system(size: 12, weight: .bold))
+                            }
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(Color(hex: "294A3B"))
+                            .clipShape(Capsule())
+                        }
+                        .accessibilityLabel("加入视频会议")
+                        .accessibilityIdentifier("EventCard_JoinButton")
                     }
                 }
                 .padding(.vertical, 4)

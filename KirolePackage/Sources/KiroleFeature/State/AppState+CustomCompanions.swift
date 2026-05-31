@@ -14,7 +14,11 @@ extension AppState {
         name: String,
         relationship: CompanionRelationship,
         personaVoice: CompanionPersonaVoice,
-        roastModeEnabled: Bool,
+        curiosityLevel: Double = 0.5,
+        humorLevel: Double = 0.5,
+        strictnessLevel: Double = 0.3,
+        backstory: String = "",
+        sensitiveBoundary: String = "",
         previewData: Data,
         pixelData: Data
     ) async throws -> CustomCompanion {
@@ -24,7 +28,11 @@ extension AppState {
             name: name,
             relationship: relationship,
             personaVoice: personaVoice,
-            roastModeEnabled: roastModeEnabled,
+            curiosityLevel: curiosityLevel,
+            humorLevel: humorLevel,
+            strictnessLevel: strictnessLevel,
+            backstory: backstory,
+            sensitiveBoundary: sensitiveBoundary,
             avatarPreviewFileName: LocalStorage.customCompanionPreviewFileName(for: id),
             avatarPixelsFileName: LocalStorage.customCompanionPixelsFileName(for: id)
         )
@@ -111,6 +119,7 @@ extension AppState {
             profile.intimacyStage = .acquaintance
         }
         updateUserProfile(profile)
+        requestBLESync(reason: "selectCustomCompanion")
 
         // Re-push the pixel frame so the device shows the newly active avatar.
         Task { @MainActor in
@@ -137,16 +146,31 @@ extension AppState {
         }
     }
 
-    /// Best-effort BLE push. Failures (device offline, secure handshake pending, etc.)
-    /// only log — the user-visible UI state already reflects the choice.
+    /// Sends the avatar pixel frame via BLE. On failure, queues the companion ID in LocalStorage
+    /// so `flushPendingCustomCompanionPushIfNeeded` can retry on the next BLE reconnect.
     private func pushCustomAvatarFrame(pixelData: Data, companionId: UUID) async {
         do {
             try await BLEService.shared.sendCustomAvatarFrame(pixelData: pixelData)
+            await localStorage.clearPendingCustomCompanionPush()
+            isCustomAvatarPendingBLEPush = false
         } catch {
+            await localStorage.savePendingCustomCompanionPush(id: companionId)
+            isCustomAvatarPendingBLEPush = true
             ErrorReporter.log(
                 .sync(component: "BLE CustomAvatarFrame", underlying: error.localizedDescription),
                 context: "AppState.pushCustomAvatarFrame id=\(companionId)"
             )
         }
+    }
+
+    /// Called by BLESyncCoordinator after establishing a connection.
+    /// Re-sends the avatar frame for the active custom companion when a previous push failed.
+    public func flushPendingCustomCompanionPushIfNeeded() async {
+        guard isCustomAvatarPendingBLEPush,
+              let id = userProfile.customCompanionId,
+              let pixels = await localStorage.loadCustomCompanionPixels(id: id) else {
+            return
+        }
+        await pushCustomAvatarFrame(pixelData: pixels, companionId: id)
     }
 }

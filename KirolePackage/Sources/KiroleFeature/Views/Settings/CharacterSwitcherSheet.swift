@@ -78,6 +78,20 @@ public struct CharacterSwitcherSheet: View {
                         appState.deleteCustomCompanion(id: companion.id)
                     }
                 }
+
+                if appState.isCustomAvatarPendingBLEPush {
+                    HStack(spacing: 6) {
+                        Image(systemName: "wifi.slash")
+                            .font(.system(size: 11))
+                            .foregroundStyle(theme.colors.secondaryText)
+                        Text("Hardware will show default companion until next sync")
+                            .font(.system(size: 11))
+                            .foregroundStyle(theme.colors.secondaryText)
+                    }
+                    .padding(.top, 4)
+                    .accessibilityLabel("Custom avatar pending hardware sync")
+                    .accessibilityIdentifier("companion.pendingHardwareSync")
+                }
             }
             .padding(.horizontal, 24)
         }
@@ -250,15 +264,6 @@ private struct CustomCompanionCard: View {
                             .foregroundStyle(theme.colors.primaryText)
                             .lineLimit(1)
 
-                        if companion.roastModeEnabled {
-                            Text("Roast")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(Color.orange)
-                                .padding(.horizontal, 7)
-                                .padding(.vertical, 2)
-                                .background(Color.orange.opacity(0.12))
-                                .clipShape(Capsule())
-                        }
                     }
 
                     Text("\(companion.relationship.displayName) · \(companion.personaVoice.displayName)")

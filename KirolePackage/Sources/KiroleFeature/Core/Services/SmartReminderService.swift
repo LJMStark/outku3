@@ -85,7 +85,6 @@ public final class SmartReminderService {
         if let result = await checkDeadline(
             tasks: incompleteTasks, pet: pet, userProfile: userProfile, now: now
         ) {
-            markReminderSent()
             return result
         }
 
@@ -94,7 +93,6 @@ public final class SmartReminderService {
             isWorkHours: isWorkHours, incompleteTasks: incompleteTasks,
             pet: pet, userProfile: userProfile
         ) {
-            markReminderSent()
             return result
         }
 
@@ -103,7 +101,6 @@ public final class SmartReminderService {
             isWorkHours: isWorkHours, incompleteTasks: incompleteTasks,
             pet: pet, userProfile: userProfile
         ) {
-            markReminderSent()
             return result
         }
 
@@ -117,8 +114,17 @@ public final class SmartReminderService {
         return Date().timeIntervalSince(last) >= minimumInterval
     }
 
-    private func markReminderSent() {
+    /// 标记一次提醒已成功投递，启动 30 分钟冷却。由投递方（BLESyncCoordinator）在 BLE 或本地通知
+    /// 确实送达后调用——而非在评估时调用，避免投递失败也白白消耗冷却。
+    public func markReminderSent() {
         lastReminderTime = Date()
+    }
+
+    /// 硬件回报用户已查看/忽略提醒——以该交互时间重启 30 分钟冷却，避免紧接着又推一条。
+    /// 用 max 防止补传(replay)的旧事件把冷却往回拨、反而提前放行下一条提醒。
+    public func registerHardwareReminderInteraction(at time: Date) {
+        let current = lastReminderTime ?? .distantPast
+        lastReminderTime = max(current, time)
     }
     // MARK: - Trigger Checks
 

@@ -37,9 +37,11 @@ public final class NotificationService {
 
     // MARK: - Local Notifications
 
-    /// 从 SmartReminderResult 发送本地通知
-    public func scheduleLocalNotification(from reminder: SmartReminderResult) async {
-        guard isAuthorized else { return }
+    /// 从 SmartReminderResult 发送本地通知。返回是否真的投递（未授权或失败返回 false），
+    /// 供调用方决定是否消耗提醒冷却。
+    @discardableResult
+    public func scheduleLocalNotification(from reminder: SmartReminderResult) async -> Bool {
+        guard isAuthorized else { return false }
 
         let content = UNMutableNotificationContent()
         content.title = notificationTitle(for: reminder.reason)
@@ -58,9 +60,37 @@ public final class NotificationService {
 
         do {
             try await UNUserNotificationCenter.current().add(request)
+            return true
         } catch {
             #if DEBUG
             print("[NotificationService] Failed to schedule notification: \(error.localizedDescription)")
+            #endif
+            return false
+        }
+    }
+
+    /// 设备低电量提醒：带权限检查，避免未授权时静默失败（旧实现直接调 UNUserNotificationCenter）。
+    /// 文案英文（全英文产品，见 CLAUDE.md Interaction Rule 4）。
+    public func scheduleLowBatteryNotification(level: Int) async {
+        await refreshAuthorizationStatus()
+        guard isAuthorized else { return }
+
+        let content = UNMutableNotificationContent()
+        content.title = "Your buddy is running low"
+        content.body = "Your Kirole's battery is at \(level)%. A little charge would keep it company."
+        content.sound = .default
+
+        let request = UNNotificationRequest(
+            identifier: "kirole-low-battery",
+            content: content,
+            trigger: nil
+        )
+
+        do {
+            try await UNUserNotificationCenter.current().add(request)
+        } catch {
+            #if DEBUG
+            print("[NotificationService] Failed to schedule low-battery notification: \(error.localizedDescription)")
             #endif
         }
     }
@@ -81,14 +111,17 @@ public final class NotificationService {
 
     // MARK: - Private
 
+    /// Titles stay in the pet's caring voice — never a task-manager "Due Soon" nudge.
+    /// The body already comes from CompanionTextService, so this only sets the tone.
+    /// English only: this is an English-language product (see CLAUDE.md Interaction Rule 4).
     private func notificationTitle(for reason: ReminderReason) -> String {
         switch reason {
         case .deadline:
-            return "Task Due Soon"
+            return "A gentle heads-up"
         case .idle:
-            return "Time to Focus"
+            return "Shall we focus?"
         case .gentleNudge:
-            return "Gentle Reminder"
+            return "Just checking in"
         }
     }
 }

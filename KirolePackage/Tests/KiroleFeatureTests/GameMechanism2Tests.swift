@@ -300,7 +300,8 @@ struct GameMechanism2Tests {
         await BLEEventHandler.handleEventLogs(
             [startLog],
             service: BLEService.shared,
-            focusService: focusService
+            focusService: focusService,
+            lastTimestampOverride: 0
         )
         #expect(focusService.activeSession?.startTime == startTime)
 
@@ -308,7 +309,8 @@ struct GameMechanism2Tests {
         await BLEEventHandler.handleEventLogs(
             [completeLog],
             service: BLEService.shared,
-            focusService: focusService
+            focusService: focusService,
+            lastTimestampOverride: 0
         )
         await focusService.waitForPendingPersistenceForTesting()
 

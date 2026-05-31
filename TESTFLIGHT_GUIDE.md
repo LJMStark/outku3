@@ -194,11 +194,12 @@ xcodebuild -workspace Kirole.xcworkspace \
    - Feedback Email: 接收反馈的邮箱
    - Marketing URL: 可选
    - Privacy Policy URL: 可选
-8. 点击 **Submit for Review**
-9. 等待审核(1-2 天)
+8. **处理出口合规**:若 build 卡在「准备提交 / Ready to Submit」,先回答加密合规问题(Kirole 选"仅豁免 / 否")。本项目自 build 567 起已在 `Config/Info.plist` 声明 `ITSAppUsesNonExemptEncryption=false`,自动免询问;更早的 build 需手动答这一步。
+9. 点击 **Submit for Review**
+10. 等待审核:**仅该版本号(如 2.0)首次提交外部测试**才需要,现在通常几小时(首次可能一天内)。**同一版本号下的后续 build 通常免审或秒过**,无需重等。
 
 **外部测试特点**:
-- ⚠️ 需要 Apple 审核(1-2 天)
+- ⚠️ 仅版本号首次需 Apple 审核;同版本号(如 2.0)后续 build 通常免审或秒过
 - ✅ 最多 10,000 名测试员
 - ✅ 测试员无需是团队成员
 - ✅ 通过公开链接邀请
@@ -264,6 +265,23 @@ xcodebuild -workspace Kirole.xcworkspace \
 3. Provisioning Profile 包含 Family Controls
 4. 测试设备 iOS 版本 >= 15.0
 
+### Q6: 外部测试员收不到更新 / 公开链接只显示旧版本?
+
+**A**: 根本原因(本项目用 ASC API 实测确认):新 build **没有提交 Beta App Review**。公开链接 / 外部组只显示**已通过审核(APPROVED)**的 build,所以会一直停在最后一个过审的旧版本(本项目曾长期停在 543——它是唯一 APPROVED 的近期 build,555–567 全是 NO_SUBMISSION)。**次因**:出口合规未答会让 build 先卡「准备提交」,连提交审核都做不了。
+
+手动处理某个 build:
+1. App Store Connect → TestFlight → 该 build。
+2. (若卡「准备提交」)回答出口合规(Kirole 选"仅豁免 / 否")。
+3. 确认「测试信息」已填(反馈邮箱等,外部测试必需)。
+4. **提交 Beta App Review**(关键!仅"加入外部组"不够)。同一版本号(如 2.0)已有 build 过审时,后续 build 通常**秒过**(自动 APPROVED)。
+5. 测试员在 TestFlight App **下拉刷新**(不一定有推送通知)。
+
+**根治(均已完成)**:
+- `fastlane release` 现在分发后**自动提交 Beta App Review**(`submit_for_beta_review`,幂等);
+- `Config/Info.plist` 已声明 `ITSAppUsesNonExemptEncryption=false`,build 567 起自动免出口合规询问。
+
+> 区分两件事:① **没提交审核** = 外部永远看不到(主因,fastlane 旧版漏了这步);② 卡「准备提交」= 没答合规(次因,挡在提交之前)。两者现已分别根治。
+
 ## 时间线估算
 
 | 步骤 | 预计时间 |
@@ -276,7 +294,7 @@ xcodebuild -workspace Kirole.xcworkspace \
 | Apple 处理构建 | 10-30 分钟 |
 | 配置 TestFlight | 5 分钟 |
 | 内部测试员安装 | 立即 |
-| 外部测试审核 | 1-2 天 |
+| 外部测试审核 | 仅版本号首次需要,通常几小时;同版本号后续 build 免审或秒过 |
 
 **总计**: 从开始到内部测试员可以安装,预计 **30-60 分钟**
 
@@ -311,9 +329,10 @@ xcodebuild -workspace Kirole.xcworkspace \
 ### 外部测试(可选)
 - [ ] 创建外部测试组
 - [ ] 填写 Test Information
-- [ ] 提交审核
-- [ ] 审核通过
-- [ ] 外部测试员可以安装
+- [ ] 回答出口合规(若卡「准备提交」) — build 567 起已由 Info.plist 自动免除
+- [ ] 提交审核(仅版本号首次需要)
+- [ ] 审核通过(状态变绿「正在测试」)
+- [ ] 外部测试员可以安装(让其在 TestFlight 下拉刷新)
 
 ## 下一步
 

@@ -3,19 +3,32 @@ import Foundation
 // MARK: - Custom Companion
 
 /// User-created companion (4th option alongside Joy/Silas/Nova).
-/// Inspired by Inku's avatar+persona model: free-form image upload + structured persona dials.
+/// Inspired by Kindroid's multi-dimensional persona model: structured dials + backstory + boundary.
 public struct CustomCompanion: Sendable, Codable, Identifiable, Equatable {
     public let id: UUID
     public var name: String
     public var relationship: CompanionRelationship
     public var personaVoice: CompanionPersonaVoice
-    public var roastModeEnabled: Bool
+
+    // MARK: Kindroid-style persona dimensions (0.0 – 1.0)
+    /// How frequently the companion asks questions and explores ideas. 0 = reserved, 1 = highly curious.
+    public var curiosityLevel: Double
+    /// How much wit and levity the companion brings. 0 = earnest, 1 = playfully witty.
+    public var humorLevel: Double
+    /// How directly the companion holds the user to standards. 0 = gentle, 1 = firm accountability.
+    public var strictnessLevel: Double
+    /// Free-form story describing the companion's history, personality, and quirks.
+    public var backstory: String
+    /// Free-form topic boundary, e.g. "feel free to tease procrastination, but skip work stress".
+    /// Supersedes roastModeEnabled — richer and safer than a boolean toggle.
+    public var sensitiveBoundary: String
+
     public var avatarPreviewFileName: String
     public var avatarPixelsFileName: String
     public var createdAt: Date
-    /// Bumped on every mutation that affects prompt assembly (name / relationship / voice / roast).
-    /// Cache fingerprints reference `id + updatedAt` so any future mutable field invalidates
-    /// downstream caches automatically, without revisiting fingerprint construction.
+    /// Bumped on every mutation that affects prompt assembly.
+    /// Cache fingerprints reference `id + updatedAt` so any field change invalidates
+    /// downstream caches automatically.
     public var updatedAt: Date
 
     public init(
@@ -23,7 +36,11 @@ public struct CustomCompanion: Sendable, Codable, Identifiable, Equatable {
         name: String,
         relationship: CompanionRelationship,
         personaVoice: CompanionPersonaVoice,
-        roastModeEnabled: Bool = false,
+        curiosityLevel: Double = 0.5,
+        humorLevel: Double = 0.5,
+        strictnessLevel: Double = 0.3,
+        backstory: String = "",
+        sensitiveBoundary: String = "",
         avatarPreviewFileName: String,
         avatarPixelsFileName: String,
         createdAt: Date = Date(),
@@ -33,7 +50,11 @@ public struct CustomCompanion: Sendable, Codable, Identifiable, Equatable {
         self.name = name
         self.relationship = relationship
         self.personaVoice = personaVoice
-        self.roastModeEnabled = roastModeEnabled
+        self.curiosityLevel = curiosityLevel
+        self.humorLevel = humorLevel
+        self.strictnessLevel = strictnessLevel
+        self.backstory = backstory
+        self.sensitiveBoundary = sensitiveBoundary
         self.avatarPreviewFileName = avatarPreviewFileName
         self.avatarPixelsFileName = avatarPixelsFileName
         self.createdAt = createdAt
@@ -42,15 +63,20 @@ public struct CustomCompanion: Sendable, Codable, Identifiable, Equatable {
 }
 
 extension CustomCompanion {
-    /// Decoding tolerates pre-updatedAt JSON by falling back to createdAt.
-    /// Keeps existing on-disk companions readable without forcing a migration step.
+    /// Decoder tolerates pre-Kindroid JSON (missing sliders / backstory / sensitiveBoundary)
+    /// and pre-updatedAt JSON. All new fields default gracefully so existing companions
+    /// continue to load without any migration step.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.id = try container.decode(UUID.self, forKey: .id)
         self.name = try container.decode(String.self, forKey: .name)
         self.relationship = try container.decode(CompanionRelationship.self, forKey: .relationship)
         self.personaVoice = try container.decode(CompanionPersonaVoice.self, forKey: .personaVoice)
-        self.roastModeEnabled = try container.decode(Bool.self, forKey: .roastModeEnabled)
+        self.curiosityLevel = try container.decodeIfPresent(Double.self, forKey: .curiosityLevel) ?? 0.5
+        self.humorLevel = try container.decodeIfPresent(Double.self, forKey: .humorLevel) ?? 0.5
+        self.strictnessLevel = try container.decodeIfPresent(Double.self, forKey: .strictnessLevel) ?? 0.3
+        self.backstory = try container.decodeIfPresent(String.self, forKey: .backstory) ?? ""
+        self.sensitiveBoundary = try container.decodeIfPresent(String.self, forKey: .sensitiveBoundary) ?? ""
         self.avatarPreviewFileName = try container.decode(String.self, forKey: .avatarPreviewFileName)
         self.avatarPixelsFileName = try container.decode(String.self, forKey: .avatarPixelsFileName)
         let created = try container.decode(Date.self, forKey: .createdAt)

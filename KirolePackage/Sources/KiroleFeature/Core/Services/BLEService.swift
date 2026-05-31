@@ -1,5 +1,6 @@
 @preconcurrency import CoreBluetooth
 import Foundation
+import os
 
 // MARK: - BLE Device
 
@@ -83,6 +84,7 @@ private enum KiroleBLEUUIDs {
 @MainActor
 public final class BLEService: NSObject {
     public static let shared = BLEService()
+    private static let bleLogger = Logger(subsystem: "com.kirole.app", category: "BLE")
 
     // MARK: - Published State
 
@@ -118,11 +120,34 @@ public final class BLEService: NSObject {
     private var pendingConnectedPeripheralName: String?
     private var handshakeTimeoutTask: Task<Void, Never>?
 
+    /// 标记最近一次断开是否由 App 主动发起（sync 收尾 / 用户点击断开 / 后台到期）。
+    /// 主动断开不应触发自动重连。生命周期：`disconnect()` 置 true，发起新连接时归零；
+    /// `cleanup()` 不重置它（避免在 didDisconnect 回调到达前被清掉）。
+    private var isIntentionalDisconnect = false
+    /// 意外断开后的延迟重连任务，便于在主动断开 / 重新连接时取消。
+    private var reconnectTask: Task<Void, Never>?
+    /// 扫描代次。每次发起扫描自增；扫描超时任务只在仍是本轮扫描时才结束扫描，
+    /// 避免上一轮已提前结束的超时任务误停下一轮扫描。
+    private var scanGeneration: UInt64 = 0
+    private var connectGeneration: UInt64 = 0
+
     // MARK: - UserDefaults Keys
 
     private enum Keys {
         static let lastConnectedDeviceID = "lastConnectedBLEDeviceID"
         static let autoReconnect = "bleAutoReconnect"
+        static let keepAliveDebugMode = "bleKeepAliveDebugMode"
+    }
+
+    // MARK: - Timing
+
+    private enum Timing {
+        /// Apple 警告：在 `didDisconnect` / `didFailToConnect` 回调里立刻 `connect`，
+        /// 会让蓝牙框架卡在 bad state（state=connecting 但 pending connection 未真正建立）。
+        /// 官方建议至少等 ~20ms，这里用 50ms 留余量。
+        static let reconnectDelay: Duration = .milliseconds(50)
+        /// 主动连接（UI / sync）的连接超时。
+        static let connectTimeout: Duration = .seconds(15)
     }
 
     // MARK: - Settings
@@ -130,6 +155,30 @@ public final class BLEService: NSObject {
     public var autoReconnect: Bool {
         get { UserDefaults.standard.bool(forKey: Keys.autoReconnect) }
         set { UserDefaults.standard.set(newValue, forKey: Keys.autoReconnect) }
+    }
+
+    /// 固件联调专用：开启后 App **不**在同步收尾 / 超时看门狗 / 后台到期时主动断连，
+    /// 保持长连接供硬件团队调试固件；意外掉线时也强制尝试自动重连。
+    ///
+    /// 默认值：**测试阶段全包默认开启**（硬件团队拿到即用，无需手动开）；用户在设置里手动改过则
+    /// 永远以其选择为准。getter 仍以 `AppBuildEnvironment.showsHardwareDebugTools` 为闸门——当前
+    /// 测试阶段该闸恒 `true`；上架 App Store 前恢复门控后，正式包会自动回到省电脉冲式同步
+    /// （即使本地残留 `true` 也不启用）。
+    public var keepAliveDebugMode: Bool {
+        get {
+            guard AppBuildEnvironment.showsHardwareDebugTools else { return false }
+            if let stored = UserDefaults.standard.object(forKey: Keys.keepAliveDebugMode) as? Bool {
+                return stored
+            }
+            return true
+        }
+        set { UserDefaults.standard.set(newValue, forKey: Keys.keepAliveDebugMode) }
+    }
+
+    /// 实际生效的自动重连开关：用户设置为准，但 keep-alive 调试模式下强制开启，
+    /// 以便固件重启 / 信号抖动导致的意外掉线能立刻恢复调试连接。
+    private var autoReconnectEffective: Bool {
+        autoReconnect || keepAliveDebugMode
     }
 
     public nonisolated static var configuredSecurityMode: BLESecurityMode {
@@ -178,6 +227,13 @@ public final class BLEService: NSObject {
 
     /// 扫描附近的 Kirole E-ink 设备
     public func scanForDevices(timeout: TimeInterval = 10) async throws -> [BLEDevice] {
+        // 互斥：以 connectionState 为唯一真相源。已在扫描 / 连接 / 已连接则直接拒绝，
+        // 杜绝并发 scanForDevices 互相覆盖单槽 scanCompletion / continuation
+        // （历史 bug：被覆盖的 continuation 永不 resume → 永久挂起 + 卡死 Searching）。
+        guard BLEConnectionPolicy.canBeginScan(state: connectionState) else {
+            throw BLEError.scanAlreadyInProgress
+        }
+        // 同步占位（@MainActor 串行保证从 guard 到此处原子），后续 await 期间任何并发入口都会被拒绝。
         connectionState = .scanning
 
         let manager: CBCentralManager
@@ -192,6 +248,8 @@ public final class BLEService: NSObject {
 
         discoveredDevices = []
         peripheralCache = [:]
+        scanGeneration &+= 1
+        let generation = scanGeneration
 
         return await withCheckedContinuation { continuation in
             scanCompletion = { devices in
@@ -203,51 +261,70 @@ public final class BLEService: NSObject {
                 options: [CBCentralManagerScanOptionAllowDuplicatesKey: false]
             )
 
-            // 超时后停止扫描
+            // 超时后结束扫描（finishScan 幂等）。仅当仍是本轮扫描时才结束，
+            // 避免上一轮已提前结束的超时任务误停下一轮扫描。
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(timeout))
-                self.stopScanning()
+                guard self.scanGeneration == generation else { return }
+                self.finishScan()
             }
         }
     }
 
-    /// 停止扫描
+    /// 停止扫描（公共 API：UI 在用户点击连接前调用）。
     public func stopScanning() {
-        centralManager?.stopScan()
+        finishScan()
+    }
 
+    /// 结束当前扫描：停止 CoreBluetooth 扫描、把状态拨回空闲、并 resolve 唯一的扫描 continuation。
+    /// 幂等——`scanCompletion` 取出后立即置 nil，重复调用不会二次 resume，也不会卡住 `.scanning`。
+    private func finishScan() {
+        centralManager?.stopScan()
         if connectionState == .scanning {
             connectionState = .disconnected
         }
-
-        scanCompletion?(discoveredDevices)
+        let completion = scanCompletion
         scanCompletion = nil
+        completion?(discoveredDevices)
     }
 
     // MARK: - Connection
 
-    /// 连接到指定设备
+    /// 连接到指定设备（UI 选择设备后调用）。
     public func connect(to device: BLEDevice) async throws {
         let manager = try await poweredOnCentralManager(timeout: 2)
-
-        if requiresSecureChannel {
-            if await deviceIdentityStore.isBlocked(device.id) {
-                throw BLEError.unauthorizedDevice
-            }
-
-            if await deviceIdentityStore.hasTrustedDevices(),
-               !(await deviceIdentityStore.isTrusted(device.id)) {
-                throw BLEError.unauthorizedDevice
-            }
-        }
-
         guard let peripheral = peripheralCache[device.id] else {
             throw BLEError.deviceNotFound
         }
+        try await connectKnownPeripheral(peripheral, manager: manager)
+    }
 
+    /// 连接一个已知的 CBPeripheral（来自缓存 / retrievePeripherals / retrieveConnectedPeripherals）。
+    /// 带连接超时，用于 UI 与 sync 的主动连接路径。
+    private func connectKnownPeripheral(_ peripheral: CBPeripheral, manager: CBCentralManager) async throws {
+        // 互斥：以 connectionState 为真相源，已在连接 / 已连接则拒绝，避免并发覆盖 connectCompletion。
+        guard BLEConnectionPolicy.canBeginConnect(state: connectionState) else {
+            throw BLEError.connectionInProgress
+        }
+        // 同步占位（@MainActor 串行保证原子）。新连接周期开始，清除主动断开标记。
         connectionState = .connecting
+        isIntentionalDisconnect = false
+        connectGeneration &+= 1
+        let generation = connectGeneration
+
+        if requiresSecureChannel {
+            do {
+                try await ensurePeripheralTrusted(peripheral.identifier)
+            } catch {
+                if connectionState == .connecting { connectionState = .disconnected }
+                throw error
+            }
+        }
+
         securityManager.resetSession()
         pendingConnectedPeripheralID = nil
         pendingConnectedPeripheralName = nil
+        connectedPeripheral = peripheral
 
         try await withCheckedThrowingContinuation { continuation in
             connectCompletion = { result in
@@ -263,31 +340,46 @@ public final class BLEService: NSObject {
 
             // 连接超时
             Task { @MainActor in
-                try? await Task.sleep(for: .seconds(15))
+                try? await Task.sleep(for: Timing.connectTimeout)
+                guard self.connectGeneration == generation else { return }
                 if self.connectionState == .connecting {
                     self.connectCompletion?(.failure(.connectionTimeout))
                     self.connectCompletion = nil
+                    // 主动取消 pending 连接：打标记，避免 didDisconnect 回调误判为意外断开而重连。
+                    self.isIntentionalDisconnect = true
                     manager.cancelPeripheralConnection(peripheral)
+                    self.connectedPeripheral = nil
                     self.connectionState = .disconnected
                 }
             }
         }
     }
 
-    /// 断开当前连接
+    /// 安全模式下校验外设是否可信。
+    private func ensurePeripheralTrusted(_ id: UUID) async throws {
+        if await deviceIdentityStore.isBlocked(id) {
+            throw BLEError.unauthorizedDevice
+        }
+        if await deviceIdentityStore.hasTrustedDevices(),
+           !(await deviceIdentityStore.isTrusted(id)) {
+            throw BLEError.unauthorizedDevice
+        }
+    }
+
+    /// 断开当前连接 / 取消在途的 pending 连接。
+    /// 标记为主动断开，使 didDisconnect 回调不触发自动重连。
     public func disconnect() {
-        guard let peripheral = connectedPeripheral else { return }
-        centralManager?.cancelPeripheralConnection(peripheral)
+        isIntentionalDisconnect = true
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        if let peripheral = connectedPeripheral {
+            centralManager?.cancelPeripheralConnection(peripheral)
+        }
         cleanup()
     }
 
     public func clearTrustedDevices() async {
-        if connectionState.isConnected {
-            disconnect()
-        } else {
-            cleanup()
-        }
-
+        disconnect()
         await deviceIdentityStore.clearDeviceIdentities()
         lastConnectedDeviceID = nil
         discoveredDevices = []
@@ -295,29 +387,95 @@ public final class BLEService: NSObject {
         packetAssembler = BLEPacketAssembler()
     }
 
-    /// 扫描并连接上次连接的设备，若不可用则连接第一个设备
+    /// 尝试连接一个已知外设。成功返回 true；连接超时 / 失败返回 false（允许调用方继续兜底）；
+    /// 安全拒绝（unauthorizedDevice）或并发冲突（connectionInProgress）等致命错误向上抛出，
+    /// 不应被兜底掩盖。
+    private func tryConnectKnown(_ peripheral: CBPeripheral, manager: CBCentralManager) async throws -> Bool {
+        do {
+            try await connectKnownPeripheral(peripheral, manager: manager)
+            return true
+        } catch BLEError.unauthorizedDevice {
+            throw BLEError.unauthorizedDevice
+        } catch BLEError.connectionInProgress {
+            throw BLEError.connectionInProgress
+        } catch {
+            return false
+        }
+    }
+
+    /// 连接上次连接的设备。优先用已知 identifier 直连（Apple 推荐，避免扫描），
+    /// 再尝试系统已连接设备，最后才回退扫描。任一直连的非致命失败都会继续后续兜底，
+    /// 避免旧 UUID 直连超时后直接放弃，让"找不到设备"更脆弱。
     public func connectToPreferredDevice(timeout: TimeInterval = 10) async throws {
+        let manager = try await poweredOnCentralManager(timeout: 3)
+
+        // 1. 已知设备 identifier：retrievePeripherals 直接取回并连接，跳过扫描。
+        if let knownID = lastConnectedDeviceID,
+           let peripheral = manager.retrievePeripherals(withIdentifiers: [knownID]).first {
+            peripheralCache[peripheral.identifier] = peripheral
+            if try await tryConnectKnown(peripheral, manager: manager) { return }
+        }
+
+        // 2. 系统当前已连接的同服务设备。
+        if let peripheral = manager.retrieveConnectedPeripherals(
+            withServices: [KiroleBLEUUIDs.serviceUUID]
+        ).first {
+            peripheralCache[peripheral.identifier] = peripheral
+            if try await tryConnectKnown(peripheral, manager: manager) { return }
+        }
+
+        // 3. 兜底：扫描发现后连接。
         let devices = try await scanForDevices(timeout: timeout)
         guard !devices.isEmpty else {
             throw BLEError.deviceNotFound
         }
-
         let device = devices.first(where: { $0.id == lastConnectedDeviceID }) ?? devices.first
         if let device {
             try await connect(to: device)
         }
     }
 
-    /// 尝试自动重连，返回是否成功
+    /// 意外断开后的后台自动重连：用 CoreBluetooth 的 pending connection（不超时）等待设备
+    /// 回到范围后自动重连，仅使用 retrievePeripherals（不扫描），从根上避免扫描风暴与卡死。
+    /// 返回是否成功发起了重连尝试。
+    @discardableResult
     public func attemptAutoReconnect() async -> Bool {
-        guard autoReconnect else { return false }
+        guard autoReconnectEffective else { return false }
+        return await beginPendingReconnect()
+    }
 
-        do {
-            try await connectToPreferredDevice(timeout: 5)
-            return true
-        } catch {
+    private func beginPendingReconnect() async -> Bool {
+        guard BLEConnectionPolicy.canBeginConnect(state: connectionState) else { return false }
+        guard let manager = try? await poweredOnCentralManager(timeout: 3) else { return false }
+        guard let knownID = lastConnectedDeviceID,
+              let peripheral = manager.retrievePeripherals(withIdentifiers: [knownID]).first else {
             return false
         }
+        // await 期间状态可能已变，重新确认仍可发起。
+        guard BLEConnectionPolicy.canBeginConnect(state: connectionState) else { return false }
+
+        if requiresSecureChannel {
+            guard (try? await ensurePeripheralTrusted(peripheral.identifier)) != nil,
+                  BLEConnectionPolicy.canBeginConnect(state: connectionState) else {
+                return false
+            }
+        }
+
+        // await 期间用户可能主动断开（disconnect 会置位 isIntentionalDisconnect 并取消 reconnectTask）：
+        // 真正发起连接前再确认一次，避免主动断开后仍发起 pending 重连。
+        guard !isIntentionalDisconnect, !Task.isCancelled else { return false }
+
+        connectionState = .connecting
+        isIntentionalDisconnect = false
+        connectGeneration &+= 1
+        securityManager.resetSession()
+        pendingConnectedPeripheralID = nil
+        pendingConnectedPeripheralName = nil
+        connectedPeripheral = peripheral
+
+        // pending connection：不设超时、不 await。设备进入范围后 didConnect 自动推进握手链路。
+        manager.connect(peripheral, options: nil)
+        return true
     }
 
     private func poweredOnCentralManager(timeout: TimeInterval) async throws -> CBCentralManager {
@@ -580,6 +738,10 @@ public final class BLEService: NSObject {
         peripheral: CBPeripheral,
         characteristic: CBCharacteristic
     ) async throws {
+        if AppBuildEnvironment.showsHardwareDebugTools {
+            let typeText = packet.first.map { String(format: "%02X", $0) } ?? "??"
+            Self.bleLogger.notice("BLE TX type=0x\(typeText, privacy: .public) len=\(packet.count, privacy: .public)")
+        }
         try await writeGate.acquire()
 
         do {
@@ -742,7 +904,7 @@ extension BLEService: CBCentralManagerDelegate {
         Task { @MainActor in
             switch central.state {
             case .poweredOn:
-                if autoReconnect, connectionState == .disconnected {
+                if autoReconnectEffective, connectionState == .disconnected {
                     _ = await attemptAutoReconnect()
                 }
             case .poweredOff:
@@ -822,9 +984,21 @@ extension BLEService: CBCentralManagerDelegate {
             // 设备断开时结束活跃的专注会话
             FocusSessionService.shared.handleDeviceDisconnected()
 
+            // 在 cleanup 之前捕获断开意图（cleanup 不重置该标记）。
+            let wasIntentional = isIntentionalDisconnect
             cleanup()
-            if autoReconnect {
-                _ = await attemptAutoReconnect()
+
+            guard BLEConnectionPolicy.shouldAutoReconnect(
+                isIntentional: wasIntentional,
+                autoReconnectEnabled: autoReconnectEffective
+            ) else { return }
+
+            // Apple 警告：不要在 didDisconnect 回调里立刻 connect（会卡 bad state），延迟后再发起。
+            reconnectTask?.cancel()
+            reconnectTask = Task { @MainActor in
+                try? await Task.sleep(for: Timing.reconnectDelay)
+                guard !Task.isCancelled else { return }
+                await attemptAutoReconnect()
             }
         }
     }
@@ -921,7 +1095,20 @@ extension BLEService: CBPeripheralDelegate {
         let data = characteristic.value
 
         Task { @MainActor in
-            guard error == nil, let receivedData = data else { return }
+            // notify 层错误（ATT error / 加密失败 / 断连时 pending value 清空）原先被静默丢弃，
+            // 硬件团队看来像 App 完全没收到。拆分 guard 单独上报，区分链路层错误与解析失败。
+            if let error {
+                ErrorReporter.log(
+                    .sync(component: "BLE Notify", underlying: error.localizedDescription),
+                    context: "BLEService.didUpdateValueFor"
+                )
+                return
+            }
+            guard let receivedData = data else { return }
+            if AppBuildEnvironment.showsHardwareDebugTools {
+                let firstByteText = receivedData.first.map { String(format: "%02X", $0) } ?? "??"
+                Self.bleLogger.notice("BLE RX len=\(receivedData.count, privacy: .public) firstByte=0x\(firstByteText, privacy: .public)")
+            }
             do {
                 guard let message = try decodeReceivedMessage(receivedData) else { return }
 
@@ -967,6 +1154,8 @@ public enum BLEError: LocalizedError, Sendable {
     case securityHandshakeFailed(String)
     case disconnected
     case writeTimeout
+    case scanAlreadyInProgress
+    case connectionInProgress
 
     public var errorDescription: String? {
         switch self {
@@ -994,6 +1183,10 @@ public enum BLEError: LocalizedError, Sendable {
             return "Device disconnected"
         case .writeTimeout:
             return "BLE write timed out"
+        case .scanAlreadyInProgress:
+            return "A BLE scan is already in progress"
+        case .connectionInProgress:
+            return "A BLE connection is already in progress"
         }
     }
 }

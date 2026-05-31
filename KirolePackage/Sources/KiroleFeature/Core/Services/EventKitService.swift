@@ -75,6 +75,8 @@ public actor EventKitService {
             } else {
                 safeEventId = UUID().uuidString
             }
+            let videoURL = VideoMeetingURLDetector.detect(description: event.notes, location: event.location)
+                ?? event.url.flatMap { VideoMeetingURLDetector.isVideoMeetingURL($0) ? $0 : nil }
             return CalendarEvent(
                 id: safeEventId,
                 appleEventId: eventIdentifier.isEmpty ? nil : eventIdentifier,
@@ -90,7 +92,8 @@ public actor EventKitService {
                 description: event.notes,
                 location: event.location,
                 isAllDay: event.isAllDay,
-                lastModified: event.lastModifiedDate ?? Date()
+                lastModified: event.lastModifiedDate ?? Date(),
+                videoMeetingURL: videoURL
             )
         }
     }

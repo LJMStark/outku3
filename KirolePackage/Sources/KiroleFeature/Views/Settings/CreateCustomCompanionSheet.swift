@@ -6,10 +6,11 @@ import UIKit
 
 // MARK: - Create Custom Companion Sheet
 
-/// 3-step flow to create a user-uploaded companion (Inku-style):
+/// 4-step flow to create a user-uploaded companion (Kindroid-inspired):
 /// Step 1 — pick + quantize a photo.
 /// Step 2 — name + pick relationship.
-/// Step 3 — pick persona voice + Roast Mode toggle.
+/// Step 3 — pick persona voice.
+/// Step 4 — persona dimensions (sliders + backstory + sensitive boundary).
 /// Confirm persists to AppState and switches the active companion.
 public struct CreateCustomCompanionSheet: View {
 
@@ -24,7 +25,11 @@ public struct CreateCustomCompanionSheet: View {
     @State private var name: String = ""
     @State private var relationship: CompanionRelationship = .pet
     @State private var personaVoice: CompanionPersonaVoice = .companion
-    @State private var roastMode: Bool = false
+    @State private var curiosityLevel: Double = 0.5
+    @State private var humorLevel: Double = 0.5
+    @State private var strictnessLevel: Double = 0.3
+    @State private var backstory: String = ""
+    @State private var sensitiveBoundary: String = ""
     @State private var isSaving = false
     @State private var saveError: String?
 
@@ -88,6 +93,8 @@ public struct CreateCustomCompanionSheet: View {
                     identityStep
                 case .voice:
                     voiceStep
+                case .personality:
+                    personalityStep
                 }
             }
             .padding(.horizontal, 24)
@@ -264,31 +271,107 @@ public struct CreateCustomCompanionSheet: View {
                 }
             }
 
-            Toggle(isOn: $roastMode) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Roast Mode")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(theme.colors.primaryText)
-                    Text("Lovingly call out your bad habits.")
-                        .font(.system(size: 12))
-                        .foregroundStyle(theme.colors.secondaryText)
-                }
-            }
-            .tint(theme.colors.accent)
-            .padding(14)
-            .background(
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(Color(hex: "F3F4F6"))
-            )
-            .padding(.top, 4)
-            .accessibilityIdentifier("CreateCompanion_RoastToggle")
-
             if let saveError {
                 Text(saveError)
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(Color.red)
                     .padding(.top, 4)
                     .accessibilityIdentifier("CreateCompanion_SaveError")
+            }
+        }
+    }
+
+    // MARK: - Step 4: Personality
+
+    @ViewBuilder
+    private var personalityStep: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Text("Shape how they think and talk. All optional — defaults work great.")
+                .font(.system(size: 13))
+                .foregroundStyle(theme.colors.secondaryText)
+
+            personalitySlider(
+                label: "Curiosity",
+                value: $curiosityLevel,
+                lowLabel: "Quiet observer",
+                highLabel: "Always wondering",
+                identifier: "CreateCompanion_Curiosity"
+            )
+            personalitySlider(
+                label: "Humor",
+                value: $humorLevel,
+                lowLabel: "Earnest",
+                highLabel: "Playfully witty",
+                identifier: "CreateCompanion_Humor"
+            )
+            personalitySlider(
+                label: "Accountability",
+                value: $strictnessLevel,
+                lowLabel: "Gentle",
+                highLabel: "Firm standards",
+                identifier: "CreateCompanion_Strictness"
+            )
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Backstory")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(theme.colors.primaryText)
+                Text("Who are they? What makes them unique? (optional)")
+                    .font(.system(size: 12))
+                    .foregroundStyle(theme.colors.secondaryText)
+                TextEditor(text: $backstory)
+                    .font(.system(size: 14))
+                    .frame(minHeight: 80, maxHeight: 120)
+                    .padding(10)
+                    .background(Color(hex: "F3F4F6"))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .accessibilityIdentifier("CreateCompanion_Backstory")
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Topic Boundary")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(theme.colors.primaryText)
+                Text("e.g. \"Tease my procrastination, but skip work stress\" (optional)")
+                    .font(.system(size: 12))
+                    .foregroundStyle(theme.colors.secondaryText)
+                TextField("Your preference here…", text: $sensitiveBoundary, axis: .vertical)
+                    .font(.system(size: 14))
+                    .lineLimit(3)
+                    .padding(12)
+                    .background(Color(hex: "F3F4F6"))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .accessibilityIdentifier("CreateCompanion_SensitiveBoundary")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func personalitySlider(
+        label: String,
+        value: Binding<Double>,
+        lowLabel: String,
+        highLabel: String,
+        identifier: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(label)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(theme.colors.primaryText)
+                Spacer()
+            }
+            Slider(value: value, in: 0...1)
+                .tint(theme.colors.accent)
+                .accessibilityIdentifier(identifier)
+            HStack {
+                Text(lowLabel)
+                    .font(.system(size: 11))
+                    .foregroundStyle(theme.colors.secondaryText)
+                Spacer()
+                Text(highLabel)
+                    .font(.system(size: 11))
+                    .foregroundStyle(theme.colors.secondaryText)
             }
         }
     }
@@ -315,7 +398,7 @@ public struct CreateCustomCompanionSheet: View {
                     if isSaving {
                         ProgressView().tint(.white)
                     } else {
-                        Text(step == .voice ? "Create" : "Next")
+                        Text(step == .personality ? "Create" : "Next")
                             .font(.system(size: 16, weight: .semibold))
                     }
                 }
@@ -343,6 +426,7 @@ public struct CreateCustomCompanionSheet: View {
         case .upload: return "Pick a Photo"
         case .identity: return "Who Is This?"
         case .voice: return "How Do They Speak?"
+        case .personality: return "Shape Their Personality"
         }
     }
 
@@ -351,7 +435,7 @@ public struct CreateCustomCompanionSheet: View {
         case .upload: return processResult != nil
         case .identity:
             return !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        case .voice: return true
+        case .voice, .personality: return true
         }
     }
 
@@ -363,6 +447,8 @@ public struct CreateCustomCompanionSheet: View {
             step = .upload
         case .voice:
             step = .identity
+        case .personality:
+            step = .voice
         }
     }
 
@@ -374,6 +460,8 @@ public struct CreateCustomCompanionSheet: View {
         case .identity:
             step = .voice
         case .voice:
+            step = .personality
+        case .personality:
             createAndDismiss()
         }
     }
@@ -393,7 +481,11 @@ public struct CreateCustomCompanionSheet: View {
                     name: trimmedName,
                     relationship: relationship,
                     personaVoice: personaVoice,
-                    roastModeEnabled: roastMode,
+                    curiosityLevel: curiosityLevel,
+                    humorLevel: humorLevel,
+                    strictnessLevel: strictnessLevel,
+                    backstory: backstory,
+                    sensitiveBoundary: sensitiveBoundary,
                     previewData: result.previewData,
                     pixelData: pixelData
                 )
@@ -442,5 +534,6 @@ private extension CreateCustomCompanionSheet {
         case upload = 0
         case identity = 1
         case voice = 2
+        case personality = 3
     }
 }

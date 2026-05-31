@@ -93,7 +93,8 @@ public final class PromptDebuggerState {
             episodicMemories: c.episodicMemories,
             dimensionalEmotion: c.dimensionalEmotion,
             psychologicalObjective: c.psychologicalObjective,
-            userDefinedLearnText: newLearnText
+            userDefinedLearnText: newLearnText,
+            customCompanion: c.customCompanion
         )
         
         let formatter = DateFormatter()

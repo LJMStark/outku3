@@ -24,6 +24,7 @@ public actor LocalStorage {
         static let energyBottles = "energyBottles"
         static let lastCelebratedUnlockCount = "lastCelebratedUnlockCount"
         static let lastHomeHaikuShownDate = "lastHomeHaikuShownDate"
+        static let pendingCustomCompanionPushId = "pendingCustomCompanionPushId"
     }
 
     private enum Files {
@@ -594,6 +595,23 @@ public actor LocalStorage {
     public func deleteCustomCompanionAssets(id: UUID) throws {
         try deleteFile(named: Self.customCompanionPreviewFileName(for: id))
         try deleteFile(named: Self.customCompanionPixelsFileName(for: id))
+    }
+
+    // MARK: - Pending Custom Companion BLE Push
+
+    /// Saves the companion ID whose avatar pixel frame failed to reach the hardware.
+    /// Cleared automatically when the push succeeds on the next BLE connection.
+    public func savePendingCustomCompanionPush(id: UUID) {
+        userDefaults.set(id.uuidString, forKey: Keys.pendingCustomCompanionPushId)
+    }
+
+    public func loadPendingCustomCompanionPush() -> UUID? {
+        guard let uuidString = userDefaults.string(forKey: Keys.pendingCustomCompanionPushId) else { return nil }
+        return UUID(uuidString: uuidString)
+    }
+
+    public func clearPendingCustomCompanionPush() {
+        userDefaults.removeObject(forKey: Keys.pendingCustomCompanionPushId)
     }
 
     // MARK: - Clear All

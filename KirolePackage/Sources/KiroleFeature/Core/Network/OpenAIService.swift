@@ -288,21 +288,57 @@ public actor OpenAIService {
     }
 
     /// Persona prompt fragment for a user-created companion.
-    /// Built from structured fields only — `name` is the lone user-typed string and is
-    /// passed through PromptSanitizer.userContent so `</user_content>` style tricks are
-    /// neutralized before they reach the model.
+    /// Built from structured fields only — `name`, `backstory`, and `sensitiveBoundary` are
+    /// user-typed strings and are passed through PromptSanitizer.userContent so injection tricks
+    /// are neutralized before they reach the model.
     static func customCompanionPersonaPrompt(_ companion: CustomCompanion) -> String {
         let safeName = PromptSanitizer.userContent(companion.name, maxLen: 30)
-        let roastClause = companion.roastModeEnabled
-            ? "Roast Mode is on: you may lovingly call out the user's bad habits, but every jab lands with affection."
-            : "Be warm and supportive — never sarcastic in a way that stings."
+
+        let curiosityDesc = levelDescription(companion.curiosityLevel,
+            low: "rarely asks questions; mostly observes",
+            mid: "occasionally curious; asks when it feels natural",
+            high: "deeply curious; frequently wonders aloud and asks questions")
+        let humorDesc = levelDescription(companion.humorLevel,
+            low: "earnest and sincere; avoids jokes",
+            mid: "light touch of wit when it lands naturally",
+            high: "playfully witty; levity is a core part of the voice")
+        let strictnessDesc = levelDescription(companion.strictnessLevel,
+            low: "gentle and non-judgmental; never pushes",
+            mid: "supportive accountability; nudges without pressure",
+            high: "firm standards; will name inconsistencies directly")
+
+        let backstoryClause = companion.backstory.isEmpty ? "" :
+            "Backstory: \(PromptSanitizer.userContent(companion.backstory, maxLen: 200))\n"
+
+        let boundaryClause: String
+        if !companion.sensitiveBoundary.isEmpty {
+            let safeBoundary = PromptSanitizer.userContent(companion.sensitiveBoundary, maxLen: 120)
+            boundaryClause = "Topic boundary set by user: \(safeBoundary)"
+        } else {
+            boundaryClause = "Be warm and supportive — never sarcastic in a way that stings."
+        }
+
         return """
             Physical Form: A small pixel-art companion modeled after a photo the user uploaded.
             Base Persona: \(safeName), the user's \(companion.relationship.rawValue.lowercased()).
             \(companion.relationship.promptDescription)
             \(companion.personaVoice.promptDescription)
-            \(roastClause)
+            Curiosity: \(curiosityDesc)
+            Humor: \(humorDesc)
+            Accountability: \(strictnessDesc)
+            \(backstoryClause)\(boundaryClause)
             """
+    }
+
+    private static func levelDescription(
+        _ value: Double,
+        low: String, mid: String, high: String
+    ) -> String {
+        switch value {
+        case ..<0.35: return low
+        case 0.35..<0.65: return mid
+        default: return high
+        }
     }
 
     private func buildCompanionSystemPrompt(context: AIContext) async -> String {

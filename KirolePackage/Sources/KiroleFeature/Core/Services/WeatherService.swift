@@ -47,10 +47,15 @@ public final class WeatherService: NSObject {
             let current = appleWeather.currentWeather
             let dailyForecast = appleWeather.dailyForecast.first
 
+            // BLE protocol (docs/BLE通信协议规格文档.md §4.5) defines Weather temperature
+            // as a signed int8 in *Celsius*. The App is the source of truth for that byte,
+            // so store Celsius — sending Fahrenheit made the firmware misread the value
+            // (e.g. 22°C shipped as 72 and rendered as 72°C). Also matches the home header's
+            // bare "°" display for the China-first audience.
             let weather = Weather(
-                temperature: Int(current.temperature.converted(to: .fahrenheit).value),
-                highTemp: dailyForecast.map { Int($0.highTemperature.converted(to: .fahrenheit).value) } ?? 0,
-                lowTemp: dailyForecast.map { Int($0.lowTemperature.converted(to: .fahrenheit).value) } ?? 0,
+                temperature: Int(current.temperature.converted(to: .celsius).value),
+                highTemp: dailyForecast.map { Int($0.highTemperature.converted(to: .celsius).value) } ?? 0,
+                lowTemp: dailyForecast.map { Int($0.lowTemperature.converted(to: .celsius).value) } ?? 0,
                 condition: mapCondition(current.condition),
                 location: await reverseGeocode(location),
                 hasData: true

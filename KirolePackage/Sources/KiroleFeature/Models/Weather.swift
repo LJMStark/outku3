@@ -12,8 +12,8 @@ public struct Weather: Sendable, Codable {
 
     public init(
         temperature: Int = 22,
-        highTemp: Int = 85,
-        lowTemp: Int = 64,
+        highTemp: Int = 26,
+        lowTemp: Int = 18,
         condition: WeatherCondition = .sunny,
         location: String = "San Francisco",
         hasData: Bool = false
@@ -33,8 +33,8 @@ public struct Weather: Sendable, Codable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.temperature = try c.decodeIfPresent(Int.self, forKey: .temperature) ?? 22
-        self.highTemp = try c.decodeIfPresent(Int.self, forKey: .highTemp) ?? 85
-        self.lowTemp = try c.decodeIfPresent(Int.self, forKey: .lowTemp) ?? 64
+        self.highTemp = try c.decodeIfPresent(Int.self, forKey: .highTemp) ?? 26
+        self.lowTemp = try c.decodeIfPresent(Int.self, forKey: .lowTemp) ?? 18
         self.condition = try c.decodeIfPresent(WeatherCondition.self, forKey: .condition) ?? .sunny
         self.location = try c.decodeIfPresent(String.self, forKey: .location) ?? "San Francisco"
         self.hasData = try c.decodeIfPresent(Bool.self, forKey: .hasData) ?? false

@@ -136,5 +136,25 @@ def distribute_to_external_groups(app, build)
     build_id:       build.id,
     beta_group_ids: external.map(&:id)
   )
-  UI.message("✓ Distribution submitted (external review starts if needed)")
+  UI.message("✓ Added to external groups")
+
+  # Submit for Beta App Review — REQUIRED for external testers (incl. the public
+  # link) to actually receive the build. Without it the build stays NO_SUBMISSION
+  # / "Ready to Submit" and the public link keeps serving the last APPROVED build
+  # (this is exactly why testers were stuck on 543). A build of an
+  # already-approved version string is auto-approved immediately.
+  submit_for_beta_review(client, build)
+end
+
+def submit_for_beta_review(client, build)
+  existing = client.get_beta_app_review_submissions(filter: { build: build.id })
+                   .all_pages.flat_map(&:to_models)
+  unless existing.empty?
+    UI.message("Beta review already exists: #{existing.map(&:beta_review_state).join(', ')}")
+    return
+  end
+  client.post_beta_app_review_submissions(build_id: build.id)
+  UI.success("✓ Submitted for external Beta App Review")
+rescue => e
+  UI.important("⚠ Beta review submission failed — submit manually in ASC: #{e.message}")
 end

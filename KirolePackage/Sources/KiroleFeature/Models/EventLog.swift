@@ -117,10 +117,15 @@ public enum EventLogType: String, Codable, Sendable {
 // MARK: - Battery Level
 
 public extension EventLog {
-    /// Battery level for LowBattery events (0-100)
+    /// Battery level for LowBattery / DeviceWake events (0-100).
+    /// DeviceWake carries battery as its first payload byte since v2.3.0.
     var batteryLevel: Int? {
-        guard eventType == .lowBattery else { return nil }
-        return value
+        switch eventType {
+        case .lowBattery, .deviceWake:
+            return value
+        default:
+            return nil
+        }
     }
 }
 
@@ -144,6 +149,11 @@ public extension EventLog {
 
         case .reminderAcknowledged, .reminderDismissed:
             return parseTimestampOnlyEvent(eventType: eventType, payload: payload)
+
+        case .deviceWake:
+            // v2.3.0+: first payload byte is battery level (0-100). Older/empty payloads → 0.
+            let level = payload.isEmpty ? 0 : min(Int(payload[0]), 100)
+            return EventLog(eventType: eventType, value: level)
 
         default:
             return EventLog(eventType: eventType)

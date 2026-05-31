@@ -115,6 +115,22 @@ public struct SettingsIntegrationSection: View {
                 .disabled(isDisconnecting)
                 .opacity(isDisconnecting ? 0.6 : 1.0)
             }
+
+            if !appState.remoteSyncErrors.isEmpty {
+                let providerList = appState.remoteSyncErrors.keys.sorted().joined(separator: ", ")
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.red)
+                    Text(providerList + " sync failed")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.red)
+                }
+                .padding(.horizontal, 4)
+                .padding(.top, 4)
+                .accessibilityLabel("Sync error: \(providerList) sync failed")
+                .accessibilityIdentifier("settings.syncErrorIndicator")
+            }
         }
     }
 

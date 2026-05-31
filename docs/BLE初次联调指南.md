@@ -1,7 +1,7 @@
 # Kirole BLE 初次联调指南
 
-**版本:** v0.1.0
-**更新日期:** 2026-05-08
+**版本:** v0.1.1
+**更新日期:** 2026-05-30
 **状态:** 第一次硬件联调用
 
 ---
@@ -175,6 +175,10 @@ CRC 使用 CRC16-CCITT-FALSE：
 ### App 连接后没有数据
 
 检查固件是否提供了正确的 Write / Notify characteristic，并确认 Notify 已开启。
+
+### 想确认 App 到底收发了哪些帧
+
+DEBUG 包与 TestFlight 包可用 Console.app（或 `log stream`）过滤 `subsystem:com.kirole.app category:BLE` 查看 App 的 BLE 收发帧摘要：TX 记录 `type/len`，RX 记录 `len/firstByte`。可据此判断「固件发出的帧 App 有没有收到」「App 写出的帧类型 / 长度对不对」。正式 App Store 包关闭此日志，且不记录完整 payload。
 
 ### 收到 `0x14` 不知道怎么解释
 

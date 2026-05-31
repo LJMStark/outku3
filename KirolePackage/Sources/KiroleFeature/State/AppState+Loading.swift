@@ -71,6 +71,8 @@ extension AppState {
             reportPersistenceError(error, operation: "load", target: "custom_companions.json")
         }
 
+        isCustomAvatarPendingBLEPush = await localStorage.loadPendingCustomCompanionPush() != nil
+
         // focusEnforcementMode is loaded by FocusSessionService.loadFocusEnforcementMode() on its init.
         await ScreenTimeFocusGuardService.shared.refreshAuthorizationStatus()
 

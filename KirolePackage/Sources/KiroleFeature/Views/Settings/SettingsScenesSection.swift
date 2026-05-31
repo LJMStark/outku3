@@ -93,7 +93,8 @@ public struct SettingsScenesSection: View {
                 SimulatorBridge.shared.connect()
             }
             SimulatorBridge.shared.sendPetStatus(
-                petName: appState.userProfile.companionCharacter.displayName,
+                petName: appState.activeCustomCompanion?.name
+                    ?? appState.userProfile.companionCharacter.displayName,
                 petMood: appState.pet.mood.rawValue,
                 sceneId: scene.rawValue,
                 characterId: appState.userProfile.companionCharacter.rawValue

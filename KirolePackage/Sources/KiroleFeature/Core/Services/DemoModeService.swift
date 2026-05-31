@@ -19,12 +19,12 @@ public final class DemoModeService {
             weather: WeatherInfo(from: weather),
             deviceMode: .interactive,
             focusChallengeEnabled: false,
-            morningGreeting: "Good morning! Ready for a great day?",
-            dailySummary: "3 tasks, 2 events today.",
-            firstItem: "09:00 - Team standup",
-            currentScheduleSummary: "2 events remaining",
+            petDialogue: "You've got this!",
+            events: [
+                EventSummary(time: "09:00", title: "Team standup", description: "Daily sync with the team."),
+                EventSummary(time: "14:00", title: "Product review", description: "Walk through the latest build."),
+            ],
             topTasks: tasks.filter { !$0.isCompleted }.map { TaskSummary(from: $0) },
-            companionPhrase: "You've got this!",
             settlementData: SettlementData(
                 tasksCompleted: 1, tasksTotal: 4, pointsEarned: 10,
                 petMood: "Happy", summaryMessage: "Good start today!", encouragementMessage: "Keep up the momentum!"

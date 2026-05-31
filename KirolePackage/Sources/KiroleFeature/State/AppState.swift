@@ -81,10 +81,23 @@ public final class AppState {
     /// 最近一次的"场景解锁庆祝"信号；HomeView onChange 时炸 confetti + 展示横幅，
     /// ~3s 后由 UI 层置回 nil。nil = 当前没有待展示的庆祝。
     public var pendingSceneCelebration: SceneCelebration?
+    /// True while the focus-settlement sheet is on screen. The sheet shows its own
+    /// "New Scene Unlocked!" highlight, so the top SceneUnlockBanner is suppressed
+    /// during that window to avoid two competing unlock notices.
+    public var isFocusSettlementPresented: Bool = false
 
     // Loading State
     public var isLoading: Bool = false
     public var lastError: String?
+    /// Remote sync error per provider ("Google", "Notion", "Taskade", "Apple Calendar", "Apple Reminders").
+    /// Set on failure, cleared on next successful sync for that provider.
+    public var remoteSyncErrors: [String: String] = [:]
+    /// True when the active custom companion's pixel frame failed to reach the hardware
+    /// and is queued for re-delivery on the next BLE reconnect.
+    public var isCustomAvatarPendingBLEPush: Bool = false
+    /// Set when the device timezone changes at runtime. UI shows a banner asking the user
+    /// whether to re-sync events. Cleared on user action (adjust or keep).
+    public var pendingTimezoneChangeName: String? = nil
     /// Tracks which sync sources are currently in-flight to prevent same-source re-entrancy.
     var activeSyncs: Set<ExternalSyncTarget> = []
     public var lastGoogleSyncDebug: String = "Not synced yet"

@@ -1,5 +1,8 @@
 import SwiftUI
 import PhotosUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 @MainActor
 public struct PersonalizationPage: View {
@@ -7,7 +10,8 @@ public struct PersonalizationPage: View {
     @Environment(ThemeManager.self) private var themeManager
 
     @State private var selectedPhoto: PhotosPickerItem?
-    @State private var photoImage: Image?
+    @State private var isProcessing = false
+    @State private var processError: String?
 
     public init(onboardingState: OnboardingState) {
         self.onboardingState = onboardingState
@@ -37,86 +41,22 @@ public struct PersonalizationPage: View {
                             .font(.system(size: 28, weight: .bold, design: .rounded))
                             .foregroundStyle(.white)
 
-                        // Theme picker
-                        VStack(spacing: 16) {
-                            Text("Pick your favorite mood")
-                                .font(.system(size: 16, design: .rounded))
-                                .foregroundStyle(.white.opacity(0.8))
-                            HStack(spacing: 12) {
-                                ForEach(AppTheme.allCases, id: \.self) { theme in
-                                    ThemePreviewCard(
-                                        theme: theme,
-                                        isSelected: themeManager.currentTheme == theme
-                                    ) {
-                                        themeManager.setTheme(theme)
-                                        onboardingState.profile.selectedTheme = theme.rawValue
-                                    }
-                                }
-                            }
-                        }
+                        themePicker
 
-                        // Companion IP selector
-                        VStack(spacing: 16) {
-                            Text("Meet your companion")
-                                .font(.system(size: 16, design: .rounded))
-                                .foregroundStyle(.white.opacity(0.8))
+                        builtInCompanionPicker
 
-                            HStack(spacing: 12) {
-                                ForEach(CompanionCharacter.allCases, id: \.self) { character in
-                                    CompanionCharacterCard(
-                                        character: character,
-                                        isSelected: onboardingState.profile.companionCharacter == character
-                                    ) {
-                                        onboardingState.profile.companionCharacter = character
-                                    }
-                                }
-                            }
-                        }
-
-                        // Custom photo upload
-                        VStack(spacing: 16) {
-                            Text("Or upload your own")
-                                .font(.system(size: 16, design: .rounded))
-                                .foregroundStyle(.white.opacity(0.8))
-
-                            if let photoImage {
-                                photoImage
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fill)
-                                    .frame(width: 80, height: 80)
-                                    .clipShape(Circle())
-                                    .overlay {
-                                        Circle().stroke(.white, lineWidth: 3)
-                                    }
-                            }
-
-                            let hasPhotoImage = photoImage != nil
-                            PhotosPicker(
-                                selection: $selectedPhoto,
-                                matching: .images
-                            ) {
-                                HStack(spacing: 8) {
-                                    Image(systemName: "photo.on.rectangle.angled")
-                                        .font(.system(size: 16))
-                                        .accessibilityHidden(true)
-                                    Text(hasPhotoImage ? "Change Photo" : "Choose Photo")
-                                        .font(.system(size: 14, weight: .medium, design: .rounded))
-                                }
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 20)
-                                .padding(.vertical, 12)
-                                .background(.white.opacity(0.2))
-                                .clipShape(Capsule())
-                            }
-                            .accessibilityLabel(hasPhotoImage ? "更换自定义图片" : "选择自定义图片")
-                            .accessibilityIdentifier("Onboarding_ChoosePhoto")
-                        }
+                        customCompanionSection
                     }
                     .padding(.horizontal, 24)
                     .padding(.top, 16)
+                    .padding(.bottom, 24)
                 }
 
-                OnboardingCTAButton(title: "I'll Make It Mine", emoji: "\u{1F3A8}") {
+                OnboardingCTAButton(
+                    title: "I'll Make It Mine",
+                    emoji: "\u{1F3A8}",
+                    isEnabled: canAdvance
+                ) {
                     onboardingState.goNext()
                 }
                 .padding(.horizontal, 24)
@@ -127,21 +67,365 @@ public struct PersonalizationPage: View {
             if onboardingState.profile.companionCharacter == nil {
                 onboardingState.profile.companionCharacter = .joy
             }
+            if onboardingState.profile.customCompanionRelationship == nil {
+                onboardingState.profile.customCompanionRelationship = .pet
+            }
+            if onboardingState.profile.customCompanionVoice == nil {
+                onboardingState.profile.customCompanionVoice = .companion
+            }
         }
         .onChange(of: selectedPhoto) { _, newValue in
-            guard let newValue else { return }
-            Task {
-                guard let data = try? await newValue.loadTransferable(type: Data.self) else { return }
-                await MainActor.run {
-                    onboardingState.profile.customPhotoData = data
-                    #if canImport(UIKit)
-                    if let uiImage = UIImage(data: data) {
-                        photoImage = Image(uiImage: uiImage)
+            handlePhotoSelection(newValue)
+        }
+    }
+
+    // MARK: - Sections
+
+    @ViewBuilder
+    private var themePicker: some View {
+        VStack(spacing: 16) {
+            Text("Pick your favorite mood")
+                .font(.system(size: 16, design: .rounded))
+                .foregroundStyle(.white.opacity(0.8))
+            HStack(spacing: 12) {
+                ForEach(AppTheme.allCases, id: \.self) { theme in
+                    ThemePreviewCard(
+                        theme: theme,
+                        isSelected: themeManager.currentTheme == theme
+                    ) {
+                        themeManager.setTheme(theme)
+                        onboardingState.profile.selectedTheme = theme.rawValue
                     }
-                    #endif
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private var builtInCompanionPicker: some View {
+        VStack(spacing: 16) {
+            Text("Meet your companion")
+                .font(.system(size: 16, design: .rounded))
+                .foregroundStyle(.white.opacity(0.8))
+
+            HStack(spacing: 12) {
+                ForEach(CompanionCharacter.allCases, id: \.self) { character in
+                    CompanionCharacterCard(
+                        character: character,
+                        isSelected: onboardingState.profile.companionCharacter == character
+                    ) {
+                        onboardingState.profile.companionCharacter = character
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var customCompanionSection: some View {
+        VStack(spacing: 16) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Or upload your own")
+                    .font(.system(size: 16, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.8))
+                Spacer()
+                if onboardingState.profile.customAvatarPreviewData != nil {
+                    Button {
+                        clearCustomCompanion()
+                    } label: {
+                        Text("Clear")
+                            .font(.system(size: 13, weight: .medium, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.7))
+                            .underline()
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("清除自定义伴侣")
+                    .accessibilityIdentifier("Onboarding_ClearCustom")
+                }
+            }
+
+            photoPreviewBlock
+
+            photoPickerButton
+
+            if onboardingState.profile.customAvatarPreviewData != nil {
+                customCompanionForm
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+
+            if let processError {
+                Text(processError)
+                    .font(.system(size: 12, design: .rounded))
+                    .foregroundStyle(Color.red.opacity(0.9))
+                    .accessibilityIdentifier("Onboarding_CustomCompanion_Error")
+            }
+
+            if shouldShowNameHint {
+                // Without this hint, users who uploaded a photo + picked
+                // relationship/voice but forgot to type a name would silently
+                // lose their custom companion: completeOnboarding's
+                // hasCustomCompanionDraft check requires a non-empty name, so
+                // the whole upload would just be discarded with no UI feedback.
+                Text("Give your companion a name to save them.")
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.9))
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+                    .accessibilityIdentifier("Onboarding_CustomCompanion_NameHint")
+            }
+        }
+        .animation(.kiroleSnappy, value: onboardingState.profile.customAvatarPreviewData != nil)
+        .padding(.top, 8)
+    }
+
+    // MARK: - Advance gating
+
+    private var hasCustomPhoto: Bool {
+        onboardingState.profile.customAvatarPreviewData != nil
+    }
+
+    private var hasCustomName: Bool {
+        let trimmed = (onboardingState.profile.customCompanionName ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return !trimmed.isEmpty
+    }
+
+    /// Users on the built-in 3-IP track (no photo) are free to advance.
+    /// Users on the custom-IP track (photo uploaded) must also fill in a name,
+    /// otherwise the upload silently drops on completeOnboarding.
+    private var canAdvance: Bool {
+        !hasCustomPhoto || hasCustomName
+    }
+
+    private var shouldShowNameHint: Bool {
+        hasCustomPhoto && !hasCustomName
+    }
+
+    @ViewBuilder
+    private var photoPreviewBlock: some View {
+        #if canImport(UIKit)
+        if let previewData = onboardingState.profile.customAvatarPreviewData,
+           let uiImage = UIImage(data: previewData) {
+            Image(uiImage: uiImage)
+                .resizable()
+                .interpolation(.none)
+                .aspectRatio(contentMode: .fill)
+                .frame(width: 96, height: 96)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 16).stroke(.white, lineWidth: 3)
+                }
+                .accessibilityLabel("自定义伴侣预览")
+        } else if isProcessing {
+            ZStack {
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(.white.opacity(0.08))
+                    .frame(width: 96, height: 96)
+                ProgressView().tint(.white)
+            }
+            .accessibilityLabel("正在处理图片")
+        }
+        #endif
+    }
+
+    @ViewBuilder
+    private var photoPickerButton: some View {
+        let hasPhoto = onboardingState.profile.customAvatarPreviewData != nil
+        PhotosPicker(
+            selection: $selectedPhoto,
+            matching: .images
+        ) {
+            HStack(spacing: 8) {
+                Image(systemName: "photo.on.rectangle.angled")
+                    .font(.system(size: 16))
+                    .accessibilityHidden(true)
+                Text(hasPhoto ? "Change Photo" : "Choose Photo")
+                    .font(.system(size: 14, weight: .medium, design: .rounded))
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+            .background(.white.opacity(0.2))
+            .clipShape(Capsule())
+        }
+        .disabled(isProcessing)
+        .accessibilityLabel(hasPhoto ? "更换自定义图片" : "选择自定义图片")
+        .accessibilityIdentifier("Onboarding_ChoosePhoto")
+    }
+
+    @ViewBuilder
+    private var customCompanionForm: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            sectionHeader("Name them")
+            TextField(
+                "",
+                text: Binding(
+                    get: { onboardingState.profile.customCompanionName ?? "" },
+                    set: { onboardingState.profile.customCompanionName = $0 }
+                ),
+                prompt: Text("e.g. Mochi").foregroundColor(.white.opacity(0.4))
+            )
+            .textFieldStyle(.plain)
+            .foregroundStyle(.white)
+            .autocorrectionDisabled()
+            .padding(14)
+            .background(.white.opacity(0.12))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .accessibilityLabel("自定义伴侣名字")
+            .accessibilityIdentifier("Onboarding_CustomCompanion_Name")
+
+            sectionHeader("Who are they to you?")
+                .padding(.top, 4)
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                ForEach(CompanionRelationship.allCases, id: \.self) { option in
+                    relationshipPill(option)
+                }
+            }
+
+            sectionHeader("Voice")
+                .padding(.top, 4)
+            VStack(spacing: 8) {
+                ForEach(CompanionPersonaVoice.allCases, id: \.self) { voice in
+                    voiceCard(voice)
+                }
+            }
+
+            Toggle(isOn: Binding(
+                get: { onboardingState.profile.customCompanionRoast },
+                set: { onboardingState.profile.customCompanionRoast = $0 }
+            )) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Roast Mode")
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white)
+                    Text("Lovingly call out your bad habits.")
+                        .font(.system(size: 12, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.7))
+                }
+            }
+            .tint(.white)
+            .padding(14)
+            .background(.white.opacity(0.12))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .padding(.top, 4)
+            .accessibilityIdentifier("Onboarding_CustomCompanion_Roast")
+        }
+    }
+
+    private func sectionHeader(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 13, weight: .semibold, design: .rounded))
+            .foregroundStyle(.white.opacity(0.8))
+    }
+
+    private func relationshipPill(_ option: CompanionRelationship) -> some View {
+        let selected = (onboardingState.profile.customCompanionRelationship ?? .pet) == option
+        return Button {
+            onboardingState.profile.customCompanionRelationship = option
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: option.iconName)
+                    .font(.system(size: 13))
+                Text(option.displayName)
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(selected ? Color.white.opacity(0.25) : Color.white.opacity(0.10))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(selected ? Color.white : Color.clear, lineWidth: 1.5)
+            )
+            .foregroundStyle(.white)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(selected ? "当前关系：\(option.displayName)" : "选择关系 \(option.displayName)")
+        .accessibilityIdentifier("Onboarding_CustomCompanion_Relationship_\(option.rawValue)")
+    }
+
+    private func voiceCard(_ voice: CompanionPersonaVoice) -> some View {
+        let selected = (onboardingState.profile.customCompanionVoice ?? .companion) == voice
+        return Button {
+            onboardingState.profile.customCompanionVoice = voice
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: voice.iconName)
+                    .font(.system(size: 16))
+                    .frame(width: 24)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(voice.displayName)
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    Text(voice.shortDescription)
+                        .font(.system(size: 11, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.7))
+                }
+                Spacer()
+                if selected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.white)
+                }
+            }
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(selected ? Color.white.opacity(0.20) : Color.white.opacity(0.10))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(selected ? Color.white : Color.clear, lineWidth: 1.5)
+            )
+            .foregroundStyle(.white)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(selected ? "当前语气：\(voice.displayName)" : "选择语气 \(voice.displayName)")
+        .accessibilityIdentifier("Onboarding_CustomCompanion_Voice_\(voice.rawValue)")
+    }
+
+    // MARK: - Actions
+
+    private func clearCustomCompanion() {
+        onboardingState.profile.customAvatarPreviewData = nil
+        onboardingState.profile.customAvatarPixelData = nil
+        onboardingState.profile.customCompanionName = nil
+        onboardingState.profile.customCompanionRoast = false
+        selectedPhoto = nil
+        processError = nil
+    }
+
+    private func handlePhotoSelection(_ item: PhotosPickerItem?) {
+        guard let item else { return }
+        isProcessing = true
+        processError = nil
+        Task {
+            let data = try? await item.loadTransferable(type: Data.self)
+            await MainActor.run {
+                applyProcessedPhoto(data: data)
+                isProcessing = false
+            }
+        }
+    }
+
+    private func applyProcessedPhoto(data: Data?) {
+        #if canImport(UIKit)
+        guard let data,
+              let uiImage = UIImage(data: data),
+              let result = AvatarImageProcessor.process(image: uiImage) else {
+            processError = "Couldn't process this image. Try another."
+            return
+        }
+        let pixelData = BLEDataEncoder.encodePixelData(
+            result.pixels,
+            width: AvatarProcessResult.dimension
+        )
+        onboardingState.profile.customAvatarPreviewData = result.previewData
+        onboardingState.profile.customAvatarPixelData = pixelData
+        #else
+        _ = data
+        processError = "Image processing unavailable on this platform."
+        #endif
     }
 }
 

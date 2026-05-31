@@ -62,15 +62,14 @@ struct ProtocolFixtures {
             date: fixedDate(),
             deviceMode: .interactive,
             focusChallengeEnabled: true,
-            morningGreeting: "Morning, B.",
-            dailySummary: "Two tasks and one hardware sync.",
-            firstItem: "Plan BLE",
-            currentScheduleSummary: "09:30 HW Sync",
+            petDialogue: "Small steps count.",
+            events: [
+                EventSummary(time: "09:30", title: "HW Sync", description: "Bring the logic analyzer."),
+            ],
             topTasks: [
                 TaskSummary(id: taskId, title: "Plan BLE", isCompleted: false, priority: 2),
                 TaskSummary(id: "task-review-packet", title: "Review packet", isCompleted: true, priority: 1),
             ],
-            companionPhrase: "Small steps count.",
             settlementData: SettlementData(
                 tasksCompleted: 1,
                 tasksTotal: 2,
@@ -278,11 +277,17 @@ struct SimulatedAppPacket {
         let day = Int(try reader.readByte())
         let deviceMode = try reader.readByte() == 0x00 ? DeviceMode.interactive : .focus
         let focusChallengeEnabled = try reader.readBool()
-        let morningGreeting = try reader.readString()
-        let dailySummary = try reader.readString()
-        let firstItem = try reader.readString()
-        let currentScheduleSummary = try reader.readString()
-        let companionPhrase = try reader.readString()
+        let petDialogue = try reader.readString()
+
+        let eventCount = Int(try reader.readByte())
+        var events: [SimulatedDayPack.Event] = []
+        for _ in 0..<eventCount {
+            events.append(.init(
+                time: try reader.readString(),
+                title: try reader.readString(),
+                description: try reader.readString()
+            ))
+        }
 
         let taskCount = Int(try reader.readByte())
         var topTasks: [SimulatedDayPack.TopTask] = []
@@ -302,9 +307,7 @@ struct SimulatedAppPacket {
             totalFocusMinutes: Int(try reader.readUInt16BE()),
             focusSessionCount: Int(try reader.readByte()),
             longestFocusMinutes: Int(try reader.readUInt16BE()),
-            interruptionCount: Int(try reader.readByte()),
-            summaryMessage: try reader.readString(),
-            encouragementMessage: try reader.readString()
+            interruptionCount: Int(try reader.readByte())
         )
         try reader.requireEnd()
 
@@ -312,11 +315,8 @@ struct SimulatedAppPacket {
             date: (year, month, day),
             deviceMode: deviceMode,
             focusChallengeEnabled: focusChallengeEnabled,
-            morningGreeting: morningGreeting,
-            dailySummary: dailySummary,
-            firstItem: firstItem,
-            currentScheduleSummary: currentScheduleSummary,
-            companionPhrase: companionPhrase,
+            petDialogue: petDialogue,
+            events: events,
             topTasks: topTasks,
             settlement: settlement
         )
@@ -512,18 +512,19 @@ struct SimulatedDayPack {
         let focusSessionCount: Int
         let longestFocusMinutes: Int
         let interruptionCount: Int
-        let summaryMessage: String
-        let encouragementMessage: String
+    }
+
+    struct Event {
+        let time: String
+        let title: String
+        let description: String
     }
 
     let date: (year: Int, month: Int, day: Int)
     let deviceMode: DeviceMode
     let focusChallengeEnabled: Bool
-    let morningGreeting: String
-    let dailySummary: String
-    let firstItem: String
-    let currentScheduleSummary: String
-    let companionPhrase: String
+    let petDialogue: String
+    let events: [Event]
     let topTasks: [TopTask]
     let settlement: Settlement
 }

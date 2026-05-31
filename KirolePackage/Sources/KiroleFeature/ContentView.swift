@@ -31,6 +31,16 @@ public struct ContentView: View {
             await authManager.initialize()
             appState.syncIntegrationStatusFromAuth()
             await configureOpenAI()
+            // Ask for notification permission only after onboarding — it powers the offline
+            // fallback reminder (the one channel that reaches the user when the companion
+            // device is out of range). Requesting before onboarding would prompt before the
+            // product is understood; UI-test runs skip onboarding via flag so they are excluded.
+            if isOnboardingCompleted {
+                await NotificationService.shared.requestAuthorization()
+            }
+            TimezoneObserver.shared.startObserving { [appState] newZone in
+                appState.pendingTimezoneChangeName = newZone.localizedName(for: .generic, locale: .current) ?? newZone.identifier
+            }
             #if DEBUG
             SimulatorBridge.shared.connect()
             #endif
@@ -89,7 +99,7 @@ public struct ContentView: View {
                 )
             }
 
-            if let celebration = appState.pendingSceneCelebration {
+            if let celebration = appState.pendingSceneCelebration, !appState.isFocusSettlementPresented {
                 SceneUnlockBanner(
                     sceneName: DisplayScene(rawValue: celebration.sceneId)?.displayName ?? celebration.sceneId
                 )
@@ -97,9 +107,44 @@ public struct ContentView: View {
                 .transition(.move(edge: .top).combined(with: .opacity))
                 .zIndex(10)
             }
+
+            if let provider = appState.remoteSyncErrors.keys.sorted().first,
+               let message = appState.remoteSyncErrors[provider] {
+                SyncErrorBanner(provider: provider, message: message) {
+                    appState.remoteSyncErrors.removeValue(forKey: provider)
+                }
+                .padding(.top, 124)
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .zIndex(9)
+            }
+
+            if let zoneName = appState.pendingTimezoneChangeName {
+                TimezoneChangeBanner(
+                    zoneName: zoneName,
+                    onAdjust: {
+                        appState.pendingTimezoneChangeName = nil
+                        Task {
+                            // Refetch external data first so events re-resolve in the new
+                            // time zone, then force-push so the hardware DayPack stops
+                            // showing the old zone's schedule instead of waiting for the
+                            // next throttled sync window.
+                            await appState.syncConnectedExternalData()
+                            await BLESyncCoordinator.shared.performSync(force: true)
+                        }
+                    },
+                    onKeep: {
+                        appState.pendingTimezoneChangeName = nil
+                    }
+                )
+                .padding(.top, 176)
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .zIndex(8)
+            }
         }
         .confetti(trigger: $sceneCelebrationConfettiTrigger)
         .animation(.kiroleSnappy, value: appState.pendingSceneCelebration)
+        .animation(.kiroleSnappy, value: appState.remoteSyncErrors.count)
+        .animation(.kiroleSnappy, value: appState.pendingTimezoneChangeName != nil)
         // Observable-style injection (for @Environment(Type.self) reads)
         .environment(appState)
         .environment(themeManager)
@@ -171,7 +216,7 @@ private struct SceneUnlockBanner: View {
                 .foregroundStyle(theme.colors.accent)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("新场景已解锁 · 去 Settings 应用")
+                Text("New scene unlocked · apply in Settings")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(theme.colors.secondaryText)
                 Text(sceneName)
@@ -187,8 +232,92 @@ private struct SceneUnlockBanner: View {
                 .shadow(color: .black.opacity(0.08), radius: 8, y: 4)
         )
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("已解锁\(sceneName)")
+        .accessibilityLabel("Unlocked \(sceneName)")
         .accessibilityIdentifier("app.sceneUnlockBanner")
+    }
+}
+
+// MARK: - Timezone Change Banner
+
+private struct TimezoneChangeBanner: View {
+    @Environment(ThemeManager.self) private var theme
+    let zoneName: String
+    let onAdjust: () -> Void
+    let onKeep: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "globe")
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(theme.colors.accent)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Looks like you've moved · \(zoneName)")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(theme.colors.secondaryText)
+                HStack(spacing: 8) {
+                    Button("Fix my times", action: onAdjust)
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(theme.colors.accent)
+                        .accessibilityIdentifier("timezone.updateButton")
+                    Text("·")
+                        .foregroundStyle(theme.colors.secondaryText)
+                    Button("Not now", action: onKeep)
+                        .font(.system(size: 13))
+                        .foregroundStyle(theme.colors.secondaryText)
+                        .accessibilityIdentifier("timezone.keepButton")
+                }
+            }
+
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(
+            Capsule()
+                .fill(theme.colors.cardBackground)
+                .shadow(color: .black.opacity(0.08), radius: 8, y: 4)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Looks like you've moved to \(zoneName). Want me to fix your times?")
+        .accessibilityIdentifier("app.timezoneChangeBanner")
+    }
+}
+
+// MARK: - Sync Error Banner
+
+private struct SyncErrorBanner: View {
+    @Environment(ThemeManager.self) private var theme
+    let provider: String
+    let message: String
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.icloud")
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(.red)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("\(provider) sync failed")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(theme.colors.secondaryText)
+                Text("Tap to dismiss")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(theme.colors.primaryText)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(
+            Capsule()
+                .fill(theme.colors.cardBackground)
+                .shadow(color: .red.opacity(0.12), radius: 8, y: 4)
+        )
+        .onTapGesture { onDismiss() }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(provider) sync failed. Tap to dismiss.")
+        .accessibilityIdentifier("app.syncErrorBanner")
     }
 }
 

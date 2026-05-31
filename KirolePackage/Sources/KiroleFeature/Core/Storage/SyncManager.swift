@@ -48,6 +48,13 @@ public actor SyncManager {
             failedCount += 1
         }
 
+        do {
+            try await syncEnergyBottles(userId: userId)
+            syncedCount += 1
+        } catch {
+            failedCount += 1
+        }
+
         syncState.lastSyncTime = Date()
         syncState.status = failedCount == 0 ? .synced : .pending
         syncState.pendingChanges = 0
@@ -92,6 +99,20 @@ public actor SyncManager {
         } else if let remote = remotePet {
             try await localStorage.savePet(remote)
         }
+    }
+
+    // MARK: - Energy Bottles Sync
+
+    /// 合并本地与云端能量瓶子（取较大值，防换机/重装清零或互相覆盖），回写本地，
+    /// 并暂存进 syncState —— 由 performFullSync 末尾的 saveSyncState 统一上推到云端。
+    private func syncEnergyBottles(userId: String) async throws {
+        let local = await localStorage.loadEnergyBottles()
+        let remote = (try await supabaseService.getSyncState(userId: userId))?.energyBottles ?? 0
+        let merged = max(local, remote)
+        if merged != local {
+            await localStorage.saveEnergyBottles(merged)
+        }
+        syncState.energyBottles = merged
     }
 
     // MARK: - Save with Sync

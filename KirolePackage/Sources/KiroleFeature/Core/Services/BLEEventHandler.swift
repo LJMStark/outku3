@@ -1,7 +1,4 @@
 import Foundation
-#if canImport(UserNotifications)
-import UserNotifications
-#endif
 
 // MARK: - BLE Event Handler
 
@@ -67,9 +64,11 @@ public enum BLEEventHandler {
 
         case .requestRefresh:
             Task { @MainActor in
-                guard await BLERateLimiter.shared.allowRefreshRequest() else {
+                // 0x20 用独立的 refresh 闸（非 deviceWake 的 10s 闸），不被频繁唤醒饿死；
+                // 2s 下限防固件把 0x20 当心跳狂发导致背靠背整轮 sync。
+                guard await BLERateLimiter.shared.allowRefreshTrigger() else {
                     ErrorReporter.log(
-                        .bleSecurity("Dropped refresh request due to rate limit"),
+                        .sync(component: "BLE RequestRefresh", underlying: "throttled (min 2s)"),
                         context: "BLEEventHandler.requestRefresh"
                     )
                     return
@@ -88,6 +87,14 @@ public enum BLEEventHandler {
                     )
                 }
                 await AppState.shared.handleHardwareWake(now: eventLog.timestamp)
+                // 整轮 sync 经退避节流，避免硬件频繁唤醒触发连接风暴。
+                guard await BLERateLimiter.shared.allowSyncTrigger() else {
+                    ErrorReporter.log(
+                        .sync(component: "BLE DeviceWake", underlying: "throttled"),
+                        context: "BLEEventHandler.deviceWake"
+                    )
+                    return
+                }
                 await BLESyncCoordinator.shared.performSync(force: false)
             }
 
@@ -97,17 +104,14 @@ public enum BLEEventHandler {
         case .lowBattery:
             if let level = eventLog.batteryLevel {
                 service.deviceBatteryLevel = level
-                postLowBatteryNotification(level: level)
+                await NotificationService.shared.scheduleLowBatteryNotification(level: level)
             }
 
-        case .reminderAcknowledged:
+        case .reminderAcknowledged, .reminderDismissed:
+            // 用户在硬件上已查看/忽略提醒：联动 App 端限流冷却，避免紧接着又推一条。
+            SmartReminderService.shared.registerHardwareReminderInteraction(at: eventLog.timestamp)
             #if DEBUG
-            print("[BLEEventHandler] Reminder acknowledged at \(eventLog.timestamp)")
-            #endif
-
-        case .reminderDismissed:
-            #if DEBUG
-            print("[BLEEventHandler] Reminder dismissed at \(eventLog.timestamp)")
+            print("[BLEEventHandler] Reminder \(eventLog.eventType.rawValue) at \(eventLog.timestamp)")
             #endif
 
         case .encoderRotateUp, .encoderRotateDown, .encoderShortPress, .encoderLongPress,
@@ -125,12 +129,34 @@ public enum BLEEventHandler {
     private static func handleEnterTaskIn(_ eventLog: EventLog, service: BLEService) {
         guard let taskId = eventLog.taskId,
               let task = resolveTask(taskId: taskId) else {
+            // 设备已进入任务详情页、正等 TaskInPage。App 找不到该 task（clean install / 任务被删 /
+            // 本地数据被 reset，而硬件仍持旧 DayPack 缓存）时不能静默——设备会永久卡在详情页“像死机”。
+            // 记日志 + 发 DeviceMode(.interactive) 把设备退回交互概览解卡。
+            ErrorReporter.log(
+                .sync(
+                    component: "BLE EnterTaskIn",
+                    underlying: "task not found (taskId=\(eventLog.taskId ?? "nil"), \(AppState.shared.tasks.count) local tasks) — recovering device to interactive mode"
+                ),
+                context: "BLEEventHandler.handleEnterTaskIn"
+            )
+            Task { @MainActor in
+                do {
+                    try await service.sendDeviceMode(.interactive)
+                } catch {
+                    ErrorReporter.log(
+                        .sync(component: "BLE EnterTaskIn recovery", underlying: error.localizedDescription),
+                        context: "BLEEventHandler.handleEnterTaskIn"
+                    )
+                }
+            }
             return
         }
 
         Task { @MainActor in
             let taskInPage = await DayPackGenerator.shared.generateTaskInPage(
-                task: task, pet: AppState.shared.pet
+                task: task,
+                pet: AppState.shared.pet,
+                userProfile: AppState.shared.userProfile
             )
             do {
                 try await service.sendTaskInPage(taskInPage)
@@ -141,33 +167,6 @@ public enum BLEEventHandler {
                 )
             }
         }
-    }
-
-    /// CompleteTask: 标记任务为已完成
-    private static func handleCompleteTask(_ eventLog: EventLog) {
-        guard let taskId = eventLog.taskId,
-              let task = resolveTask(taskId: taskId),
-              !task.isCompleted else {
-            return
-        }
-
-        AppState.shared.toggleTaskCompletion(task)
-    }
-
-    /// 低电量本地通知
-    private static func postLowBatteryNotification(level: Int) {
-        #if canImport(UserNotifications)
-        let content = UNMutableNotificationContent()
-        content.title = "Kirole Device Low Battery"
-        content.body = "Your Kirole device battery is at \(level)%. Please charge it soon."
-        content.sound = .default
-        let request = UNNotificationRequest(
-            identifier: "kirole-low-battery",
-            content: content,
-            trigger: nil
-        )
-        UNUserNotificationCenter.current().add(request)
-        #endif
     }
 
     // MARK: - Event Log Parsing
@@ -186,7 +185,31 @@ public enum BLEEventHandler {
     /// 处理 Event Log 批次数据
     private static func handleEventLogBatch(_ payload: Data, service: BLEService) async {
         let logs = parseEventLogBatchPayload(payload)
-        guard !logs.isEmpty else { return }
+        guard !logs.isEmpty else {
+            // count>0 却一条都没解析出来 = 真正的解析失败。补传是核心功能：若静默丢弃，硬件下次还发
+            // 同一批，时间戳不前进 → 死循环重发、任务状态永不更新，且硬件团队完全无法排查。
+            let declaredCount = payload.first.map(Int.init) ?? 0
+            if declaredCount > 0 {
+                let hexPrefix = payload.prefix(24).map { String(format: "%02x", $0) }.joined(separator: " ")
+                ErrorReporter.log(
+                    .sync(component: "BLE EventLogBatch", underlying: "parse failed: declaredCount=\(declaredCount) payloadBytes=\(payload.count) hex=[\(hexPrefix)]"),
+                    context: "BLEEventHandler.handleEventLogBatch"
+                )
+            }
+            return
+        }
+        // 补传路径补回电量：实时路径在 handleReceivedPayload 已处理电量，但批量重放的
+        // deviceWake/lowBattery 原先会丢掉电量字节，这里取本批最新一条带电量的应用。
+        //
+        // best-effort：deviceWake/lowBattery 的 BLE payload 不含设备时间戳（EventLog 用 Date() 兜底），
+        // 故无法用 lastEventLogTimestamp 高水位可靠区分"过期电量"。正常增量批次取到的即最新；极端下
+        // 设备重发旧批次可能短暂回退，会被下一条实时 deviceWake 纠正。电量仅展示用途，可接受。
+        if let latestBattery = logs
+            .filter({ $0.eventType == .deviceWake || $0.eventType == .lowBattery })
+            .max(by: { $0.timestamp < $1.timestamp })?
+            .batteryLevel {
+            service.deviceBatteryLevel = latestBattery
+        }
         await handleEventLogs(logs, service: service, isReplay: true)
     }
 
@@ -260,26 +283,61 @@ public enum BLEEventHandler {
         _ logs: [EventLog],
         service: BLEService,
         focusService: FocusSessionService = .shared,
-        isReplay: Bool = false
+        isReplay: Bool = false,
+        lastTimestampOverride: UInt32? = nil
     ) async {
+        // 持久化在后台进行，不阻塞状态变更。
+        //
+        // 已知 advisory 竞态（codex review P2）：两个真正并发到达的批次可能都先读到同一旧高水位再过滤，
+        // 重复处理重叠事件。当前 applyEventStateMutation 仅处理 completeTask 且带 !isCompleted 幂等保护，
+        // 故无可见危害。完整消除需把 persistEventLogs 的“存日志”与“推进高水位”解耦后做原子 claim——
+        // 留作单独带测试的改动（全局串行化会破坏共享 AppState.shared 的并行测试隔离）。
         Task {
             await persistEventLogs(logs)
         }
 
-        for log in logs {
+        let lastTimestamp: UInt32
+        if let override = lastTimestampOverride {
+            lastTimestamp = override
+        } else {
+            lastTimestamp = await localStorage.loadLastEventLogTimestamp() ?? 0
+        }
+        let processable = BLEEventHandler.filterAndSortForMutation(logs, since: lastTimestamp)
+
+        for log in processable {
             await handleFocusSessionEvent(log, focusService: focusService, isReplay: isReplay)
             applyEventStateMutation(log)
         }
     }
 
+    /// Filters to events newer than `lastTimestamp`, sorts ascending by timestamp,
+    /// and removes duplicates by (eventType, taskId, second-precision timestamp).
+    ///
+    /// EventLog.id is regenerated on every BLE parse and cannot serve as a stable
+    /// identifier, so deduplication uses the content triplet instead.
+    nonisolated static func filterAndSortForMutation(
+        _ logs: [EventLog],
+        since lastTimestamp: UInt32
+    ) -> [EventLog] {
+        var seen = Set<String>()
+        return logs
+            .filter { UInt32($0.timestamp.timeIntervalSince1970) > lastTimestamp }
+            .sorted { $0.timestamp < $1.timestamp }
+            .filter { seen.insert(eventContentKey($0)).inserted }
+    }
+
+    /// A stable deduplication key derived from event content rather than EventLog.id.
+    nonisolated static func eventContentKey(_ log: EventLog) -> String {
+        "\(log.eventType.rawValue)|\(log.taskId ?? "")|\(UInt32(log.timestamp.timeIntervalSince1970))"
+    }
+
     /// State changes that must apply for both live and replayed events.
     private static func applyEventStateMutation(_ log: EventLog) {
-        switch log.eventType {
-        case .completeTask:
-            handleCompleteTask(log)
-        default:
-            break
-        }
+        guard log.eventType == .completeTask,
+              let taskId = log.taskId,
+              let task = resolveTask(taskId: taskId),
+              !task.isCompleted else { return }
+        AppState.shared.toggleTaskCompletion(task)
     }
 
     /// 持久化事件日志
@@ -320,8 +378,13 @@ public enum BLEEventHandler {
     ) async {
         switch eventLog.eventType {
         case .enterTaskIn:
-            // During replay we have no App-side screen data for the offline period,
-            // so we cannot measure focus time. Skip to avoid a stale activeSession.
+            // INTENTIONAL — do not "fix" this into a back-fill. Product requirement:
+            // focus must be judged live inside the App, never reconstructed from
+            // hardware timestamps. During replay there is no App-side screen-activity
+            // data for the offline period, so focus time cannot be measured and we do
+            // NOT fabricate it. Skipping also avoids a stale activeSession. The Inku
+            // competitive review's "back-fill offline focus" suggestion was rejected
+            // for this reason. (See memory: project_focus_app_authoritative.)
             guard !isReplay else { break }
             if let taskId = eventLog.taskId {
                 let taskTitle = resolveTask(taskId: taskId)?.title ?? "Unknown Task"

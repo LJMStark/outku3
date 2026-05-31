@@ -72,8 +72,20 @@ public struct OnboardingProfile: Sendable, Codable, Equatable {
     public var taskApproach: TaskApproach?
     public var timeControl: TimeControl?
     public var selectedTheme: String?
-    public var customPhotoData: Data?
     public var onboardingCompletedAt: Date?
+
+    // MARK: - Custom Companion (B-plan)
+    /// Filled when the user uploads + names a custom companion on PersonalizationPage.
+    /// Consumed in completeOnboarding to call `addCustomCompanion`. When any required
+    /// piece is missing the onboarding flow falls back to the built-in 3-IP selection.
+    public var customCompanionName: String?
+    public var customCompanionRelationship: CompanionRelationship?
+    public var customCompanionVoice: CompanionPersonaVoice?
+    public var customCompanionRoast: Bool
+    /// PNG preview produced by AvatarImageProcessor.process — feeds Settings avatar art.
+    public var customAvatarPreviewData: Data?
+    /// BLE-encoded pixel payload (BLEDataEncoder.encodePixelData) for the E-ink display.
+    public var customAvatarPixelData: Data?
 
     public init(
         companionCharacter: CompanionCharacter? = nil,
@@ -85,8 +97,13 @@ public struct OnboardingProfile: Sendable, Codable, Equatable {
         taskApproach: TaskApproach? = nil,
         timeControl: TimeControl? = nil,
         selectedTheme: String? = nil,
-        customPhotoData: Data? = nil,
-        onboardingCompletedAt: Date? = nil
+        onboardingCompletedAt: Date? = nil,
+        customCompanionName: String? = nil,
+        customCompanionRelationship: CompanionRelationship? = nil,
+        customCompanionVoice: CompanionPersonaVoice? = nil,
+        customCompanionRoast: Bool = false,
+        customAvatarPreviewData: Data? = nil,
+        customAvatarPixelData: Data? = nil
     ) {
         self.companionCharacter = companionCharacter
         self.motivationStyle = motivationStyle
@@ -97,8 +114,72 @@ public struct OnboardingProfile: Sendable, Codable, Equatable {
         self.taskApproach = taskApproach
         self.timeControl = timeControl
         self.selectedTheme = selectedTheme
-        self.customPhotoData = customPhotoData
         self.onboardingCompletedAt = onboardingCompletedAt
+        self.customCompanionName = customCompanionName
+        self.customCompanionRelationship = customCompanionRelationship
+        self.customCompanionVoice = customCompanionVoice
+        self.customCompanionRoast = customCompanionRoast
+        self.customAvatarPreviewData = customAvatarPreviewData
+        self.customAvatarPixelData = customAvatarPixelData
+    }
+
+    /// True when PersonalizationPage has captured a complete custom companion definition
+    /// (photo processed + name filled). Used by completeOnboarding to decide whether to
+    /// create a CustomCompanion.
+    public var hasCustomCompanionDraft: Bool {
+        guard let name = customCompanionName?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !name.isEmpty,
+              customAvatarPreviewData != nil,
+              customAvatarPixelData != nil else {
+            return false
+        }
+        return true
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case companionCharacter
+        case motivationStyle
+        case calendarUsage
+        case taskTracking
+        case distractionSources
+        case reminderPreference
+        case taskApproach
+        case timeControl
+        case selectedTheme
+        case onboardingCompletedAt
+        case customCompanionName
+        case customCompanionRelationship
+        case customCompanionVoice
+        case customCompanionRoast
+        case customAvatarPreviewData
+        case customAvatarPixelData
+    }
+
+    /// Hand-written decoder tolerates pre-B-plan onboarding_profile.json shapes:
+    /// old TestFlight files lack the customCompanion* keys entirely, and any
+    /// legacy `customPhotoData` key is silently ignored (Swift's default
+    /// behavior for keys absent from CodingKeys). Without this, synthesized
+    /// Codable would throw the moment it reached the non-optional
+    /// `customCompanionRoast: Bool`, AppState+Loading would discard the file,
+    /// and mid-onboarding users would lose their progress on upgrade.
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.companionCharacter = try c.decodeIfPresent(CompanionCharacter.self, forKey: .companionCharacter)
+        self.motivationStyle = try c.decodeIfPresent(MotivationStyle.self, forKey: .motivationStyle)
+        self.calendarUsage = try c.decodeIfPresent(CalendarUsage.self, forKey: .calendarUsage)
+        self.taskTracking = try c.decodeIfPresent(TaskTracking.self, forKey: .taskTracking)
+        self.distractionSources = (try c.decodeIfPresent([DistractionSource].self, forKey: .distractionSources)) ?? []
+        self.reminderPreference = try c.decodeIfPresent(ReminderPreference.self, forKey: .reminderPreference)
+        self.taskApproach = try c.decodeIfPresent(TaskApproach.self, forKey: .taskApproach)
+        self.timeControl = try c.decodeIfPresent(TimeControl.self, forKey: .timeControl)
+        self.selectedTheme = try c.decodeIfPresent(String.self, forKey: .selectedTheme)
+        self.onboardingCompletedAt = try c.decodeIfPresent(Date.self, forKey: .onboardingCompletedAt)
+        self.customCompanionName = try c.decodeIfPresent(String.self, forKey: .customCompanionName)
+        self.customCompanionRelationship = try c.decodeIfPresent(CompanionRelationship.self, forKey: .customCompanionRelationship)
+        self.customCompanionVoice = try c.decodeIfPresent(CompanionPersonaVoice.self, forKey: .customCompanionVoice)
+        self.customCompanionRoast = (try c.decodeIfPresent(Bool.self, forKey: .customCompanionRoast)) ?? false
+        self.customAvatarPreviewData = try c.decodeIfPresent(Data.self, forKey: .customAvatarPreviewData)
+        self.customAvatarPixelData = try c.decodeIfPresent(Data.self, forKey: .customAvatarPixelData)
     }
 }
 

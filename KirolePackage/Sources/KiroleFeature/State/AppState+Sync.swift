@@ -113,6 +113,7 @@ extension AppState {
             let appError = AppError.sync(component: "Google", underlying: error.localizedDescription)
             ErrorReporter.log(appError, context: "AppState.syncGoogleData")
             lastError = UserFacingErrorMapper.message(for: appError)
+            remoteSyncErrors["Google"] = lastError
             lastGoogleSyncDebug = "Error: \(error.localizedDescription)"
         }
 
@@ -137,9 +138,11 @@ extension AppState {
             let otherEvents = events.filter { $0.source != .apple }
             events = otherEvents + appleEvents
             try await localStorage.saveEvents(events)
+            remoteSyncErrors.removeValue(forKey: "Apple Calendar")
         } catch {
             let appError = AppError.sync(component: "Apple Calendar", underlying: error.localizedDescription)
             lastError = UserFacingErrorMapper.message(for: appError)
+            remoteSyncErrors["Apple Calendar"] = lastError
             ErrorReporter.log(appError, context: "AppState.syncAppleCalendarEvents")
         }
     }
@@ -155,9 +158,11 @@ extension AppState {
             let syncedTasks = try await appleSyncEngine.syncReminders(currentTasks: appleTasks)
             mergeRemoteTasks(from: .apple, with: syncedTasks)
             try await localStorage.saveTasks(tasks)
+            remoteSyncErrors.removeValue(forKey: "Apple Reminders")
         } catch {
             let appError = AppError.sync(component: "Apple Reminders", underlying: error.localizedDescription)
             lastError = UserFacingErrorMapper.message(for: appError)
+            remoteSyncErrors["Apple Reminders"] = lastError
             ErrorReporter.log(appError, context: "AppState.syncAppleReminders")
         }
     }
@@ -203,6 +208,7 @@ extension AppState {
     ) {
         if warnings.isEmpty {
             lastError = nil
+            remoteSyncErrors.removeValue(forKey: "Google")
             lastGoogleSyncDebug = "Success: events=\(eventsCount), tasks=\(tasksCount), duration=\(durationMs)ms"
             return
         }
@@ -210,6 +216,7 @@ extension AppState {
         let warningText = warnings.joined(separator: " | ")
         let appError = AppError.sync(component: "Google", underlying: warningText)
         lastError = UserFacingErrorMapper.message(for: appError)
+        remoteSyncErrors["Google"] = lastError
         lastGoogleSyncDebug = "Partial: events=\(eventsCount), tasks=\(tasksCount), warnings=\(warningText), duration=\(durationMs)ms"
         ErrorReporter.log(appError, context: "AppState.applyGoogleSyncOutcome")
     }
@@ -236,9 +243,11 @@ extension AppState {
             )
             mergeRemoteTasks(from: .notion, with: syncedTasks)
             try await localStorage.saveTasks(tasks)
+            remoteSyncErrors.removeValue(forKey: "Notion")
         } catch {
             let appError = AppError.sync(component: "Notion", underlying: error.localizedDescription)
             lastError = UserFacingErrorMapper.message(for: appError)
+            remoteSyncErrors["Notion"] = lastError
             ErrorReporter.log(appError, context: "AppState.syncNotionData")
         }
 
@@ -265,9 +274,11 @@ extension AppState {
             )
             mergeRemoteTasks(from: .taskade, with: syncedTasks)
             try await localStorage.saveTasks(tasks)
+            remoteSyncErrors.removeValue(forKey: "Taskade")
         } catch {
             let appError = AppError.sync(component: "Taskade", underlying: error.localizedDescription)
             lastError = UserFacingErrorMapper.message(for: appError)
+            remoteSyncErrors["Taskade"] = lastError
             ErrorReporter.log(appError, context: "AppState.syncTaskadeData")
         }
 

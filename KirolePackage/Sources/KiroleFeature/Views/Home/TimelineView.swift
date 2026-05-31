@@ -169,6 +169,7 @@ struct TimelineEventCardRow: View {
                     participants: event.participants.count,
                     description: event.description ?? "",
                     source: event.source,
+                    videoMeetingURL: event.videoMeetingURL,
                     onTap: {
                         appState.selectEvent(event)
                     }
