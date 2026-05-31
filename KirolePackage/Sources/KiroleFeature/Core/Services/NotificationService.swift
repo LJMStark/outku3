@@ -81,14 +81,16 @@ public final class NotificationService {
 
     // MARK: - Private
 
+    /// Titles stay in the pet's caring voice — never a task-manager "Due Soon" nudge.
+    /// The body already comes from CompanionTextService, so this only sets the tone.
     private func notificationTitle(for reason: ReminderReason) -> String {
         switch reason {
         case .deadline:
-            return "Task Due Soon"
+            return "有件事想轻声提醒你"
         case .idle:
-            return "Time to Focus"
+            return "好久没一起专注啦"
         case .gentleNudge:
-            return "Gentle Reminder"
+            return "来陪你一下下"
         }
     }
 }
