@@ -99,7 +99,7 @@ public struct ContentView: View {
                 )
             }
 
-            if let celebration = appState.pendingSceneCelebration {
+            if let celebration = appState.pendingSceneCelebration, !appState.isFocusSettlementPresented {
                 SceneUnlockBanner(
                     sceneName: DisplayScene(rawValue: celebration.sceneId)?.displayName ?? celebration.sceneId
                 )
@@ -216,7 +216,7 @@ private struct SceneUnlockBanner: View {
                 .foregroundStyle(theme.colors.accent)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("新场景已解锁 · 去 Settings 应用")
+                Text("New scene unlocked · apply in Settings")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(theme.colors.secondaryText)
                 Text(sceneName)
@@ -232,7 +232,7 @@ private struct SceneUnlockBanner: View {
                 .shadow(color: .black.opacity(0.08), radius: 8, y: 4)
         )
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("已解锁\(sceneName)")
+        .accessibilityLabel("Unlocked \(sceneName)")
         .accessibilityIdentifier("app.sceneUnlockBanner")
     }
 }

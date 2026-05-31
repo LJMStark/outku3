@@ -166,12 +166,24 @@ public struct HomeView: View {
                 earnedBottles: lastSession.earnedEnergyBottles,
                 totalBottles: FocusSessionService.shared.todaySessions.reduce(0) { $0 + $1.earnedEnergyBottles }
             )
+            // Suppress the top SceneUnlockBanner while the sheet owns the unlock highlight.
+            appState.isFocusSettlementPresented = true
         }
-        .sheet(item: $settlementData) { data in
+        .sheet(item: $settlementData, onDismiss: {
+            appState.isFocusSettlementPresented = false
+            // The sheet already celebrated the unlock; consume the signal so the global
+            // banner doesn't pop again right after the sheet closes.
+            appState.pendingSceneCelebration = nil
+        }) { data in
             FocusSettlementSheet(
                 focusMinutes: data.focusMinutes,
                 earnedBottles: data.earnedBottles,
-                totalBottles: data.totalBottles
+                totalBottles: data.totalBottles,
+                // The authoritative unlock result is computed asynchronously after the
+                // session ends (against the persisted bottle total) and arrives via
+                // pendingSceneCelebration, so bind reactively — the banner reveals itself
+                // once the signal lands, typically during the sheet's entrance animation.
+                unlockedNewScene: appState.pendingSceneCelebration != nil
             )
             .injectAppEnvironment()
             .presentationDetents([.medium])
