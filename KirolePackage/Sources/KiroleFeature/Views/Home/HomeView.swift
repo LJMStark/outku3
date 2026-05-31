@@ -22,6 +22,9 @@ public struct HomeView: View {
     @State private var isInitialLoading = true
     @State private var dataSource = TimelineDataSource()
     @State private var settlementData: FocusSettlementData?
+    // True once the unlock celebration was observed while the settlement sheet is open,
+    // so onDismiss only consumes pendingSceneCelebration if the sheet actually showed it.
+    @State private var celebrationSeenDuringSettlement = false
 
     public init() {}
 
@@ -168,12 +171,23 @@ public struct HomeView: View {
             )
             // Suppress the top SceneUnlockBanner while the sheet owns the unlock highlight.
             appState.isFocusSettlementPresented = true
+            celebrationSeenDuringSettlement = appState.pendingSceneCelebration != nil
+        }
+        .onChange(of: appState.pendingSceneCelebration) { _, celebration in
+            // The unlock result lands asynchronously; if it arrives while the sheet is
+            // open, record that the sheet got to show it.
+            if appState.isFocusSettlementPresented, celebration != nil {
+                celebrationSeenDuringSettlement = true
+            }
         }
         .sheet(item: $settlementData, onDismiss: {
             appState.isFocusSettlementPresented = false
-            // The sheet already celebrated the unlock; consume the signal so the global
-            // banner doesn't pop again right after the sheet closes.
-            appState.pendingSceneCelebration = nil
+            // Only consume the signal if the sheet actually showed the unlock highlight.
+            // If it arrived after dismissal, leave it so the top banner can still surface it.
+            if celebrationSeenDuringSettlement {
+                appState.pendingSceneCelebration = nil
+            }
+            celebrationSeenDuringSettlement = false
         }) { data in
             FocusSettlementSheet(
                 focusMinutes: data.focusMinutes,
