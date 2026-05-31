@@ -245,17 +245,17 @@ private struct TimezoneChangeBanner: View {
                 .foregroundStyle(theme.colors.accent)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("Timezone changed · \(zoneName)")
+                Text("咦，你好像换地方了 · \(zoneName)")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(theme.colors.secondaryText)
                 HStack(spacing: 8) {
-                    Button("Update Events", action: onAdjust)
+                    Button("帮我对一下时间", action: onAdjust)
                         .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(theme.colors.accent)
                         .accessibilityIdentifier("timezone.updateButton")
                     Text("·")
                         .foregroundStyle(theme.colors.secondaryText)
-                    Button("Keep", action: onKeep)
+                    Button("先不用", action: onKeep)
                         .font(.system(size: 13))
                         .foregroundStyle(theme.colors.secondaryText)
                         .accessibilityIdentifier("timezone.keepButton")
@@ -272,7 +272,7 @@ private struct TimezoneChangeBanner: View {
                 .shadow(color: .black.opacity(0.08), radius: 8, y: 4)
         )
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Timezone changed to \(zoneName). Update events or keep current.")
+        .accessibilityLabel("我发现你好像换到\(zoneName)了，要帮你把时间对一下吗？")
         .accessibilityIdentifier("app.timezoneChangeBanner")
     }
 }
