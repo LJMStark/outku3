@@ -165,12 +165,12 @@ extension AppState {
         }
     }
 
-    /// Called by BLESyncCoordinator after establishing a connection.
-    /// Re-sends the avatar frame for the active custom companion when a previous push failed.
     /// Max consecutive failed flush attempts before we stop re-pushing every sync (firmware may
     /// not accept the 0x15 frame yet). Reset on a new companion selection or a successful push.
     private static let maxCustomAvatarFlushAttempts = 5
 
+    /// Called by BLESyncCoordinator after establishing a connection.
+    /// Re-sends the avatar frame for the active custom companion when a previous push failed.
     public func flushPendingCustomCompanionPushIfNeeded() async {
         guard isCustomAvatarPendingBLEPush,
               customAvatarFlushAttempts < Self.maxCustomAvatarFlushAttempts,
