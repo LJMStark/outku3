@@ -56,7 +56,7 @@ struct EventCardView: View {
                             .background(Color(hex: "294A3B"))
                             .clipShape(Capsule())
                         }
-                        .accessibilityLabel("加入视频会议")
+                        .accessibilityLabel("Join video call")
                         .accessibilityIdentifier("EventCard_JoinButton")
                     }
                 }
@@ -83,7 +83,7 @@ struct EventCardView: View {
         .buttonStyle(.kiroleCTA)
         .accessibilityLabel("\(title), \(duration)")
         .accessibilityIdentifier("Home_EventCard")
-        .accessibilityHint("点击查看活动详情")
+        .accessibilityHint("Tap to view event details")
     }
 }
 
@@ -176,7 +176,7 @@ public struct EventDetailModal: View {
                             Circle().stroke(Color(hex: "E5E7EB"), lineWidth: 1)
                         )
                 }
-                .accessibilityLabel("关闭")
+                .accessibilityLabel("Close")
                 .accessibilityIdentifier("EventDetail_Close")
             }
             .padding(.horizontal, 20)
@@ -322,7 +322,7 @@ private struct EventDetailRow<Content: View>: View {
                             .font(.system(size: 14))
                             .foregroundStyle(Color.black.opacity(0.4))
                     }
-                    .accessibilityLabel("编辑")
+                    .accessibilityLabel("Edit")
                     .accessibilityIdentifier("EventDetail_EditField")
                 }
             }

@@ -40,7 +40,7 @@ public struct QuestionnairePage: View {
                                 .accessibilityHidden(true)
                         }
                     }
-                    .accessibilityLabel("返回上一步")
+                    .accessibilityLabel("Go back")
                     .accessibilityIdentifier("Onboarding_Back")
 
                     OnboardingProgressBar(questionIndex: questionIndex)

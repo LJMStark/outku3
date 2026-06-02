@@ -346,7 +346,7 @@ private struct IntegrationAppRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.kiroleRow)
-        .accessibilityLabel("连接 \(type.rawValue)")
+        .accessibilityLabel("Connect \(type.rawValue)")
         .accessibilityIdentifier("Integration_Connect_\(type.rawValue)")
     }
 }
@@ -399,7 +399,7 @@ private struct ConnectedAppRow: View {
                 .padding(.vertical, 6)
                 .background(Color(hex: "F3F4F6"))
                 .clipShape(Capsule())
-                .accessibilityLabel("管理 \(integration.name) 连接")
+                .accessibilityLabel("Manage \(integration.name) connection")
                 .accessibilityIdentifier("Integration_Manage_\(integration.name)")
             }
         }

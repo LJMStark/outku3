@@ -330,7 +330,7 @@ struct HaikuSectionView: View {
                             .frame(height: HaikuSectionLayout.petArtworkHeight)
                             .clipShape(RoundedRectangle(cornerRadius: 16))
                             .shadow(color: .black.opacity(0.1), radius: 8, y: 4)
-                            .accessibilityLabel("宠物伴侣插图")
+                            .accessibilityLabel("Pet companion illustration")
                             .accessibilityIdentifier("Home_PetArtwork")
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

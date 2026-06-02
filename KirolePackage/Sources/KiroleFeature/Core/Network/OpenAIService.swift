@@ -23,7 +23,7 @@ public actor OpenAIService {
         CompanionModelOption(
             id: "openai/gpt-oss-120b:free",
             displayName: "GPT-OSS 120B (Free)",
-            note: "OpenRouter 免费层 120B 开源模型；速率与可用性受限。"
+            note: "Free-tier 120B open model via OpenRouter; rate and availability limited."
         )
     ]
 

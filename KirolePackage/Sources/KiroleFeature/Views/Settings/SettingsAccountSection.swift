@@ -84,7 +84,7 @@ public struct SettingsAccountSection: View {
         .buttonStyle(.plain)
         .frame(maxWidth: .infinity)
         .aspectRatio(1, contentMode: .fit)
-        .accessibilityLabel("切换伴侣，当前是 \(activeName)")
+        .accessibilityLabel("Switch companion, currently \(activeName)")
         .accessibilityIdentifier("Settings_SwitchCompanion")
     }
 
@@ -152,7 +152,7 @@ public struct SettingsAccountSection: View {
         .buttonStyle(.plain)
         .frame(maxWidth: .infinity)
         .aspectRatio(1, contentMode: .fit)
-        .accessibilityLabel("创建自定义伴侣")
+        .accessibilityLabel("Create custom companion")
         .accessibilityIdentifier("Settings_CompanionCreateCard")
     }
 

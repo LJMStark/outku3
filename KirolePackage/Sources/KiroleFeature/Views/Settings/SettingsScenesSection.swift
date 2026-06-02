@@ -174,7 +174,7 @@ private struct SceneTile: View {
                         .stroke(state == .active ? theme.colors.accent : Color.clear, lineWidth: 2)
                 )
 
-                Text(scene.englishLabel)
+                Text(scene.displayName)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(state == .locked ? theme.colors.secondaryText : theme.colors.primaryText)
             }
@@ -187,17 +187,17 @@ private struct SceneTile: View {
 
     private var accessibilityLabelText: String {
         switch state {
-        case .active: return "\(scene.englishLabel) 场景，当前正在硬件上显示"
-        case .available: return "\(scene.englishLabel) 场景，已解锁"
-        case .locked: return "\(scene.englishLabel) 场景，已锁定，需要 \(progress.threshold) 个能量瓶子"
+        case .active: return "\(scene.displayName) scene, currently showing on hardware"
+        case .available: return "\(scene.displayName) scene, unlocked"
+        case .locked: return "\(scene.displayName) scene, locked, needs \(progress.threshold) energy bottles"
         }
     }
 
     private var accessibilityHintText: String {
         switch state {
         case .active: return ""
-        case .available: return "点击应用到硬件"
-        case .locked: return "继续累积能量瓶子来解锁"
+        case .available: return "Tap to apply to hardware"
+        case .locked: return "Keep earning energy bottles to unlock"
         }
     }
 }
@@ -205,14 +205,6 @@ private struct SceneTile: View {
 // MARK: - DisplayScene UI helpers (file-private)
 
 private extension DisplayScene {
-    var englishLabel: String {
-        switch self {
-        case .harbor: return "Harbor"
-        case .forest: return "Forest"
-        case .nightCity: return "Night City"
-        }
-    }
-
     var assetName: String {
         switch self {
         case .harbor: return "scene-harbor"

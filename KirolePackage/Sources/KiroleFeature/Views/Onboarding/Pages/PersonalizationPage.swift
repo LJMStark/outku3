@@ -139,7 +139,7 @@ public struct PersonalizationPage: View {
                             .underline()
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("清除自定义伴侣")
+                    .accessibilityLabel("Clear custom companion")
                     .accessibilityIdentifier("Onboarding_ClearCustom")
                 }
             }
@@ -215,7 +215,7 @@ public struct PersonalizationPage: View {
                 .overlay {
                     RoundedRectangle(cornerRadius: 16).stroke(.white, lineWidth: 3)
                 }
-                .accessibilityLabel("自定义伴侣预览")
+                .accessibilityLabel("Custom companion preview")
         } else if isProcessing {
             ZStack {
                 RoundedRectangle(cornerRadius: 16)
@@ -223,7 +223,7 @@ public struct PersonalizationPage: View {
                     .frame(width: 96, height: 96)
                 ProgressView().tint(.white)
             }
-            .accessibilityLabel("正在处理图片")
+            .accessibilityLabel("Processing image")
         }
         #endif
     }
@@ -249,7 +249,7 @@ public struct PersonalizationPage: View {
             .clipShape(Capsule())
         }
         .disabled(isProcessing)
-        .accessibilityLabel(hasPhoto ? "更换自定义图片" : "选择自定义图片")
+        .accessibilityLabel(hasPhoto ? "Change custom image" : "Choose custom image")
         .accessibilityIdentifier("Onboarding_ChoosePhoto")
     }
 
@@ -271,7 +271,7 @@ public struct PersonalizationPage: View {
             .padding(14)
             .background(.white.opacity(0.12))
             .clipShape(RoundedRectangle(cornerRadius: 12))
-            .accessibilityLabel("自定义伴侣名字")
+            .accessibilityLabel("Custom companion name")
             .accessibilityIdentifier("Onboarding_CustomCompanion_Name")
 
             sectionHeader("Who are they to you?")
@@ -342,7 +342,7 @@ public struct PersonalizationPage: View {
             .foregroundStyle(.white)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(selected ? "当前关系：\(option.displayName)" : "选择关系 \(option.displayName)")
+        .accessibilityLabel(selected ? "Current relationship: \(option.displayName)" : "Select relationship \(option.displayName)")
         .accessibilityIdentifier("Onboarding_CustomCompanion_Relationship_\(option.rawValue)")
     }
 
@@ -380,7 +380,7 @@ public struct PersonalizationPage: View {
             .foregroundStyle(.white)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(selected ? "当前语气：\(voice.displayName)" : "选择语气 \(voice.displayName)")
+        .accessibilityLabel(selected ? "Current voice: \(voice.displayName)" : "Select voice \(voice.displayName)")
         .accessibilityIdentifier("Onboarding_CustomCompanion_Voice_\(voice.rawValue)")
     }
 
@@ -473,7 +473,7 @@ private struct CompanionCharacterCard: View {
             .animation(.kiroleSnappy, value: isSelected)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(isSelected ? "当前伴侣：\(character.displayName)" : "选择 \(character.displayName) 作为伴侣")
+        .accessibilityLabel(isSelected ? "Current companion: \(character.displayName)" : "Select \(character.displayName) as companion")
         .accessibilityIdentifier("Onboarding_Character_\(character.displayName)")
     }
 }

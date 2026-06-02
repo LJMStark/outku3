@@ -70,7 +70,7 @@ public struct OptionCard: View {
             }
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(isSelected ? "已选择：\(label)" : label)
+        .accessibilityLabel(isSelected ? "Selected: \(label)" : label)
         .accessibilityIdentifier("Onboarding_Option_\(label)")
         .animation(.kiroleGentle, value: isSelected)
         .confetti(trigger: $confettiTrigger, particleCount: 30, explosionRadius: 180)

@@ -59,7 +59,7 @@ extension TaskItem {
                 supportsPriority: false,
                 dueDatePrecision: .dateOnly,
                 supportsNotes: true,
-                guidance: "Google Tasks 不支持优先级，截止时间只会保存日期。"
+                guidance: "Google Tasks doesn't support priority, and due dates save the date only."
             )
         case .notion:
             return TaskEditCapabilities(
@@ -68,7 +68,7 @@ extension TaskItem {
                 supportsPriority: false,
                 dueDatePrecision: .unsupported,
                 supportsNotes: false,
-                guidance: "Notion 任务当前在 Kirole 中为只读，请在 Notion 中编辑。"
+                guidance: "Notion tasks are read-only in Kirole. Edit them in Notion."
             )
         case .taskade:
             return TaskEditCapabilities(
@@ -77,7 +77,7 @@ extension TaskItem {
                 supportsPriority: false,
                 dueDatePrecision: .unsupported,
                 supportsNotes: false,
-                guidance: "Taskade 任务当前在 Kirole 中为只读，请在 Taskade 中编辑。"
+                guidance: "Taskade tasks are read-only in Kirole. Edit them in Taskade."
             )
         case .todoist:
             return TaskEditCapabilities(
@@ -86,7 +86,7 @@ extension TaskItem {
                 supportsPriority: false,
                 dueDatePrecision: .unsupported,
                 supportsNotes: false,
-                guidance: "当前版本暂不支持从 Kirole 回写 Todoist，请在原平台中编辑。"
+                guidance: "Writing back to Todoist isn't supported yet. Edit it in Todoist."
             )
         }
     }
@@ -101,14 +101,14 @@ extension CalendarEvent {
             guard googleCalendarWriteAccess else {
                 return EventEditCapabilities(
                     isEditable: false,
-                    guidance: "Google Calendar 当前只有读取权限，请重新连接 Google Calendar 后再编辑。"
+                    guidance: "Google Calendar is read-only. Reconnect Google Calendar to edit."
                 )
             }
             return EventEditCapabilities(isEditable: true)
         case .todoist, .notion, .taskade:
             return EventEditCapabilities(
                 isEditable: false,
-                guidance: "当前版本请在 \(source.rawValue) 中编辑该日程。"
+                guidance: "Edit this event in \(source.rawValue) for now."
             )
         }
     }

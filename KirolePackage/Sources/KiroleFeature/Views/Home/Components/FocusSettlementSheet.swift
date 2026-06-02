@@ -125,7 +125,7 @@ public struct FocusSettlementSheet: View {
                     .clipShape(RoundedRectangle(cornerRadius: 16))
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("继续")
+            .accessibilityLabel("Continue")
             .accessibilityIdentifier("FocusSettlement_Continue")
             .padding(.horizontal, 24)
             .padding(.bottom, 24)

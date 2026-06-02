@@ -16,7 +16,7 @@ struct LocalStorageFailureTests {
 
         appState.reportPersistenceError(MockStorageError.diskFull, operation: "save", target: "tasks.json")
 
-        #expect(appState.lastError == "本地数据保存失败，请稍后重试。")
+        #expect(appState.lastError == "Couldn't save your data locally. Please try again.")
     }
 }
 

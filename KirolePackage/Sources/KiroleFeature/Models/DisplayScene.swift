@@ -54,11 +54,13 @@ public enum DisplayScene: String, CaseIterable, Sendable, Codable {
         (Self.allCases.firstIndex(of: self) ?? 0) * Self.bottlesPerUnlock
     }
 
+    /// English-only product UI: this name is shown to users (scene-unlock banner in
+    /// ContentView, Settings scene tiles). Keep it English — see CLAUDE.md Interaction Rule 4.
     public var displayName: String {
         switch self {
-        case .harbor: return "港湾"
-        case .forest: return "森林"
-        case .nightCity: return "夜城"
+        case .harbor: return "Harbor"
+        case .forest: return "Forest"
+        case .nightCity: return "Night City"
         }
     }
 }

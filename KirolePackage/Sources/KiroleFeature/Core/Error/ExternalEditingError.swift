@@ -7,9 +7,9 @@ public enum ExternalEditingError: LocalizedError, Sendable {
     public var errorDescription: String? {
         switch self {
         case .missingRemoteIdentifier(let platform):
-            return "\(platform) 数据缺少远端标识，请先刷新同步后再试。"
+            return "This \(platform) item is missing its remote ID. Refresh sync and try again."
         case .integrationReadOnly(let platform):
-            return "\(platform) 当前在 Kirole 中是只读连接，请在原平台中编辑。"
+            return "\(platform) is read-only in Kirole. Edit it in \(platform) instead."
         }
     }
 }

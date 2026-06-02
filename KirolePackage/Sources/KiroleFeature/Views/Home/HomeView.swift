@@ -122,9 +122,9 @@ public struct HomeView: View {
                     }
                     .padding(.trailing, 24)
                     .padding(.bottom, 24)
-                    .accessibilityLabel("返回顶部")
+                    .accessibilityLabel("Back to top")
                     .accessibilityIdentifier("Home_ScrollToTop")
-                    .accessibilityHint("点击滚动回时间轴顶部")
+                    .accessibilityHint("Scroll back to the top of the timeline")
                     .transition(.scale.combined(with: .opacity))
                     .zIndex(2)
                 }

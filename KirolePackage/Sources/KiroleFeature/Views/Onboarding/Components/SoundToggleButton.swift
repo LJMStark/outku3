@@ -23,7 +23,7 @@ public struct SoundToggleButton: View {
             }
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(isEnabled ? "关闭声音" : "开启声音")
+        .accessibilityLabel(isEnabled ? "Mute sound" : "Unmute sound")
         .accessibilityIdentifier("Onboarding_SoundToggle")
     }
 }

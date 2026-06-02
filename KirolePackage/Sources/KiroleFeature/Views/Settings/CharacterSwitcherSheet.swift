@@ -211,7 +211,7 @@ private struct CharacterCard: View {
             .background(cardBackground)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(isSelected ? "当前伴侣：\(character.displayName)" : "选择 \(character.displayName) 作为伴侣")
+        .accessibilityLabel(isSelected ? "Current companion: \(character.displayName)" : "Select \(character.displayName) as companion")
         .accessibilityIdentifier("Settings_Character_\(character.displayName)")
     }
 
@@ -291,7 +291,7 @@ private struct CustomCompanionCard: View {
                 Label("Delete", systemImage: "trash")
             }
         }
-        .accessibilityLabel(isSelected ? "当前伴侣：\(companion.name)" : "选择 \(companion.name)")
+        .accessibilityLabel(isSelected ? "Current companion: \(companion.name)" : "Select \(companion.name)")
         .accessibilityIdentifier("Settings_CustomCompanion_\(companion.id.uuidString)")
         .task(id: companion.id) {
             previewData = await LocalStorage.shared.loadCustomCompanionPreview(id: companion.id)
