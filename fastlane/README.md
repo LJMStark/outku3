@@ -31,6 +31,14 @@ Full pipeline: increment build → archive → upload → set notes → distribu
 
 Update TestFlight What to Test notes only (zh-Hans)
 
+### ios finish_external
+
+```sh
+[bundle exec] fastlane ios finish_external
+```
+
+Finish a release that uploaded+processed OK but died at external distribution (e.g. SSL EOF after Internal distribution). Idempotent: notes upsert + beta-review submit both skip if already done. Operates on the latest build — no archive/upload, no build bump.
+
 ----
 
 This README.md is auto-generated and will be re-generated every time [_fastlane_](https://fastlane.tools) is run.
