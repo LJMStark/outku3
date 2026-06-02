@@ -124,6 +124,7 @@ extension AppState {
         // Re-push the pixel frame so the device shows the newly active avatar.
         Task { @MainActor in
             guard let pixels = await localStorage.loadCustomCompanionPixels(id: id) else { return }
+            customAvatarFlushAttempts = 0  // fresh retry budget for the newly selected avatar
             await pushCustomAvatarFrame(pixelData: pixels, companionId: id)
         }
     }
@@ -153,6 +154,7 @@ extension AppState {
             try await BLEService.shared.sendCustomAvatarFrame(pixelData: pixelData)
             await localStorage.clearPendingCustomCompanionPush()
             isCustomAvatarPendingBLEPush = false
+            customAvatarFlushAttempts = 0
         } catch {
             await localStorage.savePendingCustomCompanionPush(id: companionId)
             isCustomAvatarPendingBLEPush = true
@@ -163,6 +165,22 @@ extension AppState {
         }
     }
 
+    /// Flush back-off policy. Re-push the 0x15 frame on every sync for the first
+    /// `maxImmediateFlushAttempts`, then drop to once every `periodicFlushRetryInterval` syncs.
+    /// This stops the frame from being re-sent on every single sync while firmware can't accept
+    /// 0x15 yet, WITHOUT ever permanently giving up: a hard cap would strand a pending push
+    /// forever once hit — a transient failure streak (hardware briefly unready) would then never
+    /// self-heal even after the hardware recovers, leaving the device on the old avatar until the
+    /// user manually re-selects a companion. Counter resets on a successful push or new selection.
+    private static let maxImmediateFlushAttempts = 5
+    private static let periodicFlushRetryInterval = 20
+
+    /// Whether the `attempt`-th consecutive flush should actually re-push. Pure + static so the
+    /// back-off schedule is unit-testable without driving real BLE. `attempt` is 1-based.
+    static func shouldAttemptCustomAvatarFlush(attempt: Int) -> Bool {
+        attempt <= maxImmediateFlushAttempts || attempt % periodicFlushRetryInterval == 0
+    }
+
     /// Called by BLESyncCoordinator after establishing a connection.
     /// Re-sends the avatar frame for the active custom companion when a previous push failed.
     public func flushPendingCustomCompanionPushIfNeeded() async {
@@ -171,6 +189,9 @@ extension AppState {
               let pixels = await localStorage.loadCustomCompanionPixels(id: id) else {
             return
         }
+        // Count every flush opportunity (even skipped ones) so the periodic retry keeps advancing.
+        customAvatarFlushAttempts += 1
+        guard Self.shouldAttemptCustomAvatarFlush(attempt: customAvatarFlushAttempts) else { return }
         await pushCustomAvatarFrame(pixelData: pixels, companionId: id)
     }
 }

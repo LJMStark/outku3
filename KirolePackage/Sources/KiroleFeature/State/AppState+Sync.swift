@@ -89,6 +89,10 @@ extension AppState {
             )
 
             if syncPlan.calendar {
+                // Offline fallback (intentional ordering — keep): this assignment runs only
+                // AFTER performFullSync above succeeds. An offline/failed Google sync throws and
+                // jumps to catch, so non-Google events — Apple/EventKit, read locally and thus
+                // offline-safe — are preserved, never cleared. Do NOT move this before the fetch.
                 let nonGoogleEvents = events.filter { $0.source != .google }
                 events = nonGoogleEvents + syncedEvents
                 try await localStorage.saveEvents(events)

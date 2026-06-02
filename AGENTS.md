@@ -156,6 +156,13 @@ xcodebuild -workspace Kirole.xcworkspace -scheme Kirole -destination 'platform=i
 - **Dependency Injection**: Use `@Environment(AppState.self)` etc.
 - **Public Access**: View types in `KirolePackage` must be `public` to be visible to App Shell.
 
+### Product Scope Red Lines (do NOT build — reject on sight)
+Kirole 是「硬件优先的单设备宠物陪伴产品」。以下提议与定位冲突，直接拒绝：
+- **不做多入口稀释**：不做多头像库网格、Apple Watch / Mac 原生端、家庭/多人共享。E-ink 硬件是唯一日常入口，多一块屏就稀释这一叙事。
+- **一账号 = 一活跃设备**：跨设备同步按「换机 = 顺序恢复（`max` 合并）」建模，无多写者并发——分布式多写竞态（如「远端写非单调 / 较低值覆盖较高值」）**不适用本产品，勿当 bug 报**（见 CLAUDE.md「Product Identity」单设备模型）。
+- **不待办化**：不做 AI 任务拆解、详情页步骤展开、催办式提醒。task/event 只是驱动宠物对话的 prompt 上下文（`TaskDehydrationService` / `MicroAction` 已于 2026-05-07 因此删除，见下文「Known Inconsistencies」）。
+- 来源：Inku 竞品深度对比逐条人工裁定（2026-05）。定位话术见 `docs/positioning-narrative.md`。
+
 ### AI Companion Text System (Product IP Paradigm)
 The companion text system is event-reactive companion writing for the Kirole task device. It reacts to task creation, active/idle work, task completion, reminders, milestones, and daily summaries. It is not open-ended chat.
 

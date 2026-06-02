@@ -35,6 +35,26 @@ public enum AvatarImageProcessor {
         (.green,  0,   140, 60),
     ]
 
+    /// Nearest Spectra 6 color to an RGB sample (Euclidean distance). Pure logic, kept OUT of the
+    /// UIKit block so it is unit-testable on any platform (the macOS test target has no UIKit).
+    static func findNearestColor(
+        r: CGFloat, g: CGFloat, b: CGFloat
+    ) -> (color: EInkColor, r: CGFloat, g: CGFloat, b: CGFloat) {
+        var bestMatch = palette[0]
+        var bestDistance = CGFloat.greatestFiniteMagnitude
+        for entry in palette {
+            let dr = r - entry.r
+            let dg = g - entry.g
+            let db = b - entry.b
+            let distance = dr * dr + dg * dg + db * db
+            if distance < bestDistance {
+                bestDistance = distance
+                bestMatch = entry
+            }
+        }
+        return bestMatch
+    }
+
     #if canImport(UIKit)
 
     /// Process a UIImage into an E-ink compatible avatar.
@@ -141,26 +161,6 @@ public enum AvatarImageProcessor {
         return (pixels, previewImage)
     }
 
-    private static func findNearestColor(
-        r: CGFloat, g: CGFloat, b: CGFloat
-    ) -> (color: EInkColor, r: CGFloat, g: CGFloat, b: CGFloat) {
-        var bestMatch = palette[0]
-        var bestDistance = CGFloat.greatestFiniteMagnitude
-
-        for entry in palette {
-            let dr = r - entry.r
-            let dg = g - entry.g
-            let db = b - entry.b
-            let distance = dr * dr + dg * dg + db * db
-
-            if distance < bestDistance {
-                bestDistance = distance
-                bestMatch = entry
-            }
-        }
-
-        return bestMatch
-    }
 
     private static func createImage(from pixelData: [UInt8], width: Int, height: Int) -> UIImage? {
         let bytesPerPixel = 4

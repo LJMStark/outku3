@@ -95,6 +95,11 @@ public final class AppState {
     /// True when the active custom companion's pixel frame failed to reach the hardware
     /// and is queued for re-delivery on the next BLE reconnect.
     public var isCustomAvatarPendingBLEPush: Bool = false
+    /// Consecutive flush opportunities for the pending custom-avatar frame. Drives the back-off
+    /// schedule in `shouldAttemptCustomAvatarFlush` (re-push every sync at first, then periodically)
+    /// so we don't re-push every sync forever while firmware can't accept the 0x15 frame yet —
+    /// without ever permanently giving up. Reset to 0 on a successful push or a new companion.
+    public var customAvatarFlushAttempts: Int = 0
     /// Set when the device timezone changes at runtime. UI shows a banner asking the user
     /// whether to re-sync events. Cleared on user action (adjust or keep).
     public var pendingTimezoneChangeName: String? = nil
