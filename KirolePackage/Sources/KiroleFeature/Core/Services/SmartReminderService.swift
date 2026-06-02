@@ -47,7 +47,9 @@ public final class SmartReminderService {
 
     // MARK: - Rate Limiting
 
-    private var lastReminderTime: Date?
+    // private(set): writes stay internal to this class; the internal getter lets @testable tests
+    // assert the cooldown was reset (e.g. by a batch-replayed reminder ack).
+    private(set) var lastReminderTime: Date?
     private let minimumInterval: TimeInterval = 30 * 60 // 30 minutes
 
     // MARK: - Constants

@@ -45,6 +45,16 @@ public struct ContentView: View {
             SimulatorBridge.shared.connect()
             #endif
         }
+        .onChange(of: isOnboardingCompleted) { _, completed in
+            // Onboarding just finished. The `.task` above already ran (with the flag still
+            // false) and does NOT re-fire on the flag flip, so a brand-new user would otherwise
+            // get no notification permission prompt until the next app launch — leaving the
+            // offline fallback reminder dead in their first session. Request it here on the flip.
+            // UI-test runs use the bypass flag (isOnboardingCompleted stays false), so they are
+            // unaffected, matching the `.task` guard above.
+            guard completed else { return }
+            Task { await NotificationService.shared.requestAuthorization() }
+        }
     }
 
     private func configureOpenAI() async {

@@ -319,4 +319,27 @@ struct GameMechanism2Tests {
 
         appState.tasks = originalTasks
     }
+
+    @Test("Batch-replayed reminder ack resets the SmartReminder cooldown (live + replay parity)")
+    @MainActor
+    func batchReplayedReminderAckResetsCooldown() async {
+        let reminder = SmartReminderService.shared
+        // Pick an ack time strictly after any existing cooldown so max-merge advances it —
+        // makes the assertion robust to the shared singleton's state from other serialized tests.
+        let baseline = reminder.lastReminderTime ?? .distantPast
+        let ackTime = max(baseline, Date()).addingTimeInterval(3600)
+
+        let ackLog = EventLog(eventType: .reminderAcknowledged, timestamp: ackTime)
+        await BLEEventHandler.handleEventLogs(
+            [ackLog],
+            service: BLEService.shared,
+            isReplay: true,
+            lastTimestampOverride: 0
+        )
+
+        // Regression guard: before the fix the replay path (isReplay: true) only ran
+        // applyEventStateMutation (completeTask only) and never reset the reminder cooldown,
+        // so an offline-then-replayed hardware ack could let the next sync immediately re-push.
+        #expect(reminder.lastReminderTime == ackTime)
+    }
 }

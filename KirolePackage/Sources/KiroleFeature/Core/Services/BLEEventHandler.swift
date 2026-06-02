@@ -108,8 +108,8 @@ public enum BLEEventHandler {
             }
 
         case .reminderAcknowledged, .reminderDismissed:
-            // 用户在硬件上已查看/忽略提醒：联动 App 端限流冷却，避免紧接着又推一条。
-            SmartReminderService.shared.registerHardwareReminderInteraction(at: eventLog.timestamp)
+            // Cooldown reset now lives in handleEventLogs (applyReminderInteractionCooldown) so it
+            // fires on BOTH the live and the 0x21-batch-replay paths; this live switch only logs.
             #if DEBUG
             print("[BLEEventHandler] Reminder \(eventLog.eventType.rawValue) at \(eventLog.timestamp)")
             #endif
@@ -307,6 +307,7 @@ public enum BLEEventHandler {
         for log in processable {
             await handleFocusSessionEvent(log, focusService: focusService, isReplay: isReplay)
             applyEventStateMutation(log)
+            applyReminderInteractionCooldown(log)
         }
     }
 
@@ -338,6 +339,17 @@ public enum BLEEventHandler {
               let task = resolveTask(taskId: taskId),
               !task.isCompleted else { return }
         AppState.shared.toggleTaskCompletion(task)
+    }
+
+    /// Reminder ack/dismiss must reset the SmartReminder cooldown on BOTH live and replay
+    /// (offline-then-reconnect `0x21` batch) paths. If it only ran on the live switch, an
+    /// offline ack/dismiss delivered later via batch replay would never restart the 30-min
+    /// cooldown, so the next sync could immediately re-push a reminder the user already handled
+    /// on the hardware. `registerHardwareReminderInteraction` is max-merge, so a stale replayed
+    /// timestamp can't pull the cooldown backwards, and re-running on the live path is idempotent.
+    private static func applyReminderInteractionCooldown(_ log: EventLog) {
+        guard log.eventType == .reminderAcknowledged || log.eventType == .reminderDismissed else { return }
+        SmartReminderService.shared.registerHardwareReminderInteraction(at: log.timestamp)
     }
 
     /// 持久化事件日志
