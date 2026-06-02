@@ -165,20 +165,33 @@ extension AppState {
         }
     }
 
-    /// Max consecutive failed flush attempts before we stop re-pushing every sync (firmware may
-    /// not accept the 0x15 frame yet). Reset on a new companion selection or a successful push.
-    private static let maxCustomAvatarFlushAttempts = 5
+    /// Flush back-off policy. Re-push the 0x15 frame on every sync for the first
+    /// `maxImmediateFlushAttempts`, then drop to once every `periodicFlushRetryInterval` syncs.
+    /// This stops the frame from being re-sent on every single sync while firmware can't accept
+    /// 0x15 yet, WITHOUT ever permanently giving up: a hard cap would strand a pending push
+    /// forever once hit — a transient failure streak (hardware briefly unready) would then never
+    /// self-heal even after the hardware recovers, leaving the device on the old avatar until the
+    /// user manually re-selects a companion. Counter resets on a successful push or new selection.
+    private static let maxImmediateFlushAttempts = 5
+    private static let periodicFlushRetryInterval = 20
+
+    /// Whether the `attempt`-th consecutive flush should actually re-push. Pure + static so the
+    /// back-off schedule is unit-testable without driving real BLE. `attempt` is 1-based.
+    static func shouldAttemptCustomAvatarFlush(attempt: Int) -> Bool {
+        attempt <= maxImmediateFlushAttempts || attempt % periodicFlushRetryInterval == 0
+    }
 
     /// Called by BLESyncCoordinator after establishing a connection.
     /// Re-sends the avatar frame for the active custom companion when a previous push failed.
     public func flushPendingCustomCompanionPushIfNeeded() async {
         guard isCustomAvatarPendingBLEPush,
-              customAvatarFlushAttempts < Self.maxCustomAvatarFlushAttempts,
               let id = userProfile.customCompanionId,
               let pixels = await localStorage.loadCustomCompanionPixels(id: id) else {
             return
         }
+        // Count every flush opportunity (even skipped ones) so the periodic retry keeps advancing.
         customAvatarFlushAttempts += 1
+        guard Self.shouldAttemptCustomAvatarFlush(attempt: customAvatarFlushAttempts) else { return }
         await pushCustomAvatarFrame(pixelData: pixels, companionId: id)
     }
 }

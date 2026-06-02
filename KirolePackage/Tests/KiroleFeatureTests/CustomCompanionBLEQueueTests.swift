@@ -89,4 +89,30 @@ struct CustomCompanionBLEQueueTests {
 
         #expect(AppState.shared.isCustomAvatarPendingBLEPush == false)
     }
+
+    // MARK: - Flush back-off schedule (livelock regression)
+
+    @Test("Flush retries every sync for the first burst, then periodically — never permanently stops")
+    func flushBackoffSchedule_neverPermanentlyStops() {
+        // First burst: every attempt re-pushes so a transient failure recovers fast.
+        for attempt in 1...5 {
+            #expect(AppState.shouldAttemptCustomAvatarFlush(attempt: attempt) == true)
+        }
+        // After the burst, most syncs are skipped — no per-sync spamming when firmware can't 0x15.
+        #expect(AppState.shouldAttemptCustomAvatarFlush(attempt: 6) == false)
+        #expect(AppState.shouldAttemptCustomAvatarFlush(attempt: 19) == false)
+        // ...but it keeps retrying periodically, so recovered hardware self-heals.
+        // Regression guard: the old hard cap returned false for EVERY attempt >= 5 forever,
+        // stranding a pending push permanently (the livelock Codex flagged).
+        #expect(AppState.shouldAttemptCustomAvatarFlush(attempt: 20) == true)
+        #expect(AppState.shouldAttemptCustomAvatarFlush(attempt: 40) == true)
+        #expect(AppState.shouldAttemptCustomAvatarFlush(attempt: 100) == true)
+
+        // Strongest invariant: there is ALWAYS a future attempt that re-pushes — never gives up.
+        let farFuture = 10_000
+        let hasUpcomingRetry = (farFuture...(farFuture + 20)).contains {
+            AppState.shouldAttemptCustomAvatarFlush(attempt: $0)
+        }
+        #expect(hasUpcomingRetry == true)
+    }
 }
