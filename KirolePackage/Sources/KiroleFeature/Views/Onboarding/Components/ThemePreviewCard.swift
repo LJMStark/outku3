@@ -48,7 +48,7 @@ public struct ThemePreviewCard: View {
             .animation(.kiroleGentle, value: isSelected)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(isSelected ? "当前主题：\(theme.rawValue)" : "选择 \(theme.rawValue) 主题")
+        .accessibilityLabel(isSelected ? "Current theme: \(theme.rawValue)" : "Select \(theme.rawValue) theme")
         .accessibilityIdentifier("Onboarding_Theme_\(theme.rawValue)")
         .confetti(trigger: $confettiTrigger, particleCount: 30, explosionRadius: 150)
         .onChange(of: isSelected) { oldValue, newValue in

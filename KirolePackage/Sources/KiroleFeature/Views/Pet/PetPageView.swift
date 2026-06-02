@@ -168,9 +168,9 @@ private struct PetIllustrationSection: View {
             }
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("查看宠物状态")
+        .accessibilityLabel("View pet status")
         .accessibilityIdentifier("Pet_IllustrationButton")
-        .accessibilityHint("点击查看宠物详细信息")
+        .accessibilityHint("Tap to view pet details")
         .onAppear {
             // Pet breathing + floating particles are ambient loops. Under
             // Reduce Motion we skip them entirely — the illustration stays
@@ -312,7 +312,7 @@ private struct TaskItemRow: View {
                         }
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(task.isCompleted ? "标记为未完成" : "标记为完成")
+                .accessibilityLabel(task.isCompleted ? "Mark as incomplete" : "Mark as complete")
                 .accessibilityIdentifier("Pet_TaskCheckbox")
 
                 // Task title
@@ -391,7 +391,7 @@ private struct TaskItemRow: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("更多操作")
+                .accessibilityLabel("More actions")
                 .accessibilityIdentifier("Pet_TaskMoreMenu")
             }
             .padding(16)
@@ -407,7 +407,7 @@ private struct TaskItemRow: View {
         .buttonStyle(RowScaleButtonStyle(isPressed: $isPressed))
         .accessibilityLabel(task.title)
         .accessibilityIdentifier("Pet_TaskRow")
-        .accessibilityHint("点击编辑任务")
+        .accessibilityHint("Tap to edit task")
         .opacity(task.isCompleted ? 0.6 : 1.0)
         .sheet(isPresented: $showEditSheet) {
             TaskEditSheet(task: task)

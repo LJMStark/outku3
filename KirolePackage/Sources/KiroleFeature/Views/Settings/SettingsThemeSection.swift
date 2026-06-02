@@ -67,7 +67,7 @@ private struct ThemeOptionRow: View {
             )
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(isSelected ? "当前主题：\(theme.rawValue)" : "切换到 \(theme.rawValue) 主题")
+        .accessibilityLabel(isSelected ? "Current theme: \(theme.rawValue)" : "Switch to \(theme.rawValue) theme")
         .accessibilityIdentifier("Settings_Theme_\(theme.rawValue)")
     }
 }

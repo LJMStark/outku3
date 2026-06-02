@@ -1,6 +1,11 @@
 import SwiftUI
 
 #if DEBUG
+// English-only UI rule (CLAUDE.md Interaction Rule 4) does NOT apply here: this whole
+// debugger is `#if DEBUG`, so it is compiled out of Release / TestFlight / App Store builds —
+// end users and beta testers never see it. The Chinese labels (and the AI-output → Chinese
+// "translate" verification feature) are an intentional internal tool for the Chinese-speaking
+// team. Do not "clean up" these strings to English; they are dev-only, like code comments.
 
 // MARK: - Prompt Debugger FAB
 

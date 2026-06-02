@@ -33,7 +33,7 @@ public struct SignUpPage: View {
                                 .accessibilityHidden(true)
                         }
                     }
-                    .accessibilityLabel("返回上一步")
+                    .accessibilityLabel("Go back")
                     .accessibilityIdentifier("Onboarding_Back")
 
                     VStack(alignment: .leading, spacing: 4) {
@@ -116,7 +116,7 @@ public struct SignUpPage: View {
                                 .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
                             }
                             .disabled(isSigningIn)
-                            .accessibilityLabel("使用 Google 账号继续")
+                            .accessibilityLabel("Continue with Google")
                             .accessibilityIdentifier("Onboarding_SignInGoogle")
 
                             // Apple Sign In
@@ -153,7 +153,7 @@ public struct SignUpPage: View {
                                 .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
                             }
                             .disabled(isSigningIn)
-                            .accessibilityLabel("使用 Apple ID 继续")
+                            .accessibilityLabel("Continue with Apple")
                             .accessibilityIdentifier("Onboarding_SignInApple")
                         }
                         .padding(.top, 32)
@@ -180,7 +180,7 @@ public struct SignUpPage: View {
                                 .padding(.top, 16)
                                 .padding(.bottom, 8)
                         }
-                        .accessibilityLabel("暂时跳过登录")
+                        .accessibilityLabel("Skip sign-in for now")
                         .accessibilityIdentifier("Onboarding_SkipSignIn")
                     }
                     .padding(.horizontal, 24)

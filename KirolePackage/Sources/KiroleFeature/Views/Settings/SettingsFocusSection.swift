@@ -64,7 +64,7 @@ public struct SettingsFocusSection: View {
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("测试专注 UI")
+                .accessibilityLabel("Test focus UI")
                 .accessibilityIdentifier("Debug_TestFocusUI")
                 #endif
             }
@@ -118,7 +118,7 @@ public struct SettingsFocusSection: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12))
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("专注模式：\(mode.displayName)")
+        .accessibilityLabel("Focus mode: \(mode.displayName)")
         .accessibilityIdentifier("Settings_FocusMode_\(mode.displayName)")
     }
 
@@ -160,7 +160,7 @@ public struct SettingsFocusSection: View {
                             )
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel("申请屏幕使用时间权限")
+                        .accessibilityLabel("Request Screen Time permission")
                         .accessibilityIdentifier("Settings_RequestScreenTime")
                     } else {
                         Button {
@@ -172,7 +172,7 @@ public struct SettingsFocusSection: View {
                             )
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel("选择需要屏蔽的 App")
+                        .accessibilityLabel("Choose apps to block")
                         .accessibilityIdentifier("Settings_SelectDistractingApps")
                     }
                 }
@@ -306,7 +306,7 @@ private struct FocusTestOverlayView: View {
                 
                 HStack(spacing: 20) {
                     Toggle(isOn: $isAccelerated) {
-                        Text("加速测试 (1秒=1分)")
+                        Text("Fast-forward test (1s = 1min)")
                     }
                     .toggleStyle(.button)
                     .tint(theme.colors.accent)
@@ -330,7 +330,7 @@ private struct FocusTestOverlayView: View {
                     .foregroundStyle(theme.colors.secondaryText)
                     .padding()
             }
-            .accessibilityLabel("关闭专注测试")
+            .accessibilityLabel("Close focus test")
             .accessibilityIdentifier("FocusTest_Close")
         }
         .onReceive(timer) { _ in

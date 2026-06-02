@@ -4,17 +4,17 @@ public enum UserFacingErrorMapper {
     public static func message(for error: AppError) -> String {
         switch error {
         case .persistence:
-            return "本地数据保存失败，请稍后重试。"
+            return "Couldn't save your data locally. Please try again."
         case .sync:
-            return "同步失败，请检查网络后重试。"
+            return "Sync failed. Check your connection and try again."
         case .configuration:
-            return "应用配置不完整，请在设置中检查配置。"
+            return "App setup is incomplete. Please check Settings."
         case .bleSecurity:
-            return "设备安全校验失败，请重新配对设备。"
+            return "Device security check failed. Please re-pair your device."
         case .unsupportedProtocol:
-            return "设备协议版本过旧，请升级设备固件。"
+            return "Your device firmware is out of date. Please update it."
         case .unknown(let message):
-            return message.isEmpty ? "发生未知错误，请稍后重试。" : message
+            return message.isEmpty ? "Something went wrong. Please try again." : message
         }
     }
 
@@ -22,6 +22,6 @@ public enum UserFacingErrorMapper {
         if let appError = error as? AppError {
             return message(for: appError)
         }
-        return error.localizedDescription.isEmpty ? "发生未知错误，请稍后重试。" : error.localizedDescription
+        return error.localizedDescription.isEmpty ? "Something went wrong. Please try again." : error.localizedDescription
     }
 }

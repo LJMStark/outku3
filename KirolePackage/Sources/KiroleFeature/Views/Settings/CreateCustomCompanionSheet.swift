@@ -149,7 +149,7 @@ public struct CreateCustomCompanionSheet: View {
                 }
                 .disabled(isProcessing)
                 .frame(width: 200, height: 200)
-                .accessibilityLabel(processResult == nil ? "选择伴侣照片" : "更换伴侣照片")
+                .accessibilityLabel(processResult == nil ? "Choose companion photo" : "Change companion photo")
                 .accessibilityIdentifier("CreateCompanion_PickPhoto")
             }
             .contentShape(RoundedRectangle(cornerRadius: 24))

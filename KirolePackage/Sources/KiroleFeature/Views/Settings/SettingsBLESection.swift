@@ -136,7 +136,7 @@ public struct SettingsBLESection: View {
             .buttonStyle(.plain)
             .disabled(trustedDeviceCount == 0 && blockedDeviceCount == 0)
             .opacity(trustedDeviceCount == 0 && blockedDeviceCount == 0 ? 0.45 : 1)
-            .accessibilityLabel("清除已信任的 BLE 硬件设备")
+            .accessibilityLabel("Clear trusted BLE devices")
             .accessibilityIdentifier("Settings_ClearTrustedBLEDevices")
         }
         .padding(16)
@@ -213,7 +213,7 @@ public struct SettingsBLESection: View {
                 Toggle("", isOn: $keepAliveEnabled)
                     .labelsHidden()
                     .tint(Color.orange)
-                    .accessibilityLabel("保持 BLE 连接用于固件调试")
+                    .accessibilityLabel("Keep BLE connected for firmware debugging")
                     .accessibilityIdentifier("Settings_BLEKeepAliveDebugToggle")
             }
 

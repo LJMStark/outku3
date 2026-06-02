@@ -160,7 +160,7 @@ private struct SoundSettingsSection: View {
                         SettingsToggleSwitch(isOn: soundEnabled)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(soundEnabled ? "关闭音效" : "开启音效")
+                    .accessibilityLabel(soundEnabled ? "Mute sound" : "Unmute sound")
                     .accessibilityIdentifier("Settings_SoundToggle")
                 }
 
@@ -183,7 +183,7 @@ private struct SoundSettingsSection: View {
                             SoundService.shared.volume = Float(volume)
                         }
                         .tint(theme.colors.accent)
-                        .accessibilityLabel("音量")
+                        .accessibilityLabel("Volume")
                         .accessibilityIdentifier("Settings_VolumeSlider")
                     }
                 }
@@ -206,7 +206,7 @@ private struct SoundSettingsSection: View {
                     .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("测试音效")
+                .accessibilityLabel("Test sound")
                 .accessibilityIdentifier("Settings_TestSound")
             }
             .padding(16)
@@ -337,7 +337,7 @@ private struct DebugSection: View {
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("强制同步 Google 数据")
+                .accessibilityLabel("Force sync Google data")
                 .accessibilityIdentifier("Debug_ForceSyncGoogle")
 
                 Divider()
@@ -358,7 +358,7 @@ private struct DebugSection: View {
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("重置引导流程")
+                .accessibilityLabel("Reset onboarding")
                 .accessibilityIdentifier("Debug_ResetOnboarding")
                 .alert("Reset Onboarding?", isPresented: $showResetConfirm) {
                     Button("Cancel", role: .cancel) {}

@@ -62,7 +62,7 @@ public struct DeviceModeSection: View {
                     .aspectRatio(contentMode: .fit)
                     .frame(width: 100, height: 120)
                     .offset(y: 10)
-                    .accessibilityLabel("宠物头像")
+                    .accessibilityLabel("Pet avatar")
                     .accessibilityIdentifier("Settings_DevicePetAvatar")
 
                 VStack(alignment: .trailing, spacing: 12) {
@@ -102,7 +102,7 @@ public struct DeviceModeSection: View {
                 .font(.system(size: 10, weight: .bold))
                 .foregroundStyle(.white)
         }
-        .accessibilityLabel(bleService.deviceBatteryLevel.map { "设备电量 \($0)%" } ?? "设备电量未知")
+        .accessibilityLabel(bleService.deviceBatteryLevel.map { "Device battery \($0)%" } ?? "Device battery unknown")
         .accessibilityIdentifier("Settings_BatteryIndicator")
     }
 
@@ -150,7 +150,7 @@ public struct DeviceModeSection: View {
                     .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("搜索 Kirole 硬件设备")
+                .accessibilityLabel("Scan for Kirole hardware")
                 .accessibilityIdentifier("Settings_DeviceFindHardware")
                 .disabled(!canStartScan)
 
@@ -168,7 +168,7 @@ public struct DeviceModeSection: View {
                             .clipShape(Circle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("断开硬件设备")
+                    .accessibilityLabel("Disconnect hardware")
                     .accessibilityIdentifier("Settings_DeviceDisconnect")
                 }
             }
@@ -226,7 +226,7 @@ public struct DeviceModeSection: View {
                     .shadow(color: .black.opacity(0.04), radius: 6, y: 3)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("连接 \(device.name)")
+                .accessibilityLabel("Connect to \(device.name)")
                 .accessibilityIdentifier("Settings_DeviceConnect_\(device.id.uuidString)")
                 .disabled(connectingDeviceID != nil)
             }
