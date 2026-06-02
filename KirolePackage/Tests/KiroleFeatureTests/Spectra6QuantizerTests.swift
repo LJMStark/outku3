@@ -17,14 +17,36 @@ struct Spectra6QuantizerTests {
 
     @Test("Nearest color never resolves to the reserved 0x4 slot")
     func nearestColorNeverReserved() {
-        // EInkColor has no 0x4 case, so the palette can never produce it — this guards the
-        // wire encoder by construction (no runtime assertion needed on the encode side).
+        // Type-level guard: EInkColor has no 0x4 case, so findNearestColor can never produce it.
+        // Cheap regression tripwire if a future palette/EInkColor change introduces 0x4.
         for r in stride(from: CGFloat(0), through: 255, by: 51) {
             for g in stride(from: CGFloat(0), through: 255, by: 51) {
                 for b in stride(from: CGFloat(0), through: 255, by: 51) {
                     #expect(AvatarImageProcessor.findNearestColor(r: r, g: g, b: b).color.rawValue != 0x4)
                 }
             }
+        }
+    }
+
+    @Test("Quantized pixels never pack a reserved 0x4 nibble onto the wire")
+    func encodedPixelsNeverContainReservedNibble() {
+        // Wire-level guard (stronger than the type check above): run the real quantizer output
+        // through the real 4bpp packer and assert no nibble on the wire is the reserved 0x4 slot.
+        // Covers findNearestColor -> EInkColor -> packPixelPair -> bytes, not just the enum type.
+        var pixels: [EInkColor] = []
+        for r in stride(from: CGFloat(0), through: 255, by: 51) {
+            for g in stride(from: CGFloat(0), through: 255, by: 51) {
+                for b in stride(from: CGFloat(0), through: 255, by: 51) {
+                    pixels.append(AvatarImageProcessor.findNearestColor(r: r, g: g, b: b).color)
+                }
+            }
+        }
+
+        let data = BLEDataEncoder.encodePixelData(pixels, width: 6)
+
+        for byte in data {
+            #expect((byte >> 4) & 0x0F != 0x4)
+            #expect(byte & 0x0F != 0x4)
         }
     }
 }
