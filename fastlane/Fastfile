@@ -69,6 +69,19 @@ platform :ios do
     upsert_localization(build, "zh-Hans", text)
     UI.success("Done — v#{app_version}(#{build.version}) notes updated")
   end
+
+  desc "Finish a release that uploaded+processed OK but died at external distribution (e.g. SSL EOF after Internal distribution). Idempotent: notes upsert + beta-review submit both skip if already done. Operates on the latest build — no archive/upload, no build bump."
+  lane :finish_external do |options|
+    en_text = resolve_notes(options)
+    Spaceship::ConnectAPI.token = asc_token
+    app   = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
+    build = latest_build(app)
+    UI.message("▶ Finishing build #{build.version} — en notes + external distribution + beta review")
+    upsert_localization(build, "en-US", en_text)
+    UI.success("✓ English notes set")
+    distribute_to_external_groups(app, build)
+    UI.success("Done — build #{build.version} distributed to external testers")
+  end
 end
 
 # ── helpers ──────────────────────────────────────────────────────────────────
