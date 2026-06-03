@@ -62,7 +62,10 @@ public struct FocusSettlementSheet: View {
             // Energy bottles earned
             VStack(spacing: 12) {
                 HStack(spacing: 4) {
-                    ForEach(0..<3, id: \.self) { index in
+                    // Render one dot per earned bottle (FocusEnergyCalculator caps nothing —
+                    // a 2h session earns 4), with a 3-dot floor so short sessions still show
+                    // empty slots. A hardcoded 3 made the dots contradict the "+N energy" label.
+                    ForEach(0..<max(earnedBottles, 3), id: \.self) { index in
                         Circle()
                             .fill(index < earnedBottles ? Color(hex: "4A6B53") : Color(hex: "C8E6C9"))
                             .frame(width: 20, height: 20)
