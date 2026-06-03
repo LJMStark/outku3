@@ -96,6 +96,19 @@ public struct CreateCustomCompanionSheet: View {
                 case .personality:
                     personalityStep
                 }
+
+                // Shown regardless of the active step: photo-load failures surface on the
+                // upload step, save failures on the personality step. Pinning this to a
+                // single step (as it was) meant the error was set while a different step
+                // was on screen, so the user never saw it.
+                if let saveError {
+                    Text(saveError)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Color.red)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+                        .accessibilityIdentifier("CreateCompanion_SaveError")
+                }
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 12)
@@ -269,14 +282,6 @@ public struct CreateCustomCompanionSheet: View {
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("CreateCompanion_Voice_\(voice.rawValue)")
                 }
-            }
-
-            if let saveError {
-                Text(saveError)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Color.red)
-                    .padding(.top, 4)
-                    .accessibilityIdentifier("CreateCompanion_SaveError")
             }
         }
     }
@@ -500,16 +505,30 @@ public struct CreateCustomCompanionSheet: View {
     private func handlePhotoSelection(_ item: PhotosPickerItem?) {
         guard let item else { return }
         isProcessing = true
+        saveError = nil
         Task {
-            let data = try? await item.loadTransferable(type: Data.self)
-            await MainActor.run {
-                #if canImport(UIKit)
-                if let data, let uiImage = UIImage(data: data),
-                   let result = AvatarImageProcessor.process(image: uiImage) {
-                    processResult = result
+            do {
+                let data = try await item.loadTransferable(type: Data.self)
+                await MainActor.run {
+                    #if canImport(UIKit)
+                    if let data, let uiImage = UIImage(data: data),
+                       let result = AvatarImageProcessor.process(image: uiImage) {
+                        processResult = result
+                    } else {
+                        // Load succeeded but the bytes weren't a usable image (unsupported
+                        // format, decode failure, or the processor rejected it).
+                        saveError = "Couldn't use that photo. Try a different image."
+                    }
+                    #endif
+                    isProcessing = false
                 }
-                #endif
-                isProcessing = false
+            } catch {
+                // loadTransferable threw (permission, transfer failure) — previously
+                // swallowed by try?, leaving the user with a disabled Next and no reason.
+                await MainActor.run {
+                    saveError = "Couldn't load that photo. Please try again."
+                    isProcessing = false
+                }
             }
         }
     }
