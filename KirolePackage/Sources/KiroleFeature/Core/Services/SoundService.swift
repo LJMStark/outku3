@@ -112,6 +112,11 @@ public final class SoundService {
               let player = try? AVAudioPlayer(contentsOf: url)
         else { return }
 
+        // Stop any in-flight player for the same name before replacing it. Overwriting
+        // the dictionary entry drops the only strong reference to the old AVAudioPlayer,
+        // so ARC would deallocate it mid-playback and cut the previous sound short.
+        players[name]?.stop()
+
         player.volume = volume
         player.prepareToPlay()
         player.play()
