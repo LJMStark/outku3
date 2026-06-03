@@ -445,6 +445,9 @@ public struct CreateCustomCompanionSheet: View {
     }
 
     private func handleBack() {
+        // Clear any error before changing steps. The error view renders step-agnostically,
+        // so a stale message (e.g. "Save failed") would otherwise bleed onto an unrelated step.
+        saveError = nil
         switch step {
         case .upload:
             dismiss()
@@ -459,6 +462,8 @@ public struct CreateCustomCompanionSheet: View {
 
     private func handleNext() {
         guard canAdvance else { return }
+        // Clear stale errors when advancing so a prior step's message doesn't follow the user.
+        saveError = nil
         switch step {
         case .upload:
             step = .identity
