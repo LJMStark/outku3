@@ -76,24 +76,27 @@ struct CelebrationStorageTests {
         let schemaKey = LocalStorage.developmentStorageSchemaVersionKey
         let celebrationKey = "lastCelebratedUnlockCount"
 
-        await SharedPersistenceTestLock.shared.withLock {
+        // Hold the lock across the reset itself, not just setup: resetForRapidDevelopment
+        // wipes every resettable key on global .standard (now including
+        // pendingCustomCompanionPushId), so it must be serialized against other suites
+        // that read/write those keys (e.g. CustomCompanionBLEQueueTests).
+        try await SharedPersistenceTestLock.shared.withLock {
             defaults.set(1, forKey: schemaKey)
             defaults.set(3, forKey: celebrationKey)
+            defer {
+                defaults.removeObject(forKey: schemaKey)
+                defaults.removeObject(forKey: celebrationKey)
+            }
+
+            let didReset = try LocalStorage.resetForRapidDevelopmentIfNeeded(
+                currentSchemaVersion: LocalStorage.currentDevelopmentStorageSchemaVersion + 1,
+                userDefaults: defaults,
+                fileManager: FileManager.default,
+                documentsDirectory: nil
+            )
+
+            #expect(didReset)
+            #expect(defaults.object(forKey: celebrationKey) == nil)
         }
-
-        defer {
-            defaults.removeObject(forKey: schemaKey)
-            defaults.removeObject(forKey: celebrationKey)
-        }
-
-        let didReset = try LocalStorage.resetForRapidDevelopmentIfNeeded(
-            currentSchemaVersion: LocalStorage.currentDevelopmentStorageSchemaVersion + 1,
-            userDefaults: defaults,
-            fileManager: FileManager.default,
-            documentsDirectory: nil
-        )
-
-        #expect(didReset)
-        #expect(defaults.object(forKey: celebrationKey) == nil)
     }
 }
