@@ -112,6 +112,13 @@ public final class SoundService {
               let player = try? AVAudioPlayer(contentsOf: url)
         else { return }
 
+        // Same-named sounds intentionally do NOT overlap: the newest play replaces the
+        // previous one. Stop the old player first — overwriting the dictionary entry drops
+        // its only strong reference, so ARC would otherwise deallocate it mid-playback and
+        // cut the sound off abruptly instead of stopping it cleanly. (These are short UI
+        // cues like task-complete dings; a multi-player pool would be overkill.)
+        players[name]?.stop()
+
         player.volume = volume
         player.prepareToPlay()
         player.play()

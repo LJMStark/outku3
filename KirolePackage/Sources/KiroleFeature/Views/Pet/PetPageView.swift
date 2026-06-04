@@ -76,6 +76,10 @@ struct PetPageView: View {
 
     // MARK: - Task Filters
 
+    // Intentional: tasks here are pet-dialogue context, not a to-do manager, and the product
+    // is deliberately no-nag. Overdue (past-due) incomplete tasks are NOT surfaced — there is
+    // no "Overdue" section by design, so a task with a past due date drops out of all three
+    // buckets. Do not "fix" this into a nagging overdue list. (Confirmed product decision.)
     private var today: Date {
         Calendar.current.startOfDay(for: Date())
     }

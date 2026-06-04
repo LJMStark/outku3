@@ -21,6 +21,9 @@ public struct CreateCustomCompanionSheet: View {
     @State private var step: Step = .upload
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var isProcessing = false
+    // Monotonic token: only the latest photo selection's async result is applied,
+    // so a slow earlier load can't overwrite a newer pick (stale-result race).
+    @State private var photoRequestID = 0
     @State private var processResult: AvatarProcessResult?
     @State private var name: String = ""
     @State private var relationship: CompanionRelationship = .pet
@@ -95,6 +98,19 @@ public struct CreateCustomCompanionSheet: View {
                     voiceStep
                 case .personality:
                     personalityStep
+                }
+
+                // Shown regardless of the active step: photo-load failures surface on the
+                // upload step, save failures on the personality step. Pinning this to a
+                // single step (as it was) meant the error was set while a different step
+                // was on screen, so the user never saw it.
+                if let saveError {
+                    Text(saveError)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Color.red)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+                        .accessibilityIdentifier("CreateCompanion_SaveError")
                 }
             }
             .padding(.horizontal, 24)
@@ -270,14 +286,6 @@ public struct CreateCustomCompanionSheet: View {
                     .accessibilityIdentifier("CreateCompanion_Voice_\(voice.rawValue)")
                 }
             }
-
-            if let saveError {
-                Text(saveError)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Color.red)
-                    .padding(.top, 4)
-                    .accessibilityIdentifier("CreateCompanion_SaveError")
-            }
         }
     }
 
@@ -440,6 +448,9 @@ public struct CreateCustomCompanionSheet: View {
     }
 
     private func handleBack() {
+        // Clear any error before changing steps. The error view renders step-agnostically,
+        // so a stale message (e.g. "Save failed") would otherwise bleed onto an unrelated step.
+        saveError = nil
         switch step {
         case .upload:
             dismiss()
@@ -454,6 +465,8 @@ public struct CreateCustomCompanionSheet: View {
 
     private func handleNext() {
         guard canAdvance else { return }
+        // Clear stale errors when advancing so a prior step's message doesn't follow the user.
+        saveError = nil
         switch step {
         case .upload:
             step = .identity
@@ -499,17 +512,40 @@ public struct CreateCustomCompanionSheet: View {
 
     private func handlePhotoSelection(_ item: PhotosPickerItem?) {
         guard let item else { return }
+        // Invalidate any in-flight selection: a newer pick supersedes an older,
+        // possibly-slower one (e.g. a large iCloud photo that finishes downloading last).
+        photoRequestID += 1
+        let requestID = photoRequestID
         isProcessing = true
+        saveError = nil
         Task {
-            let data = try? await item.loadTransferable(type: Data.self)
-            await MainActor.run {
-                #if canImport(UIKit)
-                if let data, let uiImage = UIImage(data: data),
-                   let result = AvatarImageProcessor.process(image: uiImage) {
-                    processResult = result
+            do {
+                let data = try await item.loadTransferable(type: Data.self)
+                await MainActor.run {
+                    // Drop stale results: only the most recent selection may apply. A late
+                    // earlier load must not overwrite the newer pick's preview/result, nor
+                    // clear isProcessing while the newer request is still running.
+                    guard requestID == photoRequestID else { return }
+                    #if canImport(UIKit)
+                    if let data, let uiImage = UIImage(data: data),
+                       let result = AvatarImageProcessor.process(image: uiImage) {
+                        processResult = result
+                    } else {
+                        // Load succeeded but the bytes weren't a usable image (unsupported
+                        // format, decode failure, or the processor rejected it).
+                        saveError = "Couldn't use that photo. Try a different image."
+                    }
+                    #endif
+                    isProcessing = false
                 }
-                #endif
-                isProcessing = false
+            } catch {
+                // loadTransferable threw (permission, transfer failure) — previously
+                // swallowed by try?, leaving the user with a disabled Next and no reason.
+                await MainActor.run {
+                    guard requestID == photoRequestID else { return }
+                    saveError = "Couldn't load that photo. Please try again."
+                    isProcessing = false
+                }
             }
         }
     }

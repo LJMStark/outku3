@@ -88,6 +88,7 @@ public actor LocalStorage {
         Keys.energyBottles,
         Keys.lastCelebratedUnlockCount,
         Keys.lastHomeHaikuShownDate,
+        Keys.pendingCustomCompanionPushId,
         "isOnboardingCompleted",
     ]
 
@@ -366,6 +367,9 @@ public actor LocalStorage {
 
     /// Loads sessions for the past `count` days (day -1 through day -count) in one actor call.
     public func loadFocusSessionsForPastDays(_ count: Int) throws -> [FocusSession] {
+        // `1...count` traps (uncatchable precondition failure) when count < 1, so a
+        // non-positive window must short-circuit before the closed range is formed.
+        guard count > 0 else { return [] }
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
         var result: [FocusSession] = []
