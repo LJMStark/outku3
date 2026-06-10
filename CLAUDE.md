@@ -69,6 +69,10 @@ Four `@Observable` singletons injected at `ContentView` via `.environment()`:
 | `AuthManager` | Apple / Google Sign In |
 | `FocusSessionService` | Focus session state, enforcement mode, energy bottles |
 
+**Persistence & secrets (the two most-connected non-UI nodes — touch them carefully):**
+- `LocalStorage` (`Core/Storage/`) — the JSON + `UserDefaults` persistence hub for tasks, pet, focus & gamify state. Mutations through its *resettable* keys are exactly what the parallel-test lock below guards.
+- `KeychainService` (`Core/Auth/`) — stores ALL credentials: OAuth tokens (Google / Notion / Taskade), the Apple user identifier, and the OpenAI/OpenRouter API key. Never persist a credential anywhere else.
+
 **AppState extension map** — where to put code:
 - User-triggered mutations → `AppState+Actions.swift`
 - Remote sync (Google/Apple/Notion/Taskade) → `AppState+Sync.swift`
@@ -154,6 +158,12 @@ xcodebuild -workspace Kirole.xcworkspace -scheme Kirole \
   -only-testing:KiroleFeatureTests/MyTestSuite/testMethod
 ```
 
+### Test Suite Notes
+- **~42 Swift Testing suites** in `KirolePackage/Tests/KiroleFeatureTests/`. BLE is the most heavily covered surface (`BLEProtocolTests`, `BLESecurityTests`, `BLESyncPolicyTests`, `BLEWriteGateTests`, `BLEConnectionPolicyTests`, `BLEEventHandlerTests`, `BLEProtocolSimulationTests`), followed by focus/sync/companion logic.
+- **Parallel-test isolation (CRITICAL):** Swift Testing runs suites concurrently. Any test that mutates global `UserDefaults.standard` — i.e. anything going through `LocalStorage` resettable keys, focus energy bottles, or gamify storage — MUST wrap its body in `await SharedPersistenceTestLock.shared.withLock { ... }` (`Tests/.../SharedPersistenceTestLock.swift`) or it flakes intermittently. **Adding a new key to `LocalStorage.resettableUserDefaultKeys` can make previously-green tests flaky.** If a suite flakes, run it alone first (`swift test --filter SuiteName`) to confirm an isolation problem before changing production code.
+- **Which runner:** `swift test` (package-only, fast) for logic/services; the simulator host (`xcodebuild ... test`, or XcodeBuildMCP `test_sim`) only when the test exercises app-shell / UI lifecycle. `Kirole.xctestplan` coordinates the full run.
+- **No SwiftLint / SwiftFormat is configured** in this repo — there is no lint or format step; don't invent one.
+
 ### TestFlight Release (Full Pipeline)
 ```bash
 # Full release: auto-increment build → archive → upload → set notes → distribute external group
@@ -193,6 +203,11 @@ OPENAI_API_KEY = ...        # OpenRouter key used by OpenAIService
 ```
 
 For TestFlight automation, copy `fastlane/.env.template` → `fastlane/.env` and fill in `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_PATH`.
+
+**Build settings & entitlements (separate from `Secrets.xcconfig`):**
+- Build config is layered across `Config/Shared.xcconfig` (bundle id, versions, `IPHONEOS_DEPLOYMENT_TARGET = 17.0`), `Config/Debug.xcconfig`, `Config/Release.xcconfig`, `Config/Tests.xcconfig`.
+- App capabilities live in `Config/Kirole.entitlements` — a declarative XML file you can edit directly (e.g. to add Family Controls) without touching the Xcode project.
+- **Platform floor:** Swift 6.1 toolchain, **iOS 17+** (`KirolePackage` declares `platforms: [.iOS(.v17), .macOS(.v14)]`).
 
 ## Where to Look Next
 - `AGENTS.md` — full rules, BLE protocol spec, companion IP prompt architecture, onboarding detail, Focus Mode state machine, Event→Output dispatch map.
