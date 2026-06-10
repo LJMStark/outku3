@@ -629,7 +629,7 @@ AA 01 02 Type SceneId PostcardDay QuoteLen Quote AuthorLen Author
 | `0x17` | ReminderDismissed   | 智能提醒自动消失（超时） |
 | `0x20` | RequestRefresh      | 设备请求数据刷新 |
 | `0x21` | EventLogBatch       | 批量回传事件日志 |
-| `0x30` | DeviceWake          | 设备从睡眠中唤醒 |
+| `0x30` | DeviceWake          | 设备上线通知：BLE Notify 建立后固件主动上报（非 App 触发 MCU 唤醒） |
 | `0x31` | DeviceSleep         | 设备进入睡眠模式 |
 | `0x40` | LowBattery          | 设备电量低通知 |
 
@@ -721,9 +721,11 @@ AA 01 02 Type SceneId PostcardDay QuoteLen Quote AuthorLen Author
 
 ---
 
-### 5.8 DeviceWake (0x30)
+### 5.8 DeviceWake (0x30) — 设备上线通知 / Wake Notify
 
-设备从睡眠模式唤醒。
+BLE Notify 特征开启后，固件**主动**向 App 发送此帧，表示「设备已上线」。
+
+> **语义澄清**：此帧**不是 App 唤醒 MCU 的命令**，方向是 Device→App。MCU 何时从休眠中醒来由固件自行决定（RTC / 按键 / 电源事件等）。时序：MCU 唤醒 → 广播 → App 扫描连接 → GATT 发现 → 开 Notify → 固件发送此帧。
 
 **Payload：**
 
@@ -852,7 +854,7 @@ AA 01 02 Type SceneId PostcardDay QuoteLen Quote AuthorLen Author
 
 | 用户在设备上的动作 | 固件应发送 | App 当前行为 |
 |------------------|------------|--------------|
-| 设备唤醒 | `DeviceWake(0x30)`，payload 带 `BatteryLevel(1B)` | 更新电量，发送 Time，并按需同步数据 |
+| 设备上线（BLE Notify 建立后，固件发 Wake Notify） | `DeviceWake(0x30)`，payload 带 `BatteryLevel(1B)` | 更新电量，发送 Time，并按需同步数据 |
 | 用户手动刷新 | `RequestRefresh(0x20)` | 触发一次数据同步；2 秒内重复 `RequestRefresh` 会被忽略并记录日志；**不**与 `DeviceWake(0x30)` 的 10 秒节流共用（见 §8.5）|
 | 在任务列表中进入任务详情 | `EnterTaskIn(0x10)`，payload 带 TaskId 和时间戳 | 回发 `TaskInPage(0x11)`，并启动专注会话 |
 | 在任务详情页完成任务 | `CompleteTask(0x11)`，payload 带 TaskId 和时间戳 | App 标记任务完成，结束对应专注会话 |

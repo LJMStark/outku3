@@ -28,10 +28,17 @@
 |------|--------------|----------|
 | 广播 | 广播 Service UUID `0000FFE0-0000-1000-8000-00805F9B34FB` | App 能扫描到设备 |
 | GATT | 提供 Write `0000FFE1-0000-1000-8000-00805F9B34FB` 和 Notify `0000FFE2-0000-1000-8000-00805F9B34FB` | App 能完成连接和特征发现 |
-| 唤醒事件 | Notify 发送 `DeviceWake(0x30)`，payload 为 `BatteryLevel(1B)` | App 更新电量，并发送时间同步 |
+| 设备上线通知 / Wake Notify | BLE Notify 开启后，固件**主动**发送 `DeviceWake(0x30)`，payload 为 `BatteryLevel(1B)` | App 更新电量，并写入 `Time(0x05)` 完成时间同步 |
 | 时间同步 | 接收 App 写入的 `Time(0x05)` 简单包 | 固件串口打印收到的年月日时分秒 |
 | 请求刷新 | Notify 发送 `RequestRefresh(0x20)`，payload 为空 | App 触发数据同步 |
 | DayPack 接收 | 接收 App 写入的 `DayPack(0x10)`，支持 9 字节分包 | 固件串口打印 payload 总长度和前几个字段 |
+
+> **语义说明（设备上线通知）**：`DeviceWake(0x30)` **不是 App 唤醒 MCU 的命令**，App 无法也不会触发 MCU 从休眠中醒来。MCU 何时唤醒由固件自行决定（RTC 定时、按键、电源事件等）。完整流程如下：
+> 1. MCU 自主唤醒 → 开始广播
+> 2. App 扫描到设备 → 建立 BLE 连接 → 完成 GATT 发现 → 开启 Notify
+> 3. 固件通过 Notify 发送此帧，通知 App「设备已上线」
+>
+> 因此，文档中"唤醒事件"旧名已更正为"设备上线通知 / Wake Notify"，避免误解为 App 触发方向。
 
 ---
 
@@ -90,7 +97,7 @@
 +--------+--------+------------------+
 ```
 
-例：设备唤醒，电量 87%：
+例：设备上线通知（Wake Notify），电量 87%：
 
 ```
 30 01 57
