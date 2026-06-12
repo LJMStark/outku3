@@ -16,7 +16,16 @@ extension AppState {
             await localStorage.saveLastUsageDate(overallUsage.lastUsedDate)
         }
 
-        var usageState = (try? await localStorage.loadCompanionUsageState()) ?? CompanionUsageState()
+        // 读失败（文件存在但读取/解码失败）必须早退：若拿零值状态继续，下面的 save 会把
+        // streak=1 覆盖掉用户积累的天数，IntimacyStage 重算还会把亲密度降回 acquaintance。
+        // 宁可丢一次活跃登记。文件不存在（首次使用）返回 nil，正常走新建分支。
+        var usageState: CompanionUsageState
+        do {
+            usageState = try await localStorage.loadCompanionUsageState() ?? CompanionUsageState()
+        } catch {
+            reportPersistenceError(error, operation: "read", target: "companion_usage_state.json")
+            return
+        }
         var characterUsage = usageState.progress(for: currentCharacter)
         let didAdvanceCharacterUsage = characterUsage.registerUse(on: now)
         if didAdvanceCharacterUsage {
