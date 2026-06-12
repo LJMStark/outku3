@@ -113,7 +113,8 @@ MyView()
 ### 关键风险（拆前必读）
 
 1. **toggleTaskCompletion 跨 4 个子状态**：同时写 tasks、pet、statistics、currentHaiku。  
-   拆分后需要 AppState Facade 协调，不能让子状态直接互相引用。
+   拆分后需要 AppState Facade 协调，不能让子状态直接互相引用。  
+   注：2026-06 起带 `source: TaskToggleSource` 参数——`.hardwareReplay`（BLE 离线事件回放）只应用状态变更，跳过声音/震动与 currentHaiku 生成；拆分时两条路径都要保留。
 
 2. **FocusSessionService 调用 AppState.syncFocusHardwareDisplay**（第 92、96 行）：  
    拆分后如果 AppState 消失，此处要改为直接调 BLEService/SimulatorBridge。
