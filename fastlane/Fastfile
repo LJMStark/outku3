@@ -82,6 +82,22 @@ platform :ios do
     distribute_to_external_groups(app, build)
     UI.success("Done — build #{build.version} distributed to external testers")
   end
+
+  desc "Verify the latest TestFlight build actually landed: processing state + beta review state. Run after every release — a fastlane 'Done' line alone is not proof (process can be killed mid-upload)."
+  lane :status do
+    Spaceship::ConnectAPI.token = asc_token
+    app   = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
+    build = latest_build(app)
+    app_version = build.pre_release_version ? build.pre_release_version.version : "?"
+    UI.message("Latest build: v#{app_version} (#{build.version}), uploaded #{build.uploaded_date}")
+    UI.message("processingState: #{build.processing_state}")
+    detail = Spaceship::ConnectAPI.get_build_beta_details(filter: { build: build.id }).first
+    if detail
+      UI.message("internalBuildState: #{detail.internal_build_state}")
+      UI.message("externalBuildState: #{detail.external_build_state}")
+    end
+    UI.success("Done — build #{build.version}: #{build.processing_state} / external=#{detail&.external_build_state}")
+  end
 end
 
 # ── helpers ──────────────────────────────────────────────────────────────────

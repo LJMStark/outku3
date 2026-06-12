@@ -39,6 +39,14 @@ Update TestFlight What to Test notes only (zh-Hans)
 
 Finish a release that uploaded+processed OK but died at external distribution (e.g. SSL EOF after Internal distribution). Idempotent: notes upsert + beta-review submit both skip if already done. Operates on the latest build — no archive/upload, no build bump.
 
+### ios status
+
+```sh
+[bundle exec] fastlane ios status
+```
+
+Verify the latest TestFlight build actually landed: processing state + beta review state. Run after every release — a fastlane 'Done' line alone is not proof (process can be killed mid-upload).
+
 ----
 
 This README.md is auto-generated and will be re-generated every time [_fastlane_](https://fastlane.tools) is run.
