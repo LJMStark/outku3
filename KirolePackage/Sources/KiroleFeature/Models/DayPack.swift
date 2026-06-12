@@ -49,6 +49,8 @@ public struct DayPack: Codable, Sendable {
 
     public func stableFingerprint() -> String {
         let dateFormatter = DateFormatter()
+        // 不设 locale 时继承设备区域（如泰国佛历 yyyy=2569），指纹会随 locale 漂移。
+        dateFormatter.locale = Locale(identifier: "en_US_POSIX")
         dateFormatter.dateFormat = "yyyy-MM-dd"
         let dateString = dateFormatter.string(from: date)
 

@@ -110,21 +110,31 @@ public struct ThemeColors: Sendable {
 public final class ThemeManager {
     public static let shared = ThemeManager()
 
+    // 不加入 LocalStorage.resettableUserDefaultKeys：主题偏好不属于"重置本地数据"的范畴，
+    // 且往 resettable keys 加 key 会引入并行测试隔离问题。
+    private static let themeDefaultsKey = "kirole.selectedTheme"
+
     public var currentTheme: AppTheme = .classicWarm
 
     public var colors: ThemeColors {
         currentTheme.colors
     }
 
-    private init() {}
+    private init() {
+        if let raw = UserDefaults.standard.string(forKey: Self.themeDefaultsKey),
+           let savedTheme = AppTheme(rawValue: raw) {
+            currentTheme = savedTheme
+        }
+    }
 
     public func setTheme(_ theme: AppTheme) {
         currentTheme = theme
+        UserDefaults.standard.set(theme.rawValue, forKey: Self.themeDefaultsKey)
     }
 
     public func setTheme(index: Int) {
         guard index >= 0 && index < AppTheme.allCases.count else { return }
-        currentTheme = AppTheme.allCases[index]
+        setTheme(AppTheme.allCases[index])
     }
 
     public var currentThemeIndex: Int {

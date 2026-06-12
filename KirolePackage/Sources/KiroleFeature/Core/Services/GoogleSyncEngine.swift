@@ -286,7 +286,15 @@ public actor GoogleSyncEngine {
 
         for var entry in outbox {
             if entry.retryCount > Self.maxRetryCount {
-                remaining.append(entry)
+                // 没有任何机制会重置 retryCount——超限条目留在 outbox 只会让 outbox.json
+                // 无限膨胀。丢弃并留痕（此分支只清理历史遗留的已超限存量）。
+                ErrorReporter.log(
+                    .sync(
+                        component: "Google Tasks Outbox",
+                        underlying: "Discarding stale entry \(entry.action.rawValue):\(entry.taskItem.id) already past max retries"
+                    ),
+                    context: "GoogleSyncEngine.flushOutbox"
+                )
                 continue
             }
             do {
@@ -324,10 +332,11 @@ public actor GoogleSyncEngine {
                     )
                     ErrorReporter.log(appError, context: context)
                 } else {
-                    remaining.append(entry)
+                    // 超过最大重试次数：丢弃。任务本体仍在本地（丢的只是这次推送动作），
+                    // 任务的 syncStatus 已标记 error/conflict，后续整轮同步仍可收敛。
                     let appError = AppError.sync(
                         component: "Google Tasks Outbox",
-                        underlying: "Action \(actionName) entered conflict state after max retries; manual retry required. \(error.localizedDescription)"
+                        underlying: "Action \(actionName) dropped after \(Self.maxRetryCount) retries. \(error.localizedDescription)"
                     )
                     ErrorReporter.log(appError, context: context)
                 }

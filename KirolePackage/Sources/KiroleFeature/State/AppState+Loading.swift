@@ -109,6 +109,8 @@ extension AppState {
             tasks: tasks,
             petStateService: petStateService
         )
+        // 重算后的 mood/scene 必须落盘，否则强杀后磁盘上是 stale mood（UI 与硬件推送用内存值）。
+        await persistPet(pet, context: "AppState.updatePetState")
     }
 
     func updateStatistics() {

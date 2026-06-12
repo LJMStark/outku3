@@ -88,8 +88,9 @@ public struct FocusSettlementSheet: View {
 
             Spacer().frame(height: 16)
 
-            // Total
-            Text("Total: \(totalBottles) bottles")
+            // totalBottles is the sum of TODAY's sessions only, not the all-time
+            // persisted total that gates scene unlocks — label it accordingly.
+            Text("Earned today: \(totalBottles) bottles")
                 .font(.system(size: 14))
                 .foregroundStyle(theme.colors.secondaryText)
                 .opacity(showContent ? 1 : 0)
