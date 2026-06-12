@@ -149,9 +149,11 @@ public final class BLESyncCoordinator {
             let completedAt = Date()
             await localStorage.saveLastBleSyncTime(completedAt)
             bleService.updateLastSyncTime(completedAt)
+            bleService.lastSyncFailed = false
             lastSyncSucceeded = true
         } catch {
             lastSyncSucceeded = false
+            bleService.lastSyncFailed = true
             // 整轮同步失败的最终兜底——必须无条件上报。否则 Release/TestFlight 包（硬件团队拿的就是它）
             // 下 #if DEBUG 被裁剪，sync 失败彻底静默，硬件团队无法区分“没触发同步”和“同步失败了”。
             ErrorReporter.log(

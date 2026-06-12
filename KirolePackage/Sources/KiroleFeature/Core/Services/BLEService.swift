@@ -92,6 +92,10 @@ public final class BLEService: NSObject {
     public private(set) var discoveredDevices: [BLEDevice] = []
     public private(set) var connectedDevice: BLEDevice?
     public private(set) var lastSyncTime: Date?
+
+    /// 上一轮整轮同步是否失败。lastSyncTime 只在成功时更新，连续失败时它会无声变旧——
+    /// 这个标志让 Settings 硬件面板能把"同步失败了"和"还没到同步窗口"区分开。
+    public internal(set) var lastSyncFailed = false
     /// Last known device battery level (0-100). Updated on DeviceWake and LowBattery events.
     /// nil until the device reports a level.
     public internal(set) var deviceBatteryLevel: Int?

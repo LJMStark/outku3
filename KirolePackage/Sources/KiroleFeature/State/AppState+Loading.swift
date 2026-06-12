@@ -90,13 +90,16 @@ extension AppState {
             case .partial(_, let failed) where failed > 0:
                 let error = AppError.sync(component: "Supabase", underlying: "Some data failed to sync")
                 lastError = UserFacingErrorMapper.message(for: error)
+                // lastError 在 Release 无人读取——云备份失败必须进横幅（key 渲染为 "Cloud sync failed"）。
+                remoteSyncErrors["Cloud"] = UserFacingErrorMapper.message(for: error)
                 ErrorReporter.log(error, context: "AppState.refreshData")
             case .failure(let error):
                 let appError = AppError.sync(component: "Supabase", underlying: error.localizedDescription)
                 lastError = UserFacingErrorMapper.message(for: appError)
+                remoteSyncErrors["Cloud"] = UserFacingErrorMapper.message(for: appError)
                 ErrorReporter.log(appError, context: "AppState.refreshData")
             default:
-                break
+                remoteSyncErrors.removeValue(forKey: "Cloud")
             }
         }
 

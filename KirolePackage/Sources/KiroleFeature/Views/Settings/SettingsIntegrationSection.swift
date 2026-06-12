@@ -1,3 +1,4 @@
+import AuthenticationServices
 import SwiftUI
 
 // MARK: - Settings Integration Section
@@ -218,7 +219,9 @@ public struct SettingsIntegrationSection: View {
         let hasRequiredAccess = hasGoogleAccess(for: type)
         appState.updateIntegrationStatus(type, isConnected: hasRequiredAccess)
         guard hasRequiredAccess else {
+            // lastError 在 Release 没有任何读取方——必须同时进 remoteSyncErrors 横幅，用户才看得到。
             appState.lastError = permissionDeniedMessage(for: type)
+            appState.remoteSyncErrors["Google"] = permissionDeniedMessage(for: type)
             return
         }
 
@@ -297,8 +300,15 @@ public struct SettingsIntegrationSection: View {
             appState.updateIntegrationStatus(.notion, isConnected: true)
             await appState.syncNotionData()
         } catch {
+            guard !isUserCancellation(error) else { return }
             appState.lastError = "Failed to connect Notion: \(error.localizedDescription)"
+            appState.remoteSyncErrors["Notion"] = "Failed to connect Notion: \(error.localizedDescription)"
         }
+    }
+
+    /// 用户主动关掉 OAuth 登录窗不是错误——弹"连接失败"横幅只会制造噪音。
+    private func isUserCancellation(_ error: Error) -> Bool {
+        (error as? ASWebAuthenticationSessionError)?.code == .canceledLogin
     }
 
     // MARK: - Taskade
@@ -309,7 +319,9 @@ public struct SettingsIntegrationSection: View {
             appState.updateIntegrationStatus(.taskade, isConnected: true)
             await appState.syncTaskadeData()
         } catch {
+            guard !isUserCancellation(error) else { return }
             appState.lastError = "Failed to connect Taskade: \(error.localizedDescription)"
+            appState.remoteSyncErrors["Taskade"] = "Failed to connect Taskade: \(error.localizedDescription)"
         }
     }
 }

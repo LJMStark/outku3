@@ -24,6 +24,7 @@ public struct SettingsBLESection: View {
             SettingsSectionHeader(title: "Hardware Details")
 
             bleModeCard
+            syncStatusCard
             trustedDevicesCard
             currentSceneCard
 
@@ -251,6 +252,54 @@ public struct SettingsBLESection: View {
             : "\(blockedDeviceCount) blocked devices"
 
         return "\(trustedText), \(blockedText). Clear this before switching ESP32-S3 boards in secure mode."
+    }
+
+    // 失败状态必须用户可见：lastSyncTime 只在成功时更新，连续失败时硬件显示旧数据，
+    // 用户只看到一个越来越旧的时间戳——没有这张卡，"同步失败"与"还没到同步窗口"不可区分。
+    @MainActor
+    private var syncStatusCard: some View {
+        let failed = bleService.lastSyncFailed
+        let lastSyncText: String
+        if let lastSync = bleService.lastSyncTime {
+            lastSyncText = Self.relativeFormatter.localizedString(for: lastSync, relativeTo: Date())
+        } else {
+            lastSyncText = "Not yet synced"
+        }
+
+        return HStack(spacing: 10) {
+            Circle()
+                .fill(failed ? Color.red : Color.green)
+                .frame(width: 8, height: 8)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(failed ? "Last sync failed" : "Last Sync")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(failed ? Color.red : theme.colors.primaryText)
+                Text(failed ? "Tap to retry now" : lastSyncText)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(theme.colors.secondaryText)
+            }
+
+            Spacer()
+
+            if failed {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(theme.colors.secondaryText)
+            }
+        }
+        .padding(16)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 24))
+        .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
+        .contentShape(RoundedRectangle(cornerRadius: 24))
+        .onTapGesture {
+            guard failed else { return }
+            Task { await BLESyncCoordinator.shared.performSync(force: true) }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(failed ? "Last sync failed. Tap to retry." : "Last sync \(lastSyncText)")
+        .accessibilityIdentifier("settings.ble.syncStatus")
     }
 
     private func refreshIdentityCounts() async {
