@@ -208,9 +208,11 @@ public final class CompanionTextService {
                     )
                 }
             } catch {
-                #if DEBUG
-                print("[CompanionText] Shared dialogue generation failed for \(type.rawValue): \(error.localizedDescription)")
-                #endif
+                // Release 也要留痕：否则线上 AI 生成失败与成功不可区分（fallback 文案看起来像新内容）。
+                ErrorReporter.log(
+                    .sync(component: "CompanionText", underlying: "\(type.rawValue) generation failed: \(error.localizedDescription)"),
+                    context: "CompanionTextService.generateSharedPetDialogue"
+                )
                 guard attempt < Self.dialogueMaxAttempts - 1,
                       Self.shouldRetrySharedDialogue(after: error) else {
                     break
@@ -323,8 +325,18 @@ public final class CompanionTextService {
         // An orphaned id (custom deleted while still selected) silently falls back to built-in.
         let activeCustomCompanion: CustomCompanion? = await {
             guard let id = userProfile.customCompanionId else { return nil }
-            let all = (try? await localStorage.loadCustomCompanions()) ?? []
-            return all.first { $0.id == id }
+            do {
+                let all = try await localStorage.loadCustomCompanions()
+                return all.first { $0.id == id }
+            } catch {
+                // 列表读取失败 ≠ 没有自定义伙伴：静默回退内置人设会让用户的 custom companion
+                // "性格突变"且无任何线索。留痕后回退（生成不能阻塞在持久化错误上）。
+                ErrorReporter.log(
+                    .persistence(operation: "read", target: "custom_companions.json", underlying: error.localizedDescription),
+                    context: "CompanionTextService.activeCustomCompanion"
+                )
+                return nil
+            }
         }()
 
         let baseContext = AIContext(

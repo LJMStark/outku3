@@ -46,6 +46,11 @@ public actor SyncManager {
             syncedCount += 1
         } catch {
             failedCount += 1
+            // 只计数不留痕的话，上层只看得到 "Some data failed to sync"，根因永久丢失。
+            ErrorReporter.log(
+                .sync(component: "SyncManager.syncPet", underlying: error.localizedDescription),
+                context: "SyncManager.performFullSync"
+            )
         }
 
         do {
@@ -53,6 +58,10 @@ public actor SyncManager {
             syncedCount += 1
         } catch {
             failedCount += 1
+            ErrorReporter.log(
+                .sync(component: "SyncManager.syncEnergyBottles", underlying: error.localizedDescription),
+                context: "SyncManager.performFullSync"
+            )
         }
 
         syncState.lastSyncTime = Date()

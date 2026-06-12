@@ -550,6 +550,11 @@ public final class FocusSessionService {
             }
             return ProtectionContext(mode: .deepFocus, protectionState: .protected, interruptionSource: nil)
         } catch {
+            // metrics 只累计次数；不记错误内容的话，线上无法区分权限问题和 ScreenTime API 故障。
+            ErrorReporter.log(
+                .sync(component: "FocusGuard.applyShield", underlying: error.localizedDescription),
+                context: "FocusSessionService.resolveProtectionContext"
+            )
             Task {
                 await FocusMetricsService.shared.record(.protectionApplyFailed)
                 await FocusMetricsService.shared.record(.sessionFallback)

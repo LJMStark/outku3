@@ -375,8 +375,15 @@ public actor LocalStorage {
         var result: [FocusSession] = []
         for offset in 1...count {
             guard let date = calendar.date(byAdding: .day, value: -offset, to: today) else { continue }
-            let sessions = (try? loadFocusSessionsForDate(date)) ?? []
-            result.append(contentsOf: sessions)
+            do {
+                result.append(contentsOf: try loadFocusSessionsForDate(date) ?? [])
+            } catch {
+                // 单日文件损坏只跳过该天，但必须留痕——静默按 0 计会让周/月统计与趋势悄悄算错。
+                ErrorReporter.log(
+                    .persistence(operation: "read", target: "focus_sessions(\(date))", underlying: error.localizedDescription),
+                    context: "LocalStorage.loadFocusSessionsForPastDays"
+                )
+            }
         }
         return result
     }

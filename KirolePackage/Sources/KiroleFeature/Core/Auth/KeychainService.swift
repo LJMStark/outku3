@@ -284,6 +284,10 @@ public final class KeychainService: @unchecked Sendable {
         do {
             return try keychain.get(Keys.notionWorkspaceId)
         } catch {
+            ErrorReporter.log(
+                .persistence(operation: "read", target: "notion_workspace_id", underlying: error.localizedDescription),
+                context: "KeychainService.getNotionWorkspaceId"
+            )
             return nil
         }
     }
@@ -325,6 +329,10 @@ public final class KeychainService: @unchecked Sendable {
         do {
             return try keychain.get(Keys.taskadeRefreshToken)
         } catch {
+            ErrorReporter.log(
+                .persistence(operation: "read", target: "taskade_refresh_token", underlying: error.localizedDescription),
+                context: "KeychainService.getTaskadeRefreshToken"
+            )
             return nil
         }
     }
