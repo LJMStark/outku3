@@ -112,6 +112,7 @@ public final class BLESyncCoordinator {
                 companionCharacter: appState.userProfile.companionCharacter
             )
 
+            var dayPackSendFailed = false
             if contentChanged {
                 // Send DayPack with retry: 2 attempts, 500ms/1s backoff
                 var sent = false
@@ -136,6 +137,9 @@ public final class BLESyncCoordinator {
                 } else {
                     // DayPack 是 App→硬件最核心的帧；两次写失败必须留痕，否则硬件一直显示旧数据、
                     // App 端在 Release 下毫无信号（下轮会重试，但失败本身不可见）。
+                    // 不在此处 throw：后面的事件补传（requestEventLogsIfNeeded）是核心功能，
+                    // 不能因显示帧写失败而放弃；整轮成败在末尾按本标志判定。
+                    dayPackSendFailed = true
                     ErrorReporter.log(
                         .sync(component: "BLE DayPack", underlying: lastWriteError?.localizedDescription ?? "write failed after 2 attempts"),
                         context: "BLESyncCoordinator.performSync"
@@ -146,11 +150,19 @@ public final class BLESyncCoordinator {
             await appState.flushPendingCustomCompanionPushIfNeeded()
 
             await bleService.requestEventLogsIfNeeded()
-            let completedAt = Date()
-            await localStorage.saveLastBleSyncTime(completedAt)
-            bleService.updateLastSyncTime(completedAt)
-            bleService.lastSyncFailed = false
-            lastSyncSucceeded = true
+            if dayPackSendFailed {
+                // 硬件还在显示旧内容，这轮不算成功：不更新 lastSyncTime（避免 Settings 显示
+                // 绿色"刚同步过"），点亮 lastSyncFailed 供用户重试；lastBleSyncTime 不前进
+                // 也让 BLESyncPolicy 更早安排下一轮。
+                bleService.lastSyncFailed = true
+                lastSyncSucceeded = false
+            } else {
+                let completedAt = Date()
+                await localStorage.saveLastBleSyncTime(completedAt)
+                bleService.updateLastSyncTime(completedAt)
+                bleService.lastSyncFailed = false
+                lastSyncSucceeded = true
+            }
         } catch {
             lastSyncSucceeded = false
             bleService.lastSyncFailed = true
