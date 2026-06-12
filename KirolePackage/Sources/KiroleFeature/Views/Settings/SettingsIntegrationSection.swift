@@ -46,6 +46,9 @@ public struct SettingsIntegrationSection: View {
 
                 if connectedIntegrations.isEmpty {
                     emptyStateView
+                    // 首次连接失败时还没有任何已连接集成——错误必须在空状态下也可见，
+                    // 否则齿轮红点把用户引来 Settings 却只看到"没有已连接应用"。
+                    unattachedSyncErrorsView
                 } else {
                     connectedAppsView
                 }
@@ -133,9 +136,16 @@ public struct SettingsIntegrationSection: View {
                 }
             }
 
-            // 不归属于任何已连接集成的剩余错误（如云备份）兜底汇总展示。
-            let coveredKeys = Set(connectedIntegrations.map { syncErrorKey(for: $0.type) })
-            let remainingProviders = appState.remoteSyncErrors.keys.filter { !coveredKeys.contains($0) }.sorted()
+            unattachedSyncErrorsView
+        }
+    }
+
+    /// 不归属于任何已连接集成的剩余错误（如云备份、连接失败但尚未成为已连接集成的 provider）。
+    /// 空状态下 coveredKeys 为空集，等价于展示全部 remoteSyncErrors。
+    private var unattachedSyncErrorsView: some View {
+        let coveredKeys = Set(connectedIntegrations.map { syncErrorKey(for: $0.type) })
+        let remainingProviders = appState.remoteSyncErrors.keys.filter { !coveredKeys.contains($0) }.sorted()
+        return Group {
             if !remainingProviders.isEmpty {
                 let providerList = remainingProviders.joined(separator: ", ")
                 HStack(spacing: 6) {
