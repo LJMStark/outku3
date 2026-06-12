@@ -119,6 +119,8 @@ public final class BLEPacketAssembler {
     }
 
     private var messages: [UInt16: Assembly] = [:]
+    /// 槽满丢弃日志去重：同一条被拒消息的每个 chunk 都会走到槽满分支，只在 messageId 变化时记一次。
+    private var lastDroppedMessageId: UInt16?
 
     public init() {}
 
@@ -154,7 +156,19 @@ public final class BLEPacketAssembler {
         guard computedChunkCRC == chunkCRC else { return nil }
 
         if messages[messageId] == nil {
-            guard messages.count < Limits.maxInFlightMessages else { return nil }
+            guard messages.count < Limits.maxInFlightMessages else {
+                if lastDroppedMessageId != messageId {
+                    lastDroppedMessageId = messageId
+                    ErrorReporter.log(
+                        .sync(
+                            component: "BLEPacketAssembler",
+                            underlying: "In-flight slots full (\(Limits.maxInFlightMessages)); dropping chunked message type=0x\(String(type, radix: 16)) id=\(messageId)"
+                        ),
+                        context: "BLEPacketAssembler.append"
+                    )
+                }
+                return nil
+            }
             messages[messageId] = Assembly(type: type, total: total)
         }
 

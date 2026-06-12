@@ -887,6 +887,9 @@ public final class BLEService: NSObject {
         connectCompletion?(.failure(.connectionFailed(nil)))
         connectCompletion = nil
         securityManager.resetSession()
+        // 断连必须丢弃半成品分块重组状态：链路中断时未完成的 Assembly 槽位会永久残留，
+        // 累计 8 个后 assembler 槽满，所有后续 Device→App 分块消息（含 0x21 事件补传批次）被静默丢弃。
+        packetAssembler = BLEPacketAssembler()
         pendingConnectedPeripheralID = nil
         pendingConnectedPeripheralName = nil
         connectedPeripheral = nil
