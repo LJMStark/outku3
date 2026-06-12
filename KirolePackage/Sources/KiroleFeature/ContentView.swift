@@ -118,15 +118,8 @@ public struct ContentView: View {
                 .zIndex(10)
             }
 
-            if let provider = appState.remoteSyncErrors.keys.sorted().first,
-               let message = appState.remoteSyncErrors[provider] {
-                SyncErrorBanner(provider: provider, message: message) {
-                    appState.remoteSyncErrors.removeValue(forKey: provider)
-                }
-                .padding(.top, 124)
-                .transition(.move(edge: .top).combined(with: .opacity))
-                .zIndex(9)
-            }
+            // 同步错误不再以横幅打断时间线（产品决策 2026-06）：改为 AppHeaderView 齿轮红点 +
+            // Settings 集成区行内错误。remoteSyncErrors 仍是数据源，只是消费端搬家了。
 
             if let zoneName = appState.pendingTimezoneChangeName {
                 TimezoneChangeBanner(
@@ -153,7 +146,6 @@ public struct ContentView: View {
         }
         .confetti(trigger: $sceneCelebrationConfettiTrigger)
         .animation(.kiroleSnappy, value: appState.pendingSceneCelebration)
-        .animation(.kiroleSnappy, value: appState.remoteSyncErrors.count)
         .animation(.kiroleSnappy, value: appState.pendingTimezoneChangeName != nil)
         // Observable-style injection (for @Environment(Type.self) reads)
         .environment(appState)
@@ -295,41 +287,6 @@ private struct TimezoneChangeBanner: View {
 }
 
 // MARK: - Sync Error Banner
-
-private struct SyncErrorBanner: View {
-    @Environment(ThemeManager.self) private var theme
-    let provider: String
-    let message: String
-    let onDismiss: () -> Void
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "exclamationmark.icloud")
-                .font(.system(size: 16, weight: .bold))
-                .foregroundStyle(.red)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text("\(provider) sync failed")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(theme.colors.secondaryText)
-                Text("Tap to dismiss")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(theme.colors.primaryText)
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(
-            Capsule()
-                .fill(theme.colors.cardBackground)
-                .shadow(color: .red.opacity(0.12), radius: 8, y: 4)
-        )
-        .onTapGesture { onDismiss() }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(provider) sync failed. Tap to dismiss.")
-        .accessibilityIdentifier("app.syncErrorBanner")
-    }
-}
 
 #Preview {
     ContentView()

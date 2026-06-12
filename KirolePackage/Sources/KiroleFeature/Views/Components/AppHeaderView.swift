@@ -140,6 +140,18 @@ public struct AppHeaderView: View {
                         selectedTab = .settings
                     }
                 }
+                // 同步错误的唯一被动入口：时间线不弹横幅（产品要求零打扰），
+                // 齿轮红点常驻直到错误解决，详情在 Settings 集成区行内展示。
+                .overlay(alignment: .topTrailing) {
+                    if !appState.remoteSyncErrors.isEmpty {
+                        Circle()
+                            .fill(.red)
+                            .frame(width: 8, height: 8)
+                            .offset(x: 2, y: -2)
+                            .accessibilityLabel("Sync issues present")
+                            .accessibilityIdentifier("appHeader.settingsBadge")
+                    }
+                }
             }
             .fixedSize(horizontal: true, vertical: false)
         }

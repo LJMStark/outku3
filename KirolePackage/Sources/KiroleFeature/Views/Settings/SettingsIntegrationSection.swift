@@ -110,15 +110,34 @@ public struct SettingsIntegrationSection: View {
     private var connectedAppsView: some View {
         VStack(spacing: 8) {
             ForEach(connectedIntegrations) { integration in
-                ConnectedAppRow(integration: integration) {
-                    disconnectTarget = integration.type
+                VStack(alignment: .leading, spacing: 4) {
+                    ConnectedAppRow(integration: integration) {
+                        disconnectTarget = integration.type
+                    }
+                    .disabled(isDisconnecting)
+                    .opacity(isDisconnecting ? 0.6 : 1.0)
+
+                    if let errorMessage = syncErrorMessage(for: integration.type) {
+                        HStack(alignment: .top, spacing: 6) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.red)
+                            Text(errorMessage)
+                                .font(.system(size: 11))
+                                .foregroundStyle(.red)
+                        }
+                        .padding(.horizontal, 4)
+                        .accessibilityLabel("\(integration.type.rawValue) sync error: \(errorMessage)")
+                        .accessibilityIdentifier("settings.syncError.\(integration.type.rawValue)")
+                    }
                 }
-                .disabled(isDisconnecting)
-                .opacity(isDisconnecting ? 0.6 : 1.0)
             }
 
-            if !appState.remoteSyncErrors.isEmpty {
-                let providerList = appState.remoteSyncErrors.keys.sorted().joined(separator: ", ")
+            // 不归属于任何已连接集成的剩余错误（如云备份）兜底汇总展示。
+            let coveredKeys = Set(connectedIntegrations.map { syncErrorKey(for: $0.type) })
+            let remainingProviders = appState.remoteSyncErrors.keys.filter { !coveredKeys.contains($0) }.sorted()
+            if !remainingProviders.isEmpty {
+                let providerList = remainingProviders.joined(separator: ", ")
                 HStack(spacing: 6) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 11))
@@ -133,6 +152,23 @@ public struct SettingsIntegrationSection: View {
                 .accessibilityIdentifier("settings.syncErrorIndicator")
             }
         }
+    }
+
+    /// remoteSyncErrors 的 key 是 provider 显示名，与 IntegrationType 不一一对应
+    /// （Google Calendar/Tasks 共用 "Google" 一个 key）。
+    private func syncErrorKey(for type: IntegrationType) -> String {
+        switch type {
+        case .googleCalendar, .googleTasks: return "Google"
+        case .appleCalendar: return "Apple Calendar"
+        case .appleReminders: return "Apple Reminders"
+        case .notion: return "Notion"
+        case .taskade: return "Taskade"
+        default: return type.rawValue
+        }
+    }
+
+    private func syncErrorMessage(for type: IntegrationType) -> String? {
+        appState.remoteSyncErrors[syncErrorKey(for: type)]
     }
 
     private var connectNewAppSection: some View {
