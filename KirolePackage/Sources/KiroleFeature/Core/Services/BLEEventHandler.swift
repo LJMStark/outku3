@@ -306,7 +306,7 @@ public enum BLEEventHandler {
 
         for log in processable {
             await handleFocusSessionEvent(log, focusService: focusService, isReplay: isReplay)
-            applyEventStateMutation(log)
+            applyEventStateMutation(log, isReplay: isReplay)
             applyReminderInteractionCooldown(log)
         }
     }
@@ -333,12 +333,14 @@ public enum BLEEventHandler {
     }
 
     /// State changes that must apply for both live and replayed events.
-    private static func applyEventStateMutation(_ log: EventLog) {
+    /// Replay applies the same state mutation but suppresses feedback side
+    /// effects (sound/haptic, completion haiku) via `.hardwareReplay`.
+    private static func applyEventStateMutation(_ log: EventLog, isReplay: Bool) {
         guard log.eventType == .completeTask,
               let taskId = log.taskId,
               let task = resolveTask(taskId: taskId),
               !task.isCompleted else { return }
-        AppState.shared.toggleTaskCompletion(task)
+        AppState.shared.toggleTaskCompletion(task, source: isReplay ? .hardwareReplay : .user)
     }
 
     /// Reminder ack/dismiss must reset the SmartReminder cooldown on BOTH live and replay

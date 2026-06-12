@@ -14,13 +14,21 @@ enum TaskExternalSyncAction {
     }
 }
 
+/// 任务完成切换的触发来源。状态变更（任务状态、宠物积分、持久化、外部同步）对两者一致；
+/// 反馈类副作用（声音/震动、completion haiku）只属于实时用户操作——离线事件批量回放
+/// 时逐条触发会变成重连瞬间的震动风暴 + N 次 LLM 调用。
+public enum TaskToggleSource {
+    case user
+    case hardwareReplay
+}
+
 extension AppState {
     private enum TaskSyncSupport {
         case localOnly
         case remote
     }
 
-    public func toggleTaskCompletion(_ task: TaskItem) {
+    public func toggleTaskCompletion(_ task: TaskItem, source: TaskToggleSource = .user) {
         guard let existingTask = tasks.first(where: { $0.id == task.id }) else { return }
 
         var updatedTask = existingTask
@@ -33,7 +41,7 @@ extension AppState {
         let isCompleted = updatedTask.isCompleted
 
         tasks = taskManager.withTask(tasks, updatedTask: updatedTask)
-        updatePetForTaskToggle(isCompleted: isCompleted)
+        updatePetForTaskToggle(isCompleted: isCompleted, playFeedback: source == .user)
         updateStatistics()
         requestBLESync(reason: "toggleTaskCompletion")
 
@@ -51,7 +59,7 @@ extension AppState {
             )
             await updatePetState()
 
-            if isCompleted {
+            if isCompleted, source == .user {
                 currentHaiku = await haikuService.generateCompletionHaiku(
                     tasksCompleted: statistics.todayCompleted,
                     totalTasks: statistics.todayTotal,
@@ -61,16 +69,20 @@ extension AppState {
         }
     }
 
-    private func updatePetForTaskToggle(isCompleted: Bool) {
+    private func updatePetForTaskToggle(isCompleted: Bool, playFeedback: Bool) {
         var updatedPet = pet
 
         if isCompleted {
-            SoundService.shared.playWithHaptic(.taskComplete, haptic: .success)
+            if playFeedback {
+                SoundService.shared.playWithHaptic(.taskComplete, haptic: .success)
+            }
             updatedPet.adventuresCount += 1
             updatedPet.points += ProgressConstants.pointsPerTask
             updatedPet.lastInteraction = Date()
         } else {
-            SoundService.shared.playWithHaptic(.taskUncomplete, haptic: .light)
+            if playFeedback {
+                SoundService.shared.playWithHaptic(.taskUncomplete, haptic: .light)
+            }
             updatedPet.adventuresCount = max(0, updatedPet.adventuresCount - 1)
             updatedPet.points = max(0, updatedPet.points - ProgressConstants.pointsPerTask)
             updatedPet.lastInteraction = Date()
