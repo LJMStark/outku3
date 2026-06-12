@@ -162,6 +162,9 @@ public struct HomeView: View {
         .onChange(of: FocusSessionService.shared.todaySessions.count) { oldCount, newCount in
             guard newCount > oldCount, newCount > 0 else { return }
             guard let lastSession = FocusSessionService.shared.todaySessions.last else { return }
+            // 冷启动恢复的会话（崩溃/强杀后补记）不是用户刚刚主动完成的专注——
+            // 不弹庆祝结算，否则重新打开 App 会被一个陌生的大额结算 sheet 迎面砸中。
+            guard lastSession.endReason != .recoveredOnLaunch else { return }
             let focusMinutes = Int((lastSession.calculatedFocusTime ?? 0) / 60)
             guard focusMinutes > 0 else { return }
             settlementData = FocusSettlementData(
