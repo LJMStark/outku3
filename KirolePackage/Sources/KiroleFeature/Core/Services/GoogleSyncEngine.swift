@@ -148,8 +148,12 @@ public actor GoogleSyncEngine {
     public func syncTasks(currentTasks: [TaskItem]) async throws -> [TaskItem] {
         await flushOutbox()
 
+        // 增量同步(updatedMin)只返回基线之后改动过的任务，无法重建完整集合。断开 Google 会清空本地
+        // Google 任务但不重置 lastTasksSyncTime 基线；重连后若仍走增量，远端存在但近期未改的旧任务会
+        // 永久缺失。本地已无任何 Google 任务（googleTaskId != nil）时回退全量，首次同步(无基线)同理。
+        let hasLocalGoogleTasks = currentTasks.contains { $0.googleTaskId != nil }
         let remoteTasks: [TaskItem]
-        if let lastSync = metadata.lastTasksSyncTime {
+        if let lastSync = metadata.lastTasksSyncTime, hasLocalGoogleTasks {
             let updatedMin = lastSync.addingTimeInterval(Self.syncOverlapInterval)
             remoteTasks = try await fetchAllTasksIncremental(updatedMin: updatedMin)
         } else {
