@@ -149,9 +149,10 @@ public final class BLESyncCoordinator {
 
             await appState.flushPendingCustomCompanionPushIfNeeded()
 
-            await bleService.requestEventLogsIfNeeded()
-            if dayPackSendFailed {
-                // 硬件还在显示旧内容，这轮不算成功：不更新 lastSyncTime（避免 Settings 显示
+            let eventLogRequestSucceeded = await bleService.requestEventLogsIfNeeded()
+            if dayPackSendFailed || !eventLogRequestSucceeded {
+                // 硬件还在显示旧内容，或事件补传请求(0x20)没写出去：这轮不算成功。补传是核心功能，
+                // 0x20 写失败与 DayPack 写失败同等对待——不更新 lastBleSyncTime（避免 Settings 显示
                 // 绿色"刚同步过"），点亮 lastSyncFailed 供用户重试；lastBleSyncTime 不前进
                 // 也让 BLESyncPolicy 更早安排下一轮。
                 bleService.lastSyncFailed = true

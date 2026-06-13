@@ -612,15 +612,20 @@ public final class BLEService: NSObject {
         try await writeData(type: .eventLogRequest, data: data)
     }
 
-    public func requestEventLogsIfNeeded() async {
+    /// 发起事件补传请求(0x20)。返回值仅表示请求帧是否成功写出（不代表设备已回传——回传走后续
+    /// 0x21 eventLogBatch 路径）。补传是核心功能，调用方据此判定整轮同步成败。
+    @discardableResult
+    public func requestEventLogsIfNeeded() async -> Bool {
         let since = await localStorage.loadLastEventLogTimestamp() ?? 0
         do {
             try await requestEventLogs(since: since)
+            return true
         } catch {
             ErrorReporter.log(
                 .sync(component: "BLE Event Logs", underlying: error.localizedDescription),
                 context: "BLEService.requestEventLogsIfNeeded"
             )
+            return false
         }
     }
 
