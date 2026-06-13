@@ -46,6 +46,22 @@ extension AppState {
             type: type,
             isConnected: isConnected
         )
+        persistIntegrationConnections()
+    }
+
+    /// 持久化各集成的连接开关，使用户的断开/连接意图跨重启保留（否则启动时回落 defaultIntegrations，
+    /// Apple Calendar/Reminders 默认 isConnected:true 会让断开的集成自动复活并重新导入数据）。
+    private func persistIntegrationConnections() {
+        let states = Dictionary(
+            uniqueKeysWithValues: integrations.map { ($0.type.rawValue, $0.isConnected) }
+        )
+        Task { @MainActor in
+            do {
+                try await localStorage.saveIntegrationConnections(states)
+            } catch {
+                reportPersistenceError(error, operation: "save", target: "integration_connections.json")
+            }
+        }
     }
 
     func disconnectConflictingIntegration(for type: IntegrationType) {

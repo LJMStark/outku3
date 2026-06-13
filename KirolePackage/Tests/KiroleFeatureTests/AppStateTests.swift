@@ -866,4 +866,34 @@ struct SyncMergeTests {
         let ids = state.tasks.map(\.id)
         #expect(ids == ["n1"], "Deleted remote task n2 must not appear after merge")
     }
+
+    // MARK: - Integration Connection Persistence (B4)
+
+    @Suite("Integration Connection Persistence")
+    struct IntegrationConnectionPersistence {
+        @Test("Persisted Apple disconnect is restored over defaults")
+        @MainActor
+        func persistedDisconnectRestoredOverDefaults() {
+            let coordinator = IntegrationCoordinator()
+            // User had disconnected Apple Calendar; Reminders left connected.
+            let restored = coordinator.applyConnectionStates(
+                ["Apple Calendar": false],
+                to: Integration.defaultIntegrations
+            )
+            #expect(coordinator.hasIntegration(.appleCalendar, integrations: restored) == false)
+            #expect(coordinator.hasIntegration(.appleReminders, integrations: restored) == true)
+        }
+
+        @Test("Unknown integration raw values are ignored, leaving defaults intact")
+        @MainActor
+        func unknownRawValuesIgnored() {
+            let coordinator = IntegrationCoordinator()
+            let restored = coordinator.applyConnectionStates(
+                ["Not A Real Integration": true],
+                to: Integration.defaultIntegrations
+            )
+            #expect(restored.count == Integration.defaultIntegrations.count)
+            #expect(coordinator.hasIntegration(.appleCalendar, integrations: restored) == true)
+        }
+    }
 }

@@ -65,6 +65,17 @@ extension AppState {
             reportPersistenceError(error, operation: "load", target: "onboarding_profile.json")
         }
 
+        // Restore the user's per-integration connection toggles over defaultIntegrations so a
+        // disconnect survives relaunch (Apple Calendar/Reminders default to connected). Auth-derived
+        // integrations (Google/Notion/Taskade) are still reconciled later by syncIntegrationStatusFromAuth.
+        do {
+            if let savedConnections = try await localStorage.loadIntegrationConnections() {
+                integrations = integrationCoordinator.applyConnectionStates(savedConnections, to: integrations)
+            }
+        } catch {
+            reportPersistenceError(error, operation: "load", target: "integration_connections.json")
+        }
+
         do {
             customCompanions = try await localStorage.loadCustomCompanions()
         } catch {

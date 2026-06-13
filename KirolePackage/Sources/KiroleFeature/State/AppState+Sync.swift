@@ -37,6 +37,9 @@ extension AppState {
     }
 
     public func syncConnectedExternalData() async {
+        // 等启动本地加载完成再同步：否则会抢在集成连接状态恢复之前按 defaultIntegrations(Apple=true)
+        // 同步，把用户刚断开/清掉的 Apple 数据又导入回来（B4 启动竞态）。
+        await ensureInitialLoadComplete()
         syncIntegrationStatusFromAuth()
 
         for target in connectedExternalSyncTargets() {
@@ -174,6 +177,9 @@ extension AppState {
     }
 
     public func syncAppleData() async {
+        // 纵深防御：syncAppleData 是 public，且 Apple change observer 回调会直接调它（绕过
+        // syncConnectedExternalData）。自带等待，确保任何入口都不会在集成连接状态恢复前导入。
+        await ensureInitialLoadComplete()
         guard !activeSyncs.contains(.apple) else { return }
         activeSyncs.insert(.apple)
         defer { activeSyncs.remove(.apple) }

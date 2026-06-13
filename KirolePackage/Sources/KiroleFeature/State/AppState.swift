@@ -134,11 +134,20 @@ public final class AppState {
     // Internal coordination state — debounce handle for BLE sync requests.
     var pendingBLESyncTask: Task<Void, Never>?
 
+    /// 启动本地加载任务句柄；ensureInitialLoadComplete() 等它完成，避免首轮外部同步 / Apple observer
+    /// 抢在集成连接状态恢复之前按 defaultIntegrations(Apple=true) 同步、把已断开/已清掉的数据写回。
+    private var initialLoadTask: Task<Void, Never>?
+
     private init(loadLocalDataOnInit: Bool = true) {
         guard loadLocalDataOnInit else { return }
-        Task { @MainActor in
+        initialLoadTask = Task { @MainActor in
             await loadLocalData()
         }
+    }
+
+    /// 等待启动本地加载（含集成连接状态恢复）完成。任何首轮外部同步 / observer 挂载前必须先 await。
+    public func ensureInitialLoadComplete() async {
+        await initialLoadTask?.value
     }
 
     static func makeForTesting() -> AppState {

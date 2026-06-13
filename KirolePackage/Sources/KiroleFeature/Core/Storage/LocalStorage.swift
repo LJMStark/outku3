@@ -44,6 +44,7 @@ public actor LocalStorage {
         static let outbox = "outbox.json"
         static let googleSyncMetadata = "google_sync_metadata.json"
         static let companionUsageState = "companion_usage_state.json"
+        static let integrationConnections = "integration_connections.json"
         static let sharedCompanionDialogue = "shared_companion_dialogue.json"
         static let customCompanions = "custom_companions.json"
         /// Prefix for per-companion pixel/preview blobs.
@@ -57,6 +58,7 @@ public actor LocalStorage {
             behaviorSummary, onboardingProfile,
             deepFocusSelection, activeFocusSession,
             outbox, googleSyncMetadata, companionUsageState,
+            integrationConnections,
             sharedCompanionDialogue,
             customCompanions,
         ]
@@ -235,6 +237,18 @@ public actor LocalStorage {
 
     public func loadEvents() throws -> [CalendarEvent]? {
         try load([CalendarEvent].self, from: Files.events)
+    }
+
+    // MARK: - Integration Connection State
+
+    /// Persisted per-integration connection toggle (IntegrationType.rawValue → isConnected).
+    /// Restored on launch so a user's disconnect survives relaunch instead of reverting to defaults.
+    public func saveIntegrationConnections(_ states: [String: Bool]) throws {
+        try save(states, to: Files.integrationConnections)
+    }
+
+    public func loadIntegrationConnections() throws -> [String: Bool]? {
+        try load([String: Bool].self, from: Files.integrationConnections)
     }
 
     // MARK: - User Profile

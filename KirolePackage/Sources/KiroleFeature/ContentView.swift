@@ -168,6 +168,9 @@ public struct ContentView: View {
         }
         .task {
             SyncScheduler.shared.startForegroundSync()
+            // 等启动加载完成再读 integrations 挂 Apple observer，否则会按 defaultIntegrations(Apple=true)
+            // 给已断开的 Apple 集成挂观察者（B4 启动竞态）。
+            await appState.ensureInitialLoadComplete()
             if appState.isAnyAppleIntegrationConnected {
                 await appState.setupAppleChangeObserver()
             }
