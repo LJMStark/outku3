@@ -28,6 +28,7 @@ extension AppState {
             }
         } catch {
             reportPersistenceError(error, operation: "load", target: "pet.json")
+            await quarantineCorruptDataFile("pet.json")
         }
 
         do {
@@ -36,6 +37,7 @@ extension AppState {
             }
         } catch {
             reportPersistenceError(error, operation: "load", target: "tasks.json")
+            await quarantineCorruptDataFile("tasks.json")
         }
 
         do {
@@ -44,6 +46,7 @@ extension AppState {
             }
         } catch {
             reportPersistenceError(error, operation: "load", target: "events.json")
+            await quarantineCorruptDataFile("events.json")
         }
 
         do {
@@ -155,5 +158,15 @@ extension AppState {
         )
         ErrorReporter.log(appError, context: "AppState")
         lastError = UserFacingErrorMapper.message(for: appError)
+    }
+
+    /// 读取/解码失败后把损坏文件改名留底，避免随后的默认/残缺数据静默覆盖原始数据。
+    /// 仅在解码/读取失败（抛错）时调用——文件不存在走 load() 返回 nil 的正常默认路径，不会到这里。
+    func quarantineCorruptDataFile(_ filename: String) async {
+        do {
+            try await localStorage.quarantineCorruptFile(named: filename)
+        } catch {
+            reportPersistenceError(error, operation: "quarantine", target: filename)
+        }
     }
 }

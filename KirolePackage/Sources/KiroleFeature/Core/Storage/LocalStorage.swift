@@ -199,6 +199,25 @@ public actor LocalStorage {
         }
     }
 
+    /// Quarantine a corrupt/unreadable file by renaming it to `<name>.corrupt`.
+    /// On a read/decode failure the caller would otherwise let default/partial data silently
+    /// overwrite the original; moving it aside preserves the original for recovery/forensics while
+    /// letting the app continue. Overwrites any prior `.corrupt`. Documents-directory scoped only.
+    public func quarantineCorruptFile(named filename: String) throws {
+        guard !filename.contains(".."), !filename.contains("/") else { return }
+        let url = documentsDirectory.appendingPathComponent(filename)
+        let resolvedPath = url.standardizedFileURL.path
+        let documentsPath = documentsDirectory.standardizedFileURL.path + "/"
+        guard resolvedPath.hasPrefix(documentsPath) else { return }
+        guard fileManager.fileExists(atPath: url.path) else { return }
+
+        let quarantineURL = documentsDirectory.appendingPathComponent(filename + ".corrupt")
+        if fileManager.fileExists(atPath: quarantineURL.path) {
+            try fileManager.removeItem(at: quarantineURL)
+        }
+        try fileManager.moveItem(at: url, to: quarantineURL)
+    }
+
     /// Load a decodable value from a JSON file in the documents directory
     private func load<T: Decodable>(_ type: T.Type, from filename: String) throws -> T? {
         let url = documentsDirectory.appendingPathComponent(filename)
