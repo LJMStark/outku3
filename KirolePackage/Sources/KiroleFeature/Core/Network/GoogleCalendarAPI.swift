@@ -128,7 +128,6 @@ public actor GoogleCalendarAPI {
         let calendarIds = try await loadTargetCalendarIds()
 
         var latestByEventId: [String: CalendarEvent] = [:]
-        var successfulFetchCount = 0
         var failures: [String] = []
 
         await withTaskGroup(of: CalendarFetchOutcome.self) { group in
@@ -164,7 +163,6 @@ public actor GoogleCalendarAPI {
                     continue
                 }
 
-                successfulFetchCount += 1
                 for event in outcome.events {
                     if let existing = latestByEventId[event.id] {
                         if event.lastModified > existing.lastModified {
@@ -181,10 +179,14 @@ public actor GoogleCalendarAPI {
         if !failures.isEmpty {
             print("[GoogleCalendarAPI] Calendar fetch partial failures: \(failures.joined(separator: " | "))")
         }
-        print("[GoogleCalendarAPI] Calendar fetch success=\(successfulFetchCount)/\(calendarIds.count), events=\(latestByEventId.count)")
+        print("[GoogleCalendarAPI] Calendar fetch success=\(calendarIds.count - failures.count)/\(calendarIds.count), events=\(latestByEventId.count)")
         #endif
 
-        if successfulFetchCount == 0 && !failures.isEmpty {
+        // 任一日历拉取失败就整体抛错，而不是只在全部失败时抛。原先部分失败会静默返回成功日历的事件，
+        // 上层用 nonGoogle + syncedEvents 整组替换 → 失败日历的事件凭空消失且整轮报 Success。抛错后走
+        // runSyncStep 的 .failure：保留上轮 Google 事件（不丢，仅本轮不刷新），失败经 warnings 上报到
+        // remoteSyncErrors（齿轮红点 + Settings 行内）。瞬时失败下轮恢复即重新拉全。
+        if !failures.isEmpty {
             throw GoogleCalendarError.calendarFetchFailed(failures.joined(separator: " | "))
         }
 
