@@ -142,4 +142,42 @@ struct FocusProtectionTests {
         #expect(recovered?.interruptionSource == .recoveredOnLaunch)
         #expect(guardService.clearShieldCalls == 1)
     }
+
+    // MARK: - Duplicate enterTaskIn idempotency (guards the live-path change in A2)
+
+    @Test("Repeated enterTaskIn for the same active task does not restart the session")
+    @MainActor
+    func repeatedSameTaskDoesNotRestartSession() async throws {
+        let guardService = MockFocusGuardService(authorizationStatus: .approved)
+        let service = FocusSessionService.makeForTesting(focusGuardService: guardService, persistenceEnabled: false)
+
+        let firstStart = Date(timeIntervalSince1970: 1000)
+        await service.startSession(taskId: "task-A", taskTitle: "Task A", mode: .standard, startTime: firstStart)
+        #expect(service.activeSession?.taskId == "task-A")
+
+        // A duplicate BLE delivery of the same enterTaskIn arrives a second later.
+        await service.startSession(taskId: "task-A", taskTitle: "Task A", mode: .standard,
+                                   startTime: Date(timeIntervalSince1970: 1001))
+
+        let current = try #require(service.activeSession)
+        #expect(current.taskId == "task-A")
+        // Unchanged startTime proves the session was not torn down and reopened.
+        #expect(current.startTime == firstStart)
+    }
+
+    @Test("enterTaskIn for a different task ends the previous session and starts a new one")
+    @MainActor
+    func differentTaskStartsNewSession() async throws {
+        let guardService = MockFocusGuardService(authorizationStatus: .approved)
+        let service = FocusSessionService.makeForTesting(focusGuardService: guardService, persistenceEnabled: false)
+
+        await service.startSession(taskId: "task-A", taskTitle: "Task A", mode: .standard,
+                                   startTime: Date(timeIntervalSince1970: 1000))
+        await service.startSession(taskId: "task-B", taskTitle: "Task B", mode: .standard,
+                                   startTime: Date(timeIntervalSince1970: 2000))
+
+        let current = try #require(service.activeSession)
+        #expect(current.taskId == "task-B")
+        #expect(current.startTime == Date(timeIntervalSince1970: 2000))
+    }
 }

@@ -9,19 +9,39 @@ public struct EventLog: Codable, Sendable, Identifiable {
     public let taskId: String?
     public let timestamp: Date
     public let value: Int
+    /// 仅当 `timestamp` 是从设备自身时钟（BLE payload 里的 4 字节时间戳）解析出来时为 true。
+    /// deviceWake / lowBattery / encoder 等事件不携带设备时间戳，会用 App 端 `Date()` 兜底，此时为 false。
+    /// 离线补传高水位（`lastEventLogTimestamp`）只允许由 `hasDeviceTimestamp == true` 的事件推进，
+    /// 否则重连时先到的兜底事件会把补传 since 顶到“现在”，丢掉离线积压的真实事件——
+    /// 见 `BLEEventHandler.nextEventLogWatermark`。
+    public let hasDeviceTimestamp: Bool
 
     public init(
         id: UUID = UUID(),
         eventType: EventLogType,
         taskId: String? = nil,
         timestamp: Date = Date(),
-        value: Int = 0
+        value: Int = 0,
+        hasDeviceTimestamp: Bool = false
     ) {
         self.id = id
         self.eventType = eventType
         self.taskId = taskId
         self.timestamp = timestamp
         self.value = value
+        self.hasDeviceTimestamp = hasDeviceTimestamp
+    }
+
+    // 向后兼容：旧 event_logs.json 没有 hasDeviceTimestamp 字段，缺失时默认 false，
+    // 避免一次字段新增就让整份历史日志解码失败（与“读失败不应放大成数据丢失”一致）。
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(UUID.self, forKey: .id)
+        self.eventType = try container.decode(EventLogType.self, forKey: .eventType)
+        self.taskId = try container.decodeIfPresent(String.self, forKey: .taskId)
+        self.timestamp = try container.decode(Date.self, forKey: .timestamp)
+        self.value = try container.decodeIfPresent(Int.self, forKey: .value) ?? 0
+        self.hasDeviceTimestamp = try container.decodeIfPresent(Bool.self, forKey: .hasDeviceTimestamp) ?? false
     }
 }
 
@@ -169,6 +189,7 @@ public extension EventLog {
         let taskId = String(data: taskIdData, encoding: .utf8)
 
         var timestamp = Date()
+        var hasDeviceTimestamp = false
         let timestampOffset = 1 + taskIdLength
         if payload.count >= timestampOffset + 4 {
             let ts = UInt32(payload[timestampOffset]) << 24
@@ -176,9 +197,15 @@ public extension EventLog {
                 | UInt32(payload[timestampOffset + 2]) << 8
                 | UInt32(payload[timestampOffset + 3])
             timestamp = Date(timeIntervalSince1970: TimeInterval(ts))
+            hasDeviceTimestamp = true
         }
 
-        return EventLog(eventType: eventType, taskId: taskId, timestamp: timestamp)
+        return EventLog(
+            eventType: eventType,
+            taskId: taskId,
+            timestamp: timestamp,
+            hasDeviceTimestamp: hasDeviceTimestamp
+        )
     }
 
     private static func parseTimestampOnlyEvent(eventType: EventLogType, payload: Data) -> EventLog {
@@ -189,7 +216,11 @@ public extension EventLog {
             | UInt32(payload[1]) << 16
             | UInt32(payload[2]) << 8
             | UInt32(payload[3])
-        return EventLog(eventType: eventType, timestamp: Date(timeIntervalSince1970: TimeInterval(ts)))
+        return EventLog(
+            eventType: eventType,
+            timestamp: Date(timeIntervalSince1970: TimeInterval(ts)),
+            hasDeviceTimestamp: true
+        )
     }
 
     private static func parseIdOnlyEvent(eventType: EventLogType, payload: Data) -> EventLog? {

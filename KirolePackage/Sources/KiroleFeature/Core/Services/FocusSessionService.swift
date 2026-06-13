@@ -119,8 +119,14 @@ public final class FocusSessionService {
         mode requestedMode: FocusEnforcementMode = .standard,
         startTime: Date = Date()
     ) async {
-        // 如果有活跃会话，先结束它
-        if activeSession != nil {
+        // 幂等保护：同一任务已有活跃会话时，重复投递的 enterTaskIn（BLE 重传 / 固件重发）
+        // 不应切断当前会话再以 .timeout 重开——那会写入一个假的 timeout 会话、污染专注统计。
+        // 实时事件路径不再做高水位去重（见 BLEEventHandler.handleEventLogs），故这里必须自带幂等。
+        // 仅当切换到“不同”任务时才结束旧会话。
+        if let active = activeSession {
+            if active.taskId == taskId {
+                return
+            }
             endSession(reason: .timeout, endTime: startTime)
         }
 

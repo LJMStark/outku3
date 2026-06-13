@@ -296,13 +296,21 @@ public enum BLEEventHandler {
             await persistEventLogs(logs)
         }
 
-        let lastTimestamp: UInt32
-        if let override = lastTimestampOverride {
-            lastTimestamp = override
+        let processable: [EventLog]
+        if isReplay {
+            // 0x21 重放批次：按高水位去重过滤，防离线积压事件被重复应用。
+            let lastTimestamp: UInt32
+            if let override = lastTimestampOverride {
+                lastTimestamp = override
+            } else {
+                lastTimestamp = await localStorage.loadLastEventLogTimestamp() ?? 0
+            }
+            processable = BLEEventHandler.filterAndSortForMutation(logs, since: lastTimestamp)
         } else {
-            lastTimestamp = await localStorage.loadLastEventLogTimestamp() ?? 0
+            // 实时单事件路径不按高水位过滤：completeTask 自带 !isCompleted 幂等，
+            // 同一秒内到达的后续事件（如旋钮选中后紧接短按完成）不能因秒级水位被误丢。
+            processable = BLEEventHandler.sortAndDedup(logs)
         }
-        let processable = BLEEventHandler.filterAndSortForMutation(logs, since: lastTimestamp)
 
         for log in processable {
             await handleFocusSessionEvent(log, focusService: focusService, isReplay: isReplay)
@@ -320,11 +328,42 @@ public enum BLEEventHandler {
         _ logs: [EventLog],
         since lastTimestamp: UInt32
     ) -> [EventLog] {
+        sortAndDedup(logs.filter { UInt32($0.timestamp.timeIntervalSince1970) > lastTimestamp })
+    }
+
+    /// Sorts ascending by timestamp and removes content-key duplicates WITHOUT applying any
+    /// high-watermark filter. Used by the live single-event path, where every freshly delivered
+    /// event must be processed (the watermark exists only to dedup 0x21 replay batches).
+    nonisolated static func sortAndDedup(_ logs: [EventLog]) -> [EventLog] {
         var seen = Set<String>()
         return logs
-            .filter { UInt32($0.timestamp.timeIntervalSince1970) > lastTimestamp }
             .sorted { $0.timestamp < $1.timestamp }
             .filter { seen.insert(eventContentKey($0)).inserted }
+    }
+
+    /// 允许的设备时间戳未来向偏移上限（秒）。超过 now + 此值的时间戳视为固件 RTC 错乱，
+    /// 不允许推进高水位，避免一条异常未来时间戳（如 0xFFFFFFFE）把补传 since 永久顶死。
+    nonisolated static let maxFutureTimestampSkew: UInt32 = 48 * 60 * 60
+
+    /// 计算下一个事件高水位（= 0x20 补传请求的 since + 0x21 重放去重基线）。
+    ///
+    /// 只有同时满足三个条件的事件才能推进：携带真实设备时间戳（`hasDeviceTimestamp`）、
+    /// 未超过 `now + maxFutureTimestampSkew`、严格大于 `current`。返回 nil 表示本批不推进
+    /// （例如整批都是 deviceWake/lowBattery 等用 App 端 `Date()` 兜底的事件）。
+    ///
+    /// 这是补传链路的关键防线：若让无设备时间戳的兜底事件推进水位，重连时先到的 deviceWake
+    /// 会把 since 顶到“现在”，离线积压的真实 completeTask 会被固件与本地双双过滤掉。
+    nonisolated static func nextEventLogWatermark(
+        current: UInt32,
+        logs: [EventLog],
+        now: Date
+    ) -> UInt32? {
+        let ceiling = UInt32(now.timeIntervalSince1970) &+ maxFutureTimestampSkew
+        return logs
+            .filter { $0.hasDeviceTimestamp }
+            .map { UInt32($0.timestamp.timeIntervalSince1970) }
+            .filter { $0 > current && $0 <= ceiling }
+            .max()
     }
 
     /// A stable deduplication key derived from event content rather than EventLog.id.
@@ -376,10 +415,11 @@ public enum BLEEventHandler {
             return
         }
 
-        let maxTimestamp = filtered
-            .map { UInt32($0.timestamp.timeIntervalSince1970) }
-            .max() ?? lastTimestamp
-        await localStorage.saveLastEventLogTimestamp(maxTimestamp)
+        // 高水位只由带真实设备时间戳、且不超过 now+48h 的事件推进（A1/A4）；
+        // 整批都是无设备时间戳的兜底事件时返回 nil，水位保持不变。
+        if let maxTimestamp = nextEventLogWatermark(current: lastTimestamp, logs: filtered, now: Date()) {
+            await localStorage.saveLastEventLogTimestamp(maxTimestamp)
+        }
     }
 
     // MARK: - Focus Session Events
