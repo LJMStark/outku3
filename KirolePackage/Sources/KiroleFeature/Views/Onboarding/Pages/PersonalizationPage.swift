@@ -6,6 +6,8 @@ import UIKit
 
 @MainActor
 public struct PersonalizationPage: View {
+    private static let customPromptLimit = 1200
+
     let onboardingState: OnboardingState
     @Environment(ThemeManager.self) private var themeManager
 
@@ -190,11 +192,21 @@ public struct PersonalizationPage: View {
         return !trimmed.isEmpty
     }
 
+    private var usesCustomPromptVoice: Bool {
+        (onboardingState.profile.customCompanionVoice ?? .companion) == .customPrompt
+    }
+
+    private var hasCustomPrompt: Bool {
+        let trimmed = (onboardingState.profile.customCompanionPrompt ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return !trimmed.isEmpty
+    }
+
     /// Users on the built-in 3-IP track (no photo) are free to advance.
     /// Users on the custom-IP track (photo uploaded) must also fill in a name,
     /// otherwise the upload silently drops on completeOnboarding.
     private var canAdvance: Bool {
-        !hasCustomPhoto || hasCustomName
+        !hasCustomPhoto || (hasCustomName && (!usesCustomPromptVoice || hasCustomPrompt))
     }
 
     private var shouldShowNameHint: Bool {
@@ -290,6 +302,11 @@ public struct PersonalizationPage: View {
                 }
             }
 
+            if usesCustomPromptVoice {
+                customPromptEditor
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+
             Toggle(isOn: Binding(
                 get: { onboardingState.profile.customCompanionRoast },
                 set: { onboardingState.profile.customCompanionRoast = $0 }
@@ -310,6 +327,39 @@ public struct PersonalizationPage: View {
             .padding(.top, 4)
             .accessibilityIdentifier("Onboarding_CustomCompanion_Roast")
         }
+    }
+
+    @ViewBuilder
+    private var customPromptEditor: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Custom Prompt")
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.8))
+            Text("Describe how this companion should speak. Kirole still keeps safety, schedule context, and short replies.")
+                .font(.system(size: 11, design: .rounded))
+                .foregroundStyle(.white.opacity(0.7))
+            TextEditor(text: onboardingCustomPromptBinding)
+                .font(.system(size: 13, design: .rounded))
+                .foregroundStyle(.white)
+                .frame(minHeight: 96, maxHeight: 130)
+                .scrollContentBackground(.hidden)
+                .padding(10)
+                .background(.white.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .accessibilityIdentifier("Onboarding_CustomCompanion_CustomPrompt")
+            HStack {
+                if !hasCustomPrompt {
+                    Text("Required for Custom Prompt")
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.9))
+                }
+                Spacer()
+                Text("\((onboardingState.profile.customCompanionPrompt ?? "").count)/\(Self.customPromptLimit)")
+                    .font(.system(size: 11, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.65))
+            }
+        }
+        .padding(.top, 2)
     }
 
     private func sectionHeader(_ text: String) -> some View {
@@ -384,12 +434,22 @@ public struct PersonalizationPage: View {
         .accessibilityIdentifier("Onboarding_CustomCompanion_Voice_\(voice.rawValue)")
     }
 
+    private var onboardingCustomPromptBinding: Binding<String> {
+        Binding(
+            get: { onboardingState.profile.customCompanionPrompt ?? "" },
+            set: {
+                onboardingState.profile.customCompanionPrompt = String($0.prefix(Self.customPromptLimit))
+            }
+        )
+    }
+
     // MARK: - Actions
 
     private func clearCustomCompanion() {
         onboardingState.profile.customAvatarPreviewData = nil
         onboardingState.profile.customAvatarPixelData = nil
         onboardingState.profile.customCompanionName = nil
+        onboardingState.profile.customCompanionPrompt = nil
         onboardingState.profile.customCompanionRoast = false
         selectedPhoto = nil
         processError = nil

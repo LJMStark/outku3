@@ -63,12 +63,14 @@ extension AppState {
 
         let relationship = profile.customCompanionRelationship ?? .pet
         let voice = profile.customCompanionVoice ?? .companion
+        let customPrompt = voice == .customPrompt ? profile.customCompanionPrompt ?? "" : ""
 
         do {
             _ = try await addCustomCompanion(
                 name: trimmedName,
                 relationship: relationship,
                 personaVoice: voice,
+                customPrompt: customPrompt,
                 previewData: preview,
                 pixelData: pixels
             )

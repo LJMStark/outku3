@@ -13,6 +13,7 @@ import UIKit
 /// Step 4 — persona dimensions (sliders + backstory + sensitive boundary).
 /// Confirm persists to AppState and switches the active companion.
 public struct CreateCustomCompanionSheet: View {
+    private static let customPromptLimit = 1200
 
     @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
@@ -28,6 +29,7 @@ public struct CreateCustomCompanionSheet: View {
     @State private var name: String = ""
     @State private var relationship: CompanionRelationship = .pet
     @State private var personaVoice: CompanionPersonaVoice = .companion
+    @State private var customPrompt: String = ""
     @State private var curiosityLevel: Double = 0.5
     @State private var humorLevel: Double = 0.5
     @State private var strictnessLevel: Double = 0.3
@@ -286,7 +288,43 @@ public struct CreateCustomCompanionSheet: View {
                     .accessibilityIdentifier("CreateCompanion_Voice_\(voice.rawValue)")
                 }
             }
+
+            if personaVoice == .customPrompt {
+                customPromptEditor
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
         }
+    }
+
+    @ViewBuilder
+    private var customPromptEditor: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Custom Prompt")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(theme.colors.primaryText)
+            Text("Describe exactly how this companion should speak. Global safety, schedule context, and short output rules still apply.")
+                .font(.system(size: 12))
+                .foregroundStyle(theme.colors.secondaryText)
+            TextEditor(text: customPromptBinding)
+                .font(.system(size: 14))
+                .frame(minHeight: 120, maxHeight: 160)
+                .padding(10)
+                .background(Color(hex: "F3F4F6"))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .accessibilityIdentifier("CreateCompanion_CustomPrompt")
+            HStack {
+                if customPromptTrimmed.isEmpty {
+                    Text("Required when Custom Prompt is selected")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Color.red.opacity(0.8))
+                }
+                Spacer()
+                Text("\(customPrompt.count)/\(Self.customPromptLimit)")
+                    .font(.system(size: 11))
+                    .foregroundStyle(theme.colors.secondaryText)
+            }
+        }
+        .padding(.top, 2)
     }
 
     // MARK: - Step 4: Personality
@@ -443,7 +481,9 @@ public struct CreateCustomCompanionSheet: View {
         case .upload: return processResult != nil
         case .identity:
             return !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        case .voice, .personality: return true
+        case .voice:
+            return personaVoice != .customPrompt || !customPromptTrimmed.isEmpty
+        case .personality: return true
         }
     }
 
@@ -494,6 +534,7 @@ public struct CreateCustomCompanionSheet: View {
                     name: trimmedName,
                     relationship: relationship,
                     personaVoice: personaVoice,
+                    customPrompt: personaVoice == .customPrompt ? customPromptTrimmed : "",
                     curiosityLevel: curiosityLevel,
                     humorLevel: humorLevel,
                     strictnessLevel: strictnessLevel,
@@ -548,6 +589,17 @@ public struct CreateCustomCompanionSheet: View {
                 }
             }
         }
+    }
+
+    private var customPromptTrimmed: String {
+        customPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var customPromptBinding: Binding<String> {
+        Binding(
+            get: { customPrompt },
+            set: { customPrompt = String($0.prefix(Self.customPromptLimit)) }
+        )
     }
 
     @ViewBuilder

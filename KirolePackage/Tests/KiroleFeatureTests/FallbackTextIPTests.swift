@@ -138,6 +138,13 @@ struct FallbackTextIPTests {
         #expect(!result.isEmpty)
     }
 
+    @Test("given Custom custom-prompt voice, dialogue returns non-empty string")
+    func givenCustomPrompt_nonEmpty() {
+        let custom = makeCustom(voice: .customPrompt)
+        let result = FallbackText.sharedPetDialogue(context: context(custom: custom))
+        #expect(!result.isEmpty)
+    }
+
     // MARK: - All built-in styles are mutually distinct for default path
 
     @Test("given same default context, joy / silas / nova produce distinct phrase pools")

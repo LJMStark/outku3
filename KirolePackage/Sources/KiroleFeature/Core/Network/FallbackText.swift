@@ -266,6 +266,13 @@ enum FallbackText {
                 "Today's vibe: capable, focused, occasionally snacking.",
                 "You've got this. I've got snacks. Metaphorically."
             ])
+        case .customPrompt:
+            return pick([
+                "I'm here with the voice you gave me.",
+                "Your custom companion is ready for the next small step.",
+                "We move through today in your chosen rhythm.",
+                "I am listening closely. Start with what matters now."
+            ])
         }
     }
 

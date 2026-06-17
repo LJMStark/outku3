@@ -9,6 +9,7 @@ public struct CustomCompanion: Sendable, Codable, Identifiable, Equatable {
     public var name: String
     public var relationship: CompanionRelationship
     public var personaVoice: CompanionPersonaVoice
+    public var customPrompt: String
 
     // MARK: Kindroid-style persona dimensions (0.0 – 1.0)
     /// How frequently the companion asks questions and explores ideas. 0 = reserved, 1 = highly curious.
@@ -36,6 +37,7 @@ public struct CustomCompanion: Sendable, Codable, Identifiable, Equatable {
         name: String,
         relationship: CompanionRelationship,
         personaVoice: CompanionPersonaVoice,
+        customPrompt: String = "",
         curiosityLevel: Double = 0.5,
         humorLevel: Double = 0.5,
         strictnessLevel: Double = 0.3,
@@ -50,6 +52,7 @@ public struct CustomCompanion: Sendable, Codable, Identifiable, Equatable {
         self.name = name
         self.relationship = relationship
         self.personaVoice = personaVoice
+        self.customPrompt = customPrompt
         self.curiosityLevel = curiosityLevel
         self.humorLevel = humorLevel
         self.strictnessLevel = strictnessLevel
@@ -72,6 +75,7 @@ extension CustomCompanion {
         self.name = try container.decode(String.self, forKey: .name)
         self.relationship = try container.decode(CompanionRelationship.self, forKey: .relationship)
         self.personaVoice = try container.decode(CompanionPersonaVoice.self, forKey: .personaVoice)
+        self.customPrompt = try container.decodeIfPresent(String.self, forKey: .customPrompt) ?? ""
         self.curiosityLevel = try container.decodeIfPresent(Double.self, forKey: .curiosityLevel) ?? 0.5
         self.humorLevel = try container.decodeIfPresent(Double.self, forKey: .humorLevel) ?? 0.5
         self.strictnessLevel = try container.decodeIfPresent(Double.self, forKey: .strictnessLevel) ?? 0.3
@@ -134,13 +138,13 @@ public enum CompanionRelationship: String, Sendable, Codable, CaseIterable {
 
 // MARK: - Persona Voice
 
-/// Structured voice presets (no free-form prompt input — keeps generation quality stable
-/// and removes most prompt-injection surface area).
+/// Voice presets plus a custom prompt option for user-created companions.
 public enum CompanionPersonaVoice: String, Sendable, Codable, CaseIterable {
     case companion = "Companion"
     case challenger = "Challenger"
     case zen = "Zen"
     case playful = "Playful"
+    case customPrompt = "Custom Prompt"
 
     public var displayName: String { rawValue }
 
@@ -150,6 +154,7 @@ public enum CompanionPersonaVoice: String, Sendable, Codable, CaseIterable {
         case .challenger: return "flame.fill"
         case .zen: return "leaf.fill"
         case .playful: return "sparkles"
+        case .customPrompt: return "text.quote"
         }
     }
 
@@ -159,6 +164,7 @@ public enum CompanionPersonaVoice: String, Sendable, Codable, CaseIterable {
         case .challenger: return "Direct nudges, raises the bar"
         case .zen: return "Quiet, grounded, spacious"
         case .playful: return "Light, witty, slightly mischievous"
+        case .customPrompt: return "Write your own companion prompt"
         }
     }
 
@@ -172,6 +178,8 @@ public enum CompanionPersonaVoice: String, Sendable, Codable, CaseIterable {
             return "Voice: quiet, spacious, grounded. Short sentences. Leave room for the user to breathe."
         case .playful:
             return "Voice: light, witty, a little mischievous. Tease with affection, never sarcasm that bites."
+        case .customPrompt:
+            return "Voice: follow the user's custom companion prompt."
         }
     }
 }

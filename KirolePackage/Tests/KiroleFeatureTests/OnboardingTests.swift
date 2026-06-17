@@ -79,6 +79,36 @@ struct OnboardingProfileCodableTests {
         #expect(profile.onboardingCompletedAt == nil)
         #expect(profile.distractionSources.isEmpty)
     }
+
+    @Test func customCompanionPromptRoundTrips() throws {
+        var profile = OnboardingProfile()
+        profile.customCompanionVoice = .customPrompt
+        profile.customCompanionPrompt = "Speak like a calm studio producer."
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let data = try encoder.encode(profile)
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let decoded = try decoder.decode(OnboardingProfile.self, from: data)
+
+        #expect(decoded.customCompanionVoice == .customPrompt)
+        #expect(decoded.customCompanionPrompt == "Speak like a calm studio producer.")
+        #expect(decoded == profile)
+    }
+
+    /// Pre-2026-06 on-disk profiles have no `customCompanionPrompt` key. The `decodeIfPresent`
+    /// back-compat path must yield nil rather than throwing when the field is absent — mirrors the
+    /// EventLog legacy-decode guarantee so a field addition never escalates into a load failure.
+    @Test func legacyProfileWithoutCustomPromptDecodesToNil() throws {
+        let legacyJSON = Data(#"{"customCompanionRoast":false,"distractionSources":[]}"#.utf8)
+
+        let decoded = try JSONDecoder().decode(OnboardingProfile.self, from: legacyJSON)
+
+        #expect(decoded.customCompanionPrompt == nil)
+        #expect(decoded.customCompanionRoast == false)
+    }
 }
 
 // MARK: - Question Data Integrity Tests

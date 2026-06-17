@@ -81,6 +81,7 @@ public struct OnboardingProfile: Sendable, Codable, Equatable {
     public var customCompanionName: String?
     public var customCompanionRelationship: CompanionRelationship?
     public var customCompanionVoice: CompanionPersonaVoice?
+    public var customCompanionPrompt: String?
     public var customCompanionRoast: Bool
     /// PNG preview produced by AvatarImageProcessor.process — feeds Settings avatar art.
     public var customAvatarPreviewData: Data?
@@ -101,6 +102,7 @@ public struct OnboardingProfile: Sendable, Codable, Equatable {
         customCompanionName: String? = nil,
         customCompanionRelationship: CompanionRelationship? = nil,
         customCompanionVoice: CompanionPersonaVoice? = nil,
+        customCompanionPrompt: String? = nil,
         customCompanionRoast: Bool = false,
         customAvatarPreviewData: Data? = nil,
         customAvatarPixelData: Data? = nil
@@ -118,6 +120,7 @@ public struct OnboardingProfile: Sendable, Codable, Equatable {
         self.customCompanionName = customCompanionName
         self.customCompanionRelationship = customCompanionRelationship
         self.customCompanionVoice = customCompanionVoice
+        self.customCompanionPrompt = customCompanionPrompt
         self.customCompanionRoast = customCompanionRoast
         self.customAvatarPreviewData = customAvatarPreviewData
         self.customAvatarPixelData = customAvatarPixelData
@@ -150,6 +153,7 @@ public struct OnboardingProfile: Sendable, Codable, Equatable {
         case customCompanionName
         case customCompanionRelationship
         case customCompanionVoice
+        case customCompanionPrompt
         case customCompanionRoast
         case customAvatarPreviewData
         case customAvatarPixelData
@@ -177,9 +181,9 @@ public struct OnboardingProfile: Sendable, Codable, Equatable {
         self.customCompanionName = try c.decodeIfPresent(String.self, forKey: .customCompanionName)
         self.customCompanionRelationship = try c.decodeIfPresent(CompanionRelationship.self, forKey: .customCompanionRelationship)
         self.customCompanionVoice = try c.decodeIfPresent(CompanionPersonaVoice.self, forKey: .customCompanionVoice)
+        self.customCompanionPrompt = try c.decodeIfPresent(String.self, forKey: .customCompanionPrompt)
         self.customCompanionRoast = (try c.decodeIfPresent(Bool.self, forKey: .customCompanionRoast)) ?? false
         self.customAvatarPreviewData = try c.decodeIfPresent(Data.self, forKey: .customAvatarPreviewData)
         self.customAvatarPixelData = try c.decodeIfPresent(Data.self, forKey: .customAvatarPixelData)
     }
 }
-
