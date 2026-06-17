@@ -425,11 +425,21 @@ public enum BLEEventHandler {
     // MARK: - Focus Session Events
 
     /// 处理专注会话相关事件
+    /// 专注事件时间戳防未来偏移：把进入专注路径的设备时间戳夹到不晚于 `now`。一次专注会话不可能在
+    /// 未来结束——若固件 RTC 错乱跳到未来（或 dev 未签名模式伪造一帧），裸用 `eventLog.timestamp` 当会话
+    /// 端点会把 `[start, 未来]` 整段算成专注时长，而 energy bottle 按 minutes/30 无上限发，能凭空解锁全部
+    /// 场景并污染统计。与 `nextEventLogWatermark` 的 maxFutureTimestampSkew 同philosophy，此处更严（直接夹到 now）。
+    nonisolated static func focusEventTimestamp(_ raw: Date, now: Date) -> Date {
+        min(raw, now)
+    }
+
     private static func handleFocusSessionEvent(
         _ eventLog: EventLog,
         focusService: FocusSessionService,
         isReplay: Bool = false
     ) async {
+        // 设备时间戳不可信：夹到不晚于 now，防未来偏移凭空铸造专注时长 / 能量瓶（见 focusEventTimestamp）。
+        let sessionTimestamp = focusEventTimestamp(eventLog.timestamp, now: Date())
         switch eventLog.eventType {
         case .enterTaskIn:
             // INTENTIONAL — do not "fix" this into a back-fill. Product requirement:
@@ -446,18 +456,18 @@ public enum BLEEventHandler {
                     taskId: taskId,
                     taskTitle: taskTitle,
                     mode: FocusSessionService.shared.focusEnforcementMode,
-                    startTime: eventLog.timestamp
+                    startTime: sessionTimestamp
                 )
             }
 
         case .completeTask:
             if let taskId = eventLog.taskId {
-                focusService.completeTask(taskId: taskId, endTime: eventLog.timestamp)
+                focusService.completeTask(taskId: taskId, endTime: sessionTimestamp)
             }
 
         case .skipTask:
             if let taskId = eventLog.taskId {
-                focusService.skipTask(taskId: taskId, endTime: eventLog.timestamp)
+                focusService.skipTask(taskId: taskId, endTime: sessionTimestamp)
             }
 
         default:

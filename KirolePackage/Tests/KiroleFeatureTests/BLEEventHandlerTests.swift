@@ -242,4 +242,27 @@ struct BLEEventHandlerTests {
 
         #expect(decoded.hasDeviceTimestamp == true)
     }
+
+    // MARK: - focusEventTimestamp future-skew clamp (focus-time / energy-bottle integrity)
+
+    @Test("given a future-skewed device timestamp, when clamped for a focus event, then it is pinned to now")
+    func givenFutureTimestamp_whenClamped_thenPinnedToNow() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        // A firmware RTC glitch (or a forged unsigned frame) lands the session end years ahead.
+        let future = Date(timeIntervalSince1970: 1_700_000_000 + (5 * 365 * 24 * 60 * 60))
+        #expect(BLEEventHandler.focusEventTimestamp(future, now: now) == now)
+    }
+
+    @Test("given a normal past device timestamp, when clamped for a focus event, then it is left untouched")
+    func givenPastTimestamp_whenClamped_thenUnchanged() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let past = Date(timeIntervalSince1970: 1_699_999_000)
+        #expect(BLEEventHandler.focusEventTimestamp(past, now: now) == past)
+    }
+
+    @Test("given a device timestamp equal to now, when clamped, then it is preserved exactly")
+    func givenTimestampEqualToNow_whenClamped_thenPreserved() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        #expect(BLEEventHandler.focusEventTimestamp(now, now: now) == now)
+    }
 }
