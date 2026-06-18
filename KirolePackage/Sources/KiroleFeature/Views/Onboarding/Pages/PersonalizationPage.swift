@@ -347,6 +347,7 @@ public struct PersonalizationPage: View {
                 .background(.white.opacity(0.12))
                 .clipShape(RoundedRectangle(cornerRadius: 12))
                 .accessibilityIdentifier("Onboarding_CustomCompanion_CustomPrompt")
+                .accessibilityLabel("Custom companion voice prompt")
             HStack {
                 if !hasCustomPrompt {
                     Text("Required for Custom Prompt")

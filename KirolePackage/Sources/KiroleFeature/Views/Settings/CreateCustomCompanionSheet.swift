@@ -248,7 +248,9 @@ public struct CreateCustomCompanionSheet: View {
             VStack(spacing: 10) {
                 ForEach(CompanionPersonaVoice.allCases, id: \.self) { voice in
                     Button {
-                        personaVoice = voice
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            personaVoice = voice
+                        }
                     } label: {
                         HStack(spacing: 12) {
                             Image(systemName: voice.iconName)
@@ -308,10 +310,12 @@ public struct CreateCustomCompanionSheet: View {
             TextEditor(text: customPromptBinding)
                 .font(.system(size: 14))
                 .frame(minHeight: 120, maxHeight: 160)
+                .scrollContentBackground(.hidden)
                 .padding(10)
                 .background(Color(hex: "F3F4F6"))
                 .clipShape(RoundedRectangle(cornerRadius: 12))
                 .accessibilityIdentifier("CreateCompanion_CustomPrompt")
+                .accessibilityLabel("Custom companion voice prompt")
             HStack {
                 if customPromptTrimmed.isEmpty {
                     Text("Required when Custom Prompt is selected")
