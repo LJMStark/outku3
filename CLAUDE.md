@@ -210,6 +210,7 @@ For TestFlight automation, copy `fastlane/.env.template` → `fastlane/.env` and
 - **Platform floor:** Swift 6.1 toolchain, **iOS 17+** (`KirolePackage` declares `platforms: [.iOS(.v17), .macOS(.v14)]`).
 
 ## Where to Look Next
-- `AGENTS.md` — full rules, BLE protocol spec, companion IP prompt architecture, onboarding detail, Focus Mode state machine, Event→Output dispatch map.
+- `AGENTS.md` — full rules, BLE protocol *rules/summary*, companion IP prompt architecture, onboarding detail, Focus Mode state machine, Event→Output dispatch map.
+- `docs/` — **hardware-facing source of truth** (AGENTS.md defers here). `BLE通信协议规格文档.md` is the **authoritative BLE wire-protocol spec** — the firmware contract; edit this file directly (versioned, currently v2.5.2), never a root-level copy. `BLE初次联调指南.md` / `BLE联调前全协议模拟报告.md` are the integration + dry-run guides; `硬件需求文档-Hardware-Requirements-Document.md` and `固件功能规格文档.md` are the hardware/firmware requirement specs; `Kirole显示屏页面（游戏机制2）.pdf` and `positioning-narrative.md` are the product mechanism / positioning source of truth (e.g. why the streak system was deleted). When you change a BLE/firmware doc here, the protocol byte tables and §-numbers are what the hardware team builds against — keep them exact.
 - `.cursor/rules/*.mdc` — Swift / SwiftUI / Testing / Concurrency / XcodeBuildMCP guidance.
 - `TESTFLIGHT_GUIDE.md`, `TESTFLIGHT_PROGRESS.md` — release workflow state.
