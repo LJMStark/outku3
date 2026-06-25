@@ -98,3 +98,8 @@ docs/UI源文件_1/
 docs/UI源文件_2/
 docs/源文件/
 .codex_review_diff.txt
+
+# 硬件/美术交付源材料（PSD 源文件 2.3GB+，归属磁盘 + 飞书，勿入库）
+docs/硬件资源/
+# baoyu-slide-deck 生成的会议 PPT（图片生成物，按需另存）
+slide-deck/
