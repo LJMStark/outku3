@@ -186,6 +186,14 @@ public final class FocusSessionService {
         completeSession(session, endTime: endTime, clearPersistedActiveSession: true)
     }
 
+    /// Screen-unlock (interruption) events recorded so far in the active session window.
+    /// The live hardware push uses these so the on-device fill/phase reflect interruptions in
+    /// real time, instead of a wall-clock count that never resets when the user picks up the phone.
+    func currentUnlockEvents(until end: Date) -> [ScreenUnlockEvent] {
+        guard let session = activeSession else { return [] }
+        return screenActivityTracker?.getUnlockEventsDuring(start: session.startTime, end: end) ?? []
+    }
+
     /// 完成任务（短按滚轮）
     public func completeTask(taskId: String, endTime: Date = Date()) {
         guard let session = activeSession, session.taskId == taskId else { return }

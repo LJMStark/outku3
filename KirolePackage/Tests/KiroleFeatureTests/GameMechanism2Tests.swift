@@ -298,6 +298,31 @@ struct GameMechanism2Tests {
         ) == 0)
     }
 
+    @Test("Live focus display is segment-aware: fill resets after an interruption and never over-reports vs settlement")
+    func liveFocusDisplayIsSegmentAware() {
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        // 25 min focus, interrupt, then 25 more. Wall-clock elapsed = 50 min.
+        let unlock = ScreenUnlockEvent(timestamp: start.addingTimeInterval(25 * 60), duration: 0)
+        let now = start.addingTimeInterval(50 * 60)
+
+        // The live fill is measured from the current uninterrupted segment (25 min in), not the
+        // 50-minute wall-clock total — so it resets after the interruption.
+        let segmentStart = FocusTimeCalculator.currentSegmentStart(
+            sessionStart: start,
+            now: now,
+            screenUnlockEvents: [unlock]
+        )
+        #expect(Int(now.timeIntervalSince(segmentStart) / 60) == 25)
+
+        // Banked bottles == 0 (both 25-min segments are below 30), matching what endSession would
+        // settle. The old wall-clock display reported floor(50/30)=1, contradicting that 0.
+        #expect(FocusTimeCalculator.countableBottles(
+            sessionStart: start,
+            sessionEnd: now,
+            screenUnlockEvents: [unlock]
+        ) == 0)
+    }
+
     @Test("Recovered focus session also computes earned energy bottles")
     @MainActor
     func recoveredFocusSessionAccumulatesEnergyBottles() {

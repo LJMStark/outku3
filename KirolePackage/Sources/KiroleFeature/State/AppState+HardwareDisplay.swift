@@ -148,9 +148,26 @@ extension AppState {
         let focusBottles: Int
 
         if let session {
-            elapsedMinutes = max(0, Int(now.timeIntervalSince(session.startTime) / 60))
+            // Segment-aware live state so the on-device display matches what endSession will
+            // settle (no more "shows 1 bottle mid-session but banks 0"). `elapsedMinutes` is
+            // minutes into the CURRENT uninterrupted segment, so the fill bar and phase fall back
+            // to zero after each interruption instead of climbing on a wall-clock count.
+            // NOTE: this changes the meaning of the focus-status `elapsedMinutes` field from
+            // "total focused minutes" to "current-segment minutes" — pending hardware/protocol
+            // alignment (docs/BLE通信协议规格文档.md) after the codex joint review.
+            let unlockEvents = FocusSessionService.shared.currentUnlockEvents(until: now)
+            let segmentStart = FocusTimeCalculator.currentSegmentStart(
+                sessionStart: session.startTime,
+                now: now,
+                screenUnlockEvents: unlockEvents
+            )
+            elapsedMinutes = max(0, Int(now.timeIntervalSince(segmentStart) / 60))
             focusPhase = FocusPhase.from(elapsedMinutes: elapsedMinutes)
-            focusBottles = FocusEnergyCalculator.bottlesEarned(minutes: elapsedMinutes)
+            focusBottles = FocusTimeCalculator.countableBottles(
+                sessionStart: session.startTime,
+                sessionEnd: now,
+                screenUnlockEvents: unlockEvents
+            )
         } else {
             elapsedMinutes = 0
             focusPhase = .idle

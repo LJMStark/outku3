@@ -69,4 +69,20 @@ enum FocusTimeCalculator {
         guard seconds > 0 else { return 0 }
         return FocusEnergyCalculator.bottlesEarned(minutes: Int(seconds / 60))
     }
+
+    /// Start of the current uninterrupted focus segment: the end of the most recent interruption,
+    /// or the session start if there has been none. The live on-device fill bar and phase are
+    /// measured from here so they reset to zero after each interruption instead of climbing on a
+    /// wall-clock count that ignores the user picking up their phone.
+    static func currentSegmentStart(
+        sessionStart: Date,
+        now: Date,
+        screenUnlockEvents: [ScreenUnlockEvent]
+    ) -> Date {
+        let lastInterruptionEnd = screenUnlockEvents
+            .map { $0.timestamp.addingTimeInterval($0.duration ?? 60) }
+            .filter { $0 <= now }
+            .max()
+        return max(sessionStart, lastInterruptionEnd ?? sessionStart)
+    }
 }
