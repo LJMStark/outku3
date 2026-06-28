@@ -44,6 +44,18 @@ enum FallbackText {
         }
     }
 
+    /// Offline fallback for the events-only day summary (box②). Events only — never tasks.
+    static func daySummary(events: [EventSummary]) -> String {
+        guard let first = events.first else {
+            return "An open day ahead — a little room to breathe."
+        }
+        let firstLabel = first.time.isEmpty ? first.title : "\(first.time) \(first.title)"
+        if events.count == 1 {
+            return "One thing on the calendar today: \(firstLabel). A calm, focused day."
+        }
+        return "\(events.count) events today, starting with \(firstLabel). Pace yourself and take a short break between them."
+    }
+
     static func companionPhrase(for timeOfDay: TimeOfDay) -> String {
         random(companionPhrases[timeOfDay], defaultingTo: companionPhrases[.morning], fallback: "You've got this!")
     }

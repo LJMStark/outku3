@@ -36,7 +36,10 @@ public struct AIContext: Sendable {
     public let nextAgendaItem: String?
     public let activeTaskTitle: String?
     public let topTaskTitles: [String]
-    
+    /// Today's calendar events as sanitized "HH:mm Title" lines (events only, no to-do tasks).
+    /// Feeds the events-only day summary (box②); empty for the other text types.
+    public let todayEventDigest: [String]
+
     // MARK: - Advanced Persona Engineering Subsystems
     public let episodicMemories: [String]
     public let dimensionalEmotion: String?
@@ -68,6 +71,7 @@ public struct AIContext: Sendable {
         nextAgendaItem: String? = nil,
         activeTaskTitle: String? = nil,
         topTaskTitles: [String] = [],
+        todayEventDigest: [String] = [],
         episodicMemories: [String] = [],
         dimensionalEmotion: String? = nil,
         psychologicalObjective: String? = nil,
@@ -94,7 +98,8 @@ public struct AIContext: Sendable {
         self.nextAgendaItem = nextAgendaItem
         self.activeTaskTitle = activeTaskTitle
         self.topTaskTitles = topTaskTitles
-        
+        self.todayEventDigest = todayEventDigest
+
         self.episodicMemories = episodicMemories
         self.dimensionalEmotion = dimensionalEmotion
         self.psychologicalObjective = psychologicalObjective
@@ -136,6 +141,7 @@ public struct AIContext: Sendable {
             nextAgendaItem: nextAgendaItem,
             activeTaskTitle: activeTaskTitle,
             topTaskTitles: topTaskTitles,
+            todayEventDigest: todayEventDigest,
             episodicMemories: episodicMemories,
             dimensionalEmotion: dimensionalEmotion,
             psychologicalObjective: psychologicalObjective,

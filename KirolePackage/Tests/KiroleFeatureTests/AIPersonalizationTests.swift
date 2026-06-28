@@ -712,6 +712,26 @@ import Foundation
     #expect(result == "A free day! Time to relax.")
 }
 
+@Test @MainActor func testDaySummaryFallbackIsEventsOnly() async throws {
+    let service = CompanionTextService.shared
+    let events = [
+        EventSummary(time: "09:30", title: "Daily Writing Session", description: ""),
+        EventSummary(time: "12:00", title: "Team Meeting", description: "")
+    ]
+    let result = await service.generateDaySummary(events: events, petName: "Waffle")
+    #expect(result.contains("2 events"))
+    #expect(result.contains("09:30 Daily Writing Session"))
+    // box② speaks to the day's schedule — to-do tasks must never leak in.
+    #expect(!result.lowercased().contains("task"))
+}
+
+@Test @MainActor func testDaySummaryFallbackEmptyEventsIsOpenDay() async throws {
+    let service = CompanionTextService.shared
+    let result = await service.generateDaySummary(events: [], petName: "Waffle")
+    #expect(!result.isEmpty)
+    #expect(!result.lowercased().contains("task"))
+}
+
 @Test @MainActor func testSharedPetDialogueFallbackIsDisplaySafe() async throws {
     let longTitle = String(repeating: "planning work ", count: 10)
     let result = await CompanionTextService.shared.generateSharedPetDialogue(

@@ -63,6 +63,32 @@ public final class CompanionTextService {
         return FallbackText.dailySummary(tasksCount: tasksCount, eventsCount: eventsCount)
     }
 
+    // MARK: - Day Summary (box② — events-only day-at-a-glance panel text)
+
+    /// Generates the DayPack "day at a glance" summary (box②). Events only — to-do tasks are
+    /// intentionally excluded (the summary speaks to the day's schedule, not the todo list).
+    /// Budgeted to 180 UTF-8 bytes to match the DayPack DaySummary wire field (§4.7).
+    public func generateDaySummary(
+        events: [EventSummary], petName: String,
+        userProfile: UserProfile = .default
+    ) async -> String {
+        let digest = events.prefix(8).map { event in
+            event.time.isEmpty ? event.title : "\(event.time) \(event.title)"
+        }
+        if let aiText = await generateAIText(
+            type: .dailySummary,
+            petName: petName, petMood: .happy,
+            userProfile: userProfile,
+            events: events.count,
+            todayEventDigest: Array(digest),
+            maxBytes: 180
+        ) {
+            return aiText
+        }
+
+        return FallbackText.daySummary(events: events)
+    }
+
     // MARK: - Companion Phrase
 
     public func generateCompanionPhrase(
@@ -297,11 +323,13 @@ public final class CompanionTextService {
         mode: CompanionTextGenerationMode = .live,
         completedTasks: Int = 0, totalTasks: Int = 0,
         events: Int = 0,
+        todayEventDigest: [String] = [],
         episodicMemories: [String] = [],
         nextAgendaItem: String? = nil,
         activeTaskTitle: String? = nil,
         focusTimeToday: Int = 0,
-        energyBottles: Int = 0
+        energyBottles: Int = 0,
+        maxBytes: Int = 120
     ) async -> String? {
         guard await openAI.isConfigured else { return nil }
 
@@ -356,24 +384,26 @@ public final class CompanionTextService {
             energyBottles: energyBottles,
             nextAgendaItem: nextAgendaItem,
             activeTaskTitle: activeTaskTitle,
+            todayEventDigest: todayEventDigest,
             episodicMemories: episodicMemories,
             customCompanion: activeCustomCompanion
         )
 
-        return await generateAIText(type: type, baseContext: baseContext, mode: mode)
+        return await generateAIText(type: type, baseContext: baseContext, mode: mode, maxBytes: maxBytes)
     }
 
     private func generateAIText(
         type: AITextType,
         baseContext: AIContext,
-        mode: CompanionTextGenerationMode = .live
+        mode: CompanionTextGenerationMode = .live,
+        maxBytes: Int = 120
     ) async -> String? {
         guard await openAI.isConfigured else { return nil }
         let context = await enrichedContext(for: type, baseContext: baseContext)
 
         do {
             let text = try await openAI.generateCompanionText(type: type, context: context)
-            let enforced = CompanionTextService.enforceByteBudget(text, maxBytes: 120)
+            let enforced = CompanionTextService.enforceByteBudget(text, maxBytes: maxBytes)
             if mode.shouldPersistInteractions {
                 await saveInteraction(
                     type: type,

@@ -46,6 +46,11 @@ public final class DayPackGenerator {
 
         let eventSummaries = todayEvents.prefix(8).map { EventSummary(from: $0) }
 
+        // box② "day at a glance" — events-only summary generated from today's event details.
+        let daySummary = await textService.generateDaySummary(
+            events: eventSummaries, petName: pet.name, userProfile: userProfile
+        )
+
         let topTasks = todayTasks
             .filter { !$0.isCompleted }
             .sorted { $0.priority.rawValue > $1.priority.rawValue }
@@ -58,6 +63,7 @@ public final class DayPackGenerator {
             deviceMode: deviceMode,
             focusChallengeEnabled: false,
             petDialogue: bubble,
+            daySummary: daySummary,
             events: Array(eventSummaries),
             topTasks: Array(topTasks),
             settlementData: await generateSettlementData(tasks: todayTasks, events: todayEvents, pet: pet, userProfile: userProfile)

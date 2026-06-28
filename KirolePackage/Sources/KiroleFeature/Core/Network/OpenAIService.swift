@@ -414,6 +414,15 @@ public actor OpenAIService {
     private static func buildScheduleDigest(context: AIContext) -> String {
         var lines: [String] = []
 
+        // Today's calendar events (time + title) — the schedule itself, drives the day summary
+        if !context.todayEventDigest.isEmpty {
+            let eventList = context.todayEventDigest
+                .prefix(8)
+                .map { PromptSanitizer.userContent($0, maxLen: 60) }
+                .joined(separator: "; ")
+            lines.append("Events today: \(eventList)")
+        }
+
         // Upcoming tasks (max 3, titles only) — isolate user-created titles
         let pendingTasks = context.topTaskTitles
         if !pendingTasks.isEmpty {
@@ -451,7 +460,7 @@ public actor OpenAIService {
         case .morningGreeting:
             scene = "The user just woke up. You see them for the first time today. React."
         case .dailySummary:
-            scene = "You just saw their schedule for today. React to how packed or empty it looks."
+            scene = "You looked over today's calendar events (see Schedule). In one warm sentence, give a day-at-a-glance: note how full or open the day feels and add one practical suggestion (such as when to take a break). Talk only about calendar events, never to-do tasks."
         case .companionPhrase:
             scene = "Nothing specific happened. You're just existing next to them. Say whatever crosses your mind."
         case .taskEncouragement:
