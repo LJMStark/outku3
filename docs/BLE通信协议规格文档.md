@@ -1,8 +1,8 @@
 # Kirole BLE 通信协议规格文档
 
-**版本:** v2.5.7
+**版本:** v2.5.8
 **更新日期:** 2026-06-28
-**状态:** DayPack 显示模型重写（1 气泡 + 数据面板）。**破坏性变更：固件需按新 §4.7 / §6 重写 DayPack 解析（与 §8.7 修复一并做）。** FocusStatus(`0x14`) 新增 `SegmentMinutes` 字段（追加在 TaskTitle 后，前向兼容）；`ElapsedTime` 保持「本会话累计分钟」语义不变（v2.5.5）。`Mood`/`PetMoodByte` 明确为**前向兼容通道**：App 持续下发真实心情值，固件当前阶段可忽略、不据此展示或换图（v2.5.6，§4.2 / §4.10）。DayPack 末尾追加 `DaySummary`（框②「一天总结」：情绪向·只谈日程·≤180B），作为面板文本字段复活、与单句 `PetDialogue` 互补，不回退单气泡决策（v2.5.7，§4.7 / §6.5）。
+**状态:** DayPack 显示模型重写（1 气泡 + 数据面板）。**破坏性变更：固件需按新 §4.7 / §6 重写 DayPack 解析（与 §8.7 修复一并做）。** FocusStatus(`0x14`) 新增 `SegmentMinutes` 字段（追加在 TaskTitle 后，前向兼容）；`ElapsedTime` 保持「本会话累计分钟」语义不变（v2.5.5）。`Mood`/`PetMoodByte` 明确为**前向兼容通道**：App 持续下发真实心情值，固件当前阶段可忽略、不据此展示或换图（v2.5.6，§4.2 / §4.10）。DayPack 末尾追加 `DaySummary`（框②「一天总结」：情绪向·只谈日程·≤180B），作为面板文本字段复活、与单句 `PetDialogue` 互补，不回退单气泡决策（v2.5.7，§4.7 / §6.5）。DayPack 再追加 `FirstUp`（框③「下一项」：下一个未来事件「HH:mm 标题」/ 无则置顶任务 / ≤60B，App 算好下发，现为 DayPack 最后一个字段）（v2.5.8，§4.7）。
 
 ---
 
@@ -67,6 +67,7 @@
 | v2.5.5  | 2026-06-28 | **FocusStatus(`0x14`) 改用「加字段」而非「原地改语义」（采纳协议演进最佳实践，修订 v2.5.4）**：撤回 v2.5.4 把 `ElapsedTime` 原地改成「当前段分钟」的做法——`ElapsedTime` **还原**为「本会话累计已专注分钟」（墙钟、不随打断归零，**不破坏**可能已按总时长实现的固件）；**新增 `SegmentMinutes`(2B BE)** 表示「当前未打断段分钟」（驱动装填、打断归零），**追加在变长 TaskTitle 之后**——旧固件读到 TaskTitle 即止、忽略尾部 2 字节（前向兼容），新固件多读 2 字节。`Phase` 明确为按当前未打断段计（打断退回 warmup）。`Bottles` 维持 v2.5.4 的按段累计。详见 §4.11 |
 | v2.5.6  | 2026-06-28 | **`Mood`/`PetMoodByte` 固件处理约定（wire 字节不变，纯约定补充）**：明确 `PetStatus(0x01).Mood`（§4.2）与 `SmartReminder(0x13).PetMoodByte`（§4.10）——App **持续下发真实心情值**（H/E/F/S/M），但**固件当前阶段应忽略、不要据此展示或换图**；该字节作为**前向兼容通道保留**，待产品确定心情展示方案后再与 App 对齐渲染，无需 App 改版。背景：客户保留 App 端心情计算，硬件侧是否展示暂不确定，故先留通道、固件暂不消费 |
 | v2.5.7  | 2026-06-28 | **DayPack 新增 `DaySummary` 字段（页面一框②「一天总结」，前向兼容追加）**：在 §4.7 payload **末尾**追加 `DaySummary`（≤180B，1B 长度前缀 + UTF-8），承载设计稿页面一框②——情绪向、**只谈日程**（不含 to-do 任务）的一天概览 + 一条实用建议（如「11:30 先休息，避开正午会议」），与 `PetDialogue`（宠物口吻单句）**互补**。`DaySummary` 是 DayPack 最后一个必读字段；按 §7.1 严格解析，固件须读取它才到 payload 末尾。无兼容风险是因为固件 DayPack 解析尚未上线、将按含它的完整布局实现。App 侧 `DayPackGenerator` 喂**今日事件明细（时间/标题）**经 LLM 生成，无 key/离线兜底为计数模板。**这是对 v2.5.0「单气泡」的补充而非回退**：宠物口吻仍是单句 `PetDialogue`，框②是独立的面板概览文本。详见 §4.7 / §6.5 |
+| v2.5.8  | 2026-06-29 | **DayPack 新增 `FirstUp` 字段（页面一框③「First up」）**：在 `DaySummary` 之后再追加 `FirstUp`（≤60B，1B 长度前缀 + UTF-8），承载设计稿框③——下一个未来事件「HH:mm 标题」（全天仅标题），无未来事件则置顶（最高优先级未完成）任务标题，皆无则空串。**App 算好下发**（沿用 §6.5「App 是显示决策方」：相对当前时刻的「下一个」是 App 侧时间逻辑，固件只渲染）。`FirstUp` 现为 DayPack **最后一个字段**，同 §7.1 严格解析须读完它才到 payload 末尾——仿真解码器 `parseDayPack` 已同步。详见 §4.7 |
 
 ### 1.4 术语表
 
@@ -392,11 +393,14 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 | ...    | TaskCount              | 1 byte      | -          | 置顶任务数量（0-5，取决于屏幕尺寸）|
 | ...    | TopTasks[]             | Variable    | -          | 置顶任务（见下，4寸≤3 / 7.3寸≤5）|
 | ...    | SettlementData         | Variable    | -          | 进度/专注数值（见下，**已无文本消息**）|
-| ...    | DaySummary             | 1 + N bytes | 180 bytes  | **一天总结（框②）**：情绪向、**只谈日程**（不含 to-do 任务）的概览 + 一条实用建议；**追加在 payload 末尾**（v2.5.7，前向兼容，见下注）。空串表示尚未生成 |
+| ...    | DaySummary             | 1 + N bytes | 180 bytes  | **一天总结（框②）**：情绪向、**只谈日程**（不含 to-do 任务）的概览 + 一条实用建议；追加在 `SettlementData` 之后（v2.5.7，见下注）。空串表示尚未生成 |
+| ...    | FirstUp                | 1 + N bytes | 60 bytes   | **下一项（框③）**：「First up:」内容——下一个未来事件「HH:mm 标题」（全天事件仅标题），无未来事件则置顶任务标题，皆无则空串。App 算好下发；**DayPack 当前最后一个字段**（v2.5.8，在 DaySummary 之后，见下注）|
 
 > **v2.5.0 破坏性变更**：删除旧字段 `MorningGreeting / DailySummary / FirstItem / CurrentScheduleSummary / CompanionPhrase`，收敛为单字段 `PetDialogue`；新增带描述的 `Events[]`（旧协议缺此能力）。固件解析器须按本表重写。
 
-> **v2.5.7 追加（新增字段，严格解析）**：在 payload **末尾**追加 `DaySummary`（框②「一天总结」，≤180 字节，1 字节长度前缀 + UTF-8）。注意：按 §7.1，wire 解析是**严格**的（尾部多余字节视为格式错误），故 `DaySummary` 是 DayPack 的**最后一个必读字段**、不是可忽略的可选尾巴，固件须读取它才算到达 payload 末尾。无兼容风险是因为**固件 DayPack 解析尚未上线**——会直接按含 `DaySummary` 的完整 v2.5.7 布局实现；置于定长 `SettlementData` 之后只是让既有字段偏移保持稳定。语义：与 `PetDialogue`（宠物口吻单句）**互补**——`DaySummary` 是**面板上的一天概览段落**，情绪向、只谈日程、附一条实用建议（如「11:30 先休息，避开正午会议」）。App 侧由 `DayPackGenerator` 喂**今日事件明细（时间/标题）**经 LLM 生成，无 key/离线时兜底为「N events today」计数模板。背景见 §6.5（v2.5.0 曾把多段文本收敛为单气泡，框②的一天总结此次作为**面板文本字段**复活，不回退单气泡决策）。
+> **v2.5.7 追加（新增字段，严格解析）**：在 payload **末尾**追加 `DaySummary`（框②「一天总结」，≤180 字节，1 字节长度前缀 + UTF-8）。注意：按 §7.1，wire 解析是**严格**的（尾部多余字节视为格式错误），故 `DaySummary` 是 DayPack 的**尾部必读字段**（其后还有 `FirstUp`，v2.5.8）、不是可忽略的可选尾巴，固件须按顺序读完尾部字段才算到达 payload 末尾。无兼容风险是因为**固件 DayPack 解析尚未上线**——会直接按含 `DaySummary` 的完整 v2.5.7 布局实现；置于定长 `SettlementData` 之后只是让既有字段偏移保持稳定。语义：与 `PetDialogue`（宠物口吻单句）**互补**——`DaySummary` 是**面板上的一天概览段落**，情绪向、只谈日程、附一条实用建议（如「11:30 先休息，避开正午会议」）。App 侧由 `DayPackGenerator` 喂**今日事件明细（时间/标题）**经 LLM 生成，无 key/离线时兜底为「N events today」计数模板。背景见 §6.5（v2.5.0 曾把多段文本收敛为单气泡，框②的一天总结此次作为**面板文本字段**复活，不回退单气泡决策）。
+
+> **v2.5.8 追加（FirstUp，框③）**：在 `DaySummary` **之后**再追加 `FirstUp`（≤60 字节，1 字节长度前缀 + UTF-8），承载设计稿页面一框③的「First up:」内容。值由 **App 算好下发**：取**下一个未来事件**（startTime > 当前时刻、最早的一个）格式化为「HH:mm 标题」（全天事件仅标题）；无未来事件则取**置顶（最高优先级未完成）任务**标题；皆无则空串。由 App 算而非固件合成，是沿用 §6.5「App 是显示决策方」——「相对当前时刻的下一个」是 App 侧时间逻辑，固件只渲染。`FirstUp` 现为 DayPack **最后一个字段**，同 §7.1 严格解析：固件须读完它才到 payload 末尾（仿真解码器 `parseDayPack` 已同步）。
 
 **Event 条目：**
 
@@ -961,6 +965,7 @@ App 首页宠物头顶只有**一个**对话槽 `currentPetDialogue`，由阶段
 | 顶栏 天气/日期 | Weather + Year/Month/Day | 已有 |
 | 宠物气泡（三态一致） | **PetDialogue（= App currentPetDialogue）** | 旧：morningGreeting / companionPhrase 分散 |
 | 一天总结段落（框②） | **DaySummary（v2.5.7 新增，面板文本，≤180B）** | 旧：dailySummary 曾删，现作面板文本复活 |
+| 下一项「First up」（框③） | **FirstUp（v2.5.8 新增，App 算，≤60B）** | 旧：仅 firstItem 单行；现为 App 算好的「下一个事件/任务」标签 |
 | 事件卡（时间 + 标题 + 描述） | **Events[]（新增 description）** | 缺（仅 firstItem / scheduleSummary） |
 | 任务清单 | TopTasks[] | 已有 |
 | 进度条（如 50%） | SettlementData.completed/total | 已有 |

@@ -131,12 +131,16 @@ public enum BLEDataEncoder {
         // v2.5.0: SummaryMessage / EncouragementMessage removed from the wire — the pet voice
         // is unified in PetDialogue; energy bottles ship via 0x14 FocusStatus.
 
-        // v2.5.7: DaySummary (box② "day at a glance") is the final DayPack field. Per §7.1 the wire
-        // reader is strict (trailing bytes = format error), so any reader MUST read this field to
-        // reach end-of-payload — the in-repo simulation decoder (parseDayPack) does. There is no
-        // prior live DayPack parser to stay compatible with (firmware DayPack parsing isn't shipped
-        // yet); tail placement just keeps the fixed SettlementData offsets stable.
+        // v2.5.7: DaySummary (box② "day at a glance") is a tail-appended DayPack field. Per §7.1 the
+        // wire reader is strict (trailing bytes = format error), so any reader MUST read the tail
+        // fields to reach end-of-payload — the in-repo simulation decoder (parseDayPack) does. There
+        // is no prior live DayPack parser to stay compatible with (firmware DayPack parsing isn't
+        // shipped yet); tail placement just keeps the fixed SettlementData offsets stable.
         data.appendString(dayPack.daySummary, maxLength: 180)
+
+        // v2.5.8: FirstUp (box③ "First up:" label) — currently the final DayPack field, appended
+        // after DaySummary. Same strict-reader contract: a reader must read it to reach end.
+        data.appendString(dayPack.firstUp, maxLength: 60)
 
         return data
     }

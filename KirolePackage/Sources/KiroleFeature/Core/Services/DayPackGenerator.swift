@@ -57,6 +57,9 @@ public final class DayPackGenerator {
             .prefix(screenSize.maxTasks)
             .map { TaskSummary(from: $0) }
 
+        // box③ "First up": next upcoming event, else the top (highest-priority) incomplete task.
+        let firstUp = Self.firstUpLabel(events: todayEvents, fallbackTaskTitle: topTasks.first?.title)
+
         return DayPack(
             date: Date(),
             weather: WeatherInfo(from: weather),
@@ -64,6 +67,7 @@ public final class DayPackGenerator {
             focusChallengeEnabled: false,
             petDialogue: bubble,
             daySummary: daySummary,
+            firstUp: firstUp,
             events: Array(eventSummaries),
             topTasks: Array(topTasks),
             settlementData: await generateSettlementData(tasks: todayTasks, events: todayEvents, pet: pet, userProfile: userProfile)
@@ -79,6 +83,22 @@ public final class DayPackGenerator {
     }
 
     // MARK: - Private Helpers
+
+    /// box③ "First up" label: the next upcoming event ("HH:mm Title", or just the title for an
+    /// all-day event), else the supplied top-task title, else "". Recomputed every sync relative
+    /// to `now`, so an event drops to the fallback once it has started.
+    nonisolated static func firstUpLabel(
+        events: [CalendarEvent], fallbackTaskTitle: String?, now: Date = Date()
+    ) -> String {
+        if let next = events.filter({ $0.startTime > now }).min(by: { $0.startTime < $1.startTime }) {
+            if next.isAllDay { return next.title }
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.dateFormat = "HH:mm"
+            return "\(formatter.string(from: next.startTime)) \(next.title)"
+        }
+        return fallbackTaskTitle ?? ""
+    }
 
     /// 结算完成数统计。客户 docx「页面四」：日程无法打卡，但只要客户未取消即视为完成一项任务，
     /// 计入完成数与积分。

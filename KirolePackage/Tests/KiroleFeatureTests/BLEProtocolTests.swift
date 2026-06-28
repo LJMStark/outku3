@@ -525,6 +525,7 @@ struct BLEProtocolTests {
             focusChallengeEnabled: false,
             petDialogue: "Good morning",
             daySummary: summary,
+            firstUp: "09:30 Standup",
             events: [],
             topTasks: [],
             settlementData: settlement
@@ -532,14 +533,15 @@ struct BLEProtocolTests {
         let data = BLEDataEncoder.encodeDayPack(pack)
 
         var cursor = 5
-        #expect(readString(from: data, cursor: &cursor) == "Good morning") // PetDialogue
-        #expect(data[cursor] == 0)                                         // EventCount = 0
+        #expect(readString(from: data, cursor: &cursor) == "Good morning")  // PetDialogue
+        #expect(data[cursor] == 0)                                          // EventCount = 0
         cursor += 1
-        #expect(data[cursor] == 0)                                         // TaskCount = 0
+        #expect(data[cursor] == 0)                                          // TaskCount = 0
         cursor += 1
-        cursor += 10                                                       // SettlementData: fixed 10 bytes
-        #expect(readString(from: data, cursor: &cursor) == summary)        // DaySummary (tail)
-        #expect(cursor == data.count)                                      // DaySummary is the final field
+        cursor += 10                                                        // SettlementData: fixed 10 bytes
+        #expect(readString(from: data, cursor: &cursor) == summary)         // DaySummary
+        #expect(readString(from: data, cursor: &cursor) == "09:30 Standup") // FirstUp (tail)
+        #expect(cursor == data.count)                                       // FirstUp is the final field
     }
 
     @Test("BLEDataEncoder encodeDayPack truncates DaySummary to 180 bytes")
@@ -555,8 +557,13 @@ struct BLEProtocolTests {
             settlementData: settlement
         )
         let data = BLEDataEncoder.encodeDayPack(pack)
-        // DaySummary is the final length-prefixed field; its 1-byte length sits 181 bytes from the end.
-        #expect(data[data.count - 181] == 180)
+        // Parse forward to the DaySummary length prefix (robust to trailing fields like FirstUp).
+        var cursor = 5
+        _ = readString(from: data, cursor: &cursor)   // PetDialogue
+        cursor += 1                                    // EventCount = 0
+        cursor += 1                                    // TaskCount = 0
+        cursor += 10                                   // SettlementData
+        #expect(data[cursor] == 180)                   // DaySummary truncated to 180 bytes
     }
 
     @Test("BLEDataEncoder encodeTaskInPage format excludes legacy microAction fields")

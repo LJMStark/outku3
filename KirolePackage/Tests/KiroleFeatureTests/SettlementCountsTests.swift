@@ -102,4 +102,63 @@ struct SettlementCountsTests {
         #expect(counts.completed == 1) // endTime == now → 已结束 → 计入
         #expect(counts.total == 1)
     }
+
+    // MARK: - firstUpLabel (box③ "First up")
+
+    private func upcoming(_ title: String, minutes: Double, allDay: Bool = false) -> CalendarEvent {
+        CalendarEvent(title: title,
+                      startTime: now.addingTimeInterval(minutes * 60),
+                      endTime: now.addingTimeInterval(minutes * 60 + 3600),
+                      isAllDay: allDay)
+    }
+
+    /// 用与 firstUpLabel 相同的 formatter 算期望值 —— 时区无关，测的是格式逻辑而非硬编码时刻。
+    private func timedLabel(_ event: CalendarEvent) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "HH:mm"
+        return "\(f.string(from: event.startTime)) \(event.title)"
+    }
+
+    @Test("firstUp: 下一个未来事件，格式 HH:mm Title，优先于任务")
+    func firstUpPicksUpcomingEvent() {
+        let next = upcoming("Standup", minutes: 90)
+        let label = DayPackGenerator.firstUpLabel(
+            events: [pastEvent(), next], fallbackTaskTitle: "Some task", now: now
+        )
+        #expect(label == timedLabel(next))
+    }
+
+    @Test("firstUp: 多个未来事件取最早的（与输入顺序无关）")
+    func firstUpPicksEarliestUpcoming() {
+        let later = upcoming("Later", minutes: 180)
+        let earlier = upcoming("Earlier", minutes: 30)
+        let label = DayPackGenerator.firstUpLabel(
+            events: [later, earlier], fallbackTaskTitle: nil, now: now
+        )
+        #expect(label == timedLabel(earlier))
+    }
+
+    @Test("firstUp: 无未来事件时退化为置顶任务标题")
+    func firstUpFallsBackToTask() {
+        let label = DayPackGenerator.firstUpLabel(
+            events: [pastEvent()], fallbackTaskTitle: "Plan BLE", now: now
+        )
+        #expect(label == "Plan BLE")
+    }
+
+    @Test("firstUp: 无事件无任务回退为空串")
+    func firstUpEmptyWhenNothing() {
+        let label = DayPackGenerator.firstUpLabel(events: [], fallbackTaskTitle: nil, now: now)
+        #expect(label == "")
+    }
+
+    @Test("firstUp: 全天未来事件只显示标题（无时间前缀）")
+    func firstUpAllDayEventTitleOnly() {
+        let allDay = upcoming("Release Day", minutes: 120, allDay: true)
+        let label = DayPackGenerator.firstUpLabel(
+            events: [allDay], fallbackTaskTitle: "task", now: now
+        )
+        #expect(label == "Release Day")
+    }
 }

@@ -20,6 +20,10 @@ public struct DayPack: Codable, Sendable {
     // practical suggestion. Distinct from the pet bubble; empty until generated.)
     public let daySummary: String
 
+    // box③ "First up" (v2.5.8): next upcoming event label ("HH:mm Title"), else the first
+    // incomplete task title, else "". Computed App-side so firmware just renders it.
+    public let firstUp: String
+
     // Overview panel data
     public let events: [EventSummary]
     public let topTasks: [TaskSummary]
@@ -37,6 +41,7 @@ public struct DayPack: Codable, Sendable {
         focusChallengeEnabled: Bool = false,
         petDialogue: String,
         daySummary: String = "",
+        firstUp: String = "",
         events: [EventSummary] = [],
         topTasks: [TaskSummary] = [],
         settlementData: SettlementData
@@ -48,6 +53,7 @@ public struct DayPack: Codable, Sendable {
         self.focusChallengeEnabled = focusChallengeEnabled
         self.petDialogue = petDialogue
         self.daySummary = daySummary
+        self.firstUp = firstUp
         self.events = events
         self.topTasks = topTasks
         self.settlementData = settlementData
@@ -77,6 +83,7 @@ public struct DayPack: Codable, Sendable {
 
         parts.append("petDialogue=\(petDialogue)")
         parts.append("daySummary=\(daySummary)")
+        parts.append("firstUp=\(firstUp)")
         parts.append("events.count=\(events.count)")
         for event in events {
             parts.append("event.time=\(event.time)")

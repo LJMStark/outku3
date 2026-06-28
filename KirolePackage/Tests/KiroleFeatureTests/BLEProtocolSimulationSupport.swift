@@ -64,6 +64,7 @@ struct ProtocolFixtures {
             focusChallengeEnabled: true,
             petDialogue: "Small steps count.",
             daySummary: "Two events today. Take a break before noon.",
+            firstUp: "09:30 HW Sync",
             events: [
                 EventSummary(time: "09:30", title: "HW Sync", description: "Bring the logic analyzer."),
             ],
@@ -310,8 +311,9 @@ struct SimulatedAppPacket {
             longestFocusMinutes: Int(try reader.readUInt16BE()),
             interruptionCount: Int(try reader.readByte())
         )
-        // v2.5.7: DaySummary is the final DayPack field (mirrors encodeDayPack tail append).
+        // v2.5.7/v2.5.8: DaySummary then FirstUp are the tail DayPack fields (mirror encodeDayPack).
         let daySummary = try reader.readString()
+        let firstUp = try reader.readString()
         try reader.requireEnd()
 
         return SimulatedDayPack(
@@ -320,6 +322,7 @@ struct SimulatedAppPacket {
             focusChallengeEnabled: focusChallengeEnabled,
             petDialogue: petDialogue,
             daySummary: daySummary,
+            firstUp: firstUp,
             events: events,
             topTasks: topTasks,
             settlement: settlement
@@ -529,6 +532,7 @@ struct SimulatedDayPack {
     let focusChallengeEnabled: Bool
     let petDialogue: String
     let daySummary: String
+    let firstUp: String
     let events: [Event]
     let topTasks: [TopTask]
     let settlement: Settlement
