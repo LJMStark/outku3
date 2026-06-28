@@ -100,6 +100,7 @@ struct BLEProtocolSimulationTests {
         #expect(parsedDayPack.deviceMode == .interactive)
         #expect(parsedDayPack.focusChallengeEnabled == true)
         #expect(parsedDayPack.petDialogue == "Small steps count.")
+        #expect(parsedDayPack.daySummary == "Two events today. Take a break before noon.")
         #expect(parsedDayPack.events.map(\.title) == ["HW Sync"])
         #expect(parsedDayPack.events.first?.time == "09:30")
         #expect(parsedDayPack.events.first?.description == "Bring the logic analyzer.")
