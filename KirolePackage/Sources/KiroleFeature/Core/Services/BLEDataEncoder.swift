@@ -193,8 +193,8 @@ public enum BLEDataEncoder {
     ///
     /// Payload 格式：
     /// - phase      1B  专注阶段（0=idle, 1=warmup, 2=building, 3=deep）
-    /// - bottles    1B  本会话已获得的能量瓶子数（clamp 0-255）
-    /// - elapsed    2B  已专注分钟数（Big Endian，clamp 0-65535）
+    /// - bottles    1B  本会话已收集的能量瓶子数（按未打断段计、打断重置在装填进度；clamp 0-255）
+    /// - elapsed    2B  当前未打断连续段的专注分钟数（打断即归零重计，非本会话总分钟；Big Endian，clamp 0-65535）
     /// - taskTitle  变长 长度前缀 UTF-8，最多 40 字节
     public static func encodeFocusStatus(
         phase: FocusPhase,
