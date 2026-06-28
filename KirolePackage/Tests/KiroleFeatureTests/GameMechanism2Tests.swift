@@ -156,9 +156,10 @@ struct GameMechanism2Tests {
 
     @Test("Binding day thresholds map to intimacy stages")
     func intimacyStageThresholds() {
-        #expect(IntimacyStage.from(bindingDays: 1) == .acquaintance)
-        #expect(IntimacyStage.from(bindingDays: 6) == .familiar)
-        #expect(IntimacyStage.from(bindingDays: 16) == .closeFriend)
+        #expect(IntimacyStage.from(bindingDays: 4) == .acquaintance)
+        #expect(IntimacyStage.from(bindingDays: 5) == .familiar)
+        #expect(IntimacyStage.from(bindingDays: 14) == .familiar)
+        #expect(IntimacyStage.from(bindingDays: 15) == .closeFriend)
     }
 
     @Test("Consecutive usage progress increments once per day and resets after gaps")

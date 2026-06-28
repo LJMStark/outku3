@@ -24,9 +24,9 @@ public enum IntimacyStage: String, CaseIterable, Sendable, Codable, Comparable {
 
     public static func from(bindingDays: Int) -> IntimacyStage {
         switch bindingDays {
-        case 16...:
+        case 15...:
             return .closeFriend
-        case 6...:
+        case 5...:
             return .familiar
         default:
             return .acquaintance
