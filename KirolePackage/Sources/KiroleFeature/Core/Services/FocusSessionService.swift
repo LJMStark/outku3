@@ -178,7 +178,11 @@ public final class FocusSessionService {
             screenUnlockEvents: unlockEvents
         )
 
-        session.earnedEnergyBottles = earnedEnergyBottles(for: session.calculatedFocusTime)
+        session.earnedEnergyBottles = FocusTimeCalculator.countableBottles(
+            sessionStart: session.startTime,
+            sessionEnd: endTime,
+            screenUnlockEvents: unlockEvents
+        )
         completeSession(session, endTime: endTime, clearPersistedActiveSession: true)
     }
 
@@ -482,7 +486,11 @@ public final class FocusSessionService {
             sessionEnd: endTime,
             screenUnlockEvents: []
         )
-        recovered.earnedEnergyBottles = earnedEnergyBottles(for: recovered.calculatedFocusTime)
+        recovered.earnedEnergyBottles = FocusTimeCalculator.countableBottles(
+            sessionStart: recovered.startTime,
+            sessionEnd: endTime,
+            screenUnlockEvents: []
+        )
         if wasShieldActive || recovered.protectionState == .protected {
             recovered.mode = .standard
             recovered.protectionState = .fallback
@@ -583,11 +591,6 @@ public final class FocusSessionService {
             screenUnlockEvents: screenUnlockEvents,
             thresholdSeconds: Constants.focusThresholdSeconds
         )
-    }
-
-    private func earnedEnergyBottles(for focusTime: TimeInterval?) -> Int {
-        let focusMinutes = Int((focusTime ?? 0) / 60)
-        return FocusEnergyCalculator.bottlesEarned(minutes: focusMinutes)
     }
 
     private func completeSession(

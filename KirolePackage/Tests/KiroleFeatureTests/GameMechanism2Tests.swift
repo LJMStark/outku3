@@ -261,6 +261,43 @@ struct GameMechanism2Tests {
         #expect(FocusEnergyCalculator.bottlesEarned(minutes: Int(focusTime / 60)) == 0)
     }
 
+    @Test("Energy bottles credit per uninterrupted segment; remainders never combine across an interruption")
+    func interruptionResetsInProgressBottleFill() {
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        func unlock(at minutes: Double) -> ScreenUnlockEvent {
+            ScreenUnlockEvent(timestamp: start.addingTimeInterval(minutes * 60), duration: 0)
+        }
+
+        // No interruption: floor(75 / 30) = 2.
+        #expect(FocusTimeCalculator.countableBottles(
+            sessionStart: start,
+            sessionEnd: start.addingTimeInterval(75 * 60),
+            screenUnlockEvents: []
+        ) == 2)
+
+        // 45 | interrupt | 45: each segment floors to 1 bottle; the two 15-min remainders are
+        // discarded and must NOT combine into a third bottle. (Pooled-then-floor gave 3 = the bug.)
+        #expect(FocusTimeCalculator.countableBottles(
+            sessionStart: start,
+            sessionEnd: start.addingTimeInterval(90 * 60),
+            screenUnlockEvents: [unlock(at: 45)]
+        ) == 2)
+
+        // 50 | interrupt | 50: 1 + 1 = 2 (pooled floor(100 / 30) would be 3).
+        #expect(FocusTimeCalculator.countableBottles(
+            sessionStart: start,
+            sessionEnd: start.addingTimeInterval(100 * 60),
+            screenUnlockEvents: [unlock(at: 50)]
+        ) == 2)
+
+        // Each segment below the 30-min threshold yields nothing.
+        #expect(FocusTimeCalculator.countableBottles(
+            sessionStart: start,
+            sessionEnd: start.addingTimeInterval(50 * 60),
+            screenUnlockEvents: [unlock(at: 25)]
+        ) == 0)
+    }
+
     @Test("Recovered focus session also computes earned energy bottles")
     @MainActor
     func recoveredFocusSessionAccumulatesEnergyBottles() {

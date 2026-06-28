@@ -32,4 +32,41 @@ enum FocusTimeCalculator {
         guard duration >= thresholdSeconds else { return 0 }
         return duration
     }
+
+    /// Energy bottles earned, credited **per uninterrupted segment**.
+    ///
+    /// Each screen-unlock event splits the session; within every segment the bottles are
+    /// `floor(segmentMinutes / 30)` and the sub-30-minute remainder is discarded. Crucially the
+    /// remainder is NOT carried across an interruption to combine with a later segment — an
+    /// interruption resets the in-progress bottle fill to zero (spec: 满30分钟收一瓶；
+    /// 打断一次→当前装填进度归零，零头不跨段合并).
+    ///
+    /// This deliberately differs from `countableFocusTime`, which sums whole surviving segment
+    /// durations and is kept intact for focus-time statistics: pooling-then-flooring there would
+    /// let two 15-minute remainders straddling an interruption mint a spurious extra bottle.
+    static func countableBottles(
+        sessionStart: Date,
+        sessionEnd: Date,
+        screenUnlockEvents: [ScreenUnlockEvent]
+    ) -> Int {
+        guard !screenUnlockEvents.isEmpty else {
+            return bottles(forSeconds: sessionEnd.timeIntervalSince(sessionStart))
+        }
+
+        let sortedEvents = screenUnlockEvents.sorted { $0.timestamp < $1.timestamp }
+        var total = 0
+        var lastEventEnd = sessionStart
+
+        for event in sortedEvents {
+            total += bottles(forSeconds: event.timestamp.timeIntervalSince(lastEventEnd))
+            lastEventEnd = event.timestamp.addingTimeInterval(event.duration ?? 60)
+        }
+
+        return total + bottles(forSeconds: sessionEnd.timeIntervalSince(lastEventEnd))
+    }
+
+    private static func bottles(forSeconds seconds: TimeInterval) -> Int {
+        guard seconds > 0 else { return 0 }
+        return FocusEnergyCalculator.bottlesEarned(minutes: Int(seconds / 60))
+    }
 }
