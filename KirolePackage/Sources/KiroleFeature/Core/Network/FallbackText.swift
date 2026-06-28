@@ -31,19 +31,6 @@ enum FallbackText {
         random(morningGreetings[mood], defaultingTo: morningGreetings[.happy], fallback: "Good morning!")
     }
 
-    static func dailySummary(tasksCount: Int, eventsCount: Int) -> String {
-        switch (tasksCount, eventsCount) {
-        case (0, 0):
-            return "A free day! Time to relax."
-        case (0, _):
-            return "\(eventsCount) \(pluralized("event", count: eventsCount)) today."
-        case (_, 0):
-            return "\(tasksCount) \(pluralized("task", count: tasksCount)) to tackle today."
-        default:
-            return "\(tasksCount) \(pluralized("task", count: tasksCount)), \(eventsCount) \(pluralized("event", count: eventsCount)) today."
-        }
-    }
-
     /// Offline fallback for the events-only day summary (box②). Events only — never tasks.
     static func daySummary(events: [EventSummary]) -> String {
         guard let first = events.first else {

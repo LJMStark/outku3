@@ -45,24 +45,6 @@ public final class CompanionTextService {
         return FallbackText.morningGreeting(for: petMood)
     }
 
-    // MARK: - Daily Summary
-
-    public func generateDailySummary(
-        tasksCount: Int, eventsCount: Int, petName: String,
-        userProfile: UserProfile = .default
-    ) async -> String {
-        if let aiText = await generateAIText(
-            type: .dailySummary,
-            petName: petName, petMood: .happy,
-            userProfile: userProfile,
-            totalTasks: tasksCount, events: eventsCount
-        ) {
-            return aiText
-        }
-
-        return FallbackText.dailySummary(tasksCount: tasksCount, eventsCount: eventsCount)
-    }
-
     // MARK: - Day Summary (box② — events-only day-at-a-glance panel text)
 
     /// Generates the DayPack "day at a glance" summary (box②). Events only — to-do tasks are

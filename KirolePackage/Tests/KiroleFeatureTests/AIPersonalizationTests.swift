@@ -652,15 +652,6 @@ import Foundation
     #expect(!result.isEmpty)
 }
 
-@Test @MainActor func testDailySummaryFallbackWithoutAPIKey() async throws {
-    let service = CompanionTextService.shared
-    let result = await service.generateDailySummary(
-        tasksCount: 3, eventsCount: 2, petName: "Waffle"
-    )
-    #expect(!result.isEmpty)
-    #expect(result.contains("3"))
-}
-
 @Test @MainActor func testCompanionPhraseFallbackWithoutAPIKey() async throws {
     let service = CompanionTextService.shared
     let result = await service.generateCompanionPhrase(
@@ -702,14 +693,6 @@ import Foundation
     )
     #expect(!result.isEmpty)
     #expect(result.contains("Tomorrow"))
-}
-
-@Test @MainActor func testDailySummaryNoTasksNoEvents() async throws {
-    let service = CompanionTextService.shared
-    let result = await service.generateDailySummary(
-        tasksCount: 0, eventsCount: 0, petName: "Waffle"
-    )
-    #expect(result == "A free day! Time to relax.")
 }
 
 @Test @MainActor func testDaySummaryFallbackIsEventsOnly() async throws {
