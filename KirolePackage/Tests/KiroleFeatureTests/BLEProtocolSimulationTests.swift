@@ -44,6 +44,8 @@ struct BLEProtocolSimulationTests {
         let weather = try hardware.receiveSingleAppPacket(weatherPacket).parseWeather()
         #expect(weather.temperature == -3)
         #expect(weather.condition == WeatherCondition.rainy.rawValue)
+        #expect(weather.highTemp == 4)
+        #expect(weather.lowTemp == -6)
 
         let timePacket = BLESimpleEncoder.encode(
             type: BLEDataType.time.rawValue,

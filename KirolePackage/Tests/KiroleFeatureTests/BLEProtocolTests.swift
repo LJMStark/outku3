@@ -428,6 +428,18 @@ struct BLEProtocolTests {
         #expect(temp == 30)
     }
 
+    @Test("BLEDataEncoder encodeWeather appends high/low temps (v2.5.9)")
+    func encodeWeatherHighLow() {
+        let weather = Weather(temperature: 5, highTemp: 12, lowTemp: -3, condition: .cloudy)
+        let data = BLEDataEncoder.encodeWeather(weather)
+        // Layout: [temp:int8][condition: 1+N][high:int8][low:int8]
+        #expect(Int8(bitPattern: data[0]) == 5)
+        let condLen = Int(data[1])
+        #expect(Int8(bitPattern: data[2 + condLen]) == 12)   // high
+        #expect(Int8(bitPattern: data[3 + condLen]) == -3)   // low
+        #expect(data.count == 4 + condLen)                   // no trailing bytes
+    }
+
     @Test("BLEDataEncoder encodeCurrentTime uses year-2000 offset")
     func encodeTimeYearOffset() {
         let data = BLEDataEncoder.encodeCurrentTime()

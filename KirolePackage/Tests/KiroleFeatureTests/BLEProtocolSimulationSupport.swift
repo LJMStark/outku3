@@ -254,8 +254,11 @@ struct SimulatedAppPacket {
         var reader = PayloadReader(data: payload)
         let temperature = Int(Int8(bitPattern: try reader.readByte()))
         let condition = try reader.readString()
+        // v2.5.9: HighTemp / LowTemp appended after Condition (mirror encodeWeather).
+        let highTemp = Int(Int8(bitPattern: try reader.readByte()))
+        let lowTemp = Int(Int8(bitPattern: try reader.readByte()))
         try reader.requireEnd()
-        return SimulatedWeather(temperature: temperature, condition: condition)
+        return SimulatedWeather(temperature: temperature, condition: condition, highTemp: highTemp, lowTemp: lowTemp)
     }
 
     func parseCurrentTime() throws -> SimulatedCurrentTime {
@@ -492,6 +495,8 @@ struct SimulatedSchedule {
 struct SimulatedWeather {
     let temperature: Int
     let condition: String
+    let highTemp: Int
+    let lowTemp: Int
 }
 
 struct SimulatedCurrentTime {

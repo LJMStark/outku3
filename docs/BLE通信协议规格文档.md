@@ -1,8 +1,8 @@
 # Kirole BLE 通信协议规格文档
 
-**版本:** v2.5.8
-**更新日期:** 2026-06-28
-**状态:** DayPack 显示模型重写（1 气泡 + 数据面板）。**破坏性变更：固件需按新 §4.7 / §6 重写 DayPack 解析（与 §8.7 修复一并做）。** FocusStatus(`0x14`) 新增 `SegmentMinutes` 字段（追加在 TaskTitle 后，前向兼容）；`ElapsedTime` 保持「本会话累计分钟」语义不变（v2.5.5）。`Mood`/`PetMoodByte` 明确为**前向兼容通道**：App 持续下发真实心情值，固件当前阶段可忽略、不据此展示或换图（v2.5.6，§4.2 / §4.10）。DayPack 末尾追加 `DaySummary`（框②「一天总结」：情绪向·只谈日程·≤180B），作为面板文本字段复活、与单句 `PetDialogue` 互补，不回退单气泡决策（v2.5.7，§4.7 / §6.5）。DayPack 再追加 `FirstUp`（框③「下一项」：下一个未来事件「HH:mm 标题」/ 无则置顶任务 / ≤60B，App 算好下发，现为 DayPack 最后一个字段）（v2.5.8，§4.7）。
+**版本:** v2.5.9
+**更新日期:** 2026-06-29
+**状态:** DayPack 显示模型重写（1 气泡 + 数据面板）。**破坏性变更：固件需按新 §4.7 / §6 重写 DayPack 解析（与 §8.7 修复一并做）。** FocusStatus(`0x14`) 新增 `SegmentMinutes` 字段（追加在 TaskTitle 后，前向兼容）；`ElapsedTime` 保持「本会话累计分钟」语义不变（v2.5.5）。`Mood`/`PetMoodByte` 明确为**前向兼容通道**：App 持续下发真实心情值，固件当前阶段可忽略、不据此展示或换图（v2.5.6，§4.2 / §4.10）。DayPack 末尾追加 `DaySummary`（框②「一天总结」：情绪向·只谈日程·≤180B），作为面板文本字段复活、与单句 `PetDialogue` 互补，不回退单气泡决策（v2.5.7，§4.7 / §6.5）。DayPack 再追加 `FirstUp`（框③「下一项」：下一个未来事件「HH:mm 标题」/ 无则置顶任务 / ≤60B，App 算好下发，现为 DayPack 最后一个字段）（v2.5.8，§4.7）。Weather(`0x04`) 在 Condition 后追加 `HighTemp`/`LowTemp`（顶栏高/低温，各 1B 有符号 int8）（v2.5.9，§4.5）。
 
 ---
 
@@ -68,6 +68,7 @@
 | v2.5.6  | 2026-06-28 | **`Mood`/`PetMoodByte` 固件处理约定（wire 字节不变，纯约定补充）**：明确 `PetStatus(0x01).Mood`（§4.2）与 `SmartReminder(0x13).PetMoodByte`（§4.10）——App **持续下发真实心情值**（H/E/F/S/M），但**固件当前阶段应忽略、不要据此展示或换图**；该字节作为**前向兼容通道保留**，待产品确定心情展示方案后再与 App 对齐渲染，无需 App 改版。背景：客户保留 App 端心情计算，硬件侧是否展示暂不确定，故先留通道、固件暂不消费 |
 | v2.5.7  | 2026-06-28 | **DayPack 新增 `DaySummary` 字段（页面一框②「一天总结」，前向兼容追加）**：在 §4.7 payload **末尾**追加 `DaySummary`（≤180B，1B 长度前缀 + UTF-8），承载设计稿页面一框②——情绪向、**只谈日程**（不含 to-do 任务）的一天概览 + 一条实用建议（如「11:30 先休息，避开正午会议」），与 `PetDialogue`（宠物口吻单句）**互补**。`DaySummary` 是 DayPack 最后一个必读字段；按 §7.1 严格解析，固件须读取它才到 payload 末尾。无兼容风险是因为固件 DayPack 解析尚未上线、将按含它的完整布局实现。App 侧 `DayPackGenerator` 喂**今日事件明细（时间/标题）**经 LLM 生成，无 key/离线兜底为计数模板。**这是对 v2.5.0「单气泡」的补充而非回退**：宠物口吻仍是单句 `PetDialogue`，框②是独立的面板概览文本。详见 §4.7 / §6.5 |
 | v2.5.8  | 2026-06-29 | **DayPack 新增 `FirstUp` 字段（页面一框③「First up」）**：在 `DaySummary` 之后再追加 `FirstUp`（≤60B，1B 长度前缀 + UTF-8），承载设计稿框③——下一个未来事件「HH:mm 标题」（全天仅标题），无未来事件则置顶（最高优先级未完成）任务标题，皆无则空串。**App 算好下发**（沿用 §6.5「App 是显示决策方」：相对当前时刻的「下一个」是 App 侧时间逻辑，固件只渲染）。`FirstUp` 现为 DayPack **最后一个字段**，同 §7.1 严格解析须读完它才到 payload 末尾——仿真解码器 `parseDayPack` 已同步。详见 §4.7 |
+| v2.5.9  | 2026-06-29 | **Weather(`0x04`) 新增 `HighTemp` / `LowTemp`（页面一顶栏高/低温）**：在 §4.5 `Condition` 之后追加 `HighTemp`+`LowTemp`（各 1B 有符号 int8 摄氏度），承载设计稿顶栏「高/低温」（如「42/23」）；`Temperature` 仍为当前温度、语义不变。固件须读完这两字节才到 payload 末尾（严格解析）；若此前 0x04 仅读 temp+condition 需更新——仿真解码器 `parseWeather` 已同步。详见 §4.5 |
 
 ### 1.4 术语表
 
@@ -341,8 +342,12 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 
 | Offset | Field       | Size        | Max Length | 描述 |
 |--------|-------------|-------------|------------|--------------------------|
-| 0      | Temperature | 1 byte      | -          | 有符号 int8（摄氏度） |
+| 0      | Temperature | 1 byte      | -          | 有符号 int8（摄氏度），**当前温度** |
 | 1      | Condition   | 1 + N bytes | 15 bytes   | 天气状况字符串 |
+| ...    | HighTemp    | 1 byte      | -          | 有符号 int8（摄氏度），当日**最高温**（v2.5.9，在 Condition 后追加）|
+| ...    | LowTemp     | 1 byte      | -          | 有符号 int8（摄氏度），当日**最低温**（v2.5.9，在 HighTemp 后）|
+
+> **v2.5.9 追加（HighTemp / LowTemp）**：在 `Condition` 之后追加 `HighTemp` + `LowTemp`（各 1 字节有符号 int8，摄氏度），承载顶栏「高/低温」显示（设计稿如「42/23」）。`Temperature` 仍是**当前温度**、语义不变。按 wire 严格解析约定，固件须读完这两字节才到 payload 末尾；若固件此前已实现 0x04 仅读 `Temperature`+`Condition`，需更新为读到 `LowTemp`（仿真解码器 `parseWeather` 已同步）。
 
 **Condition 值：**
 

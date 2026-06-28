@@ -57,6 +57,11 @@ public enum BLEDataEncoder {
         let temp = Int8(clamping: weather.temperature)
         data.append(contentsOf: withUnsafeBytes(of: temp) { Array($0) })
         data.appendString(weather.condition.rawValue, maxLength: 15)
+        // v2.5.9: HighTemp / LowTemp (top-bar "high/low", e.g. 42/23) appended after Condition.
+        let high = Int8(clamping: weather.highTemp)
+        let low = Int8(clamping: weather.lowTemp)
+        data.append(contentsOf: withUnsafeBytes(of: high) { Array($0) })
+        data.append(contentsOf: withUnsafeBytes(of: low) { Array($0) })
         return data
     }
 
