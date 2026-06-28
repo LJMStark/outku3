@@ -298,6 +298,44 @@ struct GameMechanism2Tests {
         ) == 0)
     }
 
+    @Test("An open (nil-duration) interruption credits no bottles for the foregrounded tail")
+    func openInterruptionDoesNotCreditForegroundedTail() {
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        // Focus 25 min, pick up the phone at 25 min and stay foregrounded until the session ends
+        // at 61 min. duration == nil means the interruption never closed, so 26-61 is the user on
+        // their phone, not focus — it must credit 0 bottles, not the 1 the old `?? 60` default gave.
+        let openUnlock = ScreenUnlockEvent(timestamp: start.addingTimeInterval(25 * 60), duration: nil)
+        let end = start.addingTimeInterval(61 * 60)
+        #expect(FocusTimeCalculator.countableBottles(
+            sessionStart: start,
+            sessionEnd: end,
+            screenUnlockEvents: [openUnlock]
+        ) == 0)
+
+        // Live: while still foregrounded, the current segment is empty (the fill sits at 0).
+        let segmentStart = FocusTimeCalculator.currentSegmentStart(
+            sessionStart: start,
+            now: end,
+            screenUnlockEvents: [openUnlock]
+        )
+        #expect(Int(end.timeIntervalSince(segmentStart) / 60) == 0)
+    }
+
+    @Test("Overlapping interruptions never rewind the segment boundary")
+    func overlappingInterruptionsDoNotRewindSegmentBoundary() {
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        // a interrupts 20→50 (30 min); b 25→26 (1 min) nests inside a. b must not rewind the
+        // boundary from 50 back to 26 and re-count the 26-50 interrupted span as focus.
+        let a = ScreenUnlockEvent(timestamp: start.addingTimeInterval(20 * 60), duration: 30 * 60)
+        let b = ScreenUnlockEvent(timestamp: start.addingTimeInterval(25 * 60), duration: 1 * 60)
+        // Session ends at 90 min → real focus is only the 50→90 stretch = 40 min = 1 bottle, not 2.
+        #expect(FocusTimeCalculator.countableBottles(
+            sessionStart: start,
+            sessionEnd: start.addingTimeInterval(90 * 60),
+            screenUnlockEvents: [a, b]
+        ) == 1)
+    }
+
     @Test("Live focus display is segment-aware: fill resets after an interruption and never over-reports vs settlement")
     func liveFocusDisplayIsSegmentAware() {
         let start = Date(timeIntervalSince1970: 1_700_000_000)

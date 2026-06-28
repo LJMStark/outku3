@@ -17,7 +17,7 @@ enum FocusTimeCalculator {
 
         for event in sortedEvents {
             focusTime += countableDuration(from: lastEventEnd, to: event.timestamp, thresholdSeconds: thresholdSeconds)
-            lastEventEnd = event.timestamp.addingTimeInterval(event.duration ?? 60)
+            lastEventEnd = max(lastEventEnd, interruptionEnd(of: event, windowEnd: sessionEnd))
         }
 
         return focusTime + countableDuration(from: lastEventEnd, to: sessionEnd, thresholdSeconds: thresholdSeconds)
@@ -59,7 +59,7 @@ enum FocusTimeCalculator {
 
         for event in sortedEvents {
             total += bottles(forSeconds: event.timestamp.timeIntervalSince(lastEventEnd))
-            lastEventEnd = event.timestamp.addingTimeInterval(event.duration ?? 60)
+            lastEventEnd = max(lastEventEnd, interruptionEnd(of: event, windowEnd: sessionEnd))
         }
 
         return total + bottles(forSeconds: sessionEnd.timeIntervalSince(lastEventEnd))
@@ -68,6 +68,19 @@ enum FocusTimeCalculator {
     private static func bottles(forSeconds seconds: TimeInterval) -> Int {
         guard seconds > 0 else { return 0 }
         return FocusEnergyCalculator.bottlesEarned(minutes: Int(seconds / 60))
+    }
+
+    /// End of an interruption, clamped to the focus window `[event.timestamp, windowEnd]`.
+    ///
+    /// A `nil` duration means the interruption is still open at the window end (the user is still
+    /// on their phone — `handleDidBecomeActive` records the unlock with `duration: nil` until a
+    /// later `willResignActive` closes it), so it extends to `windowEnd` and no focus is credited
+    /// after it. A known duration ends it normally. Clamping keeps overlapping or out-of-window
+    /// events from moving the segment boundary backward or past the window end.
+    private static func interruptionEnd(of event: ScreenUnlockEvent, windowEnd: Date) -> Date {
+        let openDuration = max(0, windowEnd.timeIntervalSince(event.timestamp))
+        let end = event.timestamp.addingTimeInterval(event.duration ?? openDuration)
+        return min(windowEnd, max(event.timestamp, end))
     }
 
     /// Start of the current uninterrupted focus segment: the end of the most recent interruption,
@@ -80,8 +93,8 @@ enum FocusTimeCalculator {
         screenUnlockEvents: [ScreenUnlockEvent]
     ) -> Date {
         let lastInterruptionEnd = screenUnlockEvents
-            .map { $0.timestamp.addingTimeInterval($0.duration ?? 60) }
-            .filter { $0 <= now }
+            .filter { $0.timestamp <= now }
+            .map { interruptionEnd(of: $0, windowEnd: now) }
             .max()
         return max(sessionStart, lastInterruptionEnd ?? sessionStart)
     }
