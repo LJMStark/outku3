@@ -89,13 +89,24 @@ public final class FocusSessionService {
 
     private func setupScreenTracking() {
         let tracker = ScreenActivityTracker()
-        // Push the moment an interruption is recorded so the on-device fill resets immediately,
-        // rather than waiting up to a full sync tick. The tracker appends the unlock event before
-        // invoking this, so the pushed state already reflects the interruption.
+        // Push + persist the moment an interruption is recorded: the on-device fill resets
+        // immediately, and the active session is re-persisted so a crash recovery sees the
+        // interruption instead of over-crediting. The tracker appends the unlock event before
+        // invoking this, so both already reflect the interruption.
         tracker.onInterruptionRecorded = { [weak self] in
             guard let self, self.activeSession != nil else { return }
             Task { @MainActor in
                 await AppState.shared.syncFocusHardwareDisplay(session: self.activeSession)
+                await self.persistActiveSessionWithInterruptions()
+            }
+        }
+        // When an interruption closes, re-persist so the recovered session carries the resolved
+        // duration. The periodic loop stops once the app backgrounds, so this is the last write
+        // before a possible kill.
+        tracker.onInterruptionClosed = { [weak self] in
+            guard let self, self.activeSession != nil else { return }
+            Task { @MainActor in
+                await self.persistActiveSessionWithInterruptions()
             }
         }
         tracker.startTracking()
@@ -435,6 +446,16 @@ public final class FocusSessionService {
         await waitForPendingSessionPersistence()
     }
 
+    /// Persists the active session with the interruptions recorded so far, so a crash recovery
+    /// settles against the real interruption history instead of assuming an uninterrupted session
+    /// (which over-credits bottles). Best practice: persist in-progress state early.
+    private func persistActiveSessionWithInterruptions(now: Date = Date()) async {
+        guard persistenceEnabled, let session = activeSession else { return }
+        var snapshot = session
+        snapshot.screenUnlockEvents = currentUnlockEvents(until: now)
+        await persistActiveSessionIfNeeded(snapshot)
+    }
+
     private func persistActiveSessionIfNeeded(_ session: FocusSession) async {
         guard persistenceEnabled else { return }
 
@@ -517,16 +538,19 @@ public final class FocusSessionService {
         var recovered = persistedSession
         recovered.endTime = endTime
         recovered.endReason = .recoveredOnLaunch
-        recovered.screenUnlockEvents = []
+        // Settle against the interruptions persisted before the kill, not an empty list — assuming
+        // an uninterrupted session would over-credit bottles.
+        let persistedUnlocks = persistedSession.screenUnlockEvents
+        recovered.screenUnlockEvents = persistedUnlocks
         recovered.calculatedFocusTime = calculateFocusTime(
             sessionStart: recovered.startTime,
             sessionEnd: endTime,
-            screenUnlockEvents: []
+            screenUnlockEvents: persistedUnlocks
         )
         recovered.earnedEnergyBottles = FocusTimeCalculator.countableBottles(
             sessionStart: recovered.startTime,
             sessionEnd: endTime,
-            screenUnlockEvents: []
+            screenUnlockEvents: persistedUnlocks
         )
         if wasShieldActive || recovered.protectionState == .protected {
             recovered.mode = .standard
@@ -699,6 +723,12 @@ public final class ScreenActivityTracker {
     /// periodic sync tick. Ordered guarantee: the unlock event is appended before this fires.
     public var onInterruptionRecorded: (@MainActor () -> Void)?
 
+    /// Invoked right after an interruption closes (the app resigns active and the unlock event's
+    /// duration is filled in). The periodic sync loop is suspended once the app backgrounds, so
+    /// this is the last chance to re-persist the session with the resolved duration before a
+    /// possible kill — without it, recovery would treat a closed interruption as still open.
+    public var onInterruptionClosed: (@MainActor () -> Void)?
+
     public init() {}
 
     public func startTracking() {
@@ -756,6 +786,7 @@ public final class ScreenActivityTracker {
         unlockEvents.removeLast()
         unlockEvents.append(ScreenUnlockEvent(timestamp: lastEvent.timestamp, duration: duration))
         lastBecameActiveTime = nil
+        onInterruptionClosed?()
     }
 }
 

@@ -408,6 +408,30 @@ struct GameMechanism2Tests {
         #expect(service.todaySessions.last?.earnedEnergyBottles == 2)
     }
 
+    @Test("Recovered session settles bottles from its persisted interruptions, not an empty list")
+    @MainActor
+    func recoveredSessionUsesPersistedInterruptions() {
+        let focusGuardService = GameMechanismMockFocusGuardService()
+        let service = FocusSessionService.makeForTesting(
+            focusGuardService: focusGuardService,
+            persistenceEnabled: false
+        )
+        let endTime = Date()
+        let startTime = endTime.addingTimeInterval(-90 * 60)
+        // Persisted with one interruption at the 45-min mark → two 45-min segments → 1 + 1 = 2.
+        // Dropping the interruptions (the old behavior) would settle floor(90/30) = 3 and inflate.
+        let active = FocusSession(
+            taskId: "recovered-interrupted-task",
+            taskTitle: "Recovered Interrupted Task",
+            startTime: startTime,
+            screenUnlockEvents: [ScreenUnlockEvent(timestamp: startTime.addingTimeInterval(45 * 60), duration: 0)]
+        )
+
+        service.recoverPersistedSessionForTesting(active, wasShieldActive: false, endTime: endTime)
+
+        #expect(service.todaySessions.last?.earnedEnergyBottles == 2)
+    }
+
     @Test("BLE event replay uses event timestamps for focus session timing")
     @MainActor
     func bleEventReplayUsesEventTimestamps() async {
