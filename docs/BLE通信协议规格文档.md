@@ -1,8 +1,8 @@
 # Kirole BLE 通信协议规格文档
 
-**版本:** v2.5.6
+**版本:** v2.5.7
 **更新日期:** 2026-06-28
-**状态:** DayPack 显示模型重写（1 气泡 + 数据面板）。**破坏性变更：固件需按新 §4.7 / §6 重写 DayPack 解析（与 §8.7 修复一并做）。** FocusStatus(`0x14`) 新增 `SegmentMinutes` 字段（追加在 TaskTitle 后，前向兼容）；`ElapsedTime` 保持「本会话累计分钟」语义不变（v2.5.5）。`Mood`/`PetMoodByte` 明确为**前向兼容通道**：App 持续下发真实心情值，固件当前阶段可忽略、不据此展示或换图（v2.5.6，§4.2 / §4.10）。
+**状态:** DayPack 显示模型重写（1 气泡 + 数据面板）。**破坏性变更：固件需按新 §4.7 / §6 重写 DayPack 解析（与 §8.7 修复一并做）。** FocusStatus(`0x14`) 新增 `SegmentMinutes` 字段（追加在 TaskTitle 后，前向兼容）；`ElapsedTime` 保持「本会话累计分钟」语义不变（v2.5.5）。`Mood`/`PetMoodByte` 明确为**前向兼容通道**：App 持续下发真实心情值，固件当前阶段可忽略、不据此展示或换图（v2.5.6，§4.2 / §4.10）。DayPack 末尾追加 `DaySummary`（框②「一天总结」：情绪向·只谈日程·≤180B），作为面板文本字段复活、与单句 `PetDialogue` 互补，不回退单气泡决策（v2.5.7，§4.7 / §6.5）。
 
 ---
 
@@ -66,6 +66,7 @@
 | v2.5.4  | 2026-06-28 | **FocusStatus(`0x14`) 字段语义修订（wire 字节不变，含义变）**：`ElapsedTime` 从「本会话累计专注分钟」改为「**当前未打断连续段**的专注分钟」——被手机打断即归零重计，用于驱动端上「装填进度条」在打断时归零；`Bottles` 改为按未打断段各自 floor(段÷30) 累计、零头不跨打断合并（满 30 分钟连续专注收 1 瓶，与 App 结算口径一致）。**固件若用 `ElapsedTime` 显示「总专注时长」会被打破，需对齐为「当前段」语义**（如固件仍需总时长，与 App 商定新增独立字段）。详见 §4.11。**（注：本条已被 v2.5.5 修订，勿按本条实现）** |
 | v2.5.5  | 2026-06-28 | **FocusStatus(`0x14`) 改用「加字段」而非「原地改语义」（采纳协议演进最佳实践，修订 v2.5.4）**：撤回 v2.5.4 把 `ElapsedTime` 原地改成「当前段分钟」的做法——`ElapsedTime` **还原**为「本会话累计已专注分钟」（墙钟、不随打断归零，**不破坏**可能已按总时长实现的固件）；**新增 `SegmentMinutes`(2B BE)** 表示「当前未打断段分钟」（驱动装填、打断归零），**追加在变长 TaskTitle 之后**——旧固件读到 TaskTitle 即止、忽略尾部 2 字节（前向兼容），新固件多读 2 字节。`Phase` 明确为按当前未打断段计（打断退回 warmup）。`Bottles` 维持 v2.5.4 的按段累计。详见 §4.11 |
 | v2.5.6  | 2026-06-28 | **`Mood`/`PetMoodByte` 固件处理约定（wire 字节不变，纯约定补充）**：明确 `PetStatus(0x01).Mood`（§4.2）与 `SmartReminder(0x13).PetMoodByte`（§4.10）——App **持续下发真实心情值**（H/E/F/S/M），但**固件当前阶段应忽略、不要据此展示或换图**；该字节作为**前向兼容通道保留**，待产品确定心情展示方案后再与 App 对齐渲染，无需 App 改版。背景：客户保留 App 端心情计算，硬件侧是否展示暂不确定，故先留通道、固件暂不消费 |
+| v2.5.7  | 2026-06-28 | **DayPack 新增 `DaySummary` 字段（页面一框②「一天总结」，前向兼容追加）**：在 §4.7 payload **末尾**追加 `DaySummary`（≤180B，1B 长度前缀 + UTF-8），承载设计稿页面一框②——情绪向、**只谈日程**（不含 to-do 任务）的一天概览 + 一条实用建议（如「11:30 先休息，避开正午会议」），与 `PetDialogue`（宠物口吻单句）**互补**。放末尾不影响只解析到 `SettlementData` 的解析器（DayPack 解析尚未在固件上线，无回归）。App 侧 `DayPackGenerator` 喂**今日事件明细（时间/标题）**经 LLM 生成，无 key/离线兜底为计数模板。**这是对 v2.5.0「单气泡」的补充而非回退**：宠物口吻仍是单句 `PetDialogue`，框②是独立的面板概览文本。详见 §4.7 / §6.5 |
 
 ### 1.4 术语表
 
@@ -391,8 +392,11 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 | ...    | TaskCount              | 1 byte      | -          | 置顶任务数量（0-5，取决于屏幕尺寸）|
 | ...    | TopTasks[]             | Variable    | -          | 置顶任务（见下，4寸≤3 / 7.3寸≤5）|
 | ...    | SettlementData         | Variable    | -          | 进度/专注数值（见下，**已无文本消息**）|
+| ...    | DaySummary             | 1 + N bytes | 180 bytes  | **一天总结（框②）**：情绪向、**只谈日程**（不含 to-do 任务）的概览 + 一条实用建议；**追加在 payload 末尾**（v2.5.7，前向兼容，见下注）。空串表示尚未生成 |
 
 > **v2.5.0 破坏性变更**：删除旧字段 `MorningGreeting / DailySummary / FirstItem / CurrentScheduleSummary / CompanionPhrase`，收敛为单字段 `PetDialogue`；新增带描述的 `Events[]`（旧协议缺此能力）。固件解析器须按本表重写。
+
+> **v2.5.7 追加（前向兼容）**：在 payload **末尾**追加 `DaySummary`（框②「一天总结」，≤180 字节，1 字节长度前缀 + UTF-8）。放末尾而非中段插入，是为了让只解析到 `SettlementData` 的解析器不受影响——DayPack 解析尚未在固件上线，两种解析顺序都无回归。语义：与 `PetDialogue`（宠物口吻单句）**互补**——`DaySummary` 是**面板上的一天概览段落**，情绪向、只谈日程、附一条实用建议（如「11:30 先休息，避开正午会议」）。App 侧由 `DayPackGenerator` 喂**今日事件明细（时间/标题）**经 LLM 生成，无 key/离线时兜底为「N events today」计数模板。背景见 §6.5（v2.5.0 曾把多段文本收敛为单气泡，框②的一天总结此次作为**面板文本字段**复活，不回退单气泡决策）。
 
 **Event 条目：**
 
@@ -956,6 +960,7 @@ App 首页宠物头顶只有**一个**对话槽 `currentPetDialogue`，由阶段
 |---|---|---|
 | 顶栏 天气/日期 | Weather + Year/Month/Day | 已有 |
 | 宠物气泡（三态一致） | **PetDialogue（= App currentPetDialogue）** | 旧：morningGreeting / companionPhrase 分散 |
+| 一天总结段落（框②） | **DaySummary（v2.5.7 新增，面板文本，≤180B）** | 旧：dailySummary 曾删，现作面板文本复活 |
 | 事件卡（时间 + 标题 + 描述） | **Events[]（新增 description）** | 缺（仅 firstItem / scheduleSummary） |
 | 任务清单 | TopTasks[] | 已有 |
 | 进度条（如 50%） | SettlementData.completed/total | 已有 |
@@ -969,6 +974,7 @@ App 首页宠物头顶只有**一个**对话槽 `currentPetDialogue`，由阶段
 - **事件描述**：`Events[]` 每条 `Time(≤8B) / Title(≤40B) / Description(≤120B)`，沿用 §4.7 流式变长 + 按 UTF-8 字节边界截断。
 - **结算双消息**：删除 `SummaryMessage / EncouragementMessage`——宠物口吻统一由 `PetDialogue` 承载；`SettlementData` 仅保留数值字段（完成/总数、积分、专注指标、能量瓶），用于进度条与能量瓶展示。
 - **进度/能量**：复用 `SettlementData` 数值，不单列新字段。
+- **一天总结（框②，v2.5.7 补充）**：在「宠物气泡单句」之外，**面板上保留一段独立的「一天总结」文本** `DaySummary`（≤180B，§4.7 末尾追加）。这**不是回退** v2.5.0 的单气泡决策——宠物**口吻**仍只有 `PetDialogue` 一句；`DaySummary` 是**非宠物口吻的概览段落**（情绪向、只谈日程、附一条实用建议），由 `DayPackGenerator` 喂今日事件明细生成。分工：「气泡 = 宠物说的一句话」「DaySummary = 面板上的一天概览」，两者不重复。当年删 `dailySummary` 删的是「另造一套宠物口吻」的冗余，本次复活的是「面板概览段落」，定位不同。
 
 **迁移 / 兼容**
 

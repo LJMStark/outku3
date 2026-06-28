@@ -512,6 +512,53 @@ struct BLEProtocolTests {
         #expect(data[cursor] == 0x02)
     }
 
+    @Test("BLEDataEncoder encodeDayPack appends DaySummary at the tail (v2.5.7)")
+    func encodeDayPackAppendsDaySummaryTail() {
+        let settlement = SettlementData(
+            tasksCompleted: 0, tasksTotal: 0, pointsEarned: 0,
+            petMood: "happy", summaryMessage: "", encouragementMessage: ""
+        )
+        let summary = "You have 2 events today. Take a break before noon."
+        let pack = DayPack(
+            date: Date(timeIntervalSince1970: 1_700_000_000),
+            deviceMode: .interactive,
+            focusChallengeEnabled: false,
+            petDialogue: "Good morning",
+            daySummary: summary,
+            events: [],
+            topTasks: [],
+            settlementData: settlement
+        )
+        let data = BLEDataEncoder.encodeDayPack(pack)
+
+        var cursor = 5
+        #expect(readString(from: data, cursor: &cursor) == "Good morning") // PetDialogue
+        #expect(data[cursor] == 0)                                         // EventCount = 0
+        cursor += 1
+        #expect(data[cursor] == 0)                                         // TaskCount = 0
+        cursor += 1
+        cursor += 10                                                       // SettlementData: fixed 10 bytes
+        #expect(readString(from: data, cursor: &cursor) == summary)        // DaySummary (tail)
+        #expect(cursor == data.count)                                      // DaySummary is the final field
+    }
+
+    @Test("BLEDataEncoder encodeDayPack truncates DaySummary to 180 bytes")
+    func encodeDayPackTruncatesDaySummary() {
+        let settlement = SettlementData(
+            tasksCompleted: 0, tasksTotal: 0, pointsEarned: 0,
+            petMood: "happy", summaryMessage: "", encouragementMessage: ""
+        )
+        let pack = DayPack(
+            date: Date(timeIntervalSince1970: 1_700_000_000),
+            petDialogue: "x",
+            daySummary: String(repeating: "A", count: 200),
+            settlementData: settlement
+        )
+        let data = BLEDataEncoder.encodeDayPack(pack)
+        // DaySummary is the final length-prefixed field; its 1-byte length sits 181 bytes from the end.
+        #expect(data[data.count - 181] == 180)
+    }
+
     @Test("BLEDataEncoder encodeTaskInPage format excludes legacy microAction fields")
     func encodeTaskInPageFormatExcludesMicroActionFields() {
         let taskInPage = TaskInPageData(

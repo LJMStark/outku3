@@ -16,6 +16,10 @@ public struct DayPack: Codable, Sendable {
     // phase-aware, so it's a morning greeting in the morning and a settlement line at night).
     public let petDialogue: String
 
+    // Day-at-a-glance summary (v2.5.7: box② — emotion-oriented, events-only overview plus one
+    // practical suggestion. Distinct from the pet bubble; empty until generated.)
+    public let daySummary: String
+
     // Overview panel data
     public let events: [EventSummary]
     public let topTasks: [TaskSummary]
@@ -32,6 +36,7 @@ public struct DayPack: Codable, Sendable {
         deviceMode: DeviceMode = .interactive,
         focusChallengeEnabled: Bool = false,
         petDialogue: String,
+        daySummary: String = "",
         events: [EventSummary] = [],
         topTasks: [TaskSummary] = [],
         settlementData: SettlementData
@@ -42,6 +47,7 @@ public struct DayPack: Codable, Sendable {
         self.deviceMode = deviceMode
         self.focusChallengeEnabled = focusChallengeEnabled
         self.petDialogue = petDialogue
+        self.daySummary = daySummary
         self.events = events
         self.topTasks = topTasks
         self.settlementData = settlementData
@@ -70,6 +76,7 @@ public struct DayPack: Codable, Sendable {
         }
 
         parts.append("petDialogue=\(petDialogue)")
+        parts.append("daySummary=\(daySummary)")
         parts.append("events.count=\(events.count)")
         for event in events {
             parts.append("event.time=\(event.time)")

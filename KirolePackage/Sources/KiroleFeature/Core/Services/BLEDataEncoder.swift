@@ -131,6 +131,11 @@ public enum BLEDataEncoder {
         // v2.5.0: SummaryMessage / EncouragementMessage removed from the wire — the pet voice
         // is unified in PetDialogue; energy bottles ship via 0x14 FocusStatus.
 
+        // v2.5.7: DaySummary (box② "day at a glance") appended at the tail. Tail placement keeps
+        // it forward-compatible — a parser that reads only through SettlementData is unaffected
+        // (DayPack parsing isn't live on firmware yet, so there's no regression either way).
+        data.appendString(dayPack.daySummary, maxLength: 180)
+
         return data
     }
 
