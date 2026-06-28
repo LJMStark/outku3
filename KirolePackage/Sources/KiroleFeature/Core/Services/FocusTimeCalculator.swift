@@ -85,4 +85,18 @@ enum FocusTimeCalculator {
             .max()
         return max(sessionStart, lastInterruptionEnd ?? sessionStart)
     }
+
+    /// Seconds from `now` until the next energy bottle completes within the current uninterrupted
+    /// segment. Used to wake the live display loop exactly when a bottle is collected, so the
+    /// on-device "bottle collected" effect lands on time instead of up to a periodic tick late.
+    static func secondsUntilNextBottle(
+        segmentStart: Date,
+        now: Date,
+        blockSeconds: TimeInterval
+    ) -> TimeInterval {
+        guard blockSeconds > 0 else { return blockSeconds }
+        let secondsIntoSegment = max(0, now.timeIntervalSince(segmentStart))
+        let remainder = secondsIntoSegment.truncatingRemainder(dividingBy: blockSeconds)
+        return blockSeconds - remainder
+    }
 }

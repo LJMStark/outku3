@@ -88,8 +88,18 @@ public final class FocusSessionService {
     }
 
     private func setupScreenTracking() {
-        screenActivityTracker = ScreenActivityTracker()
-        screenActivityTracker?.startTracking()
+        let tracker = ScreenActivityTracker()
+        // Push the moment an interruption is recorded so the on-device fill resets immediately,
+        // rather than waiting up to a full sync tick. The tracker appends the unlock event before
+        // invoking this, so the pushed state already reflects the interruption.
+        tracker.onInterruptionRecorded = { [weak self] in
+            guard let self, self.activeSession != nil else { return }
+            Task { @MainActor in
+                await AppState.shared.syncFocusHardwareDisplay(session: self.activeSession)
+            }
+        }
+        tracker.startTracking()
+        screenActivityTracker = tracker
     }
 
     private func startFocusDisplaySyncLoop() {
@@ -98,11 +108,30 @@ public final class FocusSessionService {
             guard let self else { return }
             await AppState.shared.syncFocusHardwareDisplay(session: self.activeSession)
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(60))
+                try? await Task.sleep(for: .seconds(self.nextFocusDisplaySyncDelay()))
                 guard !Task.isCancelled else { return }
                 await AppState.shared.syncFocusHardwareDisplay(session: self.activeSession)
             }
         }
+    }
+
+    /// Seconds until the next live focus push: the sooner of the next energy bottle completing in
+    /// the current uninterrupted segment (so the "bottle collected" effect lands on time) and a
+    /// 60-second periodic refresh ceiling.
+    private func nextFocusDisplaySyncDelay(now: Date = Date()) -> TimeInterval {
+        let periodicCeiling: TimeInterval = 60
+        guard let session = activeSession else { return periodicCeiling }
+        let segmentStart = FocusTimeCalculator.currentSegmentStart(
+            sessionStart: session.startTime,
+            now: now,
+            screenUnlockEvents: currentUnlockEvents(until: now)
+        )
+        let secondsToNextBottle = FocusTimeCalculator.secondsUntilNextBottle(
+            segmentStart: segmentStart,
+            now: now,
+            blockSeconds: Constants.focusThresholdSeconds
+        )
+        return max(1, min(periodicCeiling, secondsToNextBottle))
     }
 
     private func stopFocusDisplaySyncLoop() {
@@ -665,6 +694,11 @@ public final class ScreenActivityTracker {
     private var lastBecameActiveTime: Date?
     private var observers: [Any] = []
 
+    /// Invoked right after an interruption is recorded during a session, so the live hardware
+    /// display can immediately reset the in-progress bottle fill instead of waiting for the next
+    /// periodic sync tick. Ordered guarantee: the unlock event is appended before this fires.
+    public var onInterruptionRecorded: (@MainActor () -> Void)?
+
     public init() {}
 
     public func startTracking() {
@@ -713,6 +747,7 @@ public final class ScreenActivityTracker {
         guard sessionStartTime != nil else { return }
         lastBecameActiveTime = Date()
         unlockEvents.append(ScreenUnlockEvent(timestamp: Date(), duration: nil))
+        onInterruptionRecorded?()
     }
 
     private func handleWillResignActive() {

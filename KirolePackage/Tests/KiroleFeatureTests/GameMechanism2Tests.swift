@@ -323,6 +323,33 @@ struct GameMechanism2Tests {
         ) == 0)
     }
 
+    @Test("Next-bottle countdown wakes the live display on the 30-minute boundary")
+    func secondsUntilNextBottleCountsDownWithinSegment() {
+        let segmentStart = Date(timeIntervalSince1970: 1_700_000_000)
+        let block: TimeInterval = 30 * 60
+
+        // 10 min into the segment → next bottle completes in 20 min.
+        #expect(FocusTimeCalculator.secondsUntilNextBottle(
+            segmentStart: segmentStart,
+            now: segmentStart.addingTimeInterval(10 * 60),
+            blockSeconds: block
+        ) == 20 * 60)
+
+        // Exactly on a boundary (30 min) → a full block until the next bottle.
+        #expect(FocusTimeCalculator.secondsUntilNextBottle(
+            segmentStart: segmentStart,
+            now: segmentStart.addingTimeInterval(30 * 60),
+            blockSeconds: block
+        ) == 30 * 60)
+
+        // 50 min in (1 bottle banked, 20 min into the second) → next bottle in 10 min.
+        #expect(FocusTimeCalculator.secondsUntilNextBottle(
+            segmentStart: segmentStart,
+            now: segmentStart.addingTimeInterval(50 * 60),
+            blockSeconds: block
+        ) == 10 * 60)
+    }
+
     @Test("Recovered focus session also computes earned energy bottles")
     @MainActor
     func recoveredFocusSessionAccumulatesEnergyBottles() {
