@@ -595,13 +595,15 @@ public final class BLEService: NSObject {
         phase: FocusPhase,
         energyBottles: Int,
         elapsedMinutes: Int,
-        taskTitle: String?
+        taskTitle: String?,
+        segmentMinutes: Int
     ) async throws {
         let payload = BLEDataEncoder.encodeFocusStatus(
             phase: phase,
             energyBottles: energyBottles,
             elapsedMinutes: elapsedMinutes,
-            taskTitle: taskTitle
+            taskTitle: taskTitle,
+            segmentMinutes: segmentMinutes
         )
         try await writeData(type: .focusStatus, data: payload)
     }

@@ -1126,13 +1126,19 @@ struct BLEProtocolTests {
             phase: .building,
             energyBottles: -3,
             elapsedMinutes: -20,
-            taskTitle: "Task"
+            taskTitle: "Task",
+            segmentMinutes: -5
         )
 
         #expect(data[0] == 2)
         #expect(data[1] == 0)
         #expect(data[2] == 0)
         #expect(data[3] == 0)
+        // SegmentMinutes (2B BE) is appended after the 1-byte length + "Task" (offsets 9-10)
+        // and clamps the negative value to zero.
+        #expect(data.count == 11)
+        #expect(data[9] == 0)
+        #expect(data[10] == 0)
     }
 }
 

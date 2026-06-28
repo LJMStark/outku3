@@ -194,13 +194,15 @@ public enum BLEDataEncoder {
     /// Payload 格式：
     /// - phase      1B  专注阶段（0=idle, 1=warmup, 2=building, 3=deep）
     /// - bottles    1B  本会话已收集的能量瓶子数（按未打断段计、打断重置在装填进度；clamp 0-255）
-    /// - elapsed    2B  当前未打断连续段的专注分钟数（打断即归零重计，非本会话总分钟；Big Endian，clamp 0-65535）
+    /// - elapsed    2B  本会话累计已专注分钟数（自进入任务，墙钟，不随打断归零；Big Endian，clamp 0-65535）
     /// - taskTitle  变长 长度前缀 UTF-8，最多 40 字节
+    /// - segment    2B  当前未打断连续段分钟数（打断即归零重计，驱动装填进度；追加在 taskTitle 后，Big Endian，clamp 0-65535）
     public static func encodeFocusStatus(
         phase: FocusPhase,
         energyBottles: Int,
         elapsedMinutes: Int,
-        taskTitle: String?
+        taskTitle: String?,
+        segmentMinutes: Int
     ) -> Data {
         var data = Data()
         let phaseByte: UInt8 = switch phase {
@@ -213,6 +215,9 @@ public enum BLEDataEncoder {
         data.appendClampedUInt8(energyBottles)
         data.appendBigEndian(UInt16(clamping: elapsedMinutes))
         data.appendString(taskTitle ?? "", maxLength: 40)
+        // SegmentMinutes appended after the variable-length TaskTitle so older firmware that
+        // stops at TaskTitle simply ignores the trailing bytes (forward-compatible).
+        data.appendBigEndian(UInt16(clamping: segmentMinutes))
         return data
     }
 

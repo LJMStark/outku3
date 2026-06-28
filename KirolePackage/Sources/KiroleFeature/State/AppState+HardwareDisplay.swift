@@ -144,25 +144,27 @@ extension AppState {
 
     func syncFocusHardwareDisplay(session: FocusSession?, now: Date = Date()) async {
         let elapsedMinutes: Int
+        let segmentMinutes: Int
         let focusPhase: FocusPhase
         let focusBottles: Int
 
         if let session {
-            // Segment-aware live state so the on-device display matches what endSession will
-            // settle (no more "shows 1 bottle mid-session but banks 0"). `elapsedMinutes` is
-            // minutes into the CURRENT uninterrupted segment, so the fill bar and phase fall back
-            // to zero after each interruption instead of climbing on a wall-clock count.
-            // NOTE: this changes the meaning of the focus-status `elapsedMinutes` field from
-            // "total focused minutes" to "current-segment minutes" — pending hardware/protocol
-            // alignment (docs/BLE通信协议规格文档.md) after the codex joint review.
+            // Two distinct counters per the focus-status protocol (v2.5.5):
+            // - `elapsedMinutes` (ElapsedTime): total wall-clock minutes since the session began,
+            //   a monotonic "focused N minutes" counter that does NOT reset on interruption.
+            // - `segmentMinutes` (SegmentMinutes): minutes into the CURRENT uninterrupted segment,
+            //   which resets to zero after each interruption and drives the on-device fill bar.
+            // `focusBottles`/`focusPhase` follow the segment so the banked count matches what
+            // endSession settles and the visual stage resets together with the fill.
             let unlockEvents = FocusSessionService.shared.currentUnlockEvents(until: now)
             let segmentStart = FocusTimeCalculator.currentSegmentStart(
                 sessionStart: session.startTime,
                 now: now,
                 screenUnlockEvents: unlockEvents
             )
-            elapsedMinutes = max(0, Int(now.timeIntervalSince(segmentStart) / 60))
-            focusPhase = FocusPhase.from(elapsedMinutes: elapsedMinutes)
+            elapsedMinutes = max(0, Int(now.timeIntervalSince(session.startTime) / 60))
+            segmentMinutes = max(0, Int(now.timeIntervalSince(segmentStart) / 60))
+            focusPhase = FocusPhase.from(elapsedMinutes: segmentMinutes)
             focusBottles = FocusTimeCalculator.countableBottles(
                 sessionStart: session.startTime,
                 sessionEnd: now,
@@ -170,6 +172,7 @@ extension AppState {
             )
         } else {
             elapsedMinutes = 0
+            segmentMinutes = 0
             focusPhase = .idle
             focusBottles = 0
         }
@@ -181,7 +184,8 @@ extension AppState {
                     phase: focusPhase,
                     energyBottles: focusBottles,
                     elapsedMinutes: elapsedMinutes,
-                    taskTitle: session?.taskTitle
+                    taskTitle: session?.taskTitle,
+                    segmentMinutes: segmentMinutes
                 )
             } catch {
                 ErrorReporter.log(
