@@ -256,27 +256,11 @@ struct BLEProtocolSimulationTests {
 
     @Test("Development display commands are parsed separately from standard packets")
     func developmentDisplayCommandsAreParsedSeparately() throws {
+        // 屏保已升级为 `0x16` 业务帧（见 BLESceneUnlockTests.screensaverFrameEncoding），
+        // 故此处只剩场景解锁这一条 `0xAA` 开发命令。
         let scenePacket = BLEPacketizer.buildSceneUnlockPacket(sceneId: DisplayScene.forest.commandByte)
         let sceneCommand = try SimulatedHardware.parseDevelopmentDisplayPacket(scenePacket)
         #expect(sceneCommand == .scene(sceneId: DisplayScene.forest.commandByte))
-
-        let screensaverPacket = BLEPacketizer.buildScreensaverPacket(
-            config: ScreensaverConfig(
-                type: .postcard,
-                quote: "Keep watch.",
-                author: "Nova",
-                sceneId: DisplayScene.nightCity.rawValue,
-                postcardDay: 7
-            )
-        )
-        let screensaverCommand = try SimulatedHardware.parseDevelopmentDisplayPacket(screensaverPacket)
-        #expect(screensaverCommand == .screensaver(
-            type: .postcard,
-            sceneId: DisplayScene.nightCity.commandByte,
-            postcardDay: 7,
-            quote: "Keep watch.",
-            author: "Nova"
-        ))
 
         var hardware = SimulatedHardware()
         #expect(throws: SimulationError.self) {

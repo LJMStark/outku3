@@ -644,9 +644,13 @@ public final class BLEService: NSObject {
         try await writeData(type: .customAvatarFrame, data: payload)
     }
 
+    /// 推送屏保金句/明信片到 E-ink 设备。
+    /// v2.5.10：从旧 `0xAA 01 02` 开发命令升级为 `0x16` 业务帧，经 `writeData` 发送——
+    /// dev 模式走简单包、secure 模式自动 SecureEnvelope 封装，**两种模式均可发**
+    /// （旧开发命令在配置 `BLE_SHARED_SECRET` 后会被禁用，屏保会静默发不出去）。
     public func sendScreensaverConfig(_ config: ScreensaverConfig) async throws {
-        let packet = BLEPacketizer.buildScreensaverPacket(config: config)
-        try await writeDevelopmentDisplayPacket(packet)
+        let payload = BLEDataEncoder.encodeScreensaver(config)
+        try await writeData(type: .screensaver, data: payload)
     }
 
     // MARK: - Private Methods

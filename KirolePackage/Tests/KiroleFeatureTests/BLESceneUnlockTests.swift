@@ -12,8 +12,8 @@ struct BLESceneUnlockTests {
         #expect(packet[3] == 1)
     }
 
-    @Test("Screensaver packet encodes scene quote author and postcard day")
-    func testScreensaverPacketEncoding() {
+    @Test("Screensaver frame (0x16) encodes content type, scene, postcard day, quote, author")
+    func screensaverFrameEncoding() {
         let quote = "Rest with your progress."
         let author = "Nova"
         let config = ScreensaverConfig(
@@ -24,20 +24,20 @@ struct BLESceneUnlockTests {
             postcardDay: 7
         )
 
-        let packet = BLEPacketizer.buildScreensaverPacket(config: config)
+        // v2.5.10: payload only — no `0xAA` dev header. `writeData(type: .screensaver, …)`
+        // adds the Type+Length business wrapper (SecureEnvelope in secure mode). 见协议 §4.15。
+        let payload = BLEDataEncoder.encodeScreensaver(config)
         let quoteData = Data(quote.utf8)
         let authorData = Data(author.utf8)
 
-        #expect(packet.count == 8 + quoteData.count + authorData.count)
-        #expect(packet[0] == 0xAA)
-        #expect(packet[1] == 0x01)
-        #expect(packet[2] == 0x02)
-        #expect(packet[3] == 0x01)
-        #expect(packet[4] == DisplayScene.nightCity.commandByte)
-        #expect(packet[5] == 7)
-        #expect(packet[6] == UInt8(quoteData.count))
-        #expect(packet.subdata(in: 7..<(7 + quoteData.count)) == quoteData)
-        #expect(packet[7 + quoteData.count] == UInt8(authorData.count))
-        #expect(packet.suffix(authorData.count) == authorData)
+        // ContentType(1) | SceneByte(1) | PostcardDay(1) | QuoteLen(1)+Quote | AuthorLen(1)+Author
+        #expect(payload.count == 5 + quoteData.count + authorData.count)
+        #expect(payload[0] == 0x01)                                   // postcard
+        #expect(payload[1] == DisplayScene.nightCity.commandByte)
+        #expect(payload[2] == 7)                                      // postcard day
+        #expect(payload[3] == UInt8(quoteData.count))
+        #expect(payload.subdata(in: 4..<(4 + quoteData.count)) == quoteData)
+        #expect(payload[4 + quoteData.count] == UInt8(authorData.count))
+        #expect(payload.suffix(authorData.count) == authorData)
     }
 }

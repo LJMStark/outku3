@@ -16,6 +16,7 @@ import Foundation
 //   0x13 smartReminder   AI 智能提醒
 //   0x14 focusStatus     专注状态与能量瓶子数（App→Device 实时推送）
 //   0x15 customAvatarFrame 用户自定义伴侣的 96×96 Spectra 6 像素帧（待硬件团队对齐）
+//   0x16 screensaver     屏保金句/明信片（业务帧，secure 模式可发；替代旧 0xAA 开发命令）
 //   0x20 eventLogRequest 请求增量 Event Log
 //   0x21 eventLogBatch   批量回传 Event Log（Device→App，此 type 仅出现在入站方向）
 //   0x7E secureData      安全封装（v2 SecureEnvelope）
@@ -62,6 +63,9 @@ public enum BLEDataType: UInt8, Sendable {
     /// App→Device: 推送用户自定义伴侣的 96×96 Spectra 6 像素帧
     /// 协议待硬件团队对齐：当前 payload = 1B subVersion(0x01) | 1B width(0x60) | 1B height(0x60) | 4608B 4bpp pixels
     case customAvatarFrame = 0x15
+    /// App→Device: 屏保金句/明信片业务帧（替代旧 `0xAA 01 02` 开发命令）。
+    /// 经 SecureEnvelope 走 `writeData`，secure 模式可发；payload 见 `BLEDataEncoder.encodeScreensaver`。
+    case screensaver = 0x16
     case eventLogRequest = 0x20
     case eventLogBatch = 0x21
     case secureData = 0x7E

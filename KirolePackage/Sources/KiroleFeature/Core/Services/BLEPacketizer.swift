@@ -214,22 +214,6 @@ extension BLEPacketizer {
         return data
     }
 
-    public static func buildScreensaverPacket(config: ScreensaverConfig) -> Data {
-        let sceneByte = DisplayScene(rawValue: config.sceneId)?.commandByte ?? DisplayScene.harbor.commandByte
-        let postcardDay = UInt8(clamping: config.postcardDay ?? 0)
-        let quoteData = Data(config.quote.utf8.prefix(Int(UInt8.max)))
-        let authorData = Data(config.author.utf8.prefix(Int(UInt8.max)))
-        var data = Data()
-        data.append(0xAA)
-        data.append(0x01)
-        data.append(0x02)
-        data.append(config.type == .postcard ? 0x01 : 0x00)
-        data.append(sceneByte)
-        data.append(postcardDay)
-        data.append(UInt8(quoteData.count))
-        data.append(quoteData)
-        data.append(UInt8(authorData.count))
-        data.append(authorData)
-        return data
-    }
+    // 屏保 `0xAA 01 02` 开发命令已于 v2.5.10 升级为 `0x16` 业务帧（`BLEDataEncoder.encodeScreensaver`），
+    // 旧的 `buildScreensaverPacket` 随之移除。场景解锁 `0xAA 01 01` 仍为开发命令（同样在 secure 下禁用）。
 }

@@ -161,25 +161,14 @@ struct SimulatedHardware {
             throw SimulationError.invalidDevelopmentDisplayPacket
         }
 
+        // 屏保（旧 `0xAA 01 02`）已升级为 `0x16` 业务帧（编码见 `BLEDataEncoder.encodeScreensaver`，
+        // 测试见 BLESceneUnlockTests），故 dev 命令解析只保留场景解锁（`0xAA 01 01`）。
         switch data[2] {
         case 0x01:
             guard data.count == 4 else {
                 throw SimulationError.invalidDevelopmentDisplayPacket
             }
             return .scene(sceneId: data[3])
-
-        case 0x02:
-            var reader = PayloadReader(data: data)
-            try reader.expectByte(0xAA)
-            try reader.expectByte(0x01)
-            try reader.expectByte(0x02)
-            let type: ScreensaverConfig.ScreensaverType = try reader.readByte() == 0x01 ? .postcard : .normal
-            let sceneId = try reader.readByte()
-            let postcardDay = try reader.readByte()
-            let quote = try reader.readString()
-            let author = try reader.readString()
-            try reader.requireEnd()
-            return .screensaver(type: type, sceneId: sceneId, postcardDay: postcardDay, quote: quote, author: author)
 
         default:
             throw SimulationError.invalidDevelopmentDisplayPacket
@@ -459,13 +448,6 @@ private struct PayloadReader {
 
 enum DevelopmentDisplayCommand: Equatable {
     case scene(sceneId: UInt8)
-    case screensaver(
-        type: ScreensaverConfig.ScreensaverType,
-        sceneId: UInt8,
-        postcardDay: UInt8,
-        quote: String,
-        author: String
-    )
 }
 
 struct SimulatedPetStatus {

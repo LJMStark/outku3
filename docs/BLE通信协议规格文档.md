@@ -1,8 +1,8 @@
 # Kirole BLE 通信协议规格文档
 
-**版本:** v2.5.9
+**版本:** v2.5.10
 **更新日期:** 2026-06-29
-**状态:** DayPack 显示模型重写（1 气泡 + 数据面板）。**破坏性变更：固件需按新 §4.7 / §6 重写 DayPack 解析（与 §8.7 修复一并做）。** FocusStatus(`0x14`) 新增 `SegmentMinutes` 字段（追加在 TaskTitle 后，前向兼容）；`ElapsedTime` 保持「本会话累计分钟」语义不变（v2.5.5）。`Mood`/`PetMoodByte` 明确为**前向兼容通道**：App 持续下发真实心情值，固件当前阶段可忽略、不据此展示或换图（v2.5.6，§4.2 / §4.10）。DayPack 末尾追加 `DaySummary`（框②「一天总结」：情绪向·只谈日程·≤180B），作为面板文本字段复活、与单句 `PetDialogue` 互补，不回退单气泡决策（v2.5.7，§4.7 / §6.5）。DayPack 再追加 `FirstUp`（框③「下一项」：下一个未来事件「HH:mm 标题」/ 无则置顶任务 / ≤60B，App 算好下发，现为 DayPack 最后一个字段）（v2.5.8，§4.7）。Weather(`0x04`) 在 Condition 后追加 `HighTemp`/`LowTemp`（顶栏高/低温，各 1B 有符号 int8）（v2.5.9，§4.5）。
+**状态:** DayPack 显示模型重写（1 气泡 + 数据面板）。**破坏性变更：固件需按新 §4.7 / §6 重写 DayPack 解析（与 §8.7 修复一并做）。** FocusStatus(`0x14`) 新增 `SegmentMinutes` 字段（追加在 TaskTitle 后，前向兼容）；`ElapsedTime` 保持「本会话累计分钟」语义不变（v2.5.5）。`Mood`/`PetMoodByte` 明确为**前向兼容通道**：App 持续下发真实心情值，固件当前阶段可忽略、不据此展示或换图（v2.5.6，§4.2 / §4.10）。DayPack 末尾追加 `DaySummary`（框②「一天总结」：情绪向·只谈日程·≤180B），作为面板文本字段复活、与单句 `PetDialogue` 互补，不回退单气泡决策（v2.5.7，§4.7 / §6.5）。DayPack 再追加 `FirstUp`（框③「下一项」：下一个未来事件「HH:mm 标题」/ 无则置顶任务 / ≤60B，App 算好下发，现为 DayPack 最后一个字段）（v2.5.8，§4.7）。Weather(`0x04`) 在 Condition 后追加 `HighTemp`/`LowTemp`（顶栏高/低温，各 1B 有符号 int8）（v2.5.9，§4.5）。屏保金句/明信片（`Screensaver`）从旧 `0xAA 01 02` 开发命令升级为 `0x16` 业务帧（经 SecureEnvelope，**secure 模式可发**；旧开发命令在配置 `BLE_SHARED_SECRET` 后被禁用、屏保静默发不出去）（v2.5.10，§4.15）。
 
 ---
 
@@ -69,6 +69,7 @@
 | v2.5.7  | 2026-06-28 | **DayPack 新增 `DaySummary` 字段（页面一框②「一天总结」，前向兼容追加）**：在 §4.7 payload **末尾**追加 `DaySummary`（≤180B，1B 长度前缀 + UTF-8），承载设计稿页面一框②——情绪向、**只谈日程**（不含 to-do 任务）的一天概览 + 一条实用建议（如「11:30 先休息，避开正午会议」），与 `PetDialogue`（宠物口吻单句）**互补**。`DaySummary` 是 DayPack 最后一个必读字段；按 §7.1 严格解析，固件须读取它才到 payload 末尾。无兼容风险是因为固件 DayPack 解析尚未上线、将按含它的完整布局实现。App 侧 `DayPackGenerator` 喂**今日事件明细（时间/标题）**经 LLM 生成，无 key/离线兜底为计数模板。**这是对 v2.5.0「单气泡」的补充而非回退**：宠物口吻仍是单句 `PetDialogue`，框②是独立的面板概览文本。详见 §4.7 / §6.5 |
 | v2.5.8  | 2026-06-29 | **DayPack 新增 `FirstUp` 字段（页面一框③「First up」）**：在 `DaySummary` 之后再追加 `FirstUp`（≤60B，1B 长度前缀 + UTF-8），承载设计稿框③——下一个未来事件「HH:mm 标题」（全天仅标题），无未来事件则置顶（最高优先级未完成）任务标题，皆无则空串。**App 算好下发**（沿用 §6.5「App 是显示决策方」：相对当前时刻的「下一个」是 App 侧时间逻辑，固件只渲染）。`FirstUp` 现为 DayPack **最后一个字段**，同 §7.1 严格解析须读完它才到 payload 末尾——仿真解码器 `parseDayPack` 已同步。详见 §4.7 |
 | v2.5.9  | 2026-06-29 | **Weather(`0x04`) 新增 `HighTemp` / `LowTemp`（页面一顶栏高/低温）**：在 §4.5 `Condition` 之后追加 `HighTemp`+`LowTemp`（各 1B 有符号 int8 摄氏度），承载设计稿顶栏「高/低温」（如「42/23」）；`Temperature` 仍为当前温度、语义不变。固件须读完这两字节才到 payload 末尾（严格解析）；若此前 0x04 仅读 temp+condition 需更新——仿真解码器 `parseWeather` 已同步。详见 §4.5 |
+| v2.5.10 | 2026-06-29 | **Screensaver(`0x16`) 新增——屏保金句/明信片从开发命令升级为业务帧**：旧 `0xAA 01 02` 屏保命令仅 dev 模式可发，App 配置 `BLE_SHARED_SECRET`（secure）后被禁用、屏保静默发不出；v2.5.10 改用标准业务帧 `0x16`（经 SecureEnvelope，**dev/secure 均可发**），旧命令从 App 移除、固件无需实现。§4.1 加 `0x16` 行、新增 §4.15、§4.14 屏保块标废弃。场景解锁 `0xAA 01 01`（§4.14）未一并升级（独立 gamify 命令，同类隐患，需要时同法升级）。**App 侧已实现并全绿（467 tests）**，固件按 §4.15 实现 `0x16` 解析 |
 
 ### 1.4 术语表
 
@@ -254,6 +255,7 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 | `0x13` | SmartReminder| AI 智能提醒推送 |
 | `0x14` | FocusStatus  | App→Device 推送当前专注状态与能量瓶子数（所有构建均执行） |
 | `0x15` | CustomAvatarFrame | ⚠️ 待对齐：推送用户自定义伴侣的 96×96 Spectra 6 像素帧（详见 §4.12） |
+| `0x16` | Screensaver  | 屏保金句/明信片业务帧（替代旧 `0xAA 01 02` 开发命令，secure 模式可发；详见 §4.15） |
 | `0x20` | EventLogRequest | 请求指定时间戳之后的事件日志 |
 | `0x7E` | SecureData | 安全业务封装（v2） |
 | `0x7F` | SecurityHandshake | 安全握手（v2） |
@@ -602,20 +604,29 @@ AA 01 01 SceneId
 | `01` | 1 byte | 场景显示命令 |
 | SceneId | 1 byte | `0x00=harbor`, `0x01=forest`, `0x02=nightCity` |
 
-**ScreensaverConfig：**
+**ScreensaverConfig（已废弃 — v2.5.10 升级为 §4.15 `0x16` 业务帧）：**
 
-```
-AA 01 02 Type SceneId PostcardDay QuoteLen Quote AuthorLen Author
-```
+> 屏保金句/明信片原为开发命令 `AA 01 02 …`，仅 dev 模式可发——App 配置 `BLE_SHARED_SECRET`（secure 模式）后即被禁用、屏保静默发不出去。v2.5.10 起升级为标准业务帧 `0x16`（见 **§4.15**），旧 `0xAA 01 02` 命令已从 App 移除，固件**无需**实现它。
 
-| Field | Size | 描述 |
-|-------|------|------|
-| `AA 01 02` | 3 bytes | 开发屏保命令头 |
-| Type | 1 byte | `0x00=normal`, `0x01=postcard` |
-| SceneId | 1 byte | 同上 |
-| PostcardDay | 1 byte | 明信片天数，无则为 0 |
-| QuoteLen + Quote | 1 + N bytes | UTF-8 引文 |
-| AuthorLen + Author | 1 + N bytes | UTF-8 作者 |
+---
+
+### 4.15 Screensaver (0x16)
+
+App→Device 推送屏保金句 / 明信片。**v2.5.10 起为标准业务帧**（替代旧 §4.14 `0xAA 01 02` 开发命令）：经 `Type + Length + Payload` 业务包发送，secure 模式自动经 SecureEnvelope（`0x7E`）封装，**dev / secure 两种模式均可发**——修复了旧开发命令在配置 `BLE_SHARED_SECRET` 后被禁用、屏保静默发不出的缺陷。
+
+**Payload 结构：**
+
+| Field | Size | Max | 描述 |
+|-------|------|-----|------|
+| ContentType | 1 byte | - | `0x00=normal`（金句）, `0x01=postcard`（明信片）|
+| SceneByte | 1 byte | - | 场景：`0x00=harbor`, `0x01=forest`, `0x02=nightCity` |
+| PostcardDay | 1 byte | - | 明信片天数，无则为 0 |
+| QuoteLen + Quote | 1 + N bytes | 180 bytes | UTF-8 金句（1 字节长度前缀）|
+| AuthorLen + Author | 1 + N bytes | 40 bytes | UTF-8 作者（1 字节长度前缀）|
+
+> **传输：** 经简单包 `Type(0x16) + Length + Payload` 发送（payload 小，不分包）；secure 模式整体由 `0x7E SecureData` 封装。**真相源：** 出站字节见 `Core/BLE/BLEProtocol.swift` 的 `BLEDataType.screensaver`；编码见 `BLEDataEncoder.encodeScreensaver`；测试见 `BLESceneUnlockTests.screensaverFrameEncoding`。
+>
+> **场景解锁（§4.14 `0xAA 01 01`）未一并升级**：那是独立的 gamify 解锁命令，有同样的 secure-mode 限制；若后续需在 secure 模式触发场景解锁，按本节同样方式升级为业务帧。
 
 ---
 
@@ -1203,7 +1214,7 @@ App 采用 **首次连接即信任（Trust On First Use）** 策略：
 
 **问题 3：`0xAA` 开发显示命令报 `Unknown cmd type`**
 
-固件对 `AA 01 01 …` 打印 Unknown。这是 §4.14 的开发期显示命令（非标准业务包）。若本轮不需要远程触发场景/屏保，固件可安全忽略 `0xAA`，并建议把它从错误日志降级为 debug 以减少噪音。
+固件对 `AA 01 01 …` 打印 Unknown。这是 §4.14 的开发期**场景解锁**命令（非标准业务包）。若本轮不需要远程触发场景解锁，固件可安全忽略 `0xAA`，并建议把它从错误日志降级为 debug 以减少噪音。（注：**屏保金句/明信片已于 v2.5.10 升级为 `0x16` 业务帧**，不再走 `0xAA`，见 §4.15。）
 
 > **帧层经本次联调验证正常，无需改动**：App 的 Time(`05 00 06 1A 05 1D 09 2A 28`) 被固件正确解析为 `2026-05-29 09:42:40`；设备的 DeviceWake(`30 01 64`) 被 App 正确解析为电量 100%。问题集中在 DayPack payload 结构与命令字节的方向分发，不在分包 / CRC / 长度宽度。
 
@@ -1335,6 +1346,7 @@ public enum BLEDataType: UInt8, Sendable {
     case smartReminder = 0x13
     case focusStatus = 0x14   // App→Device: 推送当前专注状态和能量瓶子数
     case customAvatarFrame = 0x15  // App→Device: 自定义伴侣像素帧（⚠️ 待对齐，见 §4.12）
+    case screensaver = 0x16        // App→Device: 屏保金句/明信片业务帧（替代旧 0xAA 01 02，见 §4.15）
     case eventLogRequest = 0x20
     case eventLogBatch = 0x21
     case secureData = 0x7E

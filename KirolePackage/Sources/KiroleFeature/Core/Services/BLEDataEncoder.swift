@@ -271,4 +271,23 @@ public enum BLEDataEncoder {
         data.append(pixelData)
         return data
     }
+
+    // MARK: - Screensaver (0x16)
+
+    /// 编码屏保金句/明信片业务帧 payload（替代旧 `0xAA 01 02` 开发命令）。
+    /// 经 `BLEService.writeData(type: .screensaver, …)` 发送：dev 模式走简单包、
+    /// secure 模式自动 SecureEnvelope 封装，**两种模式均可发**（旧开发命令在 secure 下被禁用）。
+    ///
+    /// Payload 布局（见协议 §4.15）：
+    /// `ContentType(1) | SceneByte(1) | PostcardDay(1) | QuoteLen(1)+Quote(≤180) | AuthorLen(1)+Author(≤40)`
+    public static func encodeScreensaver(_ config: ScreensaverConfig) -> Data {
+        var data = Data()
+        let sceneByte = DisplayScene(rawValue: config.sceneId)?.commandByte ?? DisplayScene.harbor.commandByte
+        data.append(config.type == .postcard ? 0x01 : 0x00)
+        data.append(sceneByte)
+        data.appendClampedUInt8(config.postcardDay ?? 0)
+        data.appendString(config.quote, maxLength: 180)
+        data.appendString(config.author, maxLength: 40)
+        return data
+    }
 }
