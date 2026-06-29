@@ -132,6 +132,28 @@ public actor OpenAIService {
         return content.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// Faithfully compress a long task note into ONE short line for the device "Overview" field.
+    /// Neutral by design — this restates the user's own task, it is NOT the pet's voice, so it does
+    /// not go through the companion persona prompt. Compression only: never adds facts, expands
+    /// abbreviations, or invents specifics not present in the note.
+    public func summarizeTaskNote(_ notes: String) async throws -> String {
+        let systemPrompt = PromptSanitizer.systemPrompt(containingUserContent: """
+            Compress the task note inside <user_content> tags into ONE short English line \
+            (under ~90 characters) a person can glance at. Keep only what the note actually says. \
+            Do NOT add facts, do NOT expand abbreviations or acronyms, do NOT invent specifics \
+            (no tools, ports, dates, or steps that are not in the note). If the note is unclear, \
+            restate it as-is rather than guessing. Output only the one-line summary — no quotes, \
+            no preamble.
+            """)
+        let content = try await chatCompletion(
+            systemPrompt: systemPrompt,
+            userPrompt: PromptSanitizer.userContent(notes, maxLen: 300),
+            temperature: 0.2,
+            maxTokens: 60
+        )
+        return content.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     // MARK: - Chat Completion
 
     /// Shared helper that sends a chat completion request and returns the response content

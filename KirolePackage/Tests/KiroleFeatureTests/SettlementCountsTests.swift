@@ -161,4 +161,59 @@ struct SettlementCountsTests {
         )
         #expect(label == "Release Day")
     }
+
+    // MARK: - notesAreSummarizableProse (in-task Overview gate)
+
+    @Test("Overview 闸门: 简写不予摘要(<12 词)")
+    func proseGateRejectsShorthand() {
+        #expect(DayPackGenerator.notesAreSummarizableProse("OC dpl k8s pt8080") == false)
+    }
+
+    @Test("Overview 闸门: 挤在一起的任务列表不予摘要")
+    func proseGateRejectsCrammedList() {
+        #expect(DayPackGenerator.notesAreSummarizableProse("buy milk; call bank; send invoice; book flight") == false)
+        #expect(DayPackGenerator.notesAreSummarizableProse("Laundry / Approve prototypes / Reply emails") == false)
+    }
+
+    @Test("Overview 闸门: 长但全是缩写(低词率)不予摘要")
+    func proseGateRejectsAbbreviationHeavy() {
+        #expect(DayPackGenerator.notesAreSummarizableProse("cfg db gw lb fw vpn dns tcp tls ssl ssh git") == false)
+    }
+
+    @Test("Overview 闸门: 太短(不足12词)不予摘要")
+    func proseGateRejectsShortText() {
+        #expect(DayPackGenerator.notesAreSummarizableProse("Deploy the new system to production") == false)
+    }
+
+    @Test("Overview 闸门: 长自然语言散文才予摘要")
+    func proseGateAcceptsLongProse() {
+        let prose = "Deploy the new authentication service to the production cluster and verify that all the health checks pass before the team meeting."
+        #expect(DayPackGenerator.notesAreSummarizableProse(prose) == true)
+    }
+
+    @Test("Overview 闸门: 中文/无空格按原文处理(不予摘要)")
+    func proseGateRejectsNonEnglish() {
+        #expect(DayPackGenerator.notesAreSummarizableProse("部署新认证服务到生产集群并核对健康检查") == false)
+    }
+
+    // MARK: - taskOverview decision tree (deterministic / config-independent branches)
+
+    @Test @MainActor func overviewNilWhenNoNotes() async {
+        #expect(await DayPackGenerator.shared.taskOverview(for: nil) == nil)
+        #expect(await DayPackGenerator.shared.taskOverview(for: "   ") == nil)
+    }
+
+    @Test @MainActor func overviewShowsShortNoteVerbatim() async {
+        let note = "Quick sync with design"
+        #expect(await DayPackGenerator.shared.taskOverview(for: note) == note)
+    }
+
+    @Test @MainActor func overviewTruncatesLongShorthandVerbatim() async {
+        // Long crammed list (> 100 bytes) → gate false → faithful truncation, never AI rewrite.
+        let crammed = String(repeating: "buy milk; call bank; send invoice; ", count: 5)
+        let result = await DayPackGenerator.shared.taskOverview(for: crammed)
+        #expect(result != nil)
+        #expect((result?.utf8.count ?? 999) <= DayPackGenerator.taskDescriptionByteBudget)
+        #expect(crammed.hasPrefix(result ?? "x"))   // a prefix of the user's own words, not a rewrite
+    }
 }

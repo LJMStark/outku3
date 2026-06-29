@@ -76,10 +76,29 @@ public final class DayPackGenerator {
 
     public func generateTaskInPage(task: TaskItem, pet: Pet, userProfile: UserProfile = .default) async -> TaskInPageData {
         let encouragement = await textService.generateTaskEncouragement(taskTitle: task.title, petName: pet.name, petMood: pet.mood, userProfile: userProfile)
+        let overview = await taskOverview(for: task.notes)
         return TaskInPageData(
             taskId: task.id, taskTitle: task.title,
+            taskDescription: overview,
             encouragement: encouragement
         )
+    }
+
+    /// In-task "Overview" (the task-content line): default to the user's OWN note verbatim; only
+    /// let AI compress when the note is too long to fit AND clearly reads like prose (not personal
+    /// shorthand, not a crammed task list). Returns nil when there is nothing to show.
+    func taskOverview(for rawNotes: String?) async -> String? {
+        let notes = rawNotes?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !notes.isEmpty else { return nil }
+        let budget = Self.taskDescriptionByteBudget
+        guard notes.utf8.count > budget else { return notes }            // fits → verbatim, no AI
+        guard Self.notesAreSummarizableProse(notes) else {               // shorthand / list → truncate verbatim
+            return CompanionTextService.enforceByteBudget(notes, maxBytes: budget)
+        }
+        if let summary = await textService.generateTaskOverview(notes: notes) {
+            return summary                                                // AI faithful compression
+        }
+        return CompanionTextService.enforceByteBudget(notes, maxBytes: budget)  // AI off/invalid → verbatim
     }
 
     // MARK: - Private Helpers
@@ -98,6 +117,30 @@ public final class DayPackGenerator {
             return "\(formatter.string(from: next.startTime)) \(next.title)"
         }
         return fallbackTaskTitle ?? ""
+    }
+
+    /// Wire budget for TaskInPage.TaskDescription (protocol §4.8). Notes longer than this are
+    /// faithfully truncated, or (for clear prose) AI-compressed.
+    static let taskDescriptionByteBudget = 100
+
+    /// Deterministic gate: is this long note safe to hand to the AI summarizer? Conservative —
+    /// returns false (→ show verbatim) on any doubt. Only summarize text that clearly reads like
+    /// natural-language prose, NOT personal shorthand ("OC dpl k8s") or a crammed multi-task list
+    /// (summarizing those would drop or misread the user's meaning). Non-English / spaceless notes
+    /// fail the word-count check and are shown verbatim — the safe default.
+    nonisolated static func notesAreSummarizableProse(_ notes: String) -> Bool {
+        let listSeparators: Set<Character> = ["\n", ";", "；", "、", "•"]
+        if notes.contains(where: { listSeparators.contains($0) }) { return false }
+        if notes.contains(" / ") { return false }
+
+        let words = notes.split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init)
+        guard words.count >= 12 else { return false }
+
+        let wordLike = words.filter { word in
+            let lower = word.lowercased()
+            return lower.filter(\.isLetter).count >= 3 && lower.contains { "aeiou".contains($0) }
+        }
+        return Double(wordLike.count) / Double(words.count) >= 0.6
     }
 
     /// 结算完成数统计。客户 docx「页面四」：日程无法打卡，但只要客户未取消即视为完成一项任务，
