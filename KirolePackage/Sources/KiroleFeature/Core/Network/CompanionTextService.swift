@@ -50,24 +50,23 @@ public final class CompanionTextService {
     /// Generates the DayPack "day at a glance" summary (box②). Events only — to-do tasks are
     /// intentionally excluded (the summary speaks to the day's schedule, not the todo list).
     /// Budgeted to 180 UTF-8 bytes to match the DayPack DaySummary wire field (§4.7).
-    public func generateDaySummary(
-        events: [EventSummary], petName: String,
-        userProfile: UserProfile = .default
-    ) async -> String {
+    /// box② "day at a glance" — a NEUTRAL panel line (not the pet's voice). Generated via the
+    /// dedicated neutral summarizer so the companion persona stays confined to the bubble.
+    public func generateDaySummary(events: [EventSummary]) async -> String {
+        guard await openAI.isConfigured else { return FallbackText.daySummary(events: events) }
         let digest = events.prefix(8).map { event in
             event.time.isEmpty ? event.title : "\(event.time) \(event.title)"
         }
-        if let aiText = await generateAIText(
-            type: .dailySummary,
-            petName: petName, petMood: .happy,
-            userProfile: userProfile,
-            events: events.count,
-            todayEventDigest: Array(digest),
-            maxBytes: 180
-        ) {
-            return aiText
+        do {
+            let raw = try await openAI.generateDaySummaryText(eventDigest: Array(digest))
+            let text = CompanionTextService.enforceByteBudget(raw, maxBytes: 180)
+            if !text.isEmpty, !text.hasPrefix("[Error]") { return text }
+        } catch {
+            ErrorReporter.log(
+                .sync(component: "DaySummary", underlying: "generate failed: \(error.localizedDescription)"),
+                context: "CompanionTextService.generateDaySummary"
+            )
         }
-
         return FallbackText.daySummary(events: events)
     }
 
@@ -329,7 +328,6 @@ public final class CompanionTextService {
         mode: CompanionTextGenerationMode = .live,
         completedTasks: Int = 0, totalTasks: Int = 0,
         events: Int = 0,
-        todayEventDigest: [String] = [],
         episodicMemories: [String] = [],
         nextAgendaItem: String? = nil,
         activeTaskTitle: String? = nil,
@@ -390,7 +388,6 @@ public final class CompanionTextService {
             energyBottles: energyBottles,
             nextAgendaItem: nextAgendaItem,
             activeTaskTitle: activeTaskTitle,
-            todayEventDigest: todayEventDigest,
             episodicMemories: episodicMemories,
             customCompanion: activeCustomCompanion
         )

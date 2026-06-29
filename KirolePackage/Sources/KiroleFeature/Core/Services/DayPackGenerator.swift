@@ -24,6 +24,11 @@ public final class DayPackGenerator {
     public static let shared = DayPackGenerator()
     private let textService = CompanionTextService.shared
 
+    /// box② DaySummary cache (date + event digest → text). Avoids regenerating the LLM summary on
+    /// every BLE sync when today's events have not changed — which also kept the DayPack fingerprint
+    /// churning (LLM text varies) and forced needless re-pushes.
+    private var daySummaryCache: (key: String, text: String)?
+
     private init() {}
 
     public func generateDayPack(
@@ -46,10 +51,8 @@ public final class DayPackGenerator {
 
         let eventSummaries = todayEvents.prefix(8).map { EventSummary(from: $0) }
 
-        // box② "day at a glance" — events-only summary generated from today's event details.
-        let daySummary = await textService.generateDaySummary(
-            events: eventSummaries, petName: pet.name, userProfile: userProfile
-        )
+        // box② "day at a glance" — neutral events-only summary, cached per date + event digest.
+        let daySummary = await cachedDaySummary(for: eventSummaries)
 
         let topTasks = todayTasks
             .filter { !$0.isCompleted }
@@ -74,10 +77,25 @@ public final class DayPackGenerator {
         )
     }
 
+    /// Returns the box② DaySummary for `events`, reusing the cached text while today's event digest
+    /// is unchanged — so an unchanged day does not re-hit the LLM or churn the DayPack fingerprint.
+    private func cachedDaySummary(for events: [EventSummary]) async -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        let key = formatter.string(from: Date()) + "#"
+            + events.map { "\($0.time)|\($0.title)" }.joined(separator: "\u{1F}")
+        if let cache = daySummaryCache, cache.key == key { return cache.text }
+        let text = await textService.generateDaySummary(events: events)
+        daySummaryCache = (key, text)
+        return text
+    }
+
     public func generateTaskInPage(task: TaskItem, pet: Pet, userProfile: UserProfile = .default) async -> TaskInPageData {
-        let encouragement = await textService.generateTaskEncouragement(taskTitle: task.title, petName: pet.name, petMood: pet.mood, userProfile: userProfile)
-        let overview = await taskOverview(for: task.notes)
-        return TaskInPageData(
+        // Two independent AI texts — run them concurrently so the TaskIn page does not wait twice.
+        async let encouragement = textService.generateTaskEncouragement(taskTitle: task.title, petName: pet.name, petMood: pet.mood, userProfile: userProfile)
+        async let overview = taskOverview(for: task.notes)
+        return await TaskInPageData(
             taskId: task.id, taskTitle: task.title,
             taskDescription: overview,
             encouragement: encouragement

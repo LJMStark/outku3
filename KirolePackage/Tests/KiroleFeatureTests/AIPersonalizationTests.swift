@@ -701,7 +701,7 @@ import Foundation
         EventSummary(time: "09:30", title: "Daily Writing Session", description: ""),
         EventSummary(time: "12:00", title: "Team Meeting", description: "")
     ]
-    let result = await service.generateDaySummary(events: events, petName: "Waffle")
+    let result = await service.generateDaySummary(events: events)
     #expect(result.contains("2 events"))
     #expect(result.contains("09:30 Daily Writing Session"))
     // box② speaks to the day's schedule — to-do tasks must never leak in.
@@ -710,7 +710,7 @@ import Foundation
 
 @Test @MainActor func testDaySummaryFallbackEmptyEventsIsOpenDay() async throws {
     let service = CompanionTextService.shared
-    let result = await service.generateDaySummary(events: [], petName: "Waffle")
+    let result = await service.generateDaySummary(events: [])
     #expect(!result.isEmpty)
     #expect(!result.lowercased().contains("task"))
 }

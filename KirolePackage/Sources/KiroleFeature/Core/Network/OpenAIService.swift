@@ -158,6 +158,29 @@ public actor OpenAIService {
         return content.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// Neutral "day at a glance" panel text (box②) — NOT the pet's voice, so it skips the companion
+    /// persona prompt (the pet's voice lives only in the bubble / PetDialogue). Summarizes the day
+    /// from the user's calendar events: how full or open it looks, plus one practical suggestion.
+    public func generateDaySummaryText(eventDigest: [String]) async throws -> String {
+        let systemPrompt = PromptSanitizer.systemPrompt(containingUserContent: """
+            Write ONE short, warm "day at a glance" line for a calendar panel, in plain neutral \
+            English — you are NOT a character speaking, just a helpful panel. Note how full or open \
+            the day looks and add ONE practical suggestion (such as when to take a break). Talk only \
+            about the calendar events inside <user_content>, never to-do tasks. Do not invent \
+            events. Output only the one line — no quotes, no preamble.
+            """)
+        let eventsText = eventDigest.isEmpty
+            ? "No events scheduled today."
+            : "Today's events: " + eventDigest.prefix(8).joined(separator: "; ")
+        let content = try await chatCompletion(
+            systemPrompt: systemPrompt,
+            userPrompt: PromptSanitizer.userContent(eventsText, maxLen: 400),
+            temperature: 0.4,
+            maxTokens: 80
+        )
+        return content.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     // MARK: - Chat Completion
 
     /// Shared helper that sends a chat completion request and returns the response content
@@ -439,15 +462,6 @@ public actor OpenAIService {
 
     private static func buildScheduleDigest(context: AIContext) -> String {
         var lines: [String] = []
-
-        // Today's calendar events (time + title) — the schedule itself, drives the day summary
-        if !context.todayEventDigest.isEmpty {
-            let eventList = context.todayEventDigest
-                .prefix(8)
-                .map { PromptSanitizer.userContent($0, maxLen: 60) }
-                .joined(separator: "; ")
-            lines.append("Events today: \(eventList)")
-        }
 
         // Upcoming tasks (max 3, titles only) — isolate user-created titles
         let pendingTasks = context.topTaskTitles
