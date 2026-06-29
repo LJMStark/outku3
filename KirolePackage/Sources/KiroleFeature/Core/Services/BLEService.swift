@@ -631,9 +631,13 @@ public final class BLEService: NSObject {
         }
     }
 
+    /// 推送场景解锁到 E-ink 设备。
+    /// v2.5.11：从旧 `0xAA 01 01` 开发命令升级为 `0x17` 业务帧，经 `writeData` 发送——
+    /// dev 模式走简单包、secure 模式自动 SecureEnvelope 封装，**两种模式均可发**
+    /// （旧开发命令在配置 `BLE_SHARED_SECRET` 后会被禁用，场景切换会静默失败）。
     public func sendDisplayScene(_ scene: DisplayScene) async throws {
-        let packet = BLEPacketizer.buildSceneUnlockPacket(sceneId: scene.commandByte)
-        try await writeDevelopmentDisplayPacket(packet)
+        let payload = BLEDataEncoder.encodeSceneUnlock(scene)
+        try await writeData(type: .sceneUnlock, data: payload)
     }
 
     /// 推送用户自定义伴侣的像素帧到 E-ink 设备。
@@ -718,19 +722,8 @@ public final class BLEService: NSObject {
         try await writePacket(packet, peripheral: peripheral, characteristic: characteristic)
     }
 
-    private func writeDevelopmentDisplayPacket(_ packet: Data) async throws {
-        guard connectionState.isConnected,
-              let characteristic = writeCharacteristic,
-              let peripheral = connectedPeripheral else {
-            throw BLEError.notConnected
-        }
-
-        guard !requiresSecureChannel else {
-            throw BLEError.securityHandshakeFailed("Custom display commands require development mode")
-        }
-
-        try await writePacket(packet, peripheral: peripheral, characteristic: characteristic)
-    }
+    // 旧 `writeDevelopmentDisplayPacket`（0xAA 开发命令出口，secure 下被禁用）已于 v2.5.11 移除：
+    // 屏保（0x16）与场景解锁（0x17）均已改走 `writeData` 业务帧，不再有 0xAA 出站命令。
 
     private func shouldUseChunkedPacket(type: BLEDataType, payloadSize: Int, maxWriteLength: Int) -> Bool {
         if payloadSize + 3 > maxWriteLength { return true }

@@ -254,17 +254,14 @@ struct BLEProtocolSimulationTests {
         }
     }
 
-    @Test("Development display commands are parsed separately from standard packets")
-    func developmentDisplayCommandsAreParsedSeparately() throws {
-        // 屏保已升级为 `0x16` 业务帧（见 BLESceneUnlockTests.screensaverFrameEncoding），
-        // 故此处只剩场景解锁这一条 `0xAA` 开发命令。
-        let scenePacket = BLEPacketizer.buildSceneUnlockPacket(sceneId: DisplayScene.forest.commandByte)
-        let sceneCommand = try SimulatedHardware.parseDevelopmentDisplayPacket(scenePacket)
-        #expect(sceneCommand == .scene(sceneId: DisplayScene.forest.commandByte))
-
+    @Test("Raw 0xAA packets are rejected as non-standard by the business parser")
+    func raw0xAAPacketsRejected() throws {
+        // 场景解锁（0x17）、屏保（0x16）均已升级为业务帧，不再有 0xAA 开发命令。
+        // 业务帧解析器仍应拒收任何残留的 0xAA 包（过时 App 发来的）。
+        let stale0xAA = Data([0xAA, 0x01, 0x01, DisplayScene.forest.commandByte])
         var hardware = SimulatedHardware()
         #expect(throws: SimulationError.self) {
-            _ = try hardware.receiveSingleAppPacket(scenePacket)
+            _ = try hardware.receiveSingleAppPacket(stale0xAA)
         }
     }
 

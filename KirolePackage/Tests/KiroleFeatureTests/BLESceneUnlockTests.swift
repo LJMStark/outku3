@@ -5,11 +5,13 @@ import Foundation
 @Suite("BLE Scene Unlock Tests")
 struct BLESceneUnlockTests {
     
-    @Test("Verify BLE packet encoding for scene unlock")
-    func testBLESceneUnlockCommand() {
-        let packet = BLEPacketizer.buildSceneUnlockPacket(sceneId: 1)
-        #expect(packet.count == 4)
-        #expect(packet[3] == 1)
+    @Test("Scene unlock frame (0x17) encodes the scene command byte")
+    func sceneUnlockFrameEncoding() {
+        // v2.5.11: payload only — single SceneId byte. `writeData(type: .sceneUnlock, …)`
+        // adds the Type+Length business wrapper (SecureEnvelope in secure mode). 见协议 §4.16。
+        let payload = BLEDataEncoder.encodeSceneUnlock(.forest)
+        #expect(payload.count == 1)
+        #expect(payload[0] == DisplayScene.forest.commandByte)
     }
 
     @Test("Screensaver frame (0x16) encodes content type, scene, postcard day, quote, author")

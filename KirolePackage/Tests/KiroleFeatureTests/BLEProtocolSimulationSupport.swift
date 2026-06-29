@@ -156,24 +156,9 @@ struct SimulatedHardware {
         return result
     }
 
-    static func parseDevelopmentDisplayPacket(_ data: Data) throws -> DevelopmentDisplayCommand {
-        guard data.count >= 3, data[0] == 0xAA, data[1] == 0x01 else {
-            throw SimulationError.invalidDevelopmentDisplayPacket
-        }
-
-        // 屏保（旧 `0xAA 01 02`）已升级为 `0x16` 业务帧（编码见 `BLEDataEncoder.encodeScreensaver`，
-        // 测试见 BLESceneUnlockTests），故 dev 命令解析只保留场景解锁（`0xAA 01 01`）。
-        switch data[2] {
-        case 0x01:
-            guard data.count == 4 else {
-                throw SimulationError.invalidDevelopmentDisplayPacket
-            }
-            return .scene(sceneId: data[3])
-
-        default:
-            throw SimulationError.invalidDevelopmentDisplayPacket
-        }
-    }
+    // 旧 `parseDevelopmentDisplayPacket`（解析 0xAA 开发命令）已于 v2.5.11 移除：屏保（0x16）与
+    // 场景解锁（0x17）均已升级为业务帧，不再有 0xAA 命令。`receiveSingleAppPacket` / `receiveAppPacket`
+    // 仍以 `developmentDisplayCommandNotStandard` 守卫拒收任何残留 0xAA 包。
 
     private static func parseSimpleAppPacket(_ data: Data) throws -> SimulatedAppPacket {
         guard data.count >= 3 else {
@@ -446,10 +431,6 @@ private struct PayloadReader {
     }
 }
 
-enum DevelopmentDisplayCommand: Equatable {
-    case scene(sceneId: UInt8)
-}
-
 struct SimulatedPetStatus {
     let name: String
     let moodByte: UInt8?
@@ -547,7 +528,6 @@ enum SimulationError: Error, Equatable {
     case trailingBytes
     case invalidUTF8
     case invalidEnumValue
-    case invalidDevelopmentDisplayPacket
     case developmentDisplayCommandNotStandard
     case invalidSecureHandshake
     case unexpectedType(expected: UInt8, actual: UInt8)

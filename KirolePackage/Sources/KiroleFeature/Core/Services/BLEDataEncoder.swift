@@ -290,4 +290,14 @@ public enum BLEDataEncoder {
         data.appendString(config.author, maxLength: 40)
         return data
     }
+
+    // MARK: - Scene Unlock (0x17)
+
+    /// 编码场景解锁业务帧 payload（替代旧 `0xAA 01 01` 开发命令）。
+    /// 经 `BLEService.writeData(type: .sceneUnlock, …)` 发送：dev 模式走简单包、
+    /// secure 模式自动 SecureEnvelope 封装，**两种模式均可发**。
+    /// Payload = 单字节 SceneId（`DisplayScene.commandByte`，见协议 §4.16）。
+    public static func encodeSceneUnlock(_ scene: DisplayScene) -> Data {
+        Data([scene.commandByte])
+    }
 }

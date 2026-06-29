@@ -206,14 +206,8 @@ public enum BLEPacketError: Error {
 }
 
 // MARK: - Gamify Scene Unlock
-
-extension BLEPacketizer {
-    public static func buildSceneUnlockPacket(sceneId: UInt8) -> Data {
-        var data = Data()
-        data.append(contentsOf: [0xAA, 0x01, 0x01, sceneId])
-        return data
-    }
-
-    // 屏保 `0xAA 01 02` 开发命令已于 v2.5.10 升级为 `0x16` 业务帧（`BLEDataEncoder.encodeScreensaver`），
-    // 旧的 `buildScreensaverPacket` 随之移除。场景解锁 `0xAA 01 01` 仍为开发命令（同样在 secure 下禁用）。
-}
+//
+// 旧 `0xAA` 开发显示命令构造器（`buildSceneUnlockPacket` / `buildScreensaverPacket`）已全部移除。
+// 场景解锁 = `0x17`（`BLEDataEncoder.encodeSceneUnlock`）、屏保 = `0x16`（`encodeScreensaver`），
+// 均改走 `writeData` 业务帧（v2.5.10 屏保 / v2.5.11 场景解锁，secure 可发）。
+// App 出站不再产生任何 `0xAA` 命令。
