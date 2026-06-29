@@ -132,24 +132,28 @@ public actor OpenAIService {
         return content.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Faithfully compress a long task note into ONE short line for the device "Overview" field.
-    /// Neutral by design — this restates the user's own task, it is NOT the pet's voice, so it does
-    /// not go through the companion persona prompt. Compression only: never adds facts, expands
-    /// abbreviations, or invents specifics not present in the note.
+    /// AI "Overview" for the device in-task page. The model SELF-JUDGES: it compresses the note
+    /// only when it clearly understands it, and returns the note verbatim when it is short/clear
+    /// or shorthand/ambiguous. Neutral by design — restates the user's own task, NOT the pet's
+    /// voice, so it skips the companion persona prompt. (Client decision; the App-side `byte budget`
+    /// truncates whatever comes back.)
     public func summarizeTaskNote(_ notes: String) async throws -> String {
         let systemPrompt = PromptSanitizer.systemPrompt(containingUserContent: """
-            Compress the task note inside <user_content> tags into ONE short English line \
-            (under ~90 characters) a person can glance at. Keep only what the note actually says. \
-            Do NOT add facts, do NOT expand abbreviations or acronyms, do NOT invent specifics \
-            (no tools, ports, dates, or steps that are not in the note). If the note is unclear, \
-            restate it as-is rather than guessing. Output only the one-line summary — no quotes, \
-            no preamble.
+            You are shown a user's task note inside <user_content> tags. Judge whether you can \
+            confidently understand its real meaning.
+            - If it is already short and clear, OR if it is shorthand, abbreviations, codes, or \
+            otherwise ambiguous and you are NOT confident what it means, output the note EXACTLY \
+            as written, unchanged. Do not guess.
+            - Only if it is long AND you clearly understand it, compress it into ONE short English \
+            line that keeps its real meaning — without adding facts, expanding abbreviations, or \
+            inventing specifics (no tools, ports, dates, or steps not in the note).
+            Output only the resulting text — no quotes, no preamble, no explanation.
             """)
         let content = try await chatCompletion(
             systemPrompt: systemPrompt,
             userPrompt: PromptSanitizer.userContent(notes, maxLen: 300),
-            temperature: 0.2,
-            maxTokens: 60
+            temperature: 0.1,
+            maxTokens: 80
         )
         return content.trimmingCharacters(in: .whitespacesAndNewlines)
     }
