@@ -998,7 +998,12 @@ App 首页宠物头顶只有**一个**对话槽 `currentPetDialogue`，由阶段
 
 ### 7.1 DayPack 最小测试向量（Hex）
 
-> ⚠️ **v2.5.0 待重生成**：以下向量基于**旧** DayPack 布局（MorningGreeting/DailySummary/…），与重写后的 §4.7 不符。固件按新 §4.7（PetDialogue + Events[] + TopTasks[] + SettlementData）实现解析后，需由 App 侧重新导出一条新向量替换此处。下表仅作流式变长解析的格式示意，**字段语义已过时**。
+> ⚠️ **下方 hex 向量是 pre-v2.5.0 旧布局，已废弃，切勿照其实现解析（v2.5.9）。** 它含 `MorningGreeting / DailySummary / FirstItem / CurrentScheduleSummary / CompanionPhrase` 及结算双消息——这些字段 v2.5.0 已删除，与现行 §4.7 完全不符。手工维护逐字节向量会随协议演进错位、反误导固件，故不再在此给出新向量，改为下面的**当前字段顺序** + 指向 App 侧锁步维护的**权威往返自检**。
+>
+> **当前 DayPack(0x10) payload 字段顺序**（详见 §4.7；变长字符串 = 1 字节长度 + UTF-8 内容，长度为 0 的空串也占 1 字节、必须照样消费再前进）：
+> `Year(1) Month(1) Day(1) DeviceMode(1) FocusChallengeEnabled(1) PetDialogue(1+N) EventCount(1) Events[]{Time(1+N) Title(1+N) Description(1+N)}×N TaskCount(1) TopTasks[]{TaskId(1+N) Title(1+N) IsCompleted(1) Priority(1)}×N SettlementData(10B 定长) DaySummary(1+N) FirstUp(1+N，最后一个字段)`。读完 `FirstUp`，解析指针应恰好停在 payload 末尾。
+>
+> **权威自检（推荐固件对照）**：App 侧 `BLEProtocolSimulationSupport.swift::parseDayPack()` 按上序逐字段读回并 `requireEnd()`（任何尾部多余字节即报错），与 `BLEDataEncoder.encodeDayPack` 在 `BLEProtocolSimulationTests` 做往返断言；编解码**锁步维护**，是当前布局的权威字节级参考。固件实现解析器后，可请 App 侧据此导出一条与现行布局一致的具体 hex 向量。
 
 以下测试向量用于验证字段顺序和长度解析，可作为固件解析器的第一条样例。它不是产品真实文案，只覆盖最小字段。左侧 `@N` 为该字段在 **payload 内的起始字节偏移**（十进制），供固件逐字段对位——注意偏移随变长字符串累积，**不是固定值**。
 
