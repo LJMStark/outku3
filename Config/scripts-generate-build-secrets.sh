@@ -45,6 +45,18 @@ DEEP_FOCUS_FEATURE_ENABLED_VALUE="$(escape_swift "${DEEP_FOCUS_FEATURE_ENABLED:-
 NOTION_OAUTH_CLIENT_ID_VALUE="$(escape_swift "${NOTION_OAUTH_CLIENT_ID:-}")"
 TASKADE_OAUTH_CLIENT_ID_VALUE="$(escape_swift "${TASKADE_OAUTH_CLIENT_ID:-}")"
 
+# AI provider base URL — contains `//`, so it hits the same xcconfig comment-pass
+# truncation as SUPABASE_URL; recover from the raw xcconfig line when truncated.
+OPENAI_BASE_URL_RAW="${OPENAI_BASE_URL:-}"
+if [[ "${OPENAI_BASE_URL_RAW}" == "https:" || "${OPENAI_BASE_URL_RAW}" == "http:" || -z "${OPENAI_BASE_URL_RAW}" ]]; then
+  RECOVERED="$(recover_from_xcconfig OPENAI_BASE_URL)"
+  if [[ -n "${RECOVERED}" && "${RECOVERED}" != "https:" && "${RECOVERED}" != "http:" ]]; then
+    OPENAI_BASE_URL_RAW="${RECOVERED}"
+  fi
+fi
+OPENAI_BASE_URL_VALUE="$(escape_swift "${OPENAI_BASE_URL_RAW}")"
+OPENAI_MODEL_VALUE="$(escape_swift "${OPENAI_MODEL:-$(recover_from_xcconfig OPENAI_MODEL)}")"
+
 cat >"${OUTPUT_FILE}" <<EOT
 import Foundation
 
@@ -56,6 +68,8 @@ enum BuildSecrets {
     static let deepFocusFeatureEnabled = "${DEEP_FOCUS_FEATURE_ENABLED_VALUE}" == "1"
     static let notionClientId = "${NOTION_OAUTH_CLIENT_ID_VALUE}"
     static let taskadeClientId = "${TASKADE_OAUTH_CLIENT_ID_VALUE}"
+    static let openAIBaseURL = "${OPENAI_BASE_URL_VALUE}"
+    static let chatModelID = "${OPENAI_MODEL_VALUE}"
 }
 EOT
 

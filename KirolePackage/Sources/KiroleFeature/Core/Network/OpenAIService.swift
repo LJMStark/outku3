@@ -18,7 +18,12 @@ public struct CompanionModelOption: Identifiable, Hashable, Sendable {
 public actor OpenAIService {
     public static let shared = OpenAIService()
     public static let companionPromptVersion = "2026-06-17-custom-prompt-guard-v1"
-    public static let defaultChatModelID = "openai/gpt-oss-120b:free"
+    /// Chat model for all AI calls. Configurable via `OPENAI_MODEL` (Secrets.xcconfig →
+    /// `AppSecrets.chatModelID`); falls back to the OpenRouter free model when unset.
+    public static var defaultChatModelID: String { AppSecrets.chatModelID ?? "openai/gpt-oss-120b:free" }
+    // In-app picker options (OpenRouter model IDs). The gateway model (e.g. gpt-5.5) is NOT
+    // listed here — it is driven by `OPENAI_MODEL` (Secrets.xcconfig → AppSecrets.chatModelID →
+    // defaultChatModelID) so it applies to both AI paths without a pickable OpenRouter mismatch.
     public static let companionModelOptions: [CompanionModelOption] = [
         CompanionModelOption(
             id: "openai/gpt-oss-120b:free",
@@ -28,7 +33,10 @@ public actor OpenAIService {
     ]
 
     private let networkClient = NetworkClient.shared
-    private let baseURL = "https://openrouter.ai/api/v1"
+    /// AI API base URL. Configurable via `OPENAI_BASE_URL` (Secrets.xcconfig →
+    /// `AppSecrets.openAIBaseURL`) to point at an OpenAI-compatible gateway (e.g. opencodeapi);
+    /// falls back to OpenRouter when unset.
+    private var baseURL: String { AppSecrets.openAIBaseURL ?? "https://openrouter.ai/api/v1" }
 
     private var apiKey: String = ""
 

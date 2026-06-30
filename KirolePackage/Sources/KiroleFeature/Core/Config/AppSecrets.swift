@@ -10,6 +10,10 @@ public enum AppSecrets {
         var deepFocusFeatureEnabled: Bool
         var notionClientId: String?
         var taskadeClientId: String?
+        /// Optional AI base URL override (e.g. an OpenAI-compatible gateway). nil → OpenRouter default.
+        var openAIBaseURL: String?
+        /// Optional chat model override. nil → `OpenAIService.defaultChatModelID` OpenRouter default.
+        var chatModelID: String?
     }
 
     private static let lock = OSAllocatedUnfairLock(
@@ -23,7 +27,9 @@ public enum AppSecrets {
         bleSharedSecret: String?,
         deepFocusFeatureEnabled: Bool = false,
         notionClientId: String? = nil,
-        taskadeClientId: String? = nil
+        taskadeClientId: String? = nil,
+        openAIBaseURL: String? = nil,
+        chatModelID: String? = nil
     ) {
         lock.withLock { storage in
             storage.supabaseURL = normalizeURL(supabaseURL)
@@ -33,6 +39,8 @@ public enum AppSecrets {
             storage.deepFocusFeatureEnabled = deepFocusFeatureEnabled
             storage.notionClientId = normalize(notionClientId)
             storage.taskadeClientId = normalize(taskadeClientId)
+            storage.openAIBaseURL = normalizeURL(openAIBaseURL)
+            storage.chatModelID = normalize(chatModelID)
         }
     }
 
@@ -61,6 +69,16 @@ public enum AppSecrets {
 
     public static var taskadeClientId: String? {
         lock.withLock { $0.taskadeClientId }
+    }
+
+    /// Optional AI base URL override; nil → `OpenAIService` falls back to the OpenRouter default.
+    public static var openAIBaseURL: String? {
+        lock.withLock { $0.openAIBaseURL }
+    }
+
+    /// Optional chat model override; nil → `OpenAIService.defaultChatModelID` OpenRouter default.
+    public static var chatModelID: String? {
+        lock.withLock { $0.chatModelID }
     }
 
     private static func normalize(_ value: String?) -> String? {
