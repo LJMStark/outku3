@@ -85,6 +85,7 @@ Gemfile.lock
 页面一比一还原*/
 docs/*.pdf
 docs/*.docx
+docs/*.xls
 docs/Outku 硬件产品规格文档*.md
 硬件需求文档-Hardware Requirements Document v0-1_*.pdf
 
