@@ -21,7 +21,8 @@ struct KiroleApp: App {
             notionClientId: BuildSecrets.notionClientId,
             taskadeClientId: BuildSecrets.taskadeClientId,
             openAIBaseURL: BuildSecrets.openAIBaseURL,
-            chatModelID: BuildSecrets.chatModelID
+            chatModelID: BuildSecrets.chatModelID,
+            fallbackAPIKey: BuildSecrets.fallbackAPIKey
         )
         BLEBackgroundSyncScheduler.shared.register()
     }

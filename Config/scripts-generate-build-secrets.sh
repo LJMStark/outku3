@@ -56,6 +56,7 @@ if [[ "${OPENAI_BASE_URL_RAW}" == "https:" || "${OPENAI_BASE_URL_RAW}" == "http:
 fi
 OPENAI_BASE_URL_VALUE="$(escape_swift "${OPENAI_BASE_URL_RAW}")"
 OPENAI_MODEL_VALUE="$(escape_swift "${OPENAI_MODEL:-$(recover_from_xcconfig OPENAI_MODEL)}")"
+FALLBACK_API_KEY_VALUE="$(escape_swift "${FALLBACK_API_KEY:-$(recover_from_xcconfig FALLBACK_API_KEY)}")"
 
 cat >"${OUTPUT_FILE}" <<EOT
 import Foundation
@@ -70,6 +71,7 @@ enum BuildSecrets {
     static let taskadeClientId = "${TASKADE_OAUTH_CLIENT_ID_VALUE}"
     static let openAIBaseURL = "${OPENAI_BASE_URL_VALUE}"
     static let chatModelID = "${OPENAI_MODEL_VALUE}"
+    static let fallbackAPIKey = "${FALLBACK_API_KEY_VALUE}"
 }
 EOT
 

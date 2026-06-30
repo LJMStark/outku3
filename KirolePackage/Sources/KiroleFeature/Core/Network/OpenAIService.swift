@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 public struct CompanionModelOption: Identifiable, Hashable, Sendable {
     public let id: String
@@ -18,9 +19,15 @@ public struct CompanionModelOption: Identifiable, Hashable, Sendable {
 public actor OpenAIService {
     public static let shared = OpenAIService()
     public static let companionPromptVersion = "2026-06-17-custom-prompt-guard-v1"
-    /// Chat model for all AI calls. Configurable via `OPENAI_MODEL` (Secrets.xcconfig →
+    /// Stable OpenRouter provider — also the **cross-provider fallback** target when a configured
+    /// primary (e.g. an opencodeapi gateway) fails. See `rules/ecc/common/ai-provider-fallback.md`
+    /// (degradable companion-text carve-out: fallback allowed here, but logged — never silent).
+    public static let openRouterBaseURL = "https://openrouter.ai/api/v1"
+    public static let openRouterFallbackModelID = "openai/gpt-oss-120b:free"
+
+    /// Chat model for the **primary** AI calls. Configurable via `OPENAI_MODEL` (Secrets.xcconfig →
     /// `AppSecrets.chatModelID`); falls back to the OpenRouter free model when unset.
-    public static var defaultChatModelID: String { AppSecrets.chatModelID ?? "openai/gpt-oss-120b:free" }
+    public static var defaultChatModelID: String { AppSecrets.chatModelID ?? openRouterFallbackModelID }
     // In-app picker options (OpenRouter model IDs). The gateway model (e.g. gpt-5.5) is NOT
     // listed here — it is driven by `OPENAI_MODEL` (Secrets.xcconfig → AppSecrets.chatModelID →
     // defaultChatModelID) so it applies to both AI paths without a pickable OpenRouter mismatch.
@@ -33,10 +40,11 @@ public actor OpenAIService {
     ]
 
     private let networkClient = NetworkClient.shared
-    /// AI API base URL. Configurable via `OPENAI_BASE_URL` (Secrets.xcconfig →
+    private static let logger = Logger(subsystem: "com.kirole.app", category: "ai")
+    /// AI API base URL (**primary**). Configurable via `OPENAI_BASE_URL` (Secrets.xcconfig →
     /// `AppSecrets.openAIBaseURL`) to point at an OpenAI-compatible gateway (e.g. opencodeapi);
     /// falls back to OpenRouter when unset.
-    private var baseURL: String { AppSecrets.openAIBaseURL ?? "https://openrouter.ai/api/v1" }
+    private var baseURL: String { AppSecrets.openAIBaseURL ?? Self.openRouterBaseURL }
 
     private var apiKey: String = ""
 
@@ -191,7 +199,13 @@ public actor OpenAIService {
 
     // MARK: - Chat Completion
 
-    /// Shared helper that sends a chat completion request and returns the response content
+    /// Shared helper that sends a chat completion request and returns the response content.
+    ///
+    /// Tries the configured **primary** provider; if it fails AND a distinct `FALLBACK_API_KEY`
+    /// is configured, **falls back to OpenRouter (`gpt-oss-120b`)** — logging the swap, so the
+    /// model that actually served the request is never silent. This cross-model fallback is
+    /// permitted only for this app's degradable companion/UI text (short, non-reproducibility-
+    /// sensitive); see `rules/ecc/common/ai-provider-fallback.md`.
     private func chatCompletion(
         systemPrompt: String,
         userPrompt: String,
@@ -203,6 +217,41 @@ public actor OpenAIService {
             throw OpenAIError.notConfigured
         }
 
+        do {
+            return try await sendChat(
+                baseURL: baseURL, apiKey: apiKey, model: model,
+                systemPrompt: systemPrompt, userPrompt: userPrompt,
+                temperature: temperature, maxTokens: maxTokens
+            )
+        } catch {
+            // Cross-provider fallback to stable OpenRouter — only when a distinct fallback key is
+            // set (i.e. a non-OpenRouter primary like the opencodeapi gateway). Transparent: log it.
+            guard let fallbackKey = AppSecrets.fallbackAPIKey, fallbackKey != apiKey else {
+                throw error
+            }
+            Self.logger.warning(
+                "AI primary failed (model=\(model, privacy: .public), base=\(self.baseURL, privacy: .public)): \(error.localizedDescription, privacy: .public) — falling back to \(OpenAIService.openRouterFallbackModelID, privacy: .public) @ OpenRouter"
+            )
+            return try await sendChat(
+                baseURL: OpenAIService.openRouterBaseURL,
+                apiKey: fallbackKey,
+                model: OpenAIService.openRouterFallbackModelID,
+                systemPrompt: systemPrompt, userPrompt: userPrompt,
+                temperature: temperature, maxTokens: maxTokens
+            )
+        }
+    }
+
+    /// One-shot chat-completion POST against an explicit provider (base URL + key + model).
+    private func sendChat(
+        baseURL: String,
+        apiKey: String,
+        model: String,
+        systemPrompt: String,
+        userPrompt: String,
+        temperature: Double,
+        maxTokens: Int
+    ) async throws -> String {
         let request = ChatCompletionRequest(
             model: model,
             messages: [

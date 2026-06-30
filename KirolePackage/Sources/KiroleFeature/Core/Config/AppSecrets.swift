@@ -14,6 +14,9 @@ public enum AppSecrets {
         var openAIBaseURL: String?
         /// Optional chat model override. nil → `OpenAIService.defaultChatModelID` OpenRouter default.
         var chatModelID: String?
+        /// Optional fallback (OpenRouter) bearer key — used to fail over to OpenRouter when the
+        /// configured primary provider errors. nil → no cross-provider fallback. See OpenAIService.
+        var fallbackAPIKey: String?
     }
 
     private static let lock = OSAllocatedUnfairLock(
@@ -29,7 +32,8 @@ public enum AppSecrets {
         notionClientId: String? = nil,
         taskadeClientId: String? = nil,
         openAIBaseURL: String? = nil,
-        chatModelID: String? = nil
+        chatModelID: String? = nil,
+        fallbackAPIKey: String? = nil
     ) {
         lock.withLock { storage in
             storage.supabaseURL = normalizeURL(supabaseURL)
@@ -41,6 +45,7 @@ public enum AppSecrets {
             storage.taskadeClientId = normalize(taskadeClientId)
             storage.openAIBaseURL = normalizeURL(openAIBaseURL)
             storage.chatModelID = normalize(chatModelID)
+            storage.fallbackAPIKey = normalize(fallbackAPIKey)
         }
     }
 
@@ -79,6 +84,11 @@ public enum AppSecrets {
     /// Optional chat model override; nil → `OpenAIService.defaultChatModelID` OpenRouter default.
     public static var chatModelID: String? {
         lock.withLock { $0.chatModelID }
+    }
+
+    /// Optional fallback (OpenRouter) bearer key; nil → no cross-provider fallback.
+    public static var fallbackAPIKey: String? {
+        lock.withLock { $0.fallbackAPIKey }
     }
 
     private static func normalize(_ value: String?) -> String? {
