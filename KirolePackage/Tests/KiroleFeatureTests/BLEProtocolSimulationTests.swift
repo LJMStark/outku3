@@ -133,6 +133,70 @@ struct BLEProtocolSimulationTests {
         #expect(parsedTaskIn.focusChallengeActive == true)
     }
 
+    @Test("Virtual hardware receives only printable ASCII even when App DayPack fields carry LLM/user junk")
+    func virtualHardwareReceivesAsciiOnly() throws {
+        var hardware = SimulatedHardware()
+
+        // A DayPack whose text fields carry exactly the non-ASCII an LLM / user / calendar produces:
+        // curly quotes, em-dash, ellipsis, accent, bullet, currency, non-breaking hyphen, emoji.
+        let dirty = DayPack(
+            date: DateComponents(calendar: Calendar(identifier: .gregorian), year: 2026, month: 5, day: 7).date ?? Date(),
+            deviceMode: .interactive,
+            focusChallengeEnabled: true,
+            petDialogue: "You\u{2019}re doing great \u{2014} keep it up! \u{1F31F}",
+            daySummary: "A quiet day\u{2026} no events, so it\u{2019}s a good chance to recharge.",
+            firstUp: "10:00 Caf\u{00E9} catch\u{2011}up",
+            events: [
+                EventSummary(time: "09:30",
+                             title: "Meet Jos\u{00E9} \u{2022} review",
+                             description: "Bring \u{20AC}20 & the \u{201C}notes\u{201D}"),
+            ],
+            topTasks: [
+                TaskSummary(id: "task-ble-plan", title: "Buy groceries \u{1F6D2}", isCompleted: false, priority: 2),
+            ],
+            settlementData: SettlementData(
+                tasksCompleted: 1, tasksTotal: 2, pointsEarned: 42, petMood: "happy",
+                summaryMessage: "", encouragementMessage: "",
+                totalFocusMinutes: 35, focusSessionCount: 1, longestFocusMinutes: 35,
+                interruptionCount: 0, totalEnergyBottles: 1
+            )
+        )
+
+        // App encodes -> BLE wire (chunked at a realistic MTU) -> hardware reassembles + parses.
+        let payload = BLEDataEncoder.encodeDayPack(dirty, screenSize: .fourInch)
+        let packets = try BLEPacketizer.packetize(
+            type: BLEDataType.dayPack.rawValue, messageId: 0x5150, payload: payload, maxChunkSize: 24
+        )
+        let assembled = try #require(try hardware.receiveAppPacketStream(packets))
+        let hw = try assembled.parseDayPack()
+
+        let fields: [(name: String, appSide: String, wire: String)] = [
+            ("petDialogue", dirty.petDialogue, hw.petDialogue),
+            ("daySummary",  dirty.daySummary,  hw.daySummary),
+            ("firstUp",     dirty.firstUp,     hw.firstUp),
+            ("event.title", dirty.events[0].title, hw.events.first?.title ?? ""),
+            ("event.desc",  dirty.events[0].description, hw.events.first?.description ?? ""),
+            ("task.title",  dirty.topTasks[0].title, hw.topTasks.first?.title ?? ""),
+        ]
+        print("\n════ Virtual hardware DayPack decode: App field -> on-wire bytes the firmware reads ════")
+        for f in fields {
+            let bytes = Array(f.wire.utf8)
+            let isAscii = bytes.allSatisfy { $0 >= 0x20 && $0 <= 0x7E }
+            let hex = bytes.map { String(format: "%02X", Int($0)) }.joined(separator: " ")
+            print("• \(f.name): ascii=\(isAscii ? "PASS" : "FAIL")")
+            print("    app  : \(f.appSide)")
+            print("    wire : \(f.wire)")
+            print("    hex  : \(hex)")
+            #expect(isAscii, "\(f.name) put a non-ASCII byte on the wire: \(f.wire)")
+        }
+        print("════ every DayPack text field the virtual hardware received is printable ASCII (0x20-0x7E) ════\n")
+
+        // The hardware sees the readable ASCII transliteration, not tofu.
+        #expect(hw.daySummary == "A quiet day... no events, so it's a good chance to recharge.")
+        #expect(hw.petDialogue == "You're doing great - keep it up! ")
+        #expect(hw.events.first?.description == "Bring 20 & the \"notes\"")
+    }
+
     @Test("Virtual App parses every Device-to-App event")
     @MainActor
     func virtualAppParsesEveryDeviceToAppEvent() throws {
