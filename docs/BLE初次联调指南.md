@@ -30,7 +30,7 @@
 | GATT | 提供 Write `0000FFE1-0000-1000-8000-00805F9B34FB` 和 Notify `0000FFE2-0000-1000-8000-00805F9B34FB` | App 能完成连接和特征发现 |
 | 设备上线通知 / Wake Notify | BLE Notify 开启后，固件**主动**发送 `DeviceWake(0x30)`，payload 为 `BatteryLevel(1B)` | App 更新电量，并写入 `Time(0x05)` 完成时间同步 |
 | 时间同步 | 接收 App 写入的 `Time(0x05)` 简单包 | 固件串口打印收到的年月日时分秒 |
-| 请求刷新 | Notify 发送 `RequestRefresh(0x20)`，payload 为空 | App 触发数据同步 |
+| 请求刷新 | Notify 发送 `RequestRefresh(0x20)`，payload 为空 | App 触发数据同步（**联调期 60s 合并窗去抖**：固件勿把 0x20 当 ~2s 心跳狂发，否则整轮 sync 会被合并为 ≤1 次/分，见协议 §8.5）|
 | DayPack 接收 | 接收 App 写入的 `DayPack(0x10)`，支持 9 字节分包 | 固件串口打印 payload 总长度和前几个字段 |
 
 > **语义说明（设备上线通知）**：`DeviceWake(0x30)` **不是 App 唤醒 MCU 的命令**，App 无法也不会触发 MCU 从休眠中醒来。MCU 何时唤醒由固件自行决定（RTC 定时、按键、电源事件等）。完整流程如下：
@@ -168,7 +168,7 @@ CRC 使用 CRC16-CCITT-FALSE：
 | 连接 | App 设备卡片显示已连接 |
 | Notify | 固件发送 `30 01 xx` 后 App 电量显示更新 |
 | Time | 固件串口看到 `05 00 06 ...` |
-| RequestRefresh | 固件发送 `20 00` 后 App 有写入动作 |
+| RequestRefresh | 固件发送 `20 00` 后 App 有写入动作（**首次或距上次 ≥60s 时**；60s 合并窗内重复的 0x20 会被去抖、无写入，属正常，见协议 §8.5）|
 | DayPack | 固件能完成分包重组，并能解析日期和第一段字符串 |
 
 ---
