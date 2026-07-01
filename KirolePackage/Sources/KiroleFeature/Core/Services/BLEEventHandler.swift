@@ -7,6 +7,9 @@ import Foundation
 public enum BLEEventHandler {
 
     private static let localStorage = LocalStorage.shared
+    // TODO: 联调稳定后恢复 0x20 触发的整轮 BLE 同步。当前固件会把 0x20 当 2 秒心跳，
+    // 导致 petStatus/time 高频下发，先临时停掉定时刷新入口。
+    private static let suppressTimedRequestRefreshSync = true
 
     // MARK: - Payload Handling
 
@@ -64,6 +67,13 @@ public enum BLEEventHandler {
 
         case .requestRefresh:
             Task { @MainActor in
+                guard !suppressTimedRequestRefreshSync else {
+                    ErrorReporter.log(
+                        .sync(component: "BLE RequestRefresh", underlying: "suppressed during hardware integration"),
+                        context: "BLEEventHandler.requestRefresh"
+                    )
+                    return
+                }
                 // 0x20 用独立的 refresh 闸（非 deviceWake 的 10s 闸），不被频繁唤醒饿死；
                 // 2s 下限防固件把 0x20 当心跳狂发导致背靠背整轮 sync。
                 guard await BLERateLimiter.shared.allowRefreshTrigger() else {
