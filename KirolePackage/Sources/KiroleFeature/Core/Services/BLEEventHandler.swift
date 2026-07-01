@@ -7,9 +7,6 @@ import Foundation
 public enum BLEEventHandler {
 
     private static let localStorage = LocalStorage.shared
-    // TODO: 联调稳定后恢复 0x20 触发的整轮 BLE 同步。当前固件会把 0x20 当 2 秒心跳，
-    // 导致 petStatus/time 高频下发，先临时停掉定时刷新入口。
-    private static let suppressTimedRequestRefreshSync = true
 
     // MARK: - Payload Handling
 
@@ -67,18 +64,13 @@ public enum BLEEventHandler {
 
         case .requestRefresh:
             Task { @MainActor in
-                guard !suppressTimedRequestRefreshSync else {
-                    ErrorReporter.log(
-                        .sync(component: "BLE RequestRefresh", underlying: "suppressed during hardware integration"),
-                        context: "BLEEventHandler.requestRefresh"
-                    )
-                    return
-                }
-                // 0x20 用独立的 refresh 闸（非 deviceWake 的 10s 闸），不被频繁唤醒饿死；
-                // 2s 下限防固件把 0x20 当心跳狂发导致背靠背整轮 sync。
+                // 0x20 用独立的 refresh 闸（非 deviceWake 的 10s 闸），不被频繁唤醒饿死。
+                // 联调期固件把 0x20 当 ~2s 心跳狂发；refresh 闸用 60s 合并窗把整轮 sync 去抖为
+                // 每分钟最多一次——既挡住心跳刷屏，又保留用户物理刷新（固件停止心跳后，一次按键
+                // 即时触发）。根因在固件侧（0x20 不应心跳化），此为 App 侧临时兜底，见协议 §8.5。
                 guard await BLERateLimiter.shared.allowRefreshTrigger() else {
                     ErrorReporter.log(
-                        .sync(component: "BLE RequestRefresh", underlying: "throttled (min 2s)"),
+                        .sync(component: "BLE RequestRefresh", underlying: "coalesced (min 60s)"),
                         context: "BLEEventHandler.requestRefresh"
                     )
                     return
