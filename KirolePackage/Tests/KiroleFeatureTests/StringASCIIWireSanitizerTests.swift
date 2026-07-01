@@ -205,4 +205,46 @@ struct StringASCIIWireSanitizerTests {
         let output = input.asciiSanitizedForEInk()
         #expect(output.utf8.allSatisfy { $0 >= 0x20 && $0 <= 0x7E })
     }
+
+    // MARK: - Realistic content verification (>=10 cases through the real production sanitizer)
+
+    /// Runs the exact kind of text the LLM (daySummary/petDialogue/encouragement/quote), the user
+    /// keyboard (task/pet names), and calendar sync (event titles) actually produce — through the
+    /// real asciiSanitizedForEInk() — and proves every output is printable ASCII (0x20-0x7E).
+    @Test("Realistic LLM / user / calendar field text is cleaned to printable ASCII")
+    func realisticContentIsAsciiClean() {
+        let cases: [(label: String, input: String, expected: String)] = [
+            ("daySummary curly+em-dash", "You\u{2019}ve got a light day ahead \u{2014} enjoy it.",   "You've got a light day ahead - enjoy it."),
+            ("petDialogue ellipsis",     "No rush today\u{2026} take it slow.",                       "No rush today... take it slow."),
+            ("quote curly doubles",      "\u{201C}Focus time\u{201D} starts at 9.",                  "\"Focus time\" starts at 9."),
+            ("encouragement emoji",      "Great job! \u{1F525} Keep going \u{1F4AA}",                "Great job!  Keep going "),
+            ("calendar accented name",   "Lunch with Jos\u{00E9} at the caf\u{00E9}",                "Lunch with Jose at the cafe"),
+            ("currency + degree",        "Pay \u{20AC}200 rent; high of 32\u{00B0}C today",          "Pay 200 rent; high of 32C today"),
+            ("inline bullets",           "Today: \u{2022} gym \u{2022} groceries \u{2022} mom",      "Today: * gym * groceries * mom"),
+            ("user CJK + em-dash",       "\u{4EFB}\u{52A1} done \u{2014} nice work",                 " done - nice work"),
+            ("arrows + multiply",        "9\u{2192}10 review, then 2\u{00D7}focus blocks",           "9->10 review, then 2xfocus blocks"),
+            ("fullwidth punctuation",    "Done\u{FF01}Next\u{FF1F}",                                 "Done!Next?"),
+            ("trademark",                "Watch the Nike\u{2122} ad later",                          "Watch the Nike(tm) ad later"),
+            ("two accents",              "Meet Zo\u{00EB} re: r\u{00E9}sum\u{00E9}",                 "Meet Zoe re: resume"),
+            ("non-breaking space",       "See you at 3\u{00A0}PM sharp",                             "See you at 3 PM sharp"),
+            ("curly singles + en-dash",  "Reflect \u{2018}quietly\u{2019} \u{2013} you earned it",   "Reflect 'quietly' - you earned it"),
+            ("pure ASCII identity",      "Two events today. Take a break before noon.",              "Two events today. Take a break before noon."),
+        ]
+
+        print("\n──────── ASCII wire-sanitizer verification: \(cases.count) realistic cases ────────")
+        var asciiClean = 0
+        for (i, c) in cases.enumerated() {
+            let out = c.input.asciiSanitizedForEInk()
+            let isAscii = out.utf8.allSatisfy { $0 >= 0x20 && $0 <= 0x7E }
+            if isAscii { asciiClean += 1 }
+            let n = String(format: "%2d", i + 1)
+            print("\(n). [\(c.label)]  ascii=\(isAscii ? "PASS" : "FAIL")  matches-expected=\(out == c.expected ? "PASS" : "FAIL")")
+            print("    in : \(c.input)")
+            print("    out: \(out)")
+            #expect(isAscii, "case \(i + 1) leaked non-ASCII byte on the wire: \(out)")
+            #expect(out == c.expected, "case \(i + 1): got \"\(out)\", expected \"\(c.expected)\"")
+        }
+        print("──────── \(asciiClean)/\(cases.count) outputs are pure printable ASCII (0x20-0x7E) ────────\n")
+        #expect(asciiClean == cases.count)
+    }
 }
