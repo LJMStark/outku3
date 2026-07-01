@@ -217,20 +217,31 @@ public actor OpenAIService {
             throw OpenAIError.notConfigured
         }
 
+        // Capture the primary base URL once so the failed call and its log line agree.
+        let primaryBaseURL = baseURL
+
         do {
             return try await sendChat(
-                baseURL: baseURL, apiKey: apiKey, model: model,
+                baseURL: primaryBaseURL, apiKey: apiKey, model: model,
                 systemPrompt: systemPrompt, userPrompt: userPrompt,
                 temperature: temperature, maxTokens: maxTokens
             )
         } catch {
+            // Never fall back on cooperative task cancellation: the native async URLSession throws
+            // `URLError.cancelled` (not `CancellationError`) when the enclosing Task is cancelled,
+            // and firing a second request there would ignore the cancel.
+            if (error as? URLError)?.code == .cancelled || error is CancellationError {
+                throw error
+            }
             // Cross-provider fallback to stable OpenRouter — only when a distinct fallback key is
             // set (i.e. a non-OpenRouter primary like the opencodeapi gateway). Transparent: log it.
             guard let fallbackKey = AppSecrets.fallbackAPIKey, fallbackKey != apiKey else {
                 throw error
             }
+            // `error.localizedDescription` is kept `.private`: NetworkError embeds the provider's
+            // raw 401/403 response body (≤280 chars), which we do not want in exported system logs.
             Self.logger.warning(
-                "AI primary failed (model=\(model, privacy: .public), base=\(self.baseURL, privacy: .public)): \(error.localizedDescription, privacy: .public) — falling back to \(OpenAIService.openRouterFallbackModelID, privacy: .public) @ OpenRouter"
+                "AI primary failed (model=\(model, privacy: .public), base=\(primaryBaseURL, privacy: .public)): \(error.localizedDescription, privacy: .private) — falling back to \(OpenAIService.openRouterFallbackModelID, privacy: .public) @ OpenRouter"
             )
             return try await sendChat(
                 baseURL: OpenAIService.openRouterBaseURL,
