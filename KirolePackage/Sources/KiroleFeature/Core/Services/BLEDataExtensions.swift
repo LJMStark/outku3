@@ -2,8 +2,13 @@ import Foundation
 
 extension Data {
     /// 追加带长度前缀的字符串数据（截断到指定最大长度）。
+    ///
+    /// 硬件 E-ink 只渲染可打印 ASCII（0x20–0x7E），其余字节显示为豆腐块。所有出站文本字段
+    /// 都经这里，因此在此单点做 ASCII 净化即可覆盖全部 21 个写入点（LLM 文案 / 用户手输 /
+    /// 日历同步）。顺序关键：先净化（可能增/减字节），再 UTF-8 编码，最后按 maxLength 截断。
     mutating func appendString(_ string: String, maxLength: Int) {
-        let stringData = string.data(using: .utf8) ?? Data()
+        let asciiSafe = string.asciiSanitizedForEInk()
+        let stringData = asciiSafe.data(using: .utf8) ?? Data()
         let truncatedData = stringData.validUTF8Prefix(maxLength: maxLength)
         append(UInt8(truncatedData.count))
         append(truncatedData)

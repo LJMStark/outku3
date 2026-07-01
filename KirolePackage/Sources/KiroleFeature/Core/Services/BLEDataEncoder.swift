@@ -40,6 +40,12 @@ public enum BLEDataEncoder {
         data.append(UInt8(min(todayEvents.count, 8)))
 
         let formatter = DateFormatter()
+        // en_US_POSIX pins ASCII digits: without it a Persian/Arabic number region would emit
+        // e.g. "۰۹:۳۰" (multi-byte, non-ASCII), which both renders as tofu on the E-ink panel
+        // AND desyncs the fixed 5-byte StartTime field (§4.4). This raw write bypasses the
+        // appendString ASCII choke point (StartTime is a fixed 5-byte field, not length-prefixed),
+        // so the locale is the guarantee here. All other time formatters already pin en_US_POSIX.
+        formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "HH:mm"
 
         for event in todayEvents.prefix(8) {

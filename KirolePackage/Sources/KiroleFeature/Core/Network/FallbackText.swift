@@ -34,7 +34,7 @@ enum FallbackText {
     /// Offline fallback for the events-only day summary (box②). Events only — never tasks.
     static func daySummary(events: [EventSummary]) -> String {
         guard let first = events.first else {
-            return "An open day ahead — a little room to breathe."
+            return "An open day ahead - a little room to breathe."
         }
         let firstLabel = first.time.isEmpty ? first.title : "\(first.time) \(first.title)"
         if events.count == 1 {
@@ -183,7 +183,7 @@ enum FallbackText {
             return pick([
                 "Clear schedule. Use it intentionally.",
                 "Open time is rare. Invest it wisely.",
-                "No tasks today. Rest or reflect — both have value."
+                "No tasks today. Rest or reflect - both have value."
             ])
         }
         if context.totalTasksToday > 0, context.tasksCompletedToday >= context.totalTasksToday {

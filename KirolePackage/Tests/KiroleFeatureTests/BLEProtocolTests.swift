@@ -440,6 +440,22 @@ struct BLEProtocolTests {
         #expect(data.count == 4 + condLen)                   // no trailing bytes
     }
 
+    @Test("BLEDataEncoder encodeSchedule emits StartTime as exactly 5 ASCII bytes (locale-pinned)")
+    func encodeScheduleStartTimeIsAscii() {
+        // A today event at 09:30 — passes the isDateInToday filter inside encodeSchedule.
+        let start = Calendar.current.date(bySettingHour: 9, minute: 30, second: 0, of: Date())!
+        let event = CalendarEvent(title: "Sync", startTime: start, endTime: start.addingTimeInterval(1800))
+        let data = BLEDataEncoder.encodeSchedule([event])
+
+        // Layout: [count:1][titleLen:1][title:N][StartTime: fixed 5 bytes "HH:mm" (§4.4)]
+        #expect(data[0] == 1)
+        let titleLen = Int(data[1])
+        let timeBytes = data.subdata(in: (2 + titleLen)..<data.count)
+        #expect(timeBytes.count == 5)                                 // fixed 5-byte field, not length-prefixed
+        #expect(timeBytes == Data("09:30".utf8))                      // ASCII digits — en_US_POSIX, not user locale
+        #expect(timeBytes.allSatisfy { $0 >= 0x20 && $0 <= 0x7E })    // never tofu on the wire
+    }
+
     @Test("BLEDataEncoder encodeCurrentTime uses year-2000 offset")
     func encodeTimeYearOffset() {
         let data = BLEDataEncoder.encodeCurrentTime()
