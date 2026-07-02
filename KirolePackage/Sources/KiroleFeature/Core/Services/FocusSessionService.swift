@@ -684,6 +684,9 @@ public final class FocusSessionService {
     private func updateStoredEnergyBottles(
         adding bottlesToAdd: Int
     ) async -> (total: Int, newlyUnlocked: [String]) {
+        // 与本类其余持久化函数同一守卫策略：persistenceEnabled=false 的测试实例
+        // 不得读写全局 UserDefaults 里的能量瓶/庆祝水位，否则污染并行测试。
+        guard persistenceEnabled else { return (0, []) }
         let before = await localStorage.loadEnergyBottles()
         guard bottlesToAdd > 0 else {
             return (before, [])
