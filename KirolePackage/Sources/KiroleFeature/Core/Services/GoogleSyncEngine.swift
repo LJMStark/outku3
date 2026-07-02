@@ -14,6 +14,11 @@ public actor GoogleSyncEngine {
     private var isSyncing = false
     private var metadata: GoogleSyncMetadata
     private var outbox: [OutboxEntry]
+    /// flush 在途批次。persistOutbox 落盘时始终写 inFlightOutbox + outbox，
+    /// 保证 flush 中途被杀时未处理完的批次仍在 outbox.json 里（重启后重试，
+    /// 已成功条目可能重推一次——与 drain 改造前的崩溃语义一致，不丢数据）。
+    private var inFlightOutbox: [OutboxEntry] = []
+    private var isFlushingOutbox = false
 
     private static let maxRetryCount = 5
     // 5-minute overlap to catch updates near the boundary
@@ -284,6 +289,11 @@ public actor GoogleSyncEngine {
     }
 
     private func flushOutbox() async {
+        // 防重入：并发第二轮 flush 会重复取批次并互相覆盖 inFlightOutbox。
+        guard !isFlushingOutbox else { return }
+        isFlushingOutbox = true
+        defer { isFlushingOutbox = false }
+
         guard !outbox.isEmpty else { return }
 
         // Drain 模式：先取走本批次并清空 outbox。网络 await 期间 actor 可重入
@@ -291,6 +301,7 @@ public actor GoogleSyncEngine {
         // `outbox = remaining` 会把 flush 期间新入队的变更静默吞掉且永不重试。
         let batch = outbox
         outbox = []
+        inFlightOutbox = batch
 
         var remaining: [OutboxEntry] = []
 
@@ -354,6 +365,8 @@ public actor GoogleSyncEngine {
         }
 
         // 失败重试项放回队首（时间序在前），flush 期间新入队的变更跟在后面。
+        // 先清 inFlightOutbox 再落盘，否则批次会和 remaining 重复写盘。
+        inFlightOutbox = []
         outbox = remaining + outbox
         await persistOutbox(context: "GoogleSyncEngine.flushOutbox")
     }
@@ -375,7 +388,7 @@ public actor GoogleSyncEngine {
 
     private func persistOutbox(context: String) async {
         do {
-            try await storage.saveOutbox(outbox)
+            try await storage.saveOutbox(inFlightOutbox + outbox)
         } catch {
             ErrorReporter.log(
                 .persistence(
