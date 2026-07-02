@@ -194,22 +194,20 @@ public actor GoogleCalendarAPI {
     }
 
     private func loadTargetCalendarIds() async throws -> [String] {
-        do {
-            let calendars = try await getCalendarList()
-            let selectedIds = calendars
-                .filter { ($0.selected ?? true) && !($0.hidden ?? false) }
-                .map(\.id)
+        // 日历列表拉取失败不能静默收窄为仅 primary：上层对 Google 事件是整组替换，收窄后
+        // 非主日历事件会本轮凭空消失且整轮报 Success。与上面"任一日历拉取失败就整体抛错"
+        // 同一策略——抛错走 runSyncStep 的 .failure：保留上轮事件，错误经 warnings 上报。
+        let calendars = try await getCalendarList()
+        let selectedIds = calendars
+            .filter { ($0.selected ?? true) && !($0.hidden ?? false) }
+            .map(\.id)
 
-            let allIds = selectedIds.isEmpty ? calendars.map(\.id) : selectedIds
-            let uniqueIds = orderedUniqueCalendarIDs(from: allIds)
+        let allIds = selectedIds.isEmpty ? calendars.map(\.id) : selectedIds
+        let uniqueIds = orderedUniqueCalendarIDs(from: allIds)
 
-            guard !uniqueIds.isEmpty else { return ["primary"] }
-            if uniqueIds.contains("primary") { return uniqueIds }
-            return ["primary"] + uniqueIds
-        } catch {
-            // Fallback to primary calendar if calendar list API fails
-            return ["primary"]
-        }
+        guard !uniqueIds.isEmpty else { return ["primary"] }
+        if uniqueIds.contains("primary") { return uniqueIds }
+        return ["primary"] + uniqueIds
     }
 
     /// 增量同步事件
