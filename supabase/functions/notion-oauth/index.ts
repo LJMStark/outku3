@@ -2,14 +2,22 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const NOTION_TOKEN_URL = "https://api.notion.com/v1/oauth/token";
 
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
-
 serve(async (req) => {
+  // 不带 CORS 头：本函数只服务原生 App（NotionAuthService 直连），浏览器跨域调用故意
+  // 不支持——之前的 Allow-Origin: * 等于把 client_secret 兑换代理开放给任意网页。
   if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: CORS });
+    return new Response("ok");
+  }
+
+  // 调用方必须持有本项目 anon key（App 侧一直在发 Bearer anonKey）。不校验用户 JWT：
+  // 连接 Notion 不要求登录（Skip 用户无 Supabase 会话），强上用户级校验会误伤他们。
+  const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
+  if (!anonKey) {
+    return json({ error: "server_misconfigured" }, 500);
+  }
+  const bearer = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
+  if (bearer !== anonKey) {
+    return json({ error: "unauthorized" }, 401);
   }
 
   const clientId = Deno.env.get("NOTION_CLIENT_ID");
@@ -47,6 +55,6 @@ serve(async (req) => {
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { ...CORS, "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json" },
   });
 }
