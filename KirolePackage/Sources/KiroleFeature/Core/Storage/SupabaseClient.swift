@@ -181,10 +181,24 @@ public actor SupabaseService {
                 refreshToken: refreshToken
             )
             try persistSession(session)
+        } catch let error as AuthError {
+            // 只有服务器明确拒绝凭证（refresh token 失效 / JWT 异常）才清 Keychain。
+            // 5xx 是服务器故障（Zeabur 自托管现实概率），不代表凭证失效，保留待下次重试。
+            if case let .api(_, _, _, response) = error, response.statusCode >= 500 {
+                #if DEBUG
+                print("[SupabaseService] Session restore hit server error \(response.statusCode), keeping tokens")
+                #endif
+            } else {
+                keychainService.clearSupabaseTokens()
+                #if DEBUG
+                print("[SupabaseService] Persisted session rejected, clearing tokens: \(error.localizedDescription)")
+                #endif
+            }
         } catch {
-            keychainService.clearSupabaseTokens()
+            // 网络/瞬时错误（典型：离线启动）不清凭证——原实现任意错误都清，导致断网开
+            // App 就丢登录态。didAttemptSessionRestore 保证每次启动只试一次，不会循环。
             #if DEBUG
-            print("[SupabaseService] Failed to restore persisted session: \(error.localizedDescription)")
+            print("[SupabaseService] Session restore failed transiently, keeping tokens: \(error.localizedDescription)")
             #endif
         }
     }
