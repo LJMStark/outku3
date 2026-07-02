@@ -18,21 +18,19 @@ extension AppState {
         completedProfile.onboardingCompletedAt = Date()
         onboardingProfile = completedProfile
 
-        UserDefaults.standard.set(true, forKey: "isOnboardingCompleted")
-
         // Map AI-relevant fields into UserProfile
         let mappedProfile = UserProfile.from(onboarding: completedProfile, merging: userProfile)
         userProfile = mappedProfile
 
         Task { @MainActor in
-            // Order matters: create + select the custom companion FIRST, then save the
-            // onboarding flags. If the process dies between the two, the worst case is
-            // "custom companion exists on disk but onboardingCompletedAt didn't persist"
-            // — the user redoes onboarding (the draft is still in memory at restart-time
-            // only if alive, but the persisted custom IP survives). The previous order
-            // had the opposite failure: onboarding marked complete on disk while the
-            // custom IP never got created, leaving the user stuck on a default IP with
-            // no way back through the upload flow.
+            // Order matters: create + select the custom companion FIRST, then persist
+            // both profiles, and only then set the "isOnboardingCompleted" gate flag
+            // that ContentView's @AppStorage reads. If the process dies or a save throws
+            // anywhere along the way, the flag stays false and the user redoes
+            // onboarding on next launch (anything already persisted survives on disk).
+            // The old order set the gate flag synchronously up front, so a death or
+            // save failure before the writes stranded the user in the main app with a
+            // default profile and no way back into onboarding.
             if completedProfile.hasCustomCompanionDraft {
                 await createCustomCompanionFromOnboarding(completedProfile)
                 // addCustomCompanion → selectCustomCompanion → updateUserProfile already
@@ -45,6 +43,8 @@ extension AppState {
                 // customCompanionId / intimacyStage updates from selectCustomCompanion
                 // above are included in this redundant-but-idempotent write.
                 try await localStorage.saveUserProfile(userProfile)
+                // Gate flag LAST — only a fully persisted onboarding may flip the UI gate.
+                UserDefaults.standard.set(true, forKey: "isOnboardingCompleted")
             } catch {
                 reportPersistenceError(error, operation: "save", target: "onboarding_profile.json")
                 ErrorReporter.log(error, context: "AppState.completeOnboarding")
