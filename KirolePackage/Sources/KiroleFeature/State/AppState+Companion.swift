@@ -227,6 +227,13 @@ extension AppState {
         )
     }
 
+    /// 指纹分量转义：用户可控文本（标题 / agenda / learn）里的 "|" 与 "\" 必须转义，
+    /// 否则与 "|"/"||" 分隔符歧义——两组不同状态可拼出同一指纹，静默复用旧对话缓存。
+    private static func fingerprintEscaped(_ raw: String) -> String {
+        raw.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "|", with: "\\|")
+    }
+
     private func companionDialogueFingerprint(
         now: Date,
         todayTasks: [TaskItem],
@@ -268,21 +275,21 @@ extension AppState {
             "focusMinutes=\(focusMinutes)",
             "energyBottles=\(energyBottles)",
             "activeTask=\(activeTaskId)",
-            "activeTaskTitle=\(activeTaskTitle ?? "")",
-            "nextAgenda=\(nextAgendaItem ?? "")",
-            "topTasks=\(topTaskTitles.joined(separator: "|"))",
+            "activeTaskTitle=\(Self.fingerprintEscaped(activeTaskTitle ?? ""))",
+            "nextAgenda=\(Self.fingerprintEscaped(nextAgendaItem ?? ""))",
+            "topTasks=\(topTaskTitles.map(Self.fingerprintEscaped).joined(separator: "|"))",
             "promptVersion=\(OpenAIService.companionPromptVersion)",
-            "learn=\(learnText ?? "")"
+            "learn=\(Self.fingerprintEscaped(learnText ?? ""))"
         ]
 
         for task in todayTasks {
             let dueText = task.dueDate.map { Self.dialogueTimeFormatter.string(from: $0) } ?? ""
-            parts.append("task=\(task.id)|\(task.title)|\(task.isCompleted ? 1 : 0)|\(task.priority.rawValue)|\(dueText)")
+            parts.append("task=\(task.id)|\(Self.fingerprintEscaped(task.title))|\(task.isCompleted ? 1 : 0)|\(task.priority.rawValue)|\(dueText)")
         }
 
         for event in todayEvents {
             parts.append(
-                "event=\(event.id)|\(event.title)|\(Int(event.startTime.timeIntervalSince1970))|\(Int(event.endTime.timeIntervalSince1970))"
+                "event=\(event.id)|\(Self.fingerprintEscaped(event.title))|\(Int(event.startTime.timeIntervalSince1970))|\(Int(event.endTime.timeIntervalSince1970))"
             )
         }
 
