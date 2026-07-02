@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en" class="no-js">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privacy Policy — Kirole</title>
+  <meta name="description" content="Kirole's privacy policy: what we handle, how we use Google user data, and how to delete your data. No ads, no tracking SDKs.">
+  <link rel="canonical" href="https://kirole.681023.xyz/privacy.html">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'">
+  <meta name="theme-color" content="#f4f1ea">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="site-head">
+    <div class="wrap">
+      <a class="logo" href="/" aria-label="Kirole home">Kirole<b>.</b></a>
+      <nav class="site-nav" aria-label="Main navigation">
+        <a href="/#how">How it works</a>
+        <a href="/privacy.html" aria-current="page">Privacy</a>
+        <a href="/terms.html">Terms</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main" class="doc">
+    <div class="wrap">
+      <h1>Privacy Policy</h1>
+      <p class="updated">Effective date: July 2, 2026 · Applies to the Kirole iPhone app, the Kirole E-ink companion device, and this website.</p>
+
+      <div class="callout">
+        <p><strong>The short version:</strong> Kirole shows your day to you and to your companion — that's the whole job. Your calendar and task content lives on your iPhone and your paired device, not on our servers. We show no ads, we embed no analytics or tracking SDKs, and we never sell your data.</p>
+      </div>
+
+      <h2>1. Who we are</h2>
+      <p>Kirole (&ldquo;Kirole&rdquo;, &ldquo;we&rdquo;, &ldquo;us&rdquo;) makes a companion app for iPhone and a paired E-ink desk device. You can reach us any time at <a href="mailto:support@kirole.681023.xyz">support@kirole.681023.xyz</a>.</p>
+
+      <h2>2. Information we handle</h2>
+      <h3>Account</h3>
+      <p>You sign in with <strong>Sign in with Apple</strong> or <strong>Google Sign-In</strong>. We receive your name, email address, and a stable account identifier. We use these to create your account and to keep your companion's progress attached to it.</p>
+
+      <h3>Connected calendars and tasks</h3>
+      <p>Kirole works by reading the schedule sources you explicitly connect. Depending on what you choose, that can include <strong>Google Calendar</strong>, <strong>Google Tasks</strong>, <strong>Apple Calendar</strong> (read on your device via Apple's EventKit), <strong>Notion</strong>, and <strong>Taskade</strong>. Connecting any of these is optional; each is covered in section 3 (Google) and section 4 (everything else).</p>
+
+      <h3>Companion and focus data</h3>
+      <p>Your companion's state (character, level, energy bottles, unlocked scenes) and your focus-session history are stored on your iPhone. A small snapshot of companion status and sync state is backed up to our server so you can restore it if you move to a new phone. This snapshot does <strong>not</strong> contain your calendar events or tasks.</p>
+
+      <h3>Custom companion photos</h3>
+      <p>If you create a custom companion from a photo, the image is processed <strong>entirely on your device</strong> and converted to the E-ink art format there. The photo is never uploaded to us.</p>
+
+      <h3>What we deliberately do not collect</h3>
+      <ul>
+        <li>No advertising identifiers and no ads.</li>
+        <li>No third-party analytics or tracking SDKs.</li>
+        <li>No location data, no contacts, no microphone.</li>
+      </ul>
+
+      <h2 id="google">3. How we use Google user data</h2>
+      <p>If you connect Google Calendar or Google Tasks, Kirole requests access to your calendar events and your task lists. Here is exactly what happens with that data:</p>
+      <ul>
+        <li><strong>Show your day.</strong> Events and tasks are displayed inside the Kirole app and on your paired E-ink device.</li>
+        <li><strong>Let your companion talk about your day.</strong> To generate the short lines of companion dialogue and the day summary, relevant event and task titles and times are sent to our AI text provider at the moment of generation, used solely to produce the text shown to you, and not stored by us afterwards. We do <strong>not</strong> use Google user data to develop, improve, or train generalized artificial-intelligence or machine-learning models.</li>
+        <li><strong>Keep both sides in step.</strong> When you add, complete, edit, or delete a task or event inside Kirole, we write that change back to your Google account.</li>
+      </ul>
+      <p>Your Google OAuth tokens are stored only in the iOS Keychain on your device. Your Google Calendar and Google Tasks content is <strong>not stored on our servers</strong>.</p>
+      <div class="callout">
+        <p>Kirole's use and transfer to any other app of information received from Google APIs will adhere to the <a href="https://developers.google.com/terms/api-services-user-data-policy" rel="noopener">Google API Services User Data Policy</a>, including the Limited Use requirements.</p>
+      </div>
+
+      <h2>4. Other connected services</h2>
+      <p>Apple Calendar is read locally on your device through EventKit and never passes through our servers. If you connect Notion or Taskade, we exchange the sign-in code for an access token through our server (the token itself is then kept in your device's Keychain) and read the pages or tasks you choose, under the same rules as section 3: displayed to you, optionally summarized by the AI provider at generation time, never sold, never used for advertising.</p>
+
+      <h2>5. Storage and security</h2>
+      <ul>
+        <li>All OAuth tokens and credentials live in the iOS Keychain on your device — never in plain storage, never on our servers.</li>
+        <li>All network traffic uses TLS.</li>
+        <li>Our backend (a self-hosted Supabase instance) stores only your account identifier and the companion/sync snapshot described above.</li>
+        <li>Communication between the app and the E-ink device runs over Bluetooth Low Energy between your two devices.</li>
+      </ul>
+
+      <h2>6. Sharing</h2>
+      <p>We do not sell personal data, and we do not share it with advertisers or data brokers — there is nothing of that kind in the product. Data leaves the app in exactly two cases: the AI text provider receives the minimal schedule context described in section 3 to generate companion dialogue, and our hosting infrastructure stores the account and companion snapshot. We may disclose information if required by law.</p>
+
+      <h2>7. Retention and deletion</h2>
+      <ul>
+        <li><strong>Disconnect a provider:</strong> in Kirole&rsquo;s Settings, disconnect Google (or any provider) at any time — the tokens are removed from your device immediately.</li>
+        <li><strong>Revoke from Google's side:</strong> you can also revoke Kirole's access at <a href="https://myaccount.google.com/permissions" rel="noopener">myaccount.google.com/permissions</a>.</li>
+        <li><strong>Delete local data:</strong> deleting the app removes all locally stored data, including tokens.</li>
+        <li><strong>Delete your account and server snapshot:</strong> email <a href="mailto:support@kirole.681023.xyz">support@kirole.681023.xyz</a> and we will delete it within 30 days.</li>
+      </ul>
+
+      <h2>8. Children</h2>
+      <p>Kirole is not directed to children under 13, and we do not knowingly collect personal information from them.</p>
+
+      <h2>9. Changes to this policy</h2>
+      <p>If we change this policy, we will update this page and the effective date above. Material changes will be announced inside the app.</p>
+
+      <h2>10. Contact</h2>
+      <p>Questions about privacy: <a href="mailto:support@kirole.681023.xyz">support@kirole.681023.xyz</a>.</p>
+    </div>
+  </main>
+
+  <footer class="site-foot">
+    <div class="wrap">
+      <nav aria-label="Legal">
+        <a href="/privacy.html">Privacy Policy</a>
+        <a href="/terms.html">Terms of Service</a>
+        <a href="mailto:support@kirole.681023.xyz">support@kirole.681023.xyz</a>
+      </nav>
+      <p class="legal">© 2026 Kirole. All rights reserved.</p>
+    </div>
+  </footer>
+</body>
+</html>
