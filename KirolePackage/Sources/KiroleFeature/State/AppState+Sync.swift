@@ -119,11 +119,23 @@ extension AppState {
             )
 
         } catch {
-            let appError = AppError.sync(component: "Google", underlying: error.localizedDescription)
-            ErrorReporter.log(appError, context: "AppState.syncGoogleData")
-            lastError = UserFacingErrorMapper.message(for: appError)
-            remoteSyncErrors["Google"] = lastError
-            lastGoogleSyncDebug = "Error: \(error.localizedDescription)"
+            let underlying = error.localizedDescription
+            ErrorReporter.log(
+                AppError.sync(component: "Google", underlying: underlying),
+                context: "AppState.syncGoogleData"
+            )
+            remoteSyncWarnings.removeValue(forKey: "Google")
+            if Self.isOfflineErrorDescription(underlying) {
+                // 离线不是错误态（Google offline-sync 指南）：中性提示，联网后自动重试；
+                // 不点红点、不进红色 remoteSyncErrors。
+                lastError = nil
+                remoteSyncErrors.removeValue(forKey: "Google")
+                remoteSyncWarnings["Google"] = "Offline — will sync when reconnected"
+            } else {
+                lastError = "Google sync failed — check your Google account connection"
+                remoteSyncErrors["Google"] = lastError
+            }
+            lastGoogleSyncDebug = "Error: \(underlying)"
         }
 
         await applyPostSyncHooks()
@@ -148,6 +160,7 @@ extension AppState {
             events = otherEvents + appleEvents
             try await localStorage.saveEvents(events)
             remoteSyncErrors.removeValue(forKey: "Apple Calendar")
+            markIntegrationSynced("Apple Calendar")
         } catch {
             let appError = AppError.sync(component: "Apple Calendar", underlying: error.localizedDescription)
             lastError = UserFacingErrorMapper.message(for: appError)
@@ -168,6 +181,7 @@ extension AppState {
             mergeRemoteTasks(from: .apple, with: syncedTasks)
             try await localStorage.saveTasks(tasks)
             remoteSyncErrors.removeValue(forKey: "Apple Reminders")
+            markIntegrationSynced("Apple Reminders")
         } catch {
             let appError = AppError.sync(component: "Apple Reminders", underlying: error.localizedDescription)
             lastError = UserFacingErrorMapper.message(for: appError)
@@ -212,6 +226,30 @@ extension AppState {
         }
     }
 
+    /// 离线类错误的字符串启发式。GoogleSyncEngineError 只携带 warning 字符串（不带原始
+    /// Error 类型），联调期按文案特征区分「离线」与「真错误」已足够；若需精确分类，
+    /// 应让引擎透传原始错误类型而不是在这里加关键词。
+    nonisolated static func isOfflineErrorDescription(_ text: String) -> Bool {
+        let lowered = text.lowercased()
+        return lowered.contains("offline")
+            || lowered.contains("internet connection")
+            || lowered.contains("network connection was lost")
+    }
+
+    /// 记录集成最近一次成功应用数据的时间（卡片 "Synced X ago" 的数据源）并异步落盘。
+    func markIntegrationSynced(_ providerKey: String, at date: Date = Date()) {
+        integrationLastSyncedAt[providerKey] = date
+        let snapshot = integrationLastSyncedAt
+        Task { @MainActor in
+            do {
+                try await localStorage.saveIntegrationSyncTimes(snapshot)
+            } catch {
+                reportPersistenceError(error, operation: "save", target: "integration_sync_times.json")
+                ErrorReporter.log(error, context: "AppState.markIntegrationSynced")
+            }
+        }
+    }
+
     func applyGoogleSyncOutcome(
         eventsCount: Int,
         tasksCount: Int,
@@ -221,16 +259,24 @@ extension AppState {
         if warnings.isEmpty {
             lastError = nil
             remoteSyncErrors.removeValue(forKey: "Google")
+            remoteSyncWarnings.removeValue(forKey: "Google")
+            markIntegrationSynced("Google")
             lastGoogleSyncDebug = "Success: events=\(eventsCount), tasks=\(tasksCount), duration=\(durationMs)ms"
             return
         }
 
+        // 部分失败：数据已应用（失败的那一步保留上轮数据），属降级不属阻塞——
+        // 走黄色 remoteSyncWarnings，不进红色、不点亮齿轮红点（红色只留整轮失败）。
         let warningText = warnings.joined(separator: " | ")
-        let appError = AppError.sync(component: "Google", underlying: warningText)
-        lastError = UserFacingErrorMapper.message(for: appError)
-        remoteSyncErrors["Google"] = lastError
+        lastError = nil
+        remoteSyncErrors.removeValue(forKey: "Google")
+        remoteSyncWarnings["Google"] = "Synced with warnings — \(warningText)"
+        markIntegrationSynced("Google")
         lastGoogleSyncDebug = "Partial: events=\(eventsCount), tasks=\(tasksCount), warnings=\(warningText), duration=\(durationMs)ms"
-        ErrorReporter.log(appError, context: "AppState.applyGoogleSyncOutcome")
+        ErrorReporter.log(
+            AppError.sync(component: "Google", underlying: warningText),
+            context: "AppState.applyGoogleSyncOutcome"
+        )
     }
 
     // MARK: - Notion Sync
@@ -256,6 +302,7 @@ extension AppState {
             mergeRemoteTasks(from: .notion, with: syncedTasks)
             try await localStorage.saveTasks(tasks)
             remoteSyncErrors.removeValue(forKey: "Notion")
+            markIntegrationSynced("Notion")
         } catch {
             let appError = AppError.sync(component: "Notion", underlying: error.localizedDescription)
             lastError = UserFacingErrorMapper.message(for: appError)
@@ -287,6 +334,7 @@ extension AppState {
             mergeRemoteTasks(from: .taskade, with: syncedTasks)
             try await localStorage.saveTasks(tasks)
             remoteSyncErrors.removeValue(forKey: "Taskade")
+            markIntegrationSynced("Taskade")
         } catch {
             let appError = AppError.sync(component: "Taskade", underlying: error.localizedDescription)
             lastError = UserFacingErrorMapper.message(for: appError)

@@ -85,6 +85,12 @@ extension AppState {
             reportPersistenceError(error, operation: "load", target: "custom_companions.json")
         }
 
+        do {
+            integrationLastSyncedAt = try await localStorage.loadIntegrationSyncTimes()
+        } catch {
+            reportPersistenceError(error, operation: "load", target: "integration_sync_times.json")
+        }
+
         isCustomAvatarPendingBLEPush = await localStorage.loadPendingCustomCompanionPush() != nil
 
         // focusEnforcementMode is loaded by FocusSessionService.loadFocusEnforcementMode() on its init.

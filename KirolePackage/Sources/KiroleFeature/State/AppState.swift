@@ -92,6 +92,10 @@ public final class AppState {
     /// Remote sync error per provider ("Google", "Notion", "Taskade", "Apple Calendar", "Apple Reminders").
     /// Set on failure, cleared on next successful sync for that provider.
     public var remoteSyncErrors: [String: String] = [:]
+    /// 部分失败/降级提示（黄色）。红色阻塞错误在 remoteSyncErrors；本字典不点亮齿轮红点。
+    public var remoteSyncWarnings: [String: String] = [:]
+    /// 各集成最近一次成功应用数据的时间，key 与 remoteSyncErrors 的 provider 显示名一致。
+    public var integrationLastSyncedAt: [String: Date] = [:]
     /// True when the active custom companion's pixel frame failed to reach the hardware
     /// and is queued for re-delivery on the next BLE reconnect.
     public var isCustomAvatarPendingBLEPush: Bool = false

@@ -114,7 +114,10 @@ public struct SettingsIntegrationSection: View {
         VStack(spacing: 8) {
             ForEach(connectedIntegrations) { integration in
                 VStack(alignment: .leading, spacing: 4) {
-                    ConnectedAppRow(integration: integration) {
+                    ConnectedAppRow(
+                        integration: integration,
+                        lastSyncedAt: lastSyncedDate(for: integration.type)
+                    ) {
                         disconnectTarget = integration.type
                     }
                     .disabled(isDisconnecting)
@@ -132,6 +135,20 @@ public struct SettingsIntegrationSection: View {
                         .padding(.horizontal, 4)
                         .accessibilityLabel("\(integration.type.rawValue) sync error: \(errorMessage)")
                         .accessibilityIdentifier("settings.syncError.\(integration.type.rawValue)")
+                    } else if let warningMessage = syncWarningMessage(for: integration.type) {
+                        // 黄色=部分失败/离线等降级态：知道即可，无需行动；红色只留整轮失败。
+                        HStack(alignment: .top, spacing: 6) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.orange)
+                            Text(warningMessage)
+                                .font(.system(size: 11))
+                                .foregroundStyle(.orange)
+                                .lineLimit(3)
+                        }
+                        .padding(.horizontal, 4)
+                        .accessibilityLabel("\(integration.type.rawValue) sync warning: \(warningMessage)")
+                        .accessibilityIdentifier("settings.syncWarning.\(integration.type.rawValue)")
                     }
                 }
             }
@@ -179,6 +196,14 @@ public struct SettingsIntegrationSection: View {
 
     private func syncErrorMessage(for type: IntegrationType) -> String? {
         appState.remoteSyncErrors[syncErrorKey(for: type)]
+    }
+
+    private func syncWarningMessage(for type: IntegrationType) -> String? {
+        appState.remoteSyncWarnings[syncErrorKey(for: type)]
+    }
+
+    private func lastSyncedDate(for type: IntegrationType) -> Date? {
+        appState.integrationLastSyncedAt[syncErrorKey(for: type)]
     }
 
     private var connectNewAppSection: some View {
@@ -419,6 +444,7 @@ private struct IntegrationAppRow: View {
 
 private struct ConnectedAppRow: View {
     let integration: Integration
+    let lastSyncedAt: Date?
     let onDisconnect: () -> Void
 
     @Environment(ThemeManager.self) private var theme
@@ -453,9 +479,7 @@ private struct ConnectedAppRow: View {
                     .font(.system(size: 11))
                     .foregroundStyle(theme.colors.secondaryText)
 
-                // Per-integration sync timestamps aren't tracked yet; show
-                // a placeholder until Integration gains a lastSyncedAt field.
-                Text("last updated —")
+                Text(lastSyncedText)
                     .font(.system(size: 11))
                     .foregroundStyle(theme.colors.secondaryText)
             }
@@ -467,6 +491,19 @@ private struct ConnectedAppRow: View {
             RoundedRectangle(cornerRadius: 16)
                 .stroke(Color(hex: "E5E7EB"), lineWidth: 1)
         )
+    }
+
+    // 产品全英文：固定 en_US，避免中文地区设备输出中文相对时间。
+    private static let syncedFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.locale = Locale(identifier: "en_US")
+        formatter.unitsStyle = .abbreviated
+        return formatter
+    }()
+
+    private var lastSyncedText: String {
+        guard let lastSyncedAt else { return "Not synced yet" }
+        return "Synced \(Self.syncedFormatter.localizedString(for: lastSyncedAt, relativeTo: Date()))"
     }
 
     private var usernameDisplay: String {

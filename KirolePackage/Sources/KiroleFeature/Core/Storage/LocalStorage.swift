@@ -47,6 +47,7 @@ public actor LocalStorage {
         static let integrationConnections = "integration_connections.json"
         static let sharedCompanionDialogue = "shared_companion_dialogue.json"
         static let customCompanions = "custom_companions.json"
+        static let integrationSyncTimes = "integration_sync_times.json"
         /// Prefix for per-companion pixel/preview blobs.
         /// Actual filenames are built from CustomCompanion.avatarPixelsFileName / avatarPreviewFileName.
         static let customCompanionAssetPrefix = "custom_companion_"
@@ -61,6 +62,7 @@ public actor LocalStorage {
             integrationConnections,
             sharedCompanionDialogue,
             customCompanions,
+            integrationSyncTimes,
         ]
 
         /// Filenames the app no longer writes but that may still exist on disk from
@@ -268,6 +270,16 @@ public actor LocalStorage {
 
     public func loadIntegrationConnections() throws -> [String: Bool]? {
         try load([String: Bool].self, from: Files.integrationConnections)
+    }
+
+    // MARK: - Integration Sync Times
+
+    public func saveIntegrationSyncTimes(_ times: [String: Date]) throws {
+        try save(times, to: Files.integrationSyncTimes)
+    }
+
+    public func loadIntegrationSyncTimes() throws -> [String: Date] {
+        try load([String: Date].self, from: Files.integrationSyncTimes) ?? [:]
     }
 
     // MARK: - User Profile
