@@ -420,10 +420,12 @@ public final class CompanionTextService {
         } catch {
             #if DEBUG
             print("[CompanionText] AI generation failed for \(type.rawValue): \(error.localizedDescription)")
-            return "[Error] \(error.localizedDescription)"
-            #else
-            return nil
             #endif
+            // DEBUG 也返回 nil 走 FallbackText。旧的 `return "[Error] ..."` 会被
+            // generateCompanionPhrase / generateTaskEncouragement 当正常文案，经
+            // DayPack 气泡兜底和 TaskInPage 鼓励字段直上硬件屏——硬件不是调试面。
+            // 调试可见性由上面的 print 和 PromptDebugger（走 previewSharedPetDialogue）承担。
+            return nil
         }
     }
 
