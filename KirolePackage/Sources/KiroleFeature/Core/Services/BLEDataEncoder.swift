@@ -1,5 +1,17 @@
 import Foundation
 
+// MARK: - Text Byte Budgets
+
+/// DayPack/TaskInPage 文本字段的字节预算唯一真源。App 侧生成（CompanionTextService
+/// enforceByteBudget / DayPackGenerator）与线上编码（下方 appendString maxLength）必须
+/// 同值——两边手写数字曾各写一份，漂移即被 validUTF8Prefix 静默截断。改值需同步
+/// docs/BLE通信协议规格文档.md 对应字段（petDialogue §4.7 bubble / daySummary §4.7 / TaskInPage 描述）。
+public enum DayPackTextBudget {
+    public static let petDialogue = 120
+    public static let daySummary = 180
+    public static let taskDescription = 100
+}
+
 // MARK: - BLE Data Encoder
 
 /// BLE 数据编码器，负责将应用数据编码为 E-ink 设备可识别的二进制格式
@@ -110,7 +122,7 @@ public enum BLEDataEncoder {
         data.append(dayPack.focusChallengeEnabled ? 0x01 : 0x00)
 
         // Pet dialogue bubble (v2.5.0: single line, = App currentPetDialogue)
-        data.appendString(dayPack.petDialogue, maxLength: 120)
+        data.appendString(dayPack.petDialogue, maxLength: DayPackTextBudget.petDialogue)
 
         // Events[] (time / title / description)
         let maxEvents = 8
@@ -147,7 +159,7 @@ public enum BLEDataEncoder {
         // fields to reach end-of-payload — the in-repo simulation decoder (parseDayPack) does. There
         // is no prior live DayPack parser to stay compatible with (firmware DayPack parsing isn't
         // shipped yet); tail placement just keeps the fixed SettlementData offsets stable.
-        data.appendString(dayPack.daySummary, maxLength: 180)
+        data.appendString(dayPack.daySummary, maxLength: DayPackTextBudget.daySummary)
 
         // v2.5.8: FirstUp (box③ "First up:" label) — currently the final DayPack field, appended
         // after DaySummary. Same strict-reader contract: a reader must read it to reach end.
@@ -163,7 +175,7 @@ public enum BLEDataEncoder {
         var data = Data()
         data.appendString(taskInPage.taskId, maxLength: 36)
         data.appendString(taskInPage.taskTitle, maxLength: 40)
-        data.appendString(taskInPage.taskDescription ?? "", maxLength: 100)
+        data.appendString(taskInPage.taskDescription ?? "", maxLength: DayPackTextBudget.taskDescription)
         data.appendString(taskInPage.encouragement, maxLength: 50)
         data.append(taskInPage.focusChallengeActive ? 0x01 : 0x00)
         return data

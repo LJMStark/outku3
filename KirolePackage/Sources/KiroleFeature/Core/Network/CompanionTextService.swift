@@ -59,7 +59,7 @@ public final class CompanionTextService {
         }
         do {
             let raw = try await openAI.generateDaySummaryText(eventDigest: Array(digest))
-            let text = CompanionTextService.enforceByteBudget(raw, maxBytes: 180)
+            let text = CompanionTextService.enforceByteBudget(raw, maxBytes: DayPackTextBudget.daySummary)
             if !text.isEmpty, !text.hasPrefix("[Error]") { return text }
         } catch {
             ErrorReporter.log(
@@ -130,7 +130,7 @@ public final class CompanionTextService {
         guard await openAI.isConfigured else { return nil }
         do {
             let raw = try await openAI.summarizeTaskNote(notes)
-            let result = CompanionTextService.enforceByteBudget(raw, maxBytes: 100)
+            let result = CompanionTextService.enforceByteBudget(raw, maxBytes: DayPackTextBudget.taskDescription)
             // Accept either a summary or a verbatim passthrough (the "unsure → original" case);
             // only reject empty / error output.
             guard !result.isEmpty, !result.hasPrefix("[Error]") else { return nil }
@@ -216,7 +216,7 @@ public final class CompanionTextService {
             do {
                 let aiText = try await openAI.generateCompanionText(type: type, context: attemptContext)
                 let normalized = CompanionDialogueDisplayPolicy.normalized(aiText)
-                let budgeted = CompanionTextService.enforceByteBudget(normalized, maxBytes: 120)
+                let budgeted = CompanionTextService.enforceByteBudget(normalized, maxBytes: DayPackTextBudget.petDialogue)
 
                 if CompanionDialogueDisplayPolicy.isValidForDisplay(budgeted) {
                     if mode.shouldPersistInteractions {
@@ -333,7 +333,7 @@ public final class CompanionTextService {
         activeTaskTitle: String? = nil,
         focusTimeToday: Int = 0,
         energyBottles: Int = 0,
-        maxBytes: Int = 120
+        maxBytes: Int = DayPackTextBudget.petDialogue
     ) async -> String? {
         guard await openAI.isConfigured else { return nil }
 
@@ -399,7 +399,7 @@ public final class CompanionTextService {
         type: AITextType,
         baseContext: AIContext,
         mode: CompanionTextGenerationMode = .live,
-        maxBytes: Int = 120
+        maxBytes: Int = DayPackTextBudget.petDialogue
     ) async -> String? {
         guard await openAI.isConfigured else { return nil }
         let context = await enrichedContext(for: type, baseContext: baseContext)

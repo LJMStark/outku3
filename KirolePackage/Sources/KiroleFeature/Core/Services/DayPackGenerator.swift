@@ -135,7 +135,7 @@ public final class DayPackGenerator {
 
     /// Wire budget for TaskInPage.TaskDescription (protocol §4.8). The verbatim note is truncated
     /// to this when AI is unavailable.
-    static let taskDescriptionByteBudget = 100
+    static let taskDescriptionByteBudget = DayPackTextBudget.taskDescription
 
     /// 结算完成数统计。客户 docx「页面四」：日程无法打卡，但只要客户未取消即视为完成一项任务，
     /// 计入完成数与积分。
