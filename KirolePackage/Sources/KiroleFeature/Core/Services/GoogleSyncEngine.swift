@@ -286,9 +286,15 @@ public actor GoogleSyncEngine {
     private func flushOutbox() async {
         guard !outbox.isEmpty else { return }
 
+        // Drain 模式：先取走本批次并清空 outbox。网络 await 期间 actor 可重入
+        // （enqueueChange 会 append 新变更），结尾不能整体覆盖 outbox——旧实现
+        // `outbox = remaining` 会把 flush 期间新入队的变更静默吞掉且永不重试。
+        let batch = outbox
+        outbox = []
+
         var remaining: [OutboxEntry] = []
 
-        for var entry in outbox {
+        for var entry in batch {
             if entry.retryCount > Self.maxRetryCount {
                 // 没有任何机制会重置 retryCount——超限条目留在 outbox 只会让 outbox.json
                 // 无限膨胀。丢弃并留痕（此分支只清理历史遗留的已超限存量）。
@@ -347,7 +353,8 @@ public actor GoogleSyncEngine {
             }
         }
 
-        outbox = remaining
+        // 失败重试项放回队首（时间序在前），flush 期间新入队的变更跟在后面。
+        outbox = remaining + outbox
         await persistOutbox(context: "GoogleSyncEngine.flushOutbox")
     }
 
