@@ -89,7 +89,12 @@ public struct SignUpPage: View {
                                 Task { @MainActor in
                                     do {
                                         try await authManager.signInWithGoogle()
+                                    } catch GoogleSignInError.canceled {
+                                        // 用户主动关掉登录窗，和 Apple 分支同策略：不算错误
                                     } catch {
+                                        // 必须写 signInError（下方红字）——只记日志用户毫无感知，
+                                        // 会以为已连上 Google 而同步永远不来
+                                        signInError = error.localizedDescription
                                         ErrorReporter.log(
                                             .sync(component: "GoogleSignIn", underlying: error.localizedDescription),
                                             context: "SignUpPage.signInWithGoogle"

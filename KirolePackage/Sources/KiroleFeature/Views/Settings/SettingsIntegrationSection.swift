@@ -252,7 +252,13 @@ public struct SettingsIntegrationSection: View {
             default:
                 showComingSoon = true
             }
+        } catch GoogleSignInError.canceled {
+            // 用户主动关掉 Google 登录窗：不算错误
         } catch {
+            // 唯一会抛错的分支是 Google 连接。错误必须进 remoteSyncErrors 才对用户可见
+            // （齿轮红点 + Settings 行内）；只留 DEBUG print 等于静默失败，用户会以为已连上。
+            appState.lastError = error.localizedDescription
+            appState.remoteSyncErrors["Google"] = error.localizedDescription
             #if DEBUG
             print("Failed to connect \(type.rawValue): \(error)")
             #endif
