@@ -436,35 +436,28 @@ private struct ConnectedAppRow: View {
 
                 Spacer()
 
-                SettingsToggleSwitch(isOn: integration.isConnected)
+                // 断开入口就是开关本身：列表只含已连接项（开关恒为开），点击=请求
+                // 断开并弹确认框。旧的 "Manage" 文字按钮已按产品决定移除（2026-07-02）。
+                Button {
+                    onDisconnect()
+                } label: {
+                    SettingsToggleSwitch(isOn: integration.isConnected)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Disconnect \(integration.name)")
+                .accessibilityIdentifier("Integration_Toggle_\(integration.name)")
             }
 
-            HStack(alignment: .bottom) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(usernameDisplay)
-                        .font(.system(size: 11))
-                        .foregroundStyle(theme.colors.secondaryText)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(usernameDisplay)
+                    .font(.system(size: 11))
+                    .foregroundStyle(theme.colors.secondaryText)
 
-                    // Per-integration sync timestamps aren't tracked yet; show
-                    // a placeholder until Integration gains a lastSyncedAt field.
-                    Text("last updated —")
-                        .font(.system(size: 11))
-                        .foregroundStyle(theme.colors.secondaryText)
-                }
-
-                Spacer()
-
-                Button("Manage") {
-                    onDisconnect()
-                }
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(theme.colors.primaryText)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(Color(hex: "F3F4F6"))
-                .clipShape(Capsule())
-                .accessibilityLabel("Manage \(integration.name) connection")
-                .accessibilityIdentifier("Integration_Manage_\(integration.name)")
+                // Per-integration sync timestamps aren't tracked yet; show
+                // a placeholder until Integration gains a lastSyncedAt field.
+                Text("last updated —")
+                    .font(.system(size: 11))
+                    .foregroundStyle(theme.colors.secondaryText)
             }
         }
         .padding(16)
