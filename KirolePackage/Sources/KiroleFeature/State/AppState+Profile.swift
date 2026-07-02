@@ -25,19 +25,20 @@ extension AppState {
         Task { @MainActor in
             // Order matters: create + select the custom companion FIRST, then persist
             // both profiles, and only then set the "isOnboardingCompleted" gate flag
-            // that ContentView's @AppStorage reads. If the process dies or a save throws
-            // anywhere along the way, the flag stays false and the user redoes
-            // onboarding on next launch (anything already persisted survives on disk).
-            // The old order set the gate flag synchronously up front, so a death or
-            // save failure before the writes stranded the user in the main app with a
-            // default profile and no way back into onboarding.
-            if completedProfile.hasCustomCompanionDraft {
-                await createCustomCompanionFromOnboarding(completedProfile)
-                // addCustomCompanion → selectCustomCompanion → updateUserProfile already
-                // saved user_profile.json with customCompanionId set.
-            }
-
+            // that ContentView's @AppStorage reads. All three steps live in ONE do
+            // block: if the process dies or ANY step throws (including custom
+            // companion creation), the flag stays false and the user redoes
+            // onboarding on next launch (anything already persisted survives on
+            // disk; a retry may recreate the companion — orphan is deletable in
+            // Settings). The old order set the gate flag synchronously up front,
+            // stranding failed users in the main app with a default profile and
+            // no way back into onboarding.
             do {
+                if completedProfile.hasCustomCompanionDraft {
+                    try await createCustomCompanionFromOnboarding(completedProfile)
+                    // addCustomCompanion → selectCustomCompanion → updateUserProfile already
+                    // saved user_profile.json with customCompanionId set.
+                }
                 try await localStorage.saveOnboardingProfile(completedProfile)
                 // Use current userProfile (not the captured mappedProfile) so any
                 // customCompanionId / intimacyStage updates from selectCustomCompanion
@@ -46,13 +47,13 @@ extension AppState {
                 // Gate flag LAST — only a fully persisted onboarding may flip the UI gate.
                 UserDefaults.standard.set(true, forKey: "isOnboardingCompleted")
             } catch {
-                reportPersistenceError(error, operation: "save", target: "onboarding_profile.json")
+                reportPersistenceError(error, operation: "save", target: "onboarding_completion")
                 ErrorReporter.log(error, context: "AppState.completeOnboarding")
             }
         }
     }
 
-    private func createCustomCompanionFromOnboarding(_ profile: OnboardingProfile) async {
+    private func createCustomCompanionFromOnboarding(_ profile: OnboardingProfile) async throws {
         guard let rawName = profile.customCompanionName,
               let preview = profile.customAvatarPreviewData,
               let pixels = profile.customAvatarPixelData else {
@@ -65,19 +66,17 @@ extension AppState {
         let voice = profile.customCompanionVoice ?? .companion
         let customPrompt = voice == .customPrompt ? profile.customCompanionPrompt ?? "" : ""
 
-        do {
-            _ = try await addCustomCompanion(
-                name: trimmedName,
-                relationship: relationship,
-                personaVoice: voice,
-                customPrompt: customPrompt,
-                previewData: preview,
-                pixelData: pixels
-            )
-        } catch {
-            reportPersistenceError(error, operation: "create", target: "custom_companion_from_onboarding")
-            ErrorReporter.log(error, context: "AppState.createCustomCompanionFromOnboarding")
-        }
+        // 失败向上抛给 completeOnboarding 的 do 块——在这里吞掉会导致完成勾照打、
+        // 用户带着默认 IP 进主界面且再也回不到上传流程（addCustomCompanion 的
+        // 设计就是抛错让用户重试）。
+        _ = try await addCustomCompanion(
+            name: trimmedName,
+            relationship: relationship,
+            personaVoice: voice,
+            customPrompt: customPrompt,
+            previewData: preview,
+            pixelData: pixels
+        )
     }
 
     /// UserProfile is the authoritative source for onboarding completion
