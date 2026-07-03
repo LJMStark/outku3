@@ -41,6 +41,9 @@ public actor OpenAIService {
 
     private let networkClient = NetworkClient.shared
     private static let logger = Logger(subsystem: "com.kirole.app", category: "ai")
+    /// Extra max_tokens granted on top of the caller's content budget to absorb the low-effort
+    /// reasoning trace of gpt-oss-style models (measured ~100-220 tokens). See sendChat.
+    private static let reasoningTokenHeadroom = 220
     /// AI API base URL (**primary**). Configurable via `OPENAI_BASE_URL` (Secrets.xcconfig →
     /// `AppSecrets.openAIBaseURL`) to point at an OpenAI-compatible gateway (e.g. opencodeapi);
     /// falls back to OpenRouter when unset.
@@ -276,8 +279,13 @@ public actor OpenAIService {
                 ChatMessage(role: "user", content: userPrompt)
             ],
             temperature: temperature,
-            maxTokens: maxTokens,
-            reasoning: ReasoningOptions(effort: "low", exclude: true)
+            // Callers pass the CONTENT budget; reasoning models spend the hidden trace from the
+            // same max_tokens pool, so add headroom or low-effort traces still starve the content
+            // (10-line acceptance run: 4/10 empty at +0, 10/10 ok at +220). Length is ultimately
+            // governed by the persona word limits + downstream byte budgets, not max_tokens.
+            maxTokens: maxTokens + Self.reasoningTokenHeadroom,
+            reasoning: ReasoningOptions(effort: "low", exclude: true),
+            provider: ProviderRouting(requireParameters: true)
         )
 
         guard let url = URL(string: "\(baseURL)/chat/completions") else {
@@ -742,9 +750,13 @@ private struct ChatCompletionRequest: Codable {
     /// pin low effort and exclude the trace so short companion lines survive. Non-reasoning
     /// models ignore this field. Verified live 2026-07-03: without it, content came back null.
     let reasoning: ReasoningOptions
+    /// OpenRouter provider routing. `require_parameters` keeps requests off pools that silently
+    /// ignore request params — some pools dropped `reasoning.effort` and returned empty content
+    /// 4/10 times in the acceptance run; with this pinned it went 10/10.
+    let provider: ProviderRouting
 
     enum CodingKeys: String, CodingKey {
-        case model, messages, temperature, reasoning
+        case model, messages, temperature, reasoning, provider
         case maxTokens = "max_tokens"
     }
 }
@@ -752,6 +764,13 @@ private struct ChatCompletionRequest: Codable {
 private struct ReasoningOptions: Codable {
     let effort: String
     let exclude: Bool
+}
+
+private struct ProviderRouting: Codable {
+    let requireParameters: Bool
+    enum CodingKeys: String, CodingKey {
+        case requireParameters = "require_parameters"
+    }
 }
 
 private struct ChatMessage: Codable {
