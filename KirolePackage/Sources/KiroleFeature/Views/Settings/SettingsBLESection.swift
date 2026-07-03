@@ -10,6 +10,7 @@ public struct SettingsBLESection: View {
     @State private var blockedDeviceCount: Int = 0
     @State private var showClearIdentityConfirmation = false
     @State private var keepAliveEnabled = false
+    @State private var screenSize: ScreenSize = .fourInch
 
     public init() {}
 
@@ -27,6 +28,7 @@ public struct SettingsBLESection: View {
             syncStatusCard
             trustedDevicesCard
             currentSceneCard
+            screenSizeCard
 
             // 固件联调开关：DEBUG 包恒显示；Release 包仅 TestFlight 显示；正式上架包隐藏。
             if AppBuildEnvironment.showsHardwareDebugTools {
@@ -40,6 +42,7 @@ public struct SettingsBLESection: View {
         .task {
             energyBottles = await LocalStorage.shared.loadEnergyBottles()
             keepAliveEnabled = bleService.keepAliveDebugMode
+            screenSize = bleService.hardwareScreenSize
             await refreshIdentityCounts()
         }
         .alert("Clear Trusted Devices?", isPresented: $showClearIdentityConfirmation) {
@@ -195,6 +198,46 @@ public struct SettingsBLESection: View {
         .background(Color.white)
         .clipShape(RoundedRectangle(cornerRadius: 24))
         .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
+    }
+
+    @MainActor
+    private var screenSizeCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: "rectangle.ratio.3.to.4")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Color.orange)
+
+                Text("E-ink Screen Size")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(theme.colors.primaryText)
+
+                Spacer()
+            }
+
+            Picker("E-ink screen size", selection: $screenSize) {
+                Text(ScreenSize.fourInch.displayName).tag(ScreenSize.fourInch)
+                Text(ScreenSize.sevenInch.displayName).tag(ScreenSize.sevenInch)
+            }
+            .pickerStyle(.segmented)
+            .accessibilityLabel("E-ink screen size")
+            .accessibilityIdentifier("Settings_BLEScreenSizePicker")
+
+            Text("Match your Kirole device. The 7.3\" panel shows up to 5 top tasks; the 4\" panel shows 3.")
+                .font(.system(size: 12))
+                .foregroundStyle(theme.colors.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(16)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 24))
+        .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
+        .onChange(of: screenSize) { _, newValue in
+            guard newValue != bleService.hardwareScreenSize else { return }
+            bleService.hardwareScreenSize = newValue
+            // 上限变化改变 DayPack 内容（TopTasks 条数），立即推一轮让硬件对齐。
+            Task { await BLESyncCoordinator.shared.performSync(force: true) }
+        }
     }
 
     @MainActor

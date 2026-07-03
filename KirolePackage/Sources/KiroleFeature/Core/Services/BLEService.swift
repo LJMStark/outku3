@@ -141,6 +141,7 @@ public final class BLEService: NSObject {
         static let lastConnectedDeviceID = "lastConnectedBLEDeviceID"
         static let autoReconnect = "bleAutoReconnect"
         static let keepAliveDebugMode = "bleKeepAliveDebugMode"
+        static let hardwareScreenSize = "bleHardwareScreenSize"
     }
 
     // MARK: - Timing
@@ -159,6 +160,19 @@ public final class BLEService: NSObject {
     public var autoReconnect: Bool {
         get { UserDefaults.standard.bool(forKey: Keys.autoReconnect) }
         set { UserDefaults.standard.set(newValue, forKey: Keys.autoReconnect) }
+    }
+
+    /// 对端 E-ink 屏型。决定 DayPack `TopTasks[]` 上限（协议 §4.7：4寸≤3 / 7.3寸≤5）——
+    /// 生成与编码两处都要用同一值，否则 7.3寸设备只收得到 4寸档的 3 条任务（2026-07-03 联调）。
+    /// 设备暂无自报通道，由 Settings 手动选择；默认 4 寸取保守小值（4寸收 5 条会布局溢出，
+    /// 7.3寸收 3 条只是没填满）。不进 LocalStorage resettable 清单：设备属性，清数据不应抹掉。
+    public var hardwareScreenSize: ScreenSize {
+        get {
+            guard let raw = UserDefaults.standard.string(forKey: Keys.hardwareScreenSize),
+                  let size = ScreenSize(rawValue: raw) else { return .fourInch }
+            return size
+        }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: Keys.hardwareScreenSize) }
     }
 
     /// 固件联调专用：开启后 App **不**在同步收尾 / 超时看门狗 / 后台到期时主动断连，
@@ -564,7 +578,7 @@ public final class BLEService: NSObject {
 
     /// 发送 Day Pack 到 E-ink 设备
     public func sendDayPack(_ dayPack: DayPack) async throws {
-        let data = BLEDataEncoder.encodeDayPack(dayPack)
+        let data = BLEDataEncoder.encodeDayPack(dayPack, screenSize: hardwareScreenSize)
         try await writeData(type: .dayPack, data: data)
     }
 
