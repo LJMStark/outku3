@@ -1,8 +1,8 @@
 # Kirole BLE 通信协议规格文档
 
-**版本:** v2.5.15
-**更新日期:** 2026-07-02
-**状态:** DayPack 显示模型重写（1 气泡 + 数据面板）。**破坏性变更：固件需按新 §4.7 / §6 重写 DayPack 解析（与 §8.7 修复一并做）。** FocusStatus(`0x14`) 新增 `SegmentMinutes` 字段（追加在 TaskTitle 后，前向兼容）；`ElapsedTime` 保持「本会话累计分钟」语义不变（v2.5.5）。`Mood`/`PetMoodByte` 明确为**前向兼容通道**：App 持续下发真实心情值，固件当前阶段可忽略、不据此展示或换图（v2.5.6，§4.2 / §4.10）。DayPack 末尾追加 `DaySummary`（框②「一天总结」：情绪向·只谈日程·≤180B），作为面板文本字段复活、与单句 `PetDialogue` 互补，不回退单气泡决策（v2.5.7，§4.7 / §6.5）。DayPack 再追加 `FirstUp`（框③「下一项」：下一个未来事件「HH:mm 标题」/ 无则置顶任务 / ≤60B，App 算好下发，现为 DayPack 最后一个字段）（v2.5.8，§4.7）。Weather(`0x04`) 在 Condition 后追加 `HighTemp`/`LowTemp`（顶栏高/低温，各 1B 有符号 int8）（v2.5.9，§4.5）。屏保金句/明信片（`Screensaver`）从旧 `0xAA 01 02` 开发命令升级为 `0x16` 业务帧（经 SecureEnvelope，**secure 模式可发**；旧开发命令在配置 `BLE_SHARED_SECRET` 后被禁用、屏保静默发不出去）（v2.5.10，§4.15）。场景解锁（`SceneUnlock`）同样从旧 `0xAA 01 01` 开发命令升级为 `0x17` 业务帧（secure 可发）；至此两条 `0xAA` 开发显示命令全部退役（v2.5.11，§4.16 / §4.14）。§4.15 澄清屏保帧传输：Quote/Author 较长或 secure 封装后整体可能超过协商 MTU 而**分包**（按 §3.2 通用分包重组），并非恒为单包；固件须按分包处理（v2.5.12）。新增 §6.6 字体与排版：两套字库（Lugrasimo=宠物气泡 / Calibri=其余所有文本）按**字段语义角色**渲染、字体不走 wire、App 不传字体字节、固件按字段映射 + 字形回退（v2.5.13，纯文档）。§3.5 补记 App 出站文本 **ASCII 净化保证**：所有字符串字段在编码边界被净化为仅含可打印 ASCII（`0x20`–`0x7E`），非 ASCII（LLM 弯引号/破折号/省略号、用户/日历带入的 emoji/重音/CJK 等）转写为 ASCII 近似或丢弃——固件收到的文本字段恒为 ASCII，§6.6 的 Lugrasimo 缺字回退随之从常态降级为兜底（v2.5.14，§3.5/§6.6）。同记 `RequestRefresh(0x20)` 联调期**去抖合并**：固件把 0x20 当 ~2s 心跳，App 用 60s 合并窗把整轮 sync 去抖为 ≤1 次/分（v2.5.14，§8.5）。两者均为 App 侧行为，wire 格式不变。面板态判定拍板：**不新增 `PanelMode` 字节**，态 A/B/C 由固件本地状态机判定（本地 RTC + 已收数据 + 按键），App 只负责内容与校时——与 Pebble Timeline / BLE CTS / InfiniTime 同类分工一致；新增 §6.7 判定规则，§6.5 开放问题关闭（v2.5.15，纯文档、wire 不变）。
+**版本:** v2.5.16
+**更新日期:** 2026-07-03
+**状态:** DayPack 显示模型重写（1 气泡 + 数据面板）。**破坏性变更：固件需按新 §4.7 / §6 重写 DayPack 解析（与 §8.7 修复一并做）。** FocusStatus(`0x14`) 新增 `SegmentMinutes` 字段（追加在 TaskTitle 后，前向兼容）；`ElapsedTime` 保持「本会话累计分钟」语义不变（v2.5.5）。`Mood`/`PetMoodByte` 明确为**前向兼容通道**：App 持续下发真实心情值，固件当前阶段可忽略、不据此展示或换图（v2.5.6，§4.2 / §4.10）。DayPack 末尾追加 `DaySummary`（框②「一天总结」：情绪向·只谈日程·≤180B），作为面板文本字段复活、与单句 `PetDialogue` 互补，不回退单气泡决策（v2.5.7，§4.7 / §6.5）。DayPack 再追加 `FirstUp`（框③「下一项」：下一个未来事件「HH:mm 标题」/ 无则置顶任务 / ≤60B，App 算好下发，现为 DayPack 最后一个字段）（v2.5.8，§4.7）。Weather(`0x04`) 在 Condition 后追加 `HighTemp`/`LowTemp`（顶栏高/低温，各 1B 有符号 int8）（v2.5.9，§4.5）。屏保金句/明信片（`Screensaver`）从旧 `0xAA 01 02` 开发命令升级为 `0x16` 业务帧（经 SecureEnvelope，**secure 模式可发**；旧开发命令在配置 `BLE_SHARED_SECRET` 后被禁用、屏保静默发不出去）（v2.5.10，§4.15）。场景解锁（`SceneUnlock`）同样从旧 `0xAA 01 01` 开发命令升级为 `0x17` 业务帧（secure 可发）；至此两条 `0xAA` 开发显示命令全部退役（v2.5.11，§4.16 / §4.14）。§4.15 澄清屏保帧传输：Quote/Author 较长或 secure 封装后整体可能超过协商 MTU 而**分包**（按 §3.2 通用分包重组），并非恒为单包；固件须按分包处理（v2.5.12）。新增 §6.6 字体与排版：两套字库（Lugrasimo=宠物气泡 / Calibri=其余所有文本）按**字段语义角色**渲染、字体不走 wire、App 不传字体字节、固件按字段映射 + 字形回退（v2.5.13，纯文档）。§3.5 补记 App 出站文本 **ASCII 净化保证**：所有字符串字段在编码边界被净化为仅含可打印 ASCII（`0x20`–`0x7E`），非 ASCII（LLM 弯引号/破折号/省略号、用户/日历带入的 emoji/重音/CJK 等）转写为 ASCII 近似或丢弃——固件收到的文本字段恒为 ASCII，§6.6 的 Lugrasimo 缺字回退随之从常态降级为兜底（v2.5.14，§3.5/§6.6）。同记 `RequestRefresh(0x20)` 联调期**去抖合并**：固件把 0x20 当 ~2s 心跳，App 用 60s 合并窗把整轮 sync 去抖为 ≤1 次/分（v2.5.14，§8.5）。两者均为 App 侧行为，wire 格式不变。面板态判定拍板：**不新增 `PanelMode` 字节**，态 A/B/C 由固件本地状态机判定（本地 RTC + 已收数据 + 按键），App 只负责内容与校时——与 Pebble Timeline / BLE CTS / InfiniTime 同类分工一致；新增 §6.7 判定规则，§6.5 开放问题关闭（v2.5.15，纯文档、wire 不变）。§8.5 补记 `Time(0x05)`→`RequestRefresh(0x20)` **反射回路与 DayPack 双发**（2026-07-03 联调：MsgID 连号、~3 秒差、除 PetDialogue 外相同的两个 DayPack）——App 侧已修（组包前等待在途对话生成，首轮即最终文本；反射补跑轮内容无变化时不再携带 DayPack）；**固件侧建议**：收到 Time 帧不应触发 0x20（0x20 仅用于开机后久无数据与用户物理按键），渲染进行中收到新 DayPack 应合并到下一次刷新。§4.7 补记 TopTasks **实现对齐**：规格上限一直是 4寸≤3 / 7.3寸≤5，App 端此前固定按 4 寸档发 ≤3 条，build 589 起按 Settings 配置的屏型发满上限、同优先级截取顺序确定化（priority→dueDate→id）。均为 App 行为 / 文档记录，wire 不变（v2.5.16，§8.5/§4.7）。
 
 ---
 
@@ -75,6 +75,7 @@
 | v2.5.13 | 2026-06-30 | **新增 §6.6 字体与排版（纯文档，wire 不变）**：硬件内置两套字库，按**字段语义角色**渲染——`PetDialogue`（宠物气泡）用 Lugrasimo 手写体、其余**所有**中性/数据文本（天气/日期/事件卡/DaySummary/进度/TaskInPage/屏保等）用 Calibri。**字体不走 wire、App 不下发字体选择字节**（字段身份即字体选择器，沿用 §6.5 内容/呈现分离原则）；固件按字段映射字体 + 对 Lugrasimo 缺失字形回退 Calibri。明确「不逐串传字体、不加字体字节」（YAGNI）。回答客户「字体要不要走协议」：不要 |
 | v2.5.14 | 2026-07-01 | **§3.5 补记出站 ASCII 净化保证（纯文档，wire 不变）**：App 在编码边界（`appendString` 单一咽喉点）把**所有**出站字符串字段净化为纯可打印 ASCII（`0x20`–`0x7E`）——LLM 常见的弯引号 `’ “ ”` / 长破折号 `— –` / 省略号 `…`、用户手输或日历同步带入的 emoji / 重音字母 / CJK，转写为 ASCII 近似（弯引号→直引号、破折号→`-`、`…`→`...`、`café`→`cafe`）或直接丢弃（无 ASCII 近似者）。**固件收到的任何文本字段恒为纯可打印 ASCII**，§6.6 的 Lugrasimo 缺字回退随之从常态降级为兜底安全网。修复起因：LLM 在 `DaySummary` 写出弯引号 U+2019（UTF-8 `E2 80 99`）→ 硬件渲染成豆腐块 `□`。同时**记 `RequestRefresh(0x20)` 联调期去抖合并**（§8.5）：固件把 0x20 当 ~2s 心跳狂发，App 改用 60s 合并窗把整轮 sync 去抖为 ≤1 次/分（不再硬抑制、保留用户物理刷新；固件停止心跳后按键即时触发）。均为 App 侧行为、wire 不变。ASCII 修复经 Claude 编排研究 + Codex(gpt-5.5) 联合 review：净化器本体 airtight，Codex 补捉 `Schedule(0x03)` `StartTime` 的 `DateFormatter` 缺 `en_US_POSIX` locale（波斯/阿拉伯数字区会输出非 ASCII 数字、打偏固定 5 字节字段）——已修 |
 | v2.5.15 | 2026-07-02 | **§6.7 新增——面板态判定拍板（纯文档，wire 不变）**：关闭 §6.5 提案要点第 3 条开放问题——**不新增 `PanelMode` 字节**，态 A/B/C 由固件本地状态机判定（本地 RTC + 已收数据 + 用户按键），App 只负责内容与校时。判定优先级：专注中→态 C；有未完成任务→态 B；有事件→态 A；全空→固件空态兜底。原「App 是显示决策方」语义修正为「App 决定**内容**、固件决定**时机与状态**」。依据行业同类分工（Pebble Timeline / BLE CTS / InfiniTime——手机只推结构化数据与时间，屏幕状态是设备本地状态机）；§6.6 早前已按「不引入 PanelMode」行文，本次正式落笔。边界值（晚间结算时段、进行中事件窗口）标注待与固件定稿 |
+| v2.5.16 | 2026-07-03 | **§8.5 补记 Time→0x20 反射回路与 DayPack 双发（纯文档 + App 行为，wire 不变）**：联调实测（MsgID 连号、间隔 ~3s、除 PetDialogue/时间外相同的两个完整 DayPack）——固件每收到 `Time(0x05)` 即回一个 `RequestRefresh(0x20)`，而 Time 是 App 每轮 sync 的第一帧，该反射经 App「在途 sync 期间收到的 force 请求收尾补跑」机制放大为背靠背第二轮；恰逢 LLM 对话在两轮之间生成完成（~3s），PetDialogue 变化令 DayPack 指纹变化、第二轮真发 DayPack、硬件双刷屏。**App 侧已修（build 589）**：sync 组包前等待在途对话生成完成（首轮即最终文本），反射补跑轮因内容无变化不再携带 DayPack（退化为 Time/PetStatus 小帧）。**固件侧建议**：收到 Time 不要触发 0x20——0x20 仅保留「开机/唤醒后久无数据」与「用户物理按键刷新」两种意图；7.3寸全刷 ~12s，渲染进行中收到新 DayPack 应合并到下一次刷新而非排队双刷。**§4.7 补记 TopTasks 实现对齐**：规格上限一直是 4寸≤3 / 7.3寸≤5（未变），但 App 端生成与编码此前固定按 4 寸档发 ≤3 条，7.3 寸设备只收到 3 条置顶任务；build 589 起按 App Settings→Hardware Details 配置的屏型发满上限（设备暂无屏型自报通道，需在 App 内手动选择一次），同优先级任务截取顺序确定化（priority→dueDate→id）。wire 格式不变 |
 
 ### 1.4 术语表
 
@@ -435,6 +436,8 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 | N+1    | Title          | 1 + N bytes | 30 bytes   | 任务标题 |
 | ...    | IsCompleted    | 1 byte      | -          | 0x00=未完成, 0x01=已完成 |
 | ...    | Priority       | 1 byte      | -          | 优先级（1-3） |
+
+> **v2.5.16 实现对齐（wire 不变）**：TopTasks 上限规格一直是 4寸≤3 / 7.3寸≤5，但 App 端生成与编码此前固定按 4 寸档发 ≤3 条——7.3 寸设备只收到 3 条置顶任务（2026-07-03 联调实测）。App build 589 起按 **Settings → Hardware Details → E-ink Screen Size** 配置的屏型发满上限（设备暂无屏型自报通道，需在 App 内手动选择一次）；同优先级任务的截取顺序确定化（priority 降序 → dueDate 升序 → id），wire 上的任务次序可复现。
 
 **SettlementData：**
 
@@ -1233,6 +1236,15 @@ App 内置写入速率限制，固件联调时需注意：
 **调试建议**：若发现 App 长时间无响应或未按预期刷新，可检查是否触发了限流——`0x20` 触发的整轮 sync 在 **60 秒合并窗**内被去抖（联调期，防固件把 0x20 当心跳刷屏）、`0x30` 在 10 秒内重复触发整轮 sync 会被忽略（两者互不占用配额），或写入频率超过 20 次/秒被排队。
 
 **帧可见性（联调）**：DEBUG 包与 TestFlight 包可用 Console.app 过滤 `subsystem:com.kirole.app category:BLE` 查看 App 收发帧摘要——TX 记录 `type/len`、RX 记录 `len/firstByte`；正式 App Store 包关闭，且不记录完整 payload。
+
+**同步回路：Time(0x05)→RequestRefresh(0x20) 反射与 DayPack 双发（2026-07-03 联调）**
+
+联调实测：固件每收到 `Time(0x05)` 即回一个 `RequestRefresh(0x20)`（固件日志 `RTC synced → Triggering RequestRefresh`）。而 Time 是 App **每轮 sync 的第一帧**——"收到同步的开头就请求新同步"构成自激回路：该 0x20 到达时本轮 sync 尚在途，App 会在收尾后补跑一轮 force sync；若两轮之间恰有内容变化（典型：LLM 对话文本在 ~3 秒内生成完成），第二轮真发 DayPack——硬件 3 秒内收到 MsgID 连号、除 PetDialogue 外完全相同的两个 DayPack，背靠背双刷屏。首次连接与任务/日程变更后最易复现（这两种场景对话必然重新生成）；对话缓存命中时两轮内容一致、第二轮不发 DayPack，现象即"消失"。
+
+- **App 侧已修（build 589）**：sync 组包前等待在途的对话生成完成（首轮即携带最终文本）；此后反射补跑轮因指纹无变化**不再携带 DayPack**，退化为 Time/PetStatus 小帧，不触发刷屏。
+- **固件侧建议**：
+  1. 收到 `Time(0x05)` **不要**触发 `RequestRefresh(0x20)`。0x20 只保留两种意图：开机/唤醒后久无数据、用户物理按键刷新。App 每轮 sync 都会主动推送全量数据，无需设备回请。
+  2. E-ink 渲染进行中（7.3 寸全刷 ~12s）收到新 DayPack 时，**合并到下一次刷新**（只保留最新一包），不要排队逐包刷屏。
 
 ### 8.6 设备信任模型（TOFU）
 
