@@ -54,9 +54,19 @@ public final class DayPackGenerator {
         // box② "day at a glance" — neutral events-only summary, cached per date + event digest.
         let daySummary = await cachedDaySummary(for: eventSummaries)
 
+        // 同优先级按 dueDate、再按 id 定序：Swift sort 不稳定，纯按 priority 排时同级顺序
+        // 随机，截断到 maxTasks 后"谁被挤掉"不可复现（联调曾见 4 任务显 3 个且顺序反直觉）。
         let topTasks = todayTasks
             .filter { !$0.isCompleted }
-            .sorted { $0.priority.rawValue > $1.priority.rawValue }
+            .sorted {
+                if $0.priority.rawValue != $1.priority.rawValue {
+                    return $0.priority.rawValue > $1.priority.rawValue
+                }
+                let lhsDue = $0.dueDate ?? .distantFuture
+                let rhsDue = $1.dueDate ?? .distantFuture
+                if lhsDue != rhsDue { return lhsDue < rhsDue }
+                return $0.id < $1.id
+            }
             .prefix(screenSize.maxTasks)
             .map { TaskSummary(from: $0) }
 
