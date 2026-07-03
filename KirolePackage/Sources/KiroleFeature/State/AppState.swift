@@ -111,8 +111,10 @@ public final class AppState {
     var activeSyncs: Set<ExternalSyncTarget> = []
     public var lastGoogleSyncDebug: String = "Not synced yet"
     public var hasCompletedInitialHomeLoad: Bool = false
-    /// Prevents concurrent dialogue generation (multiple sync callbacks triggering at once).
-    var isRefreshingDialogue: Bool = false
+    /// In-flight shared-dialogue refresh. Re-entrant callers await it instead of returning
+    /// with the stale `currentPetDialogue` — BLE sync once shipped the stale line to hardware,
+    /// then re-pushed 3s later when the LLM finished (double E-ink refresh, 2026-07-03联调).
+    var dialogueRefreshTask: Task<Void, Never>?
 
     // Services
     let syncManager = SyncManager.shared

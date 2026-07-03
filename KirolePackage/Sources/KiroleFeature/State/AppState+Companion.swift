@@ -63,10 +63,23 @@ extension AppState {
     }
 
     func refreshSharedPetDialogueIfNeeded(force: Bool = false) async {
-        guard !isRefreshingDialogue || force else { return }
-        isRefreshingDialogue = true
-        defer { isRefreshingDialogue = false }
+        // 重入时等待在途刷新完成再返回（届时 currentPetDialogue 已是最终文本），而不是拿旧值
+        // 提前返回：BLE performSync 曾在 HomeView 刷新在途时进来、用旧对话把 DayPack 发上硬件，
+        // 3 秒后 LLM 完成、指纹变化又补推一轮——硬件 3 秒内双刷屏。
+        // force 保持既有语义：不等待、直接再跑一轮（仅 HomeView 下拉刷新使用）。
+        if !force, let inFlight = dialogueRefreshTask {
+            await inFlight.value
+            return
+        }
+        let refresh = Task { @MainActor in
+            await self.refreshSharedPetDialogueNow(force: force)
+        }
+        dialogueRefreshTask = refresh
+        await refresh.value
+        dialogueRefreshTask = nil
+    }
 
+    private func refreshSharedPetDialogueNow(force: Bool) async {
         let triggerState = await buildCompanionDialogueTriggerState()
         let todayKey = Self.homeCompanionDateKey(from: triggerState.context.currentTime)
 
