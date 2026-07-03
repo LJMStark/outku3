@@ -104,3 +104,4 @@ docs/源文件/
 docs/硬件资源/
 # baoyu-slide-deck 生成的会议 PPT（图片生成物，按需另存）
 slide-deck/
+.gstack/
