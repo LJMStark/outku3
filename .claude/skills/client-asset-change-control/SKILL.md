@@ -1,6 +1,6 @@
 ---
 name: client-asset-change-control
-description: 删除/替换/移动 图片、音频、字体等产品资产前的强制判定流程。曾因误删客户资产、IP 图错位导致多次回滚。NOT for 代码 dead path 清理（正常重构流程）或 App 图标级资产。
+description: 删除/替换/移动 图片、音频、字体等产品资产（Resources/Media.xcassets、imageset、joy/silas/nova 三 IP 图）前的强制判定流程——grep 无引用≠可删。曾因误删客户资产、IP 图错位多次回滚。NOT for 代码 dead path 清理（正常重构流程）或 App 图标级资产。
 ---
 
 # 客户资产变更管控

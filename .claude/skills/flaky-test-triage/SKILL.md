@@ -1,6 +1,6 @@
 ---
 name: flaky-test-triage
-description: 测试忽红忽绿、只在全量跑挂、单跑却绿时的排查手册（Swift Testing 并行隔离、SharedPersistenceTestLock、resettableUserDefaultKeys）。NOT for 编译错误（swift-build-resolver）或仿真解码器 trailingBytes 红（那是 wire desync，去 ble-wire-change-control）。
+description: 测试忽红忽绿、只在全量 swift test 挂、单跑却绿、加 key 后别人的老测试随机失败(flaky)时的排查手册（Swift Testing 并行隔离、SharedPersistenceTestLock、resettableUserDefaultKeys）。NOT for 编译错误（swift-build-resolver）或仿真解码器 trailingBytes 红（那是 wire desync，去 ble-wire-change-control）。
 ---
 
 # Flaky 测试排查手册

@@ -1,6 +1,6 @@
 ---
 name: ble-wire-change-control
-description: BLE wire 字节格式变更的强制流程（encodeDayPack/encodeWeather/新帧/字段增删/字节预算）。改任何上线字节前必读。NOT for 联调期行为问题（去 ble-sync-runbook）或纯文档措辞修订（去 docs-contract-change-control）。
+description: BLE wire 字节格式变更的强制流程（BLEDataEncoder 的 encodeDayPack/encodeWeather、新帧字节、字段增删、字节预算 DayPackTextBudget），含镜像解码器 requireEnd/trailingBytes 同步铁律。改任何上线字节前必读。NOT for 联调期行为问题（去 ble-sync-runbook）或纯文档措辞修订（去 docs-contract-change-control）。
 ---
 
 # BLE Wire 变更管控

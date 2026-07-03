@@ -1,6 +1,6 @@
 ---
 name: ui-change-acceptance
-description: UI/前端改动的验收标准——什么时候才能说"改完了"。模拟器目验是硬门槛。NOT for 非 UI 逻辑（跑全量测试即可）、website/ 静态站（另一条部署链）或改动前的方向评审（product-scope-contract）。
+description: UI/前端（SwiftUI 视图/资产/主题/文案）改动的验收标准——什么时候才能说"改完了"。硬门槛：rebuild 起模拟器目验+截图；查 accessibilityIdentifier、injectAppEnvironment、三主题、全量 swift test。NOT for 非 UI 逻辑（跑全量测试即可）、website/ 静态站（另一条部署链）或改动前的方向评审（去 product-scope-contract）。
 ---
 
 # UI 改动验收标准

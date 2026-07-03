@@ -1,6 +1,6 @@
 ---
 name: testflight-distribution-runbook
-description: TestFlight 测试者拿不到新版、上传疑似失败、构建卡审核时的排查手册（543 事件 runbook 化）。NOT for 发布前后的验收清单（release-acceptance）或构建/签名失败（swift-build-resolver）。
+description: TestFlight 测试者拿不到新版、fastlane 上传疑似失败（ASC 上找不到 build）、build 卡审核时的排查手册（543 事件 runbook 化，核心签名 NO_SUBMISSION）。NOT for 发布前后的验收清单（去 release-acceptance）或构建/签名失败（去 swift-build-resolver）。
 ---
 
 # TestFlight 分发排查手册
@@ -25,8 +25,9 @@ build 号已自增，都不是"用户能拿到"的证据**。唯一真源是 ASC
 ## 症状 1：外部测试者拿不到新版（543 事件模式）
 
 > 时间线：`1b8aa1c`（05-11）发出 build 543 → 之后持续发版到 556+，每次 fastlane 都 "Done" →
-> 外部测试者与公共链接**三周**始终拿到 543 → 第一轮误诊为出口合规（`c82ba9e` 修
-> ITSAppUsesNonExemptEncryption）→ 真因：分发时从未提交 Beta App Review，所有新 build 停在
+> 外部测试者与公共链接 **18 天**（05-11→05-29）始终拿到 543 → 第一轮误诊为出口合规
+> （`c82ba9e` 记录排查方向，`c2da95f` 声明 ITSAppUsesNonExemptEncryption=false）→
+> 真因：分发时从未提交 Beta App Review，所有新 build 停在
 > `NO_SUBMISSION`，公共链接只发最后一个 APPROVED 的 build（`5c49e36` 根治，`a2a376b` 纠正误诊文档）。
 
 排查顺序：

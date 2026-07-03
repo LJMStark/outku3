@@ -1,6 +1,6 @@
 ---
 name: intentional-behaviors-contract
-description: "长得像 bug 的故意行为"清单——审计误报防御契约。看到可疑行为想修之前、写审计报告之前必查。NOT for 给新设计找借口（新决策走正常评审），也 NOT for 已知 bug 的修复流程。
+description: 故意行为速查契约（长得像 bug 其实是刻意设计的清单）：SkipTask 不改状态、离线 replay 跳过 enterTaskIn、同步节流、Mood 前向兼容通道、emoji/CJK 上 wire 被丢、单设备无并发——审计误报防御。想修可疑行为前、给 audit finding 定级前必查。NOT for 给新设计找借口（走正常评审）或已知 bug 的修复流程。
 ---
 
 # 故意行为契约（审计误报防御）

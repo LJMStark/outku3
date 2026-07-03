@@ -1,6 +1,6 @@
 ---
 name: release-acceptance
-description: TestFlight 发布的前/中/后验收标准，以及上架 App Store 前的特别闸（恢复调试门控等）。NOT for 分发出问题后的排查（testflight-distribution-runbook）。发布 = /release 或 fastlane，本页管"凭什么算发成功"。
+description: TestFlight 发布（/release 或 fastlane）的前/中/后验收标准（全量测试绿、build 号交给 lane 自增、ASC status 复核），以及上架 App Store 前的特别闸（恢复 showsHardwareDebugTools 调试门控等）。NOT for 分发出问题后的排查（去 testflight-distribution-runbook）。本页管"凭什么算发成功"。
 ---
 
 # 发布验收标准
@@ -36,8 +36,8 @@ description: TestFlight 发布的前/中/后验收标准，以及上架 App Stor
 1. **ASC 复核**：`fastlane ios status` —— 确认 build 号是这次的、`processingState` 正常、
    external state 不是 `NO_SUBMISSION`（beta review 已自动提交，`5c49e36` 起内置）。
 2. **commit build bump**：确认落地后才提交 `chore(release): bump build to N`
-   （现有惯例可考：`48d6e57` build 588、`7dd8672` build 587…）。失败的发布**不留悬空 bump**，
-   revert 掉再重来。
+   （现有惯例可考：`48d6e57` build 588、`7dd8672` build 587…）。失败的发布**不留悬空 bump**——
+   此时 bump 尚未 commit，丢弃工作区里的版本号改动再重来即可。
 3. **TestFlight 文档同步**：重大流程变化更新 `TESTFLIGHT_GUIDE.md` / `TESTFLIGHT_PROGRESS.md`。
 
 ## 上架 App Store 前的特别闸（一次性，但致命）

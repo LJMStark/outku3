@@ -1,6 +1,6 @@
 ---
 name: ble-sync-runbook
-description: 硬件不显示新数据、同步不触发、连接卡死、离线补传丢失时的排查手册。第一反应"硬件没收到"往往是节流特性。NOT for 改 wire 字节（ble-wire-change-control）或"这行为是不是bug"（intentional-behaviors-contract）。
+description: 硬件不显示新数据、sync 不触发、连接卡死、离线补传(0x21 eventLogBatch)丢失时的联调排查手册。第一反应"硬件没收到"往往是同步节流特性（DayPack 指纹 / 0x20）。NOT for 改 wire 字节（去 ble-wire-change-control）或"这行为是不是 bug"（去 intentional-behaviors-contract）。
 ---
 
 # BLE 同步 / 联调排查手册
