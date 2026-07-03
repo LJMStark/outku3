@@ -27,7 +27,7 @@ This file provides guidance to Antigravity, Claude Code, Cursor and other AI cod
   - **Language**: Swift 6.1+ (Strict Concurrency)
   - **UI**: SwiftUI (Model-View Pattern - **NO ViewModels**)
   - **State**: `@Observable` singletons (`AppState`, `ThemeManager`, `AuthManager`) injected via `.environment()`
-  - **AI Backend**: OpenAI-compatible gateway via `OpenAIService` — primary base URL / model configurable (`OPENAI_BASE_URL` / `OPENAI_MODEL` in Secrets.xcconfig), defaults to OpenRouter `openai/gpt-oss-120b:free`. Primary failure falls back to the OpenRouter free model (logged, never silent — degradable companion-text carve-out in `ai-provider-fallback`). In-app picker `companionModelOptions` lists only the free model; gateway models ride xcconfig, not the picker.
+  - **AI Backend**: **OpenRouter only** via `OpenAIService` (2026-07-03 decision) — primary = paid `openai/gpt-oss-120b` pool (`OPENAI_MODEL` in Secrets.xcconfig; `OPENAI_BASE_URL` left empty = OpenRouter). Requests pin `reasoning: {effort: low, exclude: true}` — without it gpt-oss burns the whole 80-token budget on the hidden trace and `content` comes back null. Primary failure falls back to the same model's `:free` pool (same-model pool downgrade, logged, never silent — `ai-provider-fallback`). ⚠️ Closed-model pools (OpenAI/Anthropic/Google official) are region-blocked (403) from CN egress on OpenRouter — don't point the primary at them.
   - **Testing**: Swift Testing Framework (`@Test`, `#expect`) - **NO XCTest**
 
 ### Apple Developer Account

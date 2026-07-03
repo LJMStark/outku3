@@ -19,18 +19,18 @@ public struct CompanionModelOption: Identifiable, Hashable, Sendable {
 public actor OpenAIService {
     public static let shared = OpenAIService()
     public static let companionPromptVersion = "2026-06-17-custom-prompt-guard-v1"
-    /// Stable OpenRouter provider — also the **cross-provider fallback** target when a configured
-    /// primary (e.g. an opencodeapi gateway) fails. See `rules/ecc/common/ai-provider-fallback.md`
-    /// (degradable companion-text carve-out: fallback allowed here, but logged — never silent).
+    /// Stable OpenRouter fallback route. With the OpenRouter-only setup (2026-07-03) the primary
+    /// is the PAID `openai/gpt-oss-120b` pool and this is the same model's `:free` pool — a
+    /// same-model pool downgrade (the explicitly allowed case in
+    /// `rules/ecc/common/ai-provider-fallback.md`), logged, never silent.
     public static let openRouterBaseURL = "https://openrouter.ai/api/v1"
     public static let openRouterFallbackModelID = "openai/gpt-oss-120b:free"
 
     /// Chat model for the **primary** AI calls. Configurable via `OPENAI_MODEL` (Secrets.xcconfig →
     /// `AppSecrets.chatModelID`); falls back to the OpenRouter free model when unset.
     public static var defaultChatModelID: String { AppSecrets.chatModelID ?? openRouterFallbackModelID }
-    // In-app picker options (OpenRouter model IDs). The gateway model (e.g. gpt-5.5) is NOT
-    // listed here — it is driven by `OPENAI_MODEL` (Secrets.xcconfig → AppSecrets.chatModelID →
-    // defaultChatModelID) so it applies to both AI paths without a pickable OpenRouter mismatch.
+    // In-app picker options (OpenRouter model IDs). The primary model is driven by `OPENAI_MODEL`
+    // (Secrets.xcconfig → AppSecrets.chatModelID → defaultChatModelID), not by this list.
     public static let companionModelOptions: [CompanionModelOption] = [
         CompanionModelOption(
             id: "openai/gpt-oss-120b:free",
@@ -201,11 +201,12 @@ public actor OpenAIService {
 
     /// Shared helper that sends a chat completion request and returns the response content.
     ///
-    /// Tries the configured **primary** provider; if it fails AND a distinct `FALLBACK_API_KEY`
-    /// is configured, **falls back to OpenRouter (`gpt-oss-120b`)** — logging the swap, so the
-    /// model that actually served the request is never silent. This cross-model fallback is
-    /// permitted only for this app's degradable companion/UI text (short, non-reproducibility-
-    /// sensitive); see `rules/ecc/common/ai-provider-fallback.md`.
+    /// Tries the configured **primary** provider; on failure falls back to OpenRouter
+    /// `gpt-oss-120b:free`, logging the swap so the serving route is never silent.
+    /// With the OpenRouter-only setup (primary = paid `openai/gpt-oss-120b`) this is a
+    /// SAME-MODEL pool downgrade (paid → `:free`), the explicitly allowed case in
+    /// `rules/ecc/common/ai-provider-fallback.md`. A cross-model hop happens only if a
+    /// different primary model is configured (degradable companion-text carve-out).
     private func chatCompletion(
         systemPrompt: String,
         userPrompt: String,
@@ -233,9 +234,14 @@ public actor OpenAIService {
             if (error as? URLError)?.code == .cancelled || error is CancellationError {
                 throw error
             }
-            // Cross-provider fallback to stable OpenRouter — only when a distinct fallback key is
-            // set (i.e. a non-OpenRouter primary like the opencodeapi gateway). Transparent: log it.
-            guard let fallbackKey = AppSecrets.fallbackAPIKey, fallbackKey != apiKey else {
+            // Pool downgrade / provider fallback — skip only when the primary request already IS
+            // the fallback route (OpenRouter + fallback model + same key): retrying there would
+            // replay the identical request. Same key with a DIFFERENT model (paid oss-120b →
+            // :free pool) is a meaningful downgrade and must go through. Transparent: log it.
+            let primaryIsFallbackRoute = primaryBaseURL == OpenAIService.openRouterBaseURL
+                && model == OpenAIService.openRouterFallbackModelID
+            guard let fallbackKey = AppSecrets.fallbackAPIKey,
+                  !(primaryIsFallbackRoute && fallbackKey == apiKey) else {
                 throw error
             }
             // `error.localizedDescription` is kept `.private`: NetworkError embeds the provider's
@@ -270,7 +276,8 @@ public actor OpenAIService {
                 ChatMessage(role: "user", content: userPrompt)
             ],
             temperature: temperature,
-            maxTokens: maxTokens
+            maxTokens: maxTokens,
+            reasoning: ReasoningOptions(effort: "low", exclude: true)
         )
 
         guard let url = URL(string: "\(baseURL)/chat/completions") else {
@@ -730,11 +737,21 @@ private struct ChatCompletionRequest: Codable {
     let messages: [ChatMessage]
     let temperature: Double
     let maxTokens: Int
+    /// OpenRouter unified reasoning control. gpt-oss reasoning models default to medium effort
+    /// and burn the whole 80-token budget on the hidden trace (finish=length, content=null) —
+    /// pin low effort and exclude the trace so short companion lines survive. Non-reasoning
+    /// models ignore this field. Verified live 2026-07-03: without it, content came back null.
+    let reasoning: ReasoningOptions
 
     enum CodingKeys: String, CodingKey {
-        case model, messages, temperature
+        case model, messages, temperature, reasoning
         case maxTokens = "max_tokens"
     }
+}
+
+private struct ReasoningOptions: Codable {
+    let effort: String
+    let exclude: Bool
 }
 
 private struct ChatMessage: Codable {
