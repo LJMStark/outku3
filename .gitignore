@@ -12,7 +12,11 @@ xcuserdata/
 
 ## IDE
 .cursor/
-.claude/
+# .claude/ 默认忽略（settings/commands/worktrees 属本机私有），
+# 但 skills/ 是入库的仓库知识文档；reactcomponents 例外（含 node_modules）
+.claude/*
+!.claude/skills/
+.claude/skills/reactcomponents/
 .vscode/
 .idea/
 .xcodebuildmcp/
