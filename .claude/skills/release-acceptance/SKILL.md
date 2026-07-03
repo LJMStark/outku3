@@ -23,6 +23,8 @@ description: TestFlight 发布（/release 或 fastlane）的前/中/后验收标
    先 increment 再 distribute——曾有不自增直接发的教训）。
 3. **不要预先 commit build 号**——lane 只自增不提交，commit 属于发布成功之后（见"发布后"）。
 4. Release notes 必须英文（`zh_text` 可选附加）。
+5. **notes 不得出现 AI 模型/供应商名**（GPT/Claude/OpenRouter/oss/gateway…）——模型选型对外保密
+   （2026-07-03 约束）；notes 从 git log 自动生成而 commit message 里有模型名，发布前人眼过一遍这条。
 
 ## 发布中
 
