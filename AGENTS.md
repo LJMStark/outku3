@@ -27,7 +27,7 @@ This file provides guidance to Antigravity, Claude Code, Cursor and other AI cod
   - **Language**: Swift 6.1+ (Strict Concurrency)
   - **UI**: SwiftUI (Model-View Pattern - **NO ViewModels**)
   - **State**: `@Observable` singletons (`AppState`, `ThemeManager`, `AuthManager`) injected via `.environment()`
-  - **AI Backend**: OpenRouter via `OpenAIService` (single approved model: `openai/gpt-oss-120b:free`; PromptDebugger 仅展示该模型，不再提供切换)
+  - **AI Backend**: OpenAI-compatible gateway via `OpenAIService` — primary base URL / model configurable (`OPENAI_BASE_URL` / `OPENAI_MODEL` in Secrets.xcconfig), defaults to OpenRouter `openai/gpt-oss-120b:free`. Primary failure falls back to the OpenRouter free model (logged, never silent — degradable companion-text carve-out in `ai-provider-fallback`). In-app picker `companionModelOptions` lists only the free model; gateway models ride xcconfig, not the picker.
   - **Testing**: Swift Testing Framework (`@Test`, `#expect`) - **NO XCTest**
 
 ### Apple Developer Account
@@ -85,7 +85,7 @@ Images accessed via `Image("name", bundle: .module)` from `Resources/Media.xcass
 **Product spec: 3 built-in IP companions (Joy, Silas, Nova) + user-created custom companions (added 2026-05-26, Inku-inspired).**
 
 - **Built-in IP source of truth**: `CompanionCharacter` enum (`Models/CompanionCharacter.swift`): `joy`, `silas`, `nova`. Still the only `String`-backed cases; do not add new built-in cases here without a product decision.
-- **Custom companions**: `CustomCompanion` struct (`Models/CustomCompanion.swift`) — user uploads a photo, names the companion, picks a `CompanionRelationship` (Pet/Child/Partner/Friend/Mentor/Self/Other) and a `CompanionPersonaVoice` (Companion/Challenger/Zen/Playful) + optional Roast Mode. Persona prompt is template-driven from these structured fields; the user never writes free-form prompt text.
+- **Custom companions**: `CustomCompanion` struct (`Models/CustomCompanion.swift`) — user uploads a photo, names the companion, picks a `CompanionRelationship` (Pet/Child/Partner/Friend/Mentor/Self/Other) and a `CompanionPersonaVoice` (Companion/Challenger/Zen/Playful/Custom Prompt) + free-text `backstory` / `sensitiveBoundary` (the latter supersedes the old `roastModeEnabled` boolean, `658a2fb`; the onboarding-side `customCompanionRoast` flag still exists). Persona prompt is template-driven from these structured fields; user free text enters prompts only through `PromptSanitizer` fences (custom-prompt voice audited at build 580).
 - **Active companion = `UserProfile.currentSelection`**: returns `.builtIn(character)` when `customCompanionId == nil`, else `.custom(id)`. Most call sites can keep reading `userProfile.companionCharacter` directly; only branch on `currentSelection` when the built-in / custom distinction actually matters (prompt assembly, hero artwork, BLE pixel push).
 - User initially selects via `OnboardingProfile.companionCharacter`; later switches via `CharacterSwitcherSheet` (Joy/Silas/Nova + custom list + "Create Your Own" CTA).
 - Drives pet identity (image assets `<rawValue>-main` / `<rawValue>-head` under `Resources/Media.xcassets/` for built-ins, on-disk 96×96 Spectra 6 pixels for custom) and companion text style via `resolvedStyle` (built-in) or `CompanionPersonaVoice.promptDescription` (custom).
@@ -175,13 +175,13 @@ The companion text system is event-reactive companion writing for the Kirole tas
 - 1 system-prompt template, parameterized by 3 dimensions (character / intimacy / style). NOT 3 independent prompt files.
 - Per-character `defaultPrompt`: `OpenAIService.swift:242-318` (Joy 242-264, Silas 266-291, Nova 293-318).
 - Composer: `buildCompanionSystemPrompt` (`OpenAIService.swift:344-382`) merges character + intimacy + style.
-- All user-controlled text (task title / event name / pet name / learn content) MUST flow through `PromptSanitizer.sanitize(_:)` — currently 8 injection points. Wrap user content in XML delimiters declared in the system prompt.
+- All user-controlled text (task title / event name / pet name / learn content) MUST flow through `PromptSanitizer.sanitize(_:)` — currently 7 call sites (count drifts; `grep PromptSanitizer.sanitize` for the live number). Wrap user content in XML delimiters declared in the system prompt.
 
 - **Character source of truth**:
   1. `CompanionCharacter` is the **built-in** IP selection: `joy`, `silas`, `nova` (defined in `Models/CompanionCharacter.swift`).
   2. `CompanionStyle` mirrors the three product IPs: `.joy`, `.silas`, `.nova`.
   3. Character drives style through `CompanionCharacter.resolvedStyle`; do not add independent style choices for built-ins.
-  4. **Custom companions take precedence**: when `UserProfile.customCompanionId != nil`, prompt assembly uses `OpenAIService.customCompanionPersonaPrompt(_:)` and skips the built-in `characterPrompt`. The active `CustomCompanion` flows through `AIContext.customCompanion` from both `CompanionTextService.generateAIText` and `AppState+Companion.buildCompanionDialogueTriggerState`. The dialogue cache fingerprint includes the custom id + voice + roast toggle.
+  4. **Custom companions take precedence**: when `UserProfile.customCompanionId != nil`, prompt assembly uses `OpenAIService.customCompanionPersonaPrompt(_:)` and skips the built-in `characterPrompt`. The active `CustomCompanion` flows through `AIContext.customCompanion` from both `CompanionTextService.generateAIText` and `AppState+Companion.buildCompanionDialogueTriggerState`. The dialogue cache fingerprint versions by custom id + `updatedAt` — any persona field change (voice included) invalidates it (`CustomCompanion.swift`).
   5. Naming history: `Nook → Joy` rename happened in commit `63eaa05` (2026-05-02). Do not reintroduce `nook`.
 - **Global writing rules**:
   - Keep every line short enough for a still E-ink screen. Most outputs should fit in 15-25 English words.

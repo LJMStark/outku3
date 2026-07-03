@@ -22,7 +22,7 @@ description: LLM 管线安全与输出契约：PromptSanitizer 注入点（防 p
 
 1. **所有用户可控文本**（任务标题、事件名、宠物名、learn 内容、custom persona 字段）进
    prompt 前必须过 `PromptSanitizer.sanitize(_:)`（`Core/Network/PromptSanitizer.swift`），
-   当前 **8 个注入点**（AGENTS.md 计数，可能滞后——以代码 grep 为准）。新增注入点照此办理并同步更新 AGENTS.md 计数。
+   当前 **7 个调用点**（2026-07-03 实测；计数会漂，以 `grep PromptSanitizer.sanitize` 为准）。新增注入点照此办理并同步更新 AGENTS.md 计数。
 2. 用户内容包 XML 围栏（`<user_event>…</user_event>`）且**系统提示里声明围栏语义**——
    净化+围栏+声明三件套缺一不可。
 3. **custom-prompt 已审计（build 580，memory `project_custom_prompt_audit_580`）**，结论直接引用、别重审：
