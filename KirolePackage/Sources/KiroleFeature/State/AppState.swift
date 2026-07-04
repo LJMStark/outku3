@@ -115,6 +115,11 @@ public final class AppState {
     /// with the stale `currentPetDialogue` — BLE sync once shipped the stale line to hardware,
     /// then re-pushed 3s later when the LLM finished (double E-ink refresh, 2026-07-03联调).
     var dialogueRefreshTask: Task<Void, Never>?
+    /// FocusStatus(0x14) 短窗去重：前台化会被两个观察者（ScreenActivityTracker 打断记录 +
+    /// scenePhase.active 状态对齐）各触发一次，同内容背靠背两帧 → 硬件重复刷屏。
+    /// 记上一帧摘要+时间，2 秒窗内同内容跳过（2026-07-04 审计 B2）。
+    var lastFocusStatusDedupKey: String?
+    var lastFocusStatusSentAt: Date?
 
     // Services
     let syncManager = SyncManager.shared

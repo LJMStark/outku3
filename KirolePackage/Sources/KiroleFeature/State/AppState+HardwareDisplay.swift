@@ -178,7 +178,11 @@ extension AppState {
         }
 
         // Real BLE push (all builds)
-        if BLEService.shared.connectionState.isConnected {
+        // 短窗同内容去重，防前台化双观察者背靠背推同帧：见 AppState.lastFocusStatusDedupKey。
+        let dedupKey = "\(focusPhase)|\(focusBottles)|\(elapsedMinutes)|\(segmentMinutes)|\(session?.taskTitle ?? "")"
+        let isDuplicateWithinWindow = dedupKey == lastFocusStatusDedupKey
+            && lastFocusStatusSentAt.map { now.timeIntervalSince($0) < 2.0 } == true
+        if BLEService.shared.connectionState.isConnected, !isDuplicateWithinWindow {
             do {
                 try await BLEService.shared.sendFocusStatus(
                     phase: focusPhase,
@@ -187,6 +191,8 @@ extension AppState {
                     taskTitle: session?.taskTitle,
                     segmentMinutes: segmentMinutes
                 )
+                lastFocusStatusDedupKey = dedupKey
+                lastFocusStatusSentAt = now
             } catch {
                 ErrorReporter.log(
                     .sync(component: "BLE FocusStatus", underlying: error.localizedDescription),
@@ -241,6 +247,7 @@ extension AppState {
         newlyUnlocked: [String] = [],
         now: Date = Date()
     ) async {
+        // 0x14(idle) 是"退出专注态"的状态信号，必须立即发（固件靠它离开态 C）。
         await syncFocusHardwareDisplay(session: nil, now: now)
 
         #if DEBUG
@@ -251,11 +258,22 @@ extension AppState {
         SimulatorBridge.shared.sendSceneUnlocks(unlocks: unlocks)
         #endif
 
-        await syncIdleHardwareDisplay(totalEnergyBottles: totalEnergyBottles)
+        // 场景帧(0x17)只在有新解锁时立即推（配合庆祝时刻）。无解锁时场景没变，重发只是多一次
+        // 刷屏——此前无条件推，叠加任务完成路径 1.5s 后的 DayPack 全刷，硬件上"完成聚焦任务"
+        // 连刷三次（0x14+0x17+DayPack）。内容更新由下方 requestBLESync 的 DayPack 轮承载
+        // （2026-07-04 审计 B1）。
+        if !newlyUnlocked.isEmpty {
+            await syncIdleHardwareDisplay(totalEnergyBottles: totalEnergyBottles)
+        }
 
         if let celebrated = newlyUnlocked.last {
             celebrateSceneUnlock(sceneId: celebrated, at: now)
         }
+
+        // 会话结束改变结算数据（focusMinutes/sessionCount/longestFocus/interruptions，均在
+        // DayPack wire+指纹），请求一轮同步让硬件结算面板跟上；任务完成路径上
+        // toggleTaskCompletion 也会请求，debounce 合并为同一轮（2026-07-04 审计 F4 顺手修）。
+        requestBLESync(reason: "focusSessionEnd")
     }
 
     /// 触发跨阈值庆祝：触觉 + 庆祝音效 + 通过 @Observable 信号唤醒 HomeView。
