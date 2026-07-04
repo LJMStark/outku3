@@ -197,7 +197,21 @@ public actor GoogleCalendarAPI {
         // 日历列表拉取失败不能静默收窄为仅 primary：上层对 Google 事件是整组替换，收窄后
         // 非主日历事件会本轮凭空消失且整轮报 Success。与上面"任一日历拉取失败就整体抛错"
         // 同一策略——抛错走 runSyncStep 的 .failure：保留上轮事件，错误经 warnings 上报。
-        let calendars = try await getCalendarList()
+        //
+        // 例外——403 scope 不足是 by-design，不是故障：App 登录只申请 calendar.events（无
+        // calendar.readonly，见 GoogleSignInService），而 calendarList 端点不被 events scope
+        // 覆盖，因此该调用自首日起恒 403。此前被静默吞掉；263e439 浮出后把这个档位的正常
+        // 现象误报成了用户可见 warning（2026-07-04 硬件团队反馈）。events-only 档位的正确
+        // 行为就是 primary-only 同步；要解锁多日历，先补 readonly scope + 引导用户重连。
+        let calendars: [GoogleCalendarInfo]
+        do {
+            calendars = try await getCalendarList()
+        } catch NetworkError.forbidden, NetworkError.forbiddenWithMessage {
+            #if DEBUG
+            print("[GoogleCalendarAPI] calendarList 403 (events-only scope) — primary-only by design")
+            #endif
+            return ["primary"]
+        }
         let selectedIds = calendars
             .filter { ($0.selected ?? true) && !($0.hidden ?? false) }
             .map(\.id)

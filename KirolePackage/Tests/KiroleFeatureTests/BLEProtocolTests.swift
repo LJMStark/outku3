@@ -1104,9 +1104,12 @@ struct BLEProtocolTests {
             focusGuardService: BLEProtocolMockFocusGuardService(),
             persistenceEnabled: false
         )
+        // 2026-07-04 起 live enterTaskIn 会 guard 任务存在（固件曾发空 taskId 造出
+        // "Unknown Task"+溢出时长怪帧）；经 tasksOverride 注入任务，不碰 AppState.shared。
         await BLEEventHandler.handleEventLogs(
             [event], service: BLEService.shared,
-            focusService: focusService, isReplay: false
+            focusService: focusService, isReplay: false,
+            tasksOverride: [TaskItem(id: taskId, title: "Live Enter Task")]
         )
 
         #expect(focusService.activeSession?.taskId == taskId)

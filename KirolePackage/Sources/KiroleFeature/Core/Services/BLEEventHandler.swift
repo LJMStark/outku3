@@ -286,7 +286,8 @@ public enum BLEEventHandler {
         service: BLEService,
         focusService: FocusSessionService = .shared,
         isReplay: Bool = false,
-        lastTimestampOverride: UInt32? = nil
+        lastTimestampOverride: UInt32? = nil,
+        tasksOverride: [TaskItem]? = nil
     ) async {
         // 持久化在后台进行，不阻塞状态变更。
         //
@@ -315,7 +316,7 @@ public enum BLEEventHandler {
         }
 
         for log in processable {
-            await handleFocusSessionEvent(log, focusService: focusService, isReplay: isReplay)
+            await handleFocusSessionEvent(log, focusService: focusService, isReplay: isReplay, tasksOverride: tasksOverride)
             applyEventStateMutation(log, isReplay: isReplay)
             applyReminderInteractionCooldown(log)
         }
@@ -438,7 +439,8 @@ public enum BLEEventHandler {
     private static func handleFocusSessionEvent(
         _ eventLog: EventLog,
         focusService: FocusSessionService,
-        isReplay: Bool = false
+        isReplay: Bool = false,
+        tasksOverride: [TaskItem]? = nil
     ) async {
         // 设备时间戳不可信：夹到不晚于 now，防未来偏移凭空铸造专注时长 / 能量瓶（见 focusEventTimestamp）。
         let sessionTimestamp = focusEventTimestamp(eventLog.timestamp, now: Date())
@@ -452,13 +454,29 @@ public enum BLEEventHandler {
             // competitive review's "back-fill offline focus" suggestion was rejected
             // for this reason. (See memory: project_focus_app_authoritative.)
             guard !isReplay else { break }
-            if let taskId = eventLog.taskId {
-                let taskTitle = resolveTask(taskId: taskId)?.title ?? "Unknown Task"
+            // 与 handleEnterTaskIn 的 guard 对称：任务解析失败不得开会话。联调实测（2026-07-04）：
+            // 固件 EnterTaskIn payload 未按 §5.3 带 UUID 时，首字节 0x00 解析成空 taskId + 错位读出
+            // 1970 时间戳——旧逻辑仍以 "Unknown Task" 开会话，0x14 推出 elapsed=65535/bottles=255
+            // 怪帧。解卡帧（DeviceMode.interactive）由 handleEnterTaskIn 分支负责，这里只跳过。
+            if let taskId = eventLog.taskId,
+               let task = resolveTask(taskId: taskId, in: tasksOverride ?? AppState.shared.tasks) {
+                // 开新会话的起始时间过去向夹取（2 小时容忍）：固件 RTC 在 Time(0x05) 同步前是
+                // 远古值（1970 级），合法 UUID + 远古时间戳同样会铸造溢出时长。只夹这里、不动
+                // 全局 focusEventTimestamp——补传的历史事件时间戳合法地在过去。
+                let startTime = max(sessionTimestamp, Date().addingTimeInterval(-7200))
                 await focusService.startSession(
                     taskId: taskId,
-                    taskTitle: taskTitle,
+                    taskTitle: task.title,
                     mode: FocusSessionService.shared.focusEnforcementMode,
-                    startTime: sessionTimestamp
+                    startTime: startTime
+                )
+            } else {
+                ErrorReporter.log(
+                    .sync(
+                        component: "BLE EnterTaskIn",
+                        underlying: "focus start skipped — unresolvable taskId=\(eventLog.taskId ?? "nil")"
+                    ),
+                    context: "BLEEventHandler.handleFocusSessionEvent"
                 )
             }
 

@@ -443,8 +443,11 @@ struct GameMechanism2Tests {
         )
         let taskId = "ble-replay-task-\(UUID().uuidString)"
         let originalTasks = appState.tasks
-        let startTime = Date(timeIntervalSince1970: 1_700_000_000)
-        let endTime = startTime.addingTimeInterval(3600)
+        // 2026-07-04 起 live enterTaskIn 的起始时间有过去向夹取（2 小时容忍，防固件 RTC
+        // 未同步的远古时间戳铸造溢出时长）。改用近期时间戳保持"时长由事件时间戳驱动"的
+        // 测试意图：89 分钟 → floor(89/30) = 2 瓶。
+        let startTime = Date().addingTimeInterval(-5400)
+        let endTime = startTime.addingTimeInterval(5340)
 
         appState.tasks = [TaskItem(id: taskId, title: "Replay Task")]
 
@@ -453,7 +456,8 @@ struct GameMechanism2Tests {
             [startLog],
             service: BLEService.shared,
             focusService: focusService,
-            lastTimestampOverride: 0
+            lastTimestampOverride: 0,
+            tasksOverride: [TaskItem(id: taskId, title: "Replay Task")]
         )
         #expect(focusService.activeSession?.startTime == startTime)
 
