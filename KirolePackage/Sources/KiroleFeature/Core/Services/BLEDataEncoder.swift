@@ -210,17 +210,6 @@ public enum BLEDataEncoder {
         return data
     }
 
-    // MARK: - Screen Config
-
-    /// 编码屏幕配置信息
-    public static func encodeScreenConfig(_ screenSize: ScreenSize) -> Data {
-        var data = Data()
-        data.appendBigEndian(UInt16(screenSize.width))
-        data.appendBigEndian(UInt16(screenSize.height))
-        data.appendClampedUInt8(screenSize.maxTasks)
-        return data
-    }
-
     // MARK: - Focus Status (0x14)
 
     /// 编码专注状态，用于实时推送当前专注状态和能量瓶子数给硬件。

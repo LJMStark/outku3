@@ -530,18 +530,6 @@ public final class BLEService: NSObject {
         try await writeData(type: .petStatus, data: data)
     }
 
-    /// 发送任务列表到 E-ink 设备
-    public func sendTaskList(_ tasks: [TaskItem]) async throws {
-        let data = BLEDataEncoder.encodeTaskList(tasks)
-        try await writeData(type: .taskList, data: data)
-    }
-
-    /// 发送日程到 E-ink 设备
-    public func sendSchedule(_ events: [CalendarEvent]) async throws {
-        let data = BLEDataEncoder.encodeSchedule(events)
-        try await writeData(type: .schedule, data: data)
-    }
-
     /// 发送天气信息到 E-ink 设备
     public func sendWeather(_ weather: Weather) async throws {
         let data = BLEDataEncoder.encodeWeather(weather)
@@ -554,21 +542,9 @@ public final class BLEService: NSObject {
         try await writeData(type: .time, data: data)
     }
 
-    /// 同步所有数据到 E-ink 设备
-    public func syncAllData(
-        pet: Pet,
-        companionCharacter: CompanionCharacter,
-        tasks: [TaskItem],
-        events: [CalendarEvent],
-        weather: Weather
-    ) async throws {
-        try await sendPetStatus(pet, companionCharacter: companionCharacter)
-        try await sendTaskList(tasks)
-        try await sendSchedule(events)
-        try await sendWeather(weather)
-        try await syncTime()
-        lastSyncTime = Date()
-    }
+    // syncAllData / sendTaskList / sendSchedule（DayPack 之前时代的逐帧同步路径）已删：
+    // 零调用者的死路径，且把 sendWeather 一起"藏死"过（2026-07-04 审计 D2/F1）。
+    // 0x02/0x03 帧仍是协议的一部分，encodeTaskList/encodeSchedule 及其格式测试保留。
 
     public func updateLastSyncTime(_ date: Date) {
         lastSyncTime = date

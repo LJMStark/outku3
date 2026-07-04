@@ -1005,23 +1005,25 @@ struct BLEProtocolTests {
 
     // MARK: - ScreenConfig Tests
 
+    // 分辨率断言 = 硬件确认的实际面板（docs/硬件需求文档 §4）：4寸 768×552 横向、7.3寸 1600×1200。
+    // 旧断言 400×600 / 800×480 是早期面板型号（2026-07-04 审计 D1 对齐）。
     @Test("ScreenSize fourInch dimensions")
     func screenSizeFourInch() {
         let screen = ScreenSize.fourInch
-        #expect(screen.width == 400)
-        #expect(screen.height == 600)
-        #expect(screen.pixelCount == 240_000)
-        #expect(screen.frameBufferSize == 120_000)
+        #expect(screen.width == 768)
+        #expect(screen.height == 552)
+        #expect(screen.pixelCount == 423_936)
+        #expect(screen.frameBufferSize == 211_968)
         #expect(screen.maxTasks == 3)
     }
 
     @Test("ScreenSize sevenInch dimensions")
     func screenSizeSevenInch() {
         let screen = ScreenSize.sevenInch
-        #expect(screen.width == 800)
-        #expect(screen.height == 480)
-        #expect(screen.pixelCount == 384_000)
-        #expect(screen.frameBufferSize == 192_000)
+        #expect(screen.width == 1600)
+        #expect(screen.height == 1200)
+        #expect(screen.pixelCount == 1_920_000)
+        #expect(screen.frameBufferSize == 960_000)
         #expect(screen.maxTasks == 5)
     }
 
@@ -1045,33 +1047,8 @@ struct BLEProtocolTests {
         #expect(data[1] == 0x31) // red(3) | white(1) padding
     }
 
-    @Test("BLEDataEncoder encodeScreenConfig format")
-    func encodeScreenConfigFormat() {
-        let data = BLEDataEncoder.encodeScreenConfig(.fourInch)
-        #expect(data.count == 5)
-        // width 400 = 0x0190 big-endian
-        #expect(data[0] == 0x01)
-        #expect(data[1] == 0x90)
-        // height 600 = 0x0258 big-endian
-        #expect(data[2] == 0x02)
-        #expect(data[3] == 0x58)
-        // maxTasks = 3
-        #expect(data[4] == 3)
-    }
-
-    @Test("BLEDataEncoder encodeScreenConfig sevenInch")
-    func encodeScreenConfigSevenInch() {
-        let data = BLEDataEncoder.encodeScreenConfig(.sevenInch)
-        #expect(data.count == 5)
-        // width 800 = 0x0320 big-endian
-        #expect(data[0] == 0x03)
-        #expect(data[1] == 0x20)
-        // height 480 = 0x01E0 big-endian
-        #expect(data[2] == 0x01)
-        #expect(data[3] == 0xE0)
-        // maxTasks = 5
-        #expect(data[4] == 5)
-    }
+    // encodeScreenConfig 及其格式测试已删（2026-07-04 审计 D2）：该函数无发送路径、
+    // BLEDataType 也没有对应帧字节，且断言的是已过时的旧面板分辨率。
 
     // MARK: - EventLogBatch Replay → AppState Mutation Tests
 

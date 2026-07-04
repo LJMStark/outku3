@@ -364,11 +364,9 @@ struct BLEProtocolSimulationTests {
         #expect(opened.payload == payload)
     }
 
-    @Test("Screen and pixel helper encoders match hardware-facing byte layout")
-    func screenAndPixelHelperEncodersMatchByteLayout() throws {
-        let screenConfig = BLEDataEncoder.encodeScreenConfig(.fourInch)
-        #expect(screenConfig == Data([0x01, 0x90, 0x02, 0x58, 0x03]))
-
+    @Test("Pixel helper encoder matches hardware-facing byte layout")
+    func pixelHelperEncoderMatchesByteLayout() throws {
+        // encodeScreenConfig 断言已随该死函数删除（无发送路径、无帧字节，2026-07-04 审计 D2）。
         let pixels: [EInkColor] = [.black, .white, .red, .blue, .green, .yellow]
         let pixelData = BLEDataEncoder.encodePixelData(pixels, width: 3)
         #expect(pixelData == Data([0x01, 0x35, 0x62]))
