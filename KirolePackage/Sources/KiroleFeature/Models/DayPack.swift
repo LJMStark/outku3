@@ -71,15 +71,9 @@ public struct DayPack: Codable, Sendable {
         parts.append("deviceMode=\(deviceMode.rawValue)")
         parts.append("focusChallenge=\(focusChallengeEnabled)")
 
-        if let weatherInfo = weather {
-            parts.append("weather.temp=\(weatherInfo.temperature)")
-            parts.append("weather.high=\(weatherInfo.highTemp)")
-            parts.append("weather.low=\(weatherInfo.lowTemp)")
-            parts.append("weather.cond=\(weatherInfo.condition)")
-            parts.append("weather.icon=\(weatherInfo.iconName)")
-        } else {
-            parts.append("weather=none")
-        }
+        // Weather 刻意不进指纹：encodeDayPack 不编码任何天气字节（顶栏天气走独立 0x04 帧，
+        // performSync 每轮无条件发）。留在指纹只会让天气变化触发一次"没有天气字节的 DayPack
+        // 全刷"——硬件白刷屏、新天气还是没送到（2026-07-04 审计 F1 的连带修复）。
 
         parts.append("petDialogue=\(petDialogue)")
         parts.append("daySummary=\(daySummary)")

@@ -110,6 +110,10 @@ extension AppState {
             profile.intimacyStage = .acquaintance
         }
         updateUserProfile(profile)
+        // PetStatus(0x01) 携带 characterId，但 character 不在 DayPack 指纹里——不请求同步则
+        // 硬件停在旧 IP 直到下一个无关触发（最长 1h/4h 节流窗）。与 selectCustomCompanion
+        // 对齐（2026-07-04 审计 F2）。
+        requestBLESync(reason: "selectBuiltInCompanion")
     }
 
     public func selectCustomCompanion(id: UUID) {

@@ -50,6 +50,10 @@ public final class BLESyncCoordinator {
         let lastSync = await localStorage.loadLastBleSyncTime()
 
         let appState = AppState.shared
+        // 冷启动防御：0x20/0x30 可在 loadLocalData 完成前直呼本方法，用空 tasks/events 组出
+        // 空 DayPack 推上硬件（闪一屏空首页）。其余入口（syncConnectedExternalData 等）都已等待，
+        // 这里补齐（幂等，加载完成后零开销）。2026-07-04 审计 F3。
+        await appState.ensureInitialLoadComplete()
         // v2.5.0: the hardware bubble shows the SAME line as the App home. Refresh it, then
         // feed currentPetDialogue into the DayPack so both surfaces stay in sync.
         await appState.refreshSharedPetDialogueIfNeeded()
@@ -112,6 +116,10 @@ public final class BLESyncCoordinator {
                 appState.pet,
                 companionCharacter: appState.userProfile.companionCharacter
             )
+            // 顶栏天气走独立 Weather(0x04) 帧（协议 §4.5），与 PetStatus 同策略每轮无条件发。
+            // 此前 sendWeather 只挂在零调用的 syncAllData 上——硬件顶栏天气从未被更新过
+            // （2026-07-04 审计 F1）。帧仅 ~10 字节，不做变化判断。
+            try await bleService.sendWeather(appState.weather)
 
             var dayPackSendFailed = false
             if contentChanged {
