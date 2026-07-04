@@ -78,8 +78,13 @@ public final class BLESyncCoordinator {
         // 这里放行，"只有天气变化"时 0x04 要等到点轮（白天 1h/夜间 4h）才能上硬件顶栏。
         // 天气变化放行的轮只发 Time/PetStatus/Weather 小帧——DayPack 指纹未变不会全刷。
         let w = appState.weather
-        let weatherFingerprint = "\(w.temperature)|\(w.highTemp)|\(w.lowTemp)|\(w.condition)"
-        let weatherChanged = weatherFingerprint != lastSentWeatherFingerprint
+        // hasData=false 是无定位权限 / WeatherKit 失败时的占位默认（22/26/18 sunny）——App 头部
+        // 用 hasData 把它藏掉（AppHeaderView），BLE 侧同样不得把假天气发上硬件顶栏：无真实数据
+        // 时不发 0x04、也不以天气名义放行轮次，硬件保持上次显示（peer review 2026-07-04）。
+        let weatherFingerprint: String? = w.hasData
+            ? "\(w.temperature)|\(w.highTemp)|\(w.lowTemp)|\(w.condition)"
+            : nil
+        let weatherChanged = weatherFingerprint != nil && weatherFingerprint != lastSentWeatherFingerprint
 
         guard policy.shouldSync(now: now, lastSync: lastSync, contentChanged: contentChanged || weatherChanged, force: force) else {
             return
@@ -129,14 +134,16 @@ public final class BLESyncCoordinator {
             // 零调用的 syncAllData 上——硬件顶栏天气从未被更新过（2026-07-04 审计 F1）。
             // 辅助帧单独容错：写失败只记日志、不算轮失败——顶栏装饰不能阻断后面的 DayPack
             // 重试与离线事件补传（与 DayPack/eventLog 的既有"失败不阻断"哲学一致）。
-            do {
-                try await bleService.sendWeather(w)
-                lastSentWeatherFingerprint = weatherFingerprint
-            } catch {
-                ErrorReporter.log(
-                    .sync(component: "BLE Weather", underlying: error.localizedDescription),
-                    context: "BLESyncCoordinator.performSync"
-                )
+            if let weatherFingerprint {
+                do {
+                    try await bleService.sendWeather(w)
+                    lastSentWeatherFingerprint = weatherFingerprint
+                } catch {
+                    ErrorReporter.log(
+                        .sync(component: "BLE Weather", underlying: error.localizedDescription),
+                        context: "BLESyncCoordinator.performSync"
+                    )
+                }
             }
 
             var dayPackSendFailed = false
