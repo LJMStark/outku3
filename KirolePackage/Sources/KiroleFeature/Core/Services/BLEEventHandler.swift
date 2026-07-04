@@ -467,7 +467,9 @@ public enum BLEEventHandler {
                 await focusService.startSession(
                     taskId: taskId,
                     taskTitle: task.title,
-                    mode: FocusSessionService.shared.focusEnforcementMode,
+                    // 用注入实例的模式，别读 shared——测试/非 shared 调用会拿错
+                    // （Codex review P2, 2026-07-04）。
+                    mode: focusService.focusEnforcementMode,
                     startTime: startTime
                 )
             } else {

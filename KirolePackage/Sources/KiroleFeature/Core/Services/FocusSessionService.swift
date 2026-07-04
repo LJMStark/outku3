@@ -190,6 +190,11 @@ public final class FocusSessionService {
     /// 结束当前专注会话（当收到 CompleteTask 或 SkipTask 事件时调用）
     public func endSession(reason: FocusEndReason, endTime: Date = Date()) {
         guard var session = activeSession else { return }
+        // 结束时间不得早于会话开始：固件 RTC 错乱时 completeTask/skipTask 可能携带远古时间戳
+        // （1970 级），而 live 开始时间已被夹到 now-2h——不夹结束侧会算出**负专注时长**写进
+        // 结算（FocusTimeCalculator 无解锁事件时直接 end-start）。单点防御全部结束路径
+        // （Codex review P1, 2026-07-04）。
+        let endTime = max(endTime, session.startTime)
         stopFocusDisplaySyncLoop()
 
         if session.protectionState == .protected {

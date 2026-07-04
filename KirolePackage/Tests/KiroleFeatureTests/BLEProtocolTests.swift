@@ -1115,6 +1115,61 @@ struct BLEProtocolTests {
         #expect(focusService.activeSession?.taskId == taskId)
     }
 
+    @Test("Live enterTaskIn with empty taskId (malformed 0x10) does not start a session")
+    @MainActor
+    func liveEnterTaskInEmptyTaskIdSkipsSession() async {
+        // 固件 EnterTaskIn payload 首字节 0x00 解析为空 taskId（协议 §8.7 问题 4 实测）——
+        // 不得开会话，否则会推出 "Unknown Task"/溢出时长的 0x14 怪帧。
+        let event = EventLog(eventType: .enterTaskIn, taskId: "", timestamp: Date(timeIntervalSince1970: 49))
+        let focusService = FocusSessionService.makeForTesting(
+            focusGuardService: BLEProtocolMockFocusGuardService(),
+            persistenceEnabled: false
+        )
+        await BLEEventHandler.handleEventLogs(
+            [event], service: BLEService.shared,
+            focusService: focusService, isReplay: false,
+            tasksOverride: []
+        )
+        #expect(focusService.activeSession == nil)
+    }
+
+    @Test("Ancient device timestamps cannot mint negative focus duration")
+    @MainActor
+    func ancientTimestampsClampedNonNegative() async {
+        // 固件 RTC 未同步（1970 级时间戳）时：开始被夹到 now-2h，结束被 endSession 夹到
+        // 不早于开始——两侧都夹住才不会写出负专注时长（Codex review P1）。
+        let taskId = "ble-ancient-\(UUID().uuidString)"
+        let ancient = Date(timeIntervalSince1970: 49)
+        let tasks = [TaskItem(id: taskId, title: "Ancient Task")]
+        let focusService = FocusSessionService.makeForTesting(
+            focusGuardService: BLEProtocolMockFocusGuardService(),
+            persistenceEnabled: false
+        )
+        await BLEEventHandler.handleEventLogs(
+            [EventLog(eventType: .enterTaskIn, taskId: taskId, timestamp: ancient)],
+            service: BLEService.shared, focusService: focusService, isReplay: false,
+            tasksOverride: tasks
+        )
+        let start = focusService.activeSession?.startTime
+        #expect(start != nil)
+        if let start {
+            #expect(start.timeIntervalSince1970 > Date().timeIntervalSince1970 - 7300)
+        }
+
+        await BLEEventHandler.handleEventLogs(
+            [EventLog(eventType: .completeTask, taskId: taskId, timestamp: ancient)],
+            service: BLEService.shared, focusService: focusService, isReplay: false,
+            tasksOverride: tasks
+        )
+        await focusService.waitForPendingPersistenceForTesting()
+        let ended = focusService.todaySessions.last { $0.taskId == taskId }
+        #expect(ended != nil)
+        if let ended, let end = ended.endTime {
+            #expect(end >= ended.startTime)
+            #expect((ended.earnedEnergyBottles ?? 0) >= 0)
+        }
+    }
+
     @Test("BLEDataEncoder encodeDayPack with sevenInch allows 5 tasks")
     func encodeDayPackSevenInchTaskLimit() {
         let settlement = SettlementData(

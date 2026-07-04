@@ -206,7 +206,10 @@ public actor GoogleCalendarAPI {
         let calendars: [GoogleCalendarInfo]
         do {
             calendars = try await getCalendarList()
-        } catch NetworkError.forbidden, NetworkError.forbiddenWithMessage {
+        } catch let NetworkError.forbiddenWithMessage(message)
+            where message.localizedCaseInsensitiveContains("insufficient") {
+            // 只对"scope 不足"这一种 403 降级——其他 403（配额、封禁等）照抛走 warnings，
+            // 避免把真实故障也吞成 primary-only（Codex review P2, 2026-07-04）。
             #if DEBUG
             print("[GoogleCalendarAPI] calendarList 403 (events-only scope) — primary-only by design")
             #endif

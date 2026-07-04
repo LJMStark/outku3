@@ -432,9 +432,9 @@ struct GameMechanism2Tests {
         #expect(service.todaySessions.last?.earnedEnergyBottles == 2)
     }
 
-    @Test("BLE event replay uses event timestamps for focus session timing")
+    @Test("Live BLE events use event timestamps for focus session timing")
     @MainActor
-    func bleEventReplayUsesEventTimestamps() async {
+    func liveBleEventsUseEventTimestamps() async {
         let appState = AppState.makeForTesting()
         let focusGuardService = GameMechanismMockFocusGuardService()
         let focusService = FocusSessionService.makeForTesting(
