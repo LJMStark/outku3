@@ -14,8 +14,13 @@ public final class GoogleSignInService: @unchecked Sendable {
     private var refreshTask: Task<String, Error>?
 
     // Google API Scopes
+    // calendarReadOnly 是 calendarList 端点（多日历同步）所需——events scope 不覆盖它，
+    // 缺失时该调用恒 403、只能同步主日历（2026-07-04 联调定位）。三者同为 sensitive 档，
+    // 加它不改变审核等级；Testing 模式下无需审核即可生效。已连接的旧授权没有此 scope，
+    // 需断开重连一次升级；未重连的用户走 GoogleCalendarAPI 的 403 降级（主日历，无 warning）。
     private let scopes = [
         GoogleOAuthScope.calendarEvents,
+        GoogleOAuthScope.calendarReadOnly,
         GoogleOAuthScope.tasks
     ]
 
