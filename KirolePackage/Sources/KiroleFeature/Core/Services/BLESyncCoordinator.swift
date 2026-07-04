@@ -12,6 +12,9 @@ public final class BLESyncCoordinator {
     private let policy = BLESyncPolicy()
 
     private var lastSyncSucceeded = true
+    /// 上次成功发出的 Weather(0x04) 指纹（上 wire 的四个量化值）。内存态即可：重启后首轮
+    /// 多发一次 ~10B 小帧，无害；不入 LocalStorage 以避开 resettable key 的测试隔离成本。
+    private var lastSentWeatherFingerprint: String?
     /// In-flight 守卫：防止并发 performSync 重复发整轮（keep-alive 常驻连接后更易触发）。
     private var isSyncing = false
     /// 在途同步期间被丢弃的 force:true 请求；当前同步收尾后补跑一次，避免硬件 requestRefresh 被吞。
@@ -71,8 +74,14 @@ public final class BLESyncCoordinator {
         let fingerprint = dayPack.stableFingerprint()
         let lastHash = await localStorage.loadLastDayPackHash()
         let contentChanged = lastHash != fingerprint
+        // 天气单独参与轮次放行（不影响 DayPack 发送判定）：天气已移出 DayPack 指纹，若不在
+        // 这里放行，"只有天气变化"时 0x04 要等到点轮（白天 1h/夜间 4h）才能上硬件顶栏。
+        // 天气变化放行的轮只发 Time/PetStatus/Weather 小帧——DayPack 指纹未变不会全刷。
+        let w = appState.weather
+        let weatherFingerprint = "\(w.temperature)|\(w.highTemp)|\(w.lowTemp)|\(w.condition)"
+        let weatherChanged = weatherFingerprint != lastSentWeatherFingerprint
 
-        guard policy.shouldSync(now: now, lastSync: lastSync, contentChanged: contentChanged, force: force) else {
+        guard policy.shouldSync(now: now, lastSync: lastSync, contentChanged: contentChanged || weatherChanged, force: force) else {
             return
         }
 
@@ -116,10 +125,19 @@ public final class BLESyncCoordinator {
                 appState.pet,
                 companionCharacter: appState.userProfile.companionCharacter
             )
-            // 顶栏天气走独立 Weather(0x04) 帧（协议 §4.5），与 PetStatus 同策略每轮无条件发。
-            // 此前 sendWeather 只挂在零调用的 syncAllData 上——硬件顶栏天气从未被更新过
-            // （2026-07-04 审计 F1）。帧仅 ~10 字节，不做变化判断。
-            try await bleService.sendWeather(appState.weather)
+            // 顶栏天气走独立 Weather(0x04) 帧（协议 §4.5），每轮发送。此前 sendWeather 只挂在
+            // 零调用的 syncAllData 上——硬件顶栏天气从未被更新过（2026-07-04 审计 F1）。
+            // 辅助帧单独容错：写失败只记日志、不算轮失败——顶栏装饰不能阻断后面的 DayPack
+            // 重试与离线事件补传（与 DayPack/eventLog 的既有"失败不阻断"哲学一致）。
+            do {
+                try await bleService.sendWeather(w)
+                lastSentWeatherFingerprint = weatherFingerprint
+            } catch {
+                ErrorReporter.log(
+                    .sync(component: "BLE Weather", underlying: error.localizedDescription),
+                    context: "BLESyncCoordinator.performSync"
+                )
+            }
 
             var dayPackSendFailed = false
             if contentChanged {

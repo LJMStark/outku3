@@ -153,6 +153,9 @@ extension AppState {
     public func refreshWeather() async {
         #if os(iOS)
         weather = await weatherService.fetchWeather()
+        // 天气已移出 DayPack 指纹，改由 BLESyncCoordinator 的 weatherChanged 放行轮次；
+        // 这里请求一轮让变化尽快上硬件顶栏——天气没变时该轮会被节流拦下，无害。
+        requestBLESync(reason: "weatherRefresh")
         #endif
     }
 
