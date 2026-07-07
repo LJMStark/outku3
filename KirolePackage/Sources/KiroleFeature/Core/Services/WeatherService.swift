@@ -39,6 +39,8 @@ public final class WeatherService: NSObject {
         defer { isFetchingWeather = false }
 
         guard let location = await requestLocation() else {
+            // 诊断：定位授权正常但仍拿不到坐标，vs 权限被拒——用 authStatus 区分。
+            Log.weather.error("fetchWeather: no location (authStatus=\(Self.describe(self.locationManager.authorizationStatus), privacy: .public)); returning placeholder, hasData=false")
             return cachedWeather ?? Weather()
         }
 
@@ -63,8 +65,13 @@ public final class WeatherService: NSObject {
 
             cachedWeather = weather
             lastFetchDate = Date()
+            Log.weather.info("fetchWeather: ok (\(weather.temperature, privacy: .public)°C \(weather.condition.rawValue, privacy: .public) H\(weather.highTemp, privacy: .public)/L\(weather.lowTemp, privacy: .public) @ \(weather.location, privacy: .public))")
             return weather
         } catch {
+            // 诊断：这是 hasData=false 的头号原因。WeatherKit 授权失败（App ID/profile/JWT 时间）
+            // 会抛特定 domain+code（如 WDSJWTAuthenticator… code 2）——Release 也要可见，否则全程静默。
+            let ns = error as NSError
+            Log.weather.error("fetchWeather: WeatherKit failed domain=\(ns.domain, privacy: .public) code=\(ns.code, privacy: .public) desc=\(error.localizedDescription, privacy: .public)")
             #if DEBUG
             print("[WeatherService] fetch failed: \(error.localizedDescription)")
             #endif
@@ -97,6 +104,17 @@ public final class WeatherService: NSObject {
             return placemarks.first?.locality ?? placemarks.first?.administrativeArea ?? "Unknown"
         } catch {
             return "Unknown"
+        }
+    }
+
+    private static func describe(_ status: CLAuthorizationStatus) -> String {
+        switch status {
+        case .notDetermined: return "notDetermined"
+        case .restricted: return "restricted"
+        case .denied: return "denied"
+        case .authorizedAlways: return "authorizedAlways"
+        case .authorizedWhenInUse: return "authorizedWhenInUse"
+        @unknown default: return "unknown(\(status.rawValue))"
         }
     }
 
@@ -133,6 +151,9 @@ extension WeatherService: CLLocationManagerDelegate {
 
     nonisolated public func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         Task { @MainActor in
+            // 诊断：权限已授予但 requestLocation 仍失败（无 fix / 定位服务关 / 超时）——区分于授权层问题。
+            let ns = error as NSError
+            Log.weather.error("location failed domain=\(ns.domain, privacy: .public) code=\(ns.code, privacy: .public) desc=\(error.localizedDescription, privacy: .public)")
             #if DEBUG
             print("[WeatherService] location failed: \(error.localizedDescription)")
             #endif

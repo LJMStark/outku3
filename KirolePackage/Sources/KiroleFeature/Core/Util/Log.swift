@@ -21,4 +21,5 @@ public enum Log {
     public static let network   = Logger(subsystem: subsystem, category: "Network")
     public static let companion = Logger(subsystem: subsystem, category: "Companion")
     public static let config    = Logger(subsystem: subsystem, category: "Config")
+    public static let weather   = Logger(subsystem: subsystem, category: "Weather")
 }
