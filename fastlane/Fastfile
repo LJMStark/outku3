@@ -13,11 +13,15 @@ platform :ios do
     new_build = increment_build_number(xcodeproj: "Kirole.xcodeproj")
     UI.message("▶ Build number → #{new_build}")
 
-    # 2. Archive + export IPA (Automatic Signing switches to Distribution cert)
+    # 2. Archive + export IPA (Automatic Signing switches to Distribution cert).
+    # -allowProvisioningUpdates lets Xcode regenerate the App Store distribution
+    # profile on demand — required so a missing/stale profile self-heals instead
+    # of silently falling back to a Development profile (which breaks app-store export).
     gym(
       workspace:     "Kirole.xcworkspace",
       scheme:        "Kirole",
-      export_method: "app-store"
+      export_method: "app-store",
+      xcargs:        "-allowProvisioningUpdates"
     )
 
     # 3. Upload to TestFlight and wait for Apple processing
