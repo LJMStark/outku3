@@ -255,7 +255,9 @@ public enum BLEEventHandler {
         case 0x01...0x06, 0x20, 0x31:
             return 1
         case 0x30:
-            return 2  // type(1B) + BatteryLevel(1B), v2.3.0+
+            // type(1B) + BatteryLevel(1B), v2.3.0+。协议 v2.5.19 的固件版本 3 字节
+            // 只存在于实时 0x30 通知，批量记录恒为 2B（§5.15）——这里不读版本。
+            return 2
         case 0x18, 0x40:
             return 2
         case 0x16, 0x17:

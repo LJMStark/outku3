@@ -1287,6 +1287,35 @@ struct BLEProtocolTests {
         let log = EventLog.fromBLEPayload(type: 0x18, payload: Data())
         #expect(log?.value == 0xFF)
     }
+
+    // MARK: - DeviceWake Firmware Version (v2.5.19)
+
+    @Test("DeviceWake parses firmware version from 4-byte payload")
+    func deviceWakeParsesFirmwareVersion() {
+        let log = EventLog.fromBLEPayload(type: 0x30, payload: Data([0x64, 0x01, 0x02, 0x03]))
+        #expect(log?.value == 100)
+        #expect(log?.firmwareVersion == FirmwareVersion(major: 1, minor: 2, patch: 3))
+    }
+
+    @Test("DeviceWake with legacy 1-byte payload has nil firmware version")
+    func deviceWakeLegacyPayloadNoVersion() {
+        let log = EventLog.fromBLEPayload(type: 0x30, payload: Data([0x64]))
+        #expect(log?.value == 100)
+        #expect(log?.firmwareVersion == nil)
+    }
+
+    @Test("DeviceWake with 2-3 byte payload treats version as absent")
+    func deviceWakePartialPayloadNoVersion() {
+        let log = EventLog.fromBLEPayload(type: 0x30, payload: Data([0x64, 0x01]))
+        #expect(log?.value == 100)
+        #expect(log?.firmwareVersion == nil)
+    }
+
+    @Test("FirmwareVersion renders as Major.Minor.Patch")
+    func firmwareVersionDescription() {
+        let v = FirmwareVersion(major: 1, minor: 12, patch: 3)
+        #expect(v.description == "1.12.3")
+    }
 }
 
 // MARK: - Shared Mock

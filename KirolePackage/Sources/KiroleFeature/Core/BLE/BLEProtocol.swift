@@ -41,7 +41,7 @@ import Foundation
 //   0x17 reminderDismissed      智能提醒超时关闭
 //   0x20 requestRefresh         请求数据刷新
 //   0x21 eventLogBatch          批量回传事件（含 EventLogType.rawByte 流）
-//   0x30 deviceWake             设备唤醒
+//   0x30 deviceWake             设备唤醒（payload: 电量1B；v2.5.19+ 追加固件版本3B，仅实时帧）
 //   0x31 deviceSleep            设备休眠
 //   0x40 lowBattery             低电量
 

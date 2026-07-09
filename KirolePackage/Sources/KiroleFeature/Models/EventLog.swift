@@ -15,6 +15,9 @@ public struct EventLog: Codable, Sendable, Identifiable {
     /// 否则重连时先到的兜底事件会把补传 since 顶到“现在”，丢掉离线积压的真实事件——
     /// 见 `BLEEventHandler.nextEventLogWatermark`。
     public let hasDeviceTimestamp: Bool
+    /// 仅实时 `DeviceWake(0x30)` 且固件 ≥ 协议 v2.5.19（4B payload）时非 nil。
+    /// 批量补传（0x21）里的 0x30 记录恒为 2B、不带版本，此字段为 nil。
+    public let firmwareVersion: FirmwareVersion?
 
     public init(
         id: UUID = UUID(),
@@ -22,7 +25,8 @@ public struct EventLog: Codable, Sendable, Identifiable {
         taskId: String? = nil,
         timestamp: Date = Date(),
         value: Int = 0,
-        hasDeviceTimestamp: Bool = false
+        hasDeviceTimestamp: Bool = false,
+        firmwareVersion: FirmwareVersion? = nil
     ) {
         self.id = id
         self.eventType = eventType
@@ -30,6 +34,7 @@ public struct EventLog: Codable, Sendable, Identifiable {
         self.timestamp = timestamp
         self.value = value
         self.hasDeviceTimestamp = hasDeviceTimestamp
+        self.firmwareVersion = firmwareVersion
     }
 
     // 向后兼容：旧 event_logs.json 没有 hasDeviceTimestamp 字段，缺失时默认 false，
@@ -42,6 +47,7 @@ public struct EventLog: Codable, Sendable, Identifiable {
         self.timestamp = try container.decode(Date.self, forKey: .timestamp)
         self.value = try container.decodeIfPresent(Int.self, forKey: .value) ?? 0
         self.hasDeviceTimestamp = try container.decodeIfPresent(Bool.self, forKey: .hasDeviceTimestamp) ?? false
+        self.firmwareVersion = try container.decodeIfPresent(FirmwareVersion.self, forKey: .firmwareVersion)
     }
 }
 
@@ -179,9 +185,14 @@ public extension EventLog {
             return EventLog(eventType: eventType, value: Int(code))
 
         case .deviceWake:
-            // v2.3.0+: first payload byte is battery level (0-100). Older/empty payloads → 0.
+            // v2.3.0+: payload[0] = battery level (0-100). Older/empty payloads → 0.
+            // v2.5.19+: payload[1...3] = firmware Major.Minor.Patch（仅实时帧；
+            // 0x21 批量记录恒 2B 不带版本，故 count < 4 时版本视为未知）。
             let level = payload.isEmpty ? 0 : min(Int(payload[0]), 100)
-            return EventLog(eventType: eventType, value: level)
+            let version: FirmwareVersion? = payload.count >= 4
+                ? FirmwareVersion(major: payload[1], minor: payload[2], patch: payload[3])
+                : nil
+            return EventLog(eventType: eventType, value: level, firmwareVersion: version)
 
         default:
             return EventLog(eventType: eventType)
