@@ -6,6 +6,7 @@ public struct SettingsBLESection: View {
     @Environment(ThemeManager.self) private var theme
     @State private var energyBottles: Int = 0
     @State private var bleService = BLEService.shared
+    @State private var otaCoordinator = BLEOTACoordinator.shared
     @State private var trustedDeviceCount: Int = 0
     @State private var blockedDeviceCount: Int = 0
     @State private var showClearIdentityConfirmation = false
@@ -29,6 +30,7 @@ public struct SettingsBLESection: View {
             trustedDevicesCard
             currentSceneCard
             screenSizeCard
+            otaUpgradeCard
 
             // 固件联调开关：DEBUG 包恒显示；Release 包仅 TestFlight 显示；正式上架包隐藏。
             if AppBuildEnvironment.showsHardwareDebugTools {
@@ -237,6 +239,118 @@ public struct SettingsBLESection: View {
             bleService.hardwareScreenSize = newValue
             // 上限变化改变 DayPack 内容（TopTasks 条数），立即推一轮让硬件对齐。
             Task { await BLESyncCoordinator.shared.performSync(force: true) }
+        }
+    }
+
+    @MainActor
+    private var otaUpgradeCard: some View {
+        let otaState = otaCoordinator.state
+        let hasFocusSession = FocusSessionService.shared.activeSession != nil
+        let isBusy = otaState == .sending || otaState == .awaitingReboot
+        let isDisabled: Bool = {
+            if hasFocusSession { return true }
+            switch otaState {
+            case .idle, .failed: return false
+            case .sending, .awaitingReboot: return true
+            }
+        }()
+
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: "arrow.down.circle")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(theme.colors.accent)
+                Text("Firmware Update")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(theme.colors.primaryText)
+                Spacer()
+                otaStateBadge(otaState)
+            }
+
+            Text(otaDescriptionText(otaState, hasFocusSession: hasFocusSession))
+                .font(.system(size: 12))
+                .foregroundStyle(theme.colors.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button {
+                Task { @MainActor in
+                    if case .failed = otaState { otaCoordinator.reset() }
+                    await otaCoordinator.requestReboot()
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    if isBusy {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                            .tint(theme.colors.primaryText)
+                    }
+                    Text(otaButtonLabel(otaState))
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                .foregroundStyle(isDisabled ? theme.colors.secondaryText : theme.colors.primaryText)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(isDisabled ? Color.gray.opacity(0.08) : theme.colors.accent.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+            .buttonStyle(.plain)
+            .disabled(isDisabled || isBusy)
+            .accessibilityLabel(isBusy ? "Firmware upgrade in progress" : "Update firmware")
+            .accessibilityIdentifier("Settings_OTAUpgradeButton")
+        }
+        .padding(16)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 24))
+        .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
+    }
+
+    private func otaStateBadge(_ state: BLEOTACoordinator.State) -> some View {
+        let (label, color): (String, Color) = switch state {
+        case .idle:           ("Ready", theme.colors.accent)
+        case .sending:        ("Sending...", Color.orange)
+        case .awaitingReboot: ("Upgrading...", Color.orange)
+        case .failed:         ("Failed", Color.red)
+        }
+        return Text(label)
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(color)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(color.opacity(0.12))
+            .clipShape(Capsule())
+    }
+
+    private func otaDescriptionText(
+        _ state: BLEOTACoordinator.State,
+        hasFocusSession: Bool
+    ) -> String {
+        if hasFocusSession {
+            return "Focus session in progress. End your focus session before updating firmware."
+        }
+        switch state {
+        case .idle:
+            return "Upload update.bin via the device WiFi AP first, then tap Update. The device will reboot (~20 seconds)."
+        case .sending:
+            return "Sending upgrade command to device..."
+        case .awaitingReboot:
+            return "Device is upgrading firmware (~20 seconds). Do not close this screen."
+        case .failed(.deviceRejected(let code)):
+            return "Device rejected upgrade (code 0x\(String(format: "%02X", code))). Check that update.bin was uploaded via WiFi AP."
+        case .failed(.noResponse):
+            return "Device did not respond. Check the BLE connection and try again."
+        case .failed(.timedOutWaitingForReboot):
+            return "Device did not reconnect after the expected upgrade window. Check the device."
+        case .failed:
+            return "Upgrade failed. Please try again."
+        }
+    }
+
+    private func otaButtonLabel(_ state: BLEOTACoordinator.State) -> String {
+        switch state {
+        case .idle:           "Update Firmware"
+        case .sending:        "Sending..."
+        case .awaitingReboot: "Upgrading... (~20s)"
+        case .failed:         "Retry"
         }
     }
 
