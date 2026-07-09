@@ -80,8 +80,11 @@ public enum BLEEventHandler {
 
         case .deviceWake:
             Task { @MainActor in
-                // Confirm OTA upgrade complete if the coordinator was waiting for reboot.
-                BLEOTACoordinator.shared.handleDeviceWake()
+                // 记录实时上报的固件版本（v2.5.19+），并通知 OTA 协调器判定升级结果。
+                if let firmware = eventLog.firmwareVersion {
+                    service.deviceFirmwareVersion = firmware
+                }
+                BLEOTACoordinator.shared.handleDeviceWake(reportedVersion: eventLog.firmwareVersion)
                 do {
                     try await service.syncTime()
                 } catch {

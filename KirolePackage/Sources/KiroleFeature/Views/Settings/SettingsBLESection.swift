@@ -329,6 +329,22 @@ public struct SettingsBLESection: View {
         }
         switch state {
         case .idle:
+            if let outcome = otaCoordinator.lastOutcome {
+                switch outcome {
+                case .confirmed(let from, let to):
+                    if let from {
+                        return "Upgrade complete — device is now on v\(to) (was v\(from))."
+                    }
+                    return "Upgrade complete — device is now on v\(to)."
+                case .sameVersion(let version):
+                    return "Device reconnected on the same firmware (v\(version)). The update may not have been applied — check the staged update.bin."
+                case .versionUnknown:
+                    return "Device reconnected, but did not report a firmware version."
+                }
+            }
+            if let firmware = bleService.deviceFirmwareVersion {
+                return "Device firmware v\(firmware). Upload update.bin via the device WiFi AP first, then tap Update. The device will reboot (~20 seconds)."
+            }
             return "Upload update.bin via the device WiFi AP first, then tap Update. The device will reboot (~20 seconds)."
         case .sending:
             return "Sending upgrade command to device..."

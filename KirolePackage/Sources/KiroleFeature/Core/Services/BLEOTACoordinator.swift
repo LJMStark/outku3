@@ -31,6 +31,16 @@ public final class BLEOTACoordinator {
         case timedOutWaitingForReboot
     }
 
+    /// 升级完成后的结果判定（基于 DeviceWake 携带的固件版本对比，协议 v2.5.19）。
+    public enum UpgradeOutcome: Equatable {
+        /// 版本发生变化（或此前版本未知）——升级已生效。
+        case confirmed(from: FirmwareVersion?, to: FirmwareVersion)
+        /// 重启后仍为同一版本——更新可能未生效（回滚与同版本重刷在 App 侧不可分）。
+        case sameVersion(FirmwareVersion)
+        /// 重启后的 DeviceWake 未携带版本（旧固件）——无法判定。
+        case versionUnknown
+    }
+
     // MARK: - Constants
 
     private static let maxAttempts = 3
@@ -44,6 +54,8 @@ public final class BLEOTACoordinator {
     // MARK: - Observed State
 
     public private(set) var state: State = .idle
+    /// 最近一次升级流程的结果；`requestReboot()` / `reset()` 时清空。
+    public private(set) var lastOutcome: UpgradeOutcome?
 
     // MARK: - Private
 
@@ -51,6 +63,10 @@ public final class BLEOTACoordinator {
     private var attemptCount = 0
     private var responseTimeoutTask: Task<Void, Never>?
     private var rebootTimeoutTask: Task<Void, Never>?
+    /// 任意 DeviceWake 都会刷新（不限状态），作为升级前版本快照的来源。
+    private var lastKnownFirmwareVersion: FirmwareVersion?
+    /// 进入 awaitingReboot 时的版本快照，用于与重启后版本对比。
+    private var versionBeforeUpgrade: FirmwareVersion?
 
     private init(bleService: BLEService = .shared) {
         self.bleService = bleService
@@ -67,6 +83,7 @@ public final class BLEOTACoordinator {
     public func requestReboot() async {
         guard state == .idle else { return }
         attemptCount = 0
+        lastOutcome = nil
         await sendAttempt()
     }
 
@@ -92,10 +109,22 @@ public final class BLEOTACoordinator {
 
     /// Called by BLEEventHandler when DeviceWake(0x30) arrives.
     /// Confirms the device completed its reboot cycle — upgrade flow is done.
-    public func handleDeviceWake() {
+    /// `reportedVersion` 是本次 wake 帧携带的固件版本（v2.5.19+；旧固件为 nil），
+    /// 任意状态下都会刷新已知版本，仅 awaitingReboot 态触发结果判定。
+    public func handleDeviceWake(reportedVersion: FirmwareVersion? = nil) {
+        if let reportedVersion { lastKnownFirmwareVersion = reportedVersion }
         guard state == .awaitingReboot else { return }
         cancelRebootTimeout()
         bleService.isPendingOTAReboot = false
+        if let after = reportedVersion {
+            if let before = versionBeforeUpgrade, before == after {
+                lastOutcome = .sameVersion(after)
+            } else {
+                lastOutcome = .confirmed(from: versionBeforeUpgrade, to: after)
+            }
+        } else {
+            lastOutcome = .versionUnknown
+        }
         state = .idle
     }
 
@@ -106,6 +135,7 @@ public final class BLEOTACoordinator {
         bleService.isPendingOTAReboot = false
         state = .idle
         attemptCount = 0
+        lastOutcome = nil
     }
 
     // MARK: - Private
@@ -136,6 +166,7 @@ public final class BLEOTACoordinator {
     }
 
     private func enterAwaitingReboot() {
+        versionBeforeUpgrade = lastKnownFirmwareVersion
         bleService.isPendingOTAReboot = true
         state = .awaitingReboot
         scheduleRebootTimeout()
