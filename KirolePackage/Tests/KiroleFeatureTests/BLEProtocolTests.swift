@@ -1257,6 +1257,36 @@ struct BLEProtocolTests {
         #expect(data[9] == 0)
         #expect(data[10] == 0)
     }
+
+    // MARK: - OTA Protocol Tests
+
+    @Test("OTAReboot byte value is 0x18")
+    func otaRebootByteValue() {
+        #expect(BLEDataType.otaReboot.rawValue == 0x18)
+    }
+
+    @Test("OTAResult rawByte is 0x18")
+    func otaResultRawByte() {
+        #expect(EventLogType.otaResult.rawByte == 0x18)
+    }
+
+    @Test("OTAResult round-trips through rawByte init")
+    func otaResultRawByteInit() {
+        #expect(EventLogType(rawByte: 0x18) == .otaResult)
+    }
+
+    @Test("OTAResult parses 1-byte status code from payload")
+    func otaResultParsesStatusCode() {
+        let log = EventLog.fromBLEPayload(type: 0x18, payload: Data([0x01]))
+        #expect(log?.eventType == .otaResult)
+        #expect(log?.value == 1)
+    }
+
+    @Test("OTAResult falls back to 0xFF on empty payload")
+    func otaResultEmptyPayloadFallback() {
+        let log = EventLog.fromBLEPayload(type: 0x18, payload: Data())
+        #expect(log?.value == 0xFF)
+    }
 }
 
 // MARK: - Shared Mock

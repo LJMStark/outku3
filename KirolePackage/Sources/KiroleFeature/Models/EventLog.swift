@@ -85,6 +85,8 @@ public enum EventLogType: String, Codable, Sendable {
     case reminderAcknowledged = "reminder_acknowledged"
     /// 智能提醒超时自动关闭
     case reminderDismissed = "reminder_dismissed"
+    /// 固件升级重启应答（0x00=成功 / 0x01=无文件 / 0x02=大小异常 / 0x03=SD卡 / 0x04=写入失败 / 0xFF=未知）
+    case otaResult = "ota_result"
 
     public var rawByte: UInt8 {
         switch self {
@@ -106,6 +108,7 @@ public enum EventLogType: String, Codable, Sendable {
         case .lowBattery: return 0x40
         case .reminderAcknowledged: return 0x16
         case .reminderDismissed: return 0x17
+        case .otaResult: return 0x18
         }
     }
 
@@ -129,6 +132,7 @@ public enum EventLogType: String, Codable, Sendable {
         case 0x40: self = .lowBattery
         case 0x16: self = .reminderAcknowledged
         case 0x17: self = .reminderDismissed
+        case 0x18: self = .otaResult
         default: return nil
         }
     }
@@ -169,6 +173,10 @@ public extension EventLog {
 
         case .reminderAcknowledged, .reminderDismissed:
             return parseTimestampOnlyEvent(eventType: eventType, payload: payload)
+
+        case .otaResult:
+            let code = payload.isEmpty ? 0xFF : payload[0]
+            return EventLog(eventType: eventType, value: Int(code))
 
         case .deviceWake:
             // v2.3.0+: first payload byte is battery level (0-100). Older/empty payloads → 0.

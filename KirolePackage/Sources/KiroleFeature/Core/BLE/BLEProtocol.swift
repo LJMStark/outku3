@@ -18,6 +18,7 @@ import Foundation
 //   0x15 customAvatarFrame 用户自定义伴侣的 96×96 Spectra 6 像素帧（待硬件团队对齐）
 //   0x16 screensaver     屏保金句/明信片（业务帧，secure 模式可发；替代旧 0xAA 开发命令）
 //   0x17 sceneUnlock     场景解锁（业务帧，secure 模式可发；替代旧 0xAA 开发命令）
+//   0x18 otaReboot       触发固件升级重启（零 payload；固件校验包后应答并重启，不等 App 确认）
 //   0x20 eventLogRequest 请求增量 Event Log
 //   0x21 eventLogBatch   批量回传 Event Log（Device→App，此 type 仅出现在入站方向）
 //   0x7E secureData      安全封装（v2 SecureEnvelope）
@@ -70,6 +71,8 @@ public enum BLEDataType: UInt8, Sendable {
     /// App→Device: 场景解锁业务帧（替代旧 `0xAA 01 01` 开发命令）。
     /// 经 SecureEnvelope 走 `writeData`，secure 模式可发；payload 见 `BLEDataEncoder.encodeSceneUnlock`。
     case sceneUnlock = 0x17
+    /// App→Device: 触发固件升级重启（零 payload），见协议文档 §4.17
+    case otaReboot = 0x18
     case eventLogRequest = 0x20
     case eventLogBatch = 0x21
     case secureData = 0x7E

@@ -116,6 +116,12 @@ public enum BLEEventHandler {
             print("[BLEEventHandler] Reminder \(eventLog.eventType.rawValue) at \(eventLog.timestamp)")
             #endif
 
+        case .otaResult:
+            // Route to OTA coordinator (implemented in BLEOTACoordinator).
+            // Coordinator is created in Task 2 of the implementation plan;
+            // this case prevents the exhaustive-switch compile error in the interim.
+            break
+
         case .encoderRotateUp, .encoderRotateDown, .encoderShortPress, .encoderLongPress,
              .powerShortPress, .powerLongPress:
             // Hardware UI events — no App-side routing needed; already persisted via handleEventLogs.
@@ -250,7 +256,7 @@ public enum BLEEventHandler {
             return 1
         case 0x30:
             return 2  // type(1B) + BatteryLevel(1B), v2.3.0+
-        case 0x40:
+        case 0x18, 0x40:
             return 2
         case 0x16, 0x17:
             return 5
