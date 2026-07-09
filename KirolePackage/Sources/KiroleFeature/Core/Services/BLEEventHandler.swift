@@ -80,6 +80,8 @@ public enum BLEEventHandler {
 
         case .deviceWake:
             Task { @MainActor in
+                // Confirm OTA upgrade complete if the coordinator was waiting for reboot.
+                BLEOTACoordinator.shared.handleDeviceWake()
                 do {
                     try await service.syncTime()
                 } catch {
@@ -117,10 +119,8 @@ public enum BLEEventHandler {
             #endif
 
         case .otaResult:
-            // Route to OTA coordinator (implemented in BLEOTACoordinator).
-            // Coordinator is created in Task 2 of the implementation plan;
-            // this case prevents the exhaustive-switch compile error in the interim.
-            break
+            let statusCode = UInt8(clamping: eventLog.value)
+            BLEOTACoordinator.shared.handleOTAResult(statusCode: statusCode)
 
         case .encoderRotateUp, .encoderRotateDown, .encoderShortPress, .encoderLongPress,
              .powerShortPress, .powerLongPress:
