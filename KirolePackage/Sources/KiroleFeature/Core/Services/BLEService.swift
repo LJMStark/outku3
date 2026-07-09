@@ -128,6 +128,9 @@ public final class BLEService: NSObject {
     /// 主动断开不应触发自动重连。生命周期：`disconnect()` 置 true，发起新连接时归零；
     /// `cleanup()` 不重置它（避免在 didDisconnect 回调到达前被清掉）。
     private var isIntentionalDisconnect = false
+    /// Set by BLEOTACoordinator during the OTA upgrade window.
+    /// Suppresses connection-error UI during the expected device reboot disconnect.
+    var isPendingOTAReboot = false
     /// 意外断开后的延迟重连任务，便于在主动断开 / 重新连接时取消。
     private var reconnectTask: Task<Void, Never>?
     /// 扫描代次。每次发起扫描自增；扫描超时任务只在仍是本轮扫描时才结束扫描，
@@ -647,6 +650,12 @@ public final class BLEService: NSObject {
         try await writeData(type: .screensaver, data: payload)
     }
 
+    /// Sends OTAReboot (0x18) with zero payload. In secure mode, writeData
+    /// automatically wraps this in SecureEnvelope (0x7E) — no special handling needed.
+    public func sendOTAReboot() async throws {
+        try await writeData(type: .otaReboot, data: Data())
+    }
+
     // MARK: - Private Methods
 
     private func writeData(type: BLEDataType, data: Data) async throws {
@@ -987,6 +996,13 @@ extension BLEService: CBCentralManagerDelegate {
 
             // 在 cleanup 之前捕获断开意图（cleanup 不重置该标记）。
             let wasIntentional = isIntentionalDisconnect
+
+            // Notify OTA coordinator so it can transition to awaitingReboot
+            // without waiting for a 0x18 response that will never arrive.
+            if isPendingOTAReboot {
+                BLEOTACoordinator.shared.handleExpectedDisconnect()
+            }
+
             cleanup()
 
             guard BLEConnectionPolicy.shouldAutoReconnect(
