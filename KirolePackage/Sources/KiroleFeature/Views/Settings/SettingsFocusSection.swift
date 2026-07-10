@@ -235,7 +235,9 @@ public struct SettingsFocusSection: View {
 
     private var statusDescription: String {
         if appState.focusEnforcementMode == .standard {
-            return "Tracks focus duration via BLE and app state events. No app blocking."
+            // v2.5.20 打断判定重做后文案对齐：旧 "app state events" 信号已删除，
+            // 现为屏幕使用时间监测自选分心 App（记打断、不拦截）。
+            return "Tracks focus time; using a distracting app you selected resets the current bottle. No app blocking."
         }
 
         if !guardService.canShowDeepFocusEntry {
