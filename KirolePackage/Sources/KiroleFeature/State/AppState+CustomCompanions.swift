@@ -110,9 +110,21 @@ extension AppState {
             profile.intimacyStage = .acquaintance
         }
         updateUserProfile(profile)
-        // PetStatus(0x01) 携带 characterId，但 character 不在 DayPack 指纹里——不请求同步则
-        // 硬件停在旧 IP 直到下一个无关触发（最长 1h/4h 节流窗）。与 selectCustomCompanion
-        // 对齐（2026-07-04 审计 F2）。
+        // v2.5.20: 伙伴切换不再等节流窗——立即单发一帧 PetStatus(0x01) 携带新 characterId
+        // （与自定义头像的立即推送 0x15 同待遇）。character 仍被有意排除在 DayPack 指纹外
+        // （2026-07-04 审计 F2 决定保留），常规每轮 sync 照发兜底；断连时跳过即可，
+        // 下一轮 sync 自带最新值。
+        Task { @MainActor in
+            guard BLEService.shared.connectionState.isConnected else { return }
+            do {
+                try await BLEService.shared.sendPetStatus(pet, companionCharacter: character)
+            } catch {
+                ErrorReporter.log(
+                    .sync(component: "BLE PetStatus", underlying: error.localizedDescription),
+                    context: "AppState.selectBuiltInCompanion"
+                )
+            }
+        }
         requestBLESync(reason: "selectBuiltInCompanion")
     }
 
