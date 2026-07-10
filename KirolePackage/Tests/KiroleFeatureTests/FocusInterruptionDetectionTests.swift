@@ -158,17 +158,26 @@ struct FocusInterruptionDetectionTests {
 @Suite("ScreenTime Detector State")
 struct ScreenTimeDetectorStateTests {
 
-    @Test("Extension not deployed reports extensionUnavailable regardless of authorization")
-    func extensionGateComesFirst() {
+    @Test("Deployed extension: state maps authorization and selection honestly")
+    func detectionStateMapping() {
         let guardService = DetectorMockFocusGuardService()
-        guardService.authorizationStatus = .approved
-        guardService.selection = FocusAppSelection(tokenData: Data([0x01]), selectedApplicationCount: 2)
         let detector = ScreenTimeInterruptionDetector(focusGuard: guardService)
 
-        // monitorExtensionDeployed 目前为 false（扩展待 Apple 批复）——状态必须
-        // 如实报 extensionUnavailable，绝不声称检测已开启（spec D-2 诚实要求）。
-        #expect(ScreenTimeInterruptionDetector.monitorExtensionDeployed == false)
-        #expect(detector.detectionState == .extensionUnavailable)
+        // 扩展已随构建部署（2026-07-10 接线后）。
+        #expect(ScreenTimeInterruptionDetector.monitorExtensionDeployed == true)
+
+        guardService.authorizationStatus = .denied
+        #expect(detector.detectionState == .unauthorized)
+
+        guardService.authorizationStatus = .approved
+        guardService.selection = nil
+        #expect(detector.detectionState == .selectionEmpty)
+
+        guardService.selection = FocusAppSelection(tokenData: Data(), selectedApplicationCount: 0)
+        #expect(detector.detectionState == .selectionEmpty)
+
+        guardService.selection = FocusAppSelection(tokenData: Data([0x01]), selectedApplicationCount: 2)
+        #expect(detector.detectionState == .active)
     }
 
     @Test("startMonitoring is a no-op unless detection is active")
