@@ -35,8 +35,12 @@ public final class FocusSessionService {
 
     private let localStorage: LocalStorage
     private let focusGuardService: any FocusGuardService
+    private let interruptionDetector: any FocusInterruptionDetecting
     private let persistenceEnabled: Bool
-    private var screenActivityTracker: ScreenActivityTracker?
+    /// 当前会话内已检测到的打断（由 interruptionDetector 产出）。
+    /// v2.5.20 打断判定重做：打断 = 专注期间使用自选分心 App；
+    /// 旧的「Kirole 回前台即打断」ScreenActivityTracker 路径已整体移除（spec D-2 禁止回退）。
+    private var sessionInterruptions: [ScreenUnlockEvent] = []
     private var pendingSessionPersistenceTask: Task<Void, Never>?
     private var focusDisplaySyncTask: Task<Void, Never>?
 
@@ -53,29 +57,39 @@ public final class FocusSessionService {
     private init(
         localStorage: LocalStorage = .shared,
         focusGuardService: any FocusGuardService = ScreenTimeFocusGuardService.shared,
+        interruptionDetector: (any FocusInterruptionDetecting)? = nil,
         persistenceEnabled: Bool = true,
         loadOnInit: Bool = true
     ) {
         self.localStorage = localStorage
         self.focusGuardService = focusGuardService
+        self.interruptionDetector = interruptionDetector ?? ScreenTimeInterruptionDetector.shared
         self.persistenceEnabled = persistenceEnabled
+
+        // Push + persist the moment an interruption is detected: the on-device fill resets
+        // immediately, and the active session is re-persisted so a crash recovery sees the
+        // interruption instead of over-crediting.
+        self.interruptionDetector.onInterruption = { [weak self] timestamp, duration in
+            self?.handleDetectedInterruption(startingAt: timestamp, duration: duration)
+        }
 
         guard loadOnInit else { return }
         Task { @MainActor in
             await loadFocusEnforcementMode()
             await loadTodaySessions()
             await recoverSessionOnLaunchIfNeeded()
-            setupScreenTracking()
         }
     }
 
     static func makeForTesting(
         focusGuardService: any FocusGuardService,
+        interruptionDetector: (any FocusInterruptionDetecting)? = nil,
         persistenceEnabled: Bool = false
     ) -> FocusSessionService {
         FocusSessionService(
             localStorage: .shared,
             focusGuardService: focusGuardService,
+            interruptionDetector: interruptionDetector,
             persistenceEnabled: persistenceEnabled,
             loadOnInit: false
         )
@@ -84,33 +98,26 @@ public final class FocusSessionService {
     func bootstrapForTesting() async {
         await loadTodaySessions()
         await recoverSessionOnLaunchIfNeeded()
-        setupScreenTracking()
     }
 
-    private func setupScreenTracking() {
-        let tracker = ScreenActivityTracker()
-        // Push + persist the moment an interruption is recorded: the on-device fill resets
-        // immediately, and the active session is re-persisted so a crash recovery sees the
-        // interruption instead of over-crediting. The tracker appends the unlock event before
-        // invoking this, so both already reflect the interruption.
-        tracker.onInterruptionRecorded = { [weak self] in
-            guard let self, self.activeSession != nil else { return }
-            Task { @MainActor in
-                await AppState.shared.syncFocusHardwareDisplay(session: self.activeSession)
-                await self.persistActiveSessionWithInterruptions()
-            }
+    /// 打断检测当前状态（专注界面据此明示"检测是否开启"，spec D-2）。
+    public var interruptionDetectionState: FocusInterruptionDetectionState {
+        interruptionDetector.detectionState
+    }
+
+    /// 检测源回报一次打断（打断 = 专注期间使用了自选分心 App）。
+    private func handleDetectedInterruption(startingAt timestamp: Date, duration: TimeInterval) {
+        guard let session = activeSession else { return }
+        // 时间戳夹进会话窗口，防御检测源的时钟漂移/迟到回报。
+        let clamped = max(timestamp, session.startTime)
+        sessionInterruptions.append(ScreenUnlockEvent(timestamp: clamped, duration: duration))
+        // 测试实例（persistenceEnabled=false）跳过设备推送与持久化副作用，
+        // 与本类其余持久化函数同一守卫策略（防止并行测试污染全局状态）。
+        guard persistenceEnabled else { return }
+        Task { @MainActor in
+            await AppState.shared.syncFocusHardwareDisplay(session: self.activeSession)
+            await self.persistActiveSessionWithInterruptions()
         }
-        // When an interruption closes, re-persist so the recovered session carries the resolved
-        // duration. The periodic loop stops once the app backgrounds, so this is the last write
-        // before a possible kill.
-        tracker.onInterruptionClosed = { [weak self] in
-            guard let self, self.activeSession != nil else { return }
-            Task { @MainActor in
-                await self.persistActiveSessionWithInterruptions()
-            }
-        }
-        tracker.startTracking()
-        screenActivityTracker = tracker
     }
 
     private func startFocusDisplaySyncLoop() {
@@ -181,8 +188,9 @@ public final class FocusSessionService {
         )
 
         activeSession = session
+        sessionInterruptions.removeAll()
+        interruptionDetector.startMonitoring()
         startFocusDisplaySyncLoop()
-        screenActivityTracker?.markSessionStart()
         await waitForPendingSessionPersistence()
         await persistActiveSessionIfNeeded(session)
     }
@@ -196,6 +204,7 @@ public final class FocusSessionService {
         // （Codex review P1, 2026-07-04）。
         let endTime = max(endTime, session.startTime)
         stopFocusDisplaySyncLoop()
+        interruptionDetector.stopMonitoring()
 
         if session.protectionState == .protected {
             focusGuardService.clearShield()
@@ -209,11 +218,8 @@ public final class FocusSessionService {
         session.endTime = endTime
         session.endReason = reason
 
-        // 获取会话期间的屏幕解锁事件
-        let unlockEvents = screenActivityTracker?.getUnlockEventsDuring(
-            start: session.startTime,
-            end: endTime
-        ) ?? []
+        // 获取会话期间检测到的打断事件（自选分心 App 使用）
+        let unlockEvents = currentUnlockEvents(until: endTime)
         session.screenUnlockEvents = unlockEvents
 
         // 计算专注时间
@@ -231,12 +237,12 @@ public final class FocusSessionService {
         completeSession(session, endTime: endTime, clearPersistedActiveSession: true)
     }
 
-    /// Screen-unlock (interruption) events recorded so far in the active session window.
+    /// Interruption events recorded so far in the active session window.
     /// The live hardware push uses these so the on-device fill/phase reflect interruptions in
-    /// real time, instead of a wall-clock count that never resets when the user picks up the phone.
+    /// real time, instead of a wall-clock count that never resets on a detected interruption.
     func currentUnlockEvents(until end: Date) -> [ScreenUnlockEvent] {
         guard let session = activeSession else { return [] }
-        return screenActivityTracker?.getUnlockEventsDuring(start: session.startTime, end: end) ?? []
+        return sessionInterruptions.filter { $0.timestamp >= session.startTime && $0.timestamp <= end }
     }
 
     /// 完成任务（短按滚轮）
@@ -716,87 +722,9 @@ public final class FocusSessionService {
     }
 }
 
-// MARK: - Screen Activity Tracker
-
-/// 屏幕活动追踪器
-@MainActor
-public final class ScreenActivityTracker {
-    private var unlockEvents: [ScreenUnlockEvent] = []
-    private var sessionStartTime: Date?
-    private var lastBecameActiveTime: Date?
-    private var observers: [Any] = []
-
-    /// Invoked right after an interruption is recorded during a session, so the live hardware
-    /// display can immediately reset the in-progress bottle fill instead of waiting for the next
-    /// periodic sync tick. Ordered guarantee: the unlock event is appended before this fires.
-    public var onInterruptionRecorded: (@MainActor () -> Void)?
-
-    /// Invoked right after an interruption closes (the app resigns active and the unlock event's
-    /// duration is filled in). The periodic sync loop is suspended once the app backgrounds, so
-    /// this is the last chance to re-persist the session with the resolved duration before a
-    /// possible kill — without it, recovery would treat a closed interruption as still open.
-    public var onInterruptionClosed: (@MainActor () -> Void)?
-
-    public init() {}
-
-    public func startTracking() {
-        #if canImport(UIKit)
-        let activeObserver = NotificationCenter.default.addObserver(
-            forName: UIApplication.didBecomeActiveNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in
-                self?.handleDidBecomeActive()
-            }
-        }
-
-        let resignObserver = NotificationCenter.default.addObserver(
-            forName: UIApplication.willResignActiveNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in
-                self?.handleWillResignActive()
-            }
-        }
-
-        observers = [activeObserver, resignObserver]
-        #endif
-    }
-
-    public func stopTracking() {
-        for observer in observers {
-            NotificationCenter.default.removeObserver(observer)
-        }
-        observers.removeAll()
-    }
-
-    public func markSessionStart() {
-        sessionStartTime = Date()
-        unlockEvents.removeAll()
-    }
-
-    public func getUnlockEventsDuring(start: Date, end: Date) -> [ScreenUnlockEvent] {
-        unlockEvents.filter { $0.timestamp >= start && $0.timestamp <= end }
-    }
-
-    private func handleDidBecomeActive() {
-        guard sessionStartTime != nil else { return }
-        lastBecameActiveTime = Date()
-        unlockEvents.append(ScreenUnlockEvent(timestamp: Date(), duration: nil))
-        onInterruptionRecorded?()
-    }
-
-    private func handleWillResignActive() {
-        guard let activeTime = lastBecameActiveTime, let lastEvent = unlockEvents.last else { return }
-        let duration = Date().timeIntervalSince(activeTime)
-        unlockEvents.removeLast()
-        unlockEvents.append(ScreenUnlockEvent(timestamp: lastEvent.timestamp, duration: duration))
-        lastBecameActiveTime = nil
-        onInterruptionClosed?()
-    }
-}
+// ScreenActivityTracker（「Kirole 回前台即打断」的旧信号）已于 v2.5.20 整体删除：
+// 该判定与产品设计相反（打开 Kirole 查看进度反被记打断、使用其它 App 检测不到）。
+// 新判定源见 FocusInterruptionDetector.swift；spec D-2 禁止保留任何回退路径。
 
 // MARK: - Focus Enforcement Mode Persistence
 

@@ -66,6 +66,35 @@ public struct SettingsFocusSection: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Test focus UI")
                 .accessibilityIdentifier("Debug_TestFocusUI")
+
+                Button {
+                    Task { @MainActor in
+                        if FocusSessionService.shared.activeSession == nil {
+                            await FocusSessionService.shared.startSession(
+                                taskId: "debug-focus-session",
+                                taskTitle: "Debug Focus Session"
+                            )
+                        } else {
+                            FocusSessionService.shared.endSession(reason: .skipped)
+                        }
+                    }
+                } label: {
+                    HStack {
+                        Image(systemName: "timer")
+                        Text(FocusSessionService.shared.activeSession == nil
+                             ? "Start Test Focus Session"
+                             : "End Test Focus Session")
+                    }
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(theme.colors.accent)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Start or end a test focus session")
+                .accessibilityIdentifier("Debug_TestFocusSession")
                 #endif
             }
             .padding(16)

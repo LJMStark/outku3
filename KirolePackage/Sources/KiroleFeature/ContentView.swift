@@ -6,11 +6,16 @@ public struct ContentView: View {
     @State private var appState = AppState.shared
     @State private var themeManager = ThemeManager.shared
     @State private var authManager = AuthManager.shared
+    @State private var focusService = FocusSessionService.shared
     @AppStorage("isOnboardingCompleted") private var isOnboardingCompleted: Bool = false
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var sceneCelebrationConfettiTrigger = 0
     @State private var sceneCelebrationDismissTask: Task<Void, Never>?
+    /// User tapped "hide" on the focus screen. Resets on a new session and on
+    /// app foreground so an in-progress session always lands back on the focus
+    /// screen when the app is (re)opened — 专注界面自动落位（spec 任务1）。
+    @State private var isFocusScreenHidden = false
 
     private var shouldBypassOnboardingForUITests: Bool {
         ProcessInfo.processInfo.arguments.contains("-uiTestSkipOnboarding")
@@ -166,6 +171,22 @@ public struct ContentView: View {
                     .presentationCornerRadius(24)
             }
         }
+        // 专注模式固定界面：会话进行中自动全屏呈现（App 在前台时立即；后台开始的
+        // 会话则在下次打开 App 时落位）。停留在本界面不算打断（v2.5.20 判定）。
+        .modifier(FocusScreenPresentationModifier(
+            isPresented: Binding(
+                get: { focusService.activeSession != nil && !isFocusScreenHidden },
+                set: { presented in
+                    if !presented { isFocusScreenHidden = true }
+                }
+            ),
+            onHide: { isFocusScreenHidden = true }
+        ))
+        .onChange(of: focusService.activeSession?.id) { _, newSessionId in
+            if newSessionId != nil {
+                isFocusScreenHidden = false
+            }
+        }
         .task {
             SyncScheduler.shared.startForegroundSync()
             // 等启动加载完成再读 integrations 挂 Apple observer，否则会按 defaultIntegrations(Apple=true)
@@ -179,6 +200,11 @@ public struct ContentView: View {
         .onChange(of: scenePhase) { _, newPhase in
             switch newPhase {
             case .active:
+                // Re-landing rule: an in-progress focus session takes over the
+                // screen again whenever the app returns to the foreground.
+                if focusService.activeSession != nil {
+                    isFocusScreenHidden = false
+                }
                 Task {
                     await appState.handleAppDidBecomeActive()
                     if appState.hasCompletedInitialHomeLoad {
@@ -206,6 +232,30 @@ public struct ContentView: View {
     }
 
     public init() {}
+}
+
+// MARK: - Focus Screen Presentation
+
+/// fullScreenCover 仅 iOS 可用；包同时为 macOS 编译，macOS 退化为 sheet
+/// （与 Settings 的 FocusTestPresentationModifier 同一模式）。
+private struct FocusScreenPresentationModifier: ViewModifier {
+    @Binding var isPresented: Bool
+    let onHide: () -> Void
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        #if os(iOS)
+        content.fullScreenCover(isPresented: $isPresented) {
+            FocusSessionScreen(onHide: onHide)
+                .injectAppEnvironment()
+        }
+        #else
+        content.sheet(isPresented: $isPresented) {
+            FocusSessionScreen(onHide: onHide)
+                .injectAppEnvironment()
+        }
+        #endif
+    }
 }
 
 // MARK: - Scene Unlock Banner
