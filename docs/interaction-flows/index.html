@@ -849,7 +849,7 @@ const FLOWS = [
   {
     id: "focus-rules",
     title: { zh: "专注怎么计算，怎么判定被打断", en: "How focus is counted, and what counts as an interruption" },
-    desc: { zh: "2026-07-10 更新：手机 App 已完成判定源切换与专注界面（详见下方对照表）；「使用其它 App = 打断」的实际生效还差一个系统监测扩展的上架审批。下图为约定的设计逻辑。", en: "Updated 2026-07-10: the phone App has completed the detection-source switch and the focus screen (see the comparison table below); actually enforcing \"using another app = interruption\" still awaits approval of a system monitoring extension. The chart shows the agreed design." },
+    desc: { zh: "2026-07-10 更新：判定源切换、专注界面、监测扩展已全部上线，与设计逻辑一致（见下方对照表）。打断检测需要用户授权屏幕使用时间并选择分心 App 后生效。", en: "Updated 2026-07-10: the detection-source switch, the focus screen, and the monitoring extension have all shipped and now match the design (see the comparison table below). Interruption detection takes effect once the user allows Screen Time access and picks their distracting apps." },
     chart: [
       { t: "n", actor: "app", text: { zh: "收到设备的专注信号后，App 显示固定的专注界面（App 在前台时立即切换；在后台时，用户下次打开 App 直接进入专注界面）", en: "On the device's focus signal, the App shows a dedicated focus screen (switching immediately if foregrounded; if backgrounded, landing there the next time the user opens the App)" }, tag: "live" },
       { t: "a", tone: "instant", label: { zh: "专注计时开始", en: "Focus timing starts" } },
@@ -857,7 +857,7 @@ const FLOWS = [
       { t: "a", tone: "instant", label: { zh: "每满 30 分钟", en: "Every full 30 minutes" } },
       { t: "n", actor: "app", text: { zh: "记 1 个能量瓶，并立即通知设备播放收集效果", en: "1 energy bottle is earned, and the device immediately plays the collect effect" } },
       { t: "a", label: { zh: "如果你专注期间去用了其它 App…", en: "If you go use another app during focus…" } },
-      { t: "n", actor: "user", text: { zh: "打开自选清单里的分心 App——按设计，这才是「打断」（检测生效待系统扩展上线）", en: "Opening a distracting app from your chosen list — by design, this is what counts as an interruption (enforcement awaits the system extension)" }, tag: "pending" },
+      { t: "n", actor: "user", text: { zh: "打开自选清单里的分心 App——这就是「打断」（需先授权屏幕使用时间并选好分心 App 清单）", en: "Opening a distracting app from your chosen list — this is what counts as an interruption (requires Screen Time access and a chosen app list)" }, tag: "live" },
       { t: "a", tone: "instant", label: { zh: "打断生效", en: "The interruption takes effect" } },
       { t: "n", actor: "app", text: { zh: "当前不足 30 分钟的进度作废、归零；已攒满的能量瓶保留。回到专注（锁屏或回到专注界面）后，从零重新累计下一个 30 分钟", en: "The in-progress sub-30-minute count is voided and reset; already-earned bottles are kept. Once back in focus (locking the phone or returning to the focus screen), the next 30-minute count starts from zero" } },
       { t: "a", label: { zh: "会话结束时（完成 / 跳过 / 蓝牙断开）", en: "When the session ends (complete / skip / Bluetooth lost)" } },
@@ -880,7 +880,7 @@ const FLOWS = [
         { cells: [
           { zh: "专注期间使用其它 App", en: "Using another app during focus" },
           { zh: "算打断，进度归零", en: "An interruption; progress resets" },
-          { zh: "<span class=\"diff\">暂未生效</span>——检测已按设计接入手机代码，实际生效需一个系统监测扩展（其发布权限需向 Apple 申请）；获批上线前检测保持关闭，专注界面明示「检测未开启」", en: "<span class=\"diff\">Not yet enforced</span> — detection is wired into the phone per the design, but enforcement needs a system monitoring extension (whose distribution entitlement requires Apple approval); until it ships, detection stays off and the focus screen says so explicitly" }
+          { zh: "<span class=\"same\">已上线 ✓</span>（2026-07-10 随监测扩展发布）——需用户完成两步设置：授权屏幕使用时间 + 在设置中选择分心 App；未设置时检测保持关闭，专注界面明示", en: "<span class=\"same\">Live ✓</span> (shipped 2026-07-10 with the monitoring extension) — needs two user setup steps: allow Screen Time access + pick distracting apps in Settings; until then detection stays off and the focus screen says so" }
         ] },
         { cells: [
           { zh: "手机锁屏放一边", en: "Phone locked, set aside" },
@@ -905,7 +905,7 @@ const FLOWS = [
       ]
     },
     notes: [
-      { zh: "剩余一项（其它 App 使用的实际检测）待系统监测扩展获批上线；期间专注界面明示「检测未开启」，不会静默装作在检测。已获得的能量瓶、时间戳结算等其余规则全部按设计运行。", en: "The one remaining piece (actually detecting other-app usage) awaits the system monitoring extension's approval; until then the focus screen explicitly says detection is off — it never silently pretends. Everything else (bottles, timestamp settlement, etc.) now runs per the design.", warn: true },
+      { zh: "打断检测的生效条件：用户授权屏幕使用时间 + 在设置中选好分心 App 清单。两者未完成时检测保持关闭，专注界面明示「检测未开启」——不会静默装作在检测。", en: "Interruption detection takes effect once the user allows Screen Time access and picks their distracting-app list in Settings. Until both are done, detection stays off and the focus screen says so explicitly — it never silently pretends.", warn: false },
       { zh: "平台说明：iOS 不允许 App 从后台自行跳到前台。所以「自动显示专注界面」在手机锁屏时的含义是：计时照常进行，用户下次打开 App 时直接进入专注界面。", en: "Platform note: iOS never lets an app bring itself to the foreground. So with the phone locked, \"shows the focus screen automatically\" means timing continues as normal, and the user lands on the focus screen the next time they open the App.", warn: false },
       { zh: "「能量瓶」和「专注时长」都以 30 分钟为界，但口径不同：能量瓶按每段「每满 30 分钟 +1」计；专注时长只把 ≥30 分钟的整段计入（一段 25 分钟计 0）。这两条设计与当前实现一致。", en: "Bottles and focus-time both use the 30-minute threshold but count differently: bottles are \"+1 per full 30 minutes\" within each stretch; focus-time only counts whole stretches of ≥30 minutes (a 25-minute stretch counts as 0). Both rules match between design and current implementation.", warn: false }
     ]
@@ -991,8 +991,8 @@ const ISSUES = [
     title: { zh: "设备曾把手机的两类消息报为「不认识的命令」", en: "The device once reported two phone messages as \"unknown commands\"" },
     body: { zh: "同一编号在两个传输方向代表不同含义（双方约定的设计）。设备端曾查错方向的对照表，把手机的正常消息当作未知命令。已记录在协议文档，待设备端修正。", en: "The same number means different things per direction (an agreed design). The device once used the wrong direction's lookup table and flagged normal phone messages as unknown. Recorded in the protocol doc, pending a device-side fix." } },
   { kind: "pending",
-    title: { zh: "专注打断判定（2026-07-10 已大部分修正，剩系统扩展审批）", en: "Focus-interruption logic (largely fixed 2026-07-10; a system-extension approval remains)" },
-    body: { zh: "2026-07-09 确认当前实现与设计相反；2026-07-10 手机 App 已修正：专注界面随会话自动呈现并支持下次打开落位、打开/停留 Kirole 不再记为打断（旧信号彻底移除）、30 分钟能量瓶与时间戳结算保持不变。剩余一项：「专注期间使用自选分心 App」的实际检测需要一个系统监测扩展，其发布权限需向 Apple 申请、批复后随后续版本上线——期间专注界面明示「检测未开启」，不会静默装作在检测。", en: "Confirmed inverted vs the design on 2026-07-09; fixed on the phone App on 2026-07-10: the focus screen auto-presents with the session (and re-lands on next open), opening/staying in Kirole is no longer an interruption (old signal fully removed), and the 30-minute bottle + timestamp settlement rules are unchanged. One piece remains: actually detecting usage of your chosen distracting apps needs a system monitoring extension whose distribution entitlement requires Apple approval — until it ships in a later version, the focus screen explicitly says detection is off rather than silently pretending." } }
+    title: { zh: "专注打断判定（2026-07-10 已全部修正上线）", en: "Focus-interruption logic (fully fixed and shipped 2026-07-10)" },
+    body: { zh: "2026-07-09 确认原实现与设计相反；2026-07-10 已全部修正并随版本发布：专注界面随会话自动呈现并支持下次打开落位、打开/停留 Kirole 不再记为打断（旧信号彻底移除）、「专注期间使用自选分心 App = 打断」的系统监测扩展已上线、30 分钟能量瓶与时间戳结算保持不变。用户侧生效条件：授权屏幕使用时间 + 选好分心 App 清单；未完成时专注界面明示「检测未开启」。本条保留仅作历史记录。", en: "Confirmed inverted vs the design on 2026-07-09; fully fixed and shipped on 2026-07-10: the focus screen auto-presents with the session (and re-lands on next open), opening/staying in Kirole is no longer an interruption (old signal fully removed), the system monitoring extension for \"using a chosen distracting app = interruption\" has shipped, and the 30-minute bottle + timestamp settlement rules are unchanged. User setup needed to take effect: allow Screen Time access + pick the distracting-app list; until then the focus screen says detection is off. Kept here as a historical record." } }
 ];
 
 /* ---------- appendix (engineers) ---------- */
