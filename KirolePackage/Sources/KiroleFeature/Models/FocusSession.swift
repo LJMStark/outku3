@@ -165,7 +165,9 @@ public enum FocusEndReason: String, Codable, Sendable {
 
 // MARK: - Screen Unlock Event
 
-/// 手机屏幕解锁事件
+/// 专注打断事件（历史命名保留，兼容已持久化 JSON）。v2.5.20 起语义 = 专注期间
+/// 使用自选分心 App 的一次记录（FocusInterruptionDetector 产出），不再是
+/// 「手机屏幕解锁 / Kirole 回前台」——旧信号已按 spec D-2 移除，勿据旧名复活。
 public struct ScreenUnlockEvent: Codable, Sendable {
     public let timestamp: Date
     public let duration: TimeInterval?

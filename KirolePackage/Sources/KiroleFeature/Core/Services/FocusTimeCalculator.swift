@@ -72,10 +72,11 @@ enum FocusTimeCalculator {
 
     /// End of an interruption, clamped to the focus window `[event.timestamp, windowEnd]`.
     ///
-    /// A `nil` duration means the interruption is still open at the window end (the user is still
-    /// on their phone — `handleDidBecomeActive` records the unlock with `duration: nil` until a
-    /// later `willResignActive` closes it), so it extends to `windowEnd` and no focus is credited
-    /// after it. A known duration ends it normally. Clamping keeps overlapping or out-of-window
+    /// A `nil` duration means an open-ended interruption: it extends to `windowEnd` and no focus
+    /// is credited after it. v2.5.20 起唯一的打断来源是 FocusInterruptionDetector（自选分心 App
+    /// 使用，恒带具体 duration）；`nil` 仅剩一种合法来源——升级前旧版本持久化的未闭合打断，
+    /// 在恢复结算时读到。不要为「回前台/解锁」类近似信号复活 nil-duration 写入路径（spec D-2）。
+    /// A known duration ends it normally. Clamping keeps overlapping or out-of-window
     /// events from moving the segment boundary backward or past the window end.
     private static func interruptionEnd(of event: ScreenUnlockEvent, windowEnd: Date) -> Date {
         let openDuration = max(0, windowEnd.timeIntervalSince(event.timestamp))
