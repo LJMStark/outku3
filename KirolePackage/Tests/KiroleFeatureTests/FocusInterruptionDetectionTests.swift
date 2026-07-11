@@ -192,4 +192,26 @@ struct ScreenTimeDetectorStateTests {
         detector.stopMonitoring()
         #expect(fired == false)
     }
+
+    #if os(iOS) && canImport(DeviceActivity) && canImport(FamilyControls)
+    // 仅 iOS：macOS 下 armThresholdEvent 整块不编译，失败路径不存在。
+    // 模拟器跑 xcodebuild test 时生效。
+    @Test("Arming failure surfaces as monitoringFailed instead of pretending to be active")
+    func armingFailureSurfacesHonestly() {
+        let guardService = DetectorMockFocusGuardService()
+        guardService.authorizationStatus = .approved
+        // 计数非空但 tokenData 不是合法 FamilyActivitySelection：
+        // armThresholdEvent 解码即抛，稳定走进 catch 分支。
+        guardService.selection = FocusAppSelection(tokenData: Data([0x01]), selectedApplicationCount: 2)
+        let detector = ScreenTimeInterruptionDetector(focusGuard: guardService)
+        #expect(detector.detectionState == .active)
+
+        detector.startMonitoring()
+        #expect(detector.detectionState == .monitoringFailed)
+
+        // 会话结束清除失败态：不粘到下一次会话的重试。
+        detector.stopMonitoring()
+        #expect(detector.detectionState == .active)
+    }
+    #endif
 }

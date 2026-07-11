@@ -24,6 +24,9 @@ public enum FocusInterruptionDetectionState: Equatable, Sendable {
     case selectionEmpty
     /// DeviceActivityMonitor 监测扩展未随本构建部署（历史构建/极端降级态）
     case extensionUnavailable
+    /// DeviceActivity 阈值事件武装/重挂失败（系统调用抛错）——检测实际没在跑，
+    /// 按 D-2 如实明示，禁止装作在检测
+    case monitoringFailed
 }
 
 /// 专注打断检测源。
@@ -76,6 +79,9 @@ public final class ScreenTimeInterruptionDetector: FocusInterruptionDetecting {
 
     private let focusGuard: any FocusGuardService
     private var isMonitoring = false
+    /// 本会话的阈值事件武装/重挂是否失败过。置位后 detectionState 如实返回
+    /// .monitoringFailed（D-2 禁止装作在检测）；下次 start/stopMonitoring 清零重试。
+    private var hasArmingFailed = false
     /// 每次（重新）武装阈值事件递增，保证事件名唯一——同名事件在同一监测区间
     /// 只触发一次，重新武装靠换名实现。
     private var eventCounter = 0
@@ -97,10 +103,14 @@ public final class ScreenTimeInterruptionDetector: FocusInterruptionDetecting {
         guard let selection = focusGuard.currentSelection(), !selection.isEmpty else {
             return .selectionEmpty
         }
+        // 静态前提都满足，但系统监测没武装成功——同样不算在检测（D-2）。
+        if hasArmingFailed { return .monitoringFailed }
         return .active
     }
 
     public func startMonitoring() {
+        // 新会话重新尝试：上一会话的武装失败不粘住这次。
+        hasArmingFailed = false
         guard detectionState == .active else { return }
         // 丢弃上一会话/App 死亡期间的残留记录，避免旧打断立刻污染新会话。
         drainPendingRecords(emit: false)
@@ -109,6 +119,7 @@ public final class ScreenTimeInterruptionDetector: FocusInterruptionDetecting {
             try armThresholdEvent()
             isMonitoring = true
         } catch {
+            hasArmingFailed = true
             ErrorReporter.log(
                 .sync(component: "FocusInterruptionMonitor", underlying: error.localizedDescription),
                 context: "ScreenTimeInterruptionDetector.startMonitoring"
@@ -119,6 +130,7 @@ public final class ScreenTimeInterruptionDetector: FocusInterruptionDetecting {
 
     public func stopMonitoring() {
         isMonitoring = false
+        hasArmingFailed = false
         #if os(iOS) && canImport(DeviceActivity)
         center.stopMonitoring([activityName])
         #endif
@@ -186,6 +198,8 @@ public final class ScreenTimeInterruptionDetector: FocusInterruptionDetecting {
             do {
                 try armThresholdEvent()
             } catch {
+                // 重挂失败后不会再有阈值事件——检测实质已停，必须如实明示（D-2）。
+                hasArmingFailed = true
                 ErrorReporter.log(
                     .sync(component: "FocusInterruptionMonitor", underlying: error.localizedDescription),
                     context: "ScreenTimeInterruptionDetector.rearm"

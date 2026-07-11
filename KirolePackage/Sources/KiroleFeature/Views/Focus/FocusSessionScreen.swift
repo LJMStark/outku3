@@ -149,6 +149,8 @@ public struct FocusSessionScreen: View {
             return "Interruption detection is off — choose your distracting apps in Settings to enable it. Your focus time still counts."
         case .extensionUnavailable:
             return "Interruption detection isn't available in this version yet. Your focus time still counts."
+        case .monitoringFailed:
+            return "Interruption detection couldn't start due to a system error. Your focus time still counts."
         }
     }
 
