@@ -10,8 +10,13 @@ import Observation
 ///   sending → (0x00 response OR pre-response disconnect) → awaitingReboot
 ///   sending → (non-0x00 response) → failed(.deviceRejected)
 ///   sending → (3 timeouts, connection alive throughout) → failed(.noResponse)
+///   sending → (timeout while disconnected — device never got the command) → failed(.noResponse)
 ///   awaitingReboot → (DeviceWake 0x30) → idle  (success)
 ///   awaitingReboot → (~90s timeout, no DeviceWake) → failed(.timedOutWaitingForReboot)
+///
+/// `bleService.isPendingOTAReboot` is held true for the whole sending → awaitingReboot
+/// window: §4.17 allows the device to reboot *before* acking 0x18, so the disconnect
+/// routing in BLEService.didDisconnectPeripheral must already be armed while sending.
 @MainActor
 @Observable
 public final class BLEOTACoordinator {
@@ -142,11 +147,15 @@ public final class BLEOTACoordinator {
 
     private func sendAttempt() async {
         guard attemptCount < Self.maxAttempts else {
+            bleService.isPendingOTAReboot = false
             state = .failed(.noResponse)
             return
         }
         attemptCount += 1
         state = .sending
+        // 从 sending 起就布防：固件可能收到 0x18 后不回应答直接重启（§4.17 预期路径），
+        // didDisconnect 只有看到这个标志才会把断连路由给 handleExpectedDisconnect。
+        bleService.isPendingOTAReboot = true
         // Write errors are non-fatal: the response timeout will retry or give up.
         try? await bleService.sendOTAReboot()
         scheduleResponseTimeout()
@@ -156,12 +165,22 @@ public final class BLEOTACoordinator {
         cancelResponseTimeout()
         responseTimeoutTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(BLEOTACoordinator.responseTimeoutSeconds))
-            guard !Task.isCancelled, let self, self.state == .sending else { return }
-            // If still connected after 5s with no response, retry.
-            if self.bleService.connectionState.isConnected {
-                await self.sendAttempt()
-            }
-            // If disconnected, handleExpectedDisconnect() was already called by BLEService.
+            guard !Task.isCancelled, let self else { return }
+            await self.handleResponseTimeout()
+        }
+    }
+
+    /// 5 秒未收到 0x18 应答：连接仍在 → 重试（最多 3 次）；已断开 → 判失败收尾。
+    /// 真实的升级重启断连会先经 didDisconnect 路由到 handleExpectedDisconnect（转
+    /// awaitingReboot 并取消本超时）；走进断开分支的是"从未连上 / 写失败被吞"的场景
+    /// ——设备根本没收到指令，必须给 sending 一个出口，不能永远悬着。Internal for tests.
+    func handleResponseTimeout() async {
+        guard state == .sending else { return }
+        if bleService.connectionState.isConnected {
+            await sendAttempt()
+        } else {
+            bleService.isPendingOTAReboot = false
+            state = .failed(.noResponse)
         }
     }
 

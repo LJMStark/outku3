@@ -246,11 +246,13 @@ public struct SettingsBLESection: View {
     private var otaUpgradeCard: some View {
         let otaState = otaCoordinator.state
         let hasFocusSession = FocusSessionService.shared.activeSession != nil
+        let isConnected = bleService.connectionState.isConnected
         let isBusy = otaState == .sending || otaState == .awaitingReboot
         let isDisabled: Bool = {
             if hasFocusSession { return true }
             switch otaState {
-            case .idle, .failed: return false
+            // 0x18 需要活跃连接才能送达；断连时禁用，防止点击后悬在 Sending...
+            case .idle, .failed: return !isConnected
             case .sending, .awaitingReboot: return true
             }
         }()
@@ -327,6 +329,7 @@ public struct SettingsBLESection: View {
         if hasFocusSession {
             return "Focus session in progress. End your focus session before updating firmware."
         }
+        let isConnected = bleService.connectionState.isConnected
         switch state {
         case .idle:
             if let outcome = otaCoordinator.lastOutcome {
@@ -342,6 +345,9 @@ public struct SettingsBLESection: View {
                     return "Device reconnected, but did not report a firmware version."
                 }
             }
+            if !isConnected {
+                return "Connect your Kirole device to update its firmware."
+            }
             if let firmware = bleService.deviceFirmwareVersion {
                 return "Device firmware v\(firmware). Upload update.bin via the device WiFi AP first, then tap Update. The device will reboot (~20 seconds)."
             }
@@ -350,14 +356,20 @@ public struct SettingsBLESection: View {
             return "Sending upgrade command to device..."
         case .awaitingReboot:
             return "Device is upgrading firmware (~20 seconds). Do not close this screen."
-        case .failed(.deviceRejected(let code)):
-            return "Device rejected upgrade (code 0x\(String(format: "%02X", code))). Check that update.bin was uploaded via WiFi AP."
-        case .failed(.noResponse):
-            return "Device did not respond. Check the BLE connection and try again."
-        case .failed(.timedOutWaitingForReboot):
-            return "Device did not reconnect after the expected upgrade window. Check the device."
-        case .failed:
-            return "Upgrade failed. Please try again."
+        case .failed(let failure):
+            let text: String = switch failure {
+            case .deviceRejected(let code):
+                "Device rejected upgrade (code 0x\(String(format: "%02X", code))). Check that update.bin was uploaded via WiFi AP."
+            case .noResponse:
+                "Device did not respond. Check the BLE connection and try again."
+            case .timedOutWaitingForReboot:
+                "Device did not reconnect after the expected upgrade window. Check the device."
+            }
+            // Retry 需要连接；断连时补一句原因，解释按钮为何是灰的。
+            if !isConnected, failure != .noResponse {
+                return text + " Reconnect your device to retry."
+            }
+            return text
         }
     }
 

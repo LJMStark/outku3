@@ -130,8 +130,9 @@ public final class BLEService: NSObject {
     /// 主动断开不应触发自动重连。生命周期：`disconnect()` 置 true，发起新连接时归零；
     /// `cleanup()` 不重置它（避免在 didDisconnect 回调到达前被清掉）。
     private var isIntentionalDisconnect = false
-    /// Set by BLEOTACoordinator during the OTA upgrade window.
-    /// Suppresses connection-error UI during the expected device reboot disconnect.
+    /// Set by BLEOTACoordinator for the whole OTA window (sending → awaitingReboot).
+    /// didDisconnectPeripheral 靠它把预期中的升级重启断连路由给协调器——§4.17 允许
+    /// 固件收到 0x18 后不回应答直接重启，所以 sending 阶段就必须布防，不能等应答。
     var isPendingOTAReboot = false
     /// 意外断开后的延迟重连任务，便于在主动断开 / 重新连接时取消。
     private var reconnectTask: Task<Void, Never>?

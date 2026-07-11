@@ -2,8 +2,10 @@ import Testing
 import Foundation
 @testable import KiroleFeature
 
+// .serialized：下方防卡死回归用例断言共享的 BLEService.shared.isPendingOTAReboot，
+// 并行执行时其他用例的置位/清零会在 await 悬挂点插进来造成 flake。
 @MainActor
-@Suite("BLEOTACoordinator state machine")
+@Suite("BLEOTACoordinator state machine", .serialized)
 struct BLEOTACoordinatorTests {
 
     @Test("Initial state is idle")
@@ -126,5 +128,41 @@ struct BLEOTACoordinatorTests {
         #expect(c.lastOutcome != nil)
         await c.requestReboot()
         #expect(c.lastOutcome == nil)
+    }
+
+    // MARK: - Stuck-sending regressions（2026-07-12：应答前断连 / 离线点击卡死修复）
+
+    @Test("sending arms isPendingOTAReboot so a pre-response disconnect reaches the coordinator")
+    func sendingArmsPendingOTARebootFlag() async {
+        let c = BLEOTACoordinator.makeForTesting()
+        await c.requestReboot()
+        #expect(c.state == .sending)
+        // 生产断连路由的门闩：didDisconnectPeripheral 只在该标志为 true 时才通知
+        // 协调器。此前它到 awaitingReboot 才置位，sending 期间断连永远进不来。
+        #expect(BLEService.shared.isPendingOTAReboot == true)
+        c.reset()
+        #expect(BLEService.shared.isPendingOTAReboot == false)
+    }
+
+    @Test("Response timeout while disconnected fails instead of hanging in sending")
+    func responseTimeoutWhileDisconnectedFails() async {
+        let c = BLEOTACoordinator.makeForTesting()
+        await c.requestReboot()
+        #expect(c.state == .sending)
+        // 测试环境没有 BLE 连接（写入失败被吞）：超时兜底必须给 sending 一个出口。
+        await c.handleResponseTimeout()
+        #expect(c.state == .failed(.noResponse))
+        #expect(BLEService.shared.isPendingOTAReboot == false)
+    }
+
+    @Test("Response timeout is a no-op outside sending")
+    func responseTimeoutIgnoredOutsideSending() async {
+        let c = BLEOTACoordinator.makeForTesting()
+        await c.requestReboot()
+        c.handleOTAResult(statusCode: 0x00)
+        #expect(c.state == .awaitingReboot)
+        await c.handleResponseTimeout()
+        #expect(c.state == .awaitingReboot)
+        c.reset()
     }
 }
