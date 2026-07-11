@@ -170,42 +170,44 @@ public struct SettingsFocusSection: View {
 
     @ViewBuilder
     private var actionArea: some View {
-        if appState.focusEnforcementMode == .deepFocus {
-            if !guardService.canShowDeepFocusEntry {
+        // 授权与选 App 入口对两种模式都开放：Standard 的打断检测（记打断、不拦截）
+        // 复用 Deep Focus 的授权与自选分心 App 清单（spec 2026-07-09 D-1）。此前两个
+        // 按钮只在 Deep Focus 分支渲染，Standard-only 用户被专注页文案指到 Settings
+        // 却无门可进（授权和选 App 两道门都锁）。
+        if !guardService.canShowDeepFocusEntry {
+            // FamilyControls 能力不可用时两种模式都无可操作项（状态卡已明示检测
+            // 不可用），只有 Deep Focus 需要解释为什么整个模式没了。
+            if appState.focusEnforcementMode == .deepFocus {
                 Text("Deep Focus is not available in this build.")
                     .font(.system(size: 12))
                     .foregroundStyle(theme.colors.secondaryText)
-            } else {
-                VStack(alignment: .leading, spacing: 8) {
-                    if guardService.authorizationStatus != .approved {
-                        Button {
-                            Task {
-                                _ = await guardService.requestAuthorization()
-                            }
-                        } label: {
-                            actionCapsule(
-                                icon: "hand.raised.fill",
-                                title: "Request Screen Time Access"
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Request Screen Time permission")
-                        .accessibilityIdentifier("Settings_RequestScreenTime")
-                    } else {
-                        Button {
-                            guardService.presentAppPicker()
-                        } label: {
-                            actionCapsule(
-                                icon: "app.badge",
-                                title: "Select Distracting Apps"
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Choose apps to block")
-                        .accessibilityIdentifier("Settings_SelectDistractingApps")
-                    }
-                }
             }
+        } else if guardService.authorizationStatus != .approved {
+            Button {
+                Task {
+                    _ = await guardService.requestAuthorization()
+                }
+            } label: {
+                actionCapsule(
+                    icon: "hand.raised.fill",
+                    title: "Request Screen Time Access"
+                )
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Request Screen Time permission")
+            .accessibilityIdentifier("Settings_RequestScreenTime")
+        } else {
+            Button {
+                guardService.presentAppPicker()
+            } label: {
+                actionCapsule(
+                    icon: "app.badge",
+                    title: "Select Distracting Apps"
+                )
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Choose your distracting apps")
+            .accessibilityIdentifier("Settings_SelectDistractingApps")
         }
     }
 
@@ -237,6 +239,17 @@ public struct SettingsFocusSection: View {
         if appState.focusEnforcementMode == .standard {
             // v2.5.20 打断判定重做后文案对齐：旧 "app state events" 信号已删除，
             // 现为屏幕使用时间监测自选分心 App（记打断、不拦截）。
+            // 未就绪时明示缺哪一步，与 detectionState 的 unauthorized/selectionEmpty
+            // 明示态（spec D-2）和下方 actionArea 的入口一一对应。
+            guard guardService.canShowDeepFocusEntry else {
+                return "Tracks focus time. Interruption detection isn't available on this build. No app blocking."
+            }
+            if guardService.authorizationStatus != .approved {
+                return "Tracks focus time. Allow Screen Time access and select your distracting apps to enable interruption detection. No app blocking."
+            }
+            if guardService.selectedApplicationCount == 0 {
+                return "Tracks focus time. Select your distracting apps to enable interruption detection. No app blocking."
+            }
             return "Tracks focus time; using a distracting app you selected resets the current bottle. No app blocking."
         }
 
