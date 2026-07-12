@@ -10,6 +10,7 @@ public struct SettingsBLESection: View {
     @State private var trustedDeviceCount: Int = 0
     @State private var blockedDeviceCount: Int = 0
     @State private var showClearIdentityConfirmation = false
+    @State private var showOTAUpgradeConfirmation = false
     @State private var keepAliveEnabled = false
     @State private var screenSize: ScreenSize = .fourInch
 
@@ -54,6 +55,17 @@ public struct SettingsBLESection: View {
             }
         } message: {
             Text("This removes remembered and blocked BLE devices. Use it when switching hardware boards during integration.")
+        }
+        .alert("Update Firmware?", isPresented: $showOTAUpgradeConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Update") {
+                Task { @MainActor in
+                    if case .failed = otaCoordinator.state { otaCoordinator.reset() }
+                    await otaCoordinator.requestReboot()
+                }
+            }
+        } message: {
+            Text("The device will restart and apply the staged update.bin (about 20 seconds). Make sure update.bin was uploaded via the device WiFi AP first.")
         }
     }
 
@@ -275,10 +287,8 @@ public struct SettingsBLESection: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             Button {
-                Task { @MainActor in
-                    if case .failed = otaState { otaCoordinator.reset() }
-                    await otaCoordinator.requestReboot()
-                }
+                // 防误触：0x18 一发出去设备就重启升级，先弹确认再执行。
+                showOTAUpgradeConfirmation = true
             } label: {
                 HStack(spacing: 8) {
                     if isBusy {
