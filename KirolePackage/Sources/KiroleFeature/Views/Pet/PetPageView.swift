@@ -490,39 +490,21 @@ private struct TaskItemRow: View {
 
     @ViewBuilder
     private var todayDisplayControl: some View {
-        // Due-today rows already show the yellow "today" date capsule, so the sun control
-        // only marks/offers manual selection — rendering it there would say "today" twice.
-        if !isDueToday {
-            if task.isManuallySelectedForToday() {
-                // Icon-only state badge (Microsoft To Do's My Day sun / Things 3's Today
-                // star pattern): the row's only textual date stays the real due date, so
-                // the pin marker can never read as a second "today".
-                Image(systemName: "sun.max.fill")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(theme.colors.primary.opacity(0.85))
-                    .padding(6)
-                    .background(theme.colors.primary.opacity(0.1))
-                    .clipShape(Circle())
-                    .accessibilityLabel("Shown today")
-            } else {
-                Button {
-                    onTodayDisplayChange(task, true)
-                } label: {
-                    Label("Today", systemImage: "sun.max")
-                        .font(.system(size: 12, weight: .semibold))
-                        .lineLimit(1)
-                        .fixedSize()
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(theme.colors.primary.opacity(0.1))
-                        .clipShape(Capsule())
-                }
-                .buttonStyle(.plain)
+        // Display-only. Pin/unpin is a single entry point in the ⋯ menu (Show Today /
+        // Remove from Today); the row only shows a status badge when a task is manually
+        // pinned. Due-today rows already carry the yellow "today" date capsule, so nothing
+        // renders there.
+        if !isDueToday, task.isManuallySelectedForToday() {
+            // Icon-only state badge (Microsoft To Do's My Day sun / Things 3's Today star
+            // pattern): the row's only textual date stays the real due date, so the pin
+            // marker can never read as a second "today".
+            Image(systemName: "sun.max.fill")
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(theme.colors.primary.opacity(0.85))
-                .accessibilityLabel("Show \(task.title) today")
-                .accessibilityIdentifier("Pet_TaskShowToday")
-                .accessibilityHint("Shows this task in Kirole and on the E-ink display without changing its due date")
-            }
+                .padding(6)
+                .background(theme.colors.primary.opacity(0.1))
+                .clipShape(Circle())
+                .accessibilityLabel("Shown today")
         }
     }
 }
