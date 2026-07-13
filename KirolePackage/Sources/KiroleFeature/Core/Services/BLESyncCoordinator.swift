@@ -217,6 +217,9 @@ public final class BLESyncCoordinator {
         // 同步收尾默认主动断连（省电脉冲式同步）；硬件调试仍需控制通道时保持连接不断。
         // 专注会话进行中也保持连接：硬件靠这条常驻连接的 notify(0x20) 唤醒被 iOS 挂起的 App
         // 推送实时专注状态（息屏后台链路）；脉冲式断连只服务空闲期。
+        // 取舍（codex 复审 2026-07-13 发现3）：专注期不主动断连 → 写失败的"僵尸连接"不在此回收；
+        // 但反向为写失败断连会经 handleDeviceDisconnected 杀掉专注会话（更糟），真正断链由
+        // CoreBluetooth didDisconnect 兜底（→endSession→重连）。故刻意不为写失败断连。
         if bleService.connectionState.isConnected,
            !bleService.shouldKeepConnectionOpenForDebug,
            FocusSessionService.shared.activeSession == nil {

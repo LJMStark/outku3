@@ -147,3 +147,43 @@ struct BLERateLimiterRefreshThrottleTests {
         #expect(wake == true)
     }
 }
+
+// MARK: - BLERateLimiter focus-refresh throttle (codex review 2026-07-13, 发现1)
+
+/// 护栏：0x20 触发的专注状态(0x14)回推自带独立短闸——它放在整轮 sync 的 60s 合并窗**之前**
+/// （要按时更新瓶子），故须自带限流，防固件把 0x20 当 ~2s 心跳狂发时并发 Task 在首个 BLE 写
+/// 完成、去重键更新前无界排入写队列。独立于 sync 闸与整轮 refresh 闸，三者互不挤占。
+@Suite("BLERateLimiter focus-refresh throttle")
+struct BLERateLimiterFocusRefreshThrottleTests {
+
+    @Test("given fresh limiter, when first focus-refresh trigger, then allowed")
+    func givenFresh_whenFirstFocusRefresh_thenAllowed() async {
+        let limiter = BLERateLimiter()
+
+        #expect(await limiter.allowFocusRefreshTrigger() == true)
+    }
+
+    @Test("given a focus-refresh just allowed, when immediate second, then throttled")
+    func givenFocusRefreshAllowed_whenImmediateSecond_thenThrottled() async {
+        let limiter = BLERateLimiter()
+
+        let first = await limiter.allowFocusRefreshTrigger()
+        let second = await limiter.allowFocusRefreshTrigger()
+
+        #expect(first == true)
+        #expect(second == false)
+    }
+
+    @Test("focus-refresh gate is independent of the sync and full-refresh gates")
+    func focusRefreshGateIndependent() async {
+        // 三条闸互不挤占：deviceWake(0x30) sync 闸与 0x20 整轮 refresh 闸消费后，
+        // 专注回推闸仍必须放行——否则息屏期间瓶子/段位更新被饿死。
+        let limiter = BLERateLimiter()
+
+        _ = await limiter.allowSyncTrigger()
+        _ = await limiter.allowRefreshTrigger()
+        let focus = await limiter.allowFocusRefreshTrigger()
+
+        #expect(focus == true)
+    }
+}
