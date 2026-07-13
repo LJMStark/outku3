@@ -53,6 +53,22 @@ struct BLEConnectionPolicyTests {
         #expect(BLEConnectionPolicy.shouldAutoReconnect(isIntentional: false, autoReconnectEnabled: true))
         #expect(!BLEConnectionPolicy.shouldAutoReconnect(isIntentional: false, autoReconnectEnabled: false))
     }
+
+    @Test("WiFi debug keeps BLE open even when generic keep-alive is off")
+    func wifiDebugKeepsConnectionOpen() {
+        #expect(BLEConnectionPolicy.shouldKeepConnectionOpenForDebug(
+            keepAliveEnabled: false,
+            wifiDebugRequiresConnection: true
+        ))
+        #expect(BLEConnectionPolicy.shouldKeepConnectionOpenForDebug(
+            keepAliveEnabled: true,
+            wifiDebugRequiresConnection: false
+        ))
+        #expect(!BLEConnectionPolicy.shouldKeepConnectionOpenForDebug(
+            keepAliveEnabled: false,
+            wifiDebugRequiresConnection: false
+        ))
+    }
 }
 
 // MARK: - BLERateLimiter sync throttle

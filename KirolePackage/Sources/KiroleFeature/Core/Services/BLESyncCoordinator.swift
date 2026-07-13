@@ -92,8 +92,9 @@ public final class BLESyncCoordinator {
 
         let timeoutTask = Task { @MainActor in
             try? await Task.sleep(for: .seconds(self.connectionTimeoutSeconds))
-            // keep-alive 调试模式下不因超时主动断连，保留长连接供固件调试。
-            if self.bleService.connectionState.isConnected, !self.bleService.keepAliveDebugMode {
+            // 硬件调试需要长连接时不因超时主动断连。
+            if self.bleService.connectionState.isConnected,
+               !self.bleService.shouldKeepConnectionOpenForDebug {
                 self.bleService.disconnect()
             }
         }
@@ -213,8 +214,12 @@ public final class BLESyncCoordinator {
         // 否则离线用户这条温和提醒就彻底丢了（NotificationService 此前完全没有调用方）。
         await deliverSmartReminder(appState: appState)
 
-        // 同步收尾默认主动断连（省电脉冲式同步）；keep-alive 调试模式下保持连接不断。
-        if bleService.connectionState.isConnected, !bleService.keepAliveDebugMode {
+        // 同步收尾默认主动断连（省电脉冲式同步）；硬件调试仍需控制通道时保持连接不断。
+        // 专注会话进行中也保持连接：硬件靠这条常驻连接的 notify(0x20) 唤醒被 iOS 挂起的 App
+        // 推送实时专注状态（息屏后台链路）；脉冲式断连只服务空闲期。
+        if bleService.connectionState.isConnected,
+           !bleService.shouldKeepConnectionOpenForDebug,
+           FocusSessionService.shared.activeSession == nil {
             bleService.disconnect()
         }
     }
@@ -280,9 +285,15 @@ public extension BLESyncCoordinator {
 
         task.expirationHandler = { [weak self] in
             // 到期必须【同步】结案，不能排队等 MainActor（系统可能马上挂起进程，晚一步即被 watchdog
-            // 强杀并削减后台预算）。断连优先级更低，丢到 MainActor 即可（到期一律断连，keep-alive 不例外）。
+            // 强杀并削减后台预算）。断连优先级更低，丢到 MainActor 即可。专注会话或
+            // Wi-Fi 联调进行中保持连接，供硬件 notify 和热点关闭/查询继续使用。
             complete(success: false)
-            Task { @MainActor in self?.bleService.disconnect() }
+            Task { @MainActor in
+                guard let self,
+                      FocusSessionService.shared.activeSession == nil,
+                      !self.bleService.shouldKeepConnectionOpenForDebug else { return }
+                self.bleService.disconnect()
+            }
         }
 
         await AuthManager.shared.initialize()

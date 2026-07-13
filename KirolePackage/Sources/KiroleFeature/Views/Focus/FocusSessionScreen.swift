@@ -47,67 +47,110 @@ public struct FocusSessionScreen: View {
 
     @ViewBuilder
     private func sessionContent(session: FocusSession, now: Date) -> some View {
-        let interruptions = focusService.currentUnlockEvents(until: now)
-        let segmentStart = FocusTimeCalculator.currentSegmentStart(
-            sessionStart: session.startTime,
-            now: now,
-            screenUnlockEvents: interruptions
-        )
-        let segmentSeconds = max(0, now.timeIntervalSince(segmentStart))
-        let segmentMinutes = Int(segmentSeconds / 60)
-        let bottles = FocusTimeCalculator.countableBottles(
-            sessionStart: session.startTime,
-            sessionEnd: now,
-            screenUnlockEvents: interruptions
-        )
-        let phase = FocusPhase.from(elapsedMinutes: segmentMinutes)
-        let elapsed = max(0, now.timeIntervalSince(session.startTime))
+        let progress = focusService.progressSnapshot(now: now)
 
-        VStack(spacing: 28) {
-            Spacer(minLength: 60)
+        GeometryReader { geometry in
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 28) {
+                    Spacer(minLength: 60)
 
-            VStack(spacing: 6) {
-                Text("Focusing")
-                    .font(.system(size: 15, weight: .semibold))
-                    .textCase(.uppercase)
-                    .kerning(1.2)
-                    .foregroundStyle(theme.colors.secondaryText)
-                Text(session.taskTitle)
-                    .font(.system(size: 24, weight: .bold))
-                    .foregroundStyle(theme.colors.primaryText)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-                    .padding(.horizontal, 32)
-            }
+                    VStack(spacing: 6) {
+                        Text("Focusing")
+                            .font(.system(size: 15, weight: .semibold))
+                            .textCase(.uppercase)
+                            .kerning(1.2)
+                            .foregroundStyle(theme.colors.secondaryText)
+                        Text(session.taskTitle)
+                            .font(.system(size: 24, weight: .bold))
+                            .foregroundStyle(theme.colors.primaryText)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(2)
+                            .padding(.horizontal, 32)
+                    }
 
-            FocusPetView(focusMinutes: segmentMinutes)
+                    FocusPetView(focusMinutes: progress.segmentMinutes)
 
-            Text(timeString(from: elapsed))
-                .font(.system(size: 44, weight: .bold, design: .rounded))
-                .monospacedDigit()
-                .foregroundStyle(theme.colors.primaryText)
-                .accessibilityLabel("Focused for \(timeString(from: elapsed))")
+                    Text(timeString(from: progress.elapsedSeconds))
+                        .font(.system(size: 44, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(theme.colors.primaryText)
+                        .accessibilityLabel("Focused for \(timeString(from: progress.elapsedSeconds))")
 
-            VStack(spacing: 10) {
-                ProgressView(value: min(1, segmentSeconds / bottleBlockSeconds))
-                    .tint(theme.colors.accent)
-                    .padding(.horizontal, 48)
-                HStack(spacing: 14) {
-                    Text(phase.displayString)
-                    Text("·")
-                    Text(bottles == 1 ? "1 bottle collected" : "\(bottles) bottles collected")
+                    VStack(spacing: 10) {
+                        ProgressView(value: min(1, progress.segmentSeconds / bottleBlockSeconds))
+                            .tint(theme.colors.accent)
+                            .padding(.horizontal, 48)
+                        HStack(spacing: 14) {
+                            Text(progress.phase.displayString)
+                            Text("·")
+                            Text(
+                                progress.earnedEnergyBottles == 1
+                                ? "1 bottle collected"
+                                : "\(progress.earnedEnergyBottles) bottles collected"
+                            )
+                        }
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(theme.colors.secondaryText)
+                    }
+
+                    if AppBuildEnvironment.showsHardwareDebugTools {
+                        debugControls
+                            .padding(.horizontal, 24)
+                    }
+
+                    Spacer()
+
+                    detectionNotice
+                        .padding(.horizontal, 24)
+                        .padding(.bottom, 28)
                 }
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(theme.colors.secondaryText)
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: geometry.size.height)
             }
-
-            Spacer()
-
-            detectionNotice
-                .padding(.horizontal, 24)
-                .padding(.bottom, 28)
+            .accessibilityIdentifier("focus.scrollView")
         }
-        .frame(maxWidth: .infinity)
+    }
+
+    private var debugControls: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Focus Debug")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(theme.colors.primaryText)
+
+            Toggle(
+                "1 second = 1 minute",
+                isOn: Binding(
+                    get: { focusService.isFocusTimeAccelerated },
+                    set: { focusService.setFocusTimeAcceleration($0) }
+                )
+            )
+            .font(.system(size: 13, weight: .medium))
+            .tint(theme.colors.accent)
+            .accessibilityLabel("Accelerate focus time")
+            .accessibilityHint("Makes one real second count as one focus minute")
+            .accessibilityIdentifier("focus.debug.accelerationToggle")
+
+            Button {
+                focusService.advanceFocusTime(by: 30 * 60)
+            } label: {
+                Label("Add 30 minutes", systemImage: "goforward.30")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(theme.colors.accent)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 9)
+                    .background(theme.colors.accentLight)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Add 30 focus minutes")
+            .accessibilityHint("Advances this focus session by 30 virtual minutes")
+            .accessibilityIdentifier("focus.debug.addThirtyMinutes")
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(theme.colors.cardBackground)
+        )
     }
 
     private var detectionNotice: some View {

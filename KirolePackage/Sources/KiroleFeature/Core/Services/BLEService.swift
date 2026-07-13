@@ -199,10 +199,19 @@ public final class BLEService: NSObject {
         set { UserDefaults.standard.set(newValue, forKey: Keys.keepAliveDebugMode) }
     }
 
-    /// 实际生效的自动重连开关：用户设置为准，但 keep-alive 调试模式下强制开启，
+    /// 同步收尾和看门狗是否应保留 BLE。Wi-Fi 调试已开启或正在切换时必须保留，
+    /// 否则 App 会失去关闭热点与查询状态的控制通道。
+    var shouldKeepConnectionOpenForDebug: Bool {
+        BLEConnectionPolicy.shouldKeepConnectionOpenForDebug(
+            keepAliveEnabled: keepAliveDebugMode,
+            wifiDebugRequiresConnection: BLEWiFiDebugCoordinator.shared.requiresBLEConnection
+        )
+    }
+
+    /// 实际生效的自动重连开关：用户设置为准，但硬件调试需要长连接时强制开启，
     /// 以便固件重启 / 信号抖动导致的意外掉线能立刻恢复调试连接。
     private var autoReconnectEffective: Bool {
-        autoReconnect || keepAliveDebugMode
+        autoReconnect || shouldKeepConnectionOpenForDebug
     }
 
     public nonisolated static var configuredSecurityMode: BLESecurityMode {
@@ -659,6 +668,11 @@ public final class BLEService: NSObject {
         try await writeData(type: .otaReboot, data: Data())
     }
 
+    /// 发送 Wi-Fi PC Debug (0x19) 命令。统一走 writeData，secure 模式自动封装为 0x7E。
+    public func sendWiFiDebugCommand(_ command: BLEWiFiDebugCommand) async throws {
+        try await writeData(type: .wifiDebugMode, data: command.payload)
+    }
+
     // MARK: - Private Methods
 
     private func writeData(type: BLEDataType, data: Data) async throws {
@@ -853,6 +867,9 @@ public final class BLEService: NSObject {
         connectCompletion?(.success(()))
         connectCompletion = nil
         await requestEventLogsIfNeeded()
+        if AppBuildEnvironment.showsHardwareDebugTools {
+            await BLEWiFiDebugCoordinator.shared.queryStatus()
+        }
     }
 
     func decodeReceivedMessageForTesting(_ receivedData: Data) throws -> BLEReceivedMessage? {
@@ -889,6 +906,7 @@ public final class BLEService: NSObject {
     }
 
     private func cleanup() {
+        BLEWiFiDebugCoordinator.shared.handleDisconnected()
         handshakeTimeoutTask?.cancel()
         handshakeTimeoutTask = nil
         writeCompletion?(.failure(.disconnected))
@@ -997,8 +1015,9 @@ extension BLEService: CBCentralManagerDelegate {
             // 设备断开时结束活跃的专注会话
             FocusSessionService.shared.handleDeviceDisconnected()
 
-            // 在 cleanup 之前捕获断开意图（cleanup 不重置该标记）。
+            // cleanup 会把 Wi-Fi 调试协调器重置为 unknown，故重连判定也必须先快照。
             let wasIntentional = isIntentionalDisconnect
+            let shouldAutoReconnect = autoReconnectEffective
 
             // Notify OTA coordinator so it can transition to awaitingReboot
             // without waiting for a 0x18 response that will never arrive.
@@ -1010,7 +1029,7 @@ extension BLEService: CBCentralManagerDelegate {
 
             guard BLEConnectionPolicy.shouldAutoReconnect(
                 isIntentional: wasIntentional,
-                autoReconnectEnabled: autoReconnectEffective
+                autoReconnectEnabled: shouldAutoReconnect
             ) else { return }
 
             // Apple 警告：不要在 didDisconnect 回调里立刻 connect（会卡 bad state），延迟后再发起。

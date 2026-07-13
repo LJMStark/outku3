@@ -47,4 +47,12 @@ public enum BLEConnectionPolicy {
     public static func shouldAutoReconnect(isIntentional: Bool, autoReconnectEnabled: Bool) -> Bool {
         autoReconnectEnabled && !isIntentional
     }
+
+    /// 固件联调是否仍依赖当前 BLE 控制通道。
+    public static func shouldKeepConnectionOpenForDebug(
+        keepAliveEnabled: Bool,
+        wifiDebugRequiresConnection: Bool
+    ) -> Bool {
+        keepAliveEnabled || wifiDebugRequiresConnection
+    }
 }

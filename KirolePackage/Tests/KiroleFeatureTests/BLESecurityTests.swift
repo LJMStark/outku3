@@ -134,6 +134,46 @@ struct BLESecurityTests {
         }
     }
 
+    @Test("WiFi debug uses secure 0x7E envelopes in both directions")
+    @MainActor
+    func wifiDebugSecureEnvelopeRoundTrip() async throws {
+        configureSecret()
+        defer { resetSecret() }
+        let manager = BLESecurityManager()
+
+        let request = try manager.makeHandshakeRequestPayload()
+        let response = try makeHandshakeResponse(for: request)
+        try manager.validateHandshakeResponsePayload(response)
+
+        let appPayload = try manager.securePayload(
+            type: BLEDataType.wifiDebugMode.rawValue,
+            payload: BLEWiFiDebugCommand.enable.payload
+        )
+        let appFrame = BLESimpleEncoder.encode(type: BLEDataType.secureData.rawValue, payload: appPayload)
+        let appOpened = try manager.openSecurePayload(appFrame.subdata(in: 3..<appFrame.count))
+        #expect(appFrame[0] == BLEDataType.secureData.rawValue)
+        #expect(appOpened.type == BLEDataType.wifiDebugMode.rawValue)
+        #expect(appOpened.payload == Data([0x01]))
+
+        let devicePayload = try manager.securePayload(
+            type: BLEDataType.wifiDebugMode.rawValue,
+            payload: Data([0x01, 0x00])
+        )
+        var deviceFrame = Data([BLEDataType.secureData.rawValue, UInt8(devicePayload.count)])
+        deviceFrame.append(devicePayload)
+        let outerMessage = try #require(BLESimpleDecoder.decode(deviceFrame))
+        let innerMessage = try manager.openSecurePayload(outerMessage.payload)
+        let coordinator = BLEWiFiDebugCoordinator.makeForTesting { _ in }
+        await coordinator.queryStatus()
+        await BLEEventHandler.handleReceivedPayload(
+            innerMessage,
+            service: .shared,
+            wifiDebugCoordinator: coordinator
+        )
+        #expect(coordinator.state == .on)
+        #expect(coordinator.isEnabled)
+    }
+
     private func configureSecret() {
         AppSecrets.configure(
             supabaseURL: nil,

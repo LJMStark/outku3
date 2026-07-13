@@ -98,8 +98,20 @@ extension AppState {
         if FocusSessionService.shared.activeSession == nil {
             await syncIdleHardwareDisplay()
         } else {
+            // 后台唤醒先补取挂起期间累积的打断，专注快照才不漏归零（息屏后台链路）。
+            FocusSessionService.shared.refreshInterruptionsFromAppGroup()
             await syncFocusHardwareDisplay(session: FocusSessionService.shared.activeSession, now: now)
         }
+    }
+
+    /// 硬件在专注会话进行中周期性发 0x20（notify）唤醒被 iOS 挂起的 App，推送最新专注状态
+    /// （息屏后台链路——挂起时进程内定时器停摆，唯一可靠的后台唤醒是外设 notify）。
+    /// 只在有活跃会话时做事：抽取挂起期间的打断 → 现算并推 0x14。整轮 sync 与本方法解耦，
+    /// 仍走 BLEEventHandler 里的 60s 合并闸。
+    func handleFocusRefreshRequest(now: Date = Date()) async {
+        guard let session = FocusSessionService.shared.activeSession else { return }
+        FocusSessionService.shared.refreshInterruptionsFromAppGroup()
+        await syncFocusHardwareDisplay(session: session, now: now)
     }
 
     func handleHardwareSleep(now: Date = Date()) async {
@@ -143,39 +155,13 @@ extension AppState {
     }
 
     func syncFocusHardwareDisplay(session: FocusSession?, now: Date = Date()) async {
-        let elapsedMinutes: Int
-        let segmentMinutes: Int
-        let focusPhase: FocusPhase
-        let focusBottles: Int
-
-        if let session {
-            // Two distinct counters per the focus-status protocol (v2.5.5):
-            // - `elapsedMinutes` (ElapsedTime): total wall-clock minutes since the session began,
-            //   a monotonic "focused N minutes" counter that does NOT reset on interruption.
-            // - `segmentMinutes` (SegmentMinutes): minutes into the CURRENT uninterrupted segment,
-            //   which resets to zero after each interruption and drives the on-device fill bar.
-            // `focusBottles`/`focusPhase` follow the segment so the banked count matches what
-            // endSession settles and the visual stage resets together with the fill.
-            let unlockEvents = FocusSessionService.shared.currentUnlockEvents(until: now)
-            let segmentStart = FocusTimeCalculator.currentSegmentStart(
-                sessionStart: session.startTime,
-                now: now,
-                screenUnlockEvents: unlockEvents
-            )
-            elapsedMinutes = max(0, Int(now.timeIntervalSince(session.startTime) / 60))
-            segmentMinutes = max(0, Int(now.timeIntervalSince(segmentStart) / 60))
-            focusPhase = FocusPhase.from(elapsedMinutes: segmentMinutes)
-            focusBottles = FocusTimeCalculator.countableBottles(
-                sessionStart: session.startTime,
-                sessionEnd: now,
-                screenUnlockEvents: unlockEvents
-            )
-        } else {
-            elapsedMinutes = 0
-            segmentMinutes = 0
-            focusPhase = .idle
-            focusBottles = 0
-        }
+        // 专注页、硬件帧和结束结算读同一个快照，调试倍率与手动快进因此不会只作用在界面上。
+        // session == nil 时服务返回 idle 快照，保留原有的空闲状态推送。
+        let progress = FocusSessionService.shared.progressSnapshot(for: session, now: now)
+        let elapsedMinutes = progress.elapsedMinutes
+        let segmentMinutes = progress.segmentMinutes
+        let focusPhase = progress.phase
+        let focusBottles = progress.earnedEnergyBottles
 
         // Real BLE push (all builds)
         // 短窗同内容去重，防前台化双观察者背靠背推同帧：见 AppState.lastFocusStatusDedupKey。

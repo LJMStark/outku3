@@ -41,4 +41,58 @@ final class KiroleUITests: XCTestCase {
 
         XCTAssertTrue(scrollToTopButton.waitForExistence(timeout: 5))
     }
+
+    @MainActor
+    func testHardwareAndFocusDebugControlsAreReachable() throws {
+        let app = XCUIApplication()
+        app.launchArguments.append("-uiTestSkipOnboarding")
+        app.launch()
+
+        let settingsTab = app.buttons["appHeader.settingsTab"]
+        XCTAssertTrue(settingsTab.waitForExistence(timeout: 5))
+        settingsTab.tap()
+
+        let settingsScrollView = app.scrollViews["settings.scrollView"]
+        XCTAssertTrue(settingsScrollView.waitForExistence(timeout: 5))
+
+        let wifiDebugCard = app.otherElements["Settings_WiFiPCDebugCard"]
+        let wifiDebugToggle = app.switches["Settings_WiFiPCDebugToggle"]
+        scrollUntilHittable(wifiDebugToggle, in: settingsScrollView)
+        XCTAssertTrue(wifiDebugCard.exists)
+        XCTAssertTrue(wifiDebugToggle.exists)
+        XCTAssertFalse(wifiDebugToggle.isEnabled)
+
+        let testFocusButton = app.buttons["Debug_TestFocusSession"]
+        scrollUntilHittable(testFocusButton, in: settingsScrollView)
+        XCTAssertTrue(testFocusButton.exists)
+        testFocusButton.tap()
+
+        let focusScrollView = app.scrollViews["focus.scrollView"]
+        XCTAssertTrue(focusScrollView.waitForExistence(timeout: 5))
+
+        let accelerationToggle = app.switches["focus.debug.accelerationToggle"]
+        scrollUntilHittable(accelerationToggle, in: focusScrollView)
+        XCTAssertTrue(accelerationToggle.isHittable)
+        accelerationToggle.tap()
+
+        let addThirtyMinutes = app.buttons["focus.debug.addThirtyMinutes"]
+        scrollUntilHittable(addThirtyMinutes, in: focusScrollView)
+        XCTAssertTrue(addThirtyMinutes.isHittable)
+        addThirtyMinutes.tap()
+
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+    }
+
+    @MainActor
+    private func scrollUntilHittable(
+        _ element: XCUIElement,
+        in scrollView: XCUIElement,
+        maximumAttempts: Int = 12
+    ) {
+        for _ in 0..<maximumAttempts where !element.isHittable {
+            scrollView.swipeUp()
+        }
+    }
 }

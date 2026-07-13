@@ -25,6 +25,9 @@ public final class FocusSessionService {
     /// 专注统计数据
     public private(set) var statistics: FocusStatistics = FocusStatistics()
 
+    /// 当前会话是否按 60 倍虚拟时间运行。仅保存在内存中，新会话与 App 重启都会恢复正常速度。
+    public private(set) var isFocusTimeAccelerated = false
+
     // MARK: - Focus Enforcement Mode
 
     /// Controls how strictly the app enforces focus: .standard (suggestion) or .deepFocus (screen-time block).
@@ -43,6 +46,7 @@ public final class FocusSessionService {
     private var sessionInterruptions: [ScreenUnlockEvent] = []
     private var pendingSessionPersistenceTask: Task<Void, Never>?
     private var focusDisplaySyncTask: Task<Void, Never>?
+    var debugTimeline: FocusDebugTimeline?
 
     // MARK: - Constants
 
@@ -120,13 +124,27 @@ public final class FocusSessionService {
         }
     }
 
+    /// 被 BLE 后台唤醒（0x20/0x30）后调用：先补取挂起期间累积到 App Group 的打断，再由调用方
+    /// 现算并推 0x14——保证后台推给硬件的瓶子/段位已反映应归零的打断（息屏后台链路）。
+    public func refreshInterruptionsFromAppGroup() {
+        interruptionDetector.drainPendingInterruptions()
+    }
+
     private func startFocusDisplaySyncLoop() {
         focusDisplaySyncTask?.cancel()
+        guard persistenceEnabled else {
+            focusDisplaySyncTask = nil
+            return
+        }
         focusDisplaySyncTask = Task { @MainActor [weak self] in
             guard let self else { return }
             await AppState.shared.syncFocusHardwareDisplay(session: self.activeSession)
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(self.nextFocusDisplaySyncDelay()))
+                do {
+                    try await Task.sleep(for: .seconds(self.nextFocusDisplaySyncDelay()))
+                } catch {
+                    return
+                }
                 guard !Task.isCancelled else { return }
                 await AppState.shared.syncFocusHardwareDisplay(session: self.activeSession)
             }
@@ -137,24 +155,56 @@ public final class FocusSessionService {
     /// the current uninterrupted segment (so the "bottle collected" effect lands on time) and a
     /// 60-second periodic refresh ceiling.
     private func nextFocusDisplaySyncDelay(now: Date = Date()) -> TimeInterval {
-        let periodicCeiling: TimeInterval = 60
-        guard let session = activeSession else { return periodicCeiling }
-        let segmentStart = FocusTimeCalculator.currentSegmentStart(
-            sessionStart: session.startTime,
-            now: now,
-            screenUnlockEvents: currentUnlockEvents(until: now)
-        )
-        let secondsToNextBottle = FocusTimeCalculator.secondsUntilNextBottle(
-            segmentStart: segmentStart,
-            now: now,
-            blockSeconds: Constants.focusThresholdSeconds
-        )
-        return max(1, min(periodicCeiling, secondsToNextBottle))
+        let rate = debugTimeline?.rate ?? 1
+        let periodicCeiling = 60 / rate
+        guard activeSession != nil else { return periodicCeiling }
+        let segmentSeconds = progressSnapshot(now: now).segmentSeconds
+        let remainder = segmentSeconds.truncatingRemainder(dividingBy: Constants.focusThresholdSeconds)
+        let virtualSecondsToNextBottle = Constants.focusThresholdSeconds - remainder
+        return max(0.25, min(periodicCeiling, virtualSecondsToNextBottle / rate))
     }
 
     private func stopFocusDisplaySyncLoop() {
         focusDisplaySyncTask?.cancel()
         focusDisplaySyncTask = nil
+    }
+
+    // MARK: - Focus Debug Timeline
+
+    /// 在当前真实会话上切换 60 倍虚拟时间；检查点会保住切换瞬间已有进度。
+    public func setFocusTimeAcceleration(_ enabled: Bool, now: Date = Date()) {
+        guard AppBuildEnvironment.showsHardwareDebugTools,
+              activeSession != nil,
+              isFocusTimeAccelerated != enabled,
+              var timeline = debugTimeline else { return }
+        timeline.setRate(enabled ? 60 : 1, at: now)
+        debugTimeline = timeline
+        isFocusTimeAccelerated = enabled
+        startFocusDisplaySyncLoop()
+    }
+
+    /// 在当前真实会话的虚拟时间轴上前进指定秒数，不改 `startTime` / `endTime`。
+    public func advanceFocusTime(by seconds: TimeInterval, now: Date = Date()) {
+        guard AppBuildEnvironment.showsHardwareDebugTools,
+              activeSession != nil,
+              seconds > 0,
+              var timeline = debugTimeline else { return }
+        timeline.advance(by: seconds, at: now)
+        debugTimeline = timeline
+        pushCurrentFocusDisplayImmediately()
+    }
+
+    private func pushCurrentFocusDisplayImmediately() {
+        guard persistenceEnabled else { return }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await AppState.shared.syncFocusHardwareDisplay(session: self.activeSession)
+        }
+    }
+
+    private func resetDebugTimeline(sessionStart: Date? = nil) {
+        isFocusTimeAccelerated = false
+        debugTimeline = sessionStart.map(FocusDebugTimeline.init)
     }
 
     // MARK: - Session Management
@@ -189,6 +239,7 @@ public final class FocusSessionService {
 
         activeSession = session
         sessionInterruptions.removeAll()
+        resetDebugTimeline(sessionStart: startTime)
         interruptionDetector.startMonitoring()
         startFocusDisplaySyncLoop()
         await waitForPendingSessionPersistence()
@@ -222,18 +273,14 @@ public final class FocusSessionService {
         let unlockEvents = currentUnlockEvents(until: endTime)
         session.screenUnlockEvents = unlockEvents
 
-        // 计算专注时间
-        session.calculatedFocusTime = calculateFocusTime(
-            sessionStart: session.startTime,
-            sessionEnd: endTime,
+        let settlementEvaluationDate = debugTimeline?.settlementEvaluationDate(for: endTime) ?? endTime
+        let progress = progressSnapshot(
+            for: session,
+            now: settlementEvaluationDate,
             screenUnlockEvents: unlockEvents
         )
-
-        session.earnedEnergyBottles = FocusTimeCalculator.countableBottles(
-            sessionStart: session.startTime,
-            sessionEnd: endTime,
-            screenUnlockEvents: unlockEvents
-        )
+        session.calculatedFocusTime = progress.countableFocusTime
+        session.earnedEnergyBottles = progress.earnedEnergyBottles
         completeSession(session, endTime: endTime, clearPersistedActiveSession: true)
     }
 
@@ -652,7 +699,7 @@ public final class FocusSessionService {
     // MARK: - Focus Time Calculation
 
     /// 计算专注时间：只有超过阈值的无屏幕活动时段才计入
-    private func calculateFocusTime(
+    func calculateFocusTime(
         sessionStart: Date,
         sessionEnd: Date,
         screenUnlockEvents: [ScreenUnlockEvent]
@@ -672,6 +719,7 @@ public final class FocusSessionService {
     ) {
         todaySessions.append(session)
         activeSession = nil
+        resetDebugTimeline()
         updateStatistics()
 
         let bottlesToAdd = session.earnedEnergyBottles

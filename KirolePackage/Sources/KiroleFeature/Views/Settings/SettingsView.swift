@@ -85,6 +85,7 @@ struct SettingsView: View {
             .padding(.top, 24)
             .frame(width: viewportWidth)
         }
+        .accessibilityIdentifier("settings.scrollView")
         .background(theme.colors.background)
         .onAppear { appeared = true }
     }

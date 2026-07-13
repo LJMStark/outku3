@@ -10,9 +10,19 @@ private final class MockInterruptionDetector: FocusInterruptionDetecting {
     var onInterruption: ((Date, TimeInterval) -> Void)?
     var startMonitoringCount = 0
     var stopMonitoringCount = 0
+    var drainCount = 0
+    /// 模拟扩展在 App 挂起期间写入 App Group 的打断，等一次后台唤醒 drain 时逐条回调。
+    var pendingInterruptions: [(Date, TimeInterval)] = []
 
     func startMonitoring() { startMonitoringCount += 1 }
     func stopMonitoring() { stopMonitoringCount += 1 }
+
+    func drainPendingInterruptions() {
+        drainCount += 1
+        let pending = pendingInterruptions
+        pendingInterruptions.removeAll()
+        for (timestamp, duration) in pending { onInterruption?(timestamp, duration) }
+    }
 
     func simulateInterruption(at timestamp: Date, duration: TimeInterval = 60) {
         onInterruption?(timestamp, duration)
@@ -149,6 +159,49 @@ struct FocusInterruptionDetectionTests {
         await service.startSession(taskId: "t2", taskTitle: "Task 2", startTime: secondStart)
         let events = service.currentUnlockEvents(until: secondStart.addingTimeInterval(600))
         #expect(events.isEmpty)
+    }
+
+    @Test("Background-wake refresh forwards to the detector's App Group drain")
+    func backgroundWakeRefreshForwardsToDetector() async {
+        let detector = MockInterruptionDetector()
+        let service = makeService(detector: detector)
+        await service.startSession(
+            taskId: "t1", taskTitle: "Task",
+            startTime: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+
+        service.refreshInterruptionsFromAppGroup()
+
+        #expect(detector.drainCount == 1)
+    }
+
+    @Test("Draining a suspended-window interruption on wake records it and resets the segment")
+    func drainOnWakeRecordsSuspendedInterruption() async {
+        let detector = MockInterruptionDetector()
+        let service = makeService(detector: detector)
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        await service.startSession(taskId: "t1", taskTitle: "Task", startTime: start)
+
+        // An interruption landed in the App Group while the app was suspended behind a locked
+        // screen; the Darwin notify that would have drained it never reached the suspended app.
+        let interruptionAt = start.addingTimeInterval(20 * 60)
+        detector.pendingInterruptions = [(interruptionAt, 60)]
+
+        // The hardware's periodic 0x20 wakes the app, which drains before computing the snapshot.
+        service.refreshInterruptionsFromAppGroup()
+
+        let now = start.addingTimeInterval(25 * 60)
+        let events = service.currentUnlockEvents(until: now)
+        #expect(detector.drainCount == 1)
+        #expect(events.count == 1)
+        #expect(events[0].timestamp == interruptionAt)
+
+        let segmentStart = FocusTimeCalculator.currentSegmentStart(
+            sessionStart: start,
+            now: now,
+            screenUnlockEvents: events
+        )
+        #expect(segmentStart == interruptionAt.addingTimeInterval(60))
     }
 }
 

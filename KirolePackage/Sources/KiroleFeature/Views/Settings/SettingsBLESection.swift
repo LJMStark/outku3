@@ -7,6 +7,7 @@ public struct SettingsBLESection: View {
     @State private var energyBottles: Int = 0
     @State private var bleService = BLEService.shared
     @State private var otaCoordinator = BLEOTACoordinator.shared
+    @State private var wifiDebugCoordinator = BLEWiFiDebugCoordinator.shared
     @State private var trustedDeviceCount: Int = 0
     @State private var blockedDeviceCount: Int = 0
     @State private var showClearIdentityConfirmation = false
@@ -35,6 +36,7 @@ public struct SettingsBLESection: View {
 
             // 固件联调开关：DEBUG 包恒显示；Release 包仅 TestFlight 显示；正式上架包隐藏。
             if AppBuildEnvironment.showsHardwareDebugTools {
+                wifiDebugCard
                 keepAliveCard
             }
 
@@ -47,6 +49,10 @@ public struct SettingsBLESection: View {
             keepAliveEnabled = bleService.keepAliveDebugMode
             screenSize = bleService.hardwareScreenSize
             await refreshIdentityCounts()
+            if AppBuildEnvironment.showsHardwareDebugTools,
+               bleService.connectionState.isConnected {
+                await wifiDebugCoordinator.queryStatus()
+            }
         }
         .alert("Clear Trusted Devices?", isPresented: $showClearIdentityConfirmation) {
             Button("Cancel", role: .cancel) {}
@@ -389,6 +395,94 @@ public struct SettingsBLESection: View {
         case .sending:        "Sending..."
         case .awaitingReboot: "Upgrading... (~20s)"
         case .failed:         "Retry"
+        }
+    }
+
+    @MainActor
+    private var wifiDebugCard: some View {
+        let isConnected = bleService.connectionState.isConnected
+        let isDisabled = !isConnected || wifiDebugCoordinator.isBusy
+        let toggleBinding = Binding(
+            get: { wifiDebugCoordinator.isEnabled },
+            set: { newValue in
+                Task { @MainActor in
+                    await wifiDebugCoordinator.setEnabled(newValue)
+                }
+            }
+        )
+
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: "wifi.router")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(wifiDebugCoordinator.isEnabled ? Color.orange : theme.colors.secondaryText)
+
+                Text("Wi-Fi PC Debug")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(theme.colors.primaryText)
+
+                Spacer()
+
+                if wifiDebugCoordinator.isBusy {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                        .tint(Color.orange)
+                        .accessibilityLabel("Sending Wi-Fi debug command")
+                }
+
+                Toggle("", isOn: toggleBinding)
+                    .labelsHidden()
+                    .tint(Color.orange)
+                    .disabled(isDisabled)
+                    .accessibilityLabel("Wi-Fi PC Debug")
+                    .accessibilityHint("Starts or stops the device Wi-Fi access point for PC debugging")
+                    .accessibilityIdentifier("Settings_WiFiPCDebugToggle")
+            }
+
+            Text(wifiDebugDescription(isConnected: isConnected))
+                .font(.system(size: 12))
+                .foregroundStyle(wifiDebugCoordinator.failure == nil ? theme.colors.secondaryText : Color.red)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if wifiDebugCoordinator.isEnabled {
+                Text("On your PC, connect to the device hotspot, then open http://192.168.4.1/.")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(theme.colors.primaryText)
+                    .textSelection(.enabled)
+                    .accessibilityIdentifier("Settings_WiFiPCDebugAddress")
+            }
+        }
+        .padding(16)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 24))
+        .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("Settings_WiFiPCDebugCard")
+    }
+
+    private func wifiDebugDescription(isConnected: Bool) -> String {
+        if !isConnected {
+            return "Connect your Kirole device over BLE to control its Wi-Fi debug access point."
+        }
+        if let failure = wifiDebugCoordinator.failure {
+            return failure.message
+        }
+        if wifiDebugCoordinator.isQuerying {
+            return "Checking the device Wi-Fi debug status..."
+        }
+        switch wifiDebugCoordinator.state {
+        case .unknown:
+            return "Wi-Fi debug status is unknown. Reopen Hardware Details to query it."
+        case .off:
+            return "Starts the device SoftAP for PC debugging while keeping BLE connected."
+        case .enabling:
+            return "Starting the device Wi-Fi debug access point..."
+        case .on:
+            return "The device Wi-Fi debug access point is running."
+        case .disabling:
+            return "Stopping the device Wi-Fi debug access point..."
+        case .failed:
+            return "The Wi-Fi debug command failed. Toggle again to retry."
         }
     }
 

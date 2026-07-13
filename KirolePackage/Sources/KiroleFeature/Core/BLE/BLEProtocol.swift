@@ -19,6 +19,7 @@ import Foundation
 //   0x16 screensaver     屏保金句/明信片（业务帧，secure 模式可发；替代旧 0xAA 开发命令）
 //   0x17 sceneUnlock     场景解锁（业务帧，secure 模式可发；替代旧 0xAA 开发命令）
 //   0x18 otaReboot       触发固件升级重启（零 payload；固件校验包后应答并重启，不等 App 确认）
+//   0x19 wifiDebugMode   Wi-Fi PC 调试模式（App 命令 00/01/02；Device 应答 enabled+status）
 //   0x20 eventLogRequest 请求增量 Event Log
 //   0x21 eventLogBatch   批量回传 Event Log（Device→App，此 type 仅出现在入站方向）
 //   0x7E secureData      安全封装（v2 SecureEnvelope）
@@ -39,6 +40,7 @@ import Foundation
 //   0x15 viewEventDetail        查看日历事件详情
 //   0x16 reminderAcknowledged   用户确认智能提醒
 //   0x17 reminderDismissed      智能提醒超时关闭
+//   0x19 wifiDebugMode          Wi-Fi PC 调试实时应答（不进入 Event Log 批次）
 //   0x20 requestRefresh         请求数据刷新
 //   0x21 eventLogBatch          批量回传事件（含 EventLogType.rawByte 流）
 //   0x30 deviceWake             设备唤醒（payload: 电量1B；v2.5.19+ 追加固件版本3B，仅实时帧）
@@ -73,6 +75,8 @@ public enum BLEDataType: UInt8, Sendable {
     case sceneUnlock = 0x17
     /// App→Device: 触发固件升级重启（零 payload），见协议文档 §4.17
     case otaReboot = 0x18
+    /// 双向实时帧：App payload 为 disable(00)/enable(01)/query(02)，设备应答为 enabled(1B)+status(1B)。
+    case wifiDebugMode = 0x19
     case eventLogRequest = 0x20
     case eventLogBatch = 0x21
     case secureData = 0x7E

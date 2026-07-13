@@ -43,6 +43,15 @@ public protocol FocusInterruptionDetecting: AnyObject {
     func startMonitoring()
     /// 专注会话结束时调用。
     func stopMonitoring()
+    /// 主动补取挂起期间累积到 App Group 的打断记录并逐条回调。
+    /// 被 BLE 后台唤醒（0x20/0x30）时调用：Darwin 通知不投递给完全挂起的进程，故唤醒后需
+    /// 主动抽一次，专注快照才不会漏掉应归零的打断（息屏后台链路）。
+    func drainPendingInterruptions()
+}
+
+/// 默认无操作：仅 ScreenTime 实现有 App Group 待取记录；其它检测源/测试 mock 按需覆盖。
+public extension FocusInterruptionDetecting {
+    func drainPendingInterruptions() {}
 }
 
 // MARK: - Screen Time Implementation
@@ -134,6 +143,12 @@ public final class ScreenTimeInterruptionDetector: FocusInterruptionDetecting {
         #if os(iOS) && canImport(DeviceActivity)
         center.stopMonitoring([activityName])
         #endif
+    }
+
+    /// 见协议 `drainPendingInterruptions()`：被 BLE 后台唤醒时主动补取 App Group 里挂起期间
+    /// 累积的打断记录并逐条回调（等同回前台/Darwin 取件，只是多了一个唤醒时机）。
+    public func drainPendingInterruptions() {
+        drainPendingRecords(emit: true)
     }
 
     // MARK: - DeviceActivity arming

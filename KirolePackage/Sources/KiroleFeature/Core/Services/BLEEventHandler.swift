@@ -11,7 +11,18 @@ public enum BLEEventHandler {
     // MARK: - Payload Handling
 
     /// 处理接收到的 BLE 消息
-    static func handleReceivedPayload(_ message: BLEReceivedMessage, service: BLEService) async {
+    static func handleReceivedPayload(
+        _ message: BLEReceivedMessage,
+        service: BLEService,
+        wifiDebugCoordinator: BLEWiFiDebugCoordinator = .shared
+    ) async {
+        // 0x19 是当前连接内的实时控制应答，不属于可离线重放的 Event Log。
+        // 必须在 EventLog 解析之前截获，否则可能被误丢弃或将来撞上同字节的新事件。
+        if message.type == BLEDataType.wifiDebugMode.rawValue {
+            wifiDebugCoordinator.handleResponse(payload: message.payload)
+            return
+        }
+
         // Handle event log batch (0x21) separately -- keep existing batch logic
         if message.type == BLEDataType.eventLogBatch.rawValue {
             await handleEventLogBatch(message.payload, service: service)
@@ -64,6 +75,12 @@ public enum BLEEventHandler {
 
         case .requestRefresh:
             Task { @MainActor in
+                // 息屏后台链路：专注会话进行中，硬件周期性发 0x20（notify）唤醒被 iOS 挂起的 App。
+                // 先在合并闸之前推一帧最新专注状态，让瓶子/段位按 30 分钟递增不被 60s 去抖饿死；
+                // 整轮 sync 仍走下方 60s 合并闸。协议见 §5.7 / §8.5。
+                if FocusSessionService.shared.activeSession != nil {
+                    await AppState.shared.handleFocusRefreshRequest()
+                }
                 // 0x20 用独立的 refresh 闸（非 deviceWake 的 10s 闸），不被频繁唤醒饿死。
                 // 联调期固件把 0x20 当 ~2s 心跳狂发；refresh 闸用 60s 合并窗把整轮 sync 去抖为
                 // 每分钟最多一次——既挡住心跳刷屏，又保留用户物理刷新（固件停止心跳后，一次按键
