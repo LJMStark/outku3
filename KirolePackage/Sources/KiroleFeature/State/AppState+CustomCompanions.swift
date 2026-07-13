@@ -21,7 +21,7 @@ extension AppState {
         backstory: String = "",
         sensitiveBoundary: String = "",
         previewData: Data,
-        pixelData: Data
+        imageData: Data
     ) async throws -> CustomCompanion {
         let id = UUID()
         let companion = CustomCompanion(
@@ -43,7 +43,7 @@ extension AppState {
         try await localStorage.saveCustomCompanionAssets(
             id: id,
             previewData: previewData,
-            pixelData: pixelData
+            imageData: imageData
         )
 
         // Build the would-be list and try to persist before mutating shared state. If list
@@ -139,11 +139,11 @@ extension AppState {
         updateUserProfile(profile)
         requestBLESync(reason: "selectCustomCompanion")
 
-        // Re-push the pixel frame so the device shows the newly active avatar.
+        // Re-push the avatar PNG so the device shows the newly active avatar.
         Task { @MainActor in
-            guard let pixels = await localStorage.loadCustomCompanionPixels(id: id) else { return }
+            guard let imageData = await localStorage.loadCustomCompanionImageData(id: id) else { return }
             customAvatarFlushAttempts = 0  // fresh retry budget for the newly selected avatar
-            await pushCustomAvatarFrame(pixelData: pixels, companionId: id)
+            await pushCustomAvatarFrame(imageData: imageData, companionId: id)
         }
     }
 
@@ -165,11 +165,28 @@ extension AppState {
         }
     }
 
-    /// Sends the avatar pixel frame via BLE. On failure, queues the companion ID in LocalStorage
+    /// Sends the avatar PNG frame via BLE. On failure, queues the companion ID in LocalStorage
     /// so `flushPendingCustomCompanionPushIfNeeded` can retry on the next BLE reconnect.
-    private func pushCustomAvatarFrame(pixelData: Data, companionId: UUID) async {
+    private func pushCustomAvatarFrame(imageData: Data, companionId: UUID) async {
+        // Stale-asset guard (v2.5.24): pre-PNG installs persisted 4bpp pixel data whose
+        // bytes can never start with the PNG signature. Sending them as SubVersion 0x02
+        // would hand the firmware garbage — drop the push (and any pending marker) instead
+        // of retrying forever; re-creating the companion regenerates a proper PNG.
+        guard AvatarImageProcessor.isPNGData(imageData) else {
+            ErrorReporter.log(
+                .sync(
+                    component: "BLE CustomAvatarFrame",
+                    underlying: "Persisted avatar asset is not PNG (pre-v2.5.24 4bpp data) — dropping push; re-create the companion to fix"
+                ),
+                context: "AppState.pushCustomAvatarFrame id=\(companionId)"
+            )
+            await localStorage.clearPendingCustomCompanionPush()
+            isCustomAvatarPendingBLEPush = false
+            customAvatarFlushAttempts = 0
+            return
+        }
         do {
-            try await BLEService.shared.sendCustomAvatarFrame(pixelData: pixelData)
+            try await BLEService.shared.sendCustomAvatarFrame(imageData: imageData)
             await localStorage.clearPendingCustomCompanionPush()
             isCustomAvatarPendingBLEPush = false
             customAvatarFlushAttempts = 0
@@ -204,12 +221,12 @@ extension AppState {
     public func flushPendingCustomCompanionPushIfNeeded() async {
         guard isCustomAvatarPendingBLEPush,
               let id = userProfile.customCompanionId,
-              let pixels = await localStorage.loadCustomCompanionPixels(id: id) else {
+              let imageData = await localStorage.loadCustomCompanionImageData(id: id) else {
             return
         }
         // Count every flush opportunity (even skipped ones) so the periodic retry keeps advancing.
         customAvatarFlushAttempts += 1
         guard Self.shouldAttemptCustomAvatarFlush(attempt: customAvatarFlushAttempts) else { return }
-        await pushCustomAvatarFrame(pixelData: pixels, companionId: id)
+        await pushCustomAvatarFrame(imageData: imageData, companionId: id)
     }
 }

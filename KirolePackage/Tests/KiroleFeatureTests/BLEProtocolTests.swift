@@ -1035,45 +1035,9 @@ struct BLEProtocolTests {
         }
     }
 
-    // MARK: - EInkColor Tests
-
-    @Test("EInkColor raw values match Spectra 6 index table")
-    func einkColorRawValues() {
-        #expect(EInkColor.black.rawValue == 0x0)
-        #expect(EInkColor.white.rawValue == 0x1)
-        #expect(EInkColor.yellow.rawValue == 0x2)
-        #expect(EInkColor.red.rawValue == 0x3)
-        #expect(EInkColor.blue.rawValue == 0x5)
-        #expect(EInkColor.green.rawValue == 0x6)
-    }
-
-    @Test("EInkColor has exactly 6 cases")
-    func einkColorCaseCount() {
-        #expect(EInkColor.allCases.count == 6)
-    }
-
-    @Test("EInkColor packPixelPair packs two pixels into one byte")
-    func einkColorPackPixelPair() {
-        let byte = EInkColor.packPixelPair(even: .black, odd: .white)
-        #expect(byte == 0x01)
-
-        let byte2 = EInkColor.packPixelPair(even: .red, odd: .blue)
-        #expect(byte2 == 0x35)
-    }
-
-    @Test("EInkColor unpackPixelPair round-trips correctly")
-    func einkColorUnpackPixelPair() {
-        let byte = EInkColor.packPixelPair(even: .yellow, odd: .green)
-        let result = EInkColor.unpackPixelPair(byte)
-        #expect(result?.even == .yellow)
-        #expect(result?.odd == .green)
-    }
-
-    @Test("EInkColor unpackPixelPair returns nil for reserved index")
-    func einkColorUnpackReservedIndex() {
-        let byte: UInt8 = 0x40 // high nibble = 0x4 (reserved)
-        #expect(EInkColor.unpackPixelPair(byte) == nil)
-    }
+    // EInkColor / 4bpp packPixelPair 测试已删（v2.5.24）：0x15 头像帧改传 PNG，
+    // App 侧 Spectra 6 量化与 4bpp 打包整链路（EInkColor.swift / encodePixelData /
+    // Spectra6QuantizerTests）随之移除，色彩量化改由固件端完成。
 
     // MARK: - ScreenConfig Tests
 
@@ -1099,24 +1063,17 @@ struct BLEProtocolTests {
         #expect(screen.maxTasks == 5)
     }
 
-    // MARK: - BLEDataEncoder Pixel Data Tests
+    // MARK: - BLEDataEncoder Custom Avatar Frame Tests (0x15, v2.5.24)
 
-    @Test("BLEDataEncoder encodePixelData packs 4bpp correctly")
-    func encodePixelDataPacking() {
-        let pixels: [EInkColor] = [.black, .white, .red, .blue]
-        let data = BLEDataEncoder.encodePixelData(pixels, width: 2)
-        #expect(data.count == 2)
-        #expect(data[0] == 0x01) // black(0) | white(1)
-        #expect(data[1] == 0x35) // red(3) | blue(5)
-    }
+    @Test("encodeCustomAvatarFrame prefixes SubVersion 0x02 and passes PNG bytes through")
+    func encodeCustomAvatarFrameLayout() {
+        let pngSignature: [UInt8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
+        let pngData = Data(pngSignature + [0xAB, 0xCD, 0xEF])
+        let payload = BLEDataEncoder.encodeCustomAvatarFrame(pngData: pngData)
 
-    @Test("BLEDataEncoder encodePixelData pads odd pixel count with white")
-    func encodePixelDataOddCount() {
-        let pixels: [EInkColor] = [.green, .yellow, .red]
-        let data = BLEDataEncoder.encodePixelData(pixels, width: 3)
-        #expect(data.count == 2)
-        #expect(data[0] == 0x62) // green(6) | yellow(2)
-        #expect(data[1] == 0x31) // red(3) | white(1) padding
+        #expect(payload.count == 1 + pngData.count)
+        #expect(payload[0] == 0x02) // SubVersion v2：PNG 载荷（协议 §4.12）
+        #expect(payload.dropFirst() == pngData)
     }
 
     // encodeScreenConfig 及其格式测试已删（2026-07-04 审计 D2）：该函数无发送路径、

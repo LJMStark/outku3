@@ -85,8 +85,9 @@ public struct OnboardingProfile: Sendable, Codable, Equatable {
     public var customCompanionRoast: Bool
     /// PNG preview produced by AvatarImageProcessor.process — feeds Settings avatar art.
     public var customAvatarPreviewData: Data?
-    /// BLE-encoded pixel payload (BLEDataEncoder.encodePixelData) for the E-ink display.
-    public var customAvatarPixelData: Data?
+    /// Wire PNG produced by AvatarImageProcessor.process — pushed to the E-ink display
+    /// via CustomAvatarFrame (0x15, SubVersion 0x02).
+    public var customAvatarImageData: Data?
 
     public init(
         companionCharacter: CompanionCharacter? = nil,
@@ -105,7 +106,7 @@ public struct OnboardingProfile: Sendable, Codable, Equatable {
         customCompanionPrompt: String? = nil,
         customCompanionRoast: Bool = false,
         customAvatarPreviewData: Data? = nil,
-        customAvatarPixelData: Data? = nil
+        customAvatarImageData: Data? = nil
     ) {
         self.companionCharacter = companionCharacter
         self.motivationStyle = motivationStyle
@@ -123,7 +124,7 @@ public struct OnboardingProfile: Sendable, Codable, Equatable {
         self.customCompanionPrompt = customCompanionPrompt
         self.customCompanionRoast = customCompanionRoast
         self.customAvatarPreviewData = customAvatarPreviewData
-        self.customAvatarPixelData = customAvatarPixelData
+        self.customAvatarImageData = customAvatarImageData
     }
 
     /// True when PersonalizationPage has captured a complete custom companion definition
@@ -133,7 +134,7 @@ public struct OnboardingProfile: Sendable, Codable, Equatable {
         guard let name = customCompanionName?.trimmingCharacters(in: .whitespacesAndNewlines),
               !name.isEmpty,
               customAvatarPreviewData != nil,
-              customAvatarPixelData != nil else {
+              customAvatarImageData != nil else {
             return false
         }
         return true
@@ -156,16 +157,17 @@ public struct OnboardingProfile: Sendable, Codable, Equatable {
         case customCompanionPrompt
         case customCompanionRoast
         case customAvatarPreviewData
-        case customAvatarPixelData
+        case customAvatarImageData
     }
 
     /// Hand-written decoder tolerates pre-B-plan onboarding_profile.json shapes:
     /// old TestFlight files lack the customCompanion* keys entirely, and any
-    /// legacy `customPhotoData` key is silently ignored (Swift's default
-    /// behavior for keys absent from CodingKeys). Without this, synthesized
-    /// Codable would throw the moment it reached the non-optional
-    /// `customCompanionRoast: Bool`, AppState+Loading would discard the file,
-    /// and mid-onboarding users would lose their progress on upgrade.
+    /// legacy `customPhotoData` or `customAvatarPixelData` key (pre-v2.5.24
+    /// 4bpp payload — deliberately invalidated by the PNG switch) is silently
+    /// ignored (Swift's default behavior for keys absent from CodingKeys).
+    /// Without this, synthesized Codable would throw the moment it reached the
+    /// non-optional `customCompanionRoast: Bool`, AppState+Loading would discard
+    /// the file, and mid-onboarding users would lose their progress on upgrade.
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.companionCharacter = try c.decodeIfPresent(CompanionCharacter.self, forKey: .companionCharacter)
@@ -184,6 +186,6 @@ public struct OnboardingProfile: Sendable, Codable, Equatable {
         self.customCompanionPrompt = try c.decodeIfPresent(String.self, forKey: .customCompanionPrompt)
         self.customCompanionRoast = (try c.decodeIfPresent(Bool.self, forKey: .customCompanionRoast)) ?? false
         self.customAvatarPreviewData = try c.decodeIfPresent(Data.self, forKey: .customAvatarPreviewData)
-        self.customAvatarPixelData = try c.decodeIfPresent(Data.self, forKey: .customAvatarPixelData)
+        self.customAvatarImageData = try c.decodeIfPresent(Data.self, forKey: .customAvatarImageData)
     }
 }

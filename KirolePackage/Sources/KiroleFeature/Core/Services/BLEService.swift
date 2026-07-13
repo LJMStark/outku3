@@ -253,6 +253,12 @@ public final class BLEService: NSObject {
     /// 初始化 BLE 中央管理器
     public func initialize() {
         guard centralManager == nil else { return }
+        // 测试进程守卫：macOS 测试宿主（swiftpm-testing-helper）没有蓝牙用途声明，创建
+        // CBCentralManager 会触发 TCC 隐私 SIGABRT 崩掉整个测试进程——AppState 测试遗留的
+        // detached requestBLESync→performSync 任务在进程收尾期就撞上过（2026-07-14）。
+        // 测试里保持 centralManager 为 nil，poweredOnCentralManager 走既有
+        // bluetoothNotAvailable 错误路径优雅失败，sync 链路的失败分支照常被覆盖。
+        guard !AppBuildEnvironment.isRunningTests else { return }
         centralManager = CBCentralManager(delegate: self, queue: .main)
     }
 
@@ -645,11 +651,12 @@ public final class BLEService: NSObject {
         try await writeData(type: .sceneUnlock, data: payload)
     }
 
-    /// 推送用户自定义伴侣的像素帧到 E-ink 设备。
-    /// pixelData 应为 4bpp packed 数据（通常 96×96 → 4608 字节），由 BLEDataEncoder.encodePixelData 生成。
-    /// 注意：硬件端的接收/渲染逻辑待与硬件团队对齐 0x15 customAvatarFrame 协议后启用。
-    public func sendCustomAvatarFrame(pixelData: Data) async throws {
-        let payload = BLEDataEncoder.encodeCustomAvatarFrame(pixelData: pixelData)
+    /// 推送用户自定义伴侣头像 PNG 到 E-ink 设备（v2.5.24，协议 §4.12）。
+    /// imageData 为 `AvatarImageProcessor.process` 产出的 PNG（≤800×700 保比例、≤1MiB）；
+    /// 帧 payload = `0x02 | PNG 字节`，恒走 §3.2 分包（11B 头）。1MiB 最坏情况约 2093 片，
+    /// 在写限流下约 1-2 分钟发完——调用方（AppState.pushCustomAvatarFrame）已有失败重试队列。
+    public func sendCustomAvatarFrame(imageData: Data) async throws {
+        let payload = BLEDataEncoder.encodeCustomAvatarFrame(pngData: imageData)
         try await writeData(type: .customAvatarFrame, data: payload)
     }
 

@@ -615,6 +615,9 @@ public actor LocalStorage {
         "\(Files.customCompanionAssetPrefix)\(id.uuidString)_preview.png"
     }
 
+    /// Legacy on-disk name（`_pixels.dat`）保留不改：文件名经 `CustomCompanion.avatarPixelsFileName`
+    /// 持久化在 custom_companions.json 里，改名会 break 既有解码。v2.5.24 起该文件存的是
+    /// 硬件 PNG（AvatarImageProcessor 产出），不再是 4bpp 像素数据。
     public nonisolated static func customCompanionPixelsFileName(for id: UUID) -> String {
         "\(Files.customCompanionAssetPrefix)\(id.uuidString)_pixels.dat"
     }
@@ -622,16 +625,16 @@ public actor LocalStorage {
     public func saveCustomCompanionAssets(
         id: UUID,
         previewData: Data,
-        pixelData: Data
+        imageData: Data
     ) throws {
         let previewURL = documentsDirectory.appendingPathComponent(
             Self.customCompanionPreviewFileName(for: id)
         )
-        let pixelsURL = documentsDirectory.appendingPathComponent(
+        let imageURL = documentsDirectory.appendingPathComponent(
             Self.customCompanionPixelsFileName(for: id)
         )
         try previewData.write(to: previewURL, options: [.atomic])
-        try pixelData.write(to: pixelsURL, options: [.atomic])
+        try imageData.write(to: imageURL, options: [.atomic])
     }
 
     public func loadCustomCompanionPreview(id: UUID) -> Data? {
@@ -641,7 +644,9 @@ public actor LocalStorage {
         return try? Data(contentsOf: url)
     }
 
-    public func loadCustomCompanionPixels(id: UUID) -> Data? {
+    /// Loads the hardware avatar PNG (v2.5.24+; pre-existing installs may still hold
+    /// legacy 4bpp bytes here — callers guard with `AvatarImageProcessor.isPNGData`).
+    public func loadCustomCompanionImageData(id: UUID) -> Data? {
         let url = documentsDirectory.appendingPathComponent(
             Self.customCompanionPixelsFileName(for: id)
         )

@@ -244,38 +244,16 @@ public enum BLEDataEncoder {
         return data
     }
 
-    // MARK: - Pixel Data (Spectra 6, 4bpp)
-
-    /// 将 EInkColor 像素数组打包为 4bpp 数据（每字节 2 像素）
-    /// 如果像素数为奇数，最后一个字节的低 nibble 填充白色
-    public static func encodePixelData(_ pixels: [EInkColor], width: Int) -> Data {
-        let count = pixels.count
-        let byteCount = (count + 1) / 2
-        var data = Data(count: byteCount)
-        for i in stride(from: 0, to: count, by: 2) {
-            let even = pixels[i]
-            let odd = (i + 1 < count) ? pixels[i + 1] : .white
-            data[i / 2] = EInkColor.packPixelPair(even: even, odd: odd)
-        }
-        return data
-    }
-
     // MARK: - Custom Avatar Frame (0x15)
 
-    /// 编码自定义伴侣的像素帧。
-    /// Payload 布局（与硬件团队待对齐，目前以 sub-version 0x01 标记）：
-    ///   subVersion(1B) | width(1B) | height(1B) | 4bpp pixels(N)
-    /// pixelData 已是 4bpp packed 数据（通常 96×96 → 4608B）。
-    public static func encodeCustomAvatarFrame(
-        pixelData: Data,
-        width: Int = AvatarProcessResult.dimension,
-        height: Int = AvatarProcessResult.dimension
-    ) -> Data {
+    /// 编码自定义伴侣头像帧（v2.5.24 起 SubVersion 0x02，协议 §4.12）。
+    /// Payload 布局：`SubVersion(1B)=0x02 | PNG 文件字节`。
+    /// 宽高由 PNG IHDR 自描述（App 保证 ≤800×700、保持原图比例、尽力 ≤1MiB，
+    /// 见 `AvatarImageProcessor`）；旧 4bpp 96×96 v1（SubVersion 0x01）已废弃。
+    public static func encodeCustomAvatarFrame(pngData: Data) -> Data {
         var data = Data()
-        data.append(0x01)
-        data.appendClampedUInt8(width)
-        data.appendClampedUInt8(height)
-        data.append(pixelData)
+        data.append(0x02)
+        data.append(pngData)
         return data
     }
 

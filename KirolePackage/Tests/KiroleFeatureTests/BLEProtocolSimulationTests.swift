@@ -364,12 +364,60 @@ struct BLEProtocolSimulationTests {
         #expect(opened.payload == payload)
     }
 
-    @Test("Pixel helper encoder matches hardware-facing byte layout")
-    func pixelHelperEncoderMatchesByteLayout() throws {
-        // encodeScreenConfig 断言已随该死函数删除（无发送路径、无帧字节，2026-07-04 审计 D2）。
-        let pixels: [EInkColor] = [.black, .white, .red, .blue, .green, .yellow]
-        let pixelData = BLEDataEncoder.encodePixelData(pixels, width: 3)
-        #expect(pixelData == Data([0x01, 0x35, 0x62]))
+    // 旧 4bpp pixel helper 仿真已随量化链删除（v2.5.24 起 0x15 改传 PNG）。
+
+    @Test("Virtual hardware reassembles a chunked CustomAvatarFrame PNG payload")
+    func virtualHardwareReassemblesChunkedCustomAvatarFrame() throws {
+        // 小合成 PNG：8 字节签名 + 确定性填充，足以验证 0x15 分包→重组→载荷布局全链路。
+        let pngSignature: [UInt8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
+        let pngData = Data(pngSignature + (0..<300).map { UInt8($0 % 251) })
+        let payload = BLEDataEncoder.encodeCustomAvatarFrame(pngData: pngData)
+
+        let packets = try BLEPacketizer.packetize(
+            type: BLEDataType.customAvatarFrame.rawValue,
+            messageId: 0x0007,
+            payload: payload,
+            maxChunkSize: 24
+        )
+        #expect(packets.count > 1) // 0x15 恒走分包（§4.12）
+
+        var hardware = SimulatedHardware()
+        let message = try hardware.receiveAppPacketStream(packets)
+        #expect(message?.type == BLEDataType.customAvatarFrame.rawValue)
+        #expect(message?.transport == .chunked)
+        #expect(message?.payload.first == 0x02) // SubVersion v2 = PNG
+        #expect(message.map { Data($0.payload.dropFirst()) } == pngData)
+    }
+
+    @Test("Simulated firmware reassembles a 1MiB PNG avatar frame across 2093 chunks")
+    func simulatedFirmwareReassemblesMegabytePNGAvatarFrame() throws {
+        // 1MiB 上限用例走固件视角镜像重组器（SimulatedFirmwareChunkReassembler）：
+        // 生产 BLEPacketAssembler 的 256KiB 帽只管 Device→App 入站、故意不抬。
+        let pngSignature: [UInt8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
+        var pngData = Data(capacity: 1_048_576)
+        pngData.append(contentsOf: pngSignature)
+        pngData.append(Data((0..<(1_048_576 - pngSignature.count)).map { UInt8($0 % 251) }))
+        let payload = BLEDataEncoder.encodeCustomAvatarFrame(pngData: pngData)
+        #expect(payload.count == 1_048_577)
+
+        // 协商 512B 写长度 - 11B 分包头 = 501B/片 → ceil(1,048,577 / 501) = 2093 片。
+        let packets = try BLEPacketizer.packetize(
+            type: BLEDataType.customAvatarFrame.rawValue,
+            messageId: 0x0100,
+            payload: payload,
+            maxChunkSize: 501
+        )
+        #expect(packets.count == 2093)
+
+        var reassembler = SimulatedFirmwareChunkReassembler()
+        var assembled: Data?
+        for packet in packets {
+            if let complete = try reassembler.receive(packet) {
+                assembled = complete
+            }
+        }
+        #expect(assembled?.count == payload.count)
+        #expect(assembled == payload)
     }
 
     private static func deviceNotifyPacket(type: UInt8, payload: Data) -> Data {

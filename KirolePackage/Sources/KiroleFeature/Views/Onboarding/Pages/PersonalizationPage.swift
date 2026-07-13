@@ -448,7 +448,7 @@ public struct PersonalizationPage: View {
 
     private func clearCustomCompanion() {
         onboardingState.profile.customAvatarPreviewData = nil
-        onboardingState.profile.customAvatarPixelData = nil
+        onboardingState.profile.customAvatarImageData = nil
         onboardingState.profile.customCompanionName = nil
         onboardingState.profile.customCompanionPrompt = nil
         onboardingState.profile.customCompanionRoast = false
@@ -477,12 +477,8 @@ public struct PersonalizationPage: View {
             processError = "Couldn't process this image. Try another."
             return
         }
-        let pixelData = BLEDataEncoder.encodePixelData(
-            result.pixels,
-            width: AvatarProcessResult.dimension
-        )
         onboardingState.profile.customAvatarPreviewData = result.previewData
-        onboardingState.profile.customAvatarPixelData = pixelData
+        onboardingState.profile.customAvatarImageData = result.imageData
         #else
         _ = data
         processError = "Image processing unavailable on this platform."

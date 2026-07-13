@@ -26,6 +26,24 @@ public enum AppBuildEnvironment {
         return receiptURL.lastPathComponent == "sandboxReceipt"
     }()
 
+    /// 是否运行在测试进程内（`swift test` / `xcodebuild test`）。
+    ///
+    /// 判据（实测 2026-07-14）：xcodebuild/xctest 宿主带 `XCTestConfigurationFilePath` /
+    /// `XCTestBundlePath` 环境变量；`swift test`（swiftpm-testing-helper + Swift Testing）
+    /// 把 .xctest 以裸可执行镜像加载——不进 `Bundle.allBundles`、也无上述环境变量，
+    /// 但 `--test-bundle-path …/*.xctest/…` 一定出现在进程参数里。
+    /// 进程生命周期内不变，惰性求值一次后缓存（同 `isTestFlight`）。
+    ///
+    /// 用途：测试宿主进程没有 `NSBluetoothAlwaysUsageDescription`，任何路径创建
+    /// `CBCentralManager` 都会触发 TCC 隐私 SIGABRT——`BLEService.initialize()` 以此守卫。
+    public static let isRunningTests: Bool = {
+        let env = ProcessInfo.processInfo.environment
+        if env["XCTestConfigurationFilePath"] != nil || env["XCTestBundlePath"] != nil {
+            return true
+        }
+        return ProcessInfo.processInfo.arguments.contains { $0.contains(".xctest") }
+    }()
+
     /// 是否应暴露面向硬件 / 固件联调的开发者开关。
     ///
     /// **测试阶段：恒 `true`、全包可见。** 尚无 App Store 正式包，硬件 / 固件调试工具应随时可用。

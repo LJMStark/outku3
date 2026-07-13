@@ -56,7 +56,7 @@ extension AppState {
     private func createCustomCompanionFromOnboarding(_ profile: OnboardingProfile) async throws {
         guard let rawName = profile.customCompanionName,
               let preview = profile.customAvatarPreviewData,
-              let pixels = profile.customAvatarPixelData else {
+              let imageData = profile.customAvatarImageData else {
             return
         }
         let trimmedName = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -75,7 +75,7 @@ extension AppState {
             personaVoice: voice,
             customPrompt: customPrompt,
             previewData: preview,
-            pixelData: pixels
+            imageData: imageData
         )
     }
 

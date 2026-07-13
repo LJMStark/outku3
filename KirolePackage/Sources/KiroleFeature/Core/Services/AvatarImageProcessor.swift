@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -6,185 +7,111 @@ import UIKit
 // MARK: - Avatar Process Result
 
 public struct AvatarProcessResult: Sendable {
-    /// Original image data (JPEG compressed)
-    public let originalData: Data
-    /// Pixelated preview image data (PNG) for UI display
+    /// PNG for in-app UI display (same bytes as `imageData`; single Data instance, CoW).
     public let previewData: Data
-    /// EInkColor pixel array (96x96 = 9216 elements), row-major
-    public let pixels: [EInkColor]
-    /// Avatar dimension (always square)
-    public static let dimension: Int = 96
+    /// Wire PNG pushed to hardware via CustomAvatarFrame (0x15, SubVersion 0x02).
+    public let imageData: Data
 }
 
 // MARK: - Avatar Image Processor
 
-/// Processes user-uploaded avatar images into E-ink compatible pixelated format.
-/// Crops to square, scales to 96x96, quantizes to Spectra 6 color palette.
+/// Processes user-uploaded avatar images into the hardware-accepted PNG shape
+/// (v2.5.24 hardware requirement): aspect-fit into 800×700 preserving the original
+/// ratio (never upscaled, never cropped), PNG-encoded, best-effort ≤1 MiB via a
+/// ×0.9 shrink-and-re-encode loop. Color quantization for the 6-color E-ink panel
+/// now happens firmware-side — the app no longer quantizes.
 public enum AvatarImageProcessor {
 
-    /// Target dimension for the avatar (square)
-    private static let targetSize = 96
+    /// Hardware bounding box (protocol §4.12): width ≤ 800, height ≤ 700.
+    public static let maxPixelWidth = 800
+    public static let maxPixelHeight = 700
+    /// Hard cap for the encoded PNG (hardware asks "尽量 1MB 内"; we never exceed it).
+    public static let maxEncodedByteCount = 1_048_576
+    /// Per-iteration scale factor when the encoded PNG is still over the byte cap.
+    static let shrinkFactor: CGFloat = 0.9
+    /// Loop-termination floor. A ≤50px PNG can't plausibly exceed 1 MiB, so this is
+    /// theoretical protection against a runaway loop, not an expected path.
+    static let minShrinkDimension: CGFloat = 50
 
-    // Spectra 6 reference colors in RGB (0-255)
-    private static let palette: [(color: EInkColor, r: CGFloat, g: CGFloat, b: CGFloat)] = [
-        (.black,  0,   0,   0),
-        (.white,  255, 255, 255),
-        (.yellow, 255, 230, 0),
-        (.red,    200, 30,  30),
-        (.blue,   0,   60,  180),
-        (.green,  0,   140, 60),
-    ]
+    // MARK: Pure logic (outside the UIKit block so `swift test` covers it on macOS)
 
-    /// Nearest Spectra 6 color to an RGB sample (Euclidean distance). Pure logic, kept OUT of the
-    /// UIKit block so it is unit-testable on any platform (the macOS test target has no UIKit).
-    static func findNearestColor(
-        r: CGFloat, g: CGFloat, b: CGFloat
-    ) -> (color: EInkColor, r: CGFloat, g: CGFloat, b: CGFloat) {
-        var bestMatch = palette[0]
-        var bestDistance = CGFloat.greatestFiniteMagnitude
-        for entry in palette {
-            let dr = r - entry.r
-            let dg = g - entry.g
-            let db = b - entry.b
-            let distance = dr * dr + dg * dg + db * db
-            if distance < bestDistance {
-                bestDistance = distance
-                bestMatch = entry
-            }
+    /// PNG 8-byte file signature check. Doubles as the stale-asset guard: pre-v2.5.24
+    /// persisted avatars are packed 4bpp Spectra data (every byte's nibbles ≤ 0x6),
+    /// which can never start with 0x89.
+    public static func isPNGData(_ data: Data) -> Bool {
+        let signature: [UInt8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
+        guard data.count >= signature.count else { return false }
+        return data.prefix(signature.count).elementsEqual(signature)
+    }
+
+    /// Aspect-fit `original` into the bounding box, preserving ratio. Never upscales
+    /// (scale clamped to 1.0). Floor-rounded to integer pixels, minimum 1×1.
+    static func fitSize(
+        original: CGSize,
+        maxWidth: Int = maxPixelWidth,
+        maxHeight: Int = maxPixelHeight
+    ) -> CGSize {
+        guard original.width > 0, original.height > 0 else {
+            return CGSize(width: 1, height: 1)
         }
-        return bestMatch
+        let scale = min(
+            CGFloat(maxWidth) / original.width,
+            CGFloat(maxHeight) / original.height,
+            1.0
+        )
+        return CGSize(
+            width: max(1, (original.width * scale).rounded(.down)),
+            height: max(1, (original.height * scale).rounded(.down))
+        )
+    }
+
+    /// One step of the over-budget shrink loop (pure, so termination is unit-testable).
+    static func nextShrunkSize(_ size: CGSize) -> CGSize {
+        CGSize(
+            width: max(1, (size.width * shrinkFactor).rounded(.down)),
+            height: max(1, (size.height * shrinkFactor).rounded(.down))
+        )
     }
 
     #if canImport(UIKit)
 
-    /// Process a UIImage into an E-ink compatible avatar.
-    /// - Parameter image: Source image from user's photo library
-    /// - Returns: Processed result with original data, preview, and pixel array
+    /// Process a user-picked image into the hardware PNG.
+    /// - Parameter image: Source image from the photo library (any format UIImage decodes,
+    ///   e.g. HEIC/JPEG/PNG; EXIF orientation is baked in by the render pass).
+    /// - Returns: nil when the image can't be rendered/encoded, or — theoretically —
+    ///   when even the minimum-size PNG exceeds the byte cap.
     public static func process(image: UIImage) -> AvatarProcessResult? {
-        // 1. Crop to center square
-        let cropped = cropToSquare(image)
-
-        // 2. Scale to target size
-        guard let scaled = resize(cropped, to: CGSize(width: targetSize, height: targetSize)) else {
-            return nil
-        }
-
-        // 3. Extract pixel data and quantize to Spectra 6
-        guard let cgImage = scaled.cgImage else { return nil }
-        let (pixels, previewImage) = quantizeToSpectra6(cgImage)
-
-        // 4. Compress original for storage
-        guard let originalData = cropped.jpegData(compressionQuality: 0.8) else { return nil }
-        guard let previewData = previewImage.pngData() else { return nil }
-
-        return AvatarProcessResult(
-            originalData: originalData,
-            previewData: previewData,
-            pixels: pixels
+        // image.size is in points with orientation already applied; × scale = source pixels.
+        let sourcePixels = CGSize(
+            width: image.size.width * image.scale,
+            height: image.size.height * image.scale
         )
+        var target = fitSize(original: sourcePixels)
+        var png = renderPNG(image: image, size: target)
+
+        // Photographic PNGs at 800×700 routinely exceed 1 MiB — shrink until they fit.
+        // Always re-render from the ORIGINAL image so quality degrades once, not cumulatively.
+        while let data = png,
+              data.count > maxEncodedByteCount,
+              target.width > minShrinkDimension,
+              target.height > minShrinkDimension {
+            target = nextShrunkSize(target)
+            png = renderPNG(image: image, size: target)
+        }
+
+        guard let data = png, data.count <= maxEncodedByteCount else { return nil }
+        return AvatarProcessResult(previewData: data, imageData: data)
     }
 
-    // MARK: - Private Helpers
-
-    private static func cropToSquare(_ image: UIImage) -> UIImage {
-        guard let cgImage = image.cgImage else { return image }
-        let width = CGFloat(cgImage.width)
-        let height = CGFloat(cgImage.height)
-        let side = min(width, height)
-        let originX = (width - side) / 2
-        let originY = (height - side) / 2
-        let cropRect = CGRect(x: originX, y: originY, width: side, height: side)
-
-        guard let cropped = cgImage.cropping(to: cropRect) else { return image }
-        return UIImage(cgImage: cropped, scale: image.scale, orientation: image.imageOrientation)
-    }
-
-    private static func resize(_ image: UIImage, to size: CGSize) -> UIImage? {
+    private static func renderPNG(image: UIImage, size: CGSize) -> Data? {
         let format = UIGraphicsImageRendererFormat()
-        format.scale = 1.0 // Ensure exact pixel dimensions
+        format.scale = 1.0 // Exact pixel dimensions
+        // format.opaque stays false → alpha survives into the PNG (firmware composites on white).
         let renderer = UIGraphicsImageRenderer(size: size, format: format)
-        return renderer.image { _ in
-            image.draw(in: CGRect(origin: .zero, size: size))
+        let rendered = renderer.image { _ in
+            image.draw(in: CGRect(origin: .zero, size: size)) // bakes EXIF orientation
         }
-    }
-
-    private static func quantizeToSpectra6(_ cgImage: CGImage) -> ([EInkColor], UIImage) {
-        let width = cgImage.width
-        let height = cgImage.height
-        let bytesPerPixel = 4
-        let bytesPerRow = width * bytesPerPixel
-        var rawData = [UInt8](repeating: 0, count: height * bytesPerRow)
-
-        guard let context = CGContext(
-            data: &rawData,
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
-            bytesPerRow: bytesPerRow,
-            space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else {
-            return (Array(repeating: .white, count: width * height), UIImage())
-        }
-
-        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
-
-        var pixels = [EInkColor]()
-        pixels.reserveCapacity(width * height)
-
-        // Build preview pixel data (RGBA)
-        var previewData = [UInt8](repeating: 255, count: width * height * bytesPerPixel)
-
-        for y in 0..<height {
-            for x in 0..<width {
-                let offset = (y * bytesPerRow) + (x * bytesPerPixel)
-                let r = CGFloat(rawData[offset])
-                let g = CGFloat(rawData[offset + 1])
-                let b = CGFloat(rawData[offset + 2])
-
-                // Find nearest Spectra 6 color (Euclidean distance in RGB)
-                let nearest = findNearestColor(r: r, g: g, b: b)
-                pixels.append(nearest.color)
-
-                // Write preview pixel
-                let previewOffset = (y * width + x) * bytesPerPixel
-                previewData[previewOffset] = UInt8(nearest.r)
-                previewData[previewOffset + 1] = UInt8(nearest.g)
-                previewData[previewOffset + 2] = UInt8(nearest.b)
-                previewData[previewOffset + 3] = 255
-            }
-        }
-
-        // Create preview UIImage from quantized data
-        let previewImage = createImage(from: previewData, width: width, height: height) ?? UIImage()
-
-        return (pixels, previewImage)
-    }
-
-
-    private static func createImage(from pixelData: [UInt8], width: Int, height: Int) -> UIImage? {
-        let bytesPerPixel = 4
-        let bytesPerRow = width * bytesPerPixel
-        let dataSize = pixelData.count
-
-        guard let provider = CGDataProvider(data: Data(pixelData) as CFData),
-              let cgImage = CGImage(
-                width: width,
-                height: height,
-                bitsPerComponent: 8,
-                bitsPerPixel: bytesPerPixel * 8,
-                bytesPerRow: bytesPerRow,
-                space: CGColorSpaceCreateDeviceRGB(),
-                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
-                provider: provider,
-                decode: nil,
-                shouldInterpolate: false,
-                intent: .defaultIntent
-              ), dataSize == height * bytesPerRow else {
-            return nil
-        }
-
-        return UIImage(cgImage: cgImage)
+        return rendered.pngData()
     }
 
     #endif

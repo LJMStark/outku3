@@ -526,10 +526,6 @@ public struct CreateCustomCompanionSheet: View {
     private func createAndDismiss() {
         guard let result = processResult, !isSaving else { return }
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let pixelData = BLEDataEncoder.encodePixelData(
-            result.pixels,
-            width: AvatarProcessResult.dimension
-        )
         isSaving = true
         saveError = nil
         Task {
@@ -545,7 +541,7 @@ public struct CreateCustomCompanionSheet: View {
                     backstory: backstory,
                     sensitiveBoundary: sensitiveBoundary,
                     previewData: result.previewData,
-                    pixelData: pixelData
+                    imageData: result.imageData
                 )
                 dismiss()
             } catch {
