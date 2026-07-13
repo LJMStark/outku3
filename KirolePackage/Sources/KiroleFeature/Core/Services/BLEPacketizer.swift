@@ -45,16 +45,15 @@ public enum BLESimpleDecoder {
 // MARK: - BLE Packetizer
 
 public enum BLEPacketizer {
-    public static let headerSize: Int = 9
+    /// v2.5.24: 头部 9B→11B —— Seq/Total 各由 1B 扩为 2B BE，分包总数上限 255→65535，
+    /// 以承载 CustomAvatarFrame(0x15) 的 ≤1MiB PNG（协议 §3.2，双向破坏性变更）。
+    public static let headerSize: Int = 11
 
-    /// Default MTU payload size for BLE 4.2 (20 bytes ATT payload - 3 bytes ATT header = 17 usable)
-    /// BLE 5.0 supports negotiated MTU up to 512 bytes; use negotiated value when available.
-    public static let defaultMTUPayload: Int = 17
-
-    /// Estimated chunk counts for Spectra 6 frame buffers at default MTU:
-    /// - 4寸 (120,000 bytes): ~7,059 packets
-    /// - 7.3寸 (192,000 bytes): ~11,294 packets
-    /// With negotiated BLE 5.0 MTU (e.g., 512 - 3 = 509 bytes): ~236 / ~377 packets
+    /// Estimated chunk counts with negotiated BLE 5.0 MTU (512 - 11B header = 501 bytes/chunk):
+    /// - 1MiB avatar PNG (1,048,577 bytes incl. SubVersion): ~2,093 packets
+    /// - Spectra 6 frame buffers: 4寸 120,000 bytes ≈ 240 / 7.3寸 192,000 bytes ≈ 384 packets
+    /// All far below the 65,535-chunk ceiling; tiny MTUs shrink per-chunk payload and can
+    /// still overflow the ceiling for ~1MiB payloads — packetize then throws payloadTooLarge.
 
     public static func packetize(
         type: UInt8,
@@ -67,7 +66,7 @@ public enum BLEPacketizer {
         }
 
         let totalChunks = Int(ceil(Double(payload.count) / Double(maxChunkSize)))
-        guard totalChunks > 0, totalChunks <= 255 else {
+        guard totalChunks > 0, totalChunks <= 65535 else {
             throw BLEPacketError.payloadTooLarge
         }
 
@@ -83,8 +82,8 @@ public enum BLEPacketizer {
             var packet = Data()
             packet.append(type)
             packet.appendBigEndian(messageId)
-            packet.append(UInt8(index))
-            packet.append(UInt8(totalChunks))
+            packet.appendBigEndian(UInt16(index))
+            packet.appendBigEndian(UInt16(totalChunks))
             packet.appendBigEndian(UInt16(chunk.count))
             packet.appendBigEndian(chunkCRC)
             packet.append(chunk)
@@ -106,11 +105,11 @@ public final class BLEPacketAssembler {
 
     private struct Assembly {
         let type: UInt8
-        let total: UInt8
+        let total: UInt16
         var chunks: [Int: Data]
         var byteCount: Int
 
-        init(type: UInt8, total: UInt8) {
+        init(type: UInt8, total: UInt16) {
             self.type = type
             self.total = total
             self.chunks = [:]
@@ -127,10 +126,10 @@ public final class BLEPacketAssembler {
     public func isPotentialChunk(packetData: Data) -> Bool {
         guard packetData.count >= BLEPacketizer.headerSize else { return false }
 
-        let seq = Int(packetData[3])
-        let total = Int(packetData[4])
-        let chunkLength = packetData.bigEndianUInt16(at: 5)
-        let chunkCRC = packetData.bigEndianUInt16(at: 7)
+        let seq = Int(packetData.bigEndianUInt16(at: 3))
+        let total = Int(packetData.bigEndianUInt16(at: 5))
+        let chunkLength = packetData.bigEndianUInt16(at: 7)
+        let chunkCRC = packetData.bigEndianUInt16(at: 9)
         let chunk = packetData.subdata(in: BLEPacketizer.headerSize..<packetData.count)
 
         guard total > 1, seq < total, chunk.count == Int(chunkLength) else { return false }
@@ -142,10 +141,10 @@ public final class BLEPacketAssembler {
 
         let type = packetData[0]
         let messageId = packetData.bigEndianUInt16(at: 1)
-        let seq = Int(packetData[3])
-        let total = packetData[4]
-        let chunkLength = packetData.bigEndianUInt16(at: 5)
-        let chunkCRC = packetData.bigEndianUInt16(at: 7)
+        let seq = Int(packetData.bigEndianUInt16(at: 3))
+        let total = packetData.bigEndianUInt16(at: 5)
+        let chunkLength = packetData.bigEndianUInt16(at: 7)
+        let chunkCRC = packetData.bigEndianUInt16(at: 9)
 
         guard total > 0, seq < Int(total) else { return nil }
 

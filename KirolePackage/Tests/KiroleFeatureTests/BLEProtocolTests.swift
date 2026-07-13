@@ -48,7 +48,7 @@ struct BLEProtocolTests {
         #expect(result?.payload == payload)
     }
 
-    @Test("BLEPacketizer uses per-chunk payload length and CRC16")
+    @Test("BLEPacketizer emits 11-byte header with 2-byte Seq/Total and per-chunk CRC16")
     func packetizerChunkHeaderFields() throws {
         let payload = Data((0..<10).map { UInt8($0) })
         let packets = try BLEPacketizer.packetize(
@@ -64,21 +64,26 @@ struct BLEProtocolTests {
         #expect(first[0] == 0x10)
         #expect(first[1] == 0x12)
         #expect(first[2] == 0x34)
+        // v2.5.24: Seq/Total 各 2B BE（协议 §3.2）
         #expect(first[3] == 0x00)
-        #expect(first[4] == 0x03)
+        #expect(first[4] == 0x00)
         #expect(first[5] == 0x00)
-        #expect(first[6] == 0x04)
+        #expect(first[6] == 0x03)
+        #expect(first[7] == 0x00)
+        #expect(first[8] == 0x04)
         let firstPayload = first.subdata(in: BLEPacketizer.headerSize..<first.count)
-        let firstCRC = first.bigEndianUInt16(at: 7)
+        let firstCRC = first.bigEndianUInt16(at: 9)
         #expect(firstCRC == CRC16.ccittFalse(firstPayload))
 
         let third = packets[2]
-        #expect(third[3] == 0x02)
-        #expect(third[4] == 0x03)
+        #expect(third[3] == 0x00)
+        #expect(third[4] == 0x02)
         #expect(third[5] == 0x00)
-        #expect(third[6] == 0x02)
+        #expect(third[6] == 0x03)
+        #expect(third[7] == 0x00)
+        #expect(third[8] == 0x02)
         let thirdPayload = third.subdata(in: BLEPacketizer.headerSize..<third.count)
-        let thirdCRC = third.bigEndianUInt16(at: 7)
+        let thirdCRC = third.bigEndianUInt16(at: 9)
         #expect(thirdCRC == CRC16.ccittFalse(thirdPayload))
     }
 
@@ -86,8 +91,10 @@ struct BLEProtocolTests {
     func assemblerRejectsTooShort() {
         let assembler = BLEPacketAssembler()
         let shortData = Data([0x01, 0x02, 0x03])
-        let result = assembler.append(packetData: shortData)
-        #expect(result == nil)
+        #expect(assembler.append(packetData: shortData) == nil)
+        // 10 字节在旧 9B 头下曾可解析——钉死 v2.5.24 的 11B 新边界。
+        let nineByteEraPacket = Data(repeating: 0x01, count: 10)
+        #expect(assembler.append(packetData: nineByteEraPacket) == nil)
     }
 
     @Test("BLEPacketizer rejects zero chunk size")
@@ -113,7 +120,7 @@ struct BLEProtocolTests {
                 maxChunkSize: 4
             ).first
         )
-        packet[8] ^= 0xFF // corrupt CRC low byte
+        packet[10] ^= 0xFF // corrupt CRC low byte (CRC field at offset 9-10 in the 11B header)
 
         let assembler = BLEPacketAssembler()
         let result = assembler.append(packetData: packet)
@@ -147,6 +154,58 @@ struct BLEProtocolTests {
         }
 
         #expect(assembledCount == 8)
+    }
+
+    @Test("BLEPacketizer accepts exactly 65535 chunks (v2.5.24 ceiling)")
+    func packetizerAcceptsExactly65535Chunks() throws {
+        let packets = try BLEPacketizer.packetize(
+            type: 0x15,
+            messageId: 1,
+            payload: Data(count: 65535),
+            maxChunkSize: 1
+        )
+        #expect(packets.count == 65535)
+        let last = try #require(packets.last)
+        // 末片 Seq=65534(0xFFFE)、Total=65535(0xFFFF)，各 2B BE
+        #expect(last[3] == 0xFF)
+        #expect(last[4] == 0xFE)
+        #expect(last[5] == 0xFF)
+        #expect(last[6] == 0xFF)
+    }
+
+    @Test("BLEPacketizer rejects 65536 chunks")
+    func packetizerRejects65536Chunks() {
+        #expect(throws: BLEPacketError.self) {
+            _ = try BLEPacketizer.packetize(
+                type: 0x15,
+                messageId: 1,
+                payload: Data(count: 65536),
+                maxChunkSize: 1
+            )
+        }
+    }
+
+    @Test("Packetize/assemble round-trips a payload beyond the old 255-chunk limit")
+    func packetizeAssembleLargePayloadRoundTrip() throws {
+        // ~200KB @ 509B/片 → 393 片：超旧 255 上限、低于 Assembler 的 256KiB 入站帽。
+        let payload = Data((0..<200_000).map { UInt8($0 % 251) })
+        let packets = try BLEPacketizer.packetize(
+            type: 0x21,
+            messageId: 0x0042,
+            payload: payload,
+            maxChunkSize: 509
+        )
+        #expect(packets.count == 393)
+
+        let assembler = BLEPacketAssembler()
+        var result: BLEReceivedMessage?
+        for packet in packets {
+            if let message = assembler.append(packetData: packet) {
+                result = message
+            }
+        }
+        #expect(result?.type == 0x21)
+        #expect(result?.payload == payload)
     }
 
     @Test("BLE inbound decode prefers chunked packets over simple packets")

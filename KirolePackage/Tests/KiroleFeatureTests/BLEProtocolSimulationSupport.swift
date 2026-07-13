@@ -178,6 +178,68 @@ struct SimulatedHardware {
     }
 }
 
+/// v2.5.24 分包帧（11 字节头）的固件视角镜像重组器（协议 §3.2）。
+/// 刻意不复用生产 `BLEPacketAssembler`——逐字节手写解析才能镜像固件的实现视角：
+/// 11 字节头逐字段读取、`count == 11 + len` 的 requireEnd 纪律、逐片 CRC16 校验、
+/// 跨片 type/messageId/total 一致性检查、按 Seq 升序拼接。
+/// 生产 Assembler 的 256KiB 入站帽只管 Device→App 方向，本重组器不设帽——
+/// 专用于仿真 App→Device 的 ≤1MiB CustomAvatarFrame(0x15) 大载荷传输。
+struct SimulatedFirmwareChunkReassembler {
+    private var expectedType: UInt8?
+    private var expectedMessageId: UInt16?
+    private var expectedTotal: Int?
+    private var chunks: [Int: Data] = [:]
+
+    /// 返回 nil 表示消息尚未收齐；收齐后返回完整重组 payload。
+    mutating func receive(_ packet: Data) throws -> Data? {
+        guard packet.count >= 11 else {
+            throw SimulationError.truncatedPacket
+        }
+
+        let type = packet[0]
+        let messageId = UInt16(packet[1]) << 8 | UInt16(packet[2])
+        let seq = Int(packet[3]) << 8 | Int(packet[4])
+        let total = Int(packet[5]) << 8 | Int(packet[6])
+        let length = Int(packet[7]) << 8 | Int(packet[8])
+        let crc = UInt16(packet[9]) << 8 | UInt16(packet[10])
+
+        // requireEnd 纪律：分包帧不允许尾部多余字节。
+        guard packet.count == 11 + length else {
+            throw SimulationError.lengthMismatch(expected: length, actual: packet.count - 11)
+        }
+        guard total > 0, seq < total else {
+            throw SimulationError.chunkHeaderMismatch
+        }
+
+        let chunk = packet.subdata(in: 11..<packet.count)
+        guard CRC16.ccittFalse(chunk) == crc else {
+            throw SimulationError.chunkCRCMismatch
+        }
+
+        if let expectedType, let expectedMessageId, let expectedTotal {
+            guard type == expectedType, messageId == expectedMessageId, total == expectedTotal else {
+                throw SimulationError.chunkHeaderMismatch
+            }
+        } else {
+            expectedType = type
+            expectedMessageId = messageId
+            expectedTotal = total
+        }
+
+        chunks[seq] = chunk
+        guard chunks.count == total else { return nil }
+
+        var payload = Data()
+        for index in 0..<total {
+            guard let part = chunks[index] else {
+                throw SimulationError.chunkHeaderMismatch
+            }
+            payload.append(part)
+        }
+        return payload
+    }
+}
+
 struct SimulatedAppPacket {
     let type: UInt8
     let payload: Data
@@ -531,4 +593,6 @@ enum SimulationError: Error, Equatable {
     case developmentDisplayCommandNotStandard
     case invalidSecureHandshake
     case unexpectedType(expected: UInt8, actual: UInt8)
+    case chunkCRCMismatch
+    case chunkHeaderMismatch
 }
