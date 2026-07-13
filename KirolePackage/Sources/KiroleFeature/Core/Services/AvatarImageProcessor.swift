@@ -106,6 +106,10 @@ public enum AvatarImageProcessor {
     private static func renderPNG(image: UIImage, size: CGSize) -> Data? {
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1.0 // Exact pixel dimensions
+        // Wide-gamut (P3) photos default to .extended → 16-bit/channel PNG, doubling the
+        // byte size and forcing the shrink loop far below the dimension budget. The 6-color
+        // E-ink panel gains nothing from wide gamut — force 8-bit sRGB.
+        format.preferredRange = .standard
         // format.opaque stays false → alpha survives into the PNG (firmware composites on white).
         let renderer = UIGraphicsImageRenderer(size: size, format: format)
         let rendered = renderer.image { _ in
