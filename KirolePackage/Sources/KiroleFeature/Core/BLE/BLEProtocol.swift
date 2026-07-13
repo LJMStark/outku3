@@ -64,8 +64,9 @@ public enum BLEDataType: UInt8, Sendable {
     case smartReminder = 0x13
     /// App→Device: 推送当前专注状态和能量瓶子数
     case focusStatus = 0x14
-    /// App→Device: 推送用户自定义伴侣的 96×96 Spectra 6 像素帧
-    /// 协议待硬件团队对齐：当前 payload = 1B subVersion(0x01) | 1B width(0x60) | 1B height(0x60) | 4608B 4bpp pixels
+    /// App→Device: 推送用户自定义伴侣头像 PNG（≤800×700 保比例、尽力 ≤1MiB）
+    /// v2.5.24 起 payload = 1B subVersion(0x02) | PNG 文件字节（IHDR 自描述宽高），
+    /// 见协议 §4.12 / `AvatarImageProcessor` / `BLEDataEncoder.encodeCustomAvatarFrame`。
     case customAvatarFrame = 0x15
     /// App→Device: 屏保金句/明信片业务帧（替代旧 `0xAA 01 02` 开发命令）。
     /// 经 SecureEnvelope 走 `writeData`，secure 模式可发；payload 见 `BLEDataEncoder.encodeScreensaver`。

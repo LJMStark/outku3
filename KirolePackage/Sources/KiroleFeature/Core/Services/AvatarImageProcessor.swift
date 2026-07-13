@@ -2,6 +2,7 @@ import Foundation
 import CoreGraphics
 #if canImport(UIKit)
 import UIKit
+import ImageIO
 #endif
 
 // MARK: - Avatar Process Result
@@ -75,32 +76,60 @@ public enum AvatarImageProcessor {
 
     #if canImport(UIKit)
 
-    /// Process a user-picked image into the hardware PNG.
-    /// - Parameter image: Source image from the photo library (any format UIImage decodes,
-    ///   e.g. HEIC/JPEG/PNG; EXIF orientation is baked in by the render pass).
-    /// - Returns: nil when the image can't be rendered/encoded, or — theoretically —
+    /// Process raw picked-photo bytes into the hardware PNG.
+    /// - Parameter imageData: Bytes from PhotosPicker's `loadTransferable` (HEIC/JPEG/PNG…).
+    /// - Returns: nil when the bytes can't be decoded/encoded, or — theoretically —
     ///   when even the minimum-size PNG exceeds the byte cap.
-    public static func process(image: UIImage) -> AvatarProcessResult? {
-        // image.size is in points with orientation already applied; × scale = source pixels.
-        let sourcePixels = CGSize(
-            width: image.size.width * image.scale,
-            height: image.size.height * image.scale
+    ///
+    /// Deliberately NOT main-actor-bound: Data in / Sendable struct out, so call sites run
+    /// it via `Task.detached` — a 48MP photo would otherwise freeze the UI for seconds.
+    /// ImageIO downsamples straight to a ≤800px master (bounded memory even for panoramas,
+    /// EXIF orientation baked in); the over-budget shrink loop then re-renders from that
+    /// small master, never from the full-resolution original.
+    public static func process(imageData: Data) -> AvatarProcessResult? {
+        guard let master = downsampledImage(from: imageData, maxDimension: CGFloat(maxPixelWidth)) else {
+            return nil
+        }
+        // UIImage(cgImage:) has scale 1 → size IS pixel dimensions.
+        let masterPixels = CGSize(
+            width: master.size.width * master.scale,
+            height: master.size.height * master.scale
         )
-        var target = fitSize(original: sourcePixels)
-        var png = renderPNG(image: image, size: target)
+        var target = fitSize(original: masterPixels)
+        var png = renderPNG(image: master, size: target)
 
         // Photographic PNGs at 800×700 routinely exceed 1 MiB — shrink until they fit.
-        // Always re-render from the ORIGINAL image so quality degrades once, not cumulatively.
+        // Always re-render from the MASTER so quality degrades once, not cumulatively.
         while let data = png,
               data.count > maxEncodedByteCount,
               target.width > minShrinkDimension,
               target.height > minShrinkDimension {
             target = nextShrunkSize(target)
-            png = renderPNG(image: image, size: target)
+            png = renderPNG(image: master, size: target)
         }
 
         guard let data = png, data.count <= maxEncodedByteCount else { return nil }
         return AvatarProcessResult(previewData: data, imageData: data)
+    }
+
+    /// ImageIO thumbnail decode: caps the LONGER side at `maxDimension`, never upscales,
+    /// applies EXIF orientation (`WithTransform`), and avoids decoding the full-resolution
+    /// bitmap into memory. The 800×700 box is then enforced by fitSize + the render pass.
+    private static func downsampledImage(from data: Data, maxDimension: CGFloat) -> UIImage? {
+        let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
+        guard let source = CGImageSourceCreateWithData(data as CFData, sourceOptions) else {
+            return nil
+        }
+        let thumbnailOptions = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxDimension
+        ] as CFDictionary
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnailOptions) else {
+            return nil
+        }
+        return UIImage(cgImage: cgImage)
     }
 
     private static func renderPNG(image: UIImage, size: CGSize) -> Data? {

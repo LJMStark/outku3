@@ -48,7 +48,7 @@ public actor LocalStorage {
         static let sharedCompanionDialogue = "shared_companion_dialogue.json"
         static let customCompanions = "custom_companions.json"
         static let integrationSyncTimes = "integration_sync_times.json"
-        /// Prefix for per-companion pixel/preview blobs.
+        /// Prefix for per-companion avatar image/preview blobs (PNG since v2.5.24).
         /// Actual filenames are built from CustomCompanion.avatarPixelsFileName / avatarPreviewFileName.
         static let customCompanionAssetPrefix = "custom_companion_"
 
@@ -622,6 +622,8 @@ public actor LocalStorage {
         "\(Files.customCompanionAssetPrefix)\(id.uuidString)_pixels.dat"
     }
 
+    /// 注：v2.5.24 起 preview 与 image 通常是同一份 PNG 字节（AvatarProcessResult 两槽同源），
+    /// 这里刻意保持双文件写入以不动 CustomCompanion 的双文件契约；合并为单文件属未来优化。
     public func saveCustomCompanionAssets(
         id: UUID,
         previewData: Data,
@@ -660,7 +662,7 @@ public actor LocalStorage {
 
     // MARK: - Pending Custom Companion BLE Push
 
-    /// Saves the companion ID whose avatar pixel frame failed to reach the hardware.
+    /// Saves the companion ID whose avatar PNG frame failed to reach the hardware.
     /// Cleared automatically when the push succeeds on the next BLE connection.
     public func savePendingCustomCompanionPush(id: UUID) {
         userDefaults.set(id.uuidString, forKey: Keys.pendingCustomCompanionPushId)

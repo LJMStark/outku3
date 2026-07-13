@@ -208,6 +208,45 @@ struct BLEProtocolTests {
         #expect(result?.payload == payload)
     }
 
+    @Test("Assembler drops an inbound message exceeding the 256KiB cap")
+    func assemblerDropsOverCapMessage() throws {
+        // 65535 片上限放开后，256KiB 入站帽成了 Device→App 方向唯一的内存防线——
+        // 钉死它真的会丢弃超限消息（帽中途触发并整条驱逐）。
+        let payload = Data(count: 256 * 1024 + 1)
+        let packets = try BLEPacketizer.packetize(
+            type: 0x21,
+            messageId: 0x0099,
+            payload: payload,
+            maxChunkSize: 509
+        )
+        let assembler = BLEPacketAssembler()
+        var assembled: BLEReceivedMessage?
+        for packet in packets {
+            if let message = assembler.append(packetData: packet) {
+                assembled = message
+            }
+        }
+        #expect(assembled == nil)
+    }
+
+    @Test("Assembler rejects zero-length chunks")
+    func assemblerRejectsZeroLengthChunk() {
+        // packetize 永不产生空片（空 payload 直接抛错）——零长度片只可能是坏包或
+        // 恶意填充 65535 个空片撑爆重组字典（256KiB 帽数不到字典项），必须整片拒收。
+        var packet = Data()
+        packet.append(0x21)                       // type
+        packet.appendBigEndian(UInt16(0x0007))    // messageId
+        packet.appendBigEndian(UInt16(0))         // seq
+        packet.appendBigEndian(UInt16(2))         // total = 2（非末片也为空）
+        packet.appendBigEndian(UInt16(0))         // payloadLen = 0
+        packet.appendBigEndian(CRC16.ccittFalse(Data())) // 空数据的合法 CRC
+        #expect(packet.count == BLEPacketizer.headerSize)
+
+        let assembler = BLEPacketAssembler()
+        #expect(assembler.append(packetData: packet) == nil)
+        #expect(assembler.isPotentialChunk(packetData: packet) == false)
+    }
+
     @Test("BLE inbound decode prefers chunked packets over simple packets")
     @MainActor
     func inboundDecodePrefersChunkedPackets() throws {

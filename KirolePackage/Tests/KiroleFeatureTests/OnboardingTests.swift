@@ -109,6 +109,21 @@ struct OnboardingProfileCodableTests {
         #expect(decoded.customCompanionPrompt == nil)
         #expect(decoded.customCompanionRoast == false)
     }
+
+    /// v2.5.24 迁移语义：升级前的进行中草稿带着已退役的 `customAvatarPixelData`（4bpp 载荷）。
+    /// 必须解码成功、头像槽为 nil（故意作废旧 4bpp，不带垃圾进 addCustomCompanion）、
+    /// `hasCustomCompanionDraft == false`（完成 onboarding 时回落内置 IP、用户重选照片即恢复）。
+    @Test func legacyPixelDataKeyIsIgnoredAndDraftIncomplete() throws {
+        let legacyJSON = Data(
+            #"{"customCompanionRoast":false,"distractionSources":[],"customCompanionName":"Mochi","customAvatarPreviewData":"AAEC","customAvatarPixelData":"ATVi"}"#.utf8
+        )
+
+        let decoded = try JSONDecoder().decode(OnboardingProfile.self, from: legacyJSON)
+
+        #expect(decoded.customAvatarImageData == nil) // retired key deliberately dropped
+        #expect(decoded.customAvatarPreviewData != nil) // untouched sibling key still decodes
+        #expect(decoded.hasCustomCompanionDraft == false) // must force a photo re-pick
+    }
 }
 
 // MARK: - Question Data Integrity Tests

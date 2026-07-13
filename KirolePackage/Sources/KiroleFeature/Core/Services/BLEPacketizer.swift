@@ -64,8 +64,11 @@ public enum BLEPacketizer {
         guard maxChunkSize > 0 else {
             throw BLEPacketError.invalidChunkSize
         }
+        // PayloadLen 字段是 2B：把片长钳到 65535，防止调用方传超大 maxChunkSize 时
+        // `UInt16(chunk.count)` trap（现实 MTU ≤512，此钳位纯防御）。
+        let effectiveChunkSize = min(maxChunkSize, Int(UInt16.max))
 
-        let totalChunks = Int(ceil(Double(payload.count) / Double(maxChunkSize)))
+        let totalChunks = Int(ceil(Double(payload.count) / Double(effectiveChunkSize)))
         guard totalChunks > 0, totalChunks <= 65535 else {
             throw BLEPacketError.payloadTooLarge
         }
@@ -74,8 +77,8 @@ public enum BLEPacketizer {
         packets.reserveCapacity(totalChunks)
 
         for index in 0..<totalChunks {
-            let start = index * maxChunkSize
-            let end = min(start + maxChunkSize, payload.count)
+            let start = index * effectiveChunkSize
+            let end = min(start + effectiveChunkSize, payload.count)
             let chunk = payload.subdata(in: start..<end)
             let chunkCRC = CRC16.ccittFalse(chunk)
 
@@ -123,36 +126,59 @@ public final class BLEPacketAssembler {
 
     public init() {}
 
-    public func isPotentialChunk(packetData: Data) -> Bool {
-        guard packetData.count >= BLEPacketizer.headerSize else { return false }
-
-        let seq = Int(packetData.bigEndianUInt16(at: 3))
-        let total = Int(packetData.bigEndianUInt16(at: 5))
-        let chunkLength = packetData.bigEndianUInt16(at: 7)
-        let chunkCRC = packetData.bigEndianUInt16(at: 9)
-        let chunk = packetData.subdata(in: BLEPacketizer.headerSize..<packetData.count)
-
-        guard total > 1, seq < total, chunk.count == Int(chunkLength) else { return false }
-        return CRC16.ccittFalse(chunk) == chunkCRC
+    /// 11B 分包头解析（§3.2）。字段/偏移的唯一生产真源——isPotentialChunk 与 append
+    /// 共用，避免 9B→11B 这类头变更再出现两处偏移各改各的漂移。
+    /// 校验：长度 ≥ 头部、`chunk.count == PayloadLen`、逐片 CRC、
+    /// 以及 **PayloadLen > 0**——packetize 永不产生空片（空 payload 直接抛错），
+    /// 零长度片只可能是坏包或恶意填充 65535 个空片撑爆重组字典（256KiB 帽只数
+    /// payload 字节、数不到字典项），一律拒收。
+    private struct ChunkHeader {
+        let type: UInt8
+        let messageId: UInt16
+        let seq: Int
+        let total: UInt16
+        let chunk: Data
     }
 
-    public func append(packetData: Data) -> BLEReceivedMessage? {
+    private func parseChunk(_ packetData: Data) -> ChunkHeader? {
+        // 本解析器（与 bigEndianUInt16(at:)）按绝对下标读：只对 zero-based Data 正确。
+        // 现有调用方（characteristic.value / packetize 输出）都满足；传入非零 startIndex
+        // 的切片会静默读错字节，故 debug 期直接断言拦截。
+        assert(packetData.startIndex == 0, "BLEPacketAssembler requires zero-based Data (got startIndex \(packetData.startIndex))")
         guard packetData.count >= BLEPacketizer.headerSize else { return nil }
 
-        let type = packetData[0]
-        let messageId = packetData.bigEndianUInt16(at: 1)
         let seq = Int(packetData.bigEndianUInt16(at: 3))
         let total = packetData.bigEndianUInt16(at: 5)
         let chunkLength = packetData.bigEndianUInt16(at: 7)
         let chunkCRC = packetData.bigEndianUInt16(at: 9)
 
-        guard total > 0, seq < Int(total) else { return nil }
+        guard chunkLength > 0, total > 0, seq < Int(total) else { return nil }
 
         let chunk = packetData.subdata(in: BLEPacketizer.headerSize..<packetData.count)
-        guard chunk.count == Int(chunkLength) else { return nil }
+        guard chunk.count == Int(chunkLength), CRC16.ccittFalse(chunk) == chunkCRC else { return nil }
 
-        let computedChunkCRC = CRC16.ccittFalse(chunk)
-        guard computedChunkCRC == chunkCRC else { return nil }
+        return ChunkHeader(
+            type: packetData[0],
+            messageId: packetData.bigEndianUInt16(at: 1),
+            seq: seq,
+            total: total,
+            chunk: chunk
+        )
+    }
+
+    public func isPotentialChunk(packetData: Data) -> Bool {
+        guard let header = parseChunk(packetData) else { return false }
+        return header.total > 1
+    }
+
+    public func append(packetData: Data) -> BLEReceivedMessage? {
+        guard let header = parseChunk(packetData) else { return nil }
+
+        let type = header.type
+        let messageId = header.messageId
+        let seq = header.seq
+        let total = header.total
+        let chunk = header.chunk
 
         if messages[messageId] == nil {
             guard messages.count < Limits.maxInFlightMessages else {

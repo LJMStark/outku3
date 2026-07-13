@@ -92,6 +92,13 @@ public final class BLESyncCoordinator {
 
         let timeoutTask = Task { @MainActor in
             try? await Task.sleep(for: .seconds(self.connectionTimeoutSeconds))
+            guard !Task.isCancelled else { return }
+            // 大帧（0x15 头像 ≤1MiB ≈ 2093 片、限流下 1-2 分钟）传输中不掐线：
+            // 30s 超时到点先等它结束再评估，否则大头像永远发不完、整帧无限重试。
+            while !Task.isCancelled, self.bleService.isChunkedTransferInFlight {
+                try? await Task.sleep(for: .seconds(5))
+            }
+            guard !Task.isCancelled else { return }
             // 硬件调试需要长连接时不因超时主动断连。
             if self.bleService.connectionState.isConnected,
                !self.bleService.shouldKeepConnectionOpenForDebug {
@@ -222,7 +229,10 @@ public final class BLESyncCoordinator {
         // CoreBluetooth didDisconnect 兜底（→endSession→重连）。故刻意不为写失败断连。
         if bleService.connectionState.isConnected,
            !bleService.shouldKeepConnectionOpenForDebug,
-           FocusSessionService.shared.activeSession == nil {
+           FocusSessionService.shared.activeSession == nil,
+           // 头像大帧还在发就不断——由超时任务等它收尾（发完后连接闲置到下一轮 sync 收口，
+           // 只是电池成本、无正确性问题）。
+           !bleService.isChunkedTransferInFlight {
             bleService.disconnect()
         }
     }
@@ -294,7 +304,8 @@ public extension BLESyncCoordinator {
             Task { @MainActor in
                 guard let self,
                       FocusSessionService.shared.activeSession == nil,
-                      !self.bleService.shouldKeepConnectionOpenForDebug else { return }
+                      !self.bleService.shouldKeepConnectionOpenForDebug,
+                      !self.bleService.isChunkedTransferInFlight else { return }
                 self.bleService.disconnect()
             }
         }

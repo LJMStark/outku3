@@ -96,7 +96,7 @@ public final class AppState {
     public var remoteSyncWarnings: [String: String] = [:]
     /// 各集成最近一次成功应用数据的时间，key 与 remoteSyncErrors 的 provider 显示名一致。
     public var integrationLastSyncedAt: [String: Date] = [:]
-    /// True when the active custom companion's pixel frame failed to reach the hardware
+    /// True when the active custom companion's avatar PNG frame failed to reach the hardware
     /// and is queued for re-delivery on the next BLE reconnect.
     public var isCustomAvatarPendingBLEPush: Bool = false
     /// Consecutive flush opportunities for the pending custom-avatar frame. Drives the back-off
@@ -104,6 +104,10 @@ public final class AppState {
     /// so we don't re-push every sync forever while firmware can't accept the 0x15 frame yet —
     /// without ever permanently giving up. Reset to 0 on a successful push or a new companion.
     public var customAvatarFlushAttempts: Int = 0
+    /// The single in-flight avatar 0x15 push (≤1MiB PNG ≈ 2093 chunks, 1-2 min). A new
+    /// selection/flush cancels the previous task first — without this, two multi-thousand-chunk
+    /// streams interleave packet-by-packet and the OLD avatar can finish last and win the screen.
+    @ObservationIgnored var customAvatarPushTask: Task<Void, Never>?
     /// Set when the device timezone changes at runtime. UI shows a banner asking the user
     /// whether to re-sync events. Cleared on user action (adjust or keep).
     public var pendingTimezoneChangeName: String? = nil

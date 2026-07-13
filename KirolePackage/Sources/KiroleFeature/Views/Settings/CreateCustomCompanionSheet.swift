@@ -7,7 +7,7 @@ import UIKit
 // MARK: - Create Custom Companion Sheet
 
 /// 4-step flow to create a user-uploaded companion (Kindroid-inspired):
-/// Step 1 — pick + quantize a photo.
+/// Step 1 — pick a photo (processed into the hardware PNG by AvatarImageProcessor).
 /// Step 2 — name + pick relationship.
 /// Step 3 — pick persona voice.
 /// Step 4 — persona dimensions (sliders + backstory + sensitive boundary).
@@ -562,21 +562,29 @@ public struct CreateCustomCompanionSheet: View {
         Task {
             do {
                 let data = try await item.loadTransferable(type: Data.self)
+                // Heavy decode + multi-round PNG encode runs OFF the main actor
+                // (ImageIO downsample inside the processor bounds memory even for
+                // huge panoramas) — a 48MP photo would otherwise freeze the UI.
+                var result: AvatarProcessResult?
+                #if canImport(UIKit)
+                if let data {
+                    result = await Task.detached(priority: .userInitiated) {
+                        AvatarImageProcessor.process(imageData: data)
+                    }.value
+                }
+                #endif
                 await MainActor.run {
                     // Drop stale results: only the most recent selection may apply. A late
                     // earlier load must not overwrite the newer pick's preview/result, nor
                     // clear isProcessing while the newer request is still running.
                     guard requestID == photoRequestID else { return }
-                    #if canImport(UIKit)
-                    if let data, let uiImage = UIImage(data: data),
-                       let result = AvatarImageProcessor.process(image: uiImage) {
+                    if let result {
                         processResult = result
                     } else {
                         // Load succeeded but the bytes weren't a usable image (unsupported
                         // format, decode failure, or the processor rejected it).
                         saveError = "Couldn't use that photo. Try a different image."
                     }
-                    #endif
                     isProcessing = false
                 }
             } catch {

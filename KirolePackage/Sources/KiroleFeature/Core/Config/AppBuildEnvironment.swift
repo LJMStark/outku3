@@ -36,13 +36,20 @@ public enum AppBuildEnvironment {
     ///
     /// 用途：测试宿主进程没有 `NSBluetoothAlwaysUsageDescription`，任何路径创建
     /// `CBCentralManager` 都会触发 TCC 隐私 SIGABRT——`BLEService.initialize()` 以此守卫。
-    public static let isRunningTests: Bool = {
-        let env = ProcessInfo.processInfo.environment
-        if env["XCTestConfigurationFilePath"] != nil || env["XCTestBundlePath"] != nil {
+    public static let isRunningTests: Bool = detectTestHost(
+        environment: ProcessInfo.processInfo.environment,
+        arguments: ProcessInfo.processInfo.arguments
+    )
+
+    /// 纯函数形态的检测本体：注入 environment/arguments 使**负向**可测——
+    /// 误把生产进程判成测试宿主会让 BLEService.initialize() 静默跳过
+    /// CBCentralManager 创建、整机 BLE 失效，这个分支必须能被单测钉住。
+    static func detectTestHost(environment: [String: String], arguments: [String]) -> Bool {
+        if environment["XCTestConfigurationFilePath"] != nil || environment["XCTestBundlePath"] != nil {
             return true
         }
-        return ProcessInfo.processInfo.arguments.contains { $0.contains(".xctest") }
-    }()
+        return arguments.contains { $0.contains(".xctest") }
+    }
 
     /// 是否应暴露面向硬件 / 固件联调的开发者开关。
     ///

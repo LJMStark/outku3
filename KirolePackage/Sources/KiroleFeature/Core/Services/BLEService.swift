@@ -122,6 +122,14 @@ public final class BLEService: NSObject {
     private var writeCompletion: ((Result<Void, BLEError>) -> Void)?
     private var activeWriteID: UUID?
     private var nextMessageId: UInt16 = 1
+
+    /// 进行中的分包消息数（@MainActor 串行，无并发写）。大帧（0x15 头像 ≤1MiB ≈ 2093 片、
+    /// 限流下 1-2 分钟）传输期间，BLESyncCoordinator 的 30s 超时断连 / 同步收尾断连据此
+    /// 让路，否则大头像永远只能发出前几百片就被掐线、整帧无限重试。
+    private var inFlightChunkedTransfers = 0
+    var isChunkedTransferInFlight: Bool { inFlightChunkedTransfers > 0 }
+    /// flag-day 取证去重：本连接内已记过"固件还在发 9B 旧分包头"即不再重复（cleanup 复位）。
+    private var hasLoggedLegacyChunkHeader = false
     private var pendingConnectedPeripheralID: UUID?
     private var pendingConnectedPeripheralName: String?
     private var handshakeTimeoutTask: Task<Void, Never>?
@@ -258,7 +266,16 @@ public final class BLEService: NSObject {
         // detached requestBLESync→performSync 任务在进程收尾期就撞上过（2026-07-14）。
         // 测试里保持 centralManager 为 nil，poweredOnCentralManager 走既有
         // bluetoothNotAvailable 错误路径优雅失败，sync 链路的失败分支照常被覆盖。
-        guard !AppBuildEnvironment.isRunningTests else { return }
+        guard !AppBuildEnvironment.isRunningTests else {
+            // 必须留痕：万一真机包被误判为测试宿主（如未来 XCUITest / 自定义启动参数带
+            // ".xctest"），BLE 会整体静默失效、下游只看到 bluetoothNotAvailable——这行
+            // 日志是唯一能定位到守卫本身的取证信号。
+            ErrorReporter.log(
+                .sync(component: "BLEService", underlying: "initialize() skipped: test host detected (AppBuildEnvironment.isRunningTests)"),
+                context: "BLEService.initialize"
+            )
+            return
+        }
         centralManager = CBCentralManager(delegate: self, queue: .main)
     }
 
@@ -709,7 +726,12 @@ public final class BLEService: NSObject {
                 payload: securePayload,
                 maxChunkSize: maxChunkPayloadSize
             )
+            inFlightChunkedTransfers += 1
+            defer { inFlightChunkedTransfers -= 1 }
             for packet in packets {
+                // 外层任务被取消（如切换伴侣废弃旧头像流）时立即停发——写锁只串行单个
+                // packet，不检查取消的话两条 2000 片消息会逐片交错、旧流可能反杀新流。
+                try Task.checkCancellation()
                 try await writePacket(packet, peripheral: peripheral, characteristic: characteristic)
             }
             return
@@ -735,7 +757,11 @@ public final class BLEService: NSObject {
                 payload: data,
                 maxChunkSize: maxChunkPayloadSize
             )
+            inFlightChunkedTransfers += 1
+            defer { inFlightChunkedTransfers -= 1 }
             for packet in packets {
+                // 同 writeData：任务取消即停发，防多条大帧流逐片交错。
+                try Task.checkCancellation()
                 try await writePacket(packet, peripheral: peripheral, characteristic: characteristic)
             }
             return
@@ -892,6 +918,11 @@ public final class BLEService: NSObject {
         } else if let message = BLESimpleDecoder.decode(receivedData) {
             decodedMessage = message
         } else {
+            // flag-day 取证（v2.5.24）：分包头 9B→11B 无兼容窗口。固件没同步升级时，
+            // 它发来的旧 9B 分包会走到这里被静默丢弃——简单帧（0x20/0x30 等）照常工作，
+            // 唯独 0x21 离线补传无声死亡，联调时极难定位。按旧头形状识别并记日志
+            // （每连接一次，cleanup 复位），不做任何兼容解析。
+            logLegacyChunkHeaderIfDetected(receivedData)
             decodedMessage = nil
         }
 
@@ -912,6 +943,26 @@ public final class BLEService: NSObject {
         return try securityManager.openSecurePayload(message.payload)
     }
 
+    /// 旧 9B 分包头形状：`Type(1)|MsgId(2)|Seq(1)|Total(1)|Len(2 BE)@5|CRC(2 BE)@7|payload@9`。
+    /// 长度自洽 + 逐片 CRC 命中即判定为 v2.5.24 之前的固件在发旧分包格式。
+    private func logLegacyChunkHeaderIfDetected(_ data: Data) {
+        guard !hasLoggedLegacyChunkHeader, data.count > 9 else { return }
+        let legacyLength = Int(data.bigEndianUInt16(at: 5))
+        guard legacyLength > 0, data.count == 9 + legacyLength else { return }
+        let legacyCRC = data.bigEndianUInt16(at: 7)
+        let payload = data.subdata(in: 9..<data.count)
+        guard CRC16.ccittFalse(payload) == legacyCRC else { return }
+
+        hasLoggedLegacyChunkHeader = true
+        ErrorReporter.log(
+            .sync(
+                component: "BLE ChunkHeader",
+                underlying: "Device is still sending pre-v2.5.24 9-byte chunk headers — firmware must upgrade to the 11-byte header (§3.2); its chunked messages (incl. 0x21 event batches) are being dropped"
+            ),
+            context: "BLEService.decodeReceivedMessage"
+        )
+    }
+
     private func cleanup() {
         BLEWiFiDebugCoordinator.shared.handleDisconnected()
         handshakeTimeoutTask?.cancel()
@@ -925,6 +976,7 @@ public final class BLEService: NSObject {
         // 断连必须丢弃半成品分块重组状态：链路中断时未完成的 Assembly 槽位会永久残留，
         // 累计 8 个后 assembler 槽满，所有后续 Device→App 分块消息（含 0x21 事件补传批次）被静默丢弃。
         packetAssembler = BLEPacketAssembler()
+        hasLoggedLegacyChunkHeader = false
         pendingConnectedPeripheralID = nil
         pendingConnectedPeripheralName = nil
         connectedPeripheral = nil

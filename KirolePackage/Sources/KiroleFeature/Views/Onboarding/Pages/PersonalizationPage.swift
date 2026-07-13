@@ -462,27 +462,29 @@ public struct PersonalizationPage: View {
         processError = nil
         Task {
             let data = try? await item.loadTransferable(type: Data.self)
+            // Heavy decode + PNG encode off the main actor (see AvatarImageProcessor.process).
+            var result: AvatarProcessResult?
+            #if canImport(UIKit)
+            if let data {
+                result = await Task.detached(priority: .userInitiated) {
+                    AvatarImageProcessor.process(imageData: data)
+                }.value
+            }
+            #endif
             await MainActor.run {
-                applyProcessedPhoto(data: data)
+                applyProcessedPhoto(result: result)
                 isProcessing = false
             }
         }
     }
 
-    private func applyProcessedPhoto(data: Data?) {
-        #if canImport(UIKit)
-        guard let data,
-              let uiImage = UIImage(data: data),
-              let result = AvatarImageProcessor.process(image: uiImage) else {
+    private func applyProcessedPhoto(result: AvatarProcessResult?) {
+        guard let result else {
             processError = "Couldn't process this image. Try another."
             return
         }
         onboardingState.profile.customAvatarPreviewData = result.previewData
         onboardingState.profile.customAvatarImageData = result.imageData
-        #else
-        _ = data
-        processError = "Image processing unavailable on this platform."
-        #endif
     }
 }
 

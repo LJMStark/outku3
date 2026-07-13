@@ -104,6 +104,76 @@ struct CustomCompanionBLEQueueTests {
         #expect(AppState.shared.isCustomAvatarPendingBLEPush == false)
     }
 
+    // MARK: - v2.5.24 wire-contract guard (stale/oversize assets never retry forever)
+
+    /// 升级前遗留的 4bpp 资产（非 PNG）必须被推送护栏丢弃：清 pending 标记 + 复位重试计数，
+    /// 而不是当成 SubVersion 0x02 发给固件或无限重试。护栏在触碰 BLEService 之前触发，
+    /// 测试进程里不会引发 CBCentralManager 创建。
+    @Test("legacy 4bpp asset drops the push and clears the pending marker instead of retrying")
+    func legacyAssetDropsPushAndClearsPending() async throws {
+        try await SharedPersistenceTestLock.shared.withLock {
+            let id = UUID()
+            // 真实旧 4bpp 头字节（packPixelPair 输出形态），永远不可能是 PNG 签名。
+            try await LocalStorage.shared.saveCustomCompanionAssets(
+                id: id,
+                previewData: Data([0x01]),
+                imageData: Data([0x01, 0x35, 0x62])
+            )
+            await LocalStorage.shared.savePendingCustomCompanionPush(id: id)
+            let savedProfile = AppState.shared.userProfile
+            var profile = savedProfile
+            profile.customCompanionId = id
+            AppState.shared.updateUserProfile(profile)
+            AppState.shared.isCustomAvatarPendingBLEPush = true
+            AppState.shared.customAvatarFlushAttempts = 0
+
+            await AppState.shared.flushPendingCustomCompanionPushIfNeeded()
+
+            #expect(AppState.shared.isCustomAvatarPendingBLEPush == false)
+            #expect(AppState.shared.customAvatarFlushAttempts == 0)
+            let pending = await LocalStorage.shared.loadPendingCustomCompanionPush()
+            #expect(pending == nil)
+
+            // Restore
+            AppState.shared.updateUserProfile(savedProfile)
+            try? await LocalStorage.shared.deleteCustomCompanionAssets(id: id)
+            await LocalStorage.shared.clearPendingCustomCompanionPush()
+        }
+    }
+
+    /// 带合法 PNG 签名但超过 1MiB 的资产（损坏/被替换的本地文件）同样必须被丢弃——
+    /// §4.12 白纸黑字承诺设备绝不会收到 >1,048,576 字节的 PNG，出口必须设防。
+    @Test("oversize PNG asset is rejected at the push choke point")
+    func oversizePNGAssetIsRejected() async throws {
+        try await SharedPersistenceTestLock.shared.withLock {
+            let id = UUID()
+            var oversize = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
+            oversize.append(Data(count: AvatarImageProcessor.maxEncodedByteCount)) // 签名 + 1MiB → 超限
+            try await LocalStorage.shared.saveCustomCompanionAssets(
+                id: id,
+                previewData: Data([0x01]),
+                imageData: oversize
+            )
+            await LocalStorage.shared.savePendingCustomCompanionPush(id: id)
+            let savedProfile = AppState.shared.userProfile
+            var profile = savedProfile
+            profile.customCompanionId = id
+            AppState.shared.updateUserProfile(profile)
+            AppState.shared.isCustomAvatarPendingBLEPush = true
+
+            await AppState.shared.flushPendingCustomCompanionPushIfNeeded()
+
+            #expect(AppState.shared.isCustomAvatarPendingBLEPush == false)
+            let pending = await LocalStorage.shared.loadPendingCustomCompanionPush()
+            #expect(pending == nil)
+
+            // Restore
+            AppState.shared.updateUserProfile(savedProfile)
+            try? await LocalStorage.shared.deleteCustomCompanionAssets(id: id)
+            await LocalStorage.shared.clearPendingCustomCompanionPush()
+        }
+    }
+
     // MARK: - Flush back-off schedule (livelock regression)
 
     @Test("Flush retries every sync for the first burst, then periodically — never permanently stops")

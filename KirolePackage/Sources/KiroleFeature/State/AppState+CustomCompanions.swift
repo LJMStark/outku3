@@ -140,7 +140,10 @@ extension AppState {
         requestBLESync(reason: "selectCustomCompanion")
 
         // Re-push the avatar PNG so the device shows the newly active avatar.
-        Task { @MainActor in
+        // Cancel any in-flight push first: BLE 写锁只串行单个 packet，两条 ~2000 片的
+        // 0x15 流会逐片交错，旧选择可能最后完成反杀新选择（写循环见 Task.checkCancellation）。
+        customAvatarPushTask?.cancel()
+        customAvatarPushTask = Task { @MainActor in
             guard let imageData = await localStorage.loadCustomCompanionImageData(id: id) else { return }
             customAvatarFlushAttempts = 0  // fresh retry budget for the newly selected avatar
             await pushCustomAvatarFrame(imageData: imageData, companionId: id)
@@ -168,15 +171,20 @@ extension AppState {
     /// Sends the avatar PNG frame via BLE. On failure, queues the companion ID in LocalStorage
     /// so `flushPendingCustomCompanionPushIfNeeded` can retry on the next BLE reconnect.
     private func pushCustomAvatarFrame(imageData: Data, companionId: UUID) async {
-        // Stale-asset guard (v2.5.24): pre-PNG installs persisted 4bpp pixel data whose
-        // bytes can never start with the PNG signature. Sending them as SubVersion 0x02
-        // would hand the firmware garbage — drop the push (and any pending marker) instead
-        // of retrying forever; re-creating the companion regenerates a proper PNG.
-        guard AvatarImageProcessor.isPNGData(imageData) else {
+        // Wire-contract guard (v2.5.24): the persisted asset must be a PNG within the
+        // documented ≤1MiB budget before it touches BLE.
+        // - Non-PNG bytes = pre-PNG installs' 4bpp pixel data (can never start with the
+        //   PNG signature) — sending them as SubVersion 0x02 would hand firmware garbage.
+        // - Oversize with a valid signature = corrupted/replaced file; §4.12 promises the
+        //   device never receives >1,048,576 PNG bytes, so enforce it at the BLE exit too.
+        // Either way: drop the push (and any pending marker) instead of retrying forever;
+        // re-creating the companion regenerates a proper PNG.
+        guard AvatarImageProcessor.isPNGData(imageData),
+              imageData.count <= AvatarImageProcessor.maxEncodedByteCount else {
             ErrorReporter.log(
                 .sync(
                     component: "BLE CustomAvatarFrame",
-                    underlying: "Persisted avatar asset is not PNG (pre-v2.5.24 4bpp data) — dropping push; re-create the companion to fix"
+                    underlying: "Persisted avatar asset rejected (not PNG or >1MiB; \(imageData.count)B) — dropping push; re-create the companion to fix"
                 ),
                 context: "AppState.pushCustomAvatarFrame id=\(companionId)"
             )
@@ -190,6 +198,10 @@ extension AppState {
             await localStorage.clearPendingCustomCompanionPush()
             isCustomAvatarPendingBLEPush = false
             customAvatarFlushAttempts = 0
+        } catch is CancellationError {
+            // 被更新的选择/flush 取消：新任务已接管重试状态，这里不标 pending、不记错——
+            // 否则旧任务会把新选择刚清掉的待重发标记又写回去。
+            return
         } catch {
             await localStorage.savePendingCustomCompanionPush(id: companionId)
             isCustomAvatarPendingBLEPush = true
@@ -227,6 +239,13 @@ extension AppState {
         // Count every flush opportunity (even skipped ones) so the periodic retry keeps advancing.
         customAvatarFlushAttempts += 1
         guard Self.shouldAttemptCustomAvatarFlush(attempt: customAvatarFlushAttempts) else { return }
-        await pushCustomAvatarFrame(imageData: imageData, companionId: id)
+        // 与 selectCustomCompanion 共用同一任务槽：flush 也可能与手动切换赛跑，
+        // 同一时刻只允许一条 0x15 大帧流在发。仍然 await 完成，调用方语义不变。
+        customAvatarPushTask?.cancel()
+        let task = Task { @MainActor in
+            await pushCustomAvatarFrame(imageData: imageData, companionId: id)
+        }
+        customAvatarPushTask = task
+        await task.value
     }
 }

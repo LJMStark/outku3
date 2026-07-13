@@ -1,5 +1,7 @@
 # Kirole BLE 联调前全协议模拟报告
 
+> **⚠️ 历史快照（2026-05-08 协议状态）：** 本报告内提到的 **9 字节分包头已于协议 v2.5.24（2026-07-14）升级为 11 字节**（`Seq`/`Total` 各扩为 2B BE、分包上限 255→65535），字节走查仅作历史参考——**分包格式一律以《BLE通信协议规格文档》§3.2 现行版为准**。
+
 **日期:** 2026-05-08  
 **代码分支:** `codex/ble-protocol-sync`  
 **模拟依据:** App 当前代码里的 `BLEDataEncoder`、`BLESimpleEncoder`、`BLEPacketizer`、`BLEService.decodeReceivedMessageForTesting`  

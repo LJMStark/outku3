@@ -74,6 +74,16 @@ public final class BLESecurityManager {
         guard isSessionEstablished else {
             throw AppError.bleSecurity("BLE secure session has not been established")
         }
+        // SecureEnvelope 的长度字段是 2 字节（signingBytes 里 `UInt16(payload.count)` 为
+        // trapping 转换）：payload > 65535B 会直接崩进程，而 v2.5.24 的 0x15 头像 PNG
+        // 可达 ~1MiB。信封 wire 格式结构上装不下大帧——在与固件重新设计 secure 大帧
+        // 封装（加宽长度字段 / 分片签名）之前，这里抛错而非崩溃：调用方按普通发送失败
+        // 处理（0x15 走待重发队列），不会发出损坏帧。见协议 §4.12 secure 模式备注。
+        guard payload.count <= Int(UInt16.max) else {
+            throw AppError.bleSecurity(
+                "SecureEnvelope cannot carry \(payload.count)B payload (2-byte length field, max 65535B); large-frame secure design pending with firmware"
+            )
+        }
 
         let envelope = BLESecureEnvelope(
             payloadType: type,
