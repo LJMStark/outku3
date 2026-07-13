@@ -2,10 +2,11 @@
 
 **Hardware Requirements Document**
 
-**版本:** v0.5
-**更新日期:** 2026-06-25
+**版本:** v0.6
+**更新日期:** 2026-07-14
 **状态:** Draft
-**前序版本:** v0.4 (2026-05-07)
+**前序版本:** v0.5 (2026-06-25)
+**v0.6 变更:** BLE 分包头随协议 v2.5.24 由 9 字节更新为 **11 字节**（`seq`/`total` 各扩为 2B BE，分包上限 255→65535，§6/§5.2 同步）——为承载 `CustomAvatarFrame(0x15)` 用户头像 PNG（≤800×700、尽力 ≤1MiB）；协议引用版本 v2.3.5→v2.5.24。
 
 ---
 
@@ -111,7 +112,7 @@ Kirole 是一款面向深度知识工具用户的专注力伴侣设备。iOS App
 用途：
 
 - 屏幕帧缓冲（4 寸: **211,968 bytes（768×552）**，**7.3 寸: 960,000 bytes**，Spectra 6 4bpp 编码）
-- BLE 分包缓存（BLE 包头 9 字节 + payload，需支持多包重组）
+- BLE 分包缓存（BLE 包头 11 字节 + payload，需支持多包重组；0x15 头像 PNG 重组最坏 ≤1MiB）
 - UI 临时数据
 
 ---
@@ -251,9 +252,9 @@ Kirole 是一款面向深度知识工具用户的专注力伴侣设备。iOS App
 
 - 掉线自动重连
 - 大数据分包与 CRC16 校验（CRC16-CCITT-FALSE，poly `0x1021`，init `0xFFFF`）
-- 包头格式：type (1B) + messageId (2B BE) + seq (1B) + total (1B) + payloadLen (2B BE) + crc16 (2B BE) = 9 字节
+- 包头格式：type (1B) + messageId (2B BE) + seq (2B BE) + total (2B BE) + payloadLen (2B BE) + crc16 (2B BE) = 11 字节（v2.5.24 起；分包总数上限 65535）
 
-详细协议参考 `BLE通信协议规格文档.md` (v2.3.5)。第一次硬件联调先参考 `BLE初次联调指南.md`。
+详细协议参考 `BLE通信协议规格文档.md` (v2.5.24)。第一次硬件联调先参考 `BLE初次联调指南.md`。
 
 ---
 
