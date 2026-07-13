@@ -2,11 +2,8 @@ import Foundation
 
 @MainActor
 final class TaskManager {
-    func tasksForToday(tasks: [TaskItem]) -> [TaskItem] {
-        tasks.filter { task in
-            guard let dueDate = task.dueDate else { return false }
-            return Calendar.current.isDateInToday(dueDate)
-        }
+    func tasksForToday(tasks: [TaskItem], now: Date = Date()) -> [TaskItem] {
+        tasks.filter { $0.isInTodayDisplay(on: now) }
     }
 
     func completedTasksForToday(tasks: [TaskItem]) -> [TaskItem] {
@@ -15,7 +12,7 @@ final class TaskManager {
 
     func statistics(tasks: [TaskItem], now: Date = Date()) -> TaskStatistics {
         let calendar = Calendar.current
-        let todayTasks = tasksForToday(tasks: tasks)
+        let todayTasks = tasksForToday(tasks: tasks, now: now)
         let todayCompleted = todayTasks.filter(\.isCompleted).count
 
         let weekStart = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now))!

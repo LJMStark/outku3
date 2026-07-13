@@ -228,14 +228,18 @@ public actor GoogleSyncEngine {
             }
 
             if localTask.syncStatus == .synced {
-                result.append(remoteTask)
+                result.append(Self.mergeRemoteTaskPreservingLocalFields(local: localTask, remote: remoteTask))
                 continue
             }
 
             // Local is dirty - Last-Writer-Wins
             let localTime = localTask.lastModified
             let remoteTime = remoteTask.remoteUpdatedAt ?? remoteTask.lastModified
-            result.append(remoteTime > localTime ? remoteTask : localTask)
+            result.append(
+                remoteTime > localTime
+                    ? Self.mergeRemoteTaskPreservingLocalFields(local: localTask, remote: remoteTask)
+                    : localTask
+            )
         }
 
         // Keep remaining local tasks that weren't matched
@@ -244,6 +248,17 @@ public actor GoogleSyncEngine {
         }
 
         return result
+    }
+
+    /// A remote Google refresh owns provider fields but must not erase Kirole-only state.
+    nonisolated static func mergeRemoteTaskPreservingLocalFields(
+        local: TaskItem,
+        remote: TaskItem
+    ) -> TaskItem {
+        var merged = remote
+        merged.localId = local.localId
+        merged.todayDisplayDate = local.todayDisplayDate
+        return merged
     }
 
     private static func mapRemoteTask(_ googleTask: GoogleTask, taskListId: String) -> TaskItem {

@@ -33,7 +33,7 @@ public enum BLEDataEncoder {
     /// 编码任务列表数据
     public static func encodeTaskList(_ tasks: [TaskItem]) -> Data {
         var data = Data()
-        let todayTasks = tasks.filter { $0.dueDate.map { Calendar.current.isDateInToday($0) } ?? false }
+        let todayTasks = tasks.filter { $0.isInTodayDisplay() }
         data.append(UInt8(min(todayTasks.count, 10)))
 
         for task in todayTasks.prefix(10) {

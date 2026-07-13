@@ -38,7 +38,7 @@ public final class DayPackGenerator {
         screenSize: ScreenSize = .fourInch,
         petDialogue: String = ""
     ) async -> DayPack {
-        let todayTasks = tasks.filter { $0.dueDate.map { Calendar.current.isDateInToday($0) } ?? false }
+        let todayTasks = tasks.filter { $0.isInTodayDisplay() }
         let todayEvents = events
             .filter { Calendar.current.isDateInToday($0.startTime) }
             .sorted { $0.startTime < $1.startTime }

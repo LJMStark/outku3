@@ -39,8 +39,10 @@ struct AppleSyncMergeTests {
 
     @Test("synced local takes remote values")
     func syncedLocalTakesRemote() {
-        let local = makeTask(id: "1", title: "Old", isCompleted: false,
+        var local = makeTask(id: "1", title: "Old", isCompleted: false,
                              syncStatus: .synced, lastModified: Date(timeIntervalSince1970: 1000))
+        let todayDisplayDate = Date(timeIntervalSince1970: 1500)
+        local.todayDisplayDate = todayDisplayDate
         let remote = makeTask(id: "1", title: "New", isCompleted: true,
                               syncStatus: .synced, lastModified: Date(timeIntervalSince1970: 2000),
                               remoteUpdatedAt: Date(timeIntervalSince1970: 2000))
@@ -49,6 +51,7 @@ struct AppleSyncMergeTests {
 
         #expect(merged.isCompleted == true)
         #expect(merged.title == "New")
+        #expect(merged.todayDisplayDate == todayDisplayDate)
     }
 
     @Test("dirty local older than remote yields to remote (last-writer-wins)")

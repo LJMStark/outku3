@@ -187,6 +187,27 @@ extension AppState {
         }
     }
 
+    /// Adds or removes a task from today's App and hardware display without changing its real
+    /// due date or writing anything back to Google Tasks, Apple Reminders, or other providers.
+    public func setTaskDisplayedToday(
+        _ task: TaskItem,
+        displayed: Bool,
+        now: Date = Date()
+    ) async {
+        guard let index = tasks.firstIndex(where: { $0.id == task.id }) else { return }
+
+        var updatedTask = tasks[index]
+        updatedTask.todayDisplayDate = displayed ? now : nil
+        tasks = taskManager.withTask(tasks, updatedTask: updatedTask)
+        updateStatistics()
+        requestBLESync(reason: displayed ? "addTaskToTodayDisplay" : "removeTaskFromTodayDisplay")
+
+        await persistTasks(tasks, context: "AppState.setTaskDisplayedToday")
+        await updatePetState()
+        await refreshSharedPetDialogueIfNeeded()
+        await refreshHomeCompanionPresentation()
+    }
+
     public func deleteTask(_ task: TaskItem) {
         guard let existingTask = tasks.first(where: { $0.id == task.id }) else { return }
         let support = taskSyncSupport(for: existingTask, action: .delete)

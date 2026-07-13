@@ -121,6 +121,7 @@ public actor NotionSyncEngine {
     nonisolated static func mergeRemoteTaskPreservingLocalFields(local: TaskItem, remote: TaskItem) -> TaskItem {
         var merged = remote
         merged.localId = local.localId
+        merged.todayDisplayDate = local.todayDisplayDate
         merged.dueDate = remote.dueDate ?? local.dueDate
         merged.notes = remote.notes ?? local.notes
         if remote.priority == .medium {

@@ -25,6 +25,10 @@ public struct TaskItem: Identifiable, Sendable, Codable {
     public var remoteUpdatedAt: Date?
     public var remoteEtag: String?
     public var notes: String?
+    /// Kirole-only date marking this task for today's App and E-ink display.
+    /// This is deliberately separate from `dueDate`: changing it must never write to the
+    /// external task provider or alter the task's real deadline.
+    public var todayDisplayDate: Date?
 
     public init(
         id: String = UUID().uuidString,
@@ -48,7 +52,8 @@ public struct TaskItem: Identifiable, Sendable, Codable {
         lastModified: Date = Date(),
         remoteUpdatedAt: Date? = nil,
         remoteEtag: String? = nil,
-        notes: String? = nil
+        notes: String? = nil,
+        todayDisplayDate: Date? = nil
     ) {
         self.id = id
         self.localId = localId
@@ -72,6 +77,7 @@ public struct TaskItem: Identifiable, Sendable, Codable {
         self.remoteUpdatedAt = remoteUpdatedAt
         self.remoteEtag = remoteEtag
         self.notes = notes
+        self.todayDisplayDate = todayDisplayDate
     }
 
     // 从 Google API 响应创建
@@ -94,6 +100,24 @@ public struct TaskItem: Identifiable, Sendable, Codable {
             remoteEtag: googleTask.etag,
             notes: googleTask.notes
         )
+    }
+}
+
+extension TaskItem {
+    public func isManuallySelectedForToday(
+        on date: Date = Date(),
+        calendar: Calendar = .current
+    ) -> Bool {
+        guard let todayDisplayDate else { return false }
+        return calendar.isDate(todayDisplayDate, inSameDayAs: date)
+    }
+
+    public func isInTodayDisplay(
+        on date: Date = Date(),
+        calendar: Calendar = .current
+    ) -> Bool {
+        let isDueToday = dueDate.map { calendar.isDate($0, inSameDayAs: date) } ?? false
+        return isDueToday || isManuallySelectedForToday(on: date, calendar: calendar)
     }
 }
 

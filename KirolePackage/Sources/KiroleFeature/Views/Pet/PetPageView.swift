@@ -18,6 +18,7 @@ struct PetPageView: View {
     @Environment(ThemeManager.self) private var theme
     @State private var showPetStatus = false
     @State private var appeared = false
+    @State private var todayDisplayFeedback: TodayDisplayFeedback?
 
     private var viewportWidth: CGFloat? {
         #if canImport(UIKit)
@@ -42,14 +43,16 @@ struct PetPageView: View {
                     TaskSectionView(
                         title: "Tasks Today",
                         tasks: todayTasks,
-                        delay: 0.4
+                        delay: 0.4,
+                        onTodayDisplayChange: setTodayDisplay
                     )
 
                     // Upcoming
                     TaskSectionView(
                         title: "Upcoming",
                         tasks: upcomingTasks,
-                        delay: 0.6
+                        delay: 0.6,
+                        onTodayDisplayChange: setTodayDisplay
                     )
                     .padding(.top, 24)
 
@@ -57,7 +60,8 @@ struct PetPageView: View {
                     TaskSectionView(
                         title: "No Due Dates",
                         tasks: noDueDateTasks,
-                        delay: 0.8
+                        delay: 0.8,
+                        onTodayDisplayChange: setTodayDisplay
                     )
                     .padding(.top, 24)
                 }
@@ -72,6 +76,39 @@ struct PetPageView: View {
             PetStatusView()
                 .injectAppEnvironment()
         }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if let feedback = todayDisplayFeedback {
+                TodayDisplayFeedbackView(
+                    feedback: feedback,
+                    onUndo: {
+                        Task { @MainActor in
+                            await appState.setTaskDisplayedToday(
+                                feedback.task,
+                                displayed: !feedback.displayed
+                            )
+                        }
+                        withAnimation(.kiroleGentle) {
+                            todayDisplayFeedback = nil
+                        }
+                    }
+                )
+                .padding(.horizontal, 20)
+                .padding(.bottom, 8)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .task(id: todayDisplayFeedback?.id) {
+            guard let feedbackID = todayDisplayFeedback?.id else { return }
+            do {
+                try await Task.sleep(for: .seconds(4))
+            } catch {
+                return
+            }
+            guard todayDisplayFeedback?.id == feedbackID else { return }
+            withAnimation(.kiroleGentle) {
+                todayDisplayFeedback = nil
+            }
+        }
     }
 
     // MARK: - Task Filters
@@ -85,21 +122,27 @@ struct PetPageView: View {
     }
 
     private var todayTasks: [TaskItem] {
-        appState.tasks.filter { task in
-            guard let dueDate = task.dueDate else { return false }
-            return Calendar.current.isDate(dueDate, inSameDayAs: today)
-        }
+        appState.tasks.filter { $0.isInTodayDisplay(on: today) }
     }
 
     private var upcomingTasks: [TaskItem] {
         appState.tasks.filter { task in
             guard let dueDate = task.dueDate else { return false }
-            return dueDate > today && !Calendar.current.isDate(dueDate, inSameDayAs: today)
+            return dueDate > today && !task.isInTodayDisplay(on: today)
         }
     }
 
     private var noDueDateTasks: [TaskItem] {
-        appState.tasks.filter { $0.dueDate == nil }
+        appState.tasks.filter { $0.dueDate == nil && !$0.isInTodayDisplay(on: today) }
+    }
+
+    private func setTodayDisplay(_ task: TaskItem, _ displayed: Bool) {
+        Task { @MainActor in
+            await appState.setTaskDisplayedToday(task, displayed: displayed)
+        }
+        withAnimation(.kiroleGentle) {
+            todayDisplayFeedback = TodayDisplayFeedback(task: task, displayed: displayed)
+        }
     }
 }
 
@@ -249,6 +292,7 @@ private struct TaskSectionView: View {
     let title: String
     let tasks: [TaskItem]
     let delay: Double
+    let onTodayDisplayChange: (TaskItem, Bool) -> Void
 
     @Environment(ThemeManager.self) private var theme
     @State private var appeared = false
@@ -270,7 +314,7 @@ private struct TaskSectionView: View {
                 EmptyTaskPlaceholder()
             } else {
                 ForEach(Array(tasks.enumerated()), id: \.element.id) { index, task in
-                    TaskItemRow(task: task)
+                    TaskItemRow(task: task, onTodayDisplayChange: onTodayDisplayChange)
                         .opacity(appeared ? 1 : 0)
                         .offset(x: appeared ? 0 : -20)
                         .animation(
@@ -288,6 +332,7 @@ private struct TaskSectionView: View {
 
 private struct TaskItemRow: View {
     let task: TaskItem
+    let onTodayDisplayChange: (TaskItem, Bool) -> Void
     @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
     @State private var showEditSheet = false
@@ -345,19 +390,14 @@ private struct TaskItemRow: View {
 
                 Spacer()
 
-                // Tag
-                Text("#My Tasks")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(theme.colors.primary.opacity(0.8))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(theme.colors.primary.opacity(0.1))
-                    .clipShape(Capsule())
+                todayDisplayControl
 
                 // Due date label
                 if let dueDate = task.dueDate {
                     Text(formatDueDate(dueDate))
                         .font(.system(size: 12, weight: .medium))
+                        .lineLimit(1)
+                        .fixedSize()
                         .foregroundStyle(Color(hex: "8B5A2B"))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
@@ -367,6 +407,24 @@ private struct TaskItemRow: View {
 
                 // More menu
                 Menu {
+                    if task.isManuallySelectedForToday() {
+                        Button {
+                            onTodayDisplayChange(task, false)
+                        } label: {
+                            Label("Remove from Today", systemImage: "sun.max")
+                        }
+                        .accessibilityLabel("Remove from Today")
+                        .accessibilityIdentifier("Pet_TaskRemoveFromTodayMenuItem")
+                    } else if !task.isInTodayDisplay() {
+                        Button {
+                            onTodayDisplayChange(task, true)
+                        } label: {
+                            Label("Show Today", systemImage: "sun.max.fill")
+                        }
+                        .accessibilityLabel("Show Today")
+                        .accessibilityIdentifier("Pet_TaskShowTodayMenuItem")
+                    }
+
                     Button {
                         showEditSheet = true
                     } label: {
@@ -424,6 +482,86 @@ private struct TaskItemRow: View {
         if calendar.isDateInToday(date) { return "today" }
         if calendar.isDateInTomorrow(date) { return "tomorrow" }
         return dueDateFormatter.string(from: date)
+    }
+
+    private var isDueToday: Bool {
+        task.dueDate.map { Calendar.current.isDateInToday($0) } ?? false
+    }
+
+    @ViewBuilder
+    private var todayDisplayControl: some View {
+        // Due-today rows already show the yellow "today" date capsule, so the sun control
+        // only marks/offers manual selection — rendering it there would say "today" twice.
+        if !isDueToday {
+            if task.isManuallySelectedForToday() {
+                // Icon-only state badge (Microsoft To Do's My Day sun / Things 3's Today
+                // star pattern): the row's only textual date stays the real due date, so
+                // the pin marker can never read as a second "today".
+                Image(systemName: "sun.max.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(theme.colors.primary.opacity(0.85))
+                    .padding(6)
+                    .background(theme.colors.primary.opacity(0.1))
+                    .clipShape(Circle())
+                    .accessibilityLabel("Shown today")
+            } else {
+                Button {
+                    onTodayDisplayChange(task, true)
+                } label: {
+                    Label("Today", systemImage: "sun.max")
+                        .font(.system(size: 12, weight: .semibold))
+                        .lineLimit(1)
+                        .fixedSize()
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(theme.colors.primary.opacity(0.1))
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(theme.colors.primary.opacity(0.85))
+                .accessibilityLabel("Show \(task.title) today")
+                .accessibilityIdentifier("Pet_TaskShowToday")
+                .accessibilityHint("Shows this task in Kirole and on the E-ink display without changing its due date")
+            }
+        }
+    }
+}
+
+private struct TodayDisplayFeedback: Identifiable {
+    let id = UUID()
+    let task: TaskItem
+    let displayed: Bool
+}
+
+private struct TodayDisplayFeedbackView: View {
+    let feedback: TodayDisplayFeedback
+    let onUndo: () -> Void
+    @Environment(ThemeManager.self) private var theme
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: feedback.displayed ? "sun.max.fill" : "sun.max")
+                .foregroundStyle(theme.colors.accent)
+
+            Text(feedback.displayed
+                 ? "Shown today · Due date unchanged"
+                 : "Removed from today")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(theme.colors.primaryText)
+
+            Spacer(minLength: 8)
+
+            Button("Undo", action: onUndo)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(theme.colors.accent)
+                .accessibilityIdentifier("Pet_TodayDisplayUndo")
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .shadow(color: Color.black.opacity(0.12), radius: 12, y: 4)
+        .accessibilityElement(children: .combine)
     }
 }
 

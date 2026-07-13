@@ -412,6 +412,19 @@ struct BLEProtocolTests {
         #expect(data[0] == 0)
     }
 
+    @Test("BLEDataEncoder encodeTaskList includes a task manually selected for today")
+    func encodeTaskListIncludesManualTodaySelection() {
+        let task = TaskItem(
+            title: "No due date",
+            dueDate: nil,
+            todayDisplayDate: Date()
+        )
+
+        let data = BLEDataEncoder.encodeTaskList([task])
+
+        #expect(data[0] == 1)
+    }
+
     @Test("BLEDataEncoder encodeWeather handles negative temperature")
     func encodeWeatherSignedTemperature() {
         let weather = Weather(temperature: -10, condition: .snowy)

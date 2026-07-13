@@ -129,7 +129,8 @@ public actor AppleSyncEngine {
             priority: task.priority,
             syncStatus: .synced,
             lastModified: Date(),
-            notes: task.notes
+            notes: task.notes,
+            todayDisplayDate: task.todayDisplayDate
         )
     }
 

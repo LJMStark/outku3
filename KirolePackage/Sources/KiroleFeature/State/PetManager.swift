@@ -26,10 +26,7 @@ final class PetManager {
     }
 
     private func tasksForToday(tasks: [TaskItem]) -> [TaskItem] {
-        tasks.filter { task in
-            guard let dueDate = task.dueDate else { return false }
-            return Calendar.current.isDateInToday(dueDate)
-        }
+        tasks.filter { $0.isInTodayDisplay() }
     }
 
     private func completedTasksForToday(tasks: [TaskItem]) -> [TaskItem] {

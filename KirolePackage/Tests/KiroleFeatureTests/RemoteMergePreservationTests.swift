@@ -8,6 +8,7 @@ struct RemoteMergePreservationTests {
     func taskadeSparseRemoteKeepsLocalMetadata() {
         let preservedLocalId = UUID()
         let preservedDueDate = Date(timeIntervalSince1970: 1_700_000_000)
+        let preservedTodayDisplayDate = Date(timeIntervalSince1970: 1_700_010_000)
 
         let local = TaskItem(
             id: "task-1",
@@ -22,7 +23,8 @@ struct RemoteMergePreservationTests {
             syncStatus: .synced,
             lastModified: Date(timeIntervalSince1970: 100),
             remoteUpdatedAt: Date(timeIntervalSince1970: 100),
-            notes: "local note"
+            notes: "local note",
+            todayDisplayDate: preservedTodayDisplayDate
         )
         let remote = TaskItem(
             id: "task-1",
@@ -47,12 +49,14 @@ struct RemoteMergePreservationTests {
         #expect(merged.dueDate == preservedDueDate)
         #expect(merged.priority == .high)
         #expect(merged.notes == "local note")
+        #expect(merged.todayDisplayDate == preservedTodayDisplayDate)
     }
 
     @Test("Notion sparse remote keeps local metadata fields")
     func notionSparseRemoteKeepsLocalMetadata() {
         let preservedLocalId = UUID()
         let preservedDueDate = Date(timeIntervalSince1970: 1_700_000_100)
+        let preservedTodayDisplayDate = Date(timeIntervalSince1970: 1_700_010_100)
 
         let local = TaskItem(
             id: "page-1",
@@ -67,7 +71,8 @@ struct RemoteMergePreservationTests {
             syncStatus: .synced,
             lastModified: Date(timeIntervalSince1970: 100),
             remoteUpdatedAt: Date(timeIntervalSince1970: 100),
-            notes: "local note"
+            notes: "local note",
+            todayDisplayDate: preservedTodayDisplayDate
         )
         let remote = TaskItem(
             id: "page-1",
@@ -92,6 +97,7 @@ struct RemoteMergePreservationTests {
         #expect(merged.dueDate == preservedDueDate)
         #expect(merged.priority == .low)
         #expect(merged.notes == "local note")
+        #expect(merged.todayDisplayDate == preservedTodayDisplayDate)
     }
 
     @Test("Notion merge honors explicit remote metadata when provided")
@@ -130,5 +136,34 @@ struct RemoteMergePreservationTests {
         #expect(merged.dueDate == remoteDueDate)
         #expect(merged.priority == .high)
         #expect(merged.notes == "remote note")
+    }
+
+    @Test("Google remote refresh keeps local today display selection")
+    func googleRemoteKeepsLocalTodayDisplaySelection() {
+        let selectedDate = Date(timeIntervalSince1970: 1_700_020_000)
+        let local = TaskItem(
+            id: "google-1",
+            googleTaskId: "google-1",
+            googleTaskListId: "list-1",
+            title: "Local",
+            source: .google,
+            todayDisplayDate: selectedDate
+        )
+        let remote = TaskItem(
+            id: "google-1",
+            googleTaskId: "google-1",
+            googleTaskListId: "list-1",
+            title: "Remote",
+            source: .google
+        )
+
+        let merged = GoogleSyncEngine.mergeRemoteTaskPreservingLocalFields(
+            local: local,
+            remote: remote
+        )
+
+        #expect(merged.title == "Remote")
+        #expect(merged.todayDisplayDate == selectedDate)
+        #expect(merged.localId == local.localId)
     }
 }
