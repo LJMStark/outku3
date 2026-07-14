@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+SKILL_ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+PROJECT_ROOT="$(git -C "$SKILL_ROOT" rev-parse --show-toplevel)"
+export STANDALONE_SKILL_STATE="${STANDALONE_SKILL_STATE:-$PROJECT_ROOT/.agents/skill-state}"
+ENTRY="$SKILL_ROOT/daemon/src/index.ts"
+command -v bun >/dev/null 2>&1 || { echo "standalone-ios-qa-daemon: bun runtime not found" >&2; exit 1; }
+[ -f "$ENTRY" ] || { echo "standalone-ios-qa-daemon: missing $ENTRY" >&2; exit 1; }
+exec bun run "$ENTRY" "$@"
