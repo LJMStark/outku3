@@ -221,7 +221,7 @@ The companion text system is event-reactive companion writing for the Kirole tas
 ### BLE Protocol & Supabase Data
 - **E-ink Hardware**: 4-inch/7.3-inch, ESP32-S3. Spectra 6 pixel encoding (4bpp).
 - **Frame structure** (`BLEPacketizer.swift:60-98`):
-  - Packetized: `type(1B) | messageId(2B) | seq(1B) | totalChunks(1B) | chunkLength(2B) | chunkCRC(2B) | payload`.
+  - Packetized (v2.5.24, ≤65535 chunks): `type(1B) | messageId(2B BE) | seq(2B BE) | totalChunks(2B BE) | chunkLength(2B BE) | chunkCRC(2B BE) | payload`.
   - Simple App→Device: `type(1B) | length(2B BE) | payload`.
   - Simple Device→App: `type(1B) | length(1B) | payload`.
 - **App→Device 出站帧类型** (`BLEProtocol.swift` — `BLEDataType` enum): `0x01=petStatus`, `0x02=taskList`, `0x03=schedule`, `0x04=weather`, `0x05=time`, `0x10=dayPack`, `0x11=taskInPage`, `0x12=deviceMode`, `0x13=smartReminder`, `0x14=focusStatus`（实时专注状态+能量瓶子数，`BLEService.sendFocusStatus()`）, `0x19=wifiDebugMode`（开启/关闭/查询 SoftAP，设备用同 type 实时应答）, `0x20=eventLogRequest`, `0x7E=secureData`, `0x7F=securityHandshake`. 注：`0x21 eventLogBatch` 虽然挂在 `BLEDataType` enum 里（命名空间归类），实际方向是 Device→App 入站，参见入站事件清单。

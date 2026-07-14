@@ -40,7 +40,69 @@ struct TodayTaskDisplayTests {
         let task = TaskItem(title: "Ship build", dueDate: today)
 
         #expect(task.isInTodayDisplay(on: today, calendar: calendar))
+        #expect(task.isNaturallyDueToday(on: today, calendar: calendar))
         #expect(!task.isManuallySelectedForToday(on: today, calendar: calendar))
+    }
+
+    @Test("Four-inch Day Pack keeps a low-priority manual task ahead of natural due-today tasks")
+    @MainActor
+    func fourInchDayPackPrioritizesManualTodayTask() async {
+        let today = Date()
+        let futureDueDate = calendar.date(byAdding: .day, value: 5, to: today)!
+        let manualTask = TaskItem(
+            id: "manual-low",
+            title: "Manual low priority",
+            dueDate: futureDueDate,
+            priority: .low,
+            todayDisplayDate: today
+        )
+        let naturalTasks = ["natural-c", "natural-a", "natural-b"].map { id in
+            TaskItem(
+                id: id,
+                title: id,
+                dueDate: today,
+                priority: .high
+            )
+        }
+
+        let dayPack = await DayPackGenerator.shared.generateDayPack(
+            pet: Pet(),
+            tasks: [manualTask] + naturalTasks,
+            events: [],
+            weather: Weather(),
+            deviceMode: .interactive,
+            screenSize: .fourInch,
+            petDialogue: "Ready"
+        )
+
+        #expect(dayPack.topTasks.map(\.id) == ["manual-low", "natural-a", "natural-b"])
+    }
+
+    @Test("Completed tasks do not offer Show Today")
+    func completedTaskCannotShowToday() {
+        let today = Date(timeIntervalSince1970: 1_721_001_600)
+        let task = TaskItem(title: "Already done", isCompleted: true)
+
+        #expect(!task.canShowTodayDisplayAction(on: today, calendar: calendar))
+    }
+
+    @Test("Remove Today is only offered for manual tasks that are not naturally due today")
+    func removeTodayRequiresManualOnlyDisplay() {
+        let today = Date(timeIntervalSince1970: 1_721_001_600)
+        let futureDueDate = calendar.date(byAdding: .day, value: 5, to: today)!
+        let manualOnlyTask = TaskItem(
+            title: "Manual only",
+            dueDate: futureDueDate,
+            todayDisplayDate: today
+        )
+        let manualAndNaturalTask = TaskItem(
+            title: "Due and manual",
+            dueDate: today,
+            todayDisplayDate: today
+        )
+
+        #expect(manualOnlyTask.canRemoveTodayDisplayAction(on: today, calendar: calendar))
+        #expect(!manualAndNaturalTask.canRemoveTodayDisplayAction(on: today, calendar: calendar))
     }
 
     @Test("Task manager includes manual selections from any external source")

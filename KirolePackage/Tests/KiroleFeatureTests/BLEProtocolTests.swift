@@ -229,6 +229,79 @@ struct BLEProtocolTests {
         #expect(assembled == nil)
     }
 
+    @Test("Over-cap message tail chunks do not consume an in-flight slot")
+    func overCapMessageTailChunksDoNotConsumeSlot() throws {
+        let droppedMessageId: UInt16 = 0x0099
+        let oversizedPackets = try BLEPacketizer.packetize(
+            type: 0x21,
+            messageId: droppedMessageId,
+            payload: Data(count: 256 * 1024 + 1024),
+            maxChunkSize: 509
+        )
+        let assembler = BLEPacketAssembler()
+
+        for packet in oversizedPackets {
+            _ = assembler.append(packetData: packet)
+        }
+
+        var packetStreams: [[Data]] = []
+        for messageId in 1...8 {
+            let packets = try BLEPacketizer.packetize(
+                type: 0x21,
+                messageId: UInt16(messageId),
+                payload: Data(repeating: UInt8(messageId), count: 3),
+                maxChunkSize: 2
+            )
+            let firstChunk = try #require(packets.first)
+            _ = assembler.append(packetData: firstChunk)
+            packetStreams.append(packets)
+        }
+
+        var assembledCount = 0
+        for packets in packetStreams {
+            for packet in packets.dropFirst() {
+                if assembler.append(packetData: packet) != nil {
+                    assembledCount += 1
+                }
+            }
+        }
+
+        #expect(assembledCount == 8)
+    }
+
+    @Test("Over-cap message accepts a same-ID retransmission starting at sequence zero")
+    func overCapMessageAcceptsSameIdRetransmission() throws {
+        let messageId: UInt16 = 0x0099
+        let oversizedPackets = try BLEPacketizer.packetize(
+            type: 0x21,
+            messageId: messageId,
+            payload: Data(count: 256 * 1024 + 1024),
+            maxChunkSize: 509
+        )
+        let assembler = BLEPacketAssembler()
+
+        for packet in oversizedPackets {
+            _ = assembler.append(packetData: packet)
+        }
+
+        let retransmittedPayload = Data("retry".utf8)
+        let retransmittedPackets = try BLEPacketizer.packetize(
+            type: 0x21,
+            messageId: messageId,
+            payload: retransmittedPayload,
+            maxChunkSize: 2
+        )
+        var result: BLEReceivedMessage?
+        for packet in retransmittedPackets {
+            if let message = assembler.append(packetData: packet) {
+                result = message
+            }
+        }
+
+        #expect(result?.type == 0x21)
+        #expect(result?.payload == retransmittedPayload)
+    }
+
     @Test("Assembler rejects zero-length chunks")
     func assemblerRejectsZeroLengthChunk() {
         // packetize 永不产生空片（空 payload 直接抛错）——零长度片只可能是坏包或

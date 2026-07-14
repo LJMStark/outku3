@@ -169,6 +169,10 @@ extension AppState {
         let isDuplicateWithinWindow = dedupKey == lastFocusStatusDedupKey
             && lastFocusStatusSentAt.map { now.timeIntervalSince($0) < 2.0 } == true
         if BLEService.shared.connectionState.isConnected, !isDuplicateWithinWindow {
+            // 先占住去重窗再 await：设备唤醒、定时器、打断恢复可能并发进入，若成功后才写标记，
+            // 同一帧会在首个 0x14 仍发送中时重复排队。失败时撤销占位，让下一次立即重试。
+            lastFocusStatusDedupKey = dedupKey
+            lastFocusStatusSentAt = now
             do {
                 try await BLEService.shared.sendFocusStatus(
                     phase: focusPhase,
@@ -177,9 +181,8 @@ extension AppState {
                     taskTitle: session?.taskTitle,
                     segmentMinutes: segmentMinutes
                 )
-                lastFocusStatusDedupKey = dedupKey
-                lastFocusStatusSentAt = now
             } catch {
+                lastFocusStatusDedupKey = nil
                 ErrorReporter.log(
                     .sync(component: "BLE FocusStatus", underlying: error.localizedDescription),
                     context: "AppState.syncFocusHardwareDisplay"

@@ -15,7 +15,7 @@ import Foundation
 //   0x12 deviceMode      设备运行模式
 //   0x13 smartReminder   AI 智能提醒
 //   0x14 focusStatus     专注状态与能量瓶子数（App→Device 实时推送）
-//   0x15 customAvatarFrame 用户自定义伴侣的 96×96 Spectra 6 像素帧（待硬件团队对齐）
+//   0x15 customAvatarFrame 用户自定义伴侣头像 PNG v2（SubVersion 0x02 | PNG，≤800×700 保比例，≤1MiB）
 //   0x16 screensaver     屏保金句/明信片（业务帧，secure 模式可发；替代旧 0xAA 开发命令）
 //   0x17 sceneUnlock     场景解锁（业务帧，secure 模式可发；替代旧 0xAA 开发命令）
 //   0x18 otaReboot       触发固件升级重启（零 payload；固件校验包后应答并重启，不等 App 确认）

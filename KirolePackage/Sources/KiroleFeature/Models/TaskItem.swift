@@ -104,6 +104,13 @@ public struct TaskItem: Identifiable, Sendable, Codable {
 }
 
 extension TaskItem {
+    public func isNaturallyDueToday(
+        on date: Date = Date(),
+        calendar: Calendar = .current
+    ) -> Bool {
+        dueDate.map { calendar.isDate($0, inSameDayAs: date) } ?? false
+    }
+
     public func isManuallySelectedForToday(
         on date: Date = Date(),
         calendar: Calendar = .current
@@ -116,8 +123,23 @@ extension TaskItem {
         on date: Date = Date(),
         calendar: Calendar = .current
     ) -> Bool {
-        let isDueToday = dueDate.map { calendar.isDate($0, inSameDayAs: date) } ?? false
-        return isDueToday || isManuallySelectedForToday(on: date, calendar: calendar)
+        isNaturallyDueToday(on: date, calendar: calendar)
+            || isManuallySelectedForToday(on: date, calendar: calendar)
+    }
+
+    func canShowTodayDisplayAction(
+        on date: Date = Date(),
+        calendar: Calendar = .current
+    ) -> Bool {
+        !isCompleted && !isInTodayDisplay(on: date, calendar: calendar)
+    }
+
+    func canRemoveTodayDisplayAction(
+        on date: Date = Date(),
+        calendar: Calendar = .current
+    ) -> Bool {
+        isManuallySelectedForToday(on: date, calendar: calendar)
+            && !isNaturallyDueToday(on: date, calendar: calendar)
     }
 }
 

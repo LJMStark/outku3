@@ -814,6 +814,43 @@ struct TaskStatisticsTests {
 @Suite("Sync Merge Atomicity")
 struct SyncMergeTests {
 
+    @Test("current today display choice wins over stale sync snapshot")
+    func currentTodayDisplayChoiceWinsOverStaleSnapshot() {
+        let today = Date(timeIntervalSince1970: 1_720_000_000)
+        let currentShown = TaskItem(
+            id: "shown",
+            title: "Shown during sync",
+            source: .google,
+            todayDisplayDate: today
+        )
+        let currentRemoved = TaskItem(
+            id: "removed",
+            title: "Removed during sync",
+            source: .google,
+            todayDisplayDate: nil
+        )
+        let staleShown = TaskItem(
+            id: "shown",
+            title: "Shown during sync",
+            source: .google,
+            todayDisplayDate: nil
+        )
+        let staleRemoved = TaskItem(
+            id: "removed",
+            title: "Removed during sync",
+            source: .google,
+            todayDisplayDate: today
+        )
+
+        let regrafted = AppState.regraftTodayDisplayDates(
+            onto: [staleShown, staleRemoved],
+            from: [currentShown, currentRemoved]
+        )
+
+        #expect(regrafted.first { $0.id == "shown" }?.todayDisplayDate == today)
+        #expect(regrafted.first { $0.id == "removed" }?.todayDisplayDate == nil)
+    }
+
     @Test("mergeRemoteTasks preserves tasks from other sources")
     @MainActor
     func mergePreservesOtherSources() {

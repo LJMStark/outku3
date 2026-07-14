@@ -121,6 +121,7 @@ public final class BLEPacketAssembler {
     }
 
     private var messages: [UInt16: Assembly] = [:]
+    private var droppedMessageIds: Set<UInt16> = []
     /// 槽满丢弃日志去重：同一条被拒消息的每个 chunk 都会走到槽满分支，只在 messageId 变化时记一次。
     private var lastDroppedMessageId: UInt16?
 
@@ -180,6 +181,12 @@ public final class BLEPacketAssembler {
         let total = header.total
         let chunk = header.chunk
 
+        if seq == 0 {
+            droppedMessageIds.remove(messageId)
+        } else if droppedMessageIds.contains(messageId) {
+            return nil
+        }
+
         if messages[messageId] == nil {
             guard messages.count < Limits.maxInFlightMessages else {
                 if lastDroppedMessageId != messageId {
@@ -203,6 +210,7 @@ public final class BLEPacketAssembler {
         let nextByteCount = assembly.byteCount - previousChunkSize + chunk.count
         guard nextByteCount <= Limits.maxAssembledPayloadBytes else {
             messages.removeValue(forKey: messageId)
+            droppedMessageIds.insert(messageId)
             return nil
         }
 

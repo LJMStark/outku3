@@ -1666,7 +1666,7 @@ public enum BLEDataType: UInt8, Sendable {
     case deviceMode = 0x12
     case smartReminder = 0x13
     case focusStatus = 0x14   // App→Device: 推送当前专注状态和能量瓶子数
-    case customAvatarFrame = 0x15  // App→Device: 自定义伴侣像素帧（⚠️ 待对齐，见 §4.12）
+    case customAvatarFrame = 0x15  // App→Device: 自定义伴侣头像 PNG（SubVersion 0x02，见 §4.12）
     case screensaver = 0x16        // App→Device: 屏保金句/明信片业务帧（替代旧 0xAA 01 02，见 §4.15）
     case sceneUnlock = 0x17        // App→Device: 场景解锁业务帧（替代旧 0xAA 01 01，见 §4.16）
     case otaReboot = 0x18          // App→Device: 触发固件升级重启（零 payload），见 §4.17

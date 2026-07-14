@@ -407,7 +407,7 @@ private struct TaskItemRow: View {
 
                 // More menu
                 Menu {
-                    if task.isManuallySelectedForToday() {
+                    if task.canRemoveTodayDisplayAction() {
                         Button {
                             onTodayDisplayChange(task, false)
                         } label: {
@@ -415,7 +415,7 @@ private struct TaskItemRow: View {
                         }
                         .accessibilityLabel("Remove from Today")
                         .accessibilityIdentifier("Pet_TaskRemoveFromTodayMenuItem")
-                    } else if !task.isInTodayDisplay() {
+                    } else if task.canShowTodayDisplayAction() {
                         Button {
                             onTodayDisplayChange(task, true)
                         } label: {
@@ -485,7 +485,7 @@ private struct TaskItemRow: View {
     }
 
     private var isDueToday: Bool {
-        task.dueDate.map { Calendar.current.isDateInToday($0) } ?? false
+        task.isNaturallyDueToday()
     }
 
     @ViewBuilder

@@ -80,7 +80,49 @@ extension AppState {
         }
 
         do {
-            customCompanions = try await localStorage.loadCustomCompanions()
+            let storedCompanions = try await localStorage.loadCustomCompanions()
+            var retainedCompanions: [CustomCompanion] = []
+            var purgedCompanionIDs: [UUID] = []
+
+            for companion in storedCompanions {
+                let imageData = await localStorage.loadCustomCompanionImageData(id: companion.id)
+                guard Self.shouldPurgeStoredCustomCompanion(imageData: imageData) else {
+                    retainedCompanions.append(companion)
+                    continue
+                }
+                purgedCompanionIDs.append(companion.id)
+                do {
+                    try await localStorage.deleteCustomCompanionAssets(id: companion.id)
+                } catch {
+                    reportPersistenceError(error, operation: "delete", target: "custom_companion_assets")
+                }
+            }
+
+            customCompanions = retainedCompanions
+            if !purgedCompanionIDs.isEmpty {
+                do {
+                    try await localStorage.saveCustomCompanions(retainedCompanions)
+                } catch {
+                    reportPersistenceError(error, operation: "save", target: "custom_companions.json")
+                }
+                if let activeID = userProfile.customCompanionId,
+                   purgedCompanionIDs.contains(activeID) {
+                    userProfile.customCompanionId = nil
+                    do {
+                        try await localStorage.saveUserProfile(userProfile)
+                    } catch {
+                        reportPersistenceError(error, operation: "save", target: "user_profile.json")
+                    }
+                    await localStorage.clearPendingCustomCompanionPush()
+                }
+                ErrorReporter.log(
+                    .sync(
+                        component: "CustomCompanion Load",
+                        underlying: "Purged \(purgedCompanionIDs.count) legacy non-PNG avatar asset(s); falling back to built-in identity when active"
+                    ),
+                    context: "AppState.loadLocalData"
+                )
+            }
         } catch {
             reportPersistenceError(error, operation: "load", target: "custom_companions.json")
         }
@@ -98,6 +140,12 @@ extension AppState {
 
         await updatePetState()
         updateStatistics()
+    }
+
+    /// v2.5.24 前的 4bpp 文件“存在但不是 PNG”时才清理；资产暂时缺失不在这里误删元数据。
+    nonisolated static func shouldPurgeStoredCustomCompanion(imageData: Data?) -> Bool {
+        guard let imageData else { return false }
+        return !AvatarImageProcessor.isPNGData(imageData)
     }
 
     public func refreshData(userId: String?) async {

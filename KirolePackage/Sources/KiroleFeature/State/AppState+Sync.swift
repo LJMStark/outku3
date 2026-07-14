@@ -10,8 +10,24 @@ enum ExternalSyncTarget: Hashable, Sendable {
 extension AppState {
     /// Re-reads `tasks` at write time so concurrent syncs don't clobber each other's results.
     func mergeRemoteTasks(from source: EventSource, with synced: [TaskItem]) {
-        tasks = tasks.filter { $0.source != source } + synced
+        let currentTasks = tasks
+        let regrafted = Self.regraftTodayDisplayDates(onto: synced, from: currentTasks)
+        tasks = currentTasks.filter { $0.source != source } + regrafted
         updateStatistics()
+    }
+
+    /// Sync engines merge from a pre-await snapshot. Re-graft the one Kirole-only field from
+    /// current memory so a Show/Remove Today tap made during the network wait always wins.
+    nonisolated static func regraftTodayDisplayDates(
+        onto synced: [TaskItem],
+        from current: [TaskItem]
+    ) -> [TaskItem] {
+        return synced.map { task in
+            guard let currentTask = current.first(where: { $0.id == task.id }) else { return task }
+            var regrafted = task
+            regrafted.todayDisplayDate = currentTask.todayDisplayDate
+            return regrafted
+        }
     }
 
     func connectedExternalSyncTargets() -> [ExternalSyncTarget] {

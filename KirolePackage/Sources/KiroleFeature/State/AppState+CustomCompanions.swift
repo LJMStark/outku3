@@ -78,9 +78,20 @@ extension AppState {
     /// Delete a custom companion (its metadata + assets) and snap back to the built-in
     /// character if it was active.
     public func deleteCustomCompanion(id: UUID) {
+        let wasActive = userProfile.customCompanionId == id
+        if wasActive {
+            // 0x15 PNG 最坏要发 1-2 分钟；删除时不取消，半路中的旧流会在删除后继续写完，
+            // 反过来覆盖设备身份。先停流并清掉待重发状态，旧头像不能再赢回来。
+            customAvatarPushTask?.cancel()
+            isCustomAvatarPendingBLEPush = false
+            customAvatarFlushAttempts = 0
+            Task { @MainActor in
+                await localStorage.clearPendingCustomCompanionPush()
+            }
+        }
         customCompanions.removeAll { $0.id == id }
 
-        if userProfile.customCompanionId == id {
+        if wasActive {
             var profile = userProfile
             profile.customCompanionId = nil
             updateUserProfile(profile)
@@ -102,6 +113,14 @@ extension AppState {
     /// staying at "close friend" while meeting a brand-new persona would make the AI
     /// open with an unearned tone. Selecting the same companion again is a no-op for intimacy.
     public func selectBuiltInCompanion(_ character: CompanionCharacter) {
+        // 0x15 PNG 最坏要发 1-2 分钟；切回内置伙伴时必须停掉半路中的自定义头像流，
+        // 否则旧流稍后写完会覆盖刚切换的内置身份，形成 stale-stream-wins。
+        customAvatarPushTask?.cancel()
+        isCustomAvatarPendingBLEPush = false
+        customAvatarFlushAttempts = 0
+        Task { @MainActor in
+            await localStorage.clearPendingCustomCompanionPush()
+        }
         let isDifferentIdentity = userProfile.currentSelection != .builtIn(character)
         var profile = userProfile
         profile.companionCharacter = character

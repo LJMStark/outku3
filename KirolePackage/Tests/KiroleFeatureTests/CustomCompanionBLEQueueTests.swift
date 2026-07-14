@@ -55,6 +55,15 @@ struct CustomCompanionBLEQueueTests {
 
     // MARK: - AppState flag restoration
 
+    @Test("custom companion load purge only rejects existing non-PNG assets")
+    func customCompanionLoadPurgeDecision() {
+        let png = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
+
+        #expect(AppState.shouldPurgeStoredCustomCompanion(imageData: nil) == false)
+        #expect(AppState.shouldPurgeStoredCustomCompanion(imageData: png) == false)
+        #expect(AppState.shouldPurgeStoredCustomCompanion(imageData: Data([0x01, 0x35, 0x62])) == true)
+    }
+
     @Test("given pending push exists in LocalStorage, when flag checked after save, isCustomAvatarPendingBLEPush reflects storage")
     func givenStorageHasPendingPush_flagReflectsStorage() async {
         await SharedPersistenceTestLock.shared.withLock {
