@@ -334,6 +334,10 @@ public final class BLEService: NSObject {
                 try? await Task.sleep(for: Timing.connectTimeout)
                 guard self.connectGeneration == generation else { return }
                 if self.connectionState == .connecting {
+                    // 本次尝试作废时，同时拆掉它已挂的 5s 握手残表——否则残表存活到
+                    // 下一次尝试的握手窗口，会误杀新尝试的 connectCompletion。
+                    self.handshakeTimeoutTask?.cancel()
+                    self.handshakeTimeoutTask = nil
                     self.connectCompletion?(.failure(.connectionTimeout))
                     self.connectCompletion = nil
                     // 主动取消 pending 连接：打标记，避免 didDisconnect 回调误判为意外断开而重连。
@@ -783,6 +787,10 @@ public final class BLEService: NSObject {
     }
 
     private func startSecurityHandshake(peripheral: CBPeripheral) async {
+        // writePacket 的 await（writeGate/限速/写超时）期间本次尝试可能已被换代；
+        // 换代后不得再动 connectCompletion（此刻它属于新尝试），也不得动新尝试的握手表。
+        let generation = connectGeneration
+
         guard let characteristic = writeCharacteristic else {
             connectCompletion?(.failure(.characteristicNotFound))
             connectCompletion = nil
@@ -794,10 +802,13 @@ public final class BLEService: NSObject {
             let packet = BLESimpleEncoder.encode(type: BLEDataType.securityHandshake.rawValue, payload: payload)
             try await writePacket(packet, peripheral: peripheral, characteristic: characteristic)
 
+            guard connectGeneration == generation else { return }
+
             handshakeTimeoutTask?.cancel()
             handshakeTimeoutTask = Task { @MainActor in
                 try? await Task.sleep(for: .seconds(5))
                 guard !Task.isCancelled else { return }
+                guard self.connectGeneration == generation else { return }
                 if !self.securityManager.isSessionEstablished {
                     self.connectCompletion?(.failure(.securityHandshakeFailed("Handshake timeout")))
                     self.connectCompletion = nil
@@ -806,6 +817,7 @@ public final class BLEService: NSObject {
                 }
             }
         } catch {
+            guard connectGeneration == generation else { return }
             connectCompletion?(.failure(.securityHandshakeFailed(error.localizedDescription)))
             connectCompletion = nil
             connectionState = .disconnected
@@ -814,6 +826,7 @@ public final class BLEService: NSObject {
     }
 
     private func completeSecureConnection() async {
+        let generation = connectGeneration
         handshakeTimeoutTask?.cancel()
         handshakeTimeoutTask = nil
 
@@ -835,6 +848,9 @@ public final class BLEService: NSObject {
         lastConnectedDeviceID = peripheralID
         if requiresSecureChannel {
             await deviceIdentityStore.trust(peripheralID)
+            // trust 的 await 期间若发生断连→cleanup→新尝试（代次已换），此刻的
+            // connectCompletion 属于新尝试，不得用旧尝试的结果提前完成它。
+            guard connectGeneration == generation else { return }
         }
         connectCompletion?(.success(()))
         connectCompletion = nil
@@ -987,7 +1003,12 @@ extension BLEService: CBCentralManagerDelegate {
     }
 
     nonisolated public func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
+        // manager 建于 queue: .main（initialize），delegate 回调必在主线程，assumeIsolated 安全。
+        // 快照代次：回调投递→Task 执行之间若新连接尝试已开始（代次已换），旧回调必须作废，
+        // 否则它会推进已死尝试的服务发现/完成链，误触当前尝试的 connectCompletion。
+        let generation = MainActor.assumeIsolated { self.connectGeneration }
         Task { @MainActor in
+            guard self.connectGeneration == generation else { return }
             connectedPeripheral = peripheral
             peripheral.delegate = self
             peripheral.discoverServices([KiroleBLEUUIDs.serviceUUID])
@@ -999,7 +1020,10 @@ extension BLEService: CBCentralManagerDelegate {
         didFailToConnect peripheral: CBPeripheral,
         error: Error?
     ) {
+        let generation = MainActor.assumeIsolated { self.connectGeneration }
         Task { @MainActor in
+            // 迟到的失败回调被丢时状态留在 .disconnected（同为 idle，不锁新连接），仅损失错误文案。
+            guard self.connectGeneration == generation else { return }
             connectionState = .error(error?.localizedDescription ?? "Connection failed")
             connectCompletion?(.failure(.connectionFailed(error)))
             connectCompletion = nil
@@ -1048,8 +1072,10 @@ extension BLEService: CBCentralManagerDelegate {
 extension BLEService: CBPeripheralDelegate {
     nonisolated public func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         let services = peripheral.services
+        let generation = MainActor.assumeIsolated { self.connectGeneration }
 
         Task { @MainActor in
+            guard self.connectGeneration == generation else { return }
             guard error == nil,
                   let service = services?.first(where: { $0.uuid == KiroleBLEUUIDs.serviceUUID }) else {
                 connectCompletion?(.failure(.serviceNotFound))
@@ -1072,8 +1098,10 @@ extension BLEService: CBPeripheralDelegate {
         let characteristics = service.characteristics
         let peripheralID = peripheral.identifier
         let peripheralName = peripheral.name
+        let generation = MainActor.assumeIsolated { self.connectGeneration }
 
         Task { @MainActor in
+            guard self.connectGeneration == generation else { return }
             guard error == nil, let chars = characteristics else {
                 connectCompletion?(.failure(.characteristicNotFound))
                 connectCompletion = nil
@@ -1093,6 +1121,8 @@ extension BLEService: CBPeripheralDelegate {
                 pendingConnectedPeripheralID = peripheralID
                 pendingConnectedPeripheralName = peripheralName ?? "Kirole Device"
                 Task { @MainActor in
+                    // 内层 Task 有独立调度跳变，代次需再验一次。
+                    guard self.connectGeneration == generation else { return }
                     if self.requiresSecureChannel {
                         await self.startSecurityHandshake(peripheral: peripheral)
                     } else {
@@ -1138,8 +1168,11 @@ extension BLEService: CBPeripheralDelegate {
         error: Error?
     ) {
         let data = characteristic.value
+        let generation = MainActor.assumeIsolated { self.connectGeneration }
 
         Task { @MainActor in
+            // 代次在连接内恒定，稳态通知不受影响；只丢"新尝试已开始后才轮到执行"的旧连接残包。
+            guard self.connectGeneration == generation else { return }
             // notify 层错误（ATT error / 加密失败 / 断连时 pending value 清空）原先被静默丢弃，
             // 硬件团队看来像 App 完全没收到。拆分 guard 单独上报，区分链路层错误与解析失败。
             if let error {
