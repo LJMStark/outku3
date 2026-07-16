@@ -44,12 +44,13 @@ public struct FocusPetView: View {
                         .animation(reduceMotion ? nil : .easeInOut(duration: 3.0).repeatForever(autoreverses: true), value: isBreathing)
                 }
 
-                Image(appState.userProfile.companionCharacter.heroAssetName(variant: .reading), bundle: .module)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 200, height: 200)
-                    .scaleEffect(reduceMotion ? 1.0 : (isBreathing ? 1.05 : 0.98))
-                    .animation(reduceMotion ? nil : .easeInOut(duration: 2.0).repeatForever(autoreverses: true), value: isBreathing)
+                CompanionAnimationView(
+                    artwork: .reading,
+                    ambientMotion: .focus,
+                    size: CGSize(width: 200, height: 200),
+                    accessibilityLabel: "Focusing companion",
+                    accessibilityIdentifier: "Focus_CompanionAnimation"
+                )
             }
             .onAppear {
                 guard !reduceMotion else { return }

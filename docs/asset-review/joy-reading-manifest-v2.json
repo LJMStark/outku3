@@ -1,0 +1,105 @@
+{
+  "canvas": {
+    "width": 512,
+    "height": 512
+  },
+  "frameCount": 12,
+  "frames": [
+    {
+      "name": "joy-reading-idle-01",
+      "file": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-reading-idle-01.imageset/joy-reading-idle-01.png",
+      "anchor": {
+        "x": 0.5,
+        "y": 1.0
+      }
+    },
+    {
+      "name": "joy-reading-idle-02",
+      "file": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-reading-idle-02.imageset/joy-reading-idle-02.png",
+      "anchor": {
+        "x": 0.5,
+        "y": 1.0
+      }
+    },
+    {
+      "name": "joy-reading-idle-03",
+      "file": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-reading-idle-03.imageset/joy-reading-idle-03.png",
+      "anchor": {
+        "x": 0.5,
+        "y": 1.0
+      }
+    },
+    {
+      "name": "joy-reading-idle-04",
+      "file": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-reading-idle-04.imageset/joy-reading-idle-04.png",
+      "anchor": {
+        "x": 0.5,
+        "y": 1.0
+      }
+    },
+    {
+      "name": "joy-reading-focus-01",
+      "file": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-reading-focus-01.imageset/joy-reading-focus-01.png",
+      "anchor": {
+        "x": 0.5,
+        "y": 1.0
+      }
+    },
+    {
+      "name": "joy-reading-focus-02",
+      "file": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-reading-focus-02.imageset/joy-reading-focus-02.png",
+      "anchor": {
+        "x": 0.5,
+        "y": 1.0
+      }
+    },
+    {
+      "name": "joy-reading-focus-03",
+      "file": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-reading-focus-03.imageset/joy-reading-focus-03.png",
+      "anchor": {
+        "x": 0.5,
+        "y": 1.0
+      }
+    },
+    {
+      "name": "joy-reading-focus-04",
+      "file": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-reading-focus-04.imageset/joy-reading-focus-04.png",
+      "anchor": {
+        "x": 0.5,
+        "y": 1.0
+      }
+    },
+    {
+      "name": "joy-reading-celebrate-01",
+      "file": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-reading-celebrate-01.imageset/joy-reading-celebrate-01.png",
+      "anchor": {
+        "x": 0.5,
+        "y": 1.0
+      }
+    },
+    {
+      "name": "joy-reading-celebrate-02",
+      "file": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-reading-celebrate-02.imageset/joy-reading-celebrate-02.png",
+      "anchor": {
+        "x": 0.5,
+        "y": 1.0
+      }
+    },
+    {
+      "name": "joy-reading-celebrate-03",
+      "file": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-reading-celebrate-03.imageset/joy-reading-celebrate-03.png",
+      "anchor": {
+        "x": 0.5,
+        "y": 1.0
+      }
+    },
+    {
+      "name": "joy-reading-celebrate-04",
+      "file": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-reading-celebrate-04.imageset/joy-reading-celebrate-04.png",
+      "anchor": {
+        "x": 0.5,
+        "y": 1.0
+      }
+    }
+  ]
+}

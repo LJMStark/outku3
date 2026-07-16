@@ -1,0 +1,105 @@
+{
+  "canvas": {
+    "width": 512,
+    "height": 512
+  },
+  "frameCount": 12,
+  "frames": [
+    {
+      "name": "joy-main-idle-01",
+      "file": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-main-idle-01.imageset/joy-main-idle-01.png",
+      "anchor": {
+        "x": 0.5,
+        "y": 0.953125
+      }
+    },
+    {
+      "name": "joy-main-idle-02",
+      "file": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-main-idle-02.imageset/joy-main-idle-02.png",
+      "anchor": {
+        "x": 0.5,
+        "y": 0.953125
+      }
+    },
+    {
+      "name": "joy-main-idle-03",
+      "file": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-main-idle-03.imageset/joy-main-idle-03.png",
+      "anchor": {
+        "x": 0.5,
+        "y": 0.953125
+      }
+    },
+    {
+      "name": "joy-main-idle-04",
+      "file": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-main-idle-04.imageset/joy-main-idle-04.png",
+      "anchor": {
+        "x": 0.5,
+        "y": 0.953125
+      }
+    },
+    {
+      "name": "joy-main-greet-01",
+      "file": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-main-greet-01.imageset/joy-main-greet-01.png",
+      "anchor": {
+        "x": 0.5,
+        "y": 0.953125
+      }
+    },
+    {
+      "name": "joy-main-greet-02",
+      "file": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-main-greet-02.imageset/joy-main-greet-02.png",
+      "anchor": {
+        "x": 0.5,
+        "y": 0.953125
+      }
+    },
+    {
+      "name": "joy-main-greet-03",
+      "file": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-main-greet-03.imageset/joy-main-greet-03.png",
+      "anchor": {
+        "x": 0.5,
+        "y": 0.953125
+      }
+    },
+    {
+      "name": "joy-main-greet-04",
+      "file": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-main-greet-04.imageset/joy-main-greet-04.png",
+      "anchor": {
+        "x": 0.5,
+        "y": 0.953125
+      }
+    },
+    {
+      "name": "joy-main-react-01",
+      "file": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-main-react-01.imageset/joy-main-react-01.png",
+      "anchor": {
+        "x": 0.5,
+        "y": 0.953125
+      }
+    },
+    {
+      "name": "joy-main-react-02",
+      "file": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-main-react-02.imageset/joy-main-react-02.png",
+      "anchor": {
+        "x": 0.5,
+        "y": 0.953125
+      }
+    },
+    {
+      "name": "joy-main-react-03",
+      "file": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-main-react-03.imageset/joy-main-react-03.png",
+      "anchor": {
+        "x": 0.5,
+        "y": 0.953125
+      }
+    },
+    {
+      "name": "joy-main-react-04",
+      "file": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-main-react-04.imageset/joy-main-react-04.png",
+      "anchor": {
+        "x": 0.5,
+        "y": 0.953125
+      }
+    }
+  ]
+}

@@ -17,9 +17,14 @@ enum TaskExternalSyncAction {
 /// 任务完成切换的触发来源。状态变更（任务状态、宠物积分、持久化、外部同步）对两者一致；
 /// 反馈类副作用（声音/震动、completion haiku）只属于实时用户操作——离线事件批量回放
 /// 时逐条触发会变成重连瞬间的震动风暴 + N 次 LLM 调用。
-public enum TaskToggleSource {
+public enum TaskToggleSource: Equatable {
     case user
     case hardwareReplay
+
+    func companionMotion(isCompleted: Bool) -> CompanionMotion? {
+        guard self == .user, isCompleted else { return nil }
+        return .celebrate
+    }
 }
 
 extension AppState {
@@ -42,6 +47,9 @@ extension AppState {
 
         tasks = taskManager.withTask(tasks, updatedTask: updatedTask)
         updatePetForTaskToggle(isCompleted: isCompleted, playFeedback: source == .user)
+        if let motion = source.companionMotion(isCompleted: isCompleted) {
+            emitCompanionMotion(motion)
+        }
         updateStatistics()
         requestBLESync(reason: "toggleTaskCompletion")
 
@@ -75,6 +83,31 @@ extension AppState {
                     petMood: pet.mood
                 )
             }
+        }
+    }
+
+    /// Emits one non-overlapping companion motion. Repeated events are coalesced while the
+    /// current one-shot is visible, so rapid completions do not keep restarting frame one.
+    public func emitCompanionMotion(_ motion: CompanionMotion) {
+        guard pendingCompanionMotionTrigger == nil else { return }
+
+        let trigger = CompanionMotionTrigger(motion: motion)
+        pendingCompanionMotionTrigger = trigger
+        companionMotionClearTask?.cancel()
+        let duration = CompanionAnimationCatalog.animationDefinition(
+            for: .joy,
+            artwork: .reading,
+            motion: motion
+        )?.totalDuration ?? 0.8
+
+        companionMotionClearTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: .seconds(duration))
+            } catch {
+                return
+            }
+            guard self?.pendingCompanionMotionTrigger?.id == trigger.id else { return }
+            self?.pendingCompanionMotionTrigger = nil
         }
     }
 

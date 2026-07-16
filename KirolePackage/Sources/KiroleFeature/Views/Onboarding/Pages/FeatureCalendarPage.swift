@@ -67,7 +67,7 @@ public struct FeatureCalendarPage: View {
 
                 HStack {
                     CharacterView(
-                        imageName: CompanionCharacter.joy.heroAssetName(variant: .main),
+                        character: .joy,
                         size: 80
                     )
                     Spacer()

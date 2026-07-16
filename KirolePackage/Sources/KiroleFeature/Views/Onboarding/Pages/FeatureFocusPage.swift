@@ -16,7 +16,7 @@ public struct FeatureFocusPage: View {
                 HStack {
                     Spacer()
                     CharacterView(
-                        imageName: CompanionCharacter.joy.heroAssetName(variant: .main),
+                        character: .joy,
                         size: 80
                     )
                     .padding(.trailing, 16)

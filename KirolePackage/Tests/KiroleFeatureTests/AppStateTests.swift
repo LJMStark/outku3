@@ -229,6 +229,25 @@ struct AppStateTests {
             state.deleteTask(task)
         }
 
+        @Test("Only visible user completion maps to celebrate")
+        func taskToggleSourceMapsSemanticMotion() {
+            #expect(TaskToggleSource.user.companionMotion(isCompleted: true) == .celebrate)
+            #expect(TaskToggleSource.user.companionMotion(isCompleted: false) == nil)
+            #expect(TaskToggleSource.hardwareReplay.companionMotion(isCompleted: true) == nil)
+        }
+
+        @Test("Repeated pending motion is coalesced")
+        @MainActor
+        func repeatedPendingMotionIsCoalesced() throws {
+            let state = AppState.makeForTesting()
+
+            state.emitCompanionMotion(.celebrate)
+            let firstID = try #require(state.pendingCompanionMotionTrigger?.id)
+            state.emitCompanionMotion(.celebrate)
+
+            #expect(state.pendingCompanionMotionTrigger?.id == firstID)
+        }
+
         @Test("Completing task increases pet points")
         @MainActor
         func completingTaskIncreasesPetPoints() {

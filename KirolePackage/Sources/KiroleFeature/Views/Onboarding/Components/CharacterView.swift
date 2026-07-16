@@ -1,28 +1,34 @@
 import SwiftUI
 
+@MainActor
 public struct CharacterView: View {
-    let imageName: String
+    let character: CompanionCharacter
     var size: CGFloat = 80
 
-    @State private var bobOffset: CGFloat = 0
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var trigger = CompanionMotionTrigger(motion: .greet)
 
-    public init(imageName: String, size: CGFloat = 80) {
-        self.imageName = imageName
+    public init(character: CompanionCharacter, size: CGFloat = 80) {
+        self.character = character
         self.size = size
     }
 
     public var body: some View {
-        Image(imageName, bundle: .module)
-            .resizable()
-            .aspectRatio(contentMode: .fit)
-            .frame(width: size, height: size)
-            .offset(y: bobOffset)
-            .onAppear {
-                guard !reduceMotion else { return }
-                withAnimation(.easeInOut(duration: 2).repeatForever(autoreverses: true)) {
-                    bobOffset = -6
-                }
-            }
+        Button {
+            trigger = CompanionMotionTrigger(motion: .react)
+        } label: {
+            CompanionAnimationView(
+                selection: .builtIn(character),
+                artwork: .main,
+                ambientMotion: .idle,
+                trigger: trigger,
+                size: CGSize(width: size, height: size),
+                accessibilityLabel: "Onboarding companion",
+                accessibilityIdentifier: "Onboarding_CompanionAnimation"
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Onboarding companion")
+        .accessibilityIdentifier("Onboarding_CompanionButton")
+        .accessibilityHint("Tap to see a reaction")
     }
 }

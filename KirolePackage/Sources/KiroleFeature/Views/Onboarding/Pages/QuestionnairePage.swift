@@ -87,8 +87,7 @@ public struct QuestionnairePage: View {
                         // Character + dialog
                         HStack(alignment: .bottom, spacing: 12) {
                             CharacterView(
-                                imageName: (onboardingState.profile.companionCharacter ?? .joy)
-                                    .heroAssetName(variant: .main),
+                                character: onboardingState.profile.companionCharacter ?? .joy,
                                 size: 64
                             )
 

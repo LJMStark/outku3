@@ -21,14 +21,17 @@ Kirole has three product IP companions defined in
 Do not add new assets, fallbacks, tests, or documentation that depend on those
 old names.
 
-Each character needs two variants:
+Each built-in character may provide these static variants:
 
 - `main`: full body, used in onboarding hero shots and character cards.
 - `head`: cropped head or head-and-shoulders, used as avatar-style artwork.
+- `scene`, `reading`, `sunrise`, `sunset`, and `profile`: contextual artwork resolved
+  through `CompanionCharacter.heroAssetName(variant:)`; character-specific fallbacks
+  remain allowed where a dedicated image is not available.
 
 ## Deliverables
 
-Six PNG assets, each in its own `.imageset`:
+The required identity baseline is six PNG assets, each in its own `.imageset`:
 
 | File | Dimensions | Notes |
 |------|------------|-------|
@@ -41,6 +44,59 @@ Six PNG assets, each in its own `.imageset`:
 
 Each `Contents.json` should use a universal 1x image slot. Higher-scale variants
 are optional only if the art direction needs crisper Retina scaling.
+
+## App Motion Pilot (Joy)
+
+Joy's current static illustrations are three separate page/state references. They
+must never be blended into one generic character-only animation family:
+
+| Artwork family | App surface | Motion files | Playback |
+|----------------|-------------|--------------|----------|
+| `main` | Onboarding | `joy-main-idle-*`, `joy-main-greet-*`, `joy-main-react-*` | idle loop + one shots |
+| `reading` | Home / Focus | `joy-reading-idle-*`, `joy-reading-focus-*`, `joy-reading-celebrate-*` | ambient + completion one shot |
+| `scene` | Pet | `joy-scene-idle-*`, `joy-scene-react-*` | full-scene loop + tap one shot |
+
+Each motion has four 512 x 512 RGBA PNG frames at 6.67 FPS. `main` and `reading`
+remove the neutral sheet background; `scene` intentionally preserves the complete
+mushroom illustration. Silas, Nova, and custom companions remain static. Reduce
+Motion resolves directly to the matching `main`, `reading`, or `scene` artwork.
+Ambient `idle` and `focus` playback returns to frame 01 and holds it for eight
+ticks (1.2 seconds) after every four-frame movement, so the companion stays calm
+instead of moving continuously. One-shot motions play their four frames once.
+
+Each family was generated with Image2 from exactly one current App reference:
+
+- `joy-main-action-sheet-v2.png` references only `joy-main.png`.
+- `joy-reading-action-sheet-v2.png` references only `joy-reading-2.png`.
+- `joy-scene-idle-sheet-v2.png` and `joy-scene-react-sheet-v2.png` reference only
+  `joy-scene.png` and keep its complete composition.
+
+Example regeneration commands:
+
+```bash
+python3 scripts/companion_action_sheet.py \
+  docs/asset-sources/joy-main-action-sheet-v2.png \
+  --character joy \
+  --catalog KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets \
+  --review-output docs/asset-review/joy-main-contact-sheet-v2.png \
+  --manifest-output docs/asset-review/joy-main-manifest-v2.json \
+  --rows 3 --columns 4 \
+  --motions main-idle,main-greet,main-react \
+  --extraction components --placement trim --padding 24
+
+python3 scripts/companion_action_sheet.py \
+  docs/asset-sources/joy-scene-react-sheet-v2.png \
+  --character joy \
+  --catalog KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets \
+  --review-output docs/asset-review/joy-scene-react-contact-sheet-v2.png \
+  --manifest-output docs/asset-review/joy-scene-react-manifest-v2.json \
+  --rows 2 --columns 2 --motions scene-react \
+  --layout single-motion --background preserve
+```
+
+The splitter validates deterministic naming, RGBA PNG format, 512 x 512 dimensions,
+frame count and shared anchor metadata, then emits a review contact sheet and JSON
+manifest. AI output still requires visual approval for identity and scene drift.
 
 ## Visual Style
 
@@ -92,10 +148,17 @@ are optional only if the art direction needs crisper Retina scaling.
 5. After asset changes, run the package tests and visually check onboarding /
    character switching in the simulator.
 
+For action sheets, also run `python3 -m unittest
+scripts/tests/test_companion_action_sheet.py` and inspect the generated contact
+sheet before shipping.
+
 ## Wiring Notes
 
 - Onboarding and settings should load character images through
   `CompanionCharacter.heroAssetName(variant:)`.
+- Animated App surfaces resolve semantic motions through
+  `CompanionAnimationCatalog` and render them with `CompanionAnimationView`.
+- Do not put animation asset names directly in feature views.
 - Pre-selection onboarding pages default to `CompanionCharacter.joy`.
 - Character switching must propagate to later onboarding pages and settings
   without hardcoded image names.
@@ -109,3 +172,6 @@ are optional only if the art direction needs crisper Retina scaling.
 - [ ] `CompanionCharacter.allCases` remains exactly `[.joy, .silas, .nova]`.
 - [ ] Walk through onboarding character selection; subsequent pages reflect the
       selected character.
+- [ ] Joy has exactly four reviewed frames for every supported artwork/motion pair.
+- [ ] Main, reading, and scene frames retain their own original page composition.
+- [ ] Reduce Motion, Silas, Nova, and custom companion fallbacks remain static.

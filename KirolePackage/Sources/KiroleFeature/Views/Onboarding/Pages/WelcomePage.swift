@@ -32,7 +32,7 @@ public struct WelcomePage: View {
                     if showDialog {
                         HStack(alignment: .bottom, spacing: 12) {
                             CharacterView(
-                                imageName: CompanionCharacter.joy.heroAssetName(variant: .main),
+                                character: .joy,
                                 size: 96
                             )
                             OnboardingDialogBubble(

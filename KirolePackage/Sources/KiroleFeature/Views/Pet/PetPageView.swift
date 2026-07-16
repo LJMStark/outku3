@@ -145,11 +145,17 @@ private struct PetIllustrationSection: View {
     @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var breathingOffset: CGFloat = 0
+    @State private var motionTrigger: CompanionMotionTrigger?
     @State private var particleOffsets: [CGFloat] = [0, 0, 0]
 
     var body: some View {
-        Button(action: onTap) {
+        Button {
+            guard appState.userProfile.currentSelection == .builtIn(.joy), !reduceMotion else {
+                onTap()
+                return
+            }
+            motionTrigger = CompanionMotionTrigger(motion: .react)
+        } label: {
             ZStack {
                 // Background Radial Gradient for "Habitat Focus"
                 RadialGradient(
@@ -174,26 +180,20 @@ private struct PetIllustrationSection: View {
                             .blur(radius: 8)
                             .offset(y: 70)
 
-                        // Pet image
-                        Image(petImageName, bundle: .module)
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 340)
-                            .clipped()
-                            .mask(
-                                LinearGradient(
-                                    gradient: Gradient(stops: [
-                                        .init(color: .clear, location: 0),
-                                        .init(color: .black, location: 0.05),
-                                        .init(color: .black, location: 0.95),
-                                        .init(color: .clear, location: 1)
-                                    ]),
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                            )
-                            .offset(y: breathingOffset)
+                        CompanionAnimationView(
+                            artwork: .scene,
+                            ambientMotion: .idle,
+                            trigger: motionTrigger ?? appState.pendingCompanionMotionTrigger,
+                            size: CGSize(width: 300, height: 300),
+                            isActive: appState.selectedTab == .pet,
+                            accessibilityLabel: "Pet companion",
+                            accessibilityIdentifier: "Pet_CompanionAnimation",
+                            onOneShotCompletion: {
+                                guard motionTrigger?.motion == .react else { return }
+                                motionTrigger = nil
+                                onTap()
+                            }
+                        )
                             .shadow(color: theme.colors.primary.opacity(0.1), radius: 20, x: 0, y: 10)
                             
                         // Floating Particles for liveliness
@@ -211,17 +211,9 @@ private struct PetIllustrationSection: View {
         .accessibilityIdentifier("Pet_IllustrationButton")
         .accessibilityHint("Tap to view pet details")
         .onAppear {
-            // Pet breathing + floating particles are ambient loops. Under
-            // Reduce Motion we skip them entirely — the illustration stays
-            // static rather than snapping between states.
+            // Floating particles are ambient motion. Under Reduce Motion the
+            // companion and decoration both remain static.
             guard !reduceMotion else { return }
-
-            withAnimation(
-                .easeInOut(duration: 3)
-                .repeatForever(autoreverses: true)
-            ) {
-                breathingOffset = -8
-            }
 
             // Staggered particle animations
             for i in 0..<particleOffsets.count {
@@ -258,9 +250,6 @@ private struct PetIllustrationSection: View {
         .accessibilityHidden(true)
     }
 
-    private var petImageName: String {
-        appState.userProfile.companionCharacter.heroAssetName(variant: .scene)
-    }
 }
 
 // MARK: - Task Section Helper
