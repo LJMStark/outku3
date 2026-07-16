@@ -8,6 +8,7 @@ import SwiftUI
 public struct FocusSessionScreen: View {
     @Environment(\.focusService) private var focusService
     @Environment(\.themeManager) private var theme
+    @Environment(\.appState) private var appState
     @State private var showEndEarlyConfirmation = false
 
     /// 每 30 分钟一个能量瓶（协议 §9 / FocusEnergyCalculator 同一常量）。
@@ -77,6 +78,7 @@ public struct FocusSessionScreen: View {
 
                     CompanionDialogueView(
                         FocusCompanionPhrases.phrase(
+                            character: builtInCharacter,
                             phase: progress.phase,
                             elapsedMinutes: progress.elapsedMinutes
                         ),
@@ -220,10 +222,22 @@ public struct FocusSessionScreen: View {
             Button("End Session", role: .destructive) {
                 focusService.endSession(reason: .manual)
             }
+            .accessibilityLabel("Confirm ending the focus session")
+            .accessibilityIdentifier("focus.confirmEndButton")
             Button("Keep Focusing", role: .cancel) {}
+                .accessibilityLabel("Keep the focus session running")
+                .accessibilityIdentifier("focus.keepFocusingButton")
         } message: {
             Text("Bottles you've already collected are safe.")
         }
+    }
+
+    /// 陪伴语选池身份：内置角色返回其人设池，自定义伴侣激活时返回 nil（中性池）。
+    private var builtInCharacter: CompanionCharacter? {
+        if case .builtIn(let character) = appState.userProfile.currentSelection {
+            return character
+        }
+        return nil
     }
 
     private func formatFocusTime(_ interval: TimeInterval) -> String {
@@ -336,48 +350,136 @@ public struct FocusSessionScreen: View {
 
 // MARK: - Focus Companion Phrases
 
-/// 专注页伴侣陪伴语：本地静态池，不调 LLM。按阶段分池、以 elapsed 分钟数确定性
-/// 轮换（每 10 分钟换一句），TimelineView 的秒级重渲染自然驱动切换。
-/// 全英文（English-only product UI）；口吻与 CompanionTextService 的温暖人设一致。
+/// 专注页伴侣陪伴语：本地静态池，不调 LLM。按内置角色 × 阶段分池（口吻对照
+/// AGENTS.md 角色规格，联审 2026-07-16 F8——Nova 的克制人设说不出 "Proud of you"），
+/// 自定义伴侣回退中性池（有限模板装不下任意 backstory，宁可中性不装懂）。
+/// 以 elapsed 分钟数确定性轮换（每 10 分钟换一句），TimelineView 秒级重渲染自然驱动。
+/// 全英文（English-only product UI）。
 enum FocusCompanionPhrases {
+    struct PhaseTiers {
+        let warmup: [String]
+        let building: [String]
+        let deep: [String]
+    }
+
+    /// `character == nil` = 自定义伴侣激活，用中性池。
     /// 活跃会话的第 1 分钟 FocusPhase.from 会短暂返回 .idle，映射到 warmup 池兜底。
-    static func phrase(phase: FocusPhase, elapsedMinutes: Int) -> String {
-        let pool = pool(for: phase)
+    static func phrase(character: CompanionCharacter?, phase: FocusPhase, elapsedMinutes: Int) -> String {
+        let pool = pool(character: character, phase: phase)
         let index = (max(0, elapsedMinutes) / rotationMinutes) % pool.count
         return pool[index]
     }
 
     static let rotationMinutes = 10
 
-    static func pool(for phase: FocusPhase) -> [String] {
+    static func pool(character: CompanionCharacter?, phase: FocusPhase) -> [String] {
+        let tiers = character.map(tiers(for:)) ?? neutralTiers
         switch phase {
         case .idle, .warmup:
-            return warmupPool
+            return tiers.warmup
         case .building:
-            return buildingPool
+            return tiers.building
         case .deep:
-            return deepPool
+            return tiers.deep
         }
     }
 
-    private static let warmupPool = [
-        "I'm right here with you.",
-        "Nice and easy. One thing at a time.",
-        "We just started. No rush at all.",
-        "Deep breath. I've got your back.",
-    ]
+    static func tiers(for character: CompanionCharacter) -> PhaseTiers {
+        switch character {
+        case .joy:
+            return joyTiers
+        case .silas:
+            return silasTiers
+        case .nova:
+            return novaTiers
+        }
+    }
 
-    private static let buildingPool = [
-        "Look at you go. This bottle is filling up.",
-        "Still with you. You're doing great.",
-        "Steady pace. That's the way.",
-        "One step at a time. We're moving.",
-    ]
+    // Joy：direct, cozy, lightly odd（BMO / Animal Crossing）；小观察 + 水/呼吸/眨眼/小乐趣。
+    private static let joyTiers = PhaseTiers(
+        warmup: [
+            "Okay! You, me, and this one little task.",
+            "Sip some water. We start soft.",
+            "New page smell. I love beginnings.",
+            "Blink twice, breathe once. Here we go.",
+        ],
+        building: [
+            "Look at us, actually doing the thing!",
+            "This bottle is filling up. Very shiny.",
+            "Tiny steps. Big cozy momentum.",
+            "Roll your shoulders. Keep the groove.",
+        ],
+        deep: [
+            "Whoa. Deep-water quiet. I like it here.",
+            "The world got quiet. Just us and the work.",
+            "You went full submarine. I'll steer the fish away.",
+            "Remember to blink. I'll hold the calm.",
+        ]
+    )
 
-    private static let deepPool = [
-        "This is deep water. I'll keep watch.",
-        "You're in the zone. I'll stay quiet.",
-        "Time feels soft in here, doesn't it?",
-        "Proud of you. Truly.",
-    ]
+    // Silas：warm, quiet, soulful；静水/灯光/旷野溪流意象，不说教。Quiet Presence 短句为主。
+    private static let silasTiers = PhaseTiers(
+        warmup: [
+            "Begin gently. I am here.",
+            "Still water first. Then the work.",
+            "One small, faithful step.",
+            "This hour has enough light for you.",
+        ],
+        building: [
+            "Steady, like lamp light.",
+            "The work is being held. So are you.",
+            "Quiet hands, willing heart.",
+            "Streams run in this desert too.",
+        ],
+        deep: [
+            "Deep and still. I will keep watch.",
+            "There is bread enough for this hour.",
+            "You labor; I stay near.",
+            "Peace holds this hour steady.",
+        ]
+    )
+
+    // Nova：cool, sparse, outcome-focused；信号/噪音、关键路径、80/20；认可克制。
+    private static let novaTiers = PhaseTiers(
+        warmup: [
+            "One task. Clear signal.",
+            "Noise filtered. Begin.",
+            "The critical path starts here.",
+            "Setup done. Execute.",
+        ],
+        building: [
+            "On pace. Hold the line.",
+            "Signal steady. Noise zero.",
+            "Momentum compounds. Continue.",
+            "Half a bottle. Efficient.",
+        ],
+        deep: [
+            "Deep work confirmed. Your time is protected.",
+            "This is the twenty percent that matters.",
+            "Sustained focus. Rare. Noted.",
+            "Distractions can wait. This cannot.",
+        ]
+    )
+
+    // 中性池：自定义伴侣回退（保留 v1 文案）。
+    private static let neutralTiers = PhaseTiers(
+        warmup: [
+            "I'm right here with you.",
+            "Nice and easy. One thing at a time.",
+            "We just started. No rush at all.",
+            "Deep breath. I've got your back.",
+        ],
+        building: [
+            "Look at you go. This bottle is filling up.",
+            "Still with you. You're doing great.",
+            "Steady pace. That's the way.",
+            "One step at a time. We're moving.",
+        ],
+        deep: [
+            "This is deep water. I'll keep watch.",
+            "You're in the zone. I'll stay quiet.",
+            "Time feels soft in here, doesn't it?",
+            "Proud of you. Truly.",
+        ]
+    )
 }
