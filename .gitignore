@@ -112,3 +112,8 @@ slide-deck/
 
 # Project-local iOS skill runtime state
 .agents/skill-state/
+
+# 会话工作产物（codex 审查报告、fastlane 发布日志等临时文件）不入库。
+# 已跟踪的 temp/app 原型与 tech-spec.md 不受影响（gitignore 不作用于已跟踪文件）；
+# 以后要往 temp/ 新增有意入库的文件需 git add -f。
+temp/
