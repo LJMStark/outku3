@@ -360,9 +360,38 @@ public final class FocusSessionService {
 
     // MARK: - Statistics
 
-    private func updateStatistics() {
+    /// 上次统计计算所属自然日（startOfDay）。统计只在加载/结算时重算，App 跨午夜后
+    /// 缓存的 todayFocusTime 仍是昨日值——回前台时据此判断换日重算（联审 2026-07-16
+    /// F10 相邻缺陷：口径不变，只修缓存不换日）。
+    private var statisticsReferenceDay: Date?
+
+    /// 换日后重算统计缓存；同日或从未计算过为 no-op。只应在非渲染时机调用（回前台等），
+    /// 渲染路径读 Today 用 `todayFocusTimeIncludingActive(now:)`（纯读不改缓存）。
+    public func refreshStatisticsIfDayChanged(now: Date = Date()) {
+        guard let referenceDay = statisticsReferenceDay,
+              !Calendar.current.isDate(now, inSameDayAs: referenceDay) else { return }
+        updateStatistics(now: now)
+    }
+
+    /// 专注页 Today 行口径：按 now 判日的今日已结算时长 + 当前活跃会话整段可计时长。
+    /// 整段按 endTime 归属（与 updateStatistics 口径一致）：若现在结束即整体归今天，
+    /// 因此不做午夜切分，避免结算瞬间总数跳变。纯函数，渲染路径安全。
+    public func todayFocusTimeIncludingActive(now: Date = Date()) -> TimeInterval {
         let calendar = Calendar.current
-        let today = calendar.startOfDay(for: Date())
+        let settledToday = todaySessions
+            .filter { session in
+                guard let endTime = session.endTime else { return false }
+                return calendar.isDate(endTime, inSameDayAs: now)
+            }
+            .compactMap(\.calculatedFocusTime)
+            .reduce(0, +)
+        return settledToday + progressSnapshot(now: now).countableFocusTime
+    }
+
+    func updateStatistics(now: Date = Date()) {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: now)
+        statisticsReferenceDay = today
 
         let todayCompletedSessions = todaySessions.filter { session in
             guard let endTime = session.endTime else { return false }

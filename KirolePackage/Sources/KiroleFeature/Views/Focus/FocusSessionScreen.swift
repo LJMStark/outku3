@@ -107,7 +107,7 @@ public struct FocusSessionScreen: View {
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(theme.colors.secondaryText)
                         HStack(spacing: 6) {
-                            Text("Today \(formatFocusTime(todayTotalSeconds(progress: progress)))")
+                            Text("Today \(formatFocusTime(focusService.todayFocusTimeIncludingActive(now: now)))")
                             Text("·")
                             Text("Started \(session.startTime.formatted(date: .omitted, time: .shortened))")
                         }
@@ -222,11 +222,6 @@ public struct FocusSessionScreen: View {
         } message: {
             Text("Bottles you've already collected are safe.")
         }
-    }
-
-    private func todayTotalSeconds(progress: FocusProgressSnapshot) -> TimeInterval {
-        // 已结算会话的今日累计 + 本次进行中的可计时长（打断扣除后）。
-        focusService.statistics.todayFocusTime + progress.countableFocusTime
     }
 
     private func formatFocusTime(_ interval: TimeInterval) -> String {
