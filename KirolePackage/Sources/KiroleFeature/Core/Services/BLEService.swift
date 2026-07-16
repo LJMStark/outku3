@@ -55,6 +55,7 @@ public final class BLEService: NSObject {
     private var connectCompletion: ((Result<Void, BLEError>) -> Void)?
     private var writeCompletion: ((Result<Void, BLEError>) -> Void)?
     private var activeWriteID: UUID?
+    private var staleWriteAckFilter = BLEStaleWriteAckFilter()
     private var nextMessageId: UInt16 = 1
 
     /// 进行中的分包消息数（@MainActor 串行，无并发写）。大帧（0x15 头像 ≤1MiB ≈ 2093 片、
@@ -752,6 +753,9 @@ public final class BLEService: NSObject {
             let timeoutTask = Task { @MainActor in
                 try await Task.sleep(for: .seconds(5))
                 guard self.activeWriteID == writeID else { return }
+                // 被弃写的 ACK 之后可能迟到；记账让 didWriteValueFor 丢掉它，
+                // 否则它会误完成下一次写入的 continuation。
+                self.staleWriteAckFilter.markAbandonedWrite()
                 self.writeCompletion?(.failure(.writeTimeout))
                 self.writeCompletion = nil
                 self.activeWriteID = nil
@@ -905,6 +909,8 @@ public final class BLEService: NSObject {
         writeCompletion?(.failure(.disconnected))
         writeCompletion = nil
         activeWriteID = nil
+        // ACK 不跨连接；跨连接残留计数会吞掉新连接的第一个真 ACK。
+        staleWriteAckFilter.reset()
         connectCompletion?(.failure(.connectionFailed(nil)))
         connectCompletion = nil
         securityManager.resetSession()
@@ -1106,6 +1112,12 @@ extension BLEService: CBPeripheralDelegate {
         error: Error?
     ) {
         Task { @MainActor in
+            // 必须先消掉迟到 ACK 记账，再看当前槽——顺序反了会用旧 ACK 完成新写入，
+            // 或在空槽期漏消计数、吞掉下一次写入的真 ACK。
+            if staleWriteAckFilter.shouldDropIncomingAck() {
+                return
+            }
+
             guard writeCompletion != nil else {
                 return
             }
