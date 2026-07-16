@@ -140,30 +140,41 @@ public final class GoogleSignInService {
                 }
             }
 
-            if GIDSignIn.sharedInstance.currentUser == nil {
-                do {
-                    _ = try await GIDSignIn.sharedInstance.restorePreviousSignIn()
-                } catch {
-                    if Self.isMissingPreviousSignInError(error) {
-                        throw GoogleSignInError.notSignedIn
-                    }
-                    throw error
+            // SDK 凭证段与 signIn/restore/addScopes 同 key 串行（联审 2026-07-16 F1）：
+            // 此前 refresh 内嵌的 restorePreviousSignIn / refreshTokensIfNeeded 绕过队列，
+            // 可与交互登录并发进入 Google SDK——a415f19 的互斥被这条侧门架空。
+            // refreshTask 去重保留在队列之外；跨账号结果覆盖由 validateCredentialResult
+            // 的 currentUser 身份比对拦截（本就存在，队列化后仍保留兜底）。
+            return try await self.credentialOperationQueue.run(for: Self.credentialQueueKey) {
+                guard self.credentialGate.accepts(generation) else {
+                    throw GoogleSignInError.notSignedIn
                 }
-            }
 
-            guard let currentUser = GIDSignIn.sharedInstance.currentUser else {
-                throw GoogleSignInError.notSignedIn
-            }
-            try self.validateCredentialResult(generation, user: currentUser)
+                if GIDSignIn.sharedInstance.currentUser == nil {
+                    do {
+                        _ = try await GIDSignIn.sharedInstance.restorePreviousSignIn()
+                    } catch {
+                        if Self.isMissingPreviousSignInError(error) {
+                            throw GoogleSignInError.notSignedIn
+                        }
+                        throw error
+                    }
+                }
 
-            if keychainService.isGoogleTokenExpired() {
-                try await currentUser.refreshTokensIfNeeded()
+                guard let currentUser = GIDSignIn.sharedInstance.currentUser else {
+                    throw GoogleSignInError.notSignedIn
+                }
                 try self.validateCredentialResult(generation, user: currentUser)
-                try persistTokensIfAvailable(for: currentUser)
-            }
 
-            try self.validateCredentialResult(generation, user: currentUser)
-            return currentUser.accessToken.tokenString
+                if self.keychainService.isGoogleTokenExpired() {
+                    try await currentUser.refreshTokensIfNeeded()
+                    try self.validateCredentialResult(generation, user: currentUser)
+                    try self.persistTokensIfAvailable(for: currentUser)
+                }
+
+                try self.validateCredentialResult(generation, user: currentUser)
+                return currentUser.accessToken.tokenString
+            }
         }
 
         refreshTaskID = taskID
