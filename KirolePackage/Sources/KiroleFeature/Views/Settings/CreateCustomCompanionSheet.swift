@@ -22,9 +22,7 @@ public struct CreateCustomCompanionSheet: View {
     @State private var step: Step = .upload
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var isProcessing = false
-    // Monotonic token: only the latest photo selection's async result is applied,
-    // so a slow earlier load can't overwrite a newer pick (stale-result race).
-    @State private var photoRequestID = 0
+    @State private var photoRequestTracker = LatestPhotoRequestTracker()
     @State private var processResult: AvatarProcessResult?
     @State private var name: String = ""
     @State private var relationship: CompanionRelationship = .pet
@@ -553,10 +551,7 @@ public struct CreateCustomCompanionSheet: View {
 
     private func handlePhotoSelection(_ item: PhotosPickerItem?) {
         guard let item else { return }
-        // Invalidate any in-flight selection: a newer pick supersedes an older,
-        // possibly-slower one (e.g. a large iCloud photo that finishes downloading last).
-        photoRequestID += 1
-        let requestID = photoRequestID
+        let requestID = photoRequestTracker.begin()
         isProcessing = true
         saveError = nil
         Task {
@@ -577,7 +572,7 @@ public struct CreateCustomCompanionSheet: View {
                     // Drop stale results: only the most recent selection may apply. A late
                     // earlier load must not overwrite the newer pick's preview/result, nor
                     // clear isProcessing while the newer request is still running.
-                    guard requestID == photoRequestID else { return }
+                    guard photoRequestTracker.isCurrent(requestID) else { return }
                     if let result {
                         processResult = result
                     } else {
@@ -591,7 +586,7 @@ public struct CreateCustomCompanionSheet: View {
                 // loadTransferable threw (permission, transfer failure) — previously
                 // swallowed by try?, leaving the user with a disabled Next and no reason.
                 await MainActor.run {
-                    guard requestID == photoRequestID else { return }
+                    guard photoRequestTracker.isCurrent(requestID) else { return }
                     saveError = "Couldn't load that photo. Please try again."
                     isProcessing = false
                 }

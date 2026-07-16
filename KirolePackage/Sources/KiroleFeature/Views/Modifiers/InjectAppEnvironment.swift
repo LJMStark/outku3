@@ -1,28 +1,39 @@
 import SwiftUI
 
+private struct AppEnvironmentInjector: ViewModifier {
+    @Environment(\.appState) private var appState
+    @Environment(\.themeManager) private var themeManager
+    @Environment(\.authManager) private var authManager
+    @Environment(\.focusService) private var focusService
+
+    func body(content: Content) -> some View {
+        content
+            // Observable-style injection (for @Environment(Type.self) reads)
+            .environment(appState)
+            .environment(themeManager)
+            .environment(authManager)
+            .environment(focusService)
+            // Keep the key path intact for descendants that use key-style reads.
+            .environment(\.appState, appState)
+            .environment(\.themeManager, themeManager)
+            .environment(\.authManager, authManager)
+            .environment(\.focusService, focusService)
+    }
+}
+
 extension View {
-    /// Re-inject all app-wide @Observable singletons into a new environment scope.
+    /// Re-inject all app-wide @Observable dependencies into a new environment scope.
     ///
-    /// SwiftUI .sheet / .fullScreenCover / .popover create a new environment
-    /// scope that does NOT inherit values from the parent. Every root view
-    /// inside such a closure must call this modifier.
+    /// Presented roots call this modifier so key-style and Observable-style readers receive the
+    /// same instances, including previews and tests that override the key-style dependencies.
     ///
     /// We inject via BOTH paths so all reading styles work:
     /// - @Environment(AppState.self)    — Observable-style read (most views)
     /// - @Environment(\.appState)       — Key-style read (new code, test overrides)
     ///
-    /// Tests override the key-style path:  MyView().environment(\.appState, mockState)
+    /// Values come from the parent key-style environment, whose defaults are the production
+    /// singletons. This preserves a test or preview override instead of replacing it with `.shared`.
     public func injectAppEnvironment() -> some View {
-        self
-            // Observable-style injection (for @Environment(Type.self) reads)
-            .environment(AppState.shared)
-            .environment(ThemeManager.shared)
-            .environment(AuthManager.shared)
-            .environment(FocusSessionService.shared)
-            // Key-style injection (for @Environment(\.key) reads and test overrides)
-            .environment(\.appState, AppState.shared)
-            .environment(\.themeManager, ThemeManager.shared)
-            .environment(\.authManager, AuthManager.shared)
-            .environment(\.focusService, FocusSessionService.shared)
+        modifier(AppEnvironmentInjector())
     }
 }

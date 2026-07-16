@@ -44,6 +44,11 @@ public final class FocusSessionService {
     /// v2.5.20 打断判定重做：打断 = 专注期间使用自选分心 App；
     /// 旧的「Kirole 回前台即打断」ScreenActivityTracker 路径已整体移除（spec D-2 禁止回退）。
     private var sessionInterruptions: [ScreenUnlockEvent] = []
+    /// App 回前台可能早于异步恢复旧会话。恢复完成前先暂存检测器回调，避免它们在
+    /// `activeSession == nil` 时被丢弃；恢复时与 App Group 中尚未取出的记录一起合并。
+    private var preRecoveryInterruptions: [ScreenUnlockEvent] = []
+    private var hasCompletedLaunchRecovery: Bool
+    private var launchRecoveryTask: Task<Void, Never>?
     private var pendingSessionPersistenceTask: Task<Void, Never>?
     private var focusDisplaySyncTask: Task<Void, Never>?
     var debugTimeline: FocusDebugTimeline?
@@ -63,12 +68,14 @@ public final class FocusSessionService {
         focusGuardService: any FocusGuardService = ScreenTimeFocusGuardService.shared,
         interruptionDetector: (any FocusInterruptionDetecting)? = nil,
         persistenceEnabled: Bool = true,
-        loadOnInit: Bool = true
+        loadOnInit: Bool = true,
+        launchRecoveryCompleted: Bool? = nil
     ) {
         self.localStorage = localStorage
         self.focusGuardService = focusGuardService
         self.interruptionDetector = interruptionDetector ?? ScreenTimeInterruptionDetector.shared
         self.persistenceEnabled = persistenceEnabled
+        self.hasCompletedLaunchRecovery = launchRecoveryCompleted ?? !loadOnInit
 
         // Push + persist the moment an interruption is detected: the on-device fill resets
         // immediately, and the active session is re-persisted so a crash recovery sees the
@@ -78,7 +85,7 @@ public final class FocusSessionService {
         }
 
         guard loadOnInit else { return }
-        Task { @MainActor in
+        launchRecoveryTask = Task { @MainActor in
             await loadFocusEnforcementMode()
             await loadTodaySessions()
             await recoverSessionOnLaunchIfNeeded()
@@ -88,20 +95,27 @@ public final class FocusSessionService {
     static func makeForTesting(
         focusGuardService: any FocusGuardService,
         interruptionDetector: (any FocusInterruptionDetecting)? = nil,
-        persistenceEnabled: Bool = false
+        persistenceEnabled: Bool = false,
+        launchRecoveryCompleted: Bool = true
     ) -> FocusSessionService {
         FocusSessionService(
             localStorage: .shared,
             focusGuardService: focusGuardService,
             interruptionDetector: interruptionDetector,
             persistenceEnabled: persistenceEnabled,
-            loadOnInit: false
+            loadOnInit: false,
+            launchRecoveryCompleted: launchRecoveryCompleted
         )
     }
 
     func bootstrapForTesting() async {
         await loadTodaySessions()
         await recoverSessionOnLaunchIfNeeded()
+    }
+
+    func installLaunchRecoveryBarrierForTesting(_ task: Task<Void, Never>) {
+        launchRecoveryTask = task
+        hasCompletedLaunchRecovery = false
     }
 
     /// 打断检测当前状态（专注界面据此明示"检测是否开启"，spec D-2）。
@@ -111,6 +125,12 @@ public final class FocusSessionService {
 
     /// 检测源回报一次打断（打断 = 专注期间使用了自选分心 App）。
     private func handleDetectedInterruption(startingAt timestamp: Date, duration: TimeInterval) {
+        guard hasCompletedLaunchRecovery else {
+            preRecoveryInterruptions.append(
+                ScreenUnlockEvent(timestamp: timestamp, duration: duration)
+            )
+            return
+        }
         guard let session = activeSession else { return }
         // 时间戳夹进会话窗口，防御检测源的时钟漂移/迟到回报。
         let clamped = max(timestamp, session.startTime)
@@ -216,6 +236,11 @@ public final class FocusSessionService {
         mode requestedMode: FocusEnforcementMode = .standard,
         startTime: Date = Date()
     ) async {
+        // Cold-start recovery owns the active-session file until it has loaded, settled, cleared,
+        // and saved the previous session. Starting sooner can make recovery settle or delete the
+        // brand-new session that arrived from hardware during launch.
+        await launchRecoveryTask?.value
+
         // 幂等保护：同一任务已有活跃会话时，重复投递的 enterTaskIn（BLE 重传 / 固件重发）
         // 不应切断当前会话再以 .timeout 重开——那会写入一个假的 timeout 会话、污染专注统计。
         // 实时事件路径不再做高水位去重（见 BLEEventHandler.handleEventLogs），故这里必须自带幂等。
@@ -549,7 +574,11 @@ public final class FocusSessionService {
     }
 
     private func recoverSessionOnLaunchIfNeeded() async {
-        guard persistenceEnabled else { return }
+        guard persistenceEnabled else {
+            preRecoveryInterruptions.removeAll()
+            hasCompletedLaunchRecovery = true
+            return
+        }
 
         let wasShieldActive = await localStorage.loadDeepFocusShieldActive()
         if wasShieldActive {
@@ -567,14 +596,22 @@ public final class FocusSessionService {
             )
             recovered = nil
         }
+        let pendingInterruptions = takeLaunchRecoveryInterruptions()
         guard let recovered else {
+            hasCompletedLaunchRecovery = true
             return
         }
 
-        applyRecoveredSession(recovered, wasShieldActive: wasShieldActive, endTime: Date())
+        applyRecoveredSession(
+            recovered,
+            pendingInterruptions: pendingInterruptions,
+            wasShieldActive: wasShieldActive,
+            endTime: Date()
+        )
 
         await clearPersistedActiveSessionIfNeeded()
         await saveSessions()
+        hasCompletedLaunchRecovery = true
     }
 
     func recoverPersistedSessionForTesting(
@@ -585,30 +622,50 @@ public final class FocusSessionService {
         if wasShieldActive {
             focusGuardService.clearShield()
         }
-        applyRecoveredSession(persistedSession, wasShieldActive: wasShieldActive, endTime: endTime)
+        let pendingInterruptions = takeLaunchRecoveryInterruptions()
+        applyRecoveredSession(
+            persistedSession,
+            pendingInterruptions: pendingInterruptions,
+            wasShieldActive: wasShieldActive,
+            endTime: endTime
+        )
+        hasCompletedLaunchRecovery = true
+    }
+
+    private func takeLaunchRecoveryInterruptions() -> [ScreenUnlockEvent] {
+        let pending = preRecoveryInterruptions + interruptionDetector.takePendingInterruptions()
+        preRecoveryInterruptions.removeAll()
+        return pending
     }
 
     private func applyRecoveredSession(
         _ persistedSession: FocusSession,
+        pendingInterruptions: [ScreenUnlockEvent],
         wasShieldActive: Bool,
         endTime: Date
     ) {
         var recovered = persistedSession
         recovered.endTime = endTime
         recovered.endReason = .recoveredOnLaunch
-        // Settle against the interruptions persisted before the kill, not an empty list — assuming
-        // an uninterrupted session would over-credit bottles.
-        let persistedUnlocks = persistedSession.screenUnlockEvents
-        recovered.screenUnlockEvents = persistedUnlocks
+        // Merge the last persisted snapshot with App Group records written after that snapshot.
+        // Recovery consumes these records without the live callback, so no intermediate hardware
+        // push or duplicate persistence runs while the old session is being finalized.
+        let recoveredUnlocks = mergeRecoveredInterruptions(
+            persisted: persistedSession.screenUnlockEvents,
+            pending: pendingInterruptions,
+            sessionStart: recovered.startTime,
+            sessionEnd: endTime
+        )
+        recovered.screenUnlockEvents = recoveredUnlocks
         recovered.calculatedFocusTime = calculateFocusTime(
             sessionStart: recovered.startTime,
             sessionEnd: endTime,
-            screenUnlockEvents: persistedUnlocks
+            screenUnlockEvents: recoveredUnlocks
         )
         recovered.earnedEnergyBottles = FocusTimeCalculator.countableBottles(
             sessionStart: recovered.startTime,
             sessionEnd: endTime,
-            screenUnlockEvents: persistedUnlocks
+            screenUnlockEvents: recoveredUnlocks
         )
         if wasShieldActive || recovered.protectionState == .protected {
             recovered.mode = .standard
@@ -617,6 +674,24 @@ public final class FocusSessionService {
         }
 
         completeSession(recovered, endTime: endTime, clearPersistedActiveSession: false)
+    }
+
+    private func mergeRecoveredInterruptions(
+        persisted: [ScreenUnlockEvent],
+        pending: [ScreenUnlockEvent],
+        sessionStart: Date,
+        sessionEnd: Date
+    ) -> [ScreenUnlockEvent] {
+        let pendingInSession = pending.filter {
+            $0.timestamp >= sessionStart && $0.timestamp <= sessionEnd
+        }
+        var seenTimestampSeconds = Set<Int64>()
+        return (persisted + pendingInSession)
+            .sorted { $0.timestamp < $1.timestamp }
+            .filter {
+                let timestampSecond = Int64($0.timestamp.timeIntervalSince1970.rounded(.down))
+                return seenTimestampSeconds.insert(timestampSecond).inserted
+            }
     }
 
     // MARK: - Protection Resolution

@@ -277,10 +277,6 @@ enum FallbackText {
 
     // MARK: - Helpers
 
-    private static func pluralized(_ word: String, count: Int) -> String {
-        count == 1 ? word : "\(word)s"
-    }
-
     private static func random(_ preferred: [String]?, defaultingTo fallbackCandidates: [String]?, fallback: String) -> String {
         preferred?.randomElement() ?? fallbackCandidates?.randomElement() ?? fallback
     }

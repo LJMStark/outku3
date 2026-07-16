@@ -51,12 +51,4 @@ final class TaskManager {
     func removingTask(_ tasks: [TaskItem], taskID: String) -> [TaskItem] {
         tasks.filter { $0.id != taskID }
     }
-
-    func removingTasks(from source: EventSource, tasks: [TaskItem]) -> [TaskItem] {
-        tasks.filter { $0.source != source }
-    }
-
-    func mergedTasks(nonGoogleTasks: [TaskItem], syncedTasks: [TaskItem]) -> [TaskItem] {
-        nonGoogleTasks + syncedTasks
-    }
 }

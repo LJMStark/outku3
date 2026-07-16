@@ -94,7 +94,7 @@ public struct AppleSignInResult: Sendable {
 
 // MARK: - Apple Sign In Delegate
 
-private final class AppleSignInDelegate: NSObject, ASAuthorizationControllerDelegate, @unchecked Sendable {
+private final class AppleSignInDelegate: NSObject, ASAuthorizationControllerDelegate {
     private let continuation: CheckedContinuation<AppleSignInResult, Error>
 
     init(continuation: CheckedContinuation<AppleSignInResult, Error>) {

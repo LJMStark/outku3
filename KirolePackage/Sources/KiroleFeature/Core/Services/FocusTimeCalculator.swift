@@ -8,7 +8,11 @@ enum FocusTimeCalculator {
         thresholdSeconds: TimeInterval
     ) -> TimeInterval {
         guard !screenUnlockEvents.isEmpty else {
-            return sessionEnd.timeIntervalSince(sessionStart)
+            return countableDuration(
+                from: sessionStart,
+                to: sessionEnd,
+                thresholdSeconds: thresholdSeconds
+            )
         }
 
         let sortedEvents = screenUnlockEvents.sorted { $0.timestamp < $1.timestamp }

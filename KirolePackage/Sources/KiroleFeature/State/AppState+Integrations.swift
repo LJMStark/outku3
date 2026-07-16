@@ -6,16 +6,40 @@ extension AppState {
     }
 
     public func syncIntegrationStatusFromAuth() {
-        let mappings: [(isConnected: Bool, type: IntegrationType)] = [
+        let authMappings: [(isAuthenticated: Bool, type: IntegrationType)] = [
             (AuthManager.shared.isGoogleConnected && AuthManager.shared.hasCalendarAccess, .googleCalendar),
             (AuthManager.shared.isGoogleConnected && AuthManager.shared.hasTasksAccess, .googleTasks),
             (AuthManager.shared.isNotionConnected, .notion),
             (AuthManager.shared.isTaskadeConnected, .taskade)
         ]
-
-        for mapping in mappings where mapping.isConnected {
-            setIntegrationStatus(mapping.type, isConnected: true)
+        let authenticatedTypes = authMappings.compactMap { mapping in
+            mapping.isAuthenticated ? mapping.type : nil
         }
+
+        if reconcileAuthenticatedIntegrationTypes(authenticatedTypes) {
+            persistIntegrationConnections()
+        }
+    }
+
+    /// Imports credentials from installs that predate persisted connection switches. Once a
+    /// preference file exists (or this one-time bootstrap ran), auth proves only that access is
+    /// available; it must not override the user's on/off choice.
+    @discardableResult
+    func reconcileAuthenticatedIntegrationTypes(_ authenticatedTypes: [IntegrationType]) -> Bool {
+        guard !hasExplicitIntegrationConnectionPreferences,
+              !authenticatedTypes.isEmpty else {
+            return false
+        }
+
+        integrations = authenticatedTypes.reduce(integrations) { current, type in
+            integrationCoordinator.setIntegrationStatus(
+                integrations: current,
+                type: type,
+                isConnected: true
+            )
+        }
+        hasExplicitIntegrationConnectionPreferences = true
+        return true
     }
 
     public func syncGoogleIntegrationStatusFromAuth() {
@@ -23,6 +47,7 @@ extension AppState {
     }
 
     public func updateIntegrationStatus(_ type: IntegrationType, isConnected: Bool) {
+        hasExplicitIntegrationConnectionPreferences = true
         if isConnected {
             disconnectConflictingIntegration(for: type)
         }
@@ -52,11 +77,13 @@ extension AppState {
     /// 持久化各集成的连接开关，使用户的断开/连接意图跨重启保留（否则启动时回落 defaultIntegrations，
     /// Apple Calendar/Reminders 默认 isConnected:true 会让断开的集成自动复活并重新导入数据）。
     private func persistIntegrationConnections() {
-        let states = Dictionary(
-            uniqueKeysWithValues: integrations.map { ($0.type.rawValue, $0.isConnected) }
-        )
         Task { @MainActor in
             do {
+                // Build the snapshot when the task actually runs. Rapid consecutive toggles can
+                // otherwise let an older captured dictionary finish last and undo the latest one.
+                let states = Dictionary(
+                    uniqueKeysWithValues: integrations.map { ($0.type.rawValue, $0.isConnected) }
+                )
                 try await localStorage.saveIntegrationConnections(states)
             } catch {
                 reportPersistenceError(error, operation: "save", target: "integration_connections.json")

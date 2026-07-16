@@ -51,6 +51,13 @@ public actor LocalStorage {
         /// Prefix for per-companion avatar image/preview blobs (PNG since v2.5.24).
         /// Actual filenames are built from CustomCompanion.avatarPixelsFileName / avatarPreviewFileName.
         static let customCompanionAssetPrefix = "custom_companion_"
+        /// Prefix for date-partitioned focus history files (`focus_sessions_YYYY-MM-DD.json`).
+        static let focusSessionHistoryPrefix = "focus_sessions_"
+
+        static let dynamicPersistedPrefixes = [
+            customCompanionAssetPrefix,
+            focusSessionHistoryPrefix,
+        ]
 
         static let persisted = [
             pet, tasks, events,
@@ -161,9 +168,9 @@ public actor LocalStorage {
             }
         }
 
-        // Custom companion assets use dynamic per-uuid filenames, so sweep them by prefix.
+        // Date-partitioned focus history and custom companion assets use dynamic filenames.
         let contents = (try? fileManager.contentsOfDirectory(atPath: documentsDirectory.path)) ?? []
-        for name in contents where name.hasPrefix(Files.customCompanionAssetPrefix) {
+        for name in contents where Files.dynamicPersistedPrefixes.contains(where: { name.hasPrefix($0) }) {
             let url = documentsDirectory.appendingPathComponent(name)
             try? fileManager.removeItem(at: url)
         }
@@ -187,15 +194,7 @@ public actor LocalStorage {
 
     /// Delete a specific file from the documents directory
     public func deleteFile(named filename: String) throws {
-        guard !filename.contains(".."), !filename.contains("/") else {
-            return
-        }
-        let url = documentsDirectory.appendingPathComponent(filename)
-        let resolvedPath = url.standardizedFileURL.path
-        let documentsPath = documentsDirectory.standardizedFileURL.path + "/"
-        guard resolvedPath.hasPrefix(documentsPath) else {
-            return
-        }
+        guard let url = validatedDocumentFileURL(named: filename) else { return }
         if fileManager.fileExists(atPath: url.path) {
             try fileManager.removeItem(at: url)
         }
@@ -206,11 +205,7 @@ public actor LocalStorage {
     /// overwrite the original; moving it aside preserves the original for recovery/forensics while
     /// letting the app continue. Overwrites any prior `.corrupt`. Documents-directory scoped only.
     public func quarantineCorruptFile(named filename: String) throws {
-        guard !filename.contains(".."), !filename.contains("/") else { return }
-        let url = documentsDirectory.appendingPathComponent(filename)
-        let resolvedPath = url.standardizedFileURL.path
-        let documentsPath = documentsDirectory.standardizedFileURL.path + "/"
-        guard resolvedPath.hasPrefix(documentsPath) else { return }
+        guard let url = validatedDocumentFileURL(named: filename) else { return }
         guard fileManager.fileExists(atPath: url.path) else { return }
 
         let quarantineURL = documentsDirectory.appendingPathComponent(filename + ".corrupt")
@@ -218,6 +213,17 @@ public actor LocalStorage {
             try fileManager.removeItem(at: quarantineURL)
         }
         try fileManager.moveItem(at: url, to: quarantineURL)
+    }
+
+    /// Resolves a direct child of Documents while rejecting absolute, nested, and traversal paths.
+    private func validatedDocumentFileURL(named filename: String) -> URL? {
+        guard !filename.contains(".."), !filename.contains("/") else { return nil }
+
+        let url = documentsDirectory.appendingPathComponent(filename)
+        let resolvedPath = url.standardizedFileURL.path
+        let documentsPath = documentsDirectory.standardizedFileURL.path + "/"
+        guard resolvedPath.hasPrefix(documentsPath) else { return nil }
+        return url
     }
 
     /// Load a decodable value from a JSON file in the documents directory
@@ -445,16 +451,23 @@ public actor LocalStorage {
         try deleteFile(named: Files.activeFocusSession)
     }
 
-    private nonisolated static let dateKeyFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd"
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.timeZone = TimeZone.current
-        return f
-    }()
-
-    private static func dateKey(from date: Date) -> String {
-        dateKeyFormatter.string(from: date)
+    /// Builds a local calendar-day key using the timezone in effect at call time.
+    /// A cached `DateFormatter` would freeze the timezone for the process lifetime.
+    nonisolated static func dateKey(
+        from date: Date,
+        timeZone: TimeZone = .autoupdatingCurrent
+    ) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = Locale(identifier: "en_US_POSIX")
+        calendar.timeZone = timeZone
+        let components = calendar.dateComponents([.year, .month, .day], from: date)
+        guard let year = components.year,
+              let month = components.month,
+              let day = components.day else {
+            assertionFailure("Gregorian calendar did not produce a complete date")
+            return "0000-00-00"
+        }
+        return String(format: "%04d-%02d-%02d", year, month, day)
     }
 
     // MARK: - Event Logs
@@ -466,6 +479,32 @@ public actor LocalStorage {
 
     public func loadEventLogs() throws -> [EventLog]? {
         try load([EventLog].self, from: Files.eventLogs)
+    }
+
+    /// Atomically appends BLE logs and, for replay batches only, advances the replay watermark.
+    /// Keeping the read/merge/write/watermark sequence inside this actor prevents concurrent live
+    /// and 0x21 persistence tasks from overwriting one another or moving the watermark backwards.
+    func appendEventLogs(
+        _ logs: [EventLog],
+        isReplay: Bool,
+        replayWatermarkCandidate: UInt32?
+    ) throws {
+        let currentWatermark = loadLastEventLogTimestamp() ?? 0
+        let logsToPersist = isReplay
+            ? logs.filter { UInt32($0.timestamp.timeIntervalSince1970) > currentWatermark }
+            : logs
+
+        if !logsToPersist.isEmpty {
+            let existing = try loadEventLogs() ?? []
+            try saveEventLogs(existing + logsToPersist)
+        }
+
+        guard isReplay,
+              let replayWatermarkCandidate,
+              replayWatermarkCandidate > currentWatermark else {
+            return
+        }
+        saveLastEventLogTimestamp(replayWatermarkCandidate)
     }
 
     // MARK: - UserDefaults Accessors

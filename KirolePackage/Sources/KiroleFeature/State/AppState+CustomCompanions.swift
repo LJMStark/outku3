@@ -52,8 +52,14 @@ extension AppState {
         do {
             try await localStorage.saveCustomCompanions(updatedList)
         } catch {
-            try? await localStorage.deleteCustomCompanionAssets(id: id)
-            throw error
+            let listSaveError = error
+            do {
+                try await localStorage.deleteCustomCompanionAssets(id: id)
+            } catch {
+                reportPersistenceError(error, operation: "delete", target: "custom_companion_assets")
+                ErrorReporter.log(error, context: "AppState.addCustomCompanion.rollback")
+            }
+            throw listSaveError
         }
 
         customCompanions = updatedList

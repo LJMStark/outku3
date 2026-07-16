@@ -207,6 +207,142 @@ struct BLEEventHandlerTests {
         #expect(BLEEventHandler.filterAndSortForMutation(logs, since: 1000).isEmpty)
     }
 
+    @Test("given a newer live event, when an older batch is replayed, then the replay is still applied")
+    @MainActor
+    func givenNewerLiveEvent_whenOlderBatchReplays_thenReplayIsApplied() async throws {
+        try await SharedPersistenceTestLock.shared.withLock {
+            let storage = LocalStorage.shared
+            let originalWatermark = await storage.loadLastEventLogTimestamp()
+            let originalLogs = try await storage.loadEventLogs() ?? []
+
+            await storage.saveLastEventLogTimestamp(0)
+
+            let liveEvent = EventLog(
+                eventType: .selectedTaskChanged,
+                taskId: "live-event",
+                timestamp: Date(timeIntervalSince1970: 200),
+                hasDeviceTimestamp: true
+            )
+            let focusService = FocusSessionService.makeForTesting(
+                focusGuardService: BLEEventHandlerMockFocusGuardService(),
+                persistenceEnabled: false
+            )
+
+            await BLEEventHandler.handleEventLogs(
+                [liveEvent],
+                service: BLEService.shared,
+                focusService: focusService,
+                isReplay: false
+            )
+
+            var liveEventWasPersisted = false
+            for _ in 0..<100 {
+                let persisted = try await storage.loadEventLogs() ?? []
+                if persisted.contains(where: { $0.id == liveEvent.id }) {
+                    liveEventWasPersisted = true
+                    break
+                }
+                await Task.yield()
+            }
+            #expect(liveEventWasPersisted)
+
+            // Let the persistence task finish any work queued after writing the log file.
+            for _ in 0..<10 {
+                await Task.yield()
+            }
+            #expect(await storage.loadLastEventLogTimestamp() == 0)
+
+            let replayedEvent = EventLog(
+                eventType: .selectedTaskChanged,
+                taskId: "replayed-event",
+                timestamp: Date(timeIntervalSince1970: 150),
+                hasDeviceTimestamp: true
+            )
+            let processedReplay = await BLEEventHandler.handleEventLogs(
+                [replayedEvent],
+                service: BLEService.shared,
+                focusService: focusService,
+                isReplay: true
+            )
+
+            #expect(processedReplay.contains { $0.id == replayedEvent.id })
+
+            var replayWatermark: UInt32?
+            for _ in 0..<100 {
+                replayWatermark = await storage.loadLastEventLogTimestamp()
+                if replayWatermark == 150 { break }
+                await Task.yield()
+            }
+            #expect(replayWatermark == 150)
+
+            try await storage.saveEventLogs(originalLogs)
+            if let originalWatermark {
+                await storage.saveLastEventLogTimestamp(originalWatermark)
+            } else {
+                UserDefaults.standard.removeObject(forKey: "lastEventLogTimestamp")
+            }
+        }
+    }
+
+    @Test("Concurrent event-log appends do not lose live logs or regress the replay watermark")
+    func concurrentPersistenceIsAtomicAndMonotonic() async throws {
+        try await SharedPersistenceTestLock.shared.withLock {
+            let storage = LocalStorage.shared
+            let originalWatermark = await storage.loadLastEventLogTimestamp()
+            let originalLogs = try await storage.loadEventLogs() ?? []
+            let first = EventLog(
+                eventType: .selectedTaskChanged,
+                taskId: "atomic-first",
+                timestamp: Date(timeIntervalSince1970: 100),
+                hasDeviceTimestamp: true
+            )
+            let second = EventLog(
+                eventType: .selectedTaskChanged,
+                taskId: "atomic-second",
+                timestamp: Date(timeIntervalSince1970: 200),
+                hasDeviceTimestamp: true
+            )
+
+            try await storage.saveEventLogs([])
+            await storage.saveLastEventLogTimestamp(0)
+
+            async let firstAppend: Void = storage.appendEventLogs(
+                [first],
+                isReplay: false,
+                replayWatermarkCandidate: nil
+            )
+            async let secondAppend: Void = storage.appendEventLogs(
+                [second],
+                isReplay: false,
+                replayWatermarkCandidate: nil
+            )
+            _ = try await (firstAppend, secondAppend)
+
+            let persistedIDs = Set(try await storage.loadEventLogs()?.map(\.id) ?? [])
+            #expect(persistedIDs == [first.id, second.id])
+
+            async let newerReplay: Void = storage.appendEventLogs(
+                [second],
+                isReplay: true,
+                replayWatermarkCandidate: 200
+            )
+            async let olderReplay: Void = storage.appendEventLogs(
+                [first],
+                isReplay: true,
+                replayWatermarkCandidate: 100
+            )
+            _ = try await (newerReplay, olderReplay)
+            #expect(await storage.loadLastEventLogTimestamp() == 200)
+
+            try await storage.saveEventLogs(originalLogs)
+            if let originalWatermark {
+                await storage.saveLastEventLogTimestamp(originalWatermark)
+            } else {
+                UserDefaults.standard.removeObject(forKey: "lastEventLogTimestamp")
+            }
+        }
+    }
+
     // MARK: - Codable backward compatibility (A1)
 
     /// Mirrors the pre-A1 on-disk shape (no hasDeviceTimestamp field), encoded with the same
@@ -265,4 +401,21 @@ struct BLEEventHandlerTests {
         let now = Date(timeIntervalSince1970: 1_700_000_000)
         #expect(BLEEventHandler.focusEventTimestamp(now, now: now) == now)
     }
+}
+
+@MainActor
+private final class BLEEventHandlerMockFocusGuardService: FocusGuardService {
+    var authorizationStatus: FocusAuthorizationStatus = .notDetermined
+    var isDeepFocusFeatureEnabled = false
+    var isDeepFocusCapable = false
+    var canShowDeepFocusEntry: Bool { false }
+    var selectedApplicationCount = 0
+    var isPickerPresented = false
+
+    func refreshAuthorizationStatus() async {}
+    func requestAuthorization() async -> FocusAuthorizationStatus { .notDetermined }
+    func presentAppPicker() {}
+    func applyShield(selection: FocusAppSelection) throws {}
+    func clearShield() {}
+    func currentSelection() -> FocusAppSelection? { nil }
 }

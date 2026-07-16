@@ -15,6 +15,15 @@ struct BLEProtocolTests {
         return String(data: stringData, encoding: .utf8)
     }
 
+    private func threeChunkMessage(messageId: UInt16) throws -> [Data] {
+        try BLEPacketizer.packetize(
+            type: 0x21,
+            messageId: messageId,
+            payload: Data([UInt8(truncatingIfNeeded: messageId), 0xA5, 0x5A]),
+            maxChunkSize: 1
+        )
+    }
+
     // MARK: - CRC16 Tests
 
     @Test("CRC16-CCITT-FALSE known vector")
@@ -154,6 +163,54 @@ struct BLEProtocolTests {
         }
 
         #expect(assembledCount == 8)
+    }
+
+    @Test("Eight unexpired incomplete messages still block a ninth message")
+    func assemblerKeepsUnexpiredInFlightLimit() throws {
+        let assembler = BLEPacketAssembler()
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+
+        for messageId in 1...8 {
+            let packets = try threeChunkMessage(messageId: UInt16(messageId))
+            _ = assembler.append(packetData: try #require(packets.first), now: now)
+        }
+
+        let ninthPackets = try threeChunkMessage(messageId: 9)
+        var result: BLEReceivedMessage?
+        for packet in ninthPackets {
+            result = assembler.append(packetData: packet, now: now) ?? result
+        }
+
+        #expect(result == nil)
+    }
+
+    @Test("Expired incomplete messages release slots without accepting late tail chunks")
+    func assemblerEvictsExpiredMessagesBeforeNinthMessage() throws {
+        let assembler = BLEPacketAssembler()
+        let startedAt = Date(timeIntervalSince1970: 1_700_000_000)
+        let expiredAt = startedAt.addingTimeInterval(10 * 60)
+        var stalePacketStreams: [[Data]] = []
+
+        for messageId in 1...8 {
+            let packets = try threeChunkMessage(messageId: UInt16(messageId))
+            _ = assembler.append(packetData: try #require(packets.first), now: startedAt)
+            stalePacketStreams.append(packets)
+        }
+
+        // Each old stream still has two tail chunks. Sending one tail per expired ID would
+        // refill all eight slots unless expiry leaves a bounded tombstone for late packets.
+        for packets in stalePacketStreams {
+            _ = assembler.append(packetData: packets[1], now: expiredAt)
+        }
+
+        let ninthPackets = try threeChunkMessage(messageId: 9)
+        var result: BLEReceivedMessage?
+        for packet in ninthPackets {
+            result = assembler.append(packetData: packet, now: expiredAt) ?? result
+        }
+
+        #expect(result?.type == 0x21)
+        #expect(result?.payload == Data([0x09, 0xA5, 0x5A]))
     }
 
     @Test("BLEPacketizer accepts exactly 65535 chunks (v2.5.24 ceiling)")
@@ -302,6 +359,30 @@ struct BLEProtocolTests {
         #expect(result?.payload == retransmittedPayload)
     }
 
+    @Test("Sequence zero restarts an in-flight message instead of reusing old tail chunks")
+    func sequenceZeroRestartsInFlightMessage() throws {
+        let messageID: UInt16 = 0x0044
+        let oldPackets = try BLEPacketizer.packetize(
+            type: 0x21,
+            messageId: messageID,
+            payload: Data("old-tail".utf8),
+            maxChunkSize: 3
+        )
+        let newPayload = Data("new-data".utf8)
+        let newPackets = try BLEPacketizer.packetize(
+            type: 0x21,
+            messageId: messageID,
+            payload: newPayload,
+            maxChunkSize: 3
+        )
+        let assembler = BLEPacketAssembler()
+
+        _ = assembler.append(packetData: oldPackets[2])
+        _ = assembler.append(packetData: newPackets[0])
+        _ = assembler.append(packetData: newPackets[1])
+        #expect(assembler.append(packetData: newPackets[2])?.payload == newPayload)
+    }
+
     @Test("Assembler rejects zero-length chunks")
     func assemblerRejectsZeroLengthChunk() {
         // packetize 永不产生空片（空 payload 直接抛错）——零长度片只可能是坏包或
@@ -433,6 +514,34 @@ struct BLEProtocolTests {
 
         #expect(packA.stableFingerprint() != packB.stableFingerprint())
         #expect(packA.stableFingerprint() == packA.stableFingerprint())
+    }
+
+    @Test("DayPack fingerprint frames fields without delimiter collisions")
+    func dayPackFingerprintAvoidsDelimiterCollisions() {
+        let settlement = SettlementData(
+            tasksCompleted: 1,
+            tasksTotal: 3,
+            pointsEarned: 10,
+            petMood: "happy",
+            summaryMessage: "summary",
+            encouragementMessage: "encourage"
+        )
+        let commonDate = Date(timeIntervalSince1970: 1_700_000_000)
+
+        let packA = DayPack(
+            date: commonDate,
+            petDialogue: "a|daySummary=b",
+            daySummary: "c",
+            settlementData: settlement
+        )
+        let packB = DayPack(
+            date: commonDate,
+            petDialogue: "a",
+            daySummary: "b|daySummary=c",
+            settlementData: settlement
+        )
+
+        #expect(packA.stableFingerprint() != packB.stableFingerprint())
     }
 
     // MARK: - BLESimpleEncoder Tests
@@ -1307,7 +1416,7 @@ struct BLEProtocolTests {
         #expect(ended != nil)
         if let ended, let end = ended.endTime {
             #expect(end >= ended.startTime)
-            #expect((ended.earnedEnergyBottles ?? 0) >= 0)
+            #expect(ended.earnedEnergyBottles >= 0)
         }
     }
 

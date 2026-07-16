@@ -127,7 +127,7 @@ public actor GoogleCalendarAPI {
     private func getEventsAcrossCalendars(timeMin: Date, timeMax: Date) async throws -> [CalendarEvent] {
         let calendarIds = try await loadTargetCalendarIds()
 
-        var latestByEventId: [String: CalendarEvent] = [:]
+        var latestByLocalId: [String: CalendarEvent] = [:]
         var failures: [String] = []
 
         await withTaskGroup(of: CalendarFetchOutcome.self) { group in
@@ -164,12 +164,12 @@ public actor GoogleCalendarAPI {
                 }
 
                 for event in outcome.events {
-                    if let existing = latestByEventId[event.id] {
+                    if let existing = latestByLocalId[event.id] {
                         if event.lastModified > existing.lastModified {
-                            latestByEventId[event.id] = event
+                            latestByLocalId[event.id] = event
                         }
                     } else {
-                        latestByEventId[event.id] = event
+                        latestByLocalId[event.id] = event
                     }
                 }
             }
@@ -179,7 +179,7 @@ public actor GoogleCalendarAPI {
         if !failures.isEmpty {
             print("[GoogleCalendarAPI] Calendar fetch partial failures: \(failures.joined(separator: " | "))")
         }
-        print("[GoogleCalendarAPI] Calendar fetch success=\(calendarIds.count - failures.count)/\(calendarIds.count), events=\(latestByEventId.count)")
+        print("[GoogleCalendarAPI] Calendar fetch success=\(calendarIds.count - failures.count)/\(calendarIds.count), events=\(latestByLocalId.count)")
         #endif
 
         // 任一日历拉取失败就整体抛错，而不是只在全部失败时抛。原先部分失败会静默返回成功日历的事件，
@@ -190,7 +190,7 @@ public actor GoogleCalendarAPI {
             throw GoogleCalendarError.calendarFetchFailed(failures.joined(separator: " | "))
         }
 
-        return latestByEventId.values.sorted { $0.startTime < $1.startTime }
+        return latestByLocalId.values.sorted { $0.startTime < $1.startTime }
     }
 
     private func loadTargetCalendarIds() async throws -> [String] {
@@ -198,11 +198,9 @@ public actor GoogleCalendarAPI {
         // 非主日历事件会本轮凭空消失且整轮报 Success。与上面"任一日历拉取失败就整体抛错"
         // 同一策略——抛错走 runSyncStep 的 .failure：保留上轮事件，错误经 warnings 上报。
         //
-        // 例外——403 scope 不足是 by-design，不是故障：App 登录只申请 calendar.events（无
-        // calendar.readonly，见 GoogleSignInService），而 calendarList 端点不被 events scope
-        // 覆盖，因此该调用自首日起恒 403。此前被静默吞掉；263e439 浮出后把这个档位的正常
-        // 现象误报成了用户可见 warning（2026-07-04 硬件团队反馈）。events-only 档位的正确
-        // 行为就是 primary-only 同步；要解锁多日历，先补 readonly scope + 引导用户重连。
+        // 例外——403 scope 不足是旧授权的兼容档位，不是故障：当前登录已申请
+        // calendar.readonly，但升级前授权可能只有 calendar.events；后者不覆盖 calendarList。
+        // 这类旧授权按 primary-only 同步，用户重连后即可升级到多日历权限。
         let calendars: [GoogleCalendarInfo]
         do {
             calendars = try await getCalendarList()
@@ -215,14 +213,27 @@ public actor GoogleCalendarAPI {
             #endif
             return ["primary"]
         }
+        return Self.targetCalendarIDs(from: calendars)
+    }
+
+    /// CalendarList returns the primary calendar under its real id (usually the account email).
+    /// Fetching both that id and the `primary` alias would duplicate every primary event once
+    /// local ids include their calendar id, so only use the alias when no primary entry is known.
+    nonisolated static func targetCalendarIDs(from calendars: [GoogleCalendarInfo]) -> [String] {
         let selectedIds = calendars
             .filter { ($0.selected ?? true) && !($0.hidden ?? false) }
             .map(\.id)
 
         let allIds = selectedIds.isEmpty ? calendars.map(\.id) : selectedIds
-        let uniqueIds = orderedUniqueCalendarIDs(from: allIds)
+        var uniqueIds = orderedUniqueCalendarIDs(from: allIds)
+        let primaryID = calendars.first { $0.primary == true }?.id
+
+        if let primaryID, !primaryID.isEmpty, !uniqueIds.contains(primaryID) {
+            uniqueIds.insert(primaryID, at: 0)
+        }
 
         guard !uniqueIds.isEmpty else { return ["primary"] }
+        if primaryID != nil { return uniqueIds }
         if uniqueIds.contains("primary") { return uniqueIds }
         return ["primary"] + uniqueIds
     }
@@ -344,7 +355,7 @@ public actor GoogleCalendarAPI {
         return queryItems
     }
 
-    private func orderedUniqueCalendarIDs(from ids: [String]) -> [String] {
+    private nonisolated static func orderedUniqueCalendarIDs(from ids: [String]) -> [String] {
         var seen: Set<String> = []
         var result: [String] = []
 

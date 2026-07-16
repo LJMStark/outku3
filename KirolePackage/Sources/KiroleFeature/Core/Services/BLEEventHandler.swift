@@ -313,6 +313,7 @@ public enum BLEEventHandler {
     /// screen-activity data for the offline period, so focus time cannot be
     /// measured correctly. completeTask/skipTask still run to close any
     /// currently-active session.
+    @discardableResult
     static func handleEventLogs(
         _ logs: [EventLog],
         service: BLEService,
@@ -320,17 +321,7 @@ public enum BLEEventHandler {
         isReplay: Bool = false,
         lastTimestampOverride: UInt32? = nil,
         tasksOverride: [TaskItem]? = nil
-    ) async {
-        // 持久化在后台进行，不阻塞状态变更。
-        //
-        // 已知 advisory 竞态（codex review P2）：两个真正并发到达的批次可能都先读到同一旧高水位再过滤，
-        // 重复处理重叠事件。当前 applyEventStateMutation 仅处理 completeTask 且带 !isCompleted 幂等保护，
-        // 故无可见危害。完整消除需把 persistEventLogs 的“存日志”与“推进高水位”解耦后做原子 claim——
-        // 留作单独带测试的改动（全局串行化会破坏共享 AppState.shared 的并行测试隔离）。
-        Task {
-            await persistEventLogs(logs)
-        }
-
+    ) async -> [EventLog] {
         let processable: [EventLog]
         if isReplay {
             // 0x21 重放批次：按高水位去重过滤，防离线积压事件被重复应用。
@@ -347,11 +338,20 @@ public enum BLEEventHandler {
             processable = BLEEventHandler.sortAndDedup(logs)
         }
 
+        // 持久化在后台进行，不阻塞状态变更。实时事件只写日志；只有 0x21 重放批次
+        // 才能推进离线重放水位，否则先到的较新实时事件会吞掉更早的离线积压事件。
+        // 放在 processable 计算之后启动，也避免本批先抬高水位、再过滤掉自己。
+        Task {
+            await persistEventLogs(logs, advancesReplayWatermark: isReplay)
+        }
+
         for log in processable {
             await handleFocusSessionEvent(log, focusService: focusService, isReplay: isReplay, tasksOverride: tasksOverride)
             applyEventStateMutation(log, isReplay: isReplay)
             applyReminderInteractionCooldown(log)
         }
+
+        return processable
     }
 
     /// Filters to events newer than `lastTimestamp`, sorts ascending by timestamp,
@@ -428,16 +428,20 @@ public enum BLEEventHandler {
         SmartReminderService.shared.registerHardwareReminderInteraction(at: log.timestamp)
     }
 
-    /// 持久化事件日志
-    private static func persistEventLogs(_ logs: [EventLog]) async {
-        let lastTimestamp = await localStorage.loadLastEventLogTimestamp() ?? 0
-        let filtered = logs.filter { UInt32($0.timestamp.timeIntervalSince1970) > lastTimestamp }
-        guard !filtered.isEmpty else { return }
-
+    /// 持久化事件日志；只有离线重放批次可以推进重放水位。
+    private static func persistEventLogs(
+        _ logs: [EventLog],
+        advancesReplayWatermark: Bool
+    ) async {
         do {
-            let existing = try await localStorage.loadEventLogs() ?? []
-            let merged = Array((existing + filtered).suffix(1000))
-            try await localStorage.saveEventLogs(merged)
+            let candidate = advancesReplayWatermark
+                ? nextEventLogWatermark(current: 0, logs: logs, now: Date())
+                : nil
+            try await localStorage.appendEventLogs(
+                logs,
+                isReplay: advancesReplayWatermark,
+                replayWatermarkCandidate: candidate
+            )
         } catch {
             ErrorReporter.log(
                 .persistence(
@@ -447,13 +451,6 @@ public enum BLEEventHandler {
                 ),
                 context: "BLEEventHandler.persistEventLogs"
             )
-            return
-        }
-
-        // 高水位只由带真实设备时间戳、且不超过 now+48h 的事件推进（A1/A4）；
-        // 整批都是无设备时间戳的兜底事件时返回 nil，水位保持不变。
-        if let maxTimestamp = nextEventLogWatermark(current: lastTimestamp, logs: filtered, now: Date()) {
-            await localStorage.saveLastEventLogTimestamp(maxTimestamp)
         }
     }
 

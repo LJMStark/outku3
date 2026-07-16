@@ -67,7 +67,13 @@ public final class AuthManager {
         restoreLocalIdentityFromKeychain()
 
         // Step B: Google SDK local restore (typically offline-safe via cached creds).
-        let restoredGoogleResult = try? await googleSignInService.restorePreviousSignIn()
+        let restoredGoogleResult: GoogleSignInResult?
+        do {
+            restoredGoogleResult = try await googleSignInService.restorePreviousSignIn()
+        } catch {
+            restoredGoogleResult = nil
+            ErrorReporter.log(error, context: "AuthManager.initialize.restoreGoogleSignIn")
+        }
         if let googleResult = restoredGoogleResult {
             applyGoogleSignInResult(googleResult, isRestore: true, restoredSupabaseUser: nil)
         }

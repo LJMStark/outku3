@@ -3,7 +3,8 @@ import Foundation
 
 // MARK: - Keychain Service
 
-/// 安全存储敏感数据（tokens、credentials）
+/// 安全存储敏感数据（tokens、credentials）。KeychainAccess 的配置在初始化后不再修改，
+/// 每次调用只创建局部 Security 查询，因此可跨 actor 使用；多字段业务操作的一致性由调用方保证。
 public final class KeychainService: @unchecked Sendable {
     public static let shared = KeychainService()
 

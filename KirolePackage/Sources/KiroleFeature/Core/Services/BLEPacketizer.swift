@@ -104,6 +104,12 @@ public final class BLEPacketAssembler {
     private enum Limits {
         static let maxInFlightMessages = 8
         static let maxAssembledPayloadBytes = 256 * 1024
+        // 协议未规定重组 idle 超时。取 5 分钟：高于项目对最大 1MiB 出站头像帧
+        // 1-2 分钟整包时间的估算；入站又受 256KiB 帽限制，只有连续 5 分钟没有
+        // 有效分片才驱逐，既照顾慢链路，也避免缺片消息永久占槽。
+        static let assemblyIdleTimeout: TimeInterval = 5 * 60
+        static let droppedMessageRetention: TimeInterval = assemblyIdleTimeout
+        static let maxDroppedMessageIds = maxInFlightMessages * 8
     }
 
     private struct Assembly {
@@ -111,17 +117,21 @@ public final class BLEPacketAssembler {
         let total: UInt16
         var chunks: [Int: Data]
         var byteCount: Int
+        var lastUpdatedAt: Date
 
-        init(type: UInt8, total: UInt16) {
+        init(type: UInt8, total: UInt16, now: Date) {
             self.type = type
             self.total = total
             self.chunks = [:]
             self.byteCount = 0
+            self.lastUpdatedAt = now
         }
     }
 
     private var messages: [UInt16: Assembly] = [:]
-    private var droppedMessageIds: Set<UInt16> = []
+    // 超时/超限/槽满后暂存 tombstone，挡住迟到的 seq>0 尾片重新占槽；seq=0
+    // 仍可明确开始重传。到期清理且最多保留 64 个，避免集合随坏消息持续增长。
+    private var droppedMessageIds: [UInt16: Date] = [:]
     /// 槽满丢弃日志去重：同一条被拒消息的每个 chunk 都会走到槽满分支，只在 messageId 变化时记一次。
     private var lastDroppedMessageId: UInt16?
 
@@ -172,8 +182,33 @@ public final class BLEPacketAssembler {
         return header.total > 1
     }
 
-    public func append(packetData: Data) -> BLEReceivedMessage? {
+    private func markMessageDropped(_ messageId: UInt16, now: Date) {
+        let expiresAt = now.addingTimeInterval(Limits.droppedMessageRetention)
+        droppedMessageIds[messageId] = expiresAt
+
+        guard droppedMessageIds.count > Limits.maxDroppedMessageIds,
+              let oldest = droppedMessageIds.min(by: { $0.value < $1.value })?.key else {
+            return
+        }
+        droppedMessageIds.removeValue(forKey: oldest)
+    }
+
+    private func evictExpiredState(now: Date) {
+        droppedMessageIds = droppedMessageIds.filter { $0.value > now }
+
+        let expiredMessageIds = messages.compactMap { entry -> UInt16? in
+            let idleTime = now.timeIntervalSince(entry.value.lastUpdatedAt)
+            return idleTime >= Limits.assemblyIdleTimeout ? entry.key : nil
+        }
+        for messageId in expiredMessageIds {
+            messages.removeValue(forKey: messageId)
+            markMessageDropped(messageId, now: now)
+        }
+    }
+
+    public func append(packetData: Data, now: Date = Date()) -> BLEReceivedMessage? {
         guard let header = parseChunk(packetData) else { return nil }
+        evictExpiredState(now: now)
 
         let type = header.type
         let messageId = header.messageId
@@ -182,13 +217,17 @@ public final class BLEPacketAssembler {
         let chunk = header.chunk
 
         if seq == 0 {
-            droppedMessageIds.remove(messageId)
-        } else if droppedMessageIds.contains(messageId) {
+            droppedMessageIds.removeValue(forKey: messageId)
+            // Sequence zero is the protocol's explicit restart marker. Reusing an in-flight id
+            // without clearing it can splice a new head to old tail chunks and emit corrupt data.
+            messages.removeValue(forKey: messageId)
+        } else if droppedMessageIds[messageId] != nil {
             return nil
         }
 
         if messages[messageId] == nil {
             guard messages.count < Limits.maxInFlightMessages else {
+                markMessageDropped(messageId, now: now)
                 if lastDroppedMessageId != messageId {
                     lastDroppedMessageId = messageId
                     ErrorReporter.log(
@@ -201,7 +240,7 @@ public final class BLEPacketAssembler {
                 }
                 return nil
             }
-            messages[messageId] = Assembly(type: type, total: total)
+            messages[messageId] = Assembly(type: type, total: total, now: now)
         }
 
         guard var assembly = messages[messageId], assembly.total == total, assembly.type == type else { return nil }
@@ -210,12 +249,13 @@ public final class BLEPacketAssembler {
         let nextByteCount = assembly.byteCount - previousChunkSize + chunk.count
         guard nextByteCount <= Limits.maxAssembledPayloadBytes else {
             messages.removeValue(forKey: messageId)
-            droppedMessageIds.insert(messageId)
+            markMessageDropped(messageId, now: now)
             return nil
         }
 
         assembly.chunks[seq] = chunk
         assembly.byteCount = nextByteCount
+        assembly.lastUpdatedAt = max(assembly.lastUpdatedAt, now)
         messages[messageId] = assembly
 
         guard assembly.chunks.count == Int(total) else { return nil }

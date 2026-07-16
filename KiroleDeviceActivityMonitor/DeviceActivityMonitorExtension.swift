@@ -5,8 +5,9 @@ import Foundation
 //
 // 专注打断检测的系统侧回调进程（协议文档 §9 / spec 2026-07-09 任务1 第 2 步接线）。
 // 主 App 在专注会话开始时向 DeviceActivityCenter 注册「自选分心 App 累计使用满 1 分钟」
-// 的阈值事件；事件触发时系统拉起本扩展，本扩展把打断时刻写入 App Group 并发 Darwin
-// 通知。主 App 侧的桥接与常量镜像见 KirolePackage 的 FocusInterruptionDetector.swift
+// 的阈值事件；事件触发时系统拉起本扩展，本扩展把阈值达到时刻写入 App Group 并发
+// Darwin 通知。主 App 侧会向前回推一分钟，得到可用于结算的近似打断区间。
+// 桥接与常量镜像见 KirolePackage 的 FocusInterruptionDetector.swift
 // （extension 不链接 KiroleFeature 包——扩展进程有严格内存上限，保持零依赖；
 // 改动下列三个常量时必须两边同步）。
 

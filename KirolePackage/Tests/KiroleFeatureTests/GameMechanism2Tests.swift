@@ -112,7 +112,9 @@ struct GameMechanism2Tests {
             "events.json",
             "ai_interactions.json",
             "focus_session_active.json",
+            "focus_sessions_2026-07-14.json",
             "shared_companion_dialogue.json",
+            "custom_companion_test_avatar.png",
             "avatar.dat",
             "avatar_pixels.dat",
         ]
@@ -259,6 +261,34 @@ struct GameMechanism2Tests {
 
         #expect(focusTime == 0)
         #expect(FocusEnergyCalculator.bottlesEarned(minutes: Int(focusTime / 60)) == 0)
+    }
+
+    @Test("An uninterrupted segment shorter than 30 minutes contributes no focus time")
+    func uninterruptedShortSegmentDoesNotCount() {
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+
+        let focusTime = FocusTimeCalculator.countableFocusTime(
+            sessionStart: start,
+            sessionEnd: start.addingTimeInterval(29 * 60),
+            screenUnlockEvents: [],
+            thresholdSeconds: 30 * 60
+        )
+
+        #expect(focusTime == 0)
+    }
+
+    @Test("An uninterrupted 30-minute segment counts in full")
+    func uninterruptedThresholdSegmentCounts() {
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+
+        let focusTime = FocusTimeCalculator.countableFocusTime(
+            sessionStart: start,
+            sessionEnd: start.addingTimeInterval(30 * 60),
+            screenUnlockEvents: [],
+            thresholdSeconds: 30 * 60
+        )
+
+        #expect(focusTime == 30 * 60)
     }
 
     @Test("Energy bottles credit per uninterrupted segment; remainders never combine across an interruption")

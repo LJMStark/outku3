@@ -11,17 +11,27 @@ private final class MockInterruptionDetector: FocusInterruptionDetecting {
     var startMonitoringCount = 0
     var stopMonitoringCount = 0
     var drainCount = 0
+    var takeCount = 0
+    var emittedInterruptionCount = 0
     /// 模拟扩展在 App 挂起期间写入 App Group 的打断，等一次后台唤醒 drain 时逐条回调。
     var pendingInterruptions: [(Date, TimeInterval)] = []
 
     func startMonitoring() { startMonitoringCount += 1 }
     func stopMonitoring() { stopMonitoringCount += 1 }
 
-    func drainPendingInterruptions() {
-        drainCount += 1
+    func takePendingInterruptions() -> [ScreenUnlockEvent] {
+        takeCount += 1
         let pending = pendingInterruptions
         pendingInterruptions.removeAll()
-        for (timestamp, duration) in pending { onInterruption?(timestamp, duration) }
+        return pending.map { ScreenUnlockEvent(timestamp: $0.0, duration: $0.1) }
+    }
+
+    func drainPendingInterruptions() {
+        drainCount += 1
+        for event in takePendingInterruptions() {
+            emittedInterruptionCount += 1
+            onInterruption?(event.timestamp, event.duration ?? 0)
+        }
     }
 
     func simulateInterruption(at timestamp: Date, duration: TimeInterval = 60) {
@@ -45,6 +55,21 @@ private final class DetectorMockFocusGuardService: FocusGuardService {
     func applyShield(selection: FocusAppSelection) throws {}
     func clearShield() {}
     func currentSelection() -> FocusAppSelection? { selection }
+}
+
+private actor LaunchRecoveryTestGate {
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    func wait() async {
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+        }
+    }
+
+    func open() {
+        continuation?.resume()
+        continuation = nil
+    }
 }
 
 // MARK: - Session Integration
@@ -203,6 +228,97 @@ struct FocusInterruptionDetectionTests {
         )
         #expect(segmentStart == interruptionAt.addingTimeInterval(60))
     }
+
+    @Test("Launch recovery merges pending interruptions without emitting live callbacks")
+    func launchRecoveryMergesPendingInterruptionsWithoutLiveEmission() throws {
+        let detector = MockInterruptionDetector()
+        let service = makeService(detector: detector)
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        let end = start.addingTimeInterval(90 * 60)
+        let persistedAt = start.addingTimeInterval(45 * 60)
+        let pendingAt = start.addingTimeInterval(70 * 60)
+        let persistedInterruption = ScreenUnlockEvent(timestamp: persistedAt, duration: nil)
+        let active = FocusSession(
+            taskId: "recovery-with-pending",
+            taskTitle: "Recovery With Pending",
+            startTime: start,
+            screenUnlockEvents: [persistedInterruption]
+        )
+        detector.pendingInterruptions = [
+            // LocalStorage may hold the legacy nil duration and drops fractional seconds; the App
+            // Group keeps the fraction and current fixed 60-second duration. It is still one event.
+            (persistedAt.addingTimeInterval(0.8), 60),
+            (pendingAt, 60),
+        ]
+
+        service.recoverPersistedSessionForTesting(
+            active,
+            wasShieldActive: false,
+            endTime: end
+        )
+
+        let recovered = try #require(service.todaySessions.last)
+        #expect(recovered.endReason == .recoveredOnLaunch)
+        #expect(recovered.screenUnlockEvents.count == 2)
+        #expect(recovered.screenUnlockEvents.map(\.timestamp) == [persistedAt, pendingAt])
+        #expect(recovered.earnedEnergyBottles == 1)
+        #expect(detector.takeCount == 1)
+        #expect(detector.drainCount == 0)
+        #expect(detector.emittedInterruptionCount == 0)
+        #expect(detector.pendingInterruptions.isEmpty)
+    }
+
+    @Test("A foreground drain before launch recovery is retained for the recovered session")
+    func foregroundDrainBeforeRecoveryIsRetained() throws {
+        let detector = MockInterruptionDetector()
+        let service = FocusSessionService.makeForTesting(
+            focusGuardService: DetectorMockFocusGuardService(),
+            interruptionDetector: detector,
+            persistenceEnabled: false,
+            launchRecoveryCompleted: false
+        )
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        let interruptionAt = start.addingTimeInterval(40 * 60)
+        let end = start.addingTimeInterval(90 * 60)
+        let active = FocusSession(
+            taskId: "foreground-recovery",
+            taskTitle: "Foreground Recovery",
+            startTime: start
+        )
+        detector.pendingInterruptions = [(interruptionAt, 60)]
+
+        detector.drainPendingInterruptions()
+        service.recoverPersistedSessionForTesting(
+            active,
+            wasShieldActive: false,
+            endTime: end
+        )
+
+        let recovered = try #require(service.todaySessions.last)
+        #expect(recovered.screenUnlockEvents.count == 1)
+        #expect(recovered.screenUnlockEvents.first?.timestamp == interruptionAt)
+        #expect(detector.emittedInterruptionCount == 1)
+        #expect(detector.pendingInterruptions.isEmpty)
+    }
+
+    @Test("A new focus session waits until launch recovery releases persisted-session ownership")
+    func newSessionWaitsForLaunchRecovery() async {
+        let detector = MockInterruptionDetector()
+        let service = makeService(detector: detector)
+        let gate = LaunchRecoveryTestGate()
+        let recoveryTask = Task { await gate.wait() }
+        service.installLaunchRecoveryBarrierForTesting(recoveryTask)
+
+        let startTask = Task { @MainActor in
+            await service.startSession(taskId: "new", taskTitle: "New Session")
+        }
+        for _ in 0..<10 { await Task.yield() }
+        #expect(service.activeSession == nil)
+
+        await gate.open()
+        await startTask.value
+        #expect(service.activeSession?.taskId == "new")
+    }
 }
 
 // MARK: - Detector State Mapping
@@ -210,6 +326,17 @@ struct FocusInterruptionDetectionTests {
 @MainActor
 @Suite("ScreenTime Detector State")
 struct ScreenTimeDetectorStateTests {
+
+    @Test("Threshold callbacks are converted to an interval ending at the callback time")
+    func thresholdTimestampMapsToPastInterval() {
+        let thresholdReachedAt = Date(timeIntervalSince1970: 1_700_000_060)
+        let start = ScreenTimeInterruptionDetector.estimatedInterruptionStart(
+            thresholdReachedAt: thresholdReachedAt
+        )
+
+        #expect(start == Date(timeIntervalSince1970: 1_700_000_000))
+        #expect(start.addingTimeInterval(60) == thresholdReachedAt)
+    }
 
     @Test("Deployed extension: state maps authorization and selection honestly")
     func detectionStateMapping() {

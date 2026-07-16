@@ -22,8 +22,13 @@ extension AppState {
         onto synced: [TaskItem],
         from current: [TaskItem]
     ) -> [TaskItem] {
+        let currentById = current.reduce(into: [String: TaskItem]()) { tasksById, task in
+            guard tasksById[task.id] == nil else { return }
+            tasksById[task.id] = task
+        }
+
         return synced.map { task in
-            guard let currentTask = current.first(where: { $0.id == task.id }) else { return task }
+            guard let currentTask = currentById[task.id] else { return task }
             var regrafted = task
             regrafted.todayDisplayDate = currentTask.todayDisplayDate
             return regrafted
@@ -255,10 +260,11 @@ extension AppState {
     /// 记录集成最近一次成功应用数据的时间（卡片 "Synced X ago" 的数据源）并异步落盘。
     func markIntegrationSynced(_ providerKey: String, at date: Date = Date()) {
         integrationLastSyncedAt[providerKey] = date
-        let snapshot = integrationLastSyncedAt
         Task { @MainActor in
             do {
-                try await localStorage.saveIntegrationSyncTimes(snapshot)
+                // Read at task execution time so two providers completing together cannot let
+                // an older captured dictionary overwrite a newer provider timestamp on disk.
+                try await localStorage.saveIntegrationSyncTimes(integrationLastSyncedAt)
             } catch {
                 reportPersistenceError(error, operation: "save", target: "integration_sync_times.json")
                 ErrorReporter.log(error, context: "AppState.markIntegrationSynced")

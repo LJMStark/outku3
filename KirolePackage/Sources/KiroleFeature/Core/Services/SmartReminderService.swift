@@ -134,18 +134,7 @@ public final class SmartReminderService {
     private func checkDeadline(
         tasks: [TaskItem], pet: Pet, userProfile: UserProfile, now: Date
     ) async -> SmartReminderResult? {
-        let calendar = Calendar.current
-        let thresholdDate = calendar.date(byAdding: .hour, value: Constants.deadlineThresholdHours, to: now) ?? now
-
-        let urgentTask = tasks.first { task in
-            guard let dueDate = task.dueDate,
-                  task.priority == .high,
-                  calendar.isDateInToday(dueDate),
-                  dueDate <= thresholdDate else { return false }
-            return true
-        }
-
-        guard let task = urgentTask else { return nil }
+        guard let task = Self.urgentDeadlineTask(in: tasks, now: now) else { return nil }
 
         let text = await companionText.generateSmartReminder(
             reason: .deadline, petName: pet.name, petMood: pet.mood,
@@ -153,6 +142,27 @@ public final class SmartReminderService {
             userProfile: userProfile
         )
         return SmartReminderResult(reason: .deadline, urgency: .urgent, text: text, taskTitle: task.title)
+    }
+
+    static func urgentDeadlineTask(
+        in tasks: [TaskItem],
+        now: Date,
+        calendar: Calendar = .current
+    ) -> TaskItem? {
+        let thresholdDate = calendar.date(
+            byAdding: .hour,
+            value: Constants.deadlineThresholdHours,
+            to: now
+        ) ?? now
+
+        return tasks.first { task in
+            guard let dueDate = task.dueDate,
+                  task.priority == .high,
+                  calendar.isDate(dueDate, inSameDayAs: now),
+                  dueDate >= now,
+                  dueDate <= thresholdDate else { return false }
+            return true
+        }
     }
 
     /// 工作时间内超过2小时无互动

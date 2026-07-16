@@ -47,11 +47,20 @@ public protocol FocusInterruptionDetecting: AnyObject {
     /// 被 BLE 后台唤醒（0x20/0x30）时调用：Darwin 通知不投递给完全挂起的进程，故唤醒后需
     /// 主动抽一次，专注快照才不会漏掉应归零的打断（息屏后台链路）。
     func drainPendingInterruptions()
+    /// 取出并清空待处理记录，但不触发 `onInterruption`。
+    /// 仅供启动恢复合并旧会话使用，避免走实时回调产生硬件推送和重复持久化。
+    func takePendingInterruptions() -> [ScreenUnlockEvent]
 }
 
 /// 默认无操作：仅 ScreenTime 实现有 App Group 待取记录；其它检测源/测试 mock 按需覆盖。
 public extension FocusInterruptionDetecting {
-    func drainPendingInterruptions() {}
+    func takePendingInterruptions() -> [ScreenUnlockEvent] { [] }
+
+    func drainPendingInterruptions() {
+        for event in takePendingInterruptions() {
+            onInterruption?(event.timestamp, event.duration ?? 0)
+        }
+    }
 }
 
 // MARK: - Screen Time Implementation
@@ -61,8 +70,8 @@ public extension FocusInterruptionDetecting {
 /// 链路：主 App 在会话开始时向 `DeviceActivityCenter` 注册「自选分心 App 累计使用
 /// 满 1 分钟」的阈值事件 → 事件触发时系统拉起 `KiroleDeviceActivityMonitor` 扩展
 /// （工程根目录同名 target；其 Bridge 常量与本文件镜像，改动必须两边同步）→
-/// 扩展把打断时刻写入 App Group 并发 Darwin 通知 → 本类取件后回调
-/// `onInterruption`，并重新武装下一个阈值事件。
+/// 扩展把阈值达到时刻写入 App Group 并发 Darwin 通知 → 本类向前回推阈值时长，
+/// 得到近似打断区间后回调 `onInterruption`，并重新武装下一个阈值事件。
 ///
 /// 取件时机有三个：Darwin 通知（App 在运行时立即）、App 回到前台（挂起期间的
 /// 补取——注意这只是**取件时机**，不是打断信号本身，与 D-2 不冲突）、新会话开始
@@ -82,7 +91,13 @@ public final class ScreenTimeInterruptionDetector: FocusInterruptionDetecting {
     private static let darwinName = "com.kirole.app.focus.interruption"
 
     /// 阈值粒度：自选分心 App 累计使用满 1 分钟记一次打断。
-    private static let interruptionThresholdSeconds: TimeInterval = 60
+    private nonisolated static let interruptionThresholdSeconds: TimeInterval = 60
+
+    /// DeviceActivity 只提供「达到累计阈值」的回调时刻，没有真实使用区间。
+    /// 用阈值时长向前回推，至少保证近似区间在回调时刻结束，而不是错误地向未来延伸。
+    nonisolated static func estimatedInterruptionStart(thresholdReachedAt: Date) -> Date {
+        thresholdReachedAt.addingTimeInterval(-interruptionThresholdSeconds)
+    }
 
     public var onInterruption: ((Date, TimeInterval) -> Void)?
 
@@ -122,7 +137,7 @@ public final class ScreenTimeInterruptionDetector: FocusInterruptionDetecting {
         hasArmingFailed = false
         guard detectionState == .active else { return }
         // 丢弃上一会话/App 死亡期间的残留记录，避免旧打断立刻污染新会话。
-        drainPendingRecords(emit: false)
+        _ = takePendingInterruptions()
         #if os(iOS) && canImport(DeviceActivity) && canImport(FamilyControls)
         do {
             try armThresholdEvent()
@@ -148,7 +163,12 @@ public final class ScreenTimeInterruptionDetector: FocusInterruptionDetecting {
     /// 见协议 `drainPendingInterruptions()`：被 BLE 后台唤醒时主动补取 App Group 里挂起期间
     /// 累积的打断记录并逐条回调（等同回前台/Darwin 取件，只是多了一个唤醒时机）。
     public func drainPendingInterruptions() {
-        drainPendingRecords(emit: true)
+        _ = drainPendingRecords(emit: true)
+    }
+
+    /// 启动恢复专用：消费 App Group 记录并返回，不触发实时回调，也不重新武装监测。
+    public func takePendingInterruptions() -> [ScreenUnlockEvent] {
+        drainPendingRecords(emit: false)
     }
 
     // MARK: - DeviceActivity arming
@@ -195,18 +215,25 @@ public final class ScreenTimeInterruptionDetector: FocusInterruptionDetecting {
 
     /// 取出扩展写入的打断记录。`emit == true` 时逐条回调并（监测中）重新武装
     /// 下一个阈值事件；`false` 时仅清空（新会话开始前丢弃残留）。
-    private func drainPendingRecords(emit: Bool) {
-        guard let defaults = UserDefaults(suiteName: Self.appGroupID) else { return }
+    private func drainPendingRecords(emit: Bool) -> [ScreenUnlockEvent] {
+        guard let defaults = UserDefaults(suiteName: Self.appGroupID) else { return [] }
         let pending = defaults.array(forKey: Self.pendingKey) as? [Double] ?? []
-        guard !pending.isEmpty else { return }
+        guard !pending.isEmpty else { return [] }
         defaults.removeObject(forKey: Self.pendingKey)
 
-        guard emit else { return }
-        for timestamp in pending {
-            onInterruption?(
-                Date(timeIntervalSince1970: timestamp),
-                Self.interruptionThresholdSeconds
+        let events = pending.map {
+            let thresholdReachedAt = Date(timeIntervalSince1970: $0)
+            return ScreenUnlockEvent(
+                timestamp: Self.estimatedInterruptionStart(
+                    thresholdReachedAt: thresholdReachedAt
+                ),
+                duration: Self.interruptionThresholdSeconds
             )
+        }
+        guard emit else { return events }
+
+        for event in events {
+            onInterruption?(event.timestamp, event.duration ?? 0)
         }
         #if os(iOS) && canImport(DeviceActivity) && canImport(FamilyControls)
         if isMonitoring {
@@ -222,6 +249,7 @@ public final class ScreenTimeInterruptionDetector: FocusInterruptionDetecting {
             }
         }
         #endif
+        return events
     }
 
     /// Darwin 通知：扩展触发时若主 App 在运行（含蓝牙后台），立即取件。

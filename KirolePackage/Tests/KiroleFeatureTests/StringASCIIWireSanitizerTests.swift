@@ -174,9 +174,9 @@ struct StringASCIIWireSanitizerTests {
 
     @Test("ZWJ / flag / skin-tone emoji sequences drop wholesale (no orphan bytes)")
     func emojiSequencesDropWholesale() {
-        #expect("\u{1F9D1}\u{200D}\u{1F4BB}".asciiSanitizedForEInk() == "")   // 🧑‍💻 ZWJ
+        #expect("\u{1F9D1}\u{200D}\u{1F4BB}".asciiSanitizedForEInk() == "")   // ZWJ sequence
         #expect("\u{1F1FA}\u{1F1F8}".asciiSanitizedForEInk() == "")           // 🇺🇸 flag
-        #expect("\u{1F44B}\u{1F3FB}".asciiSanitizedForEInk() == "")           // 👋🏻 skin tone
+        #expect("\u{1F44B}\u{1F3FB}".asciiSanitizedForEInk() == "")           // Skin-tone modifier
     }
 
     @Test("Keycap sequence keeps the ASCII digit, drops VS16 + enclosing mark")

@@ -58,12 +58,10 @@ extension AppState {
         }
     }
 
-    func currentDisplaySceneId(totalEnergyBottles: Int? = nil) async -> String {
+    func currentDisplaySceneId() -> String {
         // User's explicit pick from Settings → Scenes wins. nil → harbor (always-unlocked default).
         // Energy bottles only gate which scenes the Settings UI unlocks for selection — bottles
-        // never auto-apply a scene to hardware. The `totalEnergyBottles` parameter is retained
-        // for call-site compatibility but is intentionally unused.
-        _ = totalEnergyBottles
+        // never auto-apply a scene to hardware.
         guard let stored = userProfile.selectedSceneId else {
             return DisplayScene.harbor.rawValue
         }
@@ -116,7 +114,7 @@ extension AppState {
 
     func handleHardwareSleep(now: Date = Date()) async {
         let usageDays = await localStorage.loadConsecutiveDays()
-        let sceneId = await currentDisplaySceneId()
+        let sceneId = currentDisplaySceneId()
         let topTaskTitles = tasksForToday()
             .filter { !$0.isCompleted }
             .prefix(3)
@@ -204,8 +202,8 @@ extension AppState {
         #endif
     }
 
-    func syncIdleHardwareDisplay(totalEnergyBottles: Int? = nil) async {
-        let sceneId = await currentDisplaySceneId(totalEnergyBottles: totalEnergyBottles)
+    func syncIdleHardwareDisplay() async {
+        let sceneId = currentDisplaySceneId()
         if BLEService.shared.connectionState.isConnected,
            let displayScene = DisplayScene(rawValue: sceneId) {
             do {
@@ -252,7 +250,7 @@ extension AppState {
         // 连刷三次（0x14+0x17+DayPack）。内容更新由下方 requestBLESync 的 DayPack 轮承载
         // （2026-07-04 审计 B1）。
         if !newlyUnlocked.isEmpty {
-            await syncIdleHardwareDisplay(totalEnergyBottles: totalEnergyBottles)
+            await syncIdleHardwareDisplay()
         }
 
         if let celebrated = newlyUnlocked.last {

@@ -109,6 +109,14 @@ public actor AppleSyncEngine {
         )
     }
 
+    public func pushReminderCompletionUpdate(_ task: TaskItem) async throws {
+        guard let identifier = task.appleReminderId else { return }
+        try await eventKitService.updateReminderCompletion(
+            identifier: identifier,
+            isCompleted: task.isCompleted
+        )
+    }
+
     public func pushReminderCreate(_ task: TaskItem, listId: String) async throws -> TaskItem {
         let result = try await eventKitService.createReminder(
             title: task.title,

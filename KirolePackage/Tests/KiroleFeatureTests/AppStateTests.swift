@@ -851,6 +851,55 @@ struct SyncMergeTests {
         #expect(regrafted.first { $0.id == "removed" }?.todayDisplayDate == nil)
     }
 
+    @Test("regraft leaves synced display date unchanged when current task is missing")
+    func regraftLeavesMissingTaskUnchanged() {
+        let syncedDate = Date(timeIntervalSince1970: 1_720_000_000)
+        let synced = TaskItem(
+            id: "missing",
+            title: "Only in sync result",
+            source: .google,
+            todayDisplayDate: syncedDate
+        )
+
+        let regrafted = AppState.regraftTodayDisplayDates(
+            onto: [synced],
+            from: []
+        )
+
+        #expect(regrafted.first?.todayDisplayDate == syncedDate)
+    }
+
+    @Test("regraft uses the first current task when IDs are duplicated")
+    func regraftUsesFirstDuplicateCurrentTask() {
+        let firstDate = Date(timeIntervalSince1970: 1_720_000_000)
+        let secondDate = Date(timeIntervalSince1970: 1_730_000_000)
+        let synced = TaskItem(
+            id: "duplicate",
+            title: "Synced task",
+            source: .google,
+            todayDisplayDate: nil
+        )
+        let firstCurrent = TaskItem(
+            id: "duplicate",
+            title: "First current task",
+            source: .google,
+            todayDisplayDate: firstDate
+        )
+        let secondCurrent = TaskItem(
+            id: "duplicate",
+            title: "Second current task",
+            source: .google,
+            todayDisplayDate: secondDate
+        )
+
+        let regrafted = AppState.regraftTodayDisplayDates(
+            onto: [synced],
+            from: [firstCurrent, secondCurrent]
+        )
+
+        #expect(regrafted.first?.todayDisplayDate == firstDate)
+    }
+
     @Test("mergeRemoteTasks preserves tasks from other sources")
     @MainActor
     func mergePreservesOtherSources() {

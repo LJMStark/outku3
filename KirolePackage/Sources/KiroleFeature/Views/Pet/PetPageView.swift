@@ -3,14 +3,6 @@ import SwiftUI
 import UIKit
 #endif
 
-// MARK: - Private Helpers
-
-private let dueDateFormatter: DateFormatter = {
-    let f = DateFormatter()
-    f.dateFormat = "MMM d"
-    return f
-}()
-
 // MARK: - Pet Page View
 
 struct PetPageView: View {
@@ -481,7 +473,7 @@ private struct TaskItemRow: View {
         let calendar = Calendar.current
         if calendar.isDateInToday(date) { return "today" }
         if calendar.isDateInTomorrow(date) { return "tomorrow" }
-        return dueDateFormatter.string(from: date)
+        return AppDateFormatters.shortDate.string(from: date)
     }
 
     private var isDueToday: Bool {

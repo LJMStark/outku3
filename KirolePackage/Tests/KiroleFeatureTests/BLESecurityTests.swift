@@ -32,6 +32,50 @@ struct BLESecurityTests {
         #expect(BLEService.shared.securityMode == .secure)
     }
 
+    @Test("BLE write policy permits only the security handshake while connecting")
+    func writePolicyPermitsOnlyHandshakeWhileConnecting() {
+        #expect(
+            BLEWritePolicy.canWrite(
+                state: .connecting,
+                packetType: BLEDataType.securityHandshake.rawValue
+            )
+        )
+        #expect(
+            !BLEWritePolicy.canWrite(
+                state: .connecting,
+                packetType: BLEDataType.taskList.rawValue
+            )
+        )
+        #expect(
+            !BLEWritePolicy.canWrite(
+                state: .connecting,
+                packetType: BLEDataType.secureData.rawValue
+            )
+        )
+    }
+
+    @Test("BLE write policy permits normal packets only while connected")
+    func writePolicyRequiresConnectedStateForNormalPackets() {
+        #expect(
+            BLEWritePolicy.canWrite(
+                state: .connected,
+                packetType: BLEDataType.taskList.rawValue
+            )
+        )
+        #expect(
+            !BLEWritePolicy.canWrite(
+                state: .disconnected,
+                packetType: BLEDataType.taskList.rawValue
+            )
+        )
+        #expect(
+            !BLEWritePolicy.canWrite(
+                state: .scanning,
+                packetType: BLEDataType.securityHandshake.rawValue
+            )
+        )
+    }
+
     @Test("Handshake establishes secure session and allows secure payload round-trip")
     @MainActor
     func handshakeAndSecureRoundTrip() throws {

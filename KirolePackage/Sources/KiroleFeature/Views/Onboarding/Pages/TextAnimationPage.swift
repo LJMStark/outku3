@@ -3,6 +3,7 @@ import SwiftUI
 public struct TextAnimationPage: View {
     let onboardingState: OnboardingState
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var visibleLines: Int = 0
     @State private var showFinal = false
     @State private var showFeatures = false
@@ -121,6 +122,14 @@ public struct TextAnimationPage: View {
             }
         }
         .task {
+            if reduceMotion {
+                visibleLines = textLines.count
+                showFinal = true
+                showFeatures = true
+                canTap = true
+                return
+            }
+
             do {
                 for i in 1...textLines.count {
                     try await Task.sleep(for: .milliseconds(400))

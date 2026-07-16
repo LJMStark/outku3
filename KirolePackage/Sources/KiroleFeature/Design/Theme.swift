@@ -220,29 +220,85 @@ public enum AppCornerRadius {
 // MARK: - Shared Date Formatters
 
 public enum AppDateFormatters {
-    public static let headerDate: DateFormatter = {
+    private static let englishPOSIXLocale = Locale(identifier: "en_US_POSIX")
+
+    private static func makeDateFormatter(_ dateFormat: String) -> DateFormatter {
         let formatter = DateFormatter()
-        formatter.dateFormat = "EEE, MMM dd"
+        formatter.locale = englishPOSIXLocale
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.timeZone = .autoupdatingCurrent
+        formatter.dateFormat = dateFormat
+        return formatter
+    }
+
+    public static let headerDate = makeDateFormatter("EEE, MMM dd")
+
+    public static let time = makeDateFormatter("h:mm a")
+
+    public static let separatorDate = makeDateFormatter("EEE, MMM d")
+
+    public static let shortDate = makeDateFormatter("MMM d")
+
+    public static let eventDetailDate = makeDateFormatter("EEEE, MMM d")
+
+    @MainActor
+    private static let fullRelativeDateTimeFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.locale = englishPOSIXLocale
+        formatter.unitsStyle = .full
         return formatter
     }()
 
-    public static let time: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "h:mm a"
+    @MainActor
+    private static let abbreviatedRelativeDateTimeFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.locale = englishPOSIXLocale
+        formatter.unitsStyle = .abbreviated
         return formatter
     }()
 
-    public static let separatorDate: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEE, MMM d"
-        return formatter
-    }()
+    @MainActor
+    public static func relativeTimeText(
+        for date: Date,
+        relativeTo referenceDate: Date,
+        unitsStyle: RelativeDateTimeFormatter.UnitsStyle = .full
+    ) -> String {
+        let formatter = unitsStyle == .abbreviated
+            ? abbreviatedRelativeDateTimeFormatter
+            : fullRelativeDateTimeFormatter
+        return formatter.localizedString(for: date, relativeTo: referenceDate)
+    }
 
-    public static let shortDate: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMM d"
-        return formatter
-    }()
+    private static let headerTimeStyle = Date.FormatStyle(
+        date: .omitted,
+        time: .shortened,
+        locale: englishPOSIXLocale,
+        calendar: Calendar(identifier: .gregorian),
+        timeZone: .autoupdatingCurrent
+    )
+
+    public static func timeZoneLabel(
+        for date: Date,
+        timeZone: TimeZone = .autoupdatingCurrent
+    ) -> String {
+        guard let abbreviation = timeZone.abbreviation(for: date), !abbreviation.isEmpty else {
+            return timeZone.identifier
+        }
+        return abbreviation
+    }
+
+    public static func headerTimeText(
+        for date: Date,
+        timeZone: TimeZone = .autoupdatingCurrent
+    ) -> String {
+        var style = headerTimeStyle
+        style.timeZone = timeZone
+        let time = date.formatted(style)
+            .components(separatedBy: .whitespacesAndNewlines)
+            .joined()
+            .lowercased()
+        return "\(time) (\(timeZoneLabel(for: date, timeZone: timeZone)))"
+    }
 }
 
 // MARK: - Card Style Modifier

@@ -12,6 +12,16 @@ struct LocalStoragePersistenceTests {
 
     private static let connectionsFile = "integration_connections.json"
 
+    @Test("focus history date keys use the timezone supplied at call time")
+    func focusHistoryDateKeyUsesCurrentTimeZone() throws {
+        let utc = try #require(TimeZone(secondsFromGMT: 0))
+        let pacific = try #require(TimeZone(secondsFromGMT: -8 * 60 * 60))
+        let epoch = Date(timeIntervalSince1970: 0)
+
+        #expect(LocalStorage.dateKey(from: epoch, timeZone: utc) == "1970-01-01")
+        #expect(LocalStorage.dateKey(from: epoch, timeZone: pacific) == "1969-12-31")
+    }
+
     @Test("integration connection states round-trip through save/load")
     func integrationConnectionsRoundTrip() async throws {
         try await SharedPersistenceTestLock.shared.withLock {
@@ -67,6 +77,32 @@ struct LocalStoragePersistenceTests {
             try await storage.quarantineCorruptFile(named: "../../evil.json")
             try await storage.quarantineCorruptFile(named: "/etc/passwd")
             try await storage.quarantineCorruptFile(named: "nested/dir.json")
+        }
+    }
+
+    @Test("delete rejects nested, traversal, and absolute filenames without escaping Documents")
+    func deleteRejectsUnsafePaths() async throws {
+        try await SharedPersistenceTestLock.shared.withLock {
+            let storage = LocalStorage.shared
+            let fileManager = FileManager.default
+            let documentsDirectory = try #require(
+                fileManager.urls(for: .documentDirectory, in: .userDomainMask).first
+            )
+            let nestedDirectory = documentsDirectory
+                .appendingPathComponent("local-storage-delete-\(UUID().uuidString)")
+            let sentinel = nestedDirectory.appendingPathComponent("sentinel.json")
+            defer { try? fileManager.removeItem(at: nestedDirectory) }
+
+            try fileManager.createDirectory(at: nestedDirectory, withIntermediateDirectories: true)
+            try Data("keep".utf8).write(to: sentinel)
+
+            try await storage.deleteFile(
+                named: "\(nestedDirectory.lastPathComponent)/sentinel.json"
+            )
+            try await storage.deleteFile(named: "../../sentinel.json")
+            try await storage.deleteFile(named: sentinel.path)
+
+            #expect(fileManager.fileExists(atPath: sentinel.path))
         }
     }
 }

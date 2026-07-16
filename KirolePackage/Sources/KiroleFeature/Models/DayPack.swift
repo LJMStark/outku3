@@ -104,8 +104,17 @@ public struct DayPack: Codable, Sendable {
         parts.append("settlement.interruptionCount=\(settlementData.interruptionCount)")
         parts.append("settlement.totalEnergyBottles=\(settlementData.totalEnergyBottles)")
 
-        let combined = parts.joined(separator: "|")
-        let digest = SHA256.hash(data: Data(combined.utf8))
+        var framedParts = Data()
+        for part in parts {
+            let bytes = Data(part.utf8)
+            var byteCount = UInt64(bytes.count).bigEndian
+            Swift.withUnsafeBytes(of: &byteCount) { lengthBytes in
+                framedParts.append(contentsOf: lengthBytes)
+            }
+            framedParts.append(bytes)
+        }
+
+        let digest = SHA256.hash(data: framedParts)
         return digest.map { String(format: "%02x", $0) }.joined()
     }
 }

@@ -83,7 +83,7 @@ public struct BehaviorAnalyzer: Sendable {
         let startHour = activeHours.first ?? 9
         let endHour = (activeHours.last ?? 17) + 1
 
-        return WorkHourRange(start: startHour, end: min(endHour, 23))
+        return WorkHourRange(start: startHour, end: min(endHour, 24))
     }
 
     /// Average number of tasks per day over the last 30 days.

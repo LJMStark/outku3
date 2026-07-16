@@ -163,7 +163,7 @@ enum ExternalSyncDispatcher {
         switch action {
         case .updateCompletion:
             if task.appleReminderId != nil {
-                try await engine.pushReminderUpdate(task)
+                try await engine.pushReminderCompletionUpdate(task)
             }
         case .delete:
             try await engine.pushReminderDelete(task)

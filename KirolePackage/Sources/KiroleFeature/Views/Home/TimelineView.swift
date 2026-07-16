@@ -55,7 +55,7 @@ struct DayTimelineView: View {
 
             TimelineEventRow(
                 time: "9:00 AM",
-                iconContent: .emoji("📬"),
+                iconContent: .emoji("\u{1F4EC}"),
                 title: "Day Start",
                 delay: 0
             )
@@ -250,8 +250,8 @@ struct TimelineEventRow: View {
                 .font(.system(size: hasIconCircle ? 16 : 22))
                 .foregroundStyle(theme.colors.accent)
                 .symbolRenderingMode(.hierarchical)
-        case .emoji(let char):
-            Text(char)
+        case .emoji(let character):
+            Text(character)
                 .font(.system(size: hasIconCircle ? 18 : 24))
         case .asset(let name):
             Image(name, bundle: .module)

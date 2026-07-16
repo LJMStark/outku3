@@ -14,6 +14,7 @@ public struct PersonalizationPage: View {
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var isProcessing = false
     @State private var processError: String?
+    @State private var photoRequestTracker = LatestPhotoRequestTracker()
 
     public init(onboardingState: OnboardingState) {
         self.onboardingState = onboardingState
@@ -447,33 +448,45 @@ public struct PersonalizationPage: View {
     // MARK: - Actions
 
     private func clearCustomCompanion() {
+        photoRequestTracker.invalidate()
         onboardingState.profile.customAvatarPreviewData = nil
         onboardingState.profile.customAvatarImageData = nil
         onboardingState.profile.customCompanionName = nil
         onboardingState.profile.customCompanionPrompt = nil
         onboardingState.profile.customCompanionRoast = false
         selectedPhoto = nil
+        isProcessing = false
         processError = nil
     }
 
     private func handlePhotoSelection(_ item: PhotosPickerItem?) {
         guard let item else { return }
+        let requestID = photoRequestTracker.begin()
         isProcessing = true
         processError = nil
         Task {
-            let data = try? await item.loadTransferable(type: Data.self)
-            // Heavy decode + PNG encode off the main actor (see AvatarImageProcessor.process).
-            var result: AvatarProcessResult?
-            #if canImport(UIKit)
-            if let data {
-                result = await Task.detached(priority: .userInitiated) {
-                    AvatarImageProcessor.process(imageData: data)
-                }.value
-            }
-            #endif
-            await MainActor.run {
-                applyProcessedPhoto(result: result)
-                isProcessing = false
+            do {
+                let data = try await item.loadTransferable(type: Data.self)
+                // Heavy decode + PNG encode off the main actor (see AvatarImageProcessor.process).
+                var result: AvatarProcessResult?
+                #if canImport(UIKit)
+                if let data {
+                    result = await Task.detached(priority: .userInitiated) {
+                        AvatarImageProcessor.process(imageData: data)
+                    }.value
+                }
+                #endif
+                await MainActor.run {
+                    guard photoRequestTracker.isCurrent(requestID) else { return }
+                    applyProcessedPhoto(result: result)
+                    isProcessing = false
+                }
+            } catch {
+                await MainActor.run {
+                    guard photoRequestTracker.isCurrent(requestID) else { return }
+                    processError = "Couldn't load that photo. Please try again."
+                    isProcessing = false
+                }
             }
         }
     }

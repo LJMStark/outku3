@@ -34,6 +34,7 @@ public struct ContentView: View {
             _ = FocusSessionService.shared
             await ScreenTimeFocusGuardService.shared.initialize()
             await authManager.initialize()
+            await appState.ensureInitialLoadComplete()
             appState.syncIntegrationStatusFromAuth()
             await configureOpenAI()
             // Ask for notification permission only after onboarding — it powers the offline
@@ -99,14 +100,17 @@ public struct ContentView: View {
                     HomeView()
                         .opacity(appState.selectedTab == .home ? 1 : 0)
                         .allowsHitTesting(appState.selectedTab == .home)
+                        .accessibilityHidden(appState.selectedTab != .home)
 
                     PetPageView()
                         .opacity(appState.selectedTab == .pet ? 1 : 0)
                         .allowsHitTesting(appState.selectedTab == .pet)
+                        .accessibilityHidden(appState.selectedTab != .pet)
 
                     SettingsView()
                         .opacity(appState.selectedTab == .settings ? 1 : 0)
                         .allowsHitTesting(appState.selectedTab == .settings)
+                        .accessibilityHidden(appState.selectedTab != .settings)
                 }
                 .animation(
                     .kiroleAdaptive(.kiroleGentle, reduceMotion: reduceMotion),

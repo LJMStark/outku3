@@ -56,6 +56,9 @@ public final class AppState {
 
     // Integrations
     public var integrations: [Integration] = Integration.defaultIntegrations
+    /// Once connection preferences have been loaded or bootstrapped, auth scopes must not
+    /// silently turn a user-disabled integration back on.
+    @ObservationIgnored var hasExplicitIntegrationConnectionPreferences = false
 
     // User Profile
     public var userProfile: UserProfile = .default
@@ -108,6 +111,7 @@ public final class AppState {
     /// selection/flush cancels the previous task first — without this, two multi-thousand-chunk
     /// streams interleave packet-by-packet and the OLD avatar can finish last and win the screen.
     @ObservationIgnored var customAvatarPushTask: Task<Void, Never>?
+    @ObservationIgnored var taskExternalSyncQueue = KeyedSerialTaskQueue<String>()
     /// Set when the device timezone changes at runtime. UI shows a banner asking the user
     /// whether to re-sync events. Cleared on user action (adjust or keep).
     public var pendingTimezoneChangeName: String? = nil

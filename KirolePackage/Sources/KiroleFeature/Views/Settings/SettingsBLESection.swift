@@ -17,12 +17,6 @@ public struct SettingsBLESection: View {
 
     public init() {}
 
-    private static let relativeFormatter: RelativeDateTimeFormatter = {
-        let f = RelativeDateTimeFormatter()
-        f.unitsStyle = .full
-        return f
-    }()
-
     public var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             SettingsSectionHeader(title: "Hardware Details")
@@ -550,7 +544,10 @@ public struct SettingsBLESection: View {
         let failed = bleService.lastSyncFailed
         let lastSyncText: String
         if let lastSync = bleService.lastSyncTime {
-            lastSyncText = Self.relativeFormatter.localizedString(for: lastSync, relativeTo: Date())
+            lastSyncText = AppDateFormatters.relativeTimeText(
+                for: lastSync,
+                relativeTo: Date()
+            )
         } else {
             lastSyncText = "Not yet synced"
         }

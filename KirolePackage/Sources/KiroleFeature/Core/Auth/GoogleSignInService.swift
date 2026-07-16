@@ -1,17 +1,47 @@
 
-#if canImport(UIKit)
 import Foundation
+
+/// Invalidates asynchronous credential results after sign-out/disconnect. Main-actor isolation
+/// serializes memory access, while this generation also protects across actor reentrancy at await.
+struct GoogleCredentialOperationGate: Sendable {
+    private(set) var generation: UInt64 = 0
+    private(set) var blocksNewOperations = false
+
+    func snapshot() -> UInt64? {
+        blocksNewOperations ? nil : generation
+    }
+
+    func accepts(_ snapshot: UInt64) -> Bool {
+        !blocksNewOperations && snapshot == generation
+    }
+
+    mutating func invalidate(blockNewOperations: Bool) {
+        generation &+= 1
+        blocksNewOperations = blockNewOperations
+    }
+
+    mutating func unblock() {
+        blocksNewOperations = false
+    }
+}
+
+#if canImport(UIKit)
 import GoogleSignIn
 import UIKit
 
 // MARK: - Google Sign In Service (iOS)
 
 /// 处理 Google Sign In 认证流程，包含 Calendar 和 Tasks API 权限
-public final class GoogleSignInService: @unchecked Sendable {
+@MainActor
+public final class GoogleSignInService {
     public static let shared = GoogleSignInService()
 
     private let keychainService = KeychainService.shared
     private var refreshTask: Task<String, Error>?
+    private var refreshTaskID: UUID?
+    private var disconnectTask: Task<Void, Never>?
+    private var disconnectTaskID: UUID?
+    private var credentialGate = GoogleCredentialOperationGate()
 
     // Google API Scopes
     // calendarReadOnly 是 calendarList 端点（多日历同步）所需——events scope 不覆盖它，
@@ -37,8 +67,8 @@ public final class GoogleSignInService: @unchecked Sendable {
     // MARK: - Sign In
 
     /// 执行 Google Sign In
-    @MainActor
     public func signIn() async throws -> GoogleSignInResult {
+        let generation = try credentialOperationSnapshot()
         guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
               let rootViewController = windowScene.windows.first?.rootViewController else {
             throw GoogleSignInError.noRootViewController
@@ -52,6 +82,7 @@ public final class GoogleSignInService: @unchecked Sendable {
         )
 
         let user = result.user
+        try validateCredentialResult(generation, user: user)
         try persistTokensIfAvailable(for: user)
         persistScopesIfAvailable(user.grantedScopes ?? [])
         return makeSignInResult(from: user)
@@ -60,13 +91,14 @@ public final class GoogleSignInService: @unchecked Sendable {
     // MARK: - Restore Previous Sign In
 
     /// 恢复之前的登录状态
-    @MainActor
     public func restorePreviousSignIn() async throws -> GoogleSignInResult? {
+        let generation = try credentialOperationSnapshot()
         do {
             let user = try await GIDSignIn.sharedInstance.restorePreviousSignIn()
+            try validateCredentialResult(generation, user: user)
             return makeSignInResult(from: user)
         } catch {
-            // 没有之前的登录状态
+            guard Self.isMissingPreviousSignInError(error) else { throw error }
             return nil
         }
     }
@@ -74,32 +106,49 @@ public final class GoogleSignInService: @unchecked Sendable {
     // MARK: - Refresh Token
 
     /// 刷新 access token（去重：并发调用共享同一个刷新任务）
-    @MainActor
     public func refreshTokenIfNeeded() async throws -> String {
         // 如果已有正在进行的刷新任务，直接等待它
         if let existingTask = refreshTask, !existingTask.isCancelled {
             return try await existingTask.value
         }
 
+        let generation = try credentialOperationSnapshot()
+        let taskID = UUID()
         let task = Task<String, Error> { @MainActor in
-            defer { self.refreshTask = nil }
+            defer {
+                if self.refreshTaskID == taskID {
+                    self.refreshTask = nil
+                    self.refreshTaskID = nil
+                }
+            }
 
             if GIDSignIn.sharedInstance.currentUser == nil {
-                _ = try? await GIDSignIn.sharedInstance.restorePreviousSignIn()
+                do {
+                    _ = try await GIDSignIn.sharedInstance.restorePreviousSignIn()
+                } catch {
+                    if Self.isMissingPreviousSignInError(error) {
+                        throw GoogleSignInError.notSignedIn
+                    }
+                    throw error
+                }
             }
 
             guard let currentUser = GIDSignIn.sharedInstance.currentUser else {
                 throw GoogleSignInError.notSignedIn
             }
+            try self.validateCredentialResult(generation, user: currentUser)
 
             if keychainService.isGoogleTokenExpired() {
                 try await currentUser.refreshTokensIfNeeded()
+                try self.validateCredentialResult(generation, user: currentUser)
                 try persistTokensIfAvailable(for: currentUser)
             }
 
+            try self.validateCredentialResult(generation, user: currentUser)
             return currentUser.accessToken.tokenString
         }
 
+        refreshTaskID = taskID
         refreshTask = task
         return try await task.value
     }
@@ -107,7 +156,6 @@ public final class GoogleSignInService: @unchecked Sendable {
     // MARK: - Get Current Access Token
 
     /// 获取当前有效的 access token（如需要会自动刷新）
-    @MainActor
     public func getValidAccessToken() async throws -> String {
         try await refreshTokenIfNeeded()
     }
@@ -127,8 +175,8 @@ public final class GoogleSignInService: @unchecked Sendable {
     // MARK: - Request Additional Scopes
 
     /// 请求额外的权限
-    @MainActor
     public func requestAdditionalScopes() async throws -> GoogleSignInResult {
+        let generation = try credentialOperationSnapshot()
         guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
               let rootViewController = windowScene.windows.first?.rootViewController,
               let currentUser = GIDSignIn.sharedInstance.currentUser else {
@@ -137,6 +185,7 @@ public final class GoogleSignInService: @unchecked Sendable {
 
         let result = try await currentUser.addScopes(scopes, presenting: rootViewController)
         let user = result.user
+        try validateCredentialResult(generation, user: user)
         try persistTokensIfAvailable(for: user)
         persistScopesIfAvailable(user.grantedScopes ?? [])
         return makeSignInResult(from: user)
@@ -146,6 +195,7 @@ public final class GoogleSignInService: @unchecked Sendable {
 
     /// 登出
     public func signOut() {
+        invalidateCredentialOperations(blockNewOperations: false)
         GIDSignIn.sharedInstance.signOut()
         keychainService.clearGoogleTokens()
     }
@@ -154,12 +204,44 @@ public final class GoogleSignInService: @unchecked Sendable {
 
     /// 断开连接（撤销所有权限）
     public func disconnect() async {
-        await withCheckedContinuation { continuation in
-            GIDSignIn.sharedInstance.disconnect { _ in
-                continuation.resume()
+        if let disconnectTask {
+            await disconnectTask.value
+            return
+        }
+
+        invalidateCredentialOperations(blockNewOperations: true)
+        keychainService.clearGoogleTokens()
+
+        let taskID = UUID()
+        let task = Task { @MainActor in
+            defer {
+                // Revoke can fail before the SDK clears its local session. The user's local
+                // disconnect choice still wins, while the callback error remains observable.
+                GIDSignIn.sharedInstance.signOut()
+                self.keychainService.clearGoogleTokens()
+                if self.disconnectTaskID == taskID {
+                    self.disconnectTask = nil
+                    self.disconnectTaskID = nil
+                    self.credentialGate.unblock()
+                }
+            }
+
+            let disconnectError: Error? = await withCheckedContinuation { continuation in
+                GIDSignIn.sharedInstance.disconnect { error in
+                    continuation.resume(returning: error)
+                }
+            }
+            if let disconnectError {
+                ErrorReporter.log(
+                    disconnectError,
+                    context: "GoogleSignInService.disconnect.revoke"
+                )
             }
         }
-        keychainService.clearGoogleTokens()
+
+        disconnectTaskID = taskID
+        disconnectTask = task
+        await task.value
     }
 
     // MARK: - Handle URL
@@ -167,6 +249,47 @@ public final class GoogleSignInService: @unchecked Sendable {
     /// 处理 OAuth 回调 URL
     public func handle(_ url: URL) -> Bool {
         GIDSignIn.sharedInstance.handle(url)
+    }
+
+    private func credentialOperationSnapshot() throws -> UInt64 {
+        guard let generation = credentialGate.snapshot() else {
+            throw GoogleSignInError.notSignedIn
+        }
+        return generation
+    }
+
+    private func validateCredentialResult(_ generation: UInt64, user: GIDGoogleUser) throws {
+        let currentUserMatches = GIDSignIn.sharedInstance.currentUser === user
+        let isAccepted = credentialGate.accepts(generation) && currentUserMatches
+        guard !Task.isCancelled, isAccepted else {
+            // Google writes currentUser and its own Keychain before returning. If an operation
+            // finishes after sign-out/disconnect, reject its result and remove that late SDK
+            // session so a later refresh cannot revive it.
+            if currentUserMatches {
+                GIDSignIn.sharedInstance.signOut()
+                keychainService.clearGoogleTokens()
+            }
+            if Task.isCancelled {
+                throw CancellationError()
+            }
+            throw GoogleSignInError.notSignedIn
+        }
+    }
+
+    private func invalidateCredentialOperations(blockNewOperations: Bool) {
+        let shouldBlock = blockNewOperations
+            || disconnectTask != nil
+            || credentialGate.blocksNewOperations
+        credentialGate.invalidate(blockNewOperations: shouldBlock)
+        refreshTask?.cancel()
+        refreshTask = nil
+        refreshTaskID = nil
+    }
+
+    private nonisolated static func isMissingPreviousSignInError(_ error: Error) -> Bool {
+        let error = error as NSError
+        // GoogleSignIn's kGIDSignInErrorDomain / kGIDSignInErrorCodeHasNoAuthInKeychain.
+        return error.domain == "com.google.GIDSignIn" && error.code == -4
     }
 
     private func makeSignInResult(from user: GIDGoogleUser) -> GoogleSignInResult {
@@ -264,31 +387,26 @@ public enum GoogleSignInError: LocalizedError, Sendable {
 }
 
 #else
-import Foundation
 
 // MARK: - Google Sign In Service (macOS Stub)
 
-public final class GoogleSignInService: @unchecked Sendable {
+@MainActor
+public final class GoogleSignInService {
     public static let shared = GoogleSignInService()
     private init() {}
     public func configure() {}
     
-    @MainActor
     public func signIn() async throws -> GoogleSignInResult { throw GoogleSignInError.notSupported }
     
-    @MainActor
     public func restorePreviousSignIn() async throws -> GoogleSignInResult? { return nil }
     
     public func signOut() {}
     public func disconnect() async {}
     
-    @MainActor
     public func refreshTokenIfNeeded() async throws -> String { throw GoogleSignInError.notSupported }
     
-    @MainActor
     public func getValidAccessToken() async throws -> String { throw GoogleSignInError.notSupported }
     
-    @MainActor
     public func requestAdditionalScopes() async throws -> GoogleSignInResult { throw GoogleSignInError.notSupported }
     
     public func handle(_ url: URL) -> Bool { return false }

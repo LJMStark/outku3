@@ -92,7 +92,7 @@ public struct CalendarEvent: Identifiable, Sendable, Codable {
         let remoteUpdated = googleEvent.updated.flatMap { iso8601Formatter.date(from: $0) }
 
         return CalendarEvent(
-            id: googleEvent.id,
+            id: googleLocalID(eventID: googleEvent.id, calendarID: googleCalendarId),
             googleEventId: googleEvent.id,
             googleCalendarId: googleCalendarId,
             title: googleEvent.summary ?? "Untitled Event",
@@ -110,6 +110,11 @@ public struct CalendarEvent: Identifiable, Sendable, Codable {
                 location: googleEvent.location
             )
         )
+    }
+
+    private static func googleLocalID(eventID: String, calendarID: String?) -> String {
+        let calendarID = calendarID ?? "primary"
+        return "google:\(calendarID.utf8.count):\(calendarID):\(eventID)"
     }
 }
 

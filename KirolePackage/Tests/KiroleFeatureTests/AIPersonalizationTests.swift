@@ -503,6 +503,26 @@ import Foundation
     #expect(summary.preferredWorkHours.end == 18)
 }
 
+@Test func testBehaviorAnalyzerKeepsLateNightEndExclusive() throws {
+    let calendar = Calendar.current
+    let lateNight = try #require(calendar.date(
+        bySettingHour: 23,
+        minute: 0,
+        second: 0,
+        of: Date()
+    ))
+    let task = TaskItem(
+        title: "Late work",
+        isCompleted: true,
+        lastModified: lateNight
+    )
+
+    let summary = BehaviorAnalyzer().generateSummary(tasks: [task], focusSessions: [])
+
+    #expect(summary.preferredWorkHours.start == 23)
+    #expect(summary.preferredWorkHours.end == 24)
+}
+
 @Test func testBehaviorAnalyzerTopCategories() async throws {
     let analyzer = BehaviorAnalyzer()
     let tasks = [

@@ -87,24 +87,6 @@ struct EventCardView: View {
     }
 }
 
-
-
-// MARK: - Event Detail Formatters
-
-private enum EventDetailFormatters {
-    static let time: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "h:mm a"
-        return formatter
-    }()
-
-    static let date: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEEE, MMM d"
-        return formatter
-    }()
-}
-
 // MARK: - Event Detail Modal
 
 public struct EventDetailModal: View {
@@ -213,7 +195,7 @@ public struct EventDetailModal: View {
                     EventDetailCard {
                         VStack(spacing: 0) {
                             EventDetailRow(icon: "calendar.badge.clock", showPencil: true, onPencilTap: { showEditSheet = true }) {
-                                Text("\(EventDetailFormatters.date.string(from: event.startTime)) · \(EventDetailFormatters.time.string(from: event.startTime))-\(EventDetailFormatters.time.string(from: event.endTime)) · \(event.durationText)")
+                                Text("\(AppDateFormatters.eventDetailDate.string(from: event.startTime)) · \(AppDateFormatters.time.string(from: event.startTime))-\(AppDateFormatters.time.string(from: event.endTime)) · \(event.durationText)")
                                     .font(.system(size: 14))
                                     .foregroundStyle(theme.colors.primaryText)
                             }

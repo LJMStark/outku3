@@ -29,7 +29,50 @@ struct GoogleCalendarAccessLevelTests {
 struct CalendarEventMappingTests {
     @Test("Google events preserve source calendar ID for later writes")
     func googleEventMappingKeepsCalendarId() throws {
-        let googleEvent = GoogleCalendarEvent(
+        let googleEvent = makeGoogleCalendarEvent()
+
+        let event = try #require(
+            CalendarEvent.from(googleEvent: googleEvent, googleCalendarId: "team-calendar")
+        )
+
+        #expect(event.googleEventId == "evt-123")
+        #expect(event.googleCalendarId == "team-calendar")
+    }
+
+    @Test("Same Google event ID in different calendars gets distinct local IDs")
+    func duplicateRemoteIdsAcrossCalendarsStayDistinct() throws {
+        let googleEvent = makeGoogleCalendarEvent()
+
+        let teamEvent = try #require(
+            CalendarEvent.from(googleEvent: googleEvent, googleCalendarId: "team-calendar")
+        )
+        let personalEvent = try #require(
+            CalendarEvent.from(googleEvent: googleEvent, googleCalendarId: "personal-calendar")
+        )
+
+        #expect(teamEvent.id != personalEvent.id)
+        #expect(teamEvent.googleEventId == googleEvent.id)
+        #expect(personalEvent.googleEventId == googleEvent.id)
+        #expect(teamEvent.googleCalendarId == "team-calendar")
+        #expect(personalEvent.googleCalendarId == "personal-calendar")
+    }
+
+    @Test("Same Google event in the same calendar keeps a stable local ID")
+    func sameRemoteEventKeepsStableLocalId() throws {
+        let googleEvent = makeGoogleCalendarEvent()
+
+        let first = try #require(
+            CalendarEvent.from(googleEvent: googleEvent, googleCalendarId: "team-calendar")
+        )
+        let second = try #require(
+            CalendarEvent.from(googleEvent: googleEvent, googleCalendarId: "team-calendar")
+        )
+
+        #expect(first.id == second.id)
+    }
+
+    private func makeGoogleCalendarEvent() -> GoogleCalendarEvent {
+        GoogleCalendarEvent(
             id: "evt-123",
             summary: "Planning",
             description: "Roadmap review",
@@ -49,13 +92,6 @@ struct CalendarEventMappingTests {
             updated: "2026-04-07T08:00:00Z",
             etag: "\"etag-1\""
         )
-
-        let event = try #require(
-            CalendarEvent.from(googleEvent: googleEvent, googleCalendarId: "team-calendar")
-        )
-
-        #expect(event.googleEventId == "evt-123")
-        #expect(event.googleCalendarId == "team-calendar")
     }
 }
 

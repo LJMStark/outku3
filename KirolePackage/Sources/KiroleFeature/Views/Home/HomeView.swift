@@ -48,6 +48,13 @@ public struct HomeView: View {
         return "\(activeSession?.taskId ?? "")||\(activeSession?.taskTitle ?? "")||\(taskSignature)"
     }
 
+    private var companionRefreshKey: HomeCompanionRefreshKey {
+        HomeCompanionRefreshKey(
+            isSceneActive: scenePhase == .active,
+            taskState: companionTaskRefreshKey
+        )
+    }
+
     public var body: some View {
         ScrollViewReader { proxy in
             ZStack(alignment: .bottomTrailing) {
@@ -123,7 +130,7 @@ public struct HomeView: View {
                     .padding(.trailing, 24)
                     .padding(.bottom, 24)
                     .accessibilityLabel("Back to top")
-                    .accessibilityIdentifier("Home_ScrollToTop")
+                    .accessibilityIdentifier("home.scrollToTopButton")
                     .accessibilityHint("Scroll back to the top of the timeline")
                     .transition(.scale.combined(with: .opacity))
                     .zIndex(2)
@@ -141,15 +148,9 @@ public struct HomeView: View {
             } // ZStack
             .background(theme.colors.background)
         } // ScrollViewReader
-        .task(id: scenePhase) {
+        .task(id: companionRefreshKey) {
             guard scenePhase == .active else { return }
             await refreshVisibleHomeCompanion()
-        }
-        .onChange(of: companionTaskRefreshKey) { _, _ in
-            Task {
-                await appState.refreshSharedPetDialogueIfNeeded()
-                await appState.refreshHomeCompanionPresentation()
-            }
         }
         .task {
             guard !appState.hasCompletedInitialHomeLoad else {
@@ -256,6 +257,11 @@ public struct HomeView: View {
 }
 
 // MARK: - Visible Date Tracking
+
+private struct HomeCompanionRefreshKey: Equatable {
+    let isSceneActive: Bool
+    let taskState: String
+}
 
 private struct VisibleDateItem: Equatable {
     let date: Date

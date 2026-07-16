@@ -26,31 +26,34 @@ struct TimezoneObserverTests {
 
     @Test("given TimezoneObserver, stopObserving after no start is safe")
     func givenNoStartObserving_stopObservingIsSafe() {
-        // stopObserving before startObserving should not crash
         TimezoneObserver.shared.stopObserving()
-        #expect(true) // reached without crash
     }
 
     @Test("given TimezoneObserver started twice, second start is no-op")
-    func givenStartedTwice_secondStartIsIdempotent() {
+    func givenStartedTwice_secondStartIsIdempotent() async {
+        defer { TimezoneObserver.shared.stopObserving() }
         var callCount = 0
         TimezoneObserver.shared.startObserving { _ in callCount += 1 }
         TimezoneObserver.shared.startObserving { _ in callCount += 100 }
 
-        // Fire the notification manually
         NotificationCenter.default.post(name: .NSSystemTimeZoneDidChange, object: nil)
-        // callCount will be checked asynchronously — here we just verify no crash
-        // and clean up
-        TimezoneObserver.shared.stopObserving()
-        #expect(true) // reached without crash
+        await Task.yield()
+
+        #expect(callCount == 1)
     }
 
     @Test("given TimezoneObserver stopped, re-start registers new callback")
-    func givenStopped_reStartRegistersCallback() {
+    func givenStopped_reStartRegistersCallback() async {
         TimezoneObserver.shared.stopObserving()
-        var fired = false
-        TimezoneObserver.shared.startObserving { _ in fired = true }
+        var callCount = 0
+        TimezoneObserver.shared.startObserving { _ in callCount += 1 }
         TimezoneObserver.shared.stopObserving()
-        #expect(!fired) // not fired yet — this just validates the lifecycle
+        TimezoneObserver.shared.startObserving { _ in callCount += 10 }
+        defer { TimezoneObserver.shared.stopObserving() }
+
+        NotificationCenter.default.post(name: .NSSystemTimeZoneDidChange, object: nil)
+        await Task.yield()
+
+        #expect(callCount == 10)
     }
 }

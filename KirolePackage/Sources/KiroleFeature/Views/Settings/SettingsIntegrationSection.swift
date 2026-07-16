@@ -88,13 +88,6 @@ public struct SettingsIntegrationSection: View {
                 Text("Are you sure you want to disconnect \(target.rawValue)?")
             }
         }
-        .task {
-            syncGoogleConnectionStatus()
-        }
-    }
-
-    private func syncGoogleConnectionStatus() {
-        appState.syncIntegrationStatusFromAuth()
     }
 
     private var emptyStateView: some View {
@@ -321,11 +314,6 @@ public struct SettingsIntegrationSection: View {
         }
     }
 
-    private func needsGoogleSignIn(for type: IntegrationType) -> Bool {
-        guard authManager.isGoogleConnected else { return true }
-        return !hasGoogleAccess(for: type)
-    }
-
     private func hasGoogleAccess(for type: IntegrationType) -> Bool {
         switch type {
         case .googleCalendar:
@@ -493,17 +481,14 @@ private struct ConnectedAppRow: View {
         )
     }
 
-    // 产品全英文：固定 en_US，避免中文地区设备输出中文相对时间。
-    private static let syncedFormatter: RelativeDateTimeFormatter = {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.locale = Locale(identifier: "en_US")
-        formatter.unitsStyle = .abbreviated
-        return formatter
-    }()
-
     private var lastSyncedText: String {
         guard let lastSyncedAt else { return "Not synced yet" }
-        return "Synced \(Self.syncedFormatter.localizedString(for: lastSyncedAt, relativeTo: Date()))"
+        let relativeTime = AppDateFormatters.relativeTimeText(
+            for: lastSyncedAt,
+            relativeTo: Date(),
+            unitsStyle: .abbreviated
+        )
+        return "Synced \(relativeTime)"
     }
 
     private var usernameDisplay: String {

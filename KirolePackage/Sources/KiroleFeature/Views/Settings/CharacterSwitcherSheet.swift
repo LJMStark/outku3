@@ -227,9 +227,9 @@ private struct CharacterCard: View {
 
     private var characterEmoji: String {
         switch character {
-        case .joy: return "🌿"
-        case .silas: return "🌙"
-        case .nova: return "⚡"
+        case .joy: return "\u{1F33F}"
+        case .silas: return "\u{1F319}"
+        case .nova: return "\u{26A1}"
         }
     }
 

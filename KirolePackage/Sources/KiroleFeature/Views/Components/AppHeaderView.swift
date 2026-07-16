@@ -72,9 +72,11 @@ public struct AppHeaderView: View {
                     .minimumScaleFactor(0.82)
 
                 HStack(spacing: 10) {
-                    Text(formattedTime)
-                        .font(.system(size: 14))
-                        .foregroundStyle(.white.opacity(0.9))
+                    TimelineView(.periodic(from: .now, by: 60)) { context in
+                        Text(AppDateFormatters.headerTimeText(for: context.date))
+                            .font(.system(size: 14))
+                            .foregroundStyle(.white.opacity(0.9))
+                    }
 
                     if appState.weather.hasData {
                         HStack(spacing: 4) {
@@ -162,16 +164,9 @@ public struct AppHeaderView: View {
     }
 
     private var formattedDate: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEE, MMM dd"
-        return formatter.string(from: appState.selectedDate)
+        AppDateFormatters.headerDate.string(from: appState.selectedDate)
     }
 
-    private var formattedTime: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "h:mma"
-        return formatter.string(from: Date()).lowercased() + " (GMT)"
-    }
 }
 
 // MARK: - Tab Button
