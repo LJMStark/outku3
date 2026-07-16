@@ -53,17 +53,21 @@ struct FocusSessionPersistenceTests {
     @Test("Ending focus session keeps completed session in memory and updates summary")
     @MainActor
     func endingSessionUpdatesInMemoryState() async {
-        let service = FocusSessionService.shared
-        let baseline = service.todaySessions.count
+        // 与 BLEServiceManualDisconnectTests 共用真单例：必须同拿一把锁，
+        // 否则套件间并行互相收割对方的 activeSession（.serialized 不跨 suite）。
+        await SharedPersistenceTestLock.shared.withLock {
+            let service = FocusSessionService.shared
+            let baseline = service.todaySessions.count
 
-        await service.startSession(taskId: "focus-test-\(UUID().uuidString)", taskTitle: "Focus Test Task")
-        service.endSession(reason: .completed)
+            await service.startSession(taskId: "focus-test-\(UUID().uuidString)", taskTitle: "Focus Test Task")
+            service.endSession(reason: .completed)
 
-        #expect(service.activeSession == nil)
-        #expect(service.todaySessions.count >= baseline + 1)
+            #expect(service.activeSession == nil)
+            #expect(service.todaySessions.count >= baseline + 1)
 
-        let summary = service.generateAttentionSummary()
-        #expect(summary.sessionCount >= baseline + 1)
+            let summary = service.generateAttentionSummary()
+            #expect(summary.sessionCount >= baseline + 1)
+        }
     }
 }
 
