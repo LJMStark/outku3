@@ -55,4 +55,25 @@ public enum BLEConnectionPolicy {
     ) -> Bool {
         keepAliveEnabled || wifiDebugRequiresConnection
     }
+
+    /// 迟到 delegate 回调的准入判定（代次门 + 外设身份，两道都过才处理）。
+    ///
+    /// CoreBluetooth 回调不携带"属于哪次连接尝试"的标记，只能间接判归属：
+    /// ① **代次**：投递时快照的 `connectGeneration` 与执行时不一致 ⇒ 投递后新尝试已从
+    ///    idle 起步——旧世界的收尾必然已由"把状态送回 idle"的那条路径做完，整个回调跳过
+    ///    （对 `didDisconnect` 意味着连 cleanup 与自动重连一起跳：新尝试在飞，旧 cleanup
+    ///    会清掉它的状态，旧重连会和它打架）。
+    /// ② **身份**：回调外设 ≠ 当前跟踪外设 ⇒ 必属残留连接——这条在"投递本身已晚于换代、
+    ///    代次检查失明"的场景仍然有效。`trackedPeripheralID == nil`（cleanup 已跑完）时
+    ///    同样拒绝。同一外设的晚投递回调原理上不可分辨，为已接受的 API 边界。
+    public static func shouldProcessCallback(
+        generationAtDelivery: UInt64,
+        currentGeneration: UInt64,
+        callbackPeripheralID: UUID?,
+        trackedPeripheralID: UUID?
+    ) -> Bool {
+        generationAtDelivery == currentGeneration
+            && callbackPeripheralID != nil
+            && callbackPeripheralID == trackedPeripheralID
+    }
 }

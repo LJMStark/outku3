@@ -942,6 +942,16 @@ public final class BLEService: NSObject {
         connectedDevice = nil
         connectionState = .disconnected
     }
+
+    /// delegate 回调准入：代次门 + 外设身份，判定逻辑见 `BLEConnectionPolicy.shouldProcessCallback`。
+    private func shouldProcessCallback(generationAtDelivery: UInt64, peripheralID: UUID) -> Bool {
+        BLEConnectionPolicy.shouldProcessCallback(
+            generationAtDelivery: generationAtDelivery,
+            currentGeneration: connectGeneration,
+            callbackPeripheralID: peripheralID,
+            trackedPeripheralID: connectedPeripheral?.identifier
+        )
+    }
 }
 
 // MARK: - CBCentralManagerDelegate
@@ -1004,11 +1014,11 @@ extension BLEService: CBCentralManagerDelegate {
 
     nonisolated public func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
         // manager 建于 queue: .main（initialize），delegate 回调必在主线程，assumeIsolated 安全。
-        // 快照代次：回调投递→Task 执行之间若新连接尝试已开始（代次已换），旧回调必须作废，
-        // 否则它会推进已死尝试的服务发现/完成链，误触当前尝试的 connectCompletion。
+        // 准入 = 代次门（杀"投递→Task 执行"间换代的旧回调）+ 外设身份（杀换代后才投递的
+        // 跨外设残留回调）；同一外设的晚投递回调原理上不可分辨，见 BLEConnectionPolicy。
         let generation = MainActor.assumeIsolated { self.connectGeneration }
         Task { @MainActor in
-            guard self.connectGeneration == generation else { return }
+            guard shouldProcessCallback(generationAtDelivery: generation, peripheralID: peripheral.identifier) else { return }
             connectedPeripheral = peripheral
             peripheral.delegate = self
             peripheral.discoverServices([KiroleBLEUUIDs.serviceUUID])
@@ -1023,7 +1033,7 @@ extension BLEService: CBCentralManagerDelegate {
         let generation = MainActor.assumeIsolated { self.connectGeneration }
         Task { @MainActor in
             // 迟到的失败回调被丢时状态留在 .disconnected（同为 idle，不锁新连接），仅损失错误文案。
-            guard self.connectGeneration == generation else { return }
+            guard shouldProcessCallback(generationAtDelivery: generation, peripheralID: peripheral.identifier) else { return }
             connectionState = .error(error?.localizedDescription ?? "Connection failed")
             connectCompletion?(.failure(.connectionFailed(error)))
             connectCompletion = nil
@@ -1035,7 +1045,13 @@ extension BLEService: CBCentralManagerDelegate {
         didDisconnectPeripheral peripheral: CBPeripheral,
         error: Error?
     ) {
+        let generation = MainActor.assumeIsolated { self.connectGeneration }
         Task { @MainActor in
+            // 旧连接的迟到断连事件不得清理新尝试：代次已换 ⇒ 新尝试从 idle 起步，旧世界的
+            // 收尾已由"把状态送回 idle"的那条路径做完，此处 cleanup 只会误清新尝试的状态、
+            // 错误完成它的 connectCompletion，自动重连也会与在飞的新尝试打架——整体跳过。
+            // 身份不符（含 cleanup 已跑完、connectedPeripheral 已空）同理。
+            guard shouldProcessCallback(generationAtDelivery: generation, peripheralID: peripheral.identifier) else { return }
             // 设备断开时结束活跃的专注会话
             FocusSessionService.shared.handleDeviceDisconnected()
 
@@ -1075,7 +1091,7 @@ extension BLEService: CBPeripheralDelegate {
         let generation = MainActor.assumeIsolated { self.connectGeneration }
 
         Task { @MainActor in
-            guard self.connectGeneration == generation else { return }
+            guard shouldProcessCallback(generationAtDelivery: generation, peripheralID: peripheral.identifier) else { return }
             guard error == nil,
                   let service = services?.first(where: { $0.uuid == KiroleBLEUUIDs.serviceUUID }) else {
                 connectCompletion?(.failure(.serviceNotFound))
@@ -1101,7 +1117,7 @@ extension BLEService: CBPeripheralDelegate {
         let generation = MainActor.assumeIsolated { self.connectGeneration }
 
         Task { @MainActor in
-            guard self.connectGeneration == generation else { return }
+            guard shouldProcessCallback(generationAtDelivery: generation, peripheralID: peripheralID) else { return }
             guard error == nil, let chars = characteristics else {
                 connectCompletion?(.failure(.characteristicNotFound))
                 connectCompletion = nil
@@ -1121,8 +1137,8 @@ extension BLEService: CBPeripheralDelegate {
                 pendingConnectedPeripheralID = peripheralID
                 pendingConnectedPeripheralName = peripheralName ?? "Kirole Device"
                 Task { @MainActor in
-                    // 内层 Task 有独立调度跳变，代次需再验一次。
-                    guard self.connectGeneration == generation else { return }
+                    // 内层 Task 有独立调度跳变，准入需再验一次。
+                    guard self.shouldProcessCallback(generationAtDelivery: generation, peripheralID: peripheralID) else { return }
                     if self.requiresSecureChannel {
                         await self.startSecurityHandshake(peripheral: peripheral)
                     } else {
@@ -1171,8 +1187,9 @@ extension BLEService: CBPeripheralDelegate {
         let generation = MainActor.assumeIsolated { self.connectGeneration }
 
         Task { @MainActor in
-            // 代次在连接内恒定，稳态通知不受影响；只丢"新尝试已开始后才轮到执行"的旧连接残包。
-            guard self.connectGeneration == generation else { return }
+            // 代次在连接内恒定，稳态通知不受影响；只丢"新尝试已开始后才轮到执行"的旧连接残包
+            // 与非当前跟踪外设的残留通知。
+            guard shouldProcessCallback(generationAtDelivery: generation, peripheralID: peripheral.identifier) else { return }
             // notify 层错误（ATT error / 加密失败 / 断连时 pending value 清空）原先被静默丢弃，
             // 硬件团队看来像 App 完全没收到。拆分 guard 单独上报，区分链路层错误与解析失败。
             if let error {
