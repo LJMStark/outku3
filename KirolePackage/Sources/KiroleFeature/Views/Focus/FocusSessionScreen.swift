@@ -157,19 +157,21 @@ public struct FocusSessionScreen: View {
             )
             .accessibilityIdentifier("focus.pill.mode")
 
-            if session.mode == .deepFocus {
-                let isShielded = session.protectionState == .protected
-                pill(
-                    text: isShielded ? "Apps Locked" : "Apps Unlocked",
-                    icon: isShielded ? "lock.fill" : "lock.open",
-                    emphasized: isShielded
-                )
-                .accessibilityLabel(
-                    isShielded
-                    ? "Distracting apps are locked"
-                    : "Distracting apps are not locked"
-                )
-                .accessibilityIdentifier("focus.pill.shield")
+            // shield pill 由 protectionState 驱动，不包在 mode == .deepFocus 里：
+            // 所有保护失败路径（撤销/启动恢复/上盾失败）都会把 mode 降为 .standard，
+            // "mode==.deepFocus 且非 protected" 组合不存在（联审 2026-07-16 F9）。
+            // 活跃会话仅三种组合：standard+unprotected / deepFocus+protected / standard+fallback。
+            switch session.protectionState {
+            case .protected:
+                pill(text: "Apps Locked", icon: "lock.fill", emphasized: true)
+                    .accessibilityLabel("Distracting apps are locked")
+                    .accessibilityIdentifier("focus.pill.shield")
+            case .fallback:
+                pill(text: "Protection Off", icon: "lock.open", emphasized: false)
+                    .accessibilityLabel("Deep Focus protection is off for this session")
+                    .accessibilityIdentifier("focus.pill.shield")
+            case .unprotected:
+                EmptyView()
             }
         }
     }
