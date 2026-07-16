@@ -49,7 +49,14 @@ final class KeyedSerialTaskQueue<Key: Hashable & Sendable> {
             self?.removeTail(for: key, matching: entryID)
         }
         tails[key] = Entry(id: entryID, task: tailTask)
-        return try await resultTask.value
+        // Task.value 不会把等待方的取消传给被等任务；不转发的话，调用方被取消后
+        // 操作照常执行、结果无人认领。转发后：未起跑的操作被 checkCancellation 拦下，
+        // 已起跑的操作可自行观察 Task.isCancelled（后继操作不受影响，尾任务仍保序）。
+        return try await withTaskCancellationHandler {
+            try await resultTask.value
+        } onCancel: {
+            resultTask.cancel()
+        }
     }
 
     private func removeTail(for key: Key, matching entryID: UUID) {

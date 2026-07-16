@@ -118,4 +118,44 @@ struct KeyedSerialTaskQueueTests {
         let value = try await queue.run(for: "cred") { "second" }
         #expect(value == "second")
     }
+
+    @Test("Cancelling a queued run's caller skips the operation and frees the queue")
+    func cancellingCallerSkipsQueuedOperationAndFreesQueue() async throws {
+        let queue = KeyedSerialTaskQueue<String>()
+        let recorder = SerialQueueRecorder()
+        let gate = SerialQueueGate()
+
+        let first = Task { @MainActor in
+            try await queue.run(for: "cred") { () async throws -> String in
+                await recorder.append("first-start")
+                await gate.wait()
+                return "first"
+            }
+        }
+        for _ in 0..<100 {
+            if !(await recorder.snapshot()).isEmpty { break }
+            await Task.yield()
+        }
+
+        // 第二个操作排在被 gate 卡住的首个后面、尚未起跑时取消其调用方。
+        let second = Task { @MainActor in
+            try await queue.run(for: "cred") { () async throws -> String in
+                await recorder.append("second")
+                return "second"
+            }
+        }
+        for _ in 0..<20 { await Task.yield() }
+        second.cancel()
+
+        await gate.open()
+        #expect(try await first.value == "first")
+        await #expect(throws: CancellationError.self) {
+            try await second.value
+        }
+
+        // 被取消的操作从未执行，且不阻塞同 key 后续操作。
+        let third = try await queue.run(for: "cred") { "third" }
+        #expect(third == "third")
+        #expect(await recorder.snapshot() == ["first-start"])
+    }
 }

@@ -73,10 +73,14 @@ public final class GoogleSignInService {
 
     /// 执行 Google Sign In
     public func signIn() async throws -> GoogleSignInResult {
-        try await credentialOperationQueue.run(for: Self.credentialQueueKey) {
-            // 快照在排到队首后才取：排队期间落地的 signOut/disconnect 会 block gate，
-            // 轮到执行时这里正确抛 notSignedIn，而不是带着过期代次进 SDK。
-            let generation = try self.credentialOperationSnapshot()
+        // 快照在调用点（入队前）取；闭包内用 accepts 复检。排队期间落地的 signOut
+        // 只换代不 block——若在队首才取快照会拿到新代次继续登录，违背"signOut 作废
+        // 未决凭证操作"；disconnect（block）两种取法都能拒，此取法对两者都正确。
+        let generation = try credentialOperationSnapshot()
+        return try await credentialOperationQueue.run(for: Self.credentialQueueKey) {
+            guard self.credentialGate.accepts(generation) else {
+                throw GoogleSignInError.notSignedIn
+            }
             guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
                   let rootViewController = windowScene.windows.first?.rootViewController else {
                 throw GoogleSignInError.noRootViewController
@@ -101,8 +105,11 @@ public final class GoogleSignInService {
 
     /// 恢复之前的登录状态
     public func restorePreviousSignIn() async throws -> GoogleSignInResult? {
-        try await credentialOperationQueue.run(for: Self.credentialQueueKey) { () async throws -> GoogleSignInResult? in
-            let generation = try self.credentialOperationSnapshot()
+        let generation = try credentialOperationSnapshot()
+        return try await credentialOperationQueue.run(for: Self.credentialQueueKey) { () async throws -> GoogleSignInResult? in
+            guard self.credentialGate.accepts(generation) else {
+                throw GoogleSignInError.notSignedIn
+            }
             do {
                 let user = try await GIDSignIn.sharedInstance.restorePreviousSignIn()
                 try self.validateCredentialResult(generation, user: user)
@@ -187,8 +194,11 @@ public final class GoogleSignInService {
 
     /// 请求额外的权限
     public func requestAdditionalScopes() async throws -> GoogleSignInResult {
-        try await credentialOperationQueue.run(for: Self.credentialQueueKey) {
-            let generation = try self.credentialOperationSnapshot()
+        let generation = try credentialOperationSnapshot()
+        return try await credentialOperationQueue.run(for: Self.credentialQueueKey) {
+            guard self.credentialGate.accepts(generation) else {
+                throw GoogleSignInError.notSignedIn
+            }
             guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
                   let rootViewController = windowScene.windows.first?.rootViewController,
                   let currentUser = GIDSignIn.sharedInstance.currentUser else {
