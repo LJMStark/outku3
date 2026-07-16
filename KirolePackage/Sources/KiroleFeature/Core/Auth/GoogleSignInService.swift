@@ -42,6 +42,11 @@ public final class GoogleSignInService {
     private var disconnectTask: Task<Void, Never>?
     private var disconnectTaskID: UUID?
     private var credentialGate = GoogleCredentialOperationGate()
+    /// signIn / restore / addScopes 互斥。gate 只能事后作废陈旧结果，挡不住同代次
+    /// 并发进 SDK（启动 restore 撞上用户点登录 → 双认证 UI / token 互踩），
+    /// 同 key 串行队列补上互斥。refresh 有自己的共享任务去重，不走此队列。
+    private let credentialOperationQueue = KeyedSerialTaskQueue<String>()
+    private static let credentialQueueKey = "google-credential-operation"
 
     // Google API Scopes
     // calendarReadOnly 是 calendarList 端点（多日历同步）所需——events scope 不覆盖它，
@@ -68,38 +73,44 @@ public final class GoogleSignInService {
 
     /// 执行 Google Sign In
     public func signIn() async throws -> GoogleSignInResult {
-        let generation = try credentialOperationSnapshot()
-        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-              let rootViewController = windowScene.windows.first?.rootViewController else {
-            throw GoogleSignInError.noRootViewController
+        try await credentialOperationQueue.run(for: Self.credentialQueueKey) {
+            // 快照在排到队首后才取：排队期间落地的 signOut/disconnect 会 block gate，
+            // 轮到执行时这里正确抛 notSignedIn，而不是带着过期代次进 SDK。
+            let generation = try self.credentialOperationSnapshot()
+            guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                  let rootViewController = windowScene.windows.first?.rootViewController else {
+                throw GoogleSignInError.noRootViewController
+            }
+
+            // 请求额外的 scopes
+            let result = try await GIDSignIn.sharedInstance.signIn(
+                withPresenting: rootViewController,
+                hint: nil,
+                additionalScopes: self.scopes
+            )
+
+            let user = result.user
+            try self.validateCredentialResult(generation, user: user)
+            try self.persistTokensIfAvailable(for: user)
+            self.persistScopesIfAvailable(user.grantedScopes ?? [])
+            return self.makeSignInResult(from: user)
         }
-
-        // 请求额外的 scopes
-        let result = try await GIDSignIn.sharedInstance.signIn(
-            withPresenting: rootViewController,
-            hint: nil,
-            additionalScopes: scopes
-        )
-
-        let user = result.user
-        try validateCredentialResult(generation, user: user)
-        try persistTokensIfAvailable(for: user)
-        persistScopesIfAvailable(user.grantedScopes ?? [])
-        return makeSignInResult(from: user)
     }
 
     // MARK: - Restore Previous Sign In
 
     /// 恢复之前的登录状态
     public func restorePreviousSignIn() async throws -> GoogleSignInResult? {
-        let generation = try credentialOperationSnapshot()
-        do {
-            let user = try await GIDSignIn.sharedInstance.restorePreviousSignIn()
-            try validateCredentialResult(generation, user: user)
-            return makeSignInResult(from: user)
-        } catch {
-            guard Self.isMissingPreviousSignInError(error) else { throw error }
-            return nil
+        try await credentialOperationQueue.run(for: Self.credentialQueueKey) { () async throws -> GoogleSignInResult? in
+            let generation = try self.credentialOperationSnapshot()
+            do {
+                let user = try await GIDSignIn.sharedInstance.restorePreviousSignIn()
+                try self.validateCredentialResult(generation, user: user)
+                return self.makeSignInResult(from: user)
+            } catch {
+                guard Self.isMissingPreviousSignInError(error) else { throw error }
+                return nil
+            }
         }
     }
 
@@ -176,19 +187,21 @@ public final class GoogleSignInService {
 
     /// 请求额外的权限
     public func requestAdditionalScopes() async throws -> GoogleSignInResult {
-        let generation = try credentialOperationSnapshot()
-        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-              let rootViewController = windowScene.windows.first?.rootViewController,
-              let currentUser = GIDSignIn.sharedInstance.currentUser else {
-            throw GoogleSignInError.notSignedIn
-        }
+        try await credentialOperationQueue.run(for: Self.credentialQueueKey) {
+            let generation = try self.credentialOperationSnapshot()
+            guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                  let rootViewController = windowScene.windows.first?.rootViewController,
+                  let currentUser = GIDSignIn.sharedInstance.currentUser else {
+                throw GoogleSignInError.notSignedIn
+            }
 
-        let result = try await currentUser.addScopes(scopes, presenting: rootViewController)
-        let user = result.user
-        try validateCredentialResult(generation, user: user)
-        try persistTokensIfAvailable(for: user)
-        persistScopesIfAvailable(user.grantedScopes ?? [])
-        return makeSignInResult(from: user)
+            let result = try await currentUser.addScopes(self.scopes, presenting: rootViewController)
+            let user = result.user
+            try self.validateCredentialResult(generation, user: user)
+            try self.persistTokensIfAvailable(for: user)
+            self.persistScopesIfAvailable(user.grantedScopes ?? [])
+            return self.makeSignInResult(from: user)
+        }
     }
 
     // MARK: - Sign Out

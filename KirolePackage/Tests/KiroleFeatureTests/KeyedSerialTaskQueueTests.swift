@@ -62,4 +62,60 @@ struct KeyedSerialTaskQueueTests {
 
         #expect(await recorder.snapshot() == ["first-start", "first-end", "second"])
     }
+
+    @Test("run serializes the same key and returns each operation's value")
+    func runSerializesSameKeyAndReturnsValue() async throws {
+        let queue = KeyedSerialTaskQueue<String>()
+        let recorder = SerialQueueRecorder()
+        let gate = SerialQueueGate()
+
+        let first = Task { @MainActor in
+            try await queue.run(for: "cred") { () async throws -> String in
+                await recorder.append("first-start")
+                await gate.wait()
+                await recorder.append("first-end")
+                return "first"
+            }
+        }
+
+        // 等首个操作确定已注册并卡在 gate 上，再提交第二个，保证提交顺序确定。
+        for _ in 0..<100 {
+            if !(await recorder.snapshot()).isEmpty { break }
+            await Task.yield()
+        }
+        #expect(await recorder.snapshot() == ["first-start"])
+
+        let second = Task { @MainActor in
+            try await queue.run(for: "cred") { () async throws -> String in
+                await recorder.append("second")
+                return "second"
+            }
+        }
+
+        // 首个仍被 gate 卡住时，第二个不得进入执行——这是互斥语义本身。
+        for _ in 0..<20 {
+            await Task.yield()
+        }
+        #expect(await recorder.snapshot() == ["first-start"])
+
+        await gate.open()
+        #expect(try await first.value == "first")
+        #expect(try await second.value == "second")
+        #expect(await recorder.snapshot() == ["first-start", "first-end", "second"])
+    }
+
+    @Test("A throwing run does not block the next operation on the same key")
+    func throwingRunDoesNotBlockNextOperation() async throws {
+        let queue = KeyedSerialTaskQueue<String>()
+        struct TestFailure: Error {}
+
+        await #expect(throws: TestFailure.self) {
+            try await queue.run(for: "cred") { () async throws -> String in
+                throw TestFailure()
+            }
+        }
+
+        let value = try await queue.run(for: "cred") { "second" }
+        #expect(value == "second")
+    }
 }
