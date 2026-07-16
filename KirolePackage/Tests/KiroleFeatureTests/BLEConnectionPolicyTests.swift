@@ -70,6 +70,59 @@ struct BLEConnectionPolicyTests {
             wifiDebugRequiresConnection: false
         ))
     }
+
+    // MARK: - shouldProcessCallback（迟到 delegate 回调准入：代次门 + 外设身份）
+
+    @Test("given same generation and matching peripheral, when callback arrives, then processed")
+    func givenCurrentCallback_whenShouldProcess_thenAllowed() {
+        let device = UUID()
+
+        #expect(BLEConnectionPolicy.shouldProcessCallback(
+            generationAtDelivery: 7,
+            currentGeneration: 7,
+            callbackPeripheralID: device,
+            trackedPeripheralID: device
+        ))
+    }
+
+    @Test("given generation changed between delivery and execution, when callback arrives, then dropped")
+    func givenStaleGeneration_whenShouldProcess_thenDropped() {
+        // 投递→Task 执行之间新尝试已起步：旧回调若放行会推进已死尝试的发现/完成链，
+        // didDisconnect 场景还会误清新尝试状态、错误完成单槽 connectCompletion。
+        let device = UUID()
+
+        #expect(!BLEConnectionPolicy.shouldProcessCallback(
+            generationAtDelivery: 7,
+            currentGeneration: 8,
+            callbackPeripheralID: device,
+            trackedPeripheralID: device
+        ))
+    }
+
+    @Test("given callback from a peripheral no longer tracked, when callback arrives, then dropped")
+    func givenForeignPeripheral_whenShouldProcess_thenDropped() {
+        // 身份门在"投递本身已晚于换代、代次检查失明"的场景仍然有效：
+        // 残留外设的回调与当前跟踪外设不同，一律拒绝。
+        #expect(!BLEConnectionPolicy.shouldProcessCallback(
+            generationAtDelivery: 8,
+            currentGeneration: 8,
+            callbackPeripheralID: UUID(),
+            trackedPeripheralID: UUID()
+        ))
+    }
+
+    @Test("given cleanup already cleared the tracked peripheral, when callback arrives, then dropped")
+    func givenNoTrackedPeripheral_whenShouldProcess_thenDropped() {
+        // cleanup 跑完（connectedPeripheral=nil）后到达的迟到回调无归属，跳过。
+        // 注意：主动断连的业务副作用（结束专注）因此必须在 disconnect() 意图点触发，
+        // 见 BLEServiceManualDisconnectTests。
+        #expect(!BLEConnectionPolicy.shouldProcessCallback(
+            generationAtDelivery: 8,
+            currentGeneration: 8,
+            callbackPeripheralID: UUID(),
+            trackedPeripheralID: nil
+        ))
+    }
 }
 
 // MARK: - BLERateLimiter sync throttle
@@ -186,56 +239,5 @@ struct BLERateLimiterFocusRefreshThrottleTests {
         let focus = await limiter.allowFocusRefreshTrigger()
 
         #expect(focus == true)
-    }
-
-    // MARK: - shouldProcessCallback（迟到 delegate 回调准入：代次门 + 外设身份）
-
-    @Test("given same generation and matching peripheral, when callback arrives, then processed")
-    func givenCurrentCallback_whenShouldProcess_thenAllowed() {
-        let device = UUID()
-
-        #expect(BLEConnectionPolicy.shouldProcessCallback(
-            generationAtDelivery: 7,
-            currentGeneration: 7,
-            callbackPeripheralID: device,
-            trackedPeripheralID: device
-        ))
-    }
-
-    @Test("given generation changed between delivery and execution, when callback arrives, then dropped")
-    func givenStaleGeneration_whenShouldProcess_thenDropped() {
-        // 投递→Task 执行之间新尝试已起步：旧回调若放行会推进已死尝试的发现/完成链，
-        // didDisconnect 场景还会误清新尝试状态、错误完成单槽 connectCompletion。
-        let device = UUID()
-
-        #expect(!BLEConnectionPolicy.shouldProcessCallback(
-            generationAtDelivery: 7,
-            currentGeneration: 8,
-            callbackPeripheralID: device,
-            trackedPeripheralID: device
-        ))
-    }
-
-    @Test("given callback from a peripheral no longer tracked, when callback arrives, then dropped")
-    func givenForeignPeripheral_whenShouldProcess_thenDropped() {
-        // 身份门在"投递本身已晚于换代、代次检查失明"的场景仍然有效：
-        // 残留外设的回调与当前跟踪外设不同，一律拒绝。
-        #expect(!BLEConnectionPolicy.shouldProcessCallback(
-            generationAtDelivery: 8,
-            currentGeneration: 8,
-            callbackPeripheralID: UUID(),
-            trackedPeripheralID: UUID()
-        ))
-    }
-
-    @Test("given cleanup already cleared the tracked peripheral, when callback arrives, then dropped")
-    func givenNoTrackedPeripheral_whenShouldProcess_thenDropped() {
-        // cleanup 跑完（connectedPeripheral=nil）后到达的迟到回调无归属，跳过。
-        #expect(!BLEConnectionPolicy.shouldProcessCallback(
-            generationAtDelivery: 8,
-            currentGeneration: 8,
-            callbackPeripheralID: UUID(),
-            trackedPeripheralID: nil
-        ))
     }
 }
