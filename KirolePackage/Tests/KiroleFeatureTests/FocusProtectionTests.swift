@@ -180,4 +180,33 @@ struct FocusProtectionTests {
         #expect(current.taskId == "task-B")
         #expect(current.startTime == Date(timeIntervalSince1970: 2000))
     }
+
+    // MARK: - Manual end (App 内 End Early 按钮，走与硬件结束同一条 endSession 出口)
+
+    @Test("Manual end reason ends the session, clears shield, and settles with .manual")
+    @MainActor
+    func manualEndReasonEndsSessionAndClearsShield() async throws {
+        let guardService = MockFocusGuardService(authorizationStatus: .approved)
+        let service = FocusSessionService.makeForTesting(focusGuardService: guardService, persistenceEnabled: false)
+
+        await service.startSession(taskId: "task-manual", taskTitle: "Manual End Task", mode: .deepFocus,
+                                   startTime: Date(timeIntervalSince1970: 1000))
+        #expect(service.activeSession?.protectionState == .protected)
+
+        service.endSession(reason: .manual, endTime: Date(timeIntervalSince1970: 1600))
+
+        #expect(service.activeSession == nil)
+        #expect(guardService.clearShieldCalls == 1)
+        let settled = try #require(service.todaySessions.last)
+        #expect(settled.endReason == .manual)
+        #expect(settled.endTime == Date(timeIntervalSince1970: 1600))
+    }
+
+    @Test("FocusEndReason.manual survives a Codable round trip")
+    func manualEndReasonCodableRoundTrip() throws {
+        let encoded = try JSONEncoder().encode(FocusEndReason.manual)
+        #expect(String(data: encoded, encoding: .utf8) == "\"manual\"")
+        let decoded = try JSONDecoder().decode(FocusEndReason.self, from: encoded)
+        #expect(decoded == .manual)
+    }
 }

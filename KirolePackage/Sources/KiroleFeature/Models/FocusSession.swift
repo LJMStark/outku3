@@ -153,6 +153,8 @@ public enum FocusEndReason: String, Codable, Sendable {
     case skipped = "skipped"
     /// 会话超时
     case timeout = "timeout"
+    /// 用户在 App 专注页点击 End Early 手动结束
+    case manual = "manual"
     /// 设备断开连接
     case disconnected = "disconnected"
     /// 会话被系统中断
