@@ -8,6 +8,7 @@ import SwiftUI
 public struct FocusSessionScreen: View {
     @Environment(\.focusService) private var focusService
     @Environment(\.themeManager) private var theme
+    @State private var showEndEarlyConfirmation = false
 
     /// 每 30 分钟一个能量瓶（协议 §9 / FocusEnergyCalculator 同一常量）。
     private let bottleBlockSeconds: TimeInterval = 30 * 60
@@ -51,8 +52,10 @@ public struct FocusSessionScreen: View {
 
         GeometryReader { geometry in
             ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: 28) {
-                    Spacer(minLength: 60)
+                // spacing 18 + 顶部 16：四块新增内容后总高度必须收在一屏内，
+                // 否则页面可滚动、宠物图会滚到灵动岛下面被遮挡（2026-07-16 用户反馈）。
+                VStack(spacing: 18) {
+                    Spacer(minLength: 16)
 
                     VStack(spacing: 6) {
                         Text("Focusing")
@@ -66,9 +69,21 @@ public struct FocusSessionScreen: View {
                             .multilineTextAlignment(.center)
                             .lineLimit(2)
                             .padding(.horizontal, 32)
+                        statusPills(session: session)
+                            .padding(.top, 6)
                     }
 
                     FocusPetView(focusMinutes: progress.segmentMinutes)
+
+                    CompanionDialogueView(
+                        FocusCompanionPhrases.phrase(
+                            phase: progress.phase,
+                            elapsedMinutes: progress.elapsedMinutes
+                        ),
+                        color: theme.colors.secondaryText
+                    )
+                    .padding(.horizontal, 32)
+                    .accessibilityIdentifier("focus.companionPhrase")
 
                     Text(timeString(from: progress.elapsedSeconds))
                         .font(.system(size: 44, weight: .bold, design: .rounded))
@@ -91,24 +106,137 @@ public struct FocusSessionScreen: View {
                         }
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(theme.colors.secondaryText)
-                    }
-
-                    if AppBuildEnvironment.showsHardwareDebugTools {
-                        debugControls
-                            .padding(.horizontal, 24)
+                        HStack(spacing: 6) {
+                            Text("Today \(formatFocusTime(todayTotalSeconds(progress: progress)))")
+                            Text("·")
+                            Text("Started \(session.startTime.formatted(date: .omitted, time: .shortened))")
+                        }
+                        .font(.system(size: 13, weight: .regular))
+                        .foregroundStyle(theme.colors.secondaryText)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityIdentifier("focus.todayInfoRow")
                     }
 
                     Spacer()
 
+                    endEarlyButton
+
                     detectionNotice
                         .padding(.horizontal, 24)
-                        .padding(.bottom, 28)
+                        .padding(.bottom, AppBuildEnvironment.showsHardwareDebugTools ? 0 : 28)
+
+                    // Debug 卡放最底：即便折叠到首屏外也只影响调试者，
+                    // 用户内容（宠物→End Early→检测卡）保持一屏内不滚动。
+                    if AppBuildEnvironment.showsHardwareDebugTools {
+                        debugControls
+                            .padding(.horizontal, 24)
+                            .padding(.bottom, 28)
+                    }
                 }
                 .frame(maxWidth: .infinity)
                 .frame(minHeight: geometry.size.height)
             }
             .accessibilityIdentifier("focus.scrollView")
         }
+    }
+
+    // MARK: - Status Pills
+
+    /// Deep Focus / shield 生效状态徽章。数据一直都在（session.mode / protectionState），
+    /// 此前 UI 完全不显示——用户开了 Deep Focus 屏上看不到任何确认。
+    @ViewBuilder
+    private func statusPills(session: FocusSession) -> some View {
+        HStack(spacing: 8) {
+            pill(
+                text: session.mode == .deepFocus ? "Deep Focus" : "Standard",
+                icon: nil,
+                emphasized: session.mode == .deepFocus
+            )
+            .accessibilityLabel(
+                session.mode == .deepFocus ? "Deep Focus mode" : "Standard mode"
+            )
+            .accessibilityIdentifier("focus.pill.mode")
+
+            if session.mode == .deepFocus {
+                let isShielded = session.protectionState == .protected
+                pill(
+                    text: isShielded ? "Apps Locked" : "Apps Unlocked",
+                    icon: isShielded ? "lock.fill" : "lock.open",
+                    emphasized: isShielded
+                )
+                .accessibilityLabel(
+                    isShielded
+                    ? "Distracting apps are locked"
+                    : "Distracting apps are not locked"
+                )
+                .accessibilityIdentifier("focus.pill.shield")
+            }
+        }
+    }
+
+    private func pill(text: String, icon: String?, emphasized: Bool) -> some View {
+        HStack(spacing: 4) {
+            if let icon {
+                Image(systemName: icon)
+                    .font(.system(size: 10, weight: .semibold))
+            }
+            Text(text)
+                .font(.system(size: 11, weight: .semibold))
+                .textCase(.uppercase)
+                .kerning(0.8)
+        }
+        .foregroundStyle(emphasized ? theme.colors.accent : theme.colors.secondaryText)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(
+            Capsule().fill(emphasized ? theme.colors.accentLight : theme.colors.cardBackground)
+        )
+    }
+
+    // MARK: - End Early
+
+    /// 低调文字按钮：给 Settings 手动开局的会话一个 App 内出口。结束走与硬件
+    /// 完成/跳过/断连同一条 endSession 出口（shield 清除、结算、0x14 idle 推硬件）。
+    private var endEarlyButton: some View {
+        Button {
+            showEndEarlyConfirmation = true
+        } label: {
+            Text("End Early")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(theme.colors.secondaryText)
+                .padding(.vertical, 8)
+                .padding(.horizontal, 20)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("End focus session early")
+        .accessibilityIdentifier("focus.endEarlyButton")
+        .confirmationDialog(
+            "End this focus session early?",
+            isPresented: $showEndEarlyConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("End Session", role: .destructive) {
+                focusService.endSession(reason: .manual)
+            }
+            Button("Keep Focusing", role: .cancel) {}
+        } message: {
+            Text("Bottles you've already collected are safe.")
+        }
+    }
+
+    private func todayTotalSeconds(progress: FocusProgressSnapshot) -> TimeInterval {
+        // 已结算会话的今日累计 + 本次进行中的可计时长（打断扣除后）。
+        focusService.statistics.todayFocusTime + progress.countableFocusTime
+    }
+
+    private func formatFocusTime(_ interval: TimeInterval) -> String {
+        let totalMinutes = Int(interval) / 60
+        let hours = totalMinutes / 60
+        let minutes = totalMinutes % 60
+        if hours > 0 {
+            return "\(hours)h \(minutes)m"
+        }
+        return "\(minutes)m"
     }
 
     private var debugControls: some View {
@@ -207,4 +335,52 @@ public struct FocusSessionScreen: View {
         }
         return String(format: "%02d:%02d", minutes, seconds)
     }
+}
+
+// MARK: - Focus Companion Phrases
+
+/// 专注页伴侣陪伴语：本地静态池，不调 LLM。按阶段分池、以 elapsed 分钟数确定性
+/// 轮换（每 10 分钟换一句），TimelineView 的秒级重渲染自然驱动切换。
+/// 全英文（English-only product UI）；口吻与 CompanionTextService 的温暖人设一致。
+enum FocusCompanionPhrases {
+    /// 活跃会话的第 1 分钟 FocusPhase.from 会短暂返回 .idle，映射到 warmup 池兜底。
+    static func phrase(phase: FocusPhase, elapsedMinutes: Int) -> String {
+        let pool = pool(for: phase)
+        let index = (max(0, elapsedMinutes) / rotationMinutes) % pool.count
+        return pool[index]
+    }
+
+    static let rotationMinutes = 10
+
+    static func pool(for phase: FocusPhase) -> [String] {
+        switch phase {
+        case .idle, .warmup:
+            return warmupPool
+        case .building:
+            return buildingPool
+        case .deep:
+            return deepPool
+        }
+    }
+
+    private static let warmupPool = [
+        "I'm right here with you.",
+        "Nice and easy. One thing at a time.",
+        "We just started. No rush at all.",
+        "Deep breath. I've got your back.",
+    ]
+
+    private static let buildingPool = [
+        "Look at you go. This bottle is filling up.",
+        "Still with you. You're doing great.",
+        "Steady pace. That's the way.",
+        "One step at a time. We're moving.",
+    ]
+
+    private static let deepPool = [
+        "This is deep water. I'll keep watch.",
+        "You're in the zone. I'll stay quiet.",
+        "Time feels soft in here, doesn't it?",
+        "Proud of you. Truly.",
+    ]
 }
