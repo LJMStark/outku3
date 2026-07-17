@@ -18,10 +18,11 @@ struct EventCardView: View {
             onTap?()
         } label: {
             VStack(alignment: .leading, spacing: 8) {
-                // Title
+                // Title：accentDark 取代硬编码 294A3B 深绿——三张主题下标题
+                // 都跟随主题墨色，圆体与全局字族一致。
                 Text(title)
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundStyle(Color(hex: "294A3B"))
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .foregroundStyle(theme.colors.accentDark)
                     .multilineTextAlignment(.leading)
 
                 // Meta info
@@ -53,7 +54,7 @@ struct EventCardView: View {
                             .foregroundStyle(.white)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 5)
-                            .background(Color(hex: "294A3B"))
+                            .background(theme.colors.accent)
                             .clipShape(Capsule())
                         }
                         .accessibilityLabel("Join video call")
@@ -62,23 +63,26 @@ struct EventCardView: View {
                 }
                 .padding(.vertical, 4)
 
-                // Description
+                // Description：弱化一档（15pt secondary），不再与标题同色
+                // 同重——标题先被读到，描述作为补充。
                 Text(description)
-                    .font(.system(size: 16))
-                    .foregroundStyle(Color(hex: "294A3B"))
-                    .lineSpacing(4)
+                    .font(.system(size: 15))
+                    .foregroundStyle(theme.colors.secondaryText)
+                    .lineSpacing(3)
                     .lineLimit(3)
                     .multilineTextAlignment(.leading)
             }
             .padding(20)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.white)
+            .background(theme.colors.cardBackground)
             .clipShape(RoundedRectangle(cornerRadius: 16))
+            // 细墨线描边取代整圈主题色描边：卡片在白底上只需要一圈安静的边。
             .overlay(
                 RoundedRectangle(cornerRadius: 16)
-                    .stroke(Color(hex: "294A3B"), lineWidth: 1)
+                    .stroke(theme.colors.border, lineWidth: 1)
             )
-            .shadow(color: .black.opacity(0.08), radius: 8, y: 4)
+            // 暖色投影，与 Pet 任务卡一致（不用纯黑）。
+            .shadow(color: theme.colors.primary.opacity(0.08), radius: 8, x: 0, y: 4)
         }
         .buttonStyle(.kiroleCTA)
         .accessibilityLabel("\(title), \(duration)")
@@ -119,7 +123,7 @@ public struct EventDetailModal: View {
         VStack(spacing: 0) {
             // Drag indicator
             Capsule()
-                .fill(Color(hex: "D1D5DB"))
+                .fill(theme.colors.borderStrong)
                 .frame(width: 40, height: 4)
                 .padding(.top, 12)
                 .padding(.bottom, 8)
@@ -152,10 +156,10 @@ public struct EventDetailModal: View {
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(theme.colors.primaryText)
                         .frame(width: 30, height: 30)
-                        .background(Color.white)
+                        .background(theme.colors.cardBackground)
                         .clipShape(Circle())
                         .overlay(
-                            Circle().stroke(Color(hex: "E5E7EB"), lineWidth: 1)
+                            Circle().stroke(theme.colors.border, lineWidth: 1)
                         )
                 }
                 .accessibilityLabel("Close")
@@ -238,7 +242,7 @@ public struct EventDetailModal: View {
                 .padding(.bottom, 32)
             }
         }
-        .background(Color.white)
+        .background(theme.colors.cardBackground)
         .sheet(isPresented: $showEditSheet) {
             EventEditSheet(event: event)
                 .injectAppEnvironment()
@@ -262,16 +266,17 @@ public struct EventDetailModal: View {
 // MARK: - Event Detail Card
 
 private struct EventDetailCard<Content: View>: View {
+    @Environment(ThemeManager.self) private var theme
     @ViewBuilder let content: Content
 
     var body: some View {
         content
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.white)
+            .background(theme.colors.cardBackground)
             .clipShape(RoundedRectangle(cornerRadius: 16))
             .overlay(
                 RoundedRectangle(cornerRadius: 16)
-                    .stroke(Color(hex: "E5E7EB"), lineWidth: 1)
+                    .stroke(theme.colors.border, lineWidth: 1)
             )
             .padding(.horizontal, 20)
     }

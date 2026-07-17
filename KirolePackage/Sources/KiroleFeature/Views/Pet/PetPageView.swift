@@ -304,13 +304,16 @@ private struct TaskItemRow: View {
                     }
                 } label: {
                     RoundedRectangle(cornerRadius: 6)
-                        .stroke(task.isCompleted ? theme.colors.taskComplete : Color(hex: "D1D5DB"), lineWidth: 2)
+                        // 未勾选描边走 borderStrong token（原 D1D5DB 硬编码）。
+                        .stroke(task.isCompleted ? theme.colors.taskComplete : theme.colors.borderStrong, lineWidth: 2)
                         .frame(width: 24, height: 24)
                         .overlay {
                             if task.isCompleted {
                                 Image(systemName: "checkmark")
                                     .font(.system(size: 14, weight: .bold))
-                                    .foregroundStyle(Color(hex: "3B82F6"))
+                                    // 勾选色与描边统一为 taskComplete 绿——原先的
+                                    // 3B82F6 蓝与整套暖色系语言冲突。
+                                    .foregroundStyle(theme.colors.taskComplete)
                             }
                         }
                 }
@@ -332,7 +335,7 @@ private struct TaskItemRow: View {
                     } else if task.syncStatus == .conflict || task.syncStatus == .error {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(Color(hex: "F59E0B"))
+                            .foregroundStyle(theme.colors.warning)
                     }
 
                     if task.pendingDeletion {
@@ -352,10 +355,12 @@ private struct TaskItemRow: View {
                         .font(.system(size: 12, weight: .medium))
                         .lineLimit(1)
                         .fixedSize()
-                        .foregroundStyle(Color(hex: "8B5A2B"))
+                        // 截止胶囊用主题 accent 对（accentLight 底 + accentDark 字），
+                        // 三套主题下都和谐；原先 FDE68A/8B5A2B 黄胶囊只搭暖色主题。
+                        .foregroundStyle(theme.colors.accentDark)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(Color(hex: "FDE68A").opacity(0.3)) // Soft pastel yellow
+                        .background(theme.colors.accentLight)
                         .clipShape(Capsule())
                 }
 
@@ -411,13 +416,13 @@ private struct TaskItemRow: View {
                 .accessibilityIdentifier("Pet_TaskMoreMenu")
             }
             .padding(16)
-            .background(Color.white)
+            .background(theme.colors.cardBackground)
             .clipShape(RoundedRectangle(cornerRadius: 16))
             // Warm shadow instead of pure black
             .shadow(color: theme.colors.primary.opacity(0.08), radius: 8, x: 0, y: 4)
             .overlay(
                 RoundedRectangle(cornerRadius: 16)
-                    .stroke(Color(hex: "F3F4F6"), lineWidth: 1)
+                    .stroke(theme.colors.border, lineWidth: 1)
             )
         }
         .buttonStyle(RowScaleButtonStyle(isPressed: $isPressed))
