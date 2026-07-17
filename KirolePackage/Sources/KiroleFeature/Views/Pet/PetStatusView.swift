@@ -5,24 +5,27 @@ import UIKit
 
 // MARK: - Postmark Stamp Decoration
 private struct StampDecoration: View {
+    @Environment(ThemeManager.self) private var theme
+
     var body: some View {
         ZStack {
             // Wavy lines representation
             VStack(spacing: 12) {
                 ForEach(0..<4, id: \.self) { _ in
                     Rectangle()
-                        .fill(Color(hex: "E8D9C8").opacity(0.6))
+                        // 邮戳纹路跟随主题 primary 淡印（原 E8D9C8 米色只搭暖主题）。
+                        .fill(theme.colors.primary.opacity(0.15))
                         .frame(width: 140, height: 2)
                 }
             }
             .rotationEffect(.degrees(-15))
             .offset(x: 20, y: 0)
-            
+
             // Dashed Circles
             ForEach(0..<4, id: \.self) { i in
                 Circle()
                     .stroke(style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
-                    .fill(Color(hex: "E8D9C8").opacity(0.6))
+                    .fill(theme.colors.primary.opacity(0.15))
                     .frame(width: 100 + CGFloat(i)*40, height: 100 + CGFloat(i)*40)
             }
         }
@@ -100,13 +103,13 @@ private struct PetStatusCard: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Green status indicator hook at top
+            // Status indicator hook at top（挂环用主题 accent，原 4A6B53 硬绿）
             RoundedRectangle(cornerRadius: 6)
-                .fill(Color(hex: "4A6B53"))
+                .fill(theme.colors.accent)
                 .frame(width: 48, height: 16)
                 .padding(.top, -8)
                 .zIndex(1)
-            
+
             ZStack(alignment: .topTrailing) {
                 // Postmark Stamp Background
                 StampDecoration()
@@ -119,7 +122,7 @@ private struct PetStatusCard: View {
                         // Pet Avatar Container
                         ZStack(alignment: .bottom) {
                             RoundedRectangle(cornerRadius: 20)
-                                .fill(Color(hex: "E6F4EA")) // Pale green
+                                .fill(theme.colors.accentLight)
                                 .frame(width: 128, height: 160)
 
                             Image(appState.userProfile.companionCharacter.heroAssetName(variant: .profile), bundle: .module)
@@ -136,7 +139,7 @@ private struct PetStatusCard: View {
                             // / prompts call the companion matches what App shows.
                             Text(appState.activeCustomCompanion?.name ?? appState.pet.name)
                                 .font(.system(size: 22, weight: .bold, design: .serif))
-                                .foregroundStyle(Color(hex: "1F3A2C"))
+                                .foregroundStyle(theme.colors.accentDark)
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.8)
 
@@ -155,7 +158,7 @@ private struct PetStatusCard: View {
 
                     // Line Divider
                     Rectangle()
-                        .fill(Color(hex: "E5E7EB"))
+                        .fill(theme.colors.border)
                         .frame(height: 1)
                         .padding(.leading, 172)
                         .padding(.trailing, 24)
@@ -171,7 +174,7 @@ private struct PetStatusCard: View {
                     .padding(.vertical, 20)
                 }
             }
-            .background(Color.white)
+            .background(theme.colors.cardBackground)
             .clipShape(RoundedRectangle(cornerRadius: 24))
         }
         .padding(.top, 8)
@@ -196,12 +199,12 @@ private struct StatRowNew: View {
             HStack(spacing: 8) {
                 Text(value)
                     .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(Color(hex: "1F2937"))
+                    .foregroundStyle(theme.colors.primaryText)
 
                 if let icon = icon {
                     Image(systemName: icon)
                         .font(.system(size: 16))
-                        .foregroundStyle(Color(hex: "BFA573"))
+                        .foregroundStyle(theme.colors.primary)
                 }
             }
             Spacer()
@@ -213,6 +216,7 @@ private struct StatRowNew: View {
 
 private struct TasksStatisticsCard: View {
     @Environment(AppState.self) private var appState
+    @Environment(ThemeManager.self) private var theme
 
     private var focusStats: FocusStatistics { FocusSessionService.shared.statistics }
 
@@ -228,7 +232,7 @@ private struct TasksStatisticsCard: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Tasks Today")
                 .font(.system(size: 22, weight: .bold, design: .serif))
-                .foregroundStyle(Color(hex: "1F3A2C"))
+                .foregroundStyle(theme.colors.accentDark)
 
             VStack(spacing: 0) {
                 TaskStatSection(title: "TODAY", tasks: appState.statistics.todayCompleted, focusTime: formatFocusTime(focusStats.todayFocusTime), delay: 0.1)
@@ -244,11 +248,13 @@ private struct TasksStatisticsCard: View {
                 TaskStatSection(title: "LAST 30 DAYS", tasks: appState.statistics.last30DaysCompleted, focusTime: formatFocusTime(focusStats.last30DaysFocusTime), delay: 0.3)
             }
             .padding(24)
-            .background(Color.white)
+            .background(theme.colors.cardBackground)
             .clipShape(RoundedRectangle(cornerRadius: 24))
             .overlay(
                 RoundedRectangle(cornerRadius: 24)
-                    .stroke(Color(hex: "1F2937").opacity(0.8), lineWidth: 1)
+                    // 墨线描边保留明信片/信纸的勾边感，但降到 accentDark 65%：
+                    // 原 1F2937@0.8 近纯黑，在紫/青主题下与卡片内容脱节。
+                    .stroke(theme.colors.accentDark.opacity(0.65), lineWidth: 1)
             )
         }
     }
@@ -287,7 +293,7 @@ private struct TaskStatSection: View {
 
                     Text("\(tasks)")
                         .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(Color(hex: "1F2937"))
+                        .foregroundStyle(theme.colors.primaryText)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.trailing, 24)
@@ -306,7 +312,7 @@ private struct TaskStatSection: View {
 
                     Text(focusTime)
                         .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(Color(hex: "1F2937"))
+                        .foregroundStyle(theme.colors.primaryText)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }

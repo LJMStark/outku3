@@ -30,7 +30,7 @@ public struct FocusSettlementSheet: View {
         VStack(spacing: 0) {
             // Drag indicator
             RoundedRectangle(cornerRadius: 3)
-                .fill(Color.gray.opacity(0.4))
+                .fill(theme.colors.borderStrong)
                 .frame(width: 40, height: 5)
                 .padding(.top, 12)
                 .padding(.bottom, 28)
@@ -48,7 +48,7 @@ public struct FocusSettlementSheet: View {
             HStack(spacing: 8) {
                 Image(systemName: "clock.fill")
                     .font(.system(size: 16))
-                    .foregroundStyle(Color(hex: "4A6B53"))
+                    .foregroundStyle(theme.colors.accent)
 
                 Text("\(focusMinutes) minutes")
                     .font(.system(size: 18, weight: .semibold))
@@ -69,10 +69,10 @@ public struct FocusSettlementSheet: View {
                     // The "+N energy" label below remains the source of truth for the count.
                     ForEach(0..<min(max(earnedBottles, 3), 8), id: \.self) { index in
                         Circle()
-                            .fill(index < earnedBottles ? Color(hex: "4A6B53") : Color(hex: "C8E6C9"))
+                            .fill(index < earnedBottles ? theme.colors.accent : theme.colors.accentLight)
                             .frame(width: 20, height: 20)
                             .shadow(
-                                color: index < earnedBottles ? Color(hex: "4A6B53").opacity(0.4) : .clear,
+                                color: index < earnedBottles ? theme.colors.accent.opacity(0.4) : .clear,
                                 radius: 6
                             )
                     }
@@ -80,7 +80,7 @@ public struct FocusSettlementSheet: View {
 
                 Text("+\(displayedBottles) energy")
                     .font(.system(size: 28, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color(hex: "4A6B53"))
+                    .foregroundStyle(theme.colors.accent)
                     .contentTransition(.numericText())
             }
             .opacity(showContent ? 1 : 0)
@@ -117,7 +117,8 @@ public struct FocusSettlementSheet: View {
 
             Spacer()
 
-            // Dismiss button
+            // Dismiss button：主题 accent 取代 4A6B53 硬绿——结算页是品牌
+            // 高光时刻，必须跟随主题。
             Button {
                 SoundService.shared.haptic(.success)
                 dismiss()
@@ -127,7 +128,7 @@ public struct FocusSettlementSheet: View {
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
-                    .background(Color(hex: "4A6B53"))
+                    .background(theme.colors.accent)
                     .clipShape(RoundedRectangle(cornerRadius: 16))
             }
             .buttonStyle(.plain)
