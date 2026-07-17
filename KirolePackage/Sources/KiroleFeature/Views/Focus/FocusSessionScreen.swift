@@ -60,9 +60,10 @@ public struct FocusSessionScreen: View {
 
                     VStack(spacing: 6) {
                         Text("Focusing")
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(.system(size: 13, weight: .semibold))
                             .textCase(.uppercase)
-                            .kerning(1.2)
+                            // tracking 取代 kerning：字距跟随 Dynamic Type 缩放。
+                            .tracking(2)
                             .foregroundStyle(theme.colors.secondaryText)
                         Text(session.taskTitle)
                             .font(.system(size: 24, weight: .bold))
@@ -94,8 +95,10 @@ public struct FocusSessionScreen: View {
                         .accessibilityLabel("Focused for \(timeString(from: progress.elapsedSeconds))")
 
                     VStack(spacing: 10) {
-                        ProgressView(value: min(1, progress.segmentSeconds / bottleBlockSeconds))
-                            .tint(theme.colors.accent)
+                        // 自定义能量轨道：8pt 胶囊轨道 + accent 填充，替代系统
+                        // ProgressView 的 2pt 细线——"瓶子在满起来"是本屏的核心
+                        // 反馈，值得更明确的存在感。
+                        BottleProgressTrack(value: min(1, progress.segmentSeconds / bottleBlockSeconds))
                             .padding(.horizontal, 48)
                         HStack(spacing: 14) {
                             Text(progress.phase.displayString)
@@ -195,6 +198,14 @@ public struct FocusSessionScreen: View {
         .background(
             Capsule().fill(emphasized ? theme.colors.accentLight : theme.colors.cardBackground)
         )
+        // 非强调徽章的 cardBackground 白底在页面底色上几乎隐形——补一圈细边
+        // 让轮廓立起来；强调徽章用同色淡边收口。
+        .overlay(
+            Capsule().stroke(
+                emphasized ? theme.colors.accent.opacity(0.25) : theme.colors.border,
+                lineWidth: 1
+            )
+        )
     }
 
     // MARK: - End Early
@@ -290,6 +301,10 @@ public struct FocusSessionScreen: View {
             RoundedRectangle(cornerRadius: 14)
                 .fill(theme.colors.cardBackground)
         )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(theme.colors.border, lineWidth: 1)
+        )
     }
 
     private var detectionNotice: some View {
@@ -308,6 +323,10 @@ public struct FocusSessionScreen: View {
         .background(
             RoundedRectangle(cornerRadius: 14)
                 .fill(theme.colors.cardBackground)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(theme.colors.border, lineWidth: 1)
         )
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("focus.detectionNotice")
@@ -345,6 +364,30 @@ public struct FocusSessionScreen: View {
             return String(format: "%d:%02d:%02d", hours, minutes, seconds)
         }
         return String(format: "%02d:%02d", minutes, seconds)
+    }
+}
+
+// MARK: - Bottle Progress Track
+
+/// 能量瓶充能轨道：8pt 胶囊轨道（accentLight）+ 填充（accent）。
+/// 进度从会话的秒级 TimelineView 驱动，用 kiroleGentle 平滑过渡。
+private struct BottleProgressTrack: View {
+    @Environment(\.themeManager) private var theme
+    let value: Double
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(theme.colors.accentLight)
+                Capsule()
+                    .fill(theme.colors.accent)
+                    .frame(width: geo.size.width * min(1, max(0, value)))
+            }
+        }
+        .frame(height: 8)
+        .animation(.kiroleGentle, value: value)
+        .accessibilityHidden(true)
     }
 }
 
