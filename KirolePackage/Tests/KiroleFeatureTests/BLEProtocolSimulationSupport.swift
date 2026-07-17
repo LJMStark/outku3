@@ -66,7 +66,7 @@ struct ProtocolFixtures {
             daySummary: "Two events today. Take a break before noon.",
             firstUp: "09:30 HW Sync",
             events: [
-                EventSummary(time: "09:30", title: "HW Sync", description: "Bring the logic analyzer."),
+                EventSummary(time: "09:30", title: "HW Sync", description: "Bring the logic analyzer.", category: .meetings),
             ],
             topTasks: [
                 TaskSummary(id: taskId, title: "Plan BLE", isCompleted: false, priority: 2),
@@ -326,7 +326,9 @@ struct SimulatedAppPacket {
             events.append(.init(
                 time: try reader.readString(),
                 title: try reader.readString(),
-                description: try reader.readString()
+                description: try reader.readString(),
+                // v2.5.27: per-event Category byte (mirror encodeDayPack).
+                category: try reader.readByte()
             ))
         }
 
@@ -555,6 +557,7 @@ struct SimulatedDayPack {
         let time: String
         let title: String
         let description: String
+        let category: UInt8
     }
 
     let date: (year: Int, month: Int, day: Int)

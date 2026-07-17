@@ -124,13 +124,17 @@ public enum BLEDataEncoder {
         // Pet dialogue bubble (v2.5.0: single line, = App currentPetDialogue)
         data.appendString(dayPack.petDialogue, maxLength: DayPackTextBudget.petDialogue)
 
-        // Events[] (time / title / description)
+        // Events[] (time / title / description / category)
         let maxEvents = 8
         data.appendClampedUInt8(min(dayPack.events.count, maxEvents))
         for event in dayPack.events.prefix(maxEvents) {
             data.appendString(event.time, maxLength: 8)
             data.appendString(event.title, maxLength: 40)
             data.appendString(event.description, maxLength: 120)
+            // v2.5.27: Category byte (0x00=untagged/no icon, 0x01-0x06 = customer's six classes).
+            // Signal only — the six icons are firmware-built-in art. Breaking change: the strict
+            // reader (§7.1) must consume this byte; parseDayPack in the test layer mirrors it.
+            data.append(event.category.rawValue)
         }
 
         // Top tasks (dynamic limit based on screen size)

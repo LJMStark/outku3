@@ -824,6 +824,8 @@ struct BLEProtocolTests {
         #expect(readString(from: data, cursor: &cursor) == "09:00")          // Event.time
         #expect(readString(from: data, cursor: &cursor) == "Standup")        // Event.title
         #expect(readString(from: data, cursor: &cursor) == "Sync")           // Event.description
+        #expect(data[cursor] == EventCategory.unknown.rawValue)              // Event.category (v2.5.27)
+        cursor += 1
         #expect(data[cursor] == 1)                                           // TaskCount
         cursor += 1
         #expect(readString(from: data, cursor: &cursor) == "task-1")

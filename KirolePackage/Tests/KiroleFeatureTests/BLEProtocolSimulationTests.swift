@@ -107,6 +107,7 @@ struct BLEProtocolSimulationTests {
         #expect(parsedDayPack.events.map(\.title) == ["HW Sync"])
         #expect(parsedDayPack.events.first?.time == "09:30")
         #expect(parsedDayPack.events.first?.description == "Bring the logic analyzer.")
+        #expect(parsedDayPack.events.first?.category == EventCategory.meetings.rawValue)
         #expect(parsedDayPack.topTasks.map(\.title) == ["Plan BLE", "Review packet"])
         #expect(parsedDayPack.topTasks.map(\.priority) == [2, 1])
         #expect(parsedDayPack.settlement.tasksCompleted == 1)
