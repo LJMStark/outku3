@@ -56,7 +56,7 @@ public struct CreateCustomCompanionSheet: View {
     private var header: some View {
         VStack(spacing: 8) {
             RoundedRectangle(cornerRadius: 3)
-                .fill(Color.gray.opacity(0.3))
+                .fill(theme.colors.borderStrong)
                 .frame(width: 40, height: 5)
                 .padding(.top, 12)
 
@@ -78,7 +78,7 @@ public struct CreateCustomCompanionSheet: View {
                 Capsule()
                     .fill(s.rawValue <= step.rawValue
                           ? theme.colors.accent
-                          : Color.gray.opacity(0.25))
+                          : theme.colors.primaryText.opacity(0.15))
                     .frame(width: s == step ? 24 : 12, height: 4)
                     .animation(.easeInOut(duration: 0.2), value: step)
             }
@@ -131,7 +131,8 @@ public struct CreateCustomCompanionSheet: View {
 
             ZStack {
                 RoundedRectangle(cornerRadius: 24)
-                    .fill(Color(hex: "F3F4F6"))
+                    // 墨洗底取代 F3F4F6 死灰（全文件统一）。
+                    .fill(theme.colors.primaryText.opacity(0.05))
                     .frame(width: 200, height: 200)
 
                 #if canImport(UIKit)
@@ -191,7 +192,7 @@ public struct CreateCustomCompanionSheet: View {
             TextField("e.g. Mochi", text: $name)
                 .textFieldStyle(.plain)
                 .padding(14)
-                .background(Color(hex: "F3F4F6"))
+                .background(theme.colors.primaryText.opacity(0.05))
                 .clipShape(RoundedRectangle(cornerRadius: 12))
                 .accessibilityIdentifier("CreateCompanion_NameField")
 
@@ -217,7 +218,7 @@ public struct CreateCustomCompanionSheet: View {
                             RoundedRectangle(cornerRadius: 12)
                                 .fill(relationship == option
                                       ? theme.colors.accent.opacity(0.15)
-                                      : Color(hex: "F3F4F6"))
+                                      : theme.colors.primaryText.opacity(0.05))
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: 12)
@@ -275,7 +276,7 @@ public struct CreateCustomCompanionSheet: View {
                         .padding(14)
                         .background(
                             RoundedRectangle(cornerRadius: 14)
-                                .fill(Color(hex: "F3F4F6"))
+                                .fill(theme.colors.primaryText.opacity(0.05))
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: 14)
@@ -310,7 +311,7 @@ public struct CreateCustomCompanionSheet: View {
                 .frame(minHeight: 120, maxHeight: 160)
                 .scrollContentBackground(.hidden)
                 .padding(10)
-                .background(Color(hex: "F3F4F6"))
+                .background(theme.colors.primaryText.opacity(0.05))
                 .clipShape(RoundedRectangle(cornerRadius: 12))
                 .accessibilityIdentifier("CreateCompanion_CustomPrompt")
                 .accessibilityLabel("Custom companion voice prompt")
@@ -371,7 +372,7 @@ public struct CreateCustomCompanionSheet: View {
                     .font(.system(size: 14))
                     .frame(minHeight: 80, maxHeight: 120)
                     .padding(10)
-                    .background(Color(hex: "F3F4F6"))
+                    .background(theme.colors.primaryText.opacity(0.05))
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                     .accessibilityIdentifier("CreateCompanion_Backstory")
             }
@@ -387,7 +388,7 @@ public struct CreateCustomCompanionSheet: View {
                     .font(.system(size: 14))
                     .lineLimit(3)
                     .padding(12)
-                    .background(Color(hex: "F3F4F6"))
+                    .background(theme.colors.primaryText.opacity(0.05))
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                     .accessibilityIdentifier("CreateCompanion_SensitiveBoundary")
             }
@@ -434,7 +435,7 @@ public struct CreateCustomCompanionSheet: View {
                     .font(.system(size: 16, weight: .semibold))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
-                    .background(Color(hex: "F3F4F6"))
+                    .background(theme.colors.primaryText.opacity(0.05))
                     .foregroundStyle(theme.colors.secondaryText)
                     .clipShape(RoundedRectangle(cornerRadius: 16))
             }
@@ -454,7 +455,7 @@ public struct CreateCustomCompanionSheet: View {
                 .padding(.vertical, 14)
                 .background(canAdvance && !isSaving
                             ? theme.colors.accent
-                            : Color.gray.opacity(0.35))
+                            : theme.colors.secondaryText.opacity(0.3))
                 .foregroundStyle(.white)
                 .clipShape(RoundedRectangle(cornerRadius: 16))
             }
@@ -610,7 +611,7 @@ public struct CreateCustomCompanionSheet: View {
         VStack(spacing: 8) {
             Image(systemName: "photo.badge.plus")
                 .font(.system(size: 48, weight: .light))
-                .foregroundStyle(Color(hex: "6B7280"))
+                .foregroundStyle(theme.colors.secondaryText)
             Text("Tap to choose photo")
                 .font(.system(size: 13))
                 .foregroundStyle(theme.colors.secondaryText)
