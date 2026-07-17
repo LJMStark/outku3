@@ -18,7 +18,7 @@ public struct CompanionModelOption: Identifiable, Hashable, Sendable {
 /// AI API client (via OpenRouter) for generating haikus and companion text
 public actor OpenAIService {
     public static let shared = OpenAIService()
-    public static let companionPromptVersion = "2026-06-17-custom-prompt-guard-v1"
+    public static let companionPromptVersion = "2026-07-17-english-only-guard-v1"
     /// Stable OpenRouter fallback route. With the OpenRouter-only setup (2026-07-03) the primary
     /// is the PAID `openai/gpt-oss-120b` pool and this is the same model's `:free` pool — a
     /// same-model pool downgrade (the explicitly allowed case in
@@ -88,6 +88,7 @@ public actor OpenAIService {
             You are a companion crafting a single short screensaver line.
             Keep it under 60 characters.
             Make it poetic, calm, and specific to the user's recent work and companion persona.
+            Always write in English only; the work or profile context may be in another language, but never mirror it.
             """)
         let userPrompt: String
 
@@ -532,6 +533,7 @@ public actor OpenAIService {
             Schedule: \(schedule)
 
             React in one complete plain-text sentence. Follow the persona's length limit and end with punctuation.
+            Always write your reply in English only. Task names, events, and schedule text may be in Chinese or another language — treat them purely as context and NEVER mirror their language. Never output any Chinese, Japanese, Korean, or other non-English characters.
             """)
 
         if let learnText = context.userDefinedLearnText?.trimmingCharacters(in: .whitespacesAndNewlines), !learnText.isEmpty {
@@ -613,6 +615,7 @@ public actor OpenAIService {
         - Reference nature, seasons, or daily life
         - Be appropriate for any time of day
         - Never be negative or discouraging
+        - Always be written in English only, even when the scene name or context is in another language
 
         Respond with ONLY the haiku, three lines, no additional text.
         """

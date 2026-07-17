@@ -161,6 +161,31 @@ import Foundation
     #expect(CompanionDialogueDisplayPolicy.isValidForDisplay(text))
 }
 
+@Test func testCompanionDialogueDisplayPolicyRejectsChineseOutput() async throws {
+    // Real regression: the model mirrored Chinese calendar titles and produced Chinese prose,
+    // which slipped through because the terminal-punctuation gate accepts "。！？".
+    let chinese = "显示屏需求与项目进度像晨光纸鹤，轻轻展开；记得喝水、眨眼，享受这温柔的绽放。"
+    #expect(!CompanionDialogueDisplayPolicy.isValidForDisplay(chinese))
+    // Mixed English + a single Han character must also be rejected.
+    let mixed = "We are teaching the computer to think, 大魔法."
+    #expect(!CompanionDialogueDisplayPolicy.isValidForDisplay(mixed))
+}
+
+@Test func testContainsCJKScriptDetectsCJKAndKanaAndHangul() async throws {
+    #expect(CompanionDialogueDisplayPolicy.containsCJKScript("记得喝水"))        // Han
+    #expect(CompanionDialogueDisplayPolicy.containsCJKScript("こんにちは"))        // Hiragana
+    #expect(CompanionDialogueDisplayPolicy.containsCJKScript("カタカナ"))          // Katakana
+    #expect(CompanionDialogueDisplayPolicy.containsCJKScript("안녕하세요"))         // Hangul
+    #expect(CompanionDialogueDisplayPolicy.containsCJKScript("done。"))           // CJK punctuation
+}
+
+@Test func testContainsCJKScriptAllowsEnglishWithNonASCIIPunctuation() async throws {
+    // Legitimate English AI prose: em-dash, accented letter, curly quotes must NOT be flagged.
+    let english = "Coding again — we’re teaching the café’s computer to think, big tiny magic."
+    #expect(!CompanionDialogueDisplayPolicy.containsCJKScript(english))
+    #expect(CompanionDialogueDisplayPolicy.isValidForDisplay(english))
+}
+
 @Test func testSharedDialogueRetryPolicyRetriesTimeouts() async throws {
     #expect(CompanionTextService.shouldRetrySharedDialogue(after: URLError(.timedOut)))
     #expect(CompanionTextService.shouldRetrySharedDialogue(after: NetworkError.rateLimited))

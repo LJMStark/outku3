@@ -60,7 +60,10 @@ public final class CompanionTextService {
         do {
             let raw = try await openAI.generateDaySummaryText(eventDigest: Array(digest))
             let text = CompanionTextService.enforceByteBudget(raw, maxBytes: DayPackTextBudget.daySummary)
-            if !text.isEmpty, !text.hasPrefix("[Error]") { return text }
+            // English-only product: if the model mirrored Chinese event titles, drop it and fall
+            // back to the English template rather than pushing CJK to the panel / hardware.
+            if !text.isEmpty, !text.hasPrefix("[Error]"),
+               !CompanionDialogueDisplayPolicy.containsCJKScript(text) { return text }
         } catch {
             ErrorReporter.log(
                 .sync(component: "DaySummary", underlying: "generate failed: \(error.localizedDescription)"),

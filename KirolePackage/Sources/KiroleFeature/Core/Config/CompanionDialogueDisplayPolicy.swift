@@ -34,8 +34,36 @@ enum CompanionDialogueDisplayPolicy {
         let normalizedText = normalized(text)
         guard !normalizedText.isEmpty else { return false }
         guard !normalizedText.hasPrefix("[Error]") else { return false }
+        // English-only product: reject any AI output that slipped into CJK (the model mirrors the
+        // language of Chinese task/event titles injected into the prompt). Rejecting here makes the
+        // dialogue retry loop regenerate and, failing that, fall back to English FallbackText —
+        // Chinese must never reach the App UI or the DayPack pushed to hardware. See CLAUDE.md
+        // Interaction Rule 4 (English-only UI).
+        guard !containsCJKScript(normalizedText) else { return false }
         guard hasTerminalPunctuation(normalizedText) else { return false }
         return renderedLineCount(for: normalizedText) <= maxLines
+    }
+
+    /// True when `text` contains any Han ideograph, Japanese kana, Korean hangul, or CJK/fullwidth
+    /// punctuation. Deliberately narrow: Latin-1 accents, em-dashes, and curly quotes are NOT
+    /// flagged (they are legitimate in English AI prose and handled separately at the BLE wire
+    /// layer), so this only trips on genuinely non-English scripts.
+    static func containsCJKScript(_ text: String) -> Bool {
+        for scalar in text.unicodeScalars {
+            switch scalar.value {
+            case 0x3000...0x303F,   // CJK symbols & punctuation (、。「」etc.)
+                 0x3040...0x30FF,   // Hiragana + Katakana
+                 0x3400...0x4DBF,   // CJK Unified Ideographs Extension A
+                 0x4E00...0x9FFF,   // CJK Unified Ideographs
+                 0xAC00...0xD7AF,   // Hangul syllables
+                 0xF900...0xFAFF,   // CJK compatibility ideographs
+                 0xFF00...0xFFEF:   // Fullwidth/halfwidth forms (！？，：fullwidth punctuation)
+                return true
+            default:
+                continue
+            }
+        }
+        return false
     }
 
     static func hasTerminalPunctuation(_ text: String) -> Bool {
