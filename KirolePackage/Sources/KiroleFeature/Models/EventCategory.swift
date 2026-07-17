@@ -6,7 +6,9 @@ import Foundation
 ///
 /// wire 上是 DayPack Events[] 每条的 1 字节 `Category`（协议 §4.7，v2.5.27）：App 只发
 /// 类别信号字节，六个像素图标本体由固件内置（与 IP 形象 / 天气图标同一"信号选内置图"
-/// 架构，见 docs/assets/event-category-icons/）。`0x00` = 未分类，固件不画图标。
+/// 架构，见 docs/assets/event-category-icons/）。`0x00` = 未分类，固件不画图标——但
+/// v2.5.28 起 App 不再发送它：归类不了的按客户拍板（2026-07-17）落 `.admin`（点赞图标），
+/// 映射在 EventCategoryService 出口处做，本枚举与启发式仍如实返回 `.unknown`。
 public enum EventCategory: UInt8, Codable, Sendable, CaseIterable {
     case unknown = 0x00
     /// 深度工作/核心生产力 — 沙漏图标（写代码、写文案、做设计、分析数据）
@@ -33,7 +35,8 @@ public enum EventCategory: UInt8, Codable, Sendable, CaseIterable {
         """
 
     /// 关键词启发式兜底：AI 不可用/输出非法时按标题猜类别，兜不住返回 `.unknown`。
-    /// 只收显而易见的词——宁可 `.unknown`（固件不画图标）也不要错图标。
+    /// 只收显而易见的词，保持「不知道就说不知道」；`.unknown` → `.admin`（点赞）的
+    /// 产品级兜底由 EventCategoryService 在出口处统一做（客户拍板 2026-07-17）。
     static func heuristic(for title: String) -> EventCategory {
         let lowered = title.lowercased()
         let table: [(EventCategory, [String])] = [

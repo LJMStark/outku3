@@ -50,7 +50,10 @@ public final class EventCategoryService {
         }
 
         return zip(summaries, resolved).map { summary, category in
-            summary.withCategory(category ?? EventCategory.heuristic(for: summary.title))
+            let resolved = category ?? EventCategory.heuristic(for: summary.title)
+            // 客户拍板（2026-07-17）：归类不了的一律按「点赞/大拇指」（Administrative & Routine）
+            // 展示，事件卡不留空图标；`0x00` 仍是 wire 合法值（固件不画图标），App 侧不再发送。
+            return summary.withCategory(resolved == .unknown ? .admin : resolved)
         }
     }
 
