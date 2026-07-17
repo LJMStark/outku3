@@ -49,7 +49,11 @@ public final class DayPackGenerator {
             ? await textService.generateCompanionPhrase(petMood: pet.mood, timeOfDay: TimeOfDay.current(), userProfile: userProfile)
             : petDialogue
 
-        let eventSummaries = todayEvents.prefix(8).map { EventSummary(from: $0) }
+        // AI-tag the day's events into the customer's six categories (§4.7 Category byte).
+        // Batched + cached inside the service, so unchanged days cost zero extra LLM calls.
+        let eventSummaries = await EventCategoryService.shared.categorized(
+            todayEvents.prefix(8).map { EventSummary(from: $0) }
+        )
 
         // box② "day at a glance" — neutral events-only summary, cached per date + event digest.
         let daySummary = await cachedDaySummary(for: eventSummaries)

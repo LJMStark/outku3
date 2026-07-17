@@ -21,8 +21,8 @@ public final class DemoModeService {
             focusChallengeEnabled: false,
             petDialogue: "You've got this!",
             events: [
-                EventSummary(time: "09:00", title: "Team standup", description: "Daily sync with the team."),
-                EventSummary(time: "14:00", title: "Product review", description: "Walk through the latest build."),
+                EventSummary(time: "09:00", title: "Team standup", description: "Daily sync with the team.", category: .meetings),
+                EventSummary(time: "14:00", title: "Product review", description: "Walk through the latest build.", category: .meetings),
             ],
             topTasks: tasks.filter { !$0.isCompleted }.map { TaskSummary(from: $0) },
             settlementData: SettlementData(

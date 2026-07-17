@@ -73,6 +73,35 @@ struct EventCategoryTests {
         #expect(tagged.description == original.description)
     }
 
+    @Test("DayPackGenerator tags events via the heuristic when AI is unavailable")
+    @MainActor
+    func generatorTagsEventsWithoutAI() async {
+        let calendar = Calendar.current
+        let today = Date()
+        let events = [
+            CalendarEvent(
+                id: "cat-sync", title: "Weekly ops sync",
+                startTime: calendar.date(bySettingHour: 9, minute: 0, second: 0, of: today)!,
+                endTime: calendar.date(bySettingHour: 9, minute: 30, second: 0, of: today)!
+            ),
+            CalendarEvent(
+                id: "cat-stretch", title: "Stretch break",
+                startTime: calendar.date(bySettingHour: 15, minute: 0, second: 0, of: today)!,
+                endTime: calendar.date(bySettingHour: 15, minute: 10, second: 0, of: today)!
+            )
+        ]
+
+        let dayPack = await DayPackGenerator.shared.generateDayPack(
+            pet: Pet(), tasks: [], events: events,
+            weather: Weather(), deviceMode: .interactive,
+            petDialogue: "Ready"
+        )
+
+        // No API key in the test environment → the batched AI call is skipped and the
+        // keyword heuristic fills the categories deterministically.
+        #expect(dayPack.events.map(\.category) == [.meetings, .wellness])
+    }
+
     @Test("DayPack fingerprint changes when only an event category changes")
     func fingerprintTracksCategory() {
         let settlement = SettlementData(
