@@ -103,7 +103,7 @@ public struct SettingsBLESection: View {
                 .foregroundStyle(theme.colors.secondaryText.opacity(0.8))
         }
         .padding(16)
-        .background(Color.white)
+        .background(theme.colors.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 24))
         .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
     }
@@ -158,7 +158,7 @@ public struct SettingsBLESection: View {
             .accessibilityIdentifier("Settings_ClearTrustedBLEDevices")
         }
         .padding(16)
-        .background(Color.white)
+        .background(theme.colors.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 24))
         .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
     }
@@ -209,7 +209,7 @@ public struct SettingsBLESection: View {
             }
         }
         .padding(16)
-        .background(Color.white)
+        .background(theme.colors.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 24))
         .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
     }
@@ -243,7 +243,7 @@ public struct SettingsBLESection: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(16)
-        .background(Color.white)
+        .background(theme.colors.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 24))
         .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
         .onChange(of: screenSize) { _, newValue in
@@ -302,7 +302,8 @@ public struct SettingsBLESection: View {
                 .foregroundStyle(isDisabled ? theme.colors.secondaryText : theme.colors.primaryText)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
-                .background(isDisabled ? Color.gray.opacity(0.08) : theme.colors.accent.opacity(0.12))
+                // 禁用底走 border token（原 gray.opacity(0.08)）。
+                .background(isDisabled ? theme.colors.border : theme.colors.accent.opacity(0.12))
                 .clipShape(RoundedRectangle(cornerRadius: 12))
             }
             .buttonStyle(.plain)
@@ -311,7 +312,7 @@ public struct SettingsBLESection: View {
             .accessibilityIdentifier("Settings_OTAUpgradeButton")
         }
         .padding(16)
-        .background(Color.white)
+        .background(theme.colors.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 24))
         .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
     }
@@ -447,7 +448,7 @@ public struct SettingsBLESection: View {
             }
         }
         .padding(16)
-        .background(Color.white)
+        .background(theme.colors.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 24))
         .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
         .accessibilityElement(children: .contain)
@@ -507,7 +508,7 @@ public struct SettingsBLESection: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(16)
-        .background(Color.white)
+        .background(theme.colors.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 24))
         .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
         .onChange(of: keepAliveEnabled) { _, newValue in
@@ -575,7 +576,7 @@ public struct SettingsBLESection: View {
             }
         }
         .padding(16)
-        .background(Color.white)
+        .background(theme.colors.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 24))
         .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
         .contentShape(RoundedRectangle(cornerRadius: 24))
@@ -619,7 +620,7 @@ public struct SettingsBLESection: View {
                 .foregroundStyle(isConnected ? Color.green : theme.colors.secondaryText)
         }
         .padding(16)
-        .background(Color.white)
+        .background(theme.colors.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 24))
         .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
     }
