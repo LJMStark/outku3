@@ -130,7 +130,7 @@ public struct CharacterSwitcherSheet: View {
     @ViewBuilder
     private var dragIndicator: some View {
         RoundedRectangle(cornerRadius: 3)
-            .fill(Color.gray.opacity(0.4))
+            .fill(theme.colors.borderStrong)
             .frame(width: 40, height: 5)
             .padding(.top, 12)
             .padding(.bottom, 20)
@@ -168,7 +168,7 @@ private struct CharacterCard: View {
             HStack(spacing: 16) {
                 ZStack {
                     Circle()
-                        .fill(isSelected ? Color(hex: "4A6B53").opacity(0.15) : theme.colors.accentLight)
+                        .fill(theme.colors.accentLight)
                         .frame(width: 56, height: 56)
 
                     Text(characterEmoji)
@@ -204,7 +204,8 @@ private struct CharacterCard: View {
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 22))
-                        .foregroundStyle(Color(hex: "4A6B53"))
+                        // 选中勾选跟随主题 accent（原 4A6B53 硬绿）。
+                        .foregroundStyle(theme.colors.accent)
                 }
             }
             .padding(16)
@@ -217,10 +218,10 @@ private struct CharacterCard: View {
 
     private var cardBackground: some View {
         RoundedRectangle(cornerRadius: 20)
-            .fill(Color.white)
+            .fill(theme.colors.cardBackground)
             .overlay(
                 RoundedRectangle(cornerRadius: 20)
-                    .stroke(isSelected ? Color(hex: "4A6B53") : Color.clear, lineWidth: 2)
+                    .stroke(isSelected ? theme.colors.accent : Color.clear, lineWidth: 2)
             )
             .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
     }
@@ -277,7 +278,7 @@ private struct CustomCompanionCard: View {
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 22))
-                        .foregroundStyle(Color(hex: "4A6B53"))
+                        .foregroundStyle(theme.colors.accent)
                 }
             }
             .padding(16)
@@ -328,10 +329,10 @@ private struct CustomCompanionCard: View {
 
     private var cardBackground: some View {
         RoundedRectangle(cornerRadius: 20)
-            .fill(Color.white)
+            .fill(theme.colors.cardBackground)
             .overlay(
                 RoundedRectangle(cornerRadius: 20)
-                    .stroke(isSelected ? Color(hex: "4A6B53") : Color.clear, lineWidth: 2)
+                    .stroke(isSelected ? theme.colors.accent : Color.clear, lineWidth: 2)
             )
             .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
     }
