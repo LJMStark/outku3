@@ -62,10 +62,12 @@ public struct SettingsAccountSection: View {
         } label: {
             ZStack {
                 RoundedRectangle(cornerRadius: 20)
-                    .stroke(Color(hex: "374151"), lineWidth: 1)
+                    .stroke(theme.colors.borderStrong, lineWidth: 1)
                     .background(
                         RoundedRectangle(cornerRadius: 20)
-                            .fill(Color(hex: "F3F4F6"))
+                            // 墨洗底（primaryText 5%）取代 F3F4F6 中性灰：
+                            // 三套主题下都带一点主题墨色的暖，不是死灰。
+                            .fill(theme.colors.primaryText.opacity(0.05))
                     )
 
                 VStack(spacing: 8) {
@@ -133,12 +135,12 @@ public struct SettingsAccountSection: View {
         } label: {
             ZStack {
                 RoundedRectangle(cornerRadius: 20)
-                    .fill(Color(hex: "F3F4F6"))
+                    .fill(theme.colors.primaryText.opacity(0.05))
 
                 VStack(spacing: 8) {
                     Image(systemName: "icloud.and.arrow.up")
                         .font(.system(size: 40, weight: .medium))
-                        .foregroundStyle(Color(hex: "6B7280"))
+                        .foregroundStyle(theme.colors.secondaryText)
                         .frame(width: 80, height: 80)
 
                     Text("Create")
