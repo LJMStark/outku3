@@ -9,16 +9,17 @@ struct DateDividerView: View {
     var body: some View {
         HStack(spacing: 16) {
             Capsule()
-                .fill(theme.colors.accentDark)
-                .frame(height: 5)
+                .fill(theme.colors.accentDark.opacity(0.85))
+                .frame(height: 2.5)
 
             Text(formattedDate)
-                .font(.system(size: 16, weight: .bold))
+                .font(.system(size: 15, weight: .bold))
+                .tracking(0.3)
                 .foregroundStyle(theme.colors.accentDark)
 
             Capsule()
-                .fill(theme.colors.accentDark)
-                .frame(height: 5)
+                .fill(theme.colors.accentDark.opacity(0.85))
+                .frame(height: 2.5)
         }
         .padding(.horizontal, 24)
     }

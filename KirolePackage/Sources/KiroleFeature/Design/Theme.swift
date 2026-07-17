@@ -103,6 +103,26 @@ public struct ThemeColors: Sendable {
     public let sunset: Color
 }
 
+// MARK: - Derived Semantic Tokens
+//
+// 由核心色板推导的语义 token。计算属性而非存储属性：三套主题自动保持同步，
+// 不存在逐主题调色 drift 的问题，也不会破坏任何既有 ThemeColors 构造点。
+// 视图里请优先用这些 token，不要再写裸 `Color(hex:)`：
+//
+//   border        — 卡片/面板细描边、sheet 拖动指示条
+//   borderStrong  — 需要更清晰静态轮廓的控件（未勾选 checkbox 等）
+//   warning       — 可恢复的同步告警（琥珀色，语义色，刻意不随主题变化）
+public extension ThemeColors {
+    /// 低透明墨色细线：在白卡和彩色底上都读得出，又足够安静。
+    var border: Color { primaryText.opacity(0.10) }
+
+    /// 控件级静态轮廓（未勾选 checkbox、输入框边框）。
+    var borderStrong: Color { primaryText.opacity(0.24) }
+
+    /// 告警琥珀：语义色，刻意保持跨主题一致（警示含义不应随皮肤改变）。
+    var warning: Color { Color(hex: "D97706") }
+}
+
 // MARK: - Theme Environment
 
 @Observable
