@@ -26,6 +26,26 @@ struct EventCategoryTests {
         #expect(EventCategory.heuristic(for: "") == .unknown)
     }
 
+    @Test("AI failure cooldown blocks retries for ten minutes")
+    func aiFailureCooldownBlocksRetries() {
+        let failedAt = Date(timeIntervalSince1970: 1_700_000_000)
+        let retryAfter = failedAt.addingTimeInterval(EventCategoryService.aiFailureCooldown)
+
+        #expect(!EventCategoryService.isAIRetryAllowed(
+            retryAfter: retryAfter,
+            now: failedAt.addingTimeInterval(599)
+        ))
+        #expect(EventCategoryService.isAIRetryAllowed(
+            retryAfter: retryAfter,
+            now: failedAt.addingTimeInterval(600)
+        ))
+    }
+
+    @Test("AI classification is allowed before any failure")
+    func aiClassificationAllowedWithoutFailure() {
+        #expect(EventCategoryService.isAIRetryAllowed(retryAfter: nil, now: Date()))
+    }
+
     // MARK: Classifier reply parsing
 
     @Test("parseCategoryReply accepts a clean comma-separated digit line")
@@ -34,7 +54,7 @@ struct EventCategoryTests {
         #expect(categories == [.meetings, .wellness, .deepWork])
     }
 
-    @Test("parseCategoryReply tolerates spaces, newlines, and numbered labels")
+    @Test("parseCategoryReply tolerates spaces and newlines")
     func parseToleratesNoise() throws {
         let categories = try OpenAIService.parseCategoryReply(" 4 ,\n6 ", expectedCount: 2)
         #expect(categories == [.deadline, .rest])

@@ -49,14 +49,13 @@ public final class DayPackGenerator {
             ? await textService.generateCompanionPhrase(petMood: pet.mood, timeOfDay: TimeOfDay.current(), userProfile: userProfile)
             : petDialogue
 
-        // AI-tag the day's events into the customer's six categories (§4.7 Category byte).
-        // Batched + cached inside the service, so unchanged days cost zero extra LLM calls.
-        let eventSummaries = await EventCategoryService.shared.categorized(
-            todayEvents.prefix(8).map { EventSummary(from: $0) }
-        )
-
-        // box② "day at a glance" — neutral events-only summary, cached per date + event digest.
-        let daySummary = await cachedDaySummary(for: eventSummaries)
+        let uncategorizedEvents = todayEvents.prefix(8).map { EventSummary(from: $0) }
+        // Category tagging and the neutral day summary depend on the same immutable event snapshot,
+        // not on each other's result. Run both LLM-backed operations concurrently so a cold sync
+        // waits for the slower request instead of adding both request durations together.
+        async let categorizedEvents = EventCategoryService.shared.categorized(uncategorizedEvents)
+        async let generatedDaySummary = cachedDaySummary(for: uncategorizedEvents)
+        let (eventSummaries, daySummary) = await (categorizedEvents, generatedDaySummary)
 
         // 手动加入 Today 的任务先于自然到期任务；组内再按 priority、dueDate、id 定序。
         // Swift sort 不稳定，保留完整兜底顺序，确保截断到 maxTasks 后结果可复现。
