@@ -40,20 +40,16 @@ public struct DeviceModeSection: View {
 
     private var deviceCard: some View {
         ZStack {
-            // Background
+            // Background：主题深墨渐变（accent→accentDark）取代硬编码鼠尾草绿
+            // 5A7D6A/4A6352——设备卡从此跟随主题，紫/青主题下不再是一片绿。
             RoundedRectangle(cornerRadius: 24)
                 .fill(
                     LinearGradient(
-                        colors: [Color(hex: "5A7D6A"), Color(hex: "4A6352")],
+                        colors: [theme.colors.accent, theme.colors.accentDark],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
                 )
-            
-            // Texture overlay (optional)
-            RoundedRectangle(cornerRadius: 24)
-                .fill(Color.black.opacity(0.1))
-                .blendMode(.multiply)
 
             HStack(spacing: 8) {
                 // Pet Image
@@ -79,7 +75,7 @@ public struct DeviceModeSection: View {
             .padding(.vertical, 20)
         }
         .frame(height: 140)
-        .shadow(color: .black.opacity(0.1), radius: 10, y: 5)
+        .shadow(color: theme.colors.accent.opacity(0.25), radius: 10, y: 5)
         .contentShape(RoundedRectangle(cornerRadius: 24))
         .onTapGesture {
             guard canStartScan else { return }
@@ -108,15 +104,17 @@ public struct DeviceModeSection: View {
 
     private var speechBubble: some View {
         ZStack {
+            // 白泡 + 主题墨字 + 细边：原方案是绿泡绿边压在绿卡上，糊成一片；
+            // 白色气泡在任何主题深墨卡上都读得清。
             RoundedRectangle(cornerRadius: 16)
-                .fill(Color(hex: "C6D8C8"))
+                .fill(Color.white)
 
             RoundedRectangle(cornerRadius: 16)
-                .stroke(Color(hex: "95B19A"), lineWidth: 4)
+                .stroke(theme.colors.accent.opacity(0.25), lineWidth: 1)
 
             Text(appState.currentPetDialogue)
                 .font(.system(size: 13, weight: .medium, design: .rounded))
-                .foregroundStyle(Color(hex: "374151"))
+                .foregroundStyle(theme.colors.accentDark)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
                 .minimumScaleFactor(0.8)
@@ -164,7 +162,7 @@ public struct DeviceModeSection: View {
                             .font(.system(size: 13, weight: .bold))
                             .foregroundStyle(theme.colors.secondaryText)
                             .frame(width: 38, height: 38)
-                            .background(Color.white)
+                            .background(theme.colors.cardBackground)
                             .clipShape(Circle())
                     }
                     .buttonStyle(.plain)
@@ -221,7 +219,7 @@ public struct DeviceModeSection: View {
                         }
                     }
                     .padding(12)
-                    .background(Color.white)
+                    .background(theme.colors.cardBackground)
                     .clipShape(RoundedRectangle(cornerRadius: 16))
                     .shadow(color: .black.opacity(0.04), radius: 6, y: 3)
                 }

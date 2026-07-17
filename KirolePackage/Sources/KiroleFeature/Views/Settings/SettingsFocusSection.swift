@@ -51,7 +51,7 @@ public struct SettingsFocusSection: View {
                 }
             }
             .padding(16)
-            .background(Color.white)
+            .background(theme.colors.cardBackground)
             .clipShape(RoundedRectangle(cornerRadius: 24))
             .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
         }
@@ -130,7 +130,8 @@ public struct SettingsFocusSection: View {
                 .background(
                     appState.focusEnforcementMode == mode
                     ? theme.colors.accentLight
-                    : Color(hex: "F9FAFB")
+                    // 墨洗底取代 F9FAFB 死灰
+                    : theme.colors.primaryText.opacity(0.04)
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 12))
         }
@@ -152,7 +153,7 @@ public struct SettingsFocusSection: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(hex: "F9FAFB"))
+        .background(theme.colors.primaryText.opacity(0.04))
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
