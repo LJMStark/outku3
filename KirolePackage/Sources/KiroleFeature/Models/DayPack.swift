@@ -83,6 +83,9 @@ public struct DayPack: Codable, Sendable {
             parts.append("event.time=\(event.time)")
             parts.append("event.title=\(event.title)")
             parts.append("event.desc=\(event.description)")
+            // Category joins the fingerprint so an async classification landing later (cache miss →
+            // AI result on the next generate) re-pushes the DayPack instead of being deduped away.
+            parts.append("event.category=\(event.category.rawValue)")
         }
 
         parts.append("topTasks.count=\(topTasks.count)")
@@ -194,19 +197,22 @@ public struct TaskSummary: Codable, Sendable, Identifiable {
 
 // MARK: - Event Summary
 
-/// 事件摘要（用于 DayPack 概览面板的事件卡：时间 + 标题 + 描述）
+/// 事件摘要（用于 DayPack 概览面板的事件卡：时间 + 标题 + 描述 + 类别图标信号）
 public struct EventSummary: Codable, Sendable {
     public let time: String          // "HH:mm"，全天事件为空串
     public let title: String
     public let description: String
+    /// 六大类标签（AI 打标，v2.5.27 起随 DayPack 下发 1 字节；.unknown = 固件不画图标）。
+    public let category: EventCategory
 
-    public init(time: String, title: String, description: String) {
+    public init(time: String, title: String, description: String, category: EventCategory = .unknown) {
         self.time = time
         self.title = title
         self.description = description
+        self.category = category
     }
 
-    public init(from event: CalendarEvent) {
+    public init(from event: CalendarEvent, category: EventCategory = .unknown) {
         if event.isAllDay {
             self.time = ""
         } else {
@@ -217,6 +223,12 @@ public struct EventSummary: Codable, Sendable {
         }
         self.title = event.title
         self.description = event.description ?? ""
+        self.category = category
+    }
+
+    /// 同内容换类别的拷贝（分类结果落地时用，保持结构体不可变语义）。
+    public func withCategory(_ category: EventCategory) -> EventSummary {
+        EventSummary(time: time, title: title, description: description, category: category)
     }
 }
 
