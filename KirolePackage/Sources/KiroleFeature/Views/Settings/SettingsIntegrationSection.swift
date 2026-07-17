@@ -61,7 +61,7 @@ public struct SettingsIntegrationSection: View {
                 connectNewAppSection
             }
             .padding(16)
-            .background(Color.white)
+            .background(theme.colors.cardBackground)
             .clipShape(RoundedRectangle(cornerRadius: 24))
             .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
         }
@@ -133,10 +133,10 @@ public struct SettingsIntegrationSection: View {
                         HStack(alignment: .top, spacing: 6) {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .font(.system(size: 11))
-                                .foregroundStyle(.orange)
+                                .foregroundStyle(theme.colors.warning)
                             Text(warningMessage)
                                 .font(.system(size: 11))
-                                .foregroundStyle(.orange)
+                                .foregroundStyle(theme.colors.warning)
                                 .lineLimit(3)
                         }
                         .padding(.horizontal, 4)
@@ -211,11 +211,12 @@ public struct SettingsIntegrationSection: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
-            .background(Color.white)
+            .background(theme.colors.cardBackground)
             .clipShape(Capsule())
             .overlay(
                 Capsule()
-                    .stroke(Color(hex: "374151"), lineWidth: 1)
+                    // 搜索框用 borderStrong 墨线：输入控件需要看得见的静态轮廓。
+                    .stroke(theme.colors.borderStrong, lineWidth: 1)
             )
 
             Text("Commonly connected apps")
@@ -473,11 +474,11 @@ private struct ConnectedAppRow: View {
             }
         }
         .padding(16)
-        .background(Color.white)
+        .background(theme.colors.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .overlay(
             RoundedRectangle(cornerRadius: 16)
-                .stroke(Color(hex: "E5E7EB"), lineWidth: 1)
+                .stroke(theme.colors.border, lineWidth: 1)
         )
     }
 
