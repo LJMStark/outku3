@@ -10,7 +10,7 @@ from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
 
 DEFAULT_MOTIONS = ("idle", "greet", "focus", "celebrate", "react")
@@ -112,6 +112,14 @@ def normalize_frame(
             (canvas_size - frame.width) // 2,
             canvas_size - padding - vertical_lift - frame.height,
         )
+    elif placement == "fill":
+        scale = max(canvas_size / frame.width, canvas_size / frame.height)
+        target = (max(1, round(frame.width * scale)), max(1, round(frame.height * scale)))
+        frame = frame.resize(target, resample_filter)
+        left = (frame.width - canvas_size) // 2
+        top = (frame.height - canvas_size) // 2
+        frame = frame.crop((left, top, left + canvas_size, top + canvas_size))
+        origin = (0, 0)
     else:
         scale = min(canvas_size / frame.width, canvas_size / frame.height)
         target = (max(1, round(frame.width * scale)), max(1, round(frame.height * scale)))
@@ -120,6 +128,101 @@ def normalize_frame(
 
     canvas.alpha_composite(frame, origin)
     return canvas
+
+
+def stabilize_motion_region(
+    frames: list[Image.Image],
+    region: tuple[int, int, int, int],
+    feather: int,
+) -> list[Image.Image]:
+    """Keep the first frame fixed outside a small character-only motion region."""
+    if not frames:
+        return []
+
+    x, y, width, height = region
+    canvas_width, canvas_height = frames[0].size
+    if width <= 0 or height <= 0:
+        raise ValueError("Motion region width and height must be positive")
+    if x < 0 or y < 0 or x + width > canvas_width or y + height > canvas_height:
+        raise ValueError("Motion region must stay inside the normalized canvas")
+
+    mask = Image.new("L", (canvas_width, canvas_height), 0)
+    ImageDraw.Draw(mask).rectangle((x, y, x + width, y + height), fill=255)
+    if feather > 0:
+        mask = mask.filter(ImageFilter.GaussianBlur(feather))
+
+    base = frames[0].convert("RGBA")
+    return [base] + [Image.composite(frame.convert("RGBA"), base, mask) for frame in frames[1:]]
+
+
+def validate_stable_outside_region(
+    frames: list[Image.Image],
+    region: tuple[int, int, int, int],
+    feather: int,
+) -> None:
+    """Reject exports whose scenery changes outside the declared motion patch."""
+    if not frames:
+        return
+    x, y, width, height = region
+    allowance = max(0, feather * 4)
+    left = max(0, x - allowance)
+    top = max(0, y - allowance)
+    right = min(frames[0].width, x + width + allowance)
+    bottom = min(frames[0].height, y + height + allowance)
+    outside = Image.new("L", frames[0].size, 255)
+    ImageDraw.Draw(outside).rectangle((left, top, right, bottom), fill=0)
+    base = frames[0].convert("RGBA")
+
+    for index, frame in enumerate(frames[1:], start=2):
+        difference = ImageChops.difference(base, frame.convert("RGBA"))
+        outside_rgba = Image.merge("RGBA", (outside, outside, outside, outside))
+        difference = ImageChops.multiply(difference, outside_rgba)
+        if difference.getbbox() is not None:
+            raise ValueError(f"Frame {index:02d} changes pixels outside the motion region")
+
+
+def align_frames_to_first(frames: list[Image.Image]) -> list[Image.Image]:
+    """Register AI frames to frame 01 before extracting a small motion patch."""
+    if not frames:
+        return []
+    try:
+        import cv2
+        import numpy as np
+    except ImportError as error:
+        raise RuntimeError("Frame alignment requires numpy and opencv-python-headless") from error
+
+    base = frames[0].convert("RGBA")
+    template = cv2.cvtColor(np.array(base.convert("RGB")), cv2.COLOR_RGB2GRAY)
+    aligned = [base]
+    criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 120, 1e-6)
+
+    for frame in frames[1:]:
+        rgba = np.array(frame.convert("RGBA"))
+        candidate = cv2.cvtColor(rgba[:, :, :3], cv2.COLOR_RGB2GRAY)
+        warp = np.eye(2, 3, dtype=np.float32)
+        try:
+            cv2.findTransformECC(
+                template,
+                candidate,
+                warp,
+                cv2.MOTION_AFFINE,
+                criteria,
+                None,
+                5,
+            )
+        except cv2.error:
+            aligned.append(frame.convert("RGBA"))
+            continue
+        registered = cv2.warpAffine(
+            rgba,
+            warp,
+            base.size,
+            flags=cv2.INTER_LANCZOS4 | cv2.WARP_INVERSE_MAP,
+            borderMode=cv2.BORDER_CONSTANT,
+            borderValue=(0, 0, 0, 0),
+        )
+        aligned.append(Image.fromarray(registered, "RGBA"))
+    return aligned
 
 
 def write_imageset(catalog: Path, name: str, frame: Image.Image) -> Path:
@@ -270,6 +373,9 @@ def split_sheet(
     remove_background: bool = True,
     resampling: str = "nearest",
     manifest_output: Path | None = None,
+    motion_region: tuple[int, int, int, int] | None = None,
+    motion_region_feather: int = 0,
+    align_to_first: bool = False,
 ) -> list[Path]:
     if layout == "motion-rows" and len(motions) != grid.rows:
         raise ValueError("Motion count must equal grid row count")
@@ -289,6 +395,7 @@ def split_sheet(
         )
 
     exported: list[tuple[str, Path]] = []
+    normalized_frames: list[tuple[str, str, Image.Image]] = []
     cells: list[tuple[int, int, str, int]] = []
     if layout == "motion-rows":
         for row, motion in enumerate(motions):
@@ -317,6 +424,31 @@ def split_sheet(
             resampling=resampling,
         )
         name = f"{character}-{motion}-{frame_index:02d}"
+        normalized_frames.append((motion, name, frame))
+
+    if motion_region is not None:
+        for motion in dict.fromkeys(item[0] for item in normalized_frames):
+            indices = [
+                index for index, item in enumerate(normalized_frames) if item[0] == motion
+            ]
+            motion_frames = [normalized_frames[index][2] for index in indices]
+            if align_to_first:
+                motion_frames = align_frames_to_first(motion_frames)
+            stabilized = stabilize_motion_region(
+                motion_frames,
+                region=motion_region,
+                feather=motion_region_feather,
+            )
+            validate_stable_outside_region(
+                stabilized,
+                region=motion_region,
+                feather=motion_region_feather,
+            )
+            for index, frame in zip(indices, stabilized, strict=True):
+                motion_name, name, _ = normalized_frames[index]
+                normalized_frames[index] = (motion_name, name, frame)
+
+    for _, name, frame in normalized_frames:
         path = write_imageset(catalog, name, frame)
         validate_export(name, path, canvas_size)
         written.append(path)
@@ -345,13 +477,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--gutter-y", type=int, default=0)
     parser.add_argument("--motions", default=",".join(DEFAULT_MOTIONS))
     parser.add_argument("--canvas-size", type=int, default=512)
-    parser.add_argument("--placement", choices=("cell", "trim"), default="cell")
+    parser.add_argument("--placement", choices=("cell", "trim", "fill"), default="cell")
     parser.add_argument("--layout", choices=("motion-rows", "single-motion"), default="motion-rows")
     parser.add_argument("--background", choices=("remove", "preserve"), default="remove")
     parser.add_argument("--resampling", choices=("nearest", "lanczos"), default="nearest")
     parser.add_argument("--extraction", choices=("grid", "components"), default="grid")
     parser.add_argument("--minimum-component-area", type=int, default=500)
     parser.add_argument("--padding", type=int, default=24)
+    parser.add_argument(
+        "--motion-region",
+        default="",
+        help="Character-only x,y,width,height region; pixels outside stay identical to frame 01",
+    )
+    parser.add_argument("--motion-region-feather", type=int, default=0)
+    parser.add_argument("--align-to-first", action="store_true")
     parser.add_argument(
         "--vertical-lifts",
         default="",
@@ -368,6 +507,15 @@ def parse_vertical_lifts(raw: str) -> dict[str, tuple[int, ...]]:
             raise ValueError(f"Invalid vertical lift entry: {entry}")
         result[motion.strip()] = tuple(int(value.strip()) for value in values.split(","))
     return result
+
+
+def parse_motion_region(raw: str) -> tuple[int, int, int, int] | None:
+    if not raw.strip():
+        return None
+    values = tuple(int(value.strip()) for value in raw.split(","))
+    if len(values) != 4:
+        raise ValueError("Motion region must contain x,y,width,height")
+    return values
 
 
 def main() -> None:
@@ -397,6 +545,9 @@ def main() -> None:
         remove_background=args.background == "remove",
         resampling=args.resampling,
         manifest_output=args.manifest_output,
+        motion_region=parse_motion_region(args.motion_region),
+        motion_region_feather=args.motion_region_feather,
+        align_to_first=args.align_to_first,
     )
     print(f"Wrote {len(written)} frames and {args.review_output}")
 

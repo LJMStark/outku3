@@ -30,43 +30,65 @@ public enum CompanionAnimationLoopMode: Sendable, Equatable {
     case oneShot
 }
 
+public struct CompanionAnimationFrame: Sendable, Equatable {
+    public let name: String
+    public let duration: TimeInterval
+
+    public init(name: String, duration: TimeInterval) {
+        precondition(duration > 0, "Companion animation frame duration must be positive")
+        self.name = name
+        self.duration = duration
+    }
+}
+
 public struct CompanionAnimationDefinition: Sendable, Equatable {
-    public let frameNames: [String]
-    public let frameDuration: TimeInterval
+    public let frames: [CompanionAnimationFrame]
     public let loopMode: CompanionAnimationLoopMode
     public let staticFallbackAssetName: String
 
     public init(
-        frameNames: [String],
-        frameDuration: TimeInterval,
+        frames: [CompanionAnimationFrame],
         loopMode: CompanionAnimationLoopMode,
         staticFallbackAssetName: String
     ) {
-        precondition(!frameNames.isEmpty, "Companion animation requires at least one frame")
-        precondition(frameDuration > 0, "Companion animation frame duration must be positive")
-        self.frameNames = frameNames
-        self.frameDuration = frameDuration
+        precondition(!frames.isEmpty, "Companion animation requires at least one frame")
+        self.frames = frames
         self.loopMode = loopMode
         self.staticFallbackAssetName = staticFallbackAssetName
     }
 
+    public var frameNames: [String] {
+        frames.map(\.name)
+    }
+
+    public var minimumFrameDuration: TimeInterval {
+        frames.map(\.duration).min() ?? 0.1
+    }
+
     public var totalDuration: TimeInterval {
-        frameDuration * Double(frameNames.count)
+        frames.reduce(0) { $0 + $1.duration }
     }
 
     public func frameName(at elapsed: TimeInterval) -> String {
         let safeElapsed = max(0, elapsed)
-        let rawIndex = Int(safeElapsed / frameDuration)
-        let index: Int
+        let playbackTime: TimeInterval
 
         switch loopMode {
         case .ambient:
-            index = rawIndex % frameNames.count
+            playbackTime = safeElapsed.truncatingRemainder(dividingBy: totalDuration)
         case .oneShot:
-            index = min(rawIndex, frameNames.count - 1)
+            guard safeElapsed < totalDuration else { return frames[frames.count - 1].name }
+            playbackTime = safeElapsed
         }
 
-        return frameNames[index]
+        var boundary: TimeInterval = 0
+        for frame in frames {
+            boundary += frame.duration
+            if playbackTime < boundary {
+                return frame.name
+            }
+        }
+        return frames[frames.count - 1].name
     }
 }
 
@@ -127,18 +149,15 @@ public enum CompanionAnimationCatalog {
             return nil
         }
 
-        let sourceFrameNames = (1...4).map {
-            "\(character.rawValue)-\(artwork.rawValue)-\(motion.rawValue)-\(String(format: "%02d", $0))"
-        }
         let loopMode: CompanionAnimationLoopMode =
             motion == .idle || motion == .focus ? .ambient : .oneShot
-        let playbackFrameNames = loopMode == .ambient
-            ? sourceFrameNames + Array(repeating: sourceFrameNames[0], count: 8)
-            : sourceFrameNames
 
         return CompanionAnimationDefinition(
-            frameNames: playbackFrameNames,
-            frameDuration: 0.15,
+            frames: timeline(
+                character: character,
+                artwork: artwork,
+                motion: motion
+            ),
             loopMode: loopMode,
             staticFallbackAssetName: staticFallbackAssetName(for: character, artwork: artwork)
         )
@@ -166,5 +185,47 @@ public enum CompanionAnimationCatalog {
         artwork: CompanionAnimationArtwork
     ) -> String {
         character.heroAssetName(variant: artwork.heroVariant)
+    }
+
+    private static func timeline(
+        character: CompanionCharacter,
+        artwork: CompanionAnimationArtwork,
+        motion: CompanionMotion
+    ) -> [CompanionAnimationFrame] {
+        let sourceMotion: CompanionMotion
+        switch artwork {
+        case .main:
+            sourceMotion = motion == .react ? .greet : motion
+        case .reading, .scene:
+            sourceMotion = .idle
+        }
+        let prefix = "\(character.rawValue)-\(artwork.rawValue)-\(sourceMotion.rawValue)"
+        let cues: [(Int, TimeInterval)]
+
+        switch (artwork, motion) {
+        case (.main, .idle):
+            cues = [(1, 2.8), (2, 0.10), (3, 0.12), (2, 0.10), (1, 1.8)]
+        case (.main, .greet), (.main, .react):
+            cues = [(4, 0.12), (3, 0.10), (2, 0.12), (1, 0.32), (2, 0.12), (3, 0.10), (4, 0.20)]
+        case (.reading, .idle):
+            cues = [(1, 2.8), (2, 0.12), (1, 1.4), (5, 0.12), (1, 1.8)]
+        case (.reading, .focus):
+            cues = [(1, 2.2), (3, 0.12), (2, 0.16), (4, 0.12), (1, 1.4)]
+        case (.reading, .celebrate):
+            cues = [(1, 0.12), (3, 0.10), (6, 0.12), (2, 0.36), (6, 0.12), (3, 0.10), (1, 0.20)]
+        case (.scene, .idle):
+            cues = [(1, 3.4), (2, 0.10), (1, 1.6), (5, 0.14), (1, 2.4)]
+        case (.scene, .react):
+            cues = [(1, 0.12), (2, 0.12), (5, 0.36), (2, 0.12), (1, 0.20)]
+        default:
+            preconditionFailure("Unsupported companion animation timeline")
+        }
+
+        return cues.map { index, duration in
+            CompanionAnimationFrame(
+                name: "\(prefix)-\(String(format: "%02d", index))",
+                duration: duration
+            )
+        }
     }
 }

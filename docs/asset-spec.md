@@ -52,17 +52,30 @@ must never be blended into one generic character-only animation family:
 
 | Artwork family | App surface | Motion files | Playback |
 |----------------|-------------|--------------|----------|
-| `main` | Onboarding | `joy-main-idle-*`, `joy-main-greet-*`, `joy-main-react-*` | idle loop + one shots |
-| `reading` | Home / Focus | `joy-reading-idle-*`, `joy-reading-focus-*`, `joy-reading-celebrate-*` | ambient + completion one shot |
-| `scene` | Pet | `joy-scene-idle-*`, `joy-scene-react-*` | full-scene loop + tap one shot |
+| `main` | Onboarding | `joy-main-idle-*`, `joy-main-greet-*` | intermittent idle + shared interaction one shot |
+| `reading` | Home / Focus | `joy-reading-idle-*` | one shared fixed-ground batch, state-specific timing |
+| `scene` | Pet | `joy-scene-idle-*` | one shared fixed-scene batch, state-specific timing |
 
-Each motion has four 512 x 512 RGBA PNG frames at 6.67 FPS. `main` and `reading`
-remove the neutral sheet background; `scene` intentionally preserves the complete
-mushroom illustration. Silas, Nova, and custom companions remain static. Reduce
-Motion resolves directly to the matching `main`, `reading`, or `scene` artwork.
-Ambient `idle` and `focus` playback returns to frame 01 and holds it for eight
-ticks (1.2 seconds) after every four-frame movement, so the companion stays calm
-instead of moving continuously. One-shot motions play their four frames once.
+Frames are 512 x 512 RGBA PNGs. `main` currently has four source drawings per
+retained batch, `reading` has eight, and `scene` has six. A page family stores
+one batch and reuses it with different frame order and durations; it does not
+duplicate identical PNGs for every semantic state. `main` and `reading` remove the
+neutral sheet background; `scene` preserves the complete mushroom illustration.
+Silas, Nova, and custom companions remain static. Reduce Motion resolves directly
+to the matching `main`, `reading`, or `scene` artwork.
+
+Playback uses per-frame durations instead of one fixed FPS. Ambient states hold
+frame 01 for several seconds, use 0.10-0.16 second transition drawings, then settle
+again. One-shot feedback lasts about 0.8-1.2 seconds and returns to ambient. The
+player sleeps for the current frame duration rather than continuously refreshing
+an unchanged hold frame.
+
+AI-generated scenery is never allowed to animate. During export, every `reading`
+frame is registered to frame 01 and only a small facial region is accepted; the
+grass, body, book, and tail remain frame-01 pixels. The same rule applies to
+`scene`: the mushroom forest remains frame-01 pixels and only the fox face changes.
+This follows Apple's requirement for consistent texture size and anchor placement
+and avoids the disorienting background motion warned against in the Motion HIG.
 
 Each family was generated with Image2 from exactly one current App reference:
 
@@ -70,6 +83,11 @@ Each family was generated with Image2 from exactly one current App reference:
 - `joy-reading-action-sheet-v2.png` references only `joy-reading-2.png`.
 - `joy-scene-idle-sheet-v2.png` and `joy-scene-react-sheet-v2.png` reference only
   `joy-scene.png` and keep its complete composition.
+- `joy-reading-subtle-sheet-v3.png` references only `joy-reading-2.png` and supplies
+  the shared restrained eight-frame facial cycle for idle, focus, and celebrate.
+- `joy-scene-subtle-sheet-v3.png` references only `joy-scene.png` and supplies the
+  shared restrained six-frame facial cycle for idle and react while retaining the
+  complete upper scene.
 
 Example regeneration commands:
 
@@ -92,6 +110,16 @@ python3 scripts/companion_action_sheet.py \
   --manifest-output docs/asset-review/joy-scene-react-manifest-v2.json \
   --rows 2 --columns 2 --motions scene-react \
   --layout single-motion --background preserve
+
+python3 scripts/companion_action_sheet.py \
+  docs/asset-sources/joy-reading-subtle-sheet-v3.png \
+  --character joy \
+  --catalog KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets \
+  --review-output docs/asset-review/joy-reading-idle-contact-sheet-v3.png \
+  --manifest-output docs/asset-review/joy-reading-idle-manifest-v3.json \
+  --rows 2 --columns 4 --motions reading-idle --layout single-motion \
+  --extraction grid --placement cell --resampling lanczos --align-to-first \
+  --motion-region 200,145,110,85 --motion-region-feather 3
 ```
 
 The splitter validates deterministic naming, RGBA PNG format, 512 x 512 dimensions,
@@ -172,6 +200,8 @@ sheet before shipping.
 - [ ] `CompanionCharacter.allCases` remains exactly `[.joy, .silas, .nova]`.
 - [ ] Walk through onboarding character selection; subsequent pages reflect the
       selected character.
-- [ ] Joy has exactly four reviewed frames for every supported artwork/motion pair.
+- [ ] Joy has the reviewed frame count declared above for every supported artwork/motion pair.
 - [ ] Main, reading, and scene frames retain their own original page composition.
+- [ ] Pixels outside each declared motion region remain identical to frame 01.
+- [ ] Ambient key poses hold longer than transition drawings; one shots return to ambient.
 - [ ] Reduce Motion, Silas, Nova, and custom companion fallbacks remain static.

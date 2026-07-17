@@ -1,0 +1,40 @@
+[
+  {
+    "attachments" : [
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "C584ACA0-9650-4296-8D9B-7E1FEFC5BE05",
+        "deviceName" : "iPhone 17 Pro",
+        "exportedFileName" : "A2534C34-35ED-488A-BEE0-D72130424892.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "companion-pet_0_868CDAE2-B285-4DBE-A851-8D34E9DAB709.png",
+        "timestamp" : 1784246575.422
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "C584ACA0-9650-4296-8D9B-7E1FEFC5BE05",
+        "deviceName" : "iPhone 17 Pro",
+        "exportedFileName" : "6DC43F4E-7AE0-4DE5-87E9-875AD008D039.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "companion-home_0_EA60896C-7A83-4E50-AED9-30074DBD79B9.png",
+        "timestamp" : 1784246572.691
+      }
+    ],
+    "testIdentifier" : "KiroleUITests/testCompanionAnimationSurfacesUseStableLayout()",
+    "testIdentifierURL" : "test://com.apple.xcode/Kirole/KiroleUITests/KiroleUITests/testCompanionAnimationSurfacesUseStableLayout"
+  },
+  {
+    "attachments" : [
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "C584ACA0-9650-4296-8D9B-7E1FEFC5BE05",
+        "deviceName" : "iPhone 17 Pro",
+        "exportedFileName" : "focus-reading.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "focus-reading.png"
+      }
+    ],
+    "testIdentifier" : "KiroleUITests/testHardwareAndFocusDebugControlsAreReachable()",
+    "testIdentifierURL" : "test://com.apple.xcode/Kirole/KiroleUITests/KiroleUITests/testHardwareAndFocusDebugControlsAreReachable"
+  }
+]

@@ -10,13 +10,13 @@ struct CompanionAnimationCatalogTests {
 
         let cases: [(CompanionAnimationArtwork, CompanionMotion, String)] = [
             (.main, .idle, "joy-main-idle-01"),
-            (.main, .greet, "joy-main-greet-01"),
-            (.main, .react, "joy-main-react-01"),
+            (.main, .greet, "joy-main-greet-04"),
+            (.main, .react, "joy-main-greet-04"),
             (.reading, .idle, "joy-reading-idle-01"),
-            (.reading, .focus, "joy-reading-focus-01"),
-            (.reading, .celebrate, "joy-reading-celebrate-01"),
+            (.reading, .focus, "joy-reading-idle-01"),
+            (.reading, .celebrate, "joy-reading-idle-01"),
             (.scene, .idle, "joy-scene-idle-01"),
-            (.scene, .react, "joy-scene-react-01"),
+            (.scene, .react, "joy-scene-idle-01"),
         ]
 
         for (artwork, motion, firstFrame) in cases {
@@ -32,16 +32,10 @@ struct CompanionAnimationCatalogTests {
                 continue
             }
 
-            let expectedPlaybackFrameCount = definition.loopMode == .ambient ? 12 : 4
-            #expect(definition.frameNames.count == expectedPlaybackFrameCount)
+            #expect(definition.frames.count >= 5)
             #expect(definition.frameNames.first == firstFrame)
-            if definition.loopMode == .ambient {
-                #expect(definition.frameNames[3] == firstFrame.replacingOccurrences(of: "01", with: "04"))
-                #expect(definition.frameNames.suffix(8).allSatisfy { $0 == firstFrame })
-            } else {
-                #expect(definition.frameNames.last == firstFrame.replacingOccurrences(of: "01", with: "04"))
-            }
-            #expect(definition.frameDuration == 0.15)
+            #expect(definition.frames.allSatisfy { $0.duration > 0 })
+            #expect(definition.minimumFrameDuration <= 0.12)
             #expect(definition.staticFallbackAssetName.hasPrefix("joy-"))
         }
     }
@@ -58,7 +52,18 @@ struct CompanionAnimationCatalogTests {
         #expect(idle.loopMode == .ambient)
         #expect(celebrate.loopMode == .oneShot)
         #expect(idle.frameName(at: idle.totalDuration) == "joy-reading-idle-01")
-        #expect(celebrate.frameName(at: celebrate.totalDuration * 2) == "joy-reading-celebrate-04")
+        #expect(celebrate.frameName(at: celebrate.totalDuration * 2) == celebrate.frameNames.last)
+    }
+
+    @Test("Key poses hold longer than transition drawings")
+    func variableFrameTiming() throws {
+        let idle = try #require(
+            CompanionAnimationCatalog.animationDefinition(for: .joy, artwork: .reading, motion: .idle)
+        )
+
+        #expect(idle.frames.first?.duration == 2.8)
+        #expect(idle.frames.dropFirst().contains { $0.duration <= 0.12 })
+        #expect(idle.totalDuration >= 4.0)
     }
 
     @Test("Reduce Motion and non-Joy companions use stable static artwork")

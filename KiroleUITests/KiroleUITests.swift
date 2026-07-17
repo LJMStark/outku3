@@ -86,6 +86,26 @@ final class KiroleUITests: XCTestCase {
     }
 
     @MainActor
+    func testCompanionAnimationSurfacesUseStableLayout() throws {
+        let app = XCUIApplication()
+        app.launchArguments.append("-uiTestSkipOnboarding")
+        app.launch()
+
+        let homeArtwork = app.descendants(matching: .any)["Home_PetArtwork"]
+        XCTAssertTrue(homeArtwork.waitForExistence(timeout: 5))
+        keepScreenshot(named: "companion-home", app: app)
+
+        let petTab = app.buttons["appHeader.petTab"]
+        XCTAssertTrue(petTab.waitForExistence(timeout: 5))
+        petTab.tap()
+
+        let petScene = app.descendants(matching: .any)["Pet_CompanionAnimation"]
+        XCTAssertTrue(petScene.waitForExistence(timeout: 5))
+        XCTAssertGreaterThanOrEqual(petScene.frame.width, app.frame.width * 0.95)
+        keepScreenshot(named: "companion-pet", app: app)
+    }
+
+    @MainActor
     private func scrollUntilHittable(
         _ element: XCUIElement,
         in scrollView: XCUIElement,
@@ -94,5 +114,12 @@ final class KiroleUITests: XCTestCase {
         for _ in 0..<maximumAttempts where !element.isHittable {
             scrollView.swipeUp()
         }
+    }
+
+    private func keepScreenshot(named name: String, app: XCUIApplication) {
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = name
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
     }
 }

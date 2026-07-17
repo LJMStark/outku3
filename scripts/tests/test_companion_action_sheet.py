@@ -96,6 +96,27 @@ class CompanionActionSheetTests(unittest.TestCase):
             self.assertEqual(written[-1].parent.name, "joy-scene-react-04.imageset")
             self.assertEqual(Image.open(written[0]).getchannel("A").getextrema(), (255, 255))
 
+    def test_motion_region_keeps_every_pixel_outside_character_region_stable(self):
+        base = Image.new("RGBA", (64, 64), (240, 230, 190, 255))
+        changed = base.copy()
+        base.putpixel((8, 54), (20, 140, 40, 255))
+        changed.putpixel((8, 54), (220, 40, 40, 255))
+        changed.putpixel((32, 24), (30, 60, 180, 255))
+
+        stabilized = MODULE.stabilize_motion_region(
+            [base, changed],
+            region=(16, 8, 32, 32),
+            feather=0,
+        )
+
+        self.assertEqual(stabilized[1].getpixel((8, 54)), base.getpixel((8, 54)))
+        self.assertEqual(stabilized[1].getpixel((32, 24)), changed.getpixel((32, 24)))
+        MODULE.validate_stable_outside_region(
+            stabilized,
+            region=(16, 8, 32, 32),
+            feather=0,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

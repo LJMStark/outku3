@@ -156,55 +156,28 @@ private struct PetIllustrationSection: View {
             }
             motionTrigger = CompanionMotionTrigger(motion: .react)
         } label: {
-            ZStack {
-                // Background Radial Gradient for "Habitat Focus"
-                RadialGradient(
-                    gradient: Gradient(colors: [
-                        theme.colors.primary.opacity(0.15),
-                        Color.clear
-                    ]),
-                    center: .center,
-                    startRadius: 50,
-                    endRadius: 200
-                )
-                .frame(height: 340)
+            GeometryReader { proxy in
+                ZStack {
+                    CompanionAnimationView(
+                        artwork: .scene,
+                        ambientMotion: .idle,
+                        trigger: motionTrigger ?? appState.pendingCompanionMotionTrigger,
+                        size: proxy.size,
+                        isActive: appState.selectedTab == .pet,
+                        accessibilityLabel: "Pet companion",
+                        accessibilityIdentifier: "Pet_CompanionAnimation",
+                        onOneShotCompletion: {
+                            guard motionTrigger?.motion == .react else { return }
+                            motionTrigger = nil
+                            onTap()
+                        }
+                    )
 
-                VStack {
-                    Spacer()
-
-                    ZStack {
-                        // Soft blurred ground shadow
-                        Ellipse()
-                            .fill(Color(hex: "8B5A2B").opacity(0.15))
-                            .frame(width: 140, height: 24)
-                            .blur(radius: 8)
-                            .offset(y: 70)
-
-                        CompanionAnimationView(
-                            artwork: .scene,
-                            ambientMotion: .idle,
-                            trigger: motionTrigger ?? appState.pendingCompanionMotionTrigger,
-                            size: CGSize(width: 300, height: 300),
-                            isActive: appState.selectedTab == .pet,
-                            accessibilityLabel: "Pet companion",
-                            accessibilityIdentifier: "Pet_CompanionAnimation",
-                            onOneShotCompletion: {
-                                guard motionTrigger?.motion == .react else { return }
-                                motionTrigger = nil
-                                onTap()
-                            }
-                        )
-                            .shadow(color: theme.colors.primary.opacity(0.1), radius: 20, x: 0, y: 10)
-                            
-                        // Floating Particles for liveliness
-                        floatingParticles
-                    }
-
-                    Spacer()
-                        .frame(height: 40)
+                    floatingParticles
                 }
-                .frame(height: 340)
             }
+            .frame(height: 340)
+            .clipped()
         }
         .buttonStyle(.plain)
         .accessibilityLabel("View pet status")

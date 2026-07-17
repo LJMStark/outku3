@@ -1,0 +1,73 @@
+{
+  "canvas": {
+    "width": 512,
+    "height": 512
+  },
+  "frameCount": 8,
+  "frames": [
+    {
+      "name": "joy-reading-idle-01",
+      "file": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-reading-idle-01.imageset/joy-reading-idle-01.png",
+      "anchor": {
+        "x": 0.5,
+        "y": 1.0
+      }
+    },
+    {
+      "name": "joy-reading-idle-02",
+      "file": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-reading-idle-02.imageset/joy-reading-idle-02.png",
+      "anchor": {
+        "x": 0.5,
+        "y": 1.0
+      }
+    },
+    {
+      "name": "joy-reading-idle-03",
+      "file": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-reading-idle-03.imageset/joy-reading-idle-03.png",
+      "anchor": {
+        "x": 0.5,
+        "y": 1.0
+      }
+    },
+    {
+      "name": "joy-reading-idle-04",
+      "file": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-reading-idle-04.imageset/joy-reading-idle-04.png",
+      "anchor": {
+        "x": 0.5,
+        "y": 1.0
+      }
+    },
+    {
+      "name": "joy-reading-idle-05",
+      "file": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-reading-idle-05.imageset/joy-reading-idle-05.png",
+      "anchor": {
+        "x": 0.5,
+        "y": 1.0
+      }
+    },
+    {
+      "name": "joy-reading-idle-06",
+      "file": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-reading-idle-06.imageset/joy-reading-idle-06.png",
+      "anchor": {
+        "x": 0.5,
+        "y": 1.0
+      }
+    },
+    {
+      "name": "joy-reading-idle-07",
+      "file": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-reading-idle-07.imageset/joy-reading-idle-07.png",
+      "anchor": {
+        "x": 0.5,
+        "y": 1.0
+      }
+    },
+    {
+      "name": "joy-reading-idle-08",
+      "file": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-reading-idle-08.imageset/joy-reading-idle-08.png",
+      "anchor": {
+        "x": 0.5,
+        "y": 1.0
+      }
+    }
+  ]
+}

@@ -24,9 +24,9 @@ public struct CompanionAnimationView: View {
     private let onOneShotCompletion: @MainActor () -> Void
 
     @State private var acceptedTrigger: CompanionMotionTrigger?
-    @State private var playbackStartedAt = Date()
     @State private var isVisible = false
     @State private var customPreviewData: Data?
+    @State private var displayedFrameName: String?
 
     public init(
         selection: CompanionSelection? = nil,
@@ -71,7 +71,10 @@ public struct CompanionAnimationView: View {
             .onChange(of: scenePhase) { _, newPhase in
                 guard newPhase != .active else { return }
                 acceptedTrigger = nil
-                playbackStartedAt = Date()
+            }
+            .onChange(of: isActive) { _, newValue in
+                guard !newValue else { return }
+                acceptedTrigger = nil
             }
             .task(id: acceptedTrigger?.id) {
                 guard let acceptedTrigger else { return }
@@ -90,9 +93,12 @@ public struct CompanionAnimationView: View {
                     return
                 }
                 guard self.acceptedTrigger?.id == acceptedTrigger.id else { return }
+                guard isActive, isVisible, scenePhase == .active else { return }
                 self.acceptedTrigger = nil
-                playbackStartedAt = Date()
                 onOneShotCompletion()
+            }
+            .task(id: playbackTaskID) {
+                await playFrames()
             }
             .task(id: customCompanionID) {
                 guard let customCompanionID else {
@@ -107,23 +113,15 @@ public struct CompanionAnimationView: View {
     private var animationContent: some View {
         switch presentation {
         case .animated(let definition):
-            TimelineView(
-                .animation(
-                    minimumInterval: definition.frameDuration,
-                    paused: !shouldPlay
-                )
-            ) { context in
-                companionFrame(
-                    named: definition.frameName(
-                        at: context.date.timeIntervalSince(playbackStartedAt)
-                    ),
-                    fallback: definition.staticFallbackAssetName
-                )
-            }
+            companionFrame(
+                named: displayedFrameName ?? definition.frames[0].name,
+                fallback: definition.staticFallbackAssetName
+            )
         case .staticAsset(let assetName):
             Image(assetName, bundle: .module)
                 .resizable()
-                .scaledToFit()
+                .aspectRatio(contentMode: imageContentMode)
+                .clipped()
                 .accessibilityHidden(true)
         case .custom:
             customCompanionImage
@@ -136,20 +134,23 @@ public struct CompanionAnimationView: View {
         if let image = UIImage(named: frameName, in: .module, compatibleWith: nil) {
             Image(uiImage: image)
                 .resizable()
-                .interpolation(.none)
-                .scaledToFit()
+                .interpolation(.high)
+                .aspectRatio(contentMode: imageContentMode)
+                .clipped()
                 .accessibilityHidden(true)
         } else {
             Image(fallback, bundle: .module)
                 .resizable()
-                .scaledToFit()
+                .aspectRatio(contentMode: imageContentMode)
+                .clipped()
                 .accessibilityHidden(true)
         }
         #else
         Image(frameName, bundle: .module)
             .resizable()
-            .interpolation(.none)
-            .scaledToFit()
+            .interpolation(.high)
+            .aspectRatio(contentMode: imageContentMode)
+            .clipped()
             .accessibilityHidden(true)
         #endif
     }
@@ -180,12 +181,7 @@ public struct CompanionAnimationView: View {
     }
 
     private var missingCustomCompanionFallback: some View {
-        Image(
-            appState.userProfile.companionCharacter.heroAssetName(variant: .main),
-            bundle: .module
-        )
-        .resizable()
-        .scaledToFit()
+        Color.clear
         .accessibilityHidden(true)
     }
 
@@ -215,6 +211,40 @@ public struct CompanionAnimationView: View {
         isActive && isVisible && scenePhase == .active && !reduceMotion
     }
 
+    private var imageContentMode: ContentMode {
+        artwork == .scene ? .fill : .fit
+    }
+
+    private var playbackTaskID: String {
+        "\(selection)-\(artwork.rawValue)-\(activeMotion.rawValue)-\(acceptedTrigger?.id.uuidString ?? "ambient")-\(shouldPlay)"
+    }
+
+    private func playFrames() async {
+        guard case .animated(let definition) = presentation else {
+            displayedFrameName = nil
+            return
+        }
+
+        displayedFrameName = definition.frames[0].name
+        guard shouldPlay else { return }
+
+        var index = 0
+        while !Task.isCancelled {
+            let frame = definition.frames[index]
+            displayedFrameName = frame.name
+            do {
+                try await Task.sleep(for: .seconds(frame.duration))
+            } catch {
+                return
+            }
+
+            if definition.loopMode == .oneShot, index == definition.frames.count - 1 {
+                return
+            }
+            index = (index + 1) % definition.frames.count
+        }
+    }
+
     private func accept(_ candidate: CompanionMotionTrigger?) {
         guard acceptedTrigger == nil,
               let candidate,
@@ -226,6 +256,5 @@ public struct CompanionAnimationView: View {
                 reduceMotion: reduceMotion
               ) != nil else { return }
         acceptedTrigger = candidate
-        playbackStartedAt = Date()
     }
 }
