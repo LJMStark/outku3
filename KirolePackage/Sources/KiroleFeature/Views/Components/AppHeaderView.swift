@@ -54,10 +54,12 @@ public struct AppHeaderView: View {
             headerContent
                 .background(theme.currentTheme.headerGradient)
 
-            // Bottom decorative thick line
+            // 底部墨线：E-ink 品牌的硬边墨线——细而实。原先 10pt + 35% 黑
+            // 的粗条读起来像阴影 bug，不像设计；3pt 纯色 accentDark 才是
+            // 刻意的一笔。
             Rectangle()
-                .fill(Color.black.opacity(0.35))
-                .frame(height: 10)
+                .fill(theme.colors.accentDark)
+                .frame(height: 3)
         }
     }
 
@@ -286,15 +288,12 @@ private struct StackedTabFrame<Content: View>: View {
         }
         .frame(width: AppHeaderLayout.tabOuterWidth, height: AppHeaderLayout.tabOuterHeight)
         .shadow(color: .black.opacity(0.12), radius: isSelected ? 0 : 4, y: 2)
+        // 选中态只保留一圈白色外环：原先白环 + primary 外环的双圈在彩色渐变
+        // 底上互相打架，视觉上很吵。单圈白环反而更清楚地表达"被选中"。
         .overlay(
             RoundedRectangle(cornerRadius: AppHeaderLayout.tabCornerRadius + 2)
                 .stroke(isSelected ? Color.white : Color.clear, lineWidth: 2)
                 .padding(-2)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: AppHeaderLayout.tabCornerRadius + 4)
-                .stroke(isSelected ? primaryColor : Color.clear, lineWidth: 2)
-                .padding(-4)
         )
     }
 }

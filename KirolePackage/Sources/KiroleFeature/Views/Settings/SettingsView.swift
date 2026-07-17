@@ -110,11 +110,14 @@ struct SettingsSectionHeader: View {
 
 struct SettingsToggleSwitch: View {
     let isOn: Bool
+    @Environment(ThemeManager.self) private var theme
 
     var body: some View {
         ZStack(alignment: isOn ? .trailing : .leading) {
             RoundedRectangle(cornerRadius: 12)
-                .fill(isOn ? Color(hex: "4CAF50") : Color(hex: "E0E0E0"))
+                // 语义 token：开 = taskComplete 绿，关 = borderStrong 中性灰，
+                // 取代硬编码 4CAF50 / E0E0E0（与其他控件状态色保持一致）。
+                .fill(isOn ? theme.colors.taskComplete : theme.colors.borderStrong)
                 .frame(width: 40, height: 24)
 
             Circle()
