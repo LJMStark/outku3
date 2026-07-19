@@ -1,0 +1,146 @@
+{
+  "main": {
+    "vs_frame01": [
+      {
+        "mean_abs": 22.593336802642337,
+        "changed": 0.28782166335666265,
+        "face_changed": 0.29482194655310745,
+        "outer_changed": 0.2841481385519732,
+        "max_outer": 254.33333333333334,
+        "name": "joy-main-idle-02"
+      },
+      {
+        "mean_abs": 24.119954328699038,
+        "changed": 0.29928841850748167,
+        "face_changed": 0.314040662697066,
+        "outer_changed": 0.2915616314394674,
+        "max_outer": 253.66666666666666,
+        "name": "joy-main-idle-03"
+      },
+      {
+        "mean_abs": 33.93608440421882,
+        "changed": 0.42102241291117304,
+        "face_changed": 0.4566406847012074,
+        "outer_changed": 0.4025492247693332,
+        "max_outer": 255.0,
+        "name": "joy-main-idle-04"
+      }
+    ],
+    "avg_outer_changed_vs_01": 0.3260863315869246,
+    "avg_face_changed_vs_01": 0.3551677646504603,
+    "lock_scene_pass": false,
+    "verdict": "FAIL"
+  },
+  "reading": {
+    "vs_frame01": [
+      {
+        "mean_abs": 1.9577794316412602,
+        "changed": 0.022352820407534772,
+        "face_changed": 0.07427937915742794,
+        "outer_changed": 0.0,
+        "max_outer": 0.0,
+        "name": "joy-reading-idle-02"
+      },
+      {
+        "mean_abs": 1.0939159206915126,
+        "changed": 0.018326621694410957,
+        "face_changed": 0.06082404018047161,
+        "outer_changed": 0.0,
+        "max_outer": 0.0,
+        "name": "joy-reading-idle-03"
+      },
+      {
+        "mean_abs": 2.546569789544276,
+        "changed": 0.03426579699373374,
+        "face_changed": 0.113511907288704,
+        "outer_changed": 0.0,
+        "max_outer": 0.0,
+        "name": "joy-reading-idle-04"
+      },
+      {
+        "mean_abs": 2.1655741840587335,
+        "changed": 0.02657875495465449,
+        "face_changed": 0.08825659155769476,
+        "outer_changed": 0.0,
+        "max_outer": 0.0,
+        "name": "joy-reading-idle-05"
+      },
+      {
+        "mean_abs": 1.1808063192449734,
+        "changed": 0.02074784571194091,
+        "face_changed": 0.06883934649421375,
+        "outer_changed": 0.0,
+        "max_outer": 0.0,
+        "name": "joy-reading-idle-06"
+      },
+      {
+        "mean_abs": 1.9915368340065398,
+        "changed": 0.030159646085785728,
+        "face_changed": 0.10006381620931716,
+        "outer_changed": 0.0,
+        "max_outer": 0.0,
+        "name": "joy-reading-idle-07"
+      },
+      {
+        "mean_abs": 2.577314428690575,
+        "changed": 0.03314300378520562,
+        "face_changed": 0.11012577275634193,
+        "outer_changed": 0.0,
+        "max_outer": 0.0,
+        "name": "joy-reading-idle-08"
+      }
+    ],
+    "avg_outer_changed_vs_01": 0.0,
+    "avg_face_changed_vs_01": 0.08798583623488158,
+    "lock_scene_pass": true,
+    "verdict": "PASS"
+  },
+  "pet-scene": {
+    "vs_frame01": [
+      {
+        "mean_abs": 0.35420862833658856,
+        "changed": 0.005245208740234375,
+        "face_changed": 0.02619047619047619,
+        "outer_changed": 0.001249182353368704,
+        "max_outer": 187.33333333333334,
+        "name": "joy-pet-scene-idle-02"
+      },
+      {
+        "mean_abs": 0.23434829711914062,
+        "changed": 0.00307464599609375,
+        "face_changed": 0.015404761904761905,
+        "outer_changed": 0.0007222545243113598,
+        "max_outer": 37.666666666666664,
+        "name": "joy-pet-scene-idle-03"
+      },
+      {
+        "mean_abs": 0.16608301798502606,
+        "changed": 0.00246429443359375,
+        "face_changed": 0.013476190476190477,
+        "outer_changed": 0.00036339850279816846,
+        "max_outer": 40.333333333333336,
+        "name": "joy-pet-scene-idle-04"
+      },
+      {
+        "mean_abs": 0.47953033447265614,
+        "changed": 0.00629425048828125,
+        "face_changed": 0.031357142857142854,
+        "outer_changed": 0.0015126462678973762,
+        "max_outer": 201.33333333333334,
+        "name": "joy-pet-scene-idle-05"
+      },
+      {
+        "mean_abs": 0.26269022623697913,
+        "changed": 0.003997802734375,
+        "face_changed": 0.02095238095238095,
+        "outer_changed": 0.0007631368558761538,
+        "max_outer": 50.333333333333336,
+        "name": "joy-pet-scene-idle-06"
+      }
+    ],
+    "avg_outer_changed_vs_01": 0.0009221237008503524,
+    "avg_face_changed_vs_01": 0.021476190476190475,
+    "lock_scene_pass": true,
+    "verdict": "PASS"
+  }
+}

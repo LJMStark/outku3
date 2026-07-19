@@ -159,7 +159,7 @@ private struct PetIllustrationSection: View {
             GeometryReader { proxy in
                 ZStack {
                     CompanionAnimationView(
-                        artwork: .scene,
+                        artwork: .petScene,
                         ambientMotion: .idle,
                         trigger: motionTrigger ?? appState.pendingCompanionMotionTrigger,
                         size: proxy.size,

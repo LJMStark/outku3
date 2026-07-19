@@ -131,7 +131,7 @@ private struct SceneTile: View {
         Button(action: onTap) {
             VStack(spacing: 8) {
                 ZStack {
-                    Image(scene.assetName, bundle: .module)
+                    Image(scene.previewAssetName, bundle: .module)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                         .frame(height: 110)
@@ -198,18 +198,6 @@ private struct SceneTile: View {
         case .active: return ""
         case .available: return "Tap to apply to hardware"
         case .locked: return "Keep earning energy bottles to unlock"
-        }
-    }
-}
-
-// MARK: - DisplayScene UI helpers (file-private)
-
-private extension DisplayScene {
-    var assetName: String {
-        switch self {
-        case .harbor: return "scene-harbor"
-        case .forest: return "scene-forest"
-        case .nightCity: return "scene-nightcity"
         }
     }
 }

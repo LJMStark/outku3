@@ -33,38 +33,32 @@ public enum CompanionCharacter: String, CaseIterable, Sendable, Codable {
     public enum HeroAssetVariant: Sendable {
         case main
         case head
-        /// Full-bleed scene illustration used on the Pet page header.
-        /// Only Joy currently has a dedicated scene asset; other characters fall back to `.main`.
-        case scene
+        /// Full-bleed companion illustration used on the Pet page header.
+        /// The explicit name keeps Pet page artwork distinct from hardware `DisplayScene` previews.
+        case petScene
         /// Reading/idle pose used in Timeline haiku section and Focus mode.
         case reading
-        /// Sunrise marker icon used in the Timeline header row.
-        /// Joy and Nova currently reuse the legacy tiko_sunrise art as placeholder.
+        /// Character-specific sunrise marker icon used in the Timeline header row.
         case sunrise
-        /// Sunset marker icon used in the Timeline footer row.
-        /// Joy and Nova currently reuse the legacy tiko_sunset art as placeholder.
+        /// Character-specific sunset marker icon used in the Timeline footer row.
         case sunset
         /// Profile card pose used exclusively in PetStatusView.
+        /// Always `<rawValue>-profile` (Joy currently ships the same art as `joy-main`).
         case profile
     }
 
     /// Returns the asset name to load via `Image(name, bundle: .module)`.
-    /// Maps to per-character `<rawValue>-main` / `<rawValue>-head` / `<rawValue>-scene` images
-    /// shipped under `Resources/Media.xcassets/` (e.g. `joy-main`, `joy-scene`).
+    /// Maps to per-character `<rawValue>-main` / `<rawValue>-head` /
+    /// `<rawValue>-pet-scene` images shipped under `Resources/Media.xcassets/`.
     public func heroAssetName(variant: HeroAssetVariant) -> String {
         switch variant {
         case .main: return "\(rawValue)-main"
         case .head: return "\(rawValue)-head"
-        case .scene: return "\(rawValue)-scene"
+        case .petScene: return "\(rawValue)-pet-scene"
         case .reading: return "\(rawValue)-reading"
         case .sunrise: return "\(rawValue)-sunrise"
         case .sunset: return "\(rawValue)-sunset"
-        case .profile:
-            switch self {
-            case .silas: return "silas-profile"
-            case .nova: return "nova-profile"
-            default: return "\(rawValue)-main"
-            }
+        case .profile: return "\(rawValue)-profile"
         }
     }
 }

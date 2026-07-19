@@ -84,7 +84,7 @@ class CompanionActionSheetTests(unittest.TestCase):
                 catalog=root / "Media.xcassets",
                 review_output=root / "contact.png",
                 grid=MODULE.Grid(rows=2, columns=2),
-                motions=("scene-react",),
+                motions=("pet-scene-react",),
                 canvas_size=128,
                 placement="cell",
                 padding=0,
@@ -93,7 +93,7 @@ class CompanionActionSheetTests(unittest.TestCase):
             )
 
             self.assertEqual(len(written), 4)
-            self.assertEqual(written[-1].parent.name, "joy-scene-react-04.imageset")
+            self.assertEqual(written[-1].parent.name, "joy-pet-scene-react-04.imageset")
             self.assertEqual(Image.open(written[0]).getchannel("A").getextrema(), (255, 255))
 
     def test_motion_region_keeps_every_pixel_outside_character_region_stable(self):

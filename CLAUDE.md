@@ -92,7 +92,11 @@ SwiftUI with **Model-View only** — no ViewModels. Tab-based nav via `AppState.
 ### CompanionCharacter Image Asset Naming
 Assets live in `Resources/Media.xcassets/<name>.imageset/`. Naming convention: `<rawValue>-<variant>` where `rawValue` is `joy` / `silas` / `nova`.
 
-Variants: `main`, `head`, `reading`, `profile`, `sunrise`, `sunset`, `scene`.
+Variants: `main`, `head`, `reading`, `profile`, `sunrise`, `sunset`, `petScene`.
+
+Asset catalogs and their contained files use lowercase kebab-case and the same
+base name. Pet page artwork uses `<character>-pet-scene`; hardware scene previews
+use `display-scene-preview-<scene-id>`. These are separate systems.
 
 **Always assign art to the correct character's imageset. Never place Silas art in `joy-*` or vice versa — this has caused multiple rollback commits.**
 
@@ -100,9 +104,10 @@ Current per-variant state (source of truth: `CompanionCharacter.heroAssetName(va
 
 | Variant | Joy | Silas | Nova |
 |---------|-----|-------|------|
-| `.reading` | `joy-reading-2.png` (575KB) — timeline & focus pose | `silas-reading.png` (754KB) | `nova-reading.png` |
-| `.profile` | falls back to `joy-main` (no dedicated art yet) | `silas-profile.png` (46KB) | falls back to `nova-main` |
+| `.reading` | `joy-reading.png` (575KB) — timeline & focus pose | `silas-reading.png` (754KB) | `nova-reading.png` |
+| `.profile` | `joy-profile.png` (same art as `joy-main`) | `silas-profile.png` | `nova-profile.png` |
 | `.main` | `joy-main.png` — standing pose; **not** used on the home timeline | `silas-main.png` | `nova-main.png` |
+| `.petScene` | `joy-pet-scene.png` | `silas-pet-scene.png` | `nova-pet-scene.png` |
 | `.sunrise`/`.sunset` | `joy-sunrise/sunset.png` | `silas-sunrise/sunset.png` | `nova-sunrise/sunset.png` |
 
 The home timeline pet embed and Focus mode both use `.reading`. PetStatusView uses `.profile`.

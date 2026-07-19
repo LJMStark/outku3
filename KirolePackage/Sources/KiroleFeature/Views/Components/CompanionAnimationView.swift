@@ -212,7 +212,7 @@ public struct CompanionAnimationView: View {
     }
 
     private var imageContentMode: ContentMode {
-        artwork == .scene ? .fill : .fit
+        artwork == .petScene ? .fill : .fit
     }
 
     private var playbackTaskID: String {

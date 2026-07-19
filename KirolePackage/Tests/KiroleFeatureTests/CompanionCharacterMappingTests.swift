@@ -25,6 +25,13 @@ struct CompanionCharacterMappingTests {
         #expect(CompanionCharacter.nova.displayName == "Nova")
     }
 
+    @Test("Profile variant uses dedicated <character>-profile asset names")
+    func profileHeroAssetNames() {
+        #expect(CompanionCharacter.joy.heroAssetName(variant: .profile) == "joy-profile")
+        #expect(CompanionCharacter.silas.heroAssetName(variant: .profile) == "silas-profile")
+        #expect(CompanionCharacter.nova.heroAssetName(variant: .profile) == "nova-profile")
+    }
+
     @Test("Character prompts contain distinct persona anchors")
     func characterPromptsContainExpectedPersonaAnchors() {
         let joyPrompt = OpenAIService.characterPrompt(for: .joy).lowercased()

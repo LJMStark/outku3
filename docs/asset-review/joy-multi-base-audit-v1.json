@@ -1,0 +1,260 @@
+{
+  "families": {
+    "main": {
+      "base": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-main.imageset/joy-main.png",
+      "frames": [
+        {
+          "name": "joy-main-idle-01",
+          "path": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-main-idle-01.imageset/joy-main-idle-01.png",
+          "size": [
+            512,
+            512
+          ],
+          "mean_abs_rgb": 61.3365317530728,
+          "changed_frac_gt25": 0.5902720953668852,
+          "face_region_changed_frac": 0.5230238095238096,
+          "outer_region_changed_frac": 0.6068579918673757
+        },
+        {
+          "name": "joy-main-idle-02",
+          "path": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-main-idle-02.imageset/joy-main-idle-02.png",
+          "size": [
+            512,
+            512
+          ],
+          "mean_abs_rgb": 59.24950852232423,
+          "changed_frac_gt25": 0.5695958446612062,
+          "face_region_changed_frac": 0.49533333333333335,
+          "outer_region_changed_frac": 0.5912266106775476
+        },
+        {
+          "name": "joy-main-idle-03",
+          "path": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-main-idle-03.imageset/joy-main-idle-03.png",
+          "size": [
+            512,
+            512
+          ],
+          "mean_abs_rgb": 60.27301008522521,
+          "changed_frac_gt25": 0.5765681295307549,
+          "face_region_changed_frac": 0.5066190476190476,
+          "outer_region_changed_frac": 0.5957733278772919
+        },
+        {
+          "name": "joy-main-idle-04",
+          "path": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-main-idle-04.imageset/joy-main-idle-04.png",
+          "size": [
+            512,
+            512
+          ],
+          "mean_abs_rgb": 62.25696816287846,
+          "changed_frac_gt25": 0.5998370290747066,
+          "face_region_changed_frac": 0.5323809523809524,
+          "outer_region_changed_frac": 0.6172621479499717
+        }
+      ],
+      "notes": [],
+      "audit_sheet": "docs/asset-review/joy-main-idle-audit-sheet.png",
+      "summary": {
+        "avg_outer_changed": 0.6027800195930467,
+        "avg_face_changed": 0.5143392857142858,
+        "frame_count": 4
+      }
+    },
+    "reading": {
+      "base": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-reading.imageset/joy-reading.png",
+      "frames": [
+        {
+          "name": "joy-reading-idle-01",
+          "path": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-reading-idle-01.imageset/joy-reading-idle-01.png",
+          "size": [
+            512,
+            512
+          ],
+          "mean_abs_rgb": 103.16164605876024,
+          "changed_frac_gt25": 0.8098853607009191,
+          "face_region_changed_frac": 0.5763095238095238,
+          "outer_region_changed_frac": 0.8202687747035573
+        },
+        {
+          "name": "joy-reading-idle-02",
+          "path": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-reading-idle-02.imageset/joy-reading-idle-02.png",
+          "size": [
+            512,
+            512
+          ],
+          "mean_abs_rgb": 102.51184463104163,
+          "changed_frac_gt25": 0.807011335242201,
+          "face_region_changed_frac": 0.569952380952381,
+          "outer_region_changed_frac": 0.8202687747035573
+        },
+        {
+          "name": "joy-reading-idle-03",
+          "path": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-reading-idle-03.imageset/joy-reading-idle-03.png",
+          "size": [
+            512,
+            512
+          ],
+          "mean_abs_rgb": 102.98541896785311,
+          "changed_frac_gt25": 0.8093062660189385,
+          "face_region_changed_frac": 0.5750952380952381,
+          "outer_region_changed_frac": 0.8202687747035573
+        },
+        {
+          "name": "joy-reading-idle-04",
+          "path": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-reading-idle-04.imageset/joy-reading-idle-04.png",
+          "size": [
+            512,
+            512
+          ],
+          "mean_abs_rgb": 103.10702540785542,
+          "changed_frac_gt25": 0.8105348946939476,
+          "face_region_changed_frac": 0.5778095238095238,
+          "outer_region_changed_frac": 0.8202687747035573
+        },
+        {
+          "name": "joy-reading-idle-05",
+          "path": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-reading-idle-05.imageset/joy-reading-idle-05.png",
+          "size": [
+            512,
+            512
+          ],
+          "mean_abs_rgb": 102.52379113985137,
+          "changed_frac_gt25": 0.8070542311445699,
+          "face_region_changed_frac": 0.5700952380952381,
+          "outer_region_changed_frac": 0.8202687747035573
+        },
+        {
+          "name": "joy-reading-idle-06",
+          "path": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-reading-idle-06.imageset/joy-reading-idle-06.png",
+          "size": [
+            512,
+            512
+          ],
+          "mean_abs_rgb": 102.9497683596431,
+          "changed_frac_gt25": 0.8095723232669869,
+          "face_region_changed_frac": 0.5757142857142857,
+          "outer_region_changed_frac": 0.8202687747035573
+        },
+        {
+          "name": "joy-reading-idle-07",
+          "path": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-reading-idle-07.imageset/joy-reading-idle-07.png",
+          "size": [
+            512,
+            512
+          ],
+          "mean_abs_rgb": 103.09709935124123,
+          "changed_frac_gt25": 0.8101656747627473,
+          "face_region_changed_frac": 0.577047619047619,
+          "outer_region_changed_frac": 0.8202687747035573
+        },
+        {
+          "name": "joy-reading-idle-08",
+          "path": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-reading-idle-08.imageset/joy-reading-idle-08.png",
+          "size": [
+            512,
+            512
+          ],
+          "mean_abs_rgb": 102.67102046068717,
+          "changed_frac_gt25": 0.8077467507399305,
+          "face_region_changed_frac": 0.571595238095238,
+          "outer_region_changed_frac": 0.8202687747035573
+        }
+      ],
+      "notes": [
+        "HIGH outer/background drift vs L1 base (lock-scene risk)"
+      ],
+      "audit_sheet": "docs/asset-review/joy-reading-idle-audit-sheet.png",
+      "summary": {
+        "avg_outer_changed": 0.8202687747035573,
+        "avg_face_changed": 0.574202380952381,
+        "frame_count": 8
+      }
+    },
+    "pet-scene": {
+      "base": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-pet-scene.imageset/joy-pet-scene.png",
+      "frames": [
+        {
+          "name": "joy-pet-scene-idle-01",
+          "path": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-pet-scene-idle-01.imageset/joy-pet-scene-idle-01.png",
+          "size": [
+            512,
+            512
+          ],
+          "mean_abs_rgb": 30.43131891886393,
+          "changed_frac_gt25": 0.375701904296875,
+          "face_region_changed_frac": 0.4285,
+          "outer_region_changed_frac": 0.3656288611090922
+        },
+        {
+          "name": "joy-pet-scene-idle-02",
+          "path": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-pet-scene-idle-02.imageset/joy-pet-scene-idle-02.png",
+          "size": [
+            512,
+            512
+          ],
+          "mean_abs_rgb": 30.469861348470047,
+          "changed_frac_gt25": 0.3761138916015625,
+          "face_region_changed_frac": 0.4305952380952381,
+          "outer_region_changed_frac": 0.36571971073479176
+        },
+        {
+          "name": "joy-pet-scene-idle-03",
+          "path": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-pet-scene-idle-03.imageset/joy-pet-scene-idle-03.png",
+          "size": [
+            512,
+            512
+          ],
+          "mean_abs_rgb": 30.43716176350911,
+          "changed_frac_gt25": 0.3756065368652344,
+          "face_region_changed_frac": 0.42814285714285716,
+          "outer_region_changed_frac": 0.36558343629624246
+        },
+        {
+          "name": "joy-pet-scene-idle-04",
+          "path": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-pet-scene-idle-04.imageset/joy-pet-scene-idle-04.png",
+          "size": [
+            512,
+            512
+          ],
+          "mean_abs_rgb": 30.432884216308594,
+          "changed_frac_gt25": 0.37570953369140625,
+          "face_region_changed_frac": 0.42847619047619045,
+          "outer_region_changed_frac": 0.3656424885529472
+        },
+        {
+          "name": "joy-pet-scene-idle-05",
+          "path": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-pet-scene-idle-05.imageset/joy-pet-scene-idle-05.png",
+          "size": [
+            512,
+            512
+          ],
+          "mean_abs_rgb": 30.550182342529297,
+          "changed_frac_gt25": 0.3764801025390625,
+          "face_region_changed_frac": 0.4321190476190476,
+          "outer_region_changed_frac": 0.365865070135911
+        },
+        {
+          "name": "joy-pet-scene-idle-06",
+          "path": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-pet-scene-idle-06.imageset/joy-pet-scene-idle-06.png",
+          "size": [
+            512,
+            512
+          ],
+          "mean_abs_rgb": 30.43713506062825,
+          "changed_frac_gt25": 0.3757667541503906,
+          "face_region_changed_frac": 0.4286904761904762,
+          "outer_region_changed_frac": 0.365669743440657
+        }
+      ],
+      "notes": [
+        "HIGH outer/background drift vs L1 base (lock-scene risk)"
+      ],
+      "audit_sheet": "docs/asset-review/joy-pet-scene-idle-audit-sheet.png",
+      "summary": {
+        "avg_outer_changed": 0.3656848850449403,
+        "avg_face_changed": 0.4294206349206349,
+        "frame_count": 6
+      }
+    }
+  }
+}

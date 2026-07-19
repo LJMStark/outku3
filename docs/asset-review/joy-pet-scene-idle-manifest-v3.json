@@ -1,0 +1,57 @@
+{
+  "canvas": {
+    "width": 512,
+    "height": 512
+  },
+  "frameCount": 6,
+  "frames": [
+    {
+      "name": "joy-pet-scene-idle-01",
+      "file": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-pet-scene-idle-01.imageset/joy-pet-scene-idle-01.png",
+      "anchor": {
+        "x": 0.5,
+        "y": 1.0
+      }
+    },
+    {
+      "name": "joy-pet-scene-idle-02",
+      "file": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-pet-scene-idle-02.imageset/joy-pet-scene-idle-02.png",
+      "anchor": {
+        "x": 0.5,
+        "y": 1.0
+      }
+    },
+    {
+      "name": "joy-pet-scene-idle-03",
+      "file": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-pet-scene-idle-03.imageset/joy-pet-scene-idle-03.png",
+      "anchor": {
+        "x": 0.5,
+        "y": 1.0
+      }
+    },
+    {
+      "name": "joy-pet-scene-idle-04",
+      "file": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-pet-scene-idle-04.imageset/joy-pet-scene-idle-04.png",
+      "anchor": {
+        "x": 0.5,
+        "y": 1.0
+      }
+    },
+    {
+      "name": "joy-pet-scene-idle-05",
+      "file": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-pet-scene-idle-05.imageset/joy-pet-scene-idle-05.png",
+      "anchor": {
+        "x": 0.5,
+        "y": 1.0
+      }
+    },
+    {
+      "name": "joy-pet-scene-idle-06",
+      "file": "KirolePackage/Sources/KiroleFeature/Resources/Media.xcassets/joy-pet-scene-idle-06.imageset/joy-pet-scene-idle-06.png",
+      "anchor": {
+        "x": 0.5,
+        "y": 1.0
+      }
+    }
+  ]
+}

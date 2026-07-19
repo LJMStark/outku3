@@ -14,13 +14,13 @@ public enum CompanionMotion: String, CaseIterable, Sendable {
 public enum CompanionAnimationArtwork: String, CaseIterable, Sendable {
     case main
     case reading
-    case scene
+    case petScene = "pet-scene"
 
     var heroVariant: CompanionCharacter.HeroAssetVariant {
         switch self {
         case .main: .main
         case .reading: .reading
-        case .scene: .scene
+        case .petScene: .petScene
         }
     }
 }
@@ -143,7 +143,7 @@ public enum CompanionAnimationCatalog {
         switch (artwork, motion) {
         case (.main, .idle), (.main, .greet), (.main, .react),
              (.reading, .idle), (.reading, .focus), (.reading, .celebrate),
-             (.scene, .idle), (.scene, .react):
+             (.petScene, .idle), (.petScene, .react):
             break
         default:
             return nil
@@ -196,7 +196,7 @@ public enum CompanionAnimationCatalog {
         switch artwork {
         case .main:
             sourceMotion = motion == .react ? .greet : motion
-        case .reading, .scene:
+        case .reading, .petScene:
             sourceMotion = .idle
         }
         let prefix = "\(character.rawValue)-\(artwork.rawValue)-\(sourceMotion.rawValue)"
@@ -213,9 +213,9 @@ public enum CompanionAnimationCatalog {
             cues = [(1, 2.2), (3, 0.12), (2, 0.16), (4, 0.12), (1, 1.4)]
         case (.reading, .celebrate):
             cues = [(1, 0.12), (3, 0.10), (6, 0.12), (2, 0.36), (6, 0.12), (3, 0.10), (1, 0.20)]
-        case (.scene, .idle):
+        case (.petScene, .idle):
             cues = [(1, 3.4), (2, 0.10), (1, 1.6), (5, 0.14), (1, 2.4)]
-        case (.scene, .react):
+        case (.petScene, .react):
             cues = [(1, 0.12), (2, 0.12), (5, 0.36), (2, 0.12), (1, 0.20)]
         default:
             preconditionFailure("Unsupported companion animation timeline")

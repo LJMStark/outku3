@@ -63,4 +63,14 @@ public enum DisplayScene: String, CaseIterable, Sendable, Codable {
         case .nightCity: return "Night City"
         }
     }
+
+    /// App-only preview shown in Settings. This is not companion Pet page artwork
+    /// and is never sent to the hardware as image bytes.
+    public var previewAssetName: String {
+        switch self {
+        case .harbor: return "display-scene-preview-harbor"
+        case .forest: return "display-scene-preview-forest"
+        case .nightCity: return "display-scene-preview-night-city"
+        }
+    }
 }

@@ -15,8 +15,8 @@ struct CompanionAnimationCatalogTests {
             (.reading, .idle, "joy-reading-idle-01"),
             (.reading, .focus, "joy-reading-idle-01"),
             (.reading, .celebrate, "joy-reading-idle-01"),
-            (.scene, .idle, "joy-scene-idle-01"),
-            (.scene, .react, "joy-scene-idle-01"),
+            (.petScene, .idle, "joy-pet-scene-idle-01"),
+            (.petScene, .react, "joy-pet-scene-idle-01"),
         ]
 
         for (artwork, motion, firstFrame) in cases {
@@ -101,7 +101,7 @@ struct CompanionAnimationCatalogTests {
         #expect(
             CompanionAnimationCatalog.resolve(
                 selection: .custom(id),
-                artwork: .scene,
+                artwork: .petScene,
                 motion: .react,
                 reduceMotion: false
             ) == .custom(id)
@@ -113,10 +113,10 @@ struct CompanionAnimationCatalogTests {
         #expect(
             CompanionAnimationCatalog.resolve(
                 selection: .builtIn(.joy),
-                artwork: .scene,
+                artwork: .petScene,
                 motion: .celebrate,
                 reduceMotion: false
-            ) == .staticAsset("joy-scene")
+            ) == .staticAsset("joy-pet-scene")
         )
     }
 
@@ -125,7 +125,7 @@ struct CompanionAnimationCatalogTests {
         #expect(
             CompanionAnimationCatalog.oneShotDefinition(
                 selection: .builtIn(.joy),
-                artwork: .scene,
+                artwork: .petScene,
                 motion: .react,
                 reduceMotion: false
             ) != nil
@@ -133,7 +133,7 @@ struct CompanionAnimationCatalogTests {
         #expect(
             CompanionAnimationCatalog.oneShotDefinition(
                 selection: .builtIn(.joy),
-                artwork: .scene,
+                artwork: .petScene,
                 motion: .celebrate,
                 reduceMotion: false
             ) == nil
@@ -141,7 +141,7 @@ struct CompanionAnimationCatalogTests {
         #expect(
             CompanionAnimationCatalog.oneShotDefinition(
                 selection: .custom(UUID()),
-                artwork: .scene,
+                artwork: .petScene,
                 motion: .react,
                 reduceMotion: false
             ) == nil
@@ -149,7 +149,7 @@ struct CompanionAnimationCatalogTests {
         #expect(
             CompanionAnimationCatalog.oneShotDefinition(
                 selection: .builtIn(.joy),
-                artwork: .scene,
+                artwork: .petScene,
                 motion: .react,
                 reduceMotion: true
             ) == nil
