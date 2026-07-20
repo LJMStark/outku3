@@ -162,6 +162,60 @@ struct SettlementCountsTests {
         #expect(label == "Release Day")
     }
 
+    // MARK: - scheduledEventMinutes + settlementQuoteBranch（页面四 金句三分支）
+
+    private func timedEvent(minutes: Double, allDay: Bool = false) -> CalendarEvent {
+        CalendarEvent(title: "e",
+                      startTime: now,
+                      endTime: now.addingTimeInterval(minutes * 60),
+                      isAllDay: allDay)
+    }
+
+    @Test("scheduledEventMinutes: 非全天事件时长求和")
+    func scheduledMinutesSumsTimedEvents() {
+        let total = DayPackGenerator.scheduledEventMinutes(
+            events: [timedEvent(minutes: 60), timedEvent(minutes: 90)]
+        )
+        #expect(total == 150)
+    }
+
+    @Test("scheduledEventMinutes: 全天事件排除（防止冲垮 4h 阈值）")
+    func scheduledMinutesExcludesAllDay() {
+        let total = DayPackGenerator.scheduledEventMinutes(
+            events: [timedEvent(minutes: 24 * 60, allDay: true), timedEvent(minutes: 30)]
+        )
+        #expect(total == 30)
+    }
+
+    @Test("scheduledEventMinutes: 负跨度脏数据忽略")
+    func scheduledMinutesIgnoresNegativeSpan() {
+        let total = DayPackGenerator.scheduledEventMinutes(
+            events: [timedEvent(minutes: -45), timedEvent(minutes: 20)]
+        )
+        #expect(total == 20)
+    }
+
+    @Test("branch: 全部完成 → celebration（与投入时长无关）")
+    func branchCelebrationWhenAllDone() {
+        #expect(DayPackGenerator.settlementQuoteBranch(completed: 3, total: 3, combinedMinutes: 0) == .celebration)
+        #expect(DayPackGenerator.settlementQuoteBranch(completed: 5, total: 5, combinedMinutes: 999) == .celebration)
+    }
+
+    @Test("branch: total=0 不算全完成，空日走 fullSchedule")
+    func branchEmptyDayIsNotCelebration() {
+        #expect(DayPackGenerator.settlementQuoteBranch(completed: 0, total: 0, combinedMinutes: 0) == .fullSchedule)
+    }
+
+    @Test("branch: 未完成且投入 241 分钟 → overloadedDay（阈值严格大于 240）")
+    func branchOverloadedAboveThreshold() {
+        #expect(DayPackGenerator.settlementQuoteBranch(completed: 1, total: 3, combinedMinutes: 241) == .overloadedDay)
+    }
+
+    @Test("branch: 未完成且投入恰好 240 分钟 → fullSchedule")
+    func branchFullScheduleAtThreshold() {
+        #expect(DayPackGenerator.settlementQuoteBranch(completed: 1, total: 3, combinedMinutes: 240) == .fullSchedule)
+    }
+
     // MARK: - taskOverview (AI generates + self-judges; offline → verbatim fallback)
 
     @Test @MainActor func overviewNilWhenNoNotes() async {

@@ -178,6 +178,43 @@ public final class DayPackGenerator {
                 total: tasks.count + occurredEvents)
     }
 
+    // MARK: - Settlement quote branch（客户 2026-07-20「页面四 每日总结」）
+
+    /// 客户口径：未全部完成时，日程时间 + 专注时长**超过** 4 小时视为「今天已足够努力，
+    /// 只是任务定多了」；不超过则给「日程满时少排任务」的固定建议。
+    nonisolated static let overloadedDayThresholdMinutes = 240
+
+    /// 今日日程时长合计（分钟），供金句分支的 4 小时阈值使用。
+    /// 只累计**非全天**事件的 `endTime - startTime` —— 全天事件（24h）会一票冲垮阈值，排除；
+    /// 负跨度（脏数据）忽略。
+    nonisolated static func scheduledEventMinutes(events: [CalendarEvent]) -> Int {
+        events.reduce(0) { sum, event in
+            guard !event.isAllDay else { return sum }
+            let minutes = Int(event.endTime.timeIntervalSince(event.startTime) / 60)
+            return minutes > 0 ? sum + minutes : sum
+        }
+    }
+
+    /// 「页面四 每日总结」第二行金句/明日鼓励的三个分支。
+    enum SettlementQuoteBranch: Sendable, Equatable {
+        /// 日程和任务全部完成 → 庆祝式金句（IP 风格）。
+        case celebration
+        /// 未全部完成，但日程时间+专注时长 > 4h → IP 风格表达「努力了，只是任务太满」。
+        case overloadedDay
+        /// 未全部完成且投入 ≤ 4h → 客户指定的固定建议文案（不走 AI）。
+        case fullSchedule
+    }
+
+    /// 三分支判定。`completed`/`total` 沿用 `settlementCounts` 口径（任务 + 已结束日程）；
+    /// `combinedMinutes` = `scheduledEventMinutes` + 今日专注分钟。
+    nonisolated static func settlementQuoteBranch(
+        completed: Int, total: Int, combinedMinutes: Int
+    ) -> SettlementQuoteBranch {
+        if total > 0 && completed >= total { return .celebration }
+        if combinedMinutes > overloadedDayThresholdMinutes { return .overloadedDay }
+        return .fullSchedule
+    }
+
     private func generateSettlementData(tasks: [TaskItem], events: [CalendarEvent], pet: Pet, userProfile: UserProfile = .default) async -> SettlementData {
         // 客户 docx 页面四：日程无法打卡，但只要未取消即视为完成一项任务，计入完成数/积分。
         let counts = Self.settlementCounts(tasks: tasks, events: events)
