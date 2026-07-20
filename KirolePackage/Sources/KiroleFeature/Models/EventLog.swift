@@ -18,6 +18,20 @@ public struct EventLog: Codable, Sendable, Identifiable {
     /// 仅实时 `DeviceWake(0x30)` 且固件 ≥ 协议 v2.5.19（4B payload）时非 nil。
     /// 批量补传（0x21）里的 0x30 记录恒为 2B、不带版本，此字段为 nil。
     public let firmwareVersion: FirmwareVersion?
+    /// 设备侧自定义头像库存（v2.6.0，仅实时 DeviceWake ≥9B payload）：
+    /// `hasImage` = 设备本地是否持久化有 0x15 图；`crc32` = 该图的 CRC-32/IEEE
+    /// （无图时固件填 0）。App 据此比对本地激活头像，覆盖"存储被清/图过期损坏"盲区。
+    public let avatarInventory: AvatarInventory?
+
+    public struct AvatarInventory: Codable, Sendable, Equatable {
+        public let hasImage: Bool
+        public let crc32: UInt32
+
+        public init(hasImage: Bool, crc32: UInt32) {
+            self.hasImage = hasImage
+            self.crc32 = crc32
+        }
+    }
 
     public init(
         id: UUID = UUID(),
@@ -26,7 +40,8 @@ public struct EventLog: Codable, Sendable, Identifiable {
         timestamp: Date = Date(),
         value: Int = 0,
         hasDeviceTimestamp: Bool = false,
-        firmwareVersion: FirmwareVersion? = nil
+        firmwareVersion: FirmwareVersion? = nil,
+        avatarInventory: AvatarInventory? = nil
     ) {
         self.id = id
         self.eventType = eventType
@@ -35,6 +50,7 @@ public struct EventLog: Codable, Sendable, Identifiable {
         self.value = value
         self.hasDeviceTimestamp = hasDeviceTimestamp
         self.firmwareVersion = firmwareVersion
+        self.avatarInventory = avatarInventory
     }
 
     // 向后兼容：旧 event_logs.json 没有 hasDeviceTimestamp 字段，缺失时默认 false，
@@ -48,6 +64,7 @@ public struct EventLog: Codable, Sendable, Identifiable {
         self.value = try container.decodeIfPresent(Int.self, forKey: .value) ?? 0
         self.hasDeviceTimestamp = try container.decodeIfPresent(Bool.self, forKey: .hasDeviceTimestamp) ?? false
         self.firmwareVersion = try container.decodeIfPresent(FirmwareVersion.self, forKey: .firmwareVersion)
+        self.avatarInventory = try container.decodeIfPresent(AvatarInventory.self, forKey: .avatarInventory)
     }
 }
 
@@ -192,7 +209,16 @@ public extension EventLog {
             let version: FirmwareVersion? = payload.count >= 4
                 ? FirmwareVersion(major: payload[1], minor: payload[2], patch: payload[3])
                 : nil
-            return EventLog(eventType: eventType, value: level, firmwareVersion: version)
+            // v2.6.0: payload[4] = AvatarState（0x00 无图/0x01 有图），payload[5..8] =
+            // AvatarCRC32（BE）。仅实时帧；批量 0x21 中的 0x30 恒 2B（同版本字节铁律）。
+            let inventory: AvatarInventory? = payload.count >= 9
+                ? AvatarInventory(
+                    hasImage: payload[4] == 0x01,
+                    crc32: UInt32(payload[5]) << 24 | UInt32(payload[6]) << 16
+                        | UInt32(payload[7]) << 8 | UInt32(payload[8])
+                )
+                : nil
+            return EventLog(eventType: eventType, value: level, firmwareVersion: version, avatarInventory: inventory)
 
         default:
             return EventLog(eventType: eventType)

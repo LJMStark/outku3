@@ -106,6 +106,13 @@ public enum BLEEventHandler {
                     service.deviceFirmwareVersion = firmware
                 }
                 BLEOTACoordinator.shared.handleDeviceWake(reportedVersion: eventLog.firmwareVersion)
+                // v2.6.0: 头像库存对账——设备报"无图/CRC 不一致"且自定义激活时标记 0x15 重推，
+                // 随本次唤醒触发的 sync 补发（关闭"同设备存储被清空 App 无感知"盲区）。
+                if let inventory = eventLog.avatarInventory {
+                    await AppState.shared.reconcileCustomAvatarInventory(
+                        hasImage: inventory.hasImage, reportedCRC32: inventory.crc32
+                    )
+                }
                 do {
                     try await service.syncTime()
                 } catch {

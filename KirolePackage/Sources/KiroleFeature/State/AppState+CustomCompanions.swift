@@ -258,6 +258,24 @@ extension AppState {
         }
     }
 
+    /// v2.6.0: 设备侧头像库存比对的纯判定——无图 or CRC 不一致（存储被清/图过期损坏）即需重推。
+    nonisolated static func avatarNeedsRepush(hasImage: Bool, reportedCRC32: UInt32, localCRC32: UInt32) -> Bool {
+        !hasImage || reportedCRC32 != localCRC32
+    }
+
+    /// v2.6.0: DeviceWake 上报设备头像库存（AvatarState + CRC32）后对账。自定义激活且设备
+    /// 侧无图/CRC 与本地激活头像不一致 → 重新标记 0x15 待推，随本轮 sync 的 flush 补发。
+    /// 内置激活时设备报什么都不管（CustomActive=0 已让固件不显示自定义图）。
+    public func reconcileCustomAvatarInventory(hasImage: Bool, reportedCRC32: UInt32) async {
+        guard let id = userProfile.customCompanionId,
+              let imageData = await localStorage.loadCustomCompanionImageData(id: id) else { return }
+        guard Self.avatarNeedsRepush(
+            hasImage: hasImage, reportedCRC32: reportedCRC32, localCRC32: CRC32.ieee(imageData)
+        ) else { return }
+        isCustomAvatarPendingBLEPush = true
+        customAvatarFlushAttempts = 0
+    }
+
     /// Flush back-off policy. Re-push the 0x15 frame on every sync for the first
     /// `maxImmediateFlushAttempts`, then drop to once every `periodicFlushRetryInterval` syncs.
     /// This stops the frame from being re-sent on every single sync while firmware can't accept
