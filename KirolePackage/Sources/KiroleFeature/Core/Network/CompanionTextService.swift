@@ -230,8 +230,11 @@ public final class CompanionTextService {
         // v2.5.33: 全 CJK 标题上不了 wire（ASCII 净化会清空），英文 AI 文本也不可能逐字
         // 包含——它们不参与"包含标题"判定；此时退而要求文本至少出现 "deadline" 一词
         // （保证"必提死线"这件事），兜底模板则用通用表述。
-        let wireRepresentable = meaningfulTitles
-            .filter { !$0.asciiSanitizedForEInk().trimmingCharacters(in: .whitespaces).isEmpty }
+        let wireRepresentable = meaningfulTitles.compactMap { title -> String? in
+            let sanitized = title.asciiSanitizedForEInk()
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return sanitized.isEmpty ? nil : sanitized
+        }
         if !wireRepresentable.isEmpty {
             if !wireRepresentable.contains(where: { text.localizedCaseInsensitiveContains($0) }) {
                 return false
@@ -254,8 +257,12 @@ public final class CompanionTextService {
         petName: String, petMood: PetMood,
         tasksCompleted: Int, tasksTotal: Int,
         focusMinutes: Int,
-        userProfile: UserProfile = .default
+        userProfile: UserProfile = .default,
+        customCompanion: CustomCompanion? = nil
     ) async -> String {
+        let activeCustomCompanion = customCompanion?.id == userProfile.customCompanionId
+            ? customCompanion
+            : nil
         switch branch {
         case .fullSchedule:
             return FallbackText.settlementQuoteFullSchedule()
@@ -267,12 +274,15 @@ public final class CompanionTextService {
                 completedTasks: tasksCompleted, totalTasks: tasksTotal,
                 episodicMemories: ["The user completed every task and event today."],
                 focusTimeToday: focusMinutes,
+                customCompanionOverride: activeCustomCompanion,
                 maxBytes: DayPackTextBudget.settlementQuote
             ), CompanionTextService.isDisplayablePanelText(aiText) {
                 return aiText
             }
-            // v2.5.32: 兜底按 IP 分池——自定义激活走中性池（有限模板装不下任意人设）。
-            return FallbackText.settlementQuoteCelebration(style: Self.fallbackStyle(for: userProfile))
+            return FallbackText.settlementQuoteCelebration(
+                style: Self.fallbackStyle(for: userProfile),
+                customVoice: activeCustomCompanion?.personaVoice
+            )
         case .overloadedDay:
             if let aiText = await generateAIText(
                 type: .settlementQuoteOverloaded,
@@ -281,16 +291,19 @@ public final class CompanionTextService {
                 completedTasks: tasksCompleted, totalTasks: tasksTotal,
                 episodicMemories: ["The user put in over four hours today but the plan was too packed to finish."],
                 focusTimeToday: focusMinutes,
+                customCompanionOverride: activeCustomCompanion,
                 maxBytes: DayPackTextBudget.settlementQuote
             ), CompanionTextService.isDisplayablePanelText(aiText) {
                 return aiText
             }
-            // v2.5.33: overloaded 分支同样按 IP 分池（客户原话"用IP风格表达"）。
-            return FallbackText.settlementQuoteOverloaded(style: Self.fallbackStyle(for: userProfile))
+            return FallbackText.settlementQuoteOverloaded(
+                style: Self.fallbackStyle(for: userProfile),
+                customVoice: activeCustomCompanion?.personaVoice
+            )
         }
     }
 
-    /// 兜底分池的统一取 style 口径：内置 → 对应 CompanionStyle；自定义激活 → nil（中性池）。
+    /// 兜底分池的 style 口径：内置取 CompanionStyle；自定义语气由调用方快照单独提供。
     nonisolated static func fallbackStyle(for userProfile: UserProfile) -> CompanionStyle? {
         userProfile.customCompanionId == nil ? userProfile.companionCharacter.resolvedStyle : nil
     }
@@ -467,6 +480,7 @@ public final class CompanionTextService {
         activeTaskTitle: String? = nil,
         focusTimeToday: Int = 0,
         energyBottles: Int = 0,
+        customCompanionOverride: CustomCompanion? = nil,
         maxBytes: Int = DayPackTextBudget.petDialogue
     ) async -> String? {
         guard await openAI.isConfigured else { return nil }
@@ -491,6 +505,7 @@ public final class CompanionTextService {
         // An orphaned id (custom deleted while still selected) silently falls back to built-in.
         let activeCustomCompanion: CustomCompanion? = await {
             guard let id = userProfile.customCompanionId else { return nil }
+            if customCompanionOverride?.id == id { return customCompanionOverride }
             do {
                 let all = try await localStorage.loadCustomCompanions()
                 return all.first { $0.id == id }

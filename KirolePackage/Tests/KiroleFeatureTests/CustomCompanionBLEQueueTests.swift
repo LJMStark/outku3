@@ -42,28 +42,60 @@ struct CustomCompanionBLEQueueTests {
     }
 
     @Test("删除激活中的自定义伙伴：清空选择与待推状态（v2.5.33 复审 P1 行为测试）")
-    func deleteActiveCustomCompanionClearsSelection() async {
-        await SharedPersistenceTestLock.shared.withLock {
-            let savedProfile = AppState.shared.userProfile
-            let savedPending = AppState.shared.isCustomAvatarPendingBLEPush
-            defer {
-                AppState.shared.updateUserProfile(savedProfile)
-                AppState.shared.isCustomAvatarPendingBLEPush = savedPending
+    func deleteActiveCustomCompanionClearsSelection() async throws {
+        try await SharedPersistenceTestLock.shared.withLock {
+            let savedCompanions = try await LocalStorage.shared.loadCustomCompanions()
+            let savedProfile = try await LocalStorage.shared.loadUserProfile()
+            let savedPendingID = await LocalStorage.shared.loadPendingCustomCompanionPush()
+            let state = AppState.makeForTesting()
+            let recorder = PetStatusCallRecorder()
+            state.companionIdentityStatusSender = { pet, character, customActive in
+                recorder.record(pet: pet, character: character, customActive: customActive)
             }
-
-            // 造一个"激活中的自定义 id"（不入 customCompanions 列表，避免真实资产/持久化竞态）。
             let activeId = UUID()
-            var profile = AppState.shared.userProfile
+            var profile = state.userProfile
             profile.customCompanionId = activeId
-            AppState.shared.updateUserProfile(profile)
-            AppState.shared.isCustomAvatarPendingBLEPush = true
+            state.userProfile = profile
+            state.isCustomAvatarPendingBLEPush = true
 
-            AppState.shared.deleteCustomCompanion(id: activeId)
+            await state.deleteCustomCompanion(id: activeId)
+            state.pendingBLESyncTask?.cancel()
+            await state.companionIdentityStatusSendTask?.value
 
-            // 身份切回内置 + 待推流状态清空（0x01 立即帧在断连下静默跳过，state 是可测面）。
-            #expect(AppState.shared.userProfile.customCompanionId == nil)
-            #expect(AppState.shared.isCustomAvatarPendingBLEPush == false)
+            #expect(state.userProfile.customCompanionId == nil)
+            #expect(state.isCustomAvatarPendingBLEPush == false)
+            #expect(recorder.calls.map(\.customActive) == [false])
+
+            try await LocalStorage.shared.saveCustomCompanions(savedCompanions)
+            if let savedProfile {
+                try await LocalStorage.shared.saveUserProfile(savedProfile)
+            } else {
+                try await LocalStorage.shared.deleteFile(named: "user_profile.json")
+            }
+            if let savedPendingID {
+                await LocalStorage.shared.savePendingCustomCompanionPush(id: savedPendingID)
+            } else {
+                await LocalStorage.shared.clearPendingCustomCompanionPush()
+            }
         }
+    }
+
+    @Test("连续切换伙伴时 0x01 使用调用时快照，并按调用顺序发送")
+    func rapidIdentityChangesSendCapturedSnapshotsInOrder() async {
+        let state = AppState.makeForTesting()
+        let recorder = PetStatusCallRecorder()
+        state.companionIdentityStatusSender = { pet, character, customActive in
+            recorder.record(pet: pet, character: character, customActive: customActive)
+        }
+
+        state.userProfile.companionCharacter = .joy
+        state.sendPetStatusNow(customActive: true, context: "test.custom")
+        state.userProfile.companionCharacter = .nova
+        state.sendPetStatusNow(customActive: false, context: "test.builtIn")
+        await state.companionIdentityStatusSendTask?.value
+
+        #expect(recorder.calls.map { "\($0.character.rawValue):\($0.customActive)" }
+            == ["joy:true", "nova:false"])
     }
 
     @Test("given no pending push saved, when loaded, returns nil")
@@ -242,5 +274,20 @@ struct CustomCompanionBLEQueueTests {
             AppState.shouldAttemptCustomAvatarFlush(attempt: $0)
         }
         #expect(hasUpcomingRetry == true)
+    }
+}
+
+@MainActor
+private final class PetStatusCallRecorder {
+    struct Call {
+        let pet: Pet
+        let character: CompanionCharacter
+        let customActive: Bool
+    }
+
+    private(set) var calls: [Call] = []
+
+    func record(pet: Pet, character: CompanionCharacter, customActive: Bool) {
+        calls.append(Call(pet: pet, character: character, customActive: customActive))
     }
 }

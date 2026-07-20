@@ -39,6 +39,7 @@ public final class DayPackGenerator {
         pet: Pet, tasks: [TaskItem], events: [CalendarEvent],
         weather: Weather, deviceMode: DeviceMode,
         userProfile: UserProfile = .default,
+        customCompanions: [CustomCompanion] = [],
         screenSize: ScreenSize = .fourInch,
         petDialogue: String = ""
     ) async -> DayPack {
@@ -85,9 +86,13 @@ public final class DayPackGenerator {
 
         let settlementData = await generateSettlementData(tasks: todayTasks, events: todayEvents, pet: pet, userProfile: userProfile)
         // 页面四 每日总结（v2.5.30）：概况点评 + 分支金句；素材未变走缓存。
+        let activeCustomCompanion = userProfile.customCompanionId.flatMap { id in
+            customCompanions.first { $0.id == id }
+        }
         let settlementTexts = await cachedSettlementTexts(
             events: Array(eventSummaries), todayEvents: todayEvents,
-            settlement: settlementData, pet: pet, userProfile: userProfile
+            settlement: settlementData, pet: pet, userProfile: userProfile,
+            activeCustomCompanion: activeCustomCompanion
         )
         return DayPack(
             date: Date(),
@@ -126,6 +131,7 @@ public final class DayPackGenerator {
     private func cachedSettlementTexts(
         events: [EventSummary], todayEvents: [CalendarEvent],
         settlement: SettlementData, pet: Pet, userProfile: UserProfile,
+        activeCustomCompanion: CustomCompanion?,
         now: Date = Date()
     ) async -> (review: String, quote: String) {
         let combinedMinutes = Self.scheduledEventMinutes(events: todayEvents) + settlement.totalFocusMinutes
@@ -140,22 +146,9 @@ public final class DayPackGenerator {
         formatter.dateFormat = "yyyy-MM-dd"
         // key 含当前 IP（内置 rawValue + 自定义 id@updatedAt）：金句是人格口吻，切换伙伴、
         // 或编辑自定义人设（updatedAt 递增，见 CustomCompanion 注释约定）后必须重新生成。
-        let customStamp: String = await {
-            guard let id = userProfile.customCompanionId else { return "-" }
-            do {
-                let all = try await LocalStorage.shared.loadCustomCompanions()
-                guard let companion = all.first(where: { $0.id == id }) else { return id.uuidString }
-                return "\(id.uuidString)@\(companion.updatedAt.timeIntervalSince1970)"
-            } catch {
-                // 读取失败退回 id-only key（可能多用一轮旧口吻文案）；必须留痕，
-                // 不许静默吞（coding-style "never silently swallow errors"）。
-                ErrorReporter.log(
-                    .persistence(operation: "load", target: "custom_companions.json", underlying: error.localizedDescription),
-                    context: "DayPackGenerator.settlementTextCache"
-                )
-                return id.uuidString
-            }
-        }()
+        let customStamp = activeCustomCompanion.map {
+            "\($0.id.uuidString)@\($0.updatedAt.timeIntervalSince1970)"
+        } ?? userProfile.customCompanionId?.uuidString ?? "-"
         let key = formatter.string(from: Date()) + "#"
             + events.map { "\($0.time)|\($0.title)|\($0.category.rawValue)" }.joined(separator: "\u{1F}")
             + "#\(settlement.tasksCompleted)/\(settlement.tasksTotal)#\(settlement.totalFocusMinutes)#\(branch)"
@@ -172,7 +165,8 @@ public final class DayPackGenerator {
         async let quote = textService.generateSettlementQuote(
             branch: branch, petName: pet.name, petMood: pet.mood,
             tasksCompleted: settlement.tasksCompleted, tasksTotal: settlement.tasksTotal,
-            focusMinutes: settlement.totalFocusMinutes, userProfile: userProfile
+            focusMinutes: settlement.totalFocusMinutes, userProfile: userProfile,
+            customCompanion: activeCustomCompanion
         )
         let result = (review: await review, quote: await quote)
         settlementTextCache = (key, result.review, result.quote)

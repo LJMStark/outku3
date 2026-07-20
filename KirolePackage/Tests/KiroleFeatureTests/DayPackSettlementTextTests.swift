@@ -69,9 +69,9 @@ struct DayPackSettlementTextTests {
 
     // MARK: - 金句模板（非空、ASCII、预算内）
 
-    @Test("金句模板（含三 IP 庆祝池与中性池）均非空、纯 ASCII、不超 120B 预算")
+    @Test("金句模板（三内置 IP、中性与自定义语气）均非空、纯 ASCII、不超 120B 预算")
     func quoteTemplatesAreWireSafe() {
-        let quotes = [
+        let builtInQuotes = [
             FallbackText.settlementQuoteCelebration(style: .joy),
             FallbackText.settlementQuoteCelebration(style: .silas),
             FallbackText.settlementQuoteCelebration(style: .nova),
@@ -82,7 +82,13 @@ struct DayPackSettlementTextTests {
             FallbackText.settlementQuoteOverloaded(style: nil),
             FallbackText.settlementQuoteFullSchedule()
         ]
-        for quote in quotes {
+        let customQuotes = CompanionPersonaVoice.allCases.flatMap { voice in
+            [
+                FallbackText.settlementQuoteCelebration(style: nil, customVoice: voice),
+                FallbackText.settlementQuoteOverloaded(style: nil, customVoice: voice)
+            ]
+        }
+        for quote in builtInQuotes + customQuotes {
             #expect(!quote.isEmpty)
             #expect(quote.utf8.count <= DayPackTextBudget.settlementQuote)
             #expect(quote.allSatisfy { $0.isASCII })
@@ -125,6 +131,29 @@ struct DayPackSettlementTextTests {
         ))
     }
 
+    @Test("自定义伙伴离线兜底沿用所选语气，不退回中性池")
+    @MainActor func customCompanionFallbackUsesPersonaVoice() async {
+        let companion = CustomCompanion(
+            name: "Mochi",
+            relationship: .friend,
+            personaVoice: .challenger,
+            avatarPreviewFileName: "unused-preview.png",
+            avatarPixelsFileName: "unused-image.png"
+        )
+        var profile = UserProfile.default
+        profile.customCompanionId = companion.id
+
+        let quote = await CompanionTextService.shared.generateSettlementQuote(
+            branch: .overloadedDay, petName: "Mochi", petMood: .happy,
+            tasksCompleted: 1, tasksTotal: 3, focusMinutes: 300,
+            userProfile: profile, customCompanion: companion
+        )
+
+        #expect(quote == FallbackText.settlementQuoteOverloaded(
+            style: nil, customVoice: .challenger
+        ))
+    }
+
     // MARK: - CJK 死线（v2.5.33：wire 净化预览）
 
     @Test("全 CJK 死线标题：兜底退化为通用表述，不再输出空点名")
@@ -154,6 +183,8 @@ struct DayPackSettlementTextTests {
             "A steady, quiet day overall.", deadlineTitles: ["合同付款截止"], focusMinutes: 0))
         #expect(!CompanionTextService.reviewSatisfiesHardRules(
             "Deadline handled nicely.", deadlineTitles: ["Ship v3"], focusMinutes: 0))
+        #expect(CompanionTextService.reviewSatisfiesHardRules(
+            "Ship v3 is the deadline to protect.", deadlineTitles: ["合同 Ship v3"], focusMinutes: 0))
     }
 
     // MARK: - 死线溢出发现过程（v2.5.33：纯函数直测）

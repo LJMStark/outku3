@@ -108,10 +108,13 @@ public enum BLEEventHandler {
                 BLEOTACoordinator.shared.handleDeviceWake(reportedVersion: eventLog.firmwareVersion)
                 // v2.6.0: 头像库存对账——设备报"无图/CRC 不一致"且自定义激活时标记 0x15 重推，
                 // 随本次唤醒触发的 sync 补发（关闭"同设备存储被清空 App 无感知"盲区）。
+                let avatarNeedsRepush: Bool
                 if let inventory = eventLog.avatarInventory {
-                    await AppState.shared.reconcileCustomAvatarInventory(
+                    avatarNeedsRepush = await AppState.shared.reconcileCustomAvatarInventory(
                         hasImage: inventory.hasImage, reportedCRC32: inventory.crc32
                     )
+                } else {
+                    avatarNeedsRepush = false
                 }
                 do {
                     try await service.syncTime()
@@ -122,15 +125,17 @@ public enum BLEEventHandler {
                     )
                 }
                 await AppState.shared.handleHardwareWake(now: eventLog.timestamp)
-                // 整轮 sync 经退避节流，避免硬件频繁唤醒触发连接风暴。
-                guard await BLERateLimiter.shared.allowSyncTrigger() else {
-                    ErrorReporter.log(
-                        .sync(component: "BLE DeviceWake", underlying: "throttled"),
-                        context: "BLEEventHandler.deviceWake"
-                    )
-                    return
+                // 普通唤醒经退避节流；头像库存不一致时强制本轮恢复，不能再等 1h/4h。
+                if !avatarNeedsRepush {
+                    guard await BLERateLimiter.shared.allowSyncTrigger() else {
+                        ErrorReporter.log(
+                            .sync(component: "BLE DeviceWake", underlying: "throttled"),
+                            context: "BLEEventHandler.deviceWake"
+                        )
+                        return
+                    }
                 }
-                await BLESyncCoordinator.shared.performSync(force: false)
+                await BLESyncCoordinator.shared.performSync(force: avatarNeedsRepush)
             }
 
         case .deviceSleep:

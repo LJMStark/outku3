@@ -67,6 +67,7 @@ public final class BLESyncCoordinator {
             weather: appState.weather,
             deviceMode: appState.deviceMode,
             userProfile: appState.userProfile,
+            customCompanions: appState.customCompanions,
             screenSize: bleService.hardwareScreenSize,
             petDialogue: appState.currentPetDialogue
         )

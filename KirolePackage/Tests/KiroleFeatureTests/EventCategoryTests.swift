@@ -113,6 +113,12 @@ struct EventCategoryTests {
                 id: "cat-ambiguous", title: "Dentist",
                 startTime: calendar.date(bySettingHour: 17, minute: 0, second: 0, of: today)!,
                 endTime: calendar.date(bySettingHour: 17, minute: 30, second: 0, of: today)!
+            ),
+            CalendarEvent(
+                id: "cat-description-deadline", title: "Q3 filing",
+                startTime: calendar.date(bySettingHour: 18, minute: 0, second: 0, of: today)!,
+                endTime: calendar.date(bySettingHour: 18, minute: 30, second: 0, of: today)!,
+                description: "Final submission due today"
             )
         ]
 
@@ -125,7 +131,7 @@ struct EventCategoryTests {
         // No API key in the test environment → the batched AI call is skipped and the
         // keyword heuristic fills the categories deterministically. Unclassifiable events
         // fall to .admin (thumbs-up) per the customer decision — never 0x00 on the wire.
-        #expect(dayPack.events.map(\.category) == [.meetings, .wellness, .admin])
+        #expect(dayPack.events.map(\.category) == [.meetings, .wellness, .admin, .deadline])
     }
 
     @Test("DayPack fingerprint changes when only an event category changes")

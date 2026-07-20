@@ -83,24 +83,23 @@ extension AppState {
 
     /// Delete a custom companion (its metadata + assets) and snap back to the built-in
     /// character if it was active.
-    public func deleteCustomCompanion(id: UUID) {
+    public func deleteCustomCompanion(id: UUID) async {
         let wasActive = userProfile.customCompanionId == id
         if wasActive {
-            // 0x15 PNG 最坏要发 1-2 分钟；删除时不取消，半路中的旧流会在删除后继续写完，
+            // 0x15 PNG 最坏要发 1-2 分钟；删除时若不取消，半路中的旧流会在删除后继续写完，
             // 反过来覆盖设备身份。先停流并清掉待重发状态，旧头像不能再赢回来。
             customAvatarPushTask?.cancel()
             isCustomAvatarPendingBLEPush = false
             customAvatarFlushAttempts = 0
-            Task { @MainActor in
-                await localStorage.clearPendingCustomCompanionPush()
-            }
         }
         customCompanions.removeAll { $0.id == id }
 
+        var updatedProfile: UserProfile?
         if wasActive {
             var profile = userProfile
             profile.customCompanionId = nil
-            updateUserProfile(profile)
+            userProfile = profile
+            updatedProfile = profile
             // v2.5.33（复审 P1）：删除**激活中**的自定义形象 = 一次身份切换，与选内置/选自定义
             // 同待遇立即单发 0x01（CustomActive=0），否则硬件继续显示刚删掉的用户图直到下一个
             // 节流窗（最长 1h/4h）；再补一轮 sync 兜底。
@@ -108,26 +107,39 @@ extension AppState {
             requestBLESync(reason: "deleteCustomCompanion")
         }
 
-        Task { @MainActor in
-            do {
-                try await localStorage.deleteCustomCompanionAssets(id: id)
-            } catch {
-                reportPersistenceError(error, operation: "delete", target: "custom_companion_assets")
+        if wasActive {
+            await localStorage.clearPendingCustomCompanionPush()
+            if let updatedProfile {
+                do {
+                    try await localStorage.saveUserProfile(updatedProfile)
+                } catch {
+                    reportPersistenceError(error, operation: "save", target: "user_profile.json")
+                }
             }
         }
-        persistCustomCompanionsList()
+        do {
+            try await localStorage.deleteCustomCompanionAssets(id: id)
+        } catch {
+            reportPersistenceError(error, operation: "delete", target: "custom_companion_assets")
+        }
+        do {
+            try await localStorage.saveCustomCompanions(customCompanions)
+        } catch {
+            reportPersistenceError(error, operation: "save", target: "custom_companions.json")
+        }
     }
 
-    /// 立即单发一帧 PetStatus(0x01)（不等 1h/4h 节流窗）。断连时静默跳过——下一轮
-    /// sync 每轮都携带最新 CustomActive 状态兜底。CharacterId 恒为最近内置选择
-    /// （调用方均在 updateUserProfile 之后调用，userProfile 已是目标状态）。
-    private func sendPetStatusNow(customActive: Bool, context: String) {
-        Task { @MainActor in
-            guard BLEService.shared.connectionState.isConnected else { return }
+    /// 立即单发一帧 PetStatus(0x01)（不等 1h/4h 节流窗）。每次调用先截取目标身份，
+    /// 再按调用顺序发送；快速切换时旧任务不能读取到新 profile，也不能晚于新帧完成。
+    func sendPetStatusNow(customActive: Bool, context: String) {
+        let petSnapshot = pet
+        let characterSnapshot = userProfile.companionCharacter
+        let previousTask = companionIdentityStatusSendTask
+        let sender = companionIdentityStatusSender
+        companionIdentityStatusSendTask = Task { @MainActor in
+            await previousTask?.value
             do {
-                try await BLEService.shared.sendPetStatus(
-                    pet, companionCharacter: userProfile.companionCharacter, customActive: customActive
-                )
+                try await sender(petSnapshot, characterSnapshot, customActive)
             } catch {
                 ErrorReporter.log(
                     .sync(component: "BLE PetStatus", underlying: error.localizedDescription),
@@ -266,14 +278,29 @@ extension AppState {
     /// v2.6.0: DeviceWake 上报设备头像库存（AvatarState + CRC32）后对账。自定义激活且设备
     /// 侧无图/CRC 与本地激活头像不一致 → 重新标记 0x15 待推，随本轮 sync 的 flush 补发。
     /// 内置激活时设备报什么都不管（CustomActive=0 已让固件不显示自定义图）。
-    public func reconcileCustomAvatarInventory(hasImage: Bool, reportedCRC32: UInt32) async {
+    @discardableResult
+    public func reconcileCustomAvatarInventory(hasImage: Bool, reportedCRC32: UInt32) async -> Bool {
         guard let id = userProfile.customCompanionId,
-              let imageData = await localStorage.loadCustomCompanionImageData(id: id) else { return }
+              let imageData = await localStorage.loadCustomCompanionImageData(id: id) else { return false }
+        let localCRC32 = if hasImage {
+            await Task.detached(priority: .utility) { CRC32.ieee(imageData) }.value
+        } else {
+            UInt32.zero
+        }
+        guard userProfile.customCompanionId == id else { return false }
         guard Self.avatarNeedsRepush(
-            hasImage: hasImage, reportedCRC32: reportedCRC32, localCRC32: CRC32.ieee(imageData)
-        ) else { return }
+            hasImage: hasImage, reportedCRC32: reportedCRC32, localCRC32: localCRC32
+        ) else { return false }
+        let savedPendingID = await localStorage.loadPendingCustomCompanionPush()
+        guard userProfile.customCompanionId == id else { return false }
+        if isCustomAvatarPendingBLEPush, savedPendingID == id {
+            return false
+        }
+        await localStorage.savePendingCustomCompanionPush(id: id)
+        guard userProfile.customCompanionId == id else { return false }
         isCustomAvatarPendingBLEPush = true
         customAvatarFlushAttempts = 0
+        return true
     }
 
     /// Flush back-off policy. Re-push the 0x15 frame on every sync for the first

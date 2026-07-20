@@ -75,7 +75,7 @@ public struct CharacterSwitcherSheet: View {
                     ) {
                         selectCustom(companion.id)
                     } onDelete: {
-                        appState.deleteCustomCompanion(id: companion.id)
+                        Task { await appState.deleteCustomCompanion(id: companion.id) }
                     }
                 }
 

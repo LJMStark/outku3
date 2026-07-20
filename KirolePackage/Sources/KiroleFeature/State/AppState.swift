@@ -6,6 +6,10 @@ enum ProgressConstants {
     static let pointsPerTask: Int = 10
 }
 
+typealias CompanionIdentityStatusSender = @MainActor (
+    Pet, CompanionCharacter, Bool
+) async throws -> Void
+
 // MARK: - Home Companion Display Mode
 
 public enum HomeCompanionDisplayMode: String, Codable, Sendable {
@@ -113,6 +117,16 @@ public final class AppState {
     /// selection/flush cancels the previous task first — without this, two multi-thousand-chunk
     /// streams interleave packet-by-packet and the OLD avatar can finish last and win the screen.
     @ObservationIgnored var customAvatarPushTask: Task<Void, Never>?
+    /// Serializes immediate identity-status frames so rapid companion switches cannot finish
+    /// out of order and leave hardware showing an older identity.
+    @ObservationIgnored var companionIdentityStatusSendTask: Task<Void, Never>?
+    @ObservationIgnored var companionIdentityStatusSender: CompanionIdentityStatusSender = {
+        pet, character, customActive in
+        guard BLEService.shared.connectionState.isConnected else { return }
+        try await BLEService.shared.sendPetStatus(
+            pet, companionCharacter: character, customActive: customActive
+        )
+    }
     @ObservationIgnored var taskExternalSyncQueue = KeyedSerialTaskQueue<String>()
     /// Set when the device timezone changes at runtime. UI shows a banner asking the user
     /// whether to re-sync events. Cleared on user action (adjust or keep).

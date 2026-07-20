@@ -124,9 +124,24 @@ enum FallbackText {
         return parts.joined(separator: " ")
     }
 
-    /// 全部完成 → 庆祝收尾（离线兜底；在线走 IP 人格管线）。
-    /// v2.5.32: 按 IP 分池——`style == nil` = 自定义伴侣激活，用中性池（同 sharedPetDialogue 约定）。
-    static func settlementQuoteCelebration(style: CompanionStyle?) -> String {
+    /// 全部完成 → 庆祝收尾（离线兜底；在线走人格管线）。
+    static func settlementQuoteCelebration(
+        style: CompanionStyle?, customVoice: CompanionPersonaVoice? = nil
+    ) -> String {
+        if let customVoice {
+            switch customVoice {
+            case .companion:
+                return "Every plan is complete. I noticed your steady effort, and I'm proud of you."
+            case .challenger:
+                return "Full completion. You set the bar, then cleared it. Raise it wisely tomorrow."
+            case .zen:
+                return "Everything is complete. Let the day settle; you can rest now."
+            case .playful:
+                return "You cleared the whole board. That deserves a tiny victory dance."
+            case .customPrompt:
+                return "Everything is complete. Your companion is here to celebrate with you."
+            }
+        }
         switch style {
         case .joy:
             return pick([
@@ -156,8 +171,23 @@ enum FallbackText {
     }
 
     /// 未完成但投入 > 4h → 客户指定的方向（"今天已努力，任务定多了，明天减量、从稳定完成开始"）。
-    /// v2.5.33: 按 IP 分池（客户原话"用IP风格表达这个点"）；`style == nil` = 自定义伴侣，中性池。
-    static func settlementQuoteOverloaded(style: CompanionStyle?) -> String {
+    static func settlementQuoteOverloaded(
+        style: CompanionStyle?, customVoice: CompanionPersonaVoice? = nil
+    ) -> String {
+        if let customVoice {
+            switch customVoice {
+            case .companion:
+                return "You gave today plenty. The plan was too full; choose less tomorrow and let steady wins carry you."
+            case .challenger:
+                return "The effort was real; the plan was not. Cut tomorrow's list and finish what matters."
+            case .zen:
+                return "You did enough. The plan held too much; choose less tomorrow and finish with ease."
+            case .playful:
+                return "You worked hard; the list got greedy. Feed it less tomorrow and collect a steady win."
+            case .customPrompt:
+                return "You worked hard today. The plan was too full; choose less tomorrow and build from steady wins."
+            }
+        }
         switch style {
         case .joy:
             return "You worked so hard today! The list was just a bit much - let's plan a lighter one tomorrow and win it together."
