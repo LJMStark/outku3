@@ -67,7 +67,6 @@ struct ProtocolFixtures {
             firstUp: "09:30 HW Sync",
             settlementReview: "You completed 1 of 2 planned items. You focused for 2h 5m today.",
             settlementQuote: "All clear! You finished everything you set out to do.",
-            tomorrowFirstUp: "09:00 Team Sync",
             events: [
                 EventSummary(time: "09:30", endTime: "10:00", title: "HW Sync", description: "Bring the logic analyzer.", category: .meetings),
             ],
@@ -360,11 +359,10 @@ struct SimulatedAppPacket {
         // v2.5.7/v2.5.8: DaySummary then FirstUp (mirror encodeDayPack).
         let daySummary = try reader.readString()
         let firstUp = try reader.readString()
-        // v2.5.30: settlement page texts are the tail DayPack fields — SettlementReview,
-        // SettlementQuote, then TomorrowFirstUp as the final field (mirror encodeDayPack).
+        // v2.5.30/v2.5.31: settlement page texts are the tail DayPack fields — SettlementReview,
+        // then SettlementQuote as the final field (mirror encodeDayPack).
         let settlementReview = try reader.readString()
         let settlementQuote = try reader.readString()
-        let tomorrowFirstUp = try reader.readString()
         try reader.requireEnd()
 
         return SimulatedDayPack(
@@ -376,7 +374,6 @@ struct SimulatedAppPacket {
             firstUp: firstUp,
             settlementReview: settlementReview,
             settlementQuote: settlementQuote,
-            tomorrowFirstUp: tomorrowFirstUp,
             events: events,
             topTasks: topTasks,
             settlement: settlement
@@ -582,7 +579,6 @@ struct SimulatedDayPack {
     let firstUp: String
     let settlementReview: String
     let settlementQuote: String
-    let tomorrowFirstUp: String
     let events: [Event]
     let topTasks: [TopTask]
     let settlement: Settlement

@@ -89,14 +89,6 @@ public final class DayPackGenerator {
             events: Array(eventSummaries), todayEvents: todayEvents,
             settlement: settlementData, pet: pet, userProfile: userProfile
         )
-        // 页面四第三部分：明日第一件事（"HH:mm Title"，同 firstUp 格式）。`events` 是全量入参，
-        // 明日事件均在未来，firstUpLabel 的 startTime > now 过滤天然成立；无明日日程 → 空串，
-        // 固件隐藏该行。无任务兜底——"明日预告"只讲日程。
-        let tomorrowFirstUp = Self.firstUpLabel(
-            events: events.filter { Calendar.current.isDateInTomorrow($0.startTime) },
-            fallbackTaskTitle: nil
-        )
-
         return DayPack(
             date: Date(),
             weather: WeatherInfo(from: weather),
@@ -107,7 +99,6 @@ public final class DayPackGenerator {
             firstUp: firstUp,
             settlementReview: settlementTexts.review,
             settlementQuote: settlementTexts.quote,
-            tomorrowFirstUp: tomorrowFirstUp,
             events: Array(eventSummaries),
             topTasks: Array(topTasks),
             settlementData: settlementData

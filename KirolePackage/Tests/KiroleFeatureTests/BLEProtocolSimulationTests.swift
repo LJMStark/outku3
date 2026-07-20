@@ -104,10 +104,9 @@ struct BLEProtocolSimulationTests {
         #expect(parsedDayPack.petDialogue == "Small steps count.")
         #expect(parsedDayPack.daySummary == "Two events today. Take a break before noon.")
         #expect(parsedDayPack.firstUp == "09:30 HW Sync")
-        // v2.5.30 tail fields (settlement page texts).
+        // v2.5.30/v2.5.31 tail fields (settlement page texts).
         #expect(parsedDayPack.settlementReview == "You completed 1 of 2 planned items. You focused for 2h 5m today.")
         #expect(parsedDayPack.settlementQuote == "All clear! You finished everything you set out to do.")
-        #expect(parsedDayPack.tomorrowFirstUp == "09:00 Team Sync")
         #expect(parsedDayPack.events.map(\.title) == ["HW Sync"])
         #expect(parsedDayPack.events.first?.time == "09:30")
         // v2.5.30 per-event EndTime.
@@ -155,7 +154,6 @@ struct BLEProtocolSimulationTests {
             firstUp: "10:00 Caf\u{00E9} catch\u{2011}up",
             settlementReview: "You focused for 2h 5m \u{2014} the deadline \u{201C}Launch\u{201D} is done.",
             settlementQuote: "Everything done \u{2014} today was a win worth savoring! \u{2728}",
-            tomorrowFirstUp: "09:00 Jos\u{00E9}\u{2019}s sync",
             events: [
                 EventSummary(time: "09:30",
                              endTime: "10:00",
@@ -187,7 +185,6 @@ struct BLEProtocolSimulationTests {
             ("firstUp",     dirty.firstUp,     hw.firstUp),
             ("settlementReview", dirty.settlementReview, hw.settlementReview),
             ("settlementQuote",  dirty.settlementQuote,  hw.settlementQuote),
-            ("tomorrowFirstUp",  dirty.tomorrowFirstUp,  hw.tomorrowFirstUp),
             ("event.title", dirty.events[0].title, hw.events.first?.title ?? ""),
             ("event.desc",  dirty.events[0].description, hw.events.first?.description ?? ""),
             ("task.title",  dirty.topTasks[0].title, hw.topTasks.first?.title ?? ""),
@@ -210,7 +207,6 @@ struct BLEProtocolSimulationTests {
         #expect(hw.petDialogue == "You're doing great - keep it up! ")
         #expect(hw.events.first?.description == "Bring 20 & the \"notes\"")
         #expect(hw.settlementReview == "You focused for 2h 5m - the deadline \"Launch\" is done.")
-        #expect(hw.tomorrowFirstUp == "09:00 Jose's sync")
     }
 
     @Test("Virtual App parses every Device-to-App event")

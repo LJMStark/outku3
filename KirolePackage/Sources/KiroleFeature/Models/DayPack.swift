@@ -24,12 +24,10 @@ public struct DayPack: Codable, Sendable {
     // incomplete task title, else "". Computed App-side so firmware just renders it.
     public let firstUp: String
 
-    // 页面四 每日总结（v2.5.30，客户 2026-07-20）——三段文案，固件长按"完成当日"时展示：
-    // 概况点评（死线必提、专注>2h 必提时长）；金句/明日鼓励（三分支）；明日第一件事
-    // （"HH:mm Title" 同 firstUp 格式，空串 = 固件隐藏该行）。
+    // 每日总结页（v2.5.30 增、v2.5.31 定稿两段，客户 2026-07-20 拍板"分3部分"系笔误）——
+    // 固件长按"完成当日"时展示：概况点评（死线必提、专注>2h 必提时长）+ 金句/明日鼓励（三分支）。
     public let settlementReview: String
     public let settlementQuote: String
-    public let tomorrowFirstUp: String
 
     // Overview panel data
     public let events: [EventSummary]
@@ -51,7 +49,6 @@ public struct DayPack: Codable, Sendable {
         firstUp: String = "",
         settlementReview: String = "",
         settlementQuote: String = "",
-        tomorrowFirstUp: String = "",
         events: [EventSummary] = [],
         topTasks: [TaskSummary] = [],
         settlementData: SettlementData
@@ -66,7 +63,6 @@ public struct DayPack: Codable, Sendable {
         self.firstUp = firstUp
         self.settlementReview = settlementReview
         self.settlementQuote = settlementQuote
-        self.tomorrowFirstUp = tomorrowFirstUp
         self.events = events
         self.topTasks = topTasks
         self.settlementData = settlementData
@@ -94,7 +90,6 @@ public struct DayPack: Codable, Sendable {
         // v2.5.30 上 wire 的字段必进指纹，否则内容变化会被去重掉、硬件永远收不到新文案。
         parts.append("settlementReview=\(settlementReview)")
         parts.append("settlementQuote=\(settlementQuote)")
-        parts.append("tomorrowFirstUp=\(tomorrowFirstUp)")
         parts.append("events.count=\(events.count)")
         for event in events {
             parts.append("event.time=\(event.time)")

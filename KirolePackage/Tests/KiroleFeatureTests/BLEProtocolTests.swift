@@ -852,7 +852,6 @@ struct BLEProtocolTests {
             firstUp: "09:30 Standup",
             settlementReview: "You completed 2 of 3 items today.",
             settlementQuote: "A full sweep today. Great work, truly.",
-            tomorrowFirstUp: "09:00 Team Sync",
             events: [],
             topTasks: [],
             settlementData: settlement
@@ -868,11 +867,10 @@ struct BLEProtocolTests {
         cursor += 10                                                        // SettlementData: fixed 10 bytes
         #expect(readString(from: data, cursor: &cursor) == summary)         // DaySummary
         #expect(readString(from: data, cursor: &cursor) == "09:30 Standup") // FirstUp
-        // v2.5.30 settlement page tail texts
+        // v2.5.30/v2.5.31 settlement page tail texts
         #expect(readString(from: data, cursor: &cursor) == "You completed 2 of 3 items today.")
         #expect(readString(from: data, cursor: &cursor) == "A full sweep today. Great work, truly.")
-        #expect(readString(from: data, cursor: &cursor) == "09:00 Team Sync")
-        #expect(cursor == data.count)                                       // TomorrowFirstUp is the final field
+        #expect(cursor == data.count)                                       // SettlementQuote is the final field
     }
 
     @Test("BLEDataEncoder encodeDayPack truncates settlement texts to their budgets (v2.5.30)")
@@ -888,7 +886,6 @@ struct BLEProtocolTests {
             firstUp: "f",
             settlementReview: String(repeating: "R", count: 200),
             settlementQuote: String(repeating: "Q", count: 200),
-            tomorrowFirstUp: String(repeating: "T", count: 100),
             settlementData: settlement
         )
         let data = BLEDataEncoder.encodeDayPack(pack)
@@ -903,8 +900,6 @@ struct BLEProtocolTests {
         #expect(readString(from: data, cursor: &cursor)?.count == DayPackTextBudget.settlementReview)
         #expect(data[cursor] == UInt8(DayPackTextBudget.settlementQuote))   // 120
         #expect(readString(from: data, cursor: &cursor)?.count == DayPackTextBudget.settlementQuote)
-        #expect(data[cursor] == 60)                                         // TomorrowFirstUp cap
-        #expect(readString(from: data, cursor: &cursor)?.count == 60)
         #expect(cursor == data.count)
     }
 
@@ -916,15 +911,13 @@ struct BLEProtocolTests {
         )
         let date = Date(timeIntervalSince1970: 1_700_000_000)
         func pack(
-            endTime: String = "10:00", review: String = "r",
-            quote: String = "q", tomorrow: String = "t"
+            endTime: String = "10:00", review: String = "r", quote: String = "q"
         ) -> DayPack {
             DayPack(
                 date: date,
                 petDialogue: "p",
                 settlementReview: review,
                 settlementQuote: quote,
-                tomorrowFirstUp: tomorrow,
                 events: [EventSummary(time: "09:00", endTime: endTime, title: "Sync", description: "")],
                 settlementData: settlement
             )
@@ -933,7 +926,6 @@ struct BLEProtocolTests {
         #expect(pack(endTime: "11:00").stableFingerprint() != base)
         #expect(pack(review: "r2").stableFingerprint() != base)
         #expect(pack(quote: "q2").stableFingerprint() != base)
-        #expect(pack(tomorrow: "t2").stableFingerprint() != base)
         #expect(pack().stableFingerprint() == base)
     }
 

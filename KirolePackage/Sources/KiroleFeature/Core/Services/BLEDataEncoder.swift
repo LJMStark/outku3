@@ -177,12 +177,12 @@ public enum BLEDataEncoder {
         // Same strict-reader contract: a reader must read it to reach end.
         data.appendString(dayPack.firstUp, maxLength: 60)
 
-        // v2.5.30: 页面四 每日总结三段文案（尾部追加，SettlementData 定长偏移保持稳定）。
-        // SettlementQuote 之后的 TomorrowFirstUp 是当前 DayPack 最后一个字段——严格读取方
-        // 必须依次读完这三个长度前缀字符串才到 payload 末尾。
+        // v2.5.30/v2.5.31: 每日总结页两段文案（尾部追加，SettlementData 定长偏移保持稳定）。
+        // SettlementQuote 是当前 DayPack 最后一个字段——严格读取方必须依次读完这两个
+        // 长度前缀字符串才到 payload 末尾。（v2.5.30 曾有第三个尾字段 TomorrowFirstUp，
+        // 客户 2026-07-20 拍板总结页只有两部分，v2.5.31 在固件实现前撤除。）
         data.appendString(dayPack.settlementReview, maxLength: DayPackTextBudget.settlementReview)
         data.appendString(dayPack.settlementQuote, maxLength: DayPackTextBudget.settlementQuote)
-        data.appendString(dayPack.tomorrowFirstUp, maxLength: 60)
 
         return data
     }
