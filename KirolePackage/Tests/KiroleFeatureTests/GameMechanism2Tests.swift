@@ -246,6 +246,44 @@ struct GameMechanism2Tests {
         #expect(service.todaySessions.last?.earnedEnergyBottles == 2)
     }
 
+    @Test("Hardware bottle display caps at five; real earned count passes through unchanged below it")
+    func hardwareDisplayBottlesCapAtFive() {
+        // 硬件专注页显示上限 5（客户 2026-07）。上限以下真实值原样透传，超过一律显示 5。
+        #expect(FocusEnergyCalculator.hardwareBottleDisplayCap == 5)
+        #expect(FocusEnergyCalculator.displayBottles(forEarned: 0) == 0)
+        #expect(FocusEnergyCalculator.displayBottles(forEarned: 4) == 4)
+        #expect(FocusEnergyCalculator.displayBottles(forEarned: 5) == 5)
+        #expect(FocusEnergyCalculator.displayBottles(forEarned: 6) == 5)
+        #expect(FocusEnergyCalculator.displayBottles(forEarned: 100) == 5)
+        // 防御：负数（不应出现）归零，绝不下发负瓶子数。
+        #expect(FocusEnergyCalculator.displayBottles(forEarned: -3) == 0)
+    }
+
+    @Test("A session past the display cap still banks the true bottle count for points (display cap must not touch points)")
+    @MainActor
+    func focusSessionOverCapStillBanksTrueBottles() async {
+        // 3 小时不打断 → floor(180/30) = 6 瓶。硬件显示封顶 5，但积分（累计能量瓶）必须
+        // 记真实的 6：证明显示封顶只作用在 0x14 出口，绝不污染 session.earnedEnergyBottles 积分源头。
+        let focusGuardService = GameMechanismMockFocusGuardService()
+        let service = FocusSessionService.makeForTesting(
+            focusGuardService: focusGuardService,
+            persistenceEnabled: false
+        )
+        let startTime = Date().addingTimeInterval(-180 * 60)
+
+        await service.startSession(
+            taskId: "over-cap-energy-task",
+            taskTitle: "Over Cap Energy Task",
+            startTime: startTime
+        )
+        service.endSession(reason: .completed, endTime: Date())
+
+        let banked = service.todaySessions.last?.earnedEnergyBottles
+        #expect(banked == 6)
+        // 同一真实值经显示折算后应封顶为 5（硬件所见）。
+        #expect(FocusEnergyCalculator.displayBottles(forEarned: banked ?? 0) == 5)
+    }
+
     @Test("Screen unlock breaks countable focus segments below 30 minute threshold")
     func screenUnlockBreaksCountableFocusSegments() {
         let startTime = Date(timeIntervalSince1970: 1_700_000_000)

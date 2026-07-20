@@ -162,7 +162,9 @@ extension AppState {
         let elapsedMinutes = progress.elapsedMinutes
         let segmentMinutes = progress.segmentMinutes
         let focusPhase = progress.phase
-        let focusBottles = progress.earnedEnergyBottles
+        // 硬件专注页能量瓶显示封顶 5（客户 2026-07）：满 5 后不再增显，但积分按真实值累计
+        // （会话结束 session.earnedEnergyBottles 累加，见 FocusSessionService，不读这里的显示值）。
+        let focusBottles = FocusEnergyCalculator.displayBottles(forEarned: progress.earnedEnergyBottles)
 
         // Real BLE push (all builds)
         // 短窗同内容去重，防前台化双观察者背靠背推同帧：见 AppState.lastFocusStatusDedupKey。
