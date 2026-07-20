@@ -65,8 +65,11 @@ struct ProtocolFixtures {
             petDialogue: "Small steps count.",
             daySummary: "Two events today. Take a break before noon.",
             firstUp: "09:30 HW Sync",
+            settlementReview: "You completed 1 of 2 planned items. You focused for 2h 5m today.",
+            settlementQuote: "All clear! You finished everything you set out to do.",
+            tomorrowFirstUp: "09:00 Team Sync",
             events: [
-                EventSummary(time: "09:30", title: "HW Sync", description: "Bring the logic analyzer.", category: .meetings),
+                EventSummary(time: "09:30", endTime: "10:00", title: "HW Sync", description: "Bring the logic analyzer.", category: .meetings),
             ],
             topTasks: [
                 TaskSummary(id: taskId, title: "Plan BLE", isCompleted: false, priority: 2),
@@ -328,7 +331,9 @@ struct SimulatedAppPacket {
                 title: try reader.readString(),
                 description: try reader.readString(),
                 // v2.5.27: per-event Category byte (mirror encodeDayPack).
-                category: try reader.readByte()
+                category: try reader.readByte(),
+                // v2.5.30: per-event EndTime string after Category (mirror encodeDayPack).
+                endTime: try reader.readString()
             ))
         }
 
@@ -352,9 +357,14 @@ struct SimulatedAppPacket {
             longestFocusMinutes: Int(try reader.readUInt16BE()),
             interruptionCount: Int(try reader.readByte())
         )
-        // v2.5.7/v2.5.8: DaySummary then FirstUp are the tail DayPack fields (mirror encodeDayPack).
+        // v2.5.7/v2.5.8: DaySummary then FirstUp (mirror encodeDayPack).
         let daySummary = try reader.readString()
         let firstUp = try reader.readString()
+        // v2.5.30: settlement page texts are the tail DayPack fields — SettlementReview,
+        // SettlementQuote, then TomorrowFirstUp as the final field (mirror encodeDayPack).
+        let settlementReview = try reader.readString()
+        let settlementQuote = try reader.readString()
+        let tomorrowFirstUp = try reader.readString()
         try reader.requireEnd()
 
         return SimulatedDayPack(
@@ -364,6 +374,9 @@ struct SimulatedAppPacket {
             petDialogue: petDialogue,
             daySummary: daySummary,
             firstUp: firstUp,
+            settlementReview: settlementReview,
+            settlementQuote: settlementQuote,
+            tomorrowFirstUp: tomorrowFirstUp,
             events: events,
             topTasks: topTasks,
             settlement: settlement
@@ -558,6 +571,7 @@ struct SimulatedDayPack {
         let title: String
         let description: String
         let category: UInt8
+        let endTime: String
     }
 
     let date: (year: Int, month: Int, day: Int)
@@ -566,6 +580,9 @@ struct SimulatedDayPack {
     let petDialogue: String
     let daySummary: String
     let firstUp: String
+    let settlementReview: String
+    let settlementQuote: String
+    let tomorrowFirstUp: String
     let events: [Event]
     let topTasks: [TopTask]
     let settlement: Settlement

@@ -24,6 +24,13 @@ public struct DayPack: Codable, Sendable {
     // incomplete task title, else "". Computed App-side so firmware just renders it.
     public let firstUp: String
 
+    // 页面四 每日总结（v2.5.30，客户 2026-07-20）——三段文案，固件长按"完成当日"时展示：
+    // 概况点评（死线必提、专注>2h 必提时长）；金句/明日鼓励（三分支）；明日第一件事
+    // （"HH:mm Title" 同 firstUp 格式，空串 = 固件隐藏该行）。
+    public let settlementReview: String
+    public let settlementQuote: String
+    public let tomorrowFirstUp: String
+
     // Overview panel data
     public let events: [EventSummary]
     public let topTasks: [TaskSummary]
@@ -42,6 +49,9 @@ public struct DayPack: Codable, Sendable {
         petDialogue: String,
         daySummary: String = "",
         firstUp: String = "",
+        settlementReview: String = "",
+        settlementQuote: String = "",
+        tomorrowFirstUp: String = "",
         events: [EventSummary] = [],
         topTasks: [TaskSummary] = [],
         settlementData: SettlementData
@@ -54,6 +64,9 @@ public struct DayPack: Codable, Sendable {
         self.petDialogue = petDialogue
         self.daySummary = daySummary
         self.firstUp = firstUp
+        self.settlementReview = settlementReview
+        self.settlementQuote = settlementQuote
+        self.tomorrowFirstUp = tomorrowFirstUp
         self.events = events
         self.topTasks = topTasks
         self.settlementData = settlementData
@@ -78,9 +91,14 @@ public struct DayPack: Codable, Sendable {
         parts.append("petDialogue=\(petDialogue)")
         parts.append("daySummary=\(daySummary)")
         parts.append("firstUp=\(firstUp)")
+        // v2.5.30 上 wire 的字段必进指纹，否则内容变化会被去重掉、硬件永远收不到新文案。
+        parts.append("settlementReview=\(settlementReview)")
+        parts.append("settlementQuote=\(settlementQuote)")
+        parts.append("tomorrowFirstUp=\(tomorrowFirstUp)")
         parts.append("events.count=\(events.count)")
         for event in events {
             parts.append("event.time=\(event.time)")
+            parts.append("event.endTime=\(event.endTime)")
             parts.append("event.title=\(event.title)")
             parts.append("event.desc=\(event.description)")
             // Category joins the fingerprint so an async classification landing later (cache miss →
@@ -200,13 +218,18 @@ public struct TaskSummary: Codable, Sendable, Identifiable {
 /// 事件摘要（用于 DayPack 概览面板的事件卡：时间 + 标题 + 描述 + 类别图标信号）
 public struct EventSummary: Codable, Sendable {
     public let time: String          // "HH:mm"，全天事件为空串
+    /// "HH:mm" 结束时间（v2.5.30）：固件用它算「前一日程结束→下一日程开始」间隔（页面二
+    /// <10min/>10min 布局分支）与页面一时间轴末端标注。全天事件为空串；结束时间落在开始
+    /// 时间之后的日历日（跨午夜）时按 "23:59" 封顶——App 是展示口径的决策侧（§6.5）。
+    public let endTime: String
     public let title: String
     public let description: String
     /// 六大类标签（AI 打标，v2.5.27 起随 DayPack 下发 1 字节；.unknown = 固件不画图标）。
     public let category: EventCategory
 
-    public init(time: String, title: String, description: String, category: EventCategory = .unknown) {
+    public init(time: String, endTime: String = "", title: String, description: String, category: EventCategory = .unknown) {
         self.time = time
+        self.endTime = endTime
         self.title = title
         self.description = description
         self.category = category
@@ -215,11 +238,17 @@ public struct EventSummary: Codable, Sendable {
     public init(from event: CalendarEvent, category: EventCategory = .unknown) {
         if event.isAllDay {
             self.time = ""
+            self.endTime = ""
         } else {
             let formatter = DateFormatter()
             formatter.locale = Locale(identifier: "en_US_POSIX")
             formatter.dateFormat = "HH:mm"
             self.time = formatter.string(from: event.startTime)
+            if Calendar.current.isDate(event.endTime, inSameDayAs: event.startTime) {
+                self.endTime = formatter.string(from: event.endTime)
+            } else {
+                self.endTime = "23:59"
+            }
         }
         self.title = event.title
         self.description = event.description ?? ""
@@ -228,7 +257,7 @@ public struct EventSummary: Codable, Sendable {
 
     /// 同内容换类别的拷贝（分类结果落地时用，保持结构体不可变语义）。
     public func withCategory(_ category: EventCategory) -> EventSummary {
-        EventSummary(time: time, title: title, description: description, category: category)
+        EventSummary(time: time, endTime: endTime, title: title, description: description, category: category)
     }
 }
 

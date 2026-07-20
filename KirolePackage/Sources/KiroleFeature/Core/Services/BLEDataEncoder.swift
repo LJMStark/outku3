@@ -128,7 +128,7 @@ public enum BLEDataEncoder {
         // Pet dialogue bubble (v2.5.0: single line, = App currentPetDialogue)
         data.appendString(dayPack.petDialogue, maxLength: DayPackTextBudget.petDialogue)
 
-        // Events[] (time / title / description / category)
+        // Events[] (time / title / description / category / endTime)
         let maxEvents = 8
         data.appendClampedUInt8(min(dayPack.events.count, maxEvents))
         for event in dayPack.events.prefix(maxEvents) {
@@ -139,6 +139,10 @@ public enum BLEDataEncoder {
             // Signal only — the six icons are firmware-built-in art. Breaking change: the strict
             // reader (§7.1) must consume this byte; parseDayPack in the test layer mirrors it.
             data.append(event.category.rawValue)
+            // v2.5.30: EndTime "HH:mm"（全天空串、跨午夜封顶 23:59）。固件用于页面二
+            // <10min/>10min 间隔分支 + 页面一时间轴末端标注。Breaking change：§7.1 严格
+            // 读取方必须消费此长度前缀字符串。
+            data.appendString(event.endTime, maxLength: 8)
         }
 
         // Top tasks (dynamic limit based on screen size)
@@ -169,9 +173,16 @@ public enum BLEDataEncoder {
         // shipped yet); tail placement just keeps the fixed SettlementData offsets stable.
         data.appendString(dayPack.daySummary, maxLength: DayPackTextBudget.daySummary)
 
-        // v2.5.8: FirstUp (box③ "First up:" label) — currently the final DayPack field, appended
-        // after DaySummary. Same strict-reader contract: a reader must read it to reach end.
+        // v2.5.8: FirstUp (box③ "First up:" label), appended after DaySummary.
+        // Same strict-reader contract: a reader must read it to reach end.
         data.appendString(dayPack.firstUp, maxLength: 60)
+
+        // v2.5.30: 页面四 每日总结三段文案（尾部追加，SettlementData 定长偏移保持稳定）。
+        // SettlementQuote 之后的 TomorrowFirstUp 是当前 DayPack 最后一个字段——严格读取方
+        // 必须依次读完这三个长度前缀字符串才到 payload 末尾。
+        data.appendString(dayPack.settlementReview, maxLength: DayPackTextBudget.settlementReview)
+        data.appendString(dayPack.settlementQuote, maxLength: DayPackTextBudget.settlementQuote)
+        data.appendString(dayPack.tomorrowFirstUp, maxLength: 60)
 
         return data
     }

@@ -29,6 +29,10 @@ public final class DayPackGenerator {
     /// churning (LLM text varies) and forced needless re-pushes.
     private var daySummaryCache: (key: String, text: String)?
 
+    /// 页面四文案缓存（同 daySummaryCache 动机）：key 覆盖全部生成素材（日期、事件摘要含类别、
+    /// 完成数、专注分钟、金句分支），素材不变则复用——不重打 LLM、不搅动指纹。
+    private var settlementTextCache: (key: String, review: String, quote: String)?
+
     private init() {}
 
     public func generateDayPack(
@@ -79,6 +83,20 @@ public final class DayPackGenerator {
         // box③ "First up": next upcoming event, else the top (highest-priority) incomplete task.
         let firstUp = Self.firstUpLabel(events: todayEvents, fallbackTaskTitle: topTasks.first?.title)
 
+        let settlementData = await generateSettlementData(tasks: todayTasks, events: todayEvents, pet: pet, userProfile: userProfile)
+        // 页面四 每日总结（v2.5.30）：概况点评 + 分支金句；素材未变走缓存。
+        let settlementTexts = await cachedSettlementTexts(
+            events: Array(eventSummaries), todayEvents: todayEvents,
+            settlement: settlementData, pet: pet, userProfile: userProfile
+        )
+        // 页面四第三部分：明日第一件事（"HH:mm Title"，同 firstUp 格式）。`events` 是全量入参，
+        // 明日事件均在未来，firstUpLabel 的 startTime > now 过滤天然成立；无明日日程 → 空串，
+        // 固件隐藏该行。无任务兜底——"明日预告"只讲日程。
+        let tomorrowFirstUp = Self.firstUpLabel(
+            events: events.filter { Calendar.current.isDateInTomorrow($0.startTime) },
+            fallbackTaskTitle: nil
+        )
+
         return DayPack(
             date: Date(),
             weather: WeatherInfo(from: weather),
@@ -87,9 +105,12 @@ public final class DayPackGenerator {
             petDialogue: bubble,
             daySummary: daySummary,
             firstUp: firstUp,
+            settlementReview: settlementTexts.review,
+            settlementQuote: settlementTexts.quote,
+            tomorrowFirstUp: tomorrowFirstUp,
             events: Array(eventSummaries),
             topTasks: Array(topTasks),
-            settlementData: await generateSettlementData(tasks: todayTasks, events: todayEvents, pet: pet, userProfile: userProfile)
+            settlementData: settlementData
         )
     }
 
@@ -105,6 +126,41 @@ public final class DayPackGenerator {
         let text = await textService.generateDaySummary(events: events)
         daySummaryCache = (key, text)
         return text
+    }
+
+    /// 页面四两段文案（概况点评 + 分支金句），素材键未变时复用缓存。
+    /// key 含事件类别：异步分类晚到（缓存 miss → 下轮 AI 结果落地）时会重新生成——与
+    /// Category 进指纹的既有约定同一逻辑，保证死线事件"必提"不被过期缓存吞掉。
+    private func cachedSettlementTexts(
+        events: [EventSummary], todayEvents: [CalendarEvent],
+        settlement: SettlementData, pet: Pet, userProfile: UserProfile
+    ) async -> (review: String, quote: String) {
+        let combinedMinutes = Self.scheduledEventMinutes(events: todayEvents) + settlement.totalFocusMinutes
+        let branch = Self.settlementQuoteBranch(
+            completed: settlement.tasksCompleted, total: settlement.tasksTotal,
+            combinedMinutes: combinedMinutes
+        )
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        let key = formatter.string(from: Date()) + "#"
+            + events.map { "\($0.time)|\($0.title)|\($0.category.rawValue)" }.joined(separator: "\u{1F}")
+            + "#\(settlement.tasksCompleted)/\(settlement.tasksTotal)#\(settlement.totalFocusMinutes)#\(branch)"
+        if let cache = settlementTextCache, cache.key == key { return (cache.review, cache.quote) }
+
+        // 两段文案互不依赖，并发生成（同 categorize/daySummary 的既有并发模式）。
+        async let review = textService.generateSettlementReview(
+            events: events, focusMinutes: settlement.totalFocusMinutes,
+            tasksCompleted: settlement.tasksCompleted, tasksTotal: settlement.tasksTotal
+        )
+        async let quote = textService.generateSettlementQuote(
+            branch: branch, petName: pet.name, petMood: pet.mood,
+            tasksCompleted: settlement.tasksCompleted, tasksTotal: settlement.tasksTotal,
+            focusMinutes: settlement.totalFocusMinutes, userProfile: userProfile
+        )
+        let result = (review: await review, quote: await quote)
+        settlementTextCache = (key, result.review, result.quote)
+        return result
     }
 
     public func generateTaskInPage(task: TaskItem, pet: Pet, userProfile: UserProfile = .default) async -> TaskInPageData {

@@ -826,6 +826,7 @@ struct BLEProtocolTests {
         #expect(readString(from: data, cursor: &cursor) == "Sync")           // Event.description
         #expect(data[cursor] == EventCategory.unknown.rawValue)              // Event.category (v2.5.27)
         cursor += 1
+        #expect(readString(from: data, cursor: &cursor) == "")               // Event.endTime (v2.5.30)
         #expect(data[cursor] == 1)                                           // TaskCount
         cursor += 1
         #expect(readString(from: data, cursor: &cursor) == "task-1")
@@ -849,6 +850,9 @@ struct BLEProtocolTests {
             petDialogue: "Good morning",
             daySummary: summary,
             firstUp: "09:30 Standup",
+            settlementReview: "You completed 2 of 3 items today.",
+            settlementQuote: "A full sweep today. Great work, truly.",
+            tomorrowFirstUp: "09:00 Team Sync",
             events: [],
             topTasks: [],
             settlementData: settlement
@@ -863,8 +867,74 @@ struct BLEProtocolTests {
         cursor += 1
         cursor += 10                                                        // SettlementData: fixed 10 bytes
         #expect(readString(from: data, cursor: &cursor) == summary)         // DaySummary
-        #expect(readString(from: data, cursor: &cursor) == "09:30 Standup") // FirstUp (tail)
-        #expect(cursor == data.count)                                       // FirstUp is the final field
+        #expect(readString(from: data, cursor: &cursor) == "09:30 Standup") // FirstUp
+        // v2.5.30 settlement page tail texts
+        #expect(readString(from: data, cursor: &cursor) == "You completed 2 of 3 items today.")
+        #expect(readString(from: data, cursor: &cursor) == "A full sweep today. Great work, truly.")
+        #expect(readString(from: data, cursor: &cursor) == "09:00 Team Sync")
+        #expect(cursor == data.count)                                       // TomorrowFirstUp is the final field
+    }
+
+    @Test("BLEDataEncoder encodeDayPack truncates settlement texts to their budgets (v2.5.30)")
+    func encodeDayPackTruncatesSettlementTexts() {
+        let settlement = SettlementData(
+            tasksCompleted: 0, tasksTotal: 0, pointsEarned: 0,
+            petMood: "happy", summaryMessage: "", encouragementMessage: ""
+        )
+        let pack = DayPack(
+            date: Date(timeIntervalSince1970: 1_700_000_000),
+            petDialogue: "x",
+            daySummary: "s",
+            firstUp: "f",
+            settlementReview: String(repeating: "R", count: 200),
+            settlementQuote: String(repeating: "Q", count: 200),
+            tomorrowFirstUp: String(repeating: "T", count: 100),
+            settlementData: settlement
+        )
+        let data = BLEDataEncoder.encodeDayPack(pack)
+        var cursor = 5
+        _ = readString(from: data, cursor: &cursor)    // PetDialogue
+        cursor += 1                                    // EventCount = 0
+        cursor += 1                                    // TaskCount = 0
+        cursor += 10                                   // SettlementData
+        _ = readString(from: data, cursor: &cursor)    // DaySummary
+        _ = readString(from: data, cursor: &cursor)    // FirstUp
+        #expect(data[cursor] == UInt8(DayPackTextBudget.settlementReview))  // 180
+        #expect(readString(from: data, cursor: &cursor)?.count == DayPackTextBudget.settlementReview)
+        #expect(data[cursor] == UInt8(DayPackTextBudget.settlementQuote))   // 120
+        #expect(readString(from: data, cursor: &cursor)?.count == DayPackTextBudget.settlementQuote)
+        #expect(data[cursor] == 60)                                         // TomorrowFirstUp cap
+        #expect(readString(from: data, cursor: &cursor)?.count == 60)
+        #expect(cursor == data.count)
+    }
+
+    @Test("DayPack fingerprint varies on v2.5.30 fields (endTime / settlement texts / tomorrowFirstUp)")
+    func dayPackFingerprintVariesOnSettlementFields() {
+        let settlement = SettlementData(
+            tasksCompleted: 0, tasksTotal: 0, pointsEarned: 0,
+            petMood: "happy", summaryMessage: "", encouragementMessage: ""
+        )
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
+        func pack(
+            endTime: String = "10:00", review: String = "r",
+            quote: String = "q", tomorrow: String = "t"
+        ) -> DayPack {
+            DayPack(
+                date: date,
+                petDialogue: "p",
+                settlementReview: review,
+                settlementQuote: quote,
+                tomorrowFirstUp: tomorrow,
+                events: [EventSummary(time: "09:00", endTime: endTime, title: "Sync", description: "")],
+                settlementData: settlement
+            )
+        }
+        let base = pack().stableFingerprint()
+        #expect(pack(endTime: "11:00").stableFingerprint() != base)
+        #expect(pack(review: "r2").stableFingerprint() != base)
+        #expect(pack(quote: "q2").stableFingerprint() != base)
+        #expect(pack(tomorrow: "t2").stableFingerprint() != base)
+        #expect(pack().stableFingerprint() == base)
     }
 
     @Test("BLEDataEncoder encodeDayPack truncates DaySummary to 180 bytes")
