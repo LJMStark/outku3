@@ -903,7 +903,7 @@ struct BLEProtocolTests {
         #expect(cursor == data.count)
     }
 
-    @Test("DayPack fingerprint varies on v2.5.30 fields (endTime / settlement texts / tomorrowFirstUp)")
+    @Test("DayPack fingerprint varies on v2.5.30/31 fields (endTime / settlement texts)")
     func dayPackFingerprintVariesOnSettlementFields() {
         let settlement = SettlementData(
             tasksCompleted: 0, tasksTotal: 0, pointsEarned: 0,
