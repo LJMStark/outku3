@@ -142,7 +142,7 @@ extension AppState {
         Task { @MainActor in
             guard BLEService.shared.connectionState.isConnected else { return }
             do {
-                try await BLEService.shared.sendPetStatus(pet, companionCharacter: character)
+                try await BLEService.shared.sendPetStatus(pet, companionCharacter: character, customActive: false)
             } catch {
                 ErrorReporter.log(
                     .sync(component: "BLE PetStatus", underlying: error.localizedDescription),
@@ -163,6 +163,23 @@ extension AppState {
         }
         updateUserProfile(profile)
         requestBLESync(reason: "selectCustomCompanion")
+
+        // v2.5.32: 选自定义同样立即单发 0x01（CustomActive=1，与 selectBuiltInCompanion 的
+        // v2.5.20 待遇对齐）——固件收到即切换到"自定义显示"模式（图用已持久化的 0x15）；
+        // CharacterId 仍是最近内置选择（专注页美术）。断连跳过，下一轮 sync 兜底。
+        Task { @MainActor in
+            guard BLEService.shared.connectionState.isConnected else { return }
+            do {
+                try await BLEService.shared.sendPetStatus(
+                    pet, companionCharacter: userProfile.companionCharacter, customActive: true
+                )
+            } catch {
+                ErrorReporter.log(
+                    .sync(component: "BLE PetStatus", underlying: error.localizedDescription),
+                    context: "AppState.selectCustomCompanion"
+                )
+            }
+        }
 
         // Re-push the avatar PNG so the device shows the newly active avatar.
         // Cancel any in-flight push first: BLE 写锁只串行单个 packet，两条 ~2000 片的

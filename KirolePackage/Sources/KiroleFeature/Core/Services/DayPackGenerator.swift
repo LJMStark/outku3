@@ -227,8 +227,12 @@ public final class DayPackGenerator {
     ) -> (completed: Int, total: Int) {
         let completedTasks = tasks.filter { $0.isCompleted }.count
         let occurredEvents = events.filter { $0.endTime <= now }.count
+        // v2.5.32（审核修正）：分母含**全部**今日日程，分子仍只计已结束——4 个日程过了 1 个
+        // 显示 1/4（客户 mock 的 50% 中间态语义），清晨为 0/N 而非旧口径的 0/0→白天恒 100%。
+        // "防清晨误显 Perfect day"的原始动机在**分子**（未发生不算完成），不受本次影响；
+        // 日终全部结束后 completed == total，与客户"未取消即视为完成"的结算口径一致。
         return (completed: completedTasks + occurredEvents,
-                total: tasks.count + occurredEvents)
+                total: tasks.count + events.count)
     }
 
     // MARK: - Settlement quote branch（客户 2026-07-20「页面四 每日总结」）

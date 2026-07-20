@@ -23,12 +23,17 @@ public enum BLEDataEncoder {
 
     // MARK: - Pet Status
 
-    /// 编码宠物状态数据
-    public static func encodePetStatus(_ pet: Pet, companionCharacter: CompanionCharacter) -> Data {
+    /// 编码宠物状态数据。
+    /// v2.5.32: `customActive` 尾字节——1=自定义形象激活（固件除专注页显示已持久化的
+    /// 0x15 图），0=按 CharacterId 内置渲染。CharacterId 恒为最近一次**内置**选择（供
+    /// 专注页美术），自定义激活与否由本字节判定，消除"例行 sync 的 0x01"与"用户切回
+    /// 内置"的字节歧义。
+    public static func encodePetStatus(_ pet: Pet, companionCharacter: CompanionCharacter, customActive: Bool) -> Data {
         var data = Data()
         data.appendString(pet.name, maxLength: 20)
         data.append(pet.mood.rawValue.first?.asciiValue ?? 0)
         data.appendString(companionCharacter.rawValue, maxLength: 10)
+        data.append(customActive ? 0x01 : 0x00)
         return data
     }
 

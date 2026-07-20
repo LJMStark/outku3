@@ -14,12 +14,14 @@ struct BLEProtocolSimulationTests {
 
         let petPacket = BLESimpleEncoder.encode(
             type: BLEDataType.petStatus.rawValue,
-            payload: BLEDataEncoder.encodePetStatus(fixtures.pet, companionCharacter: .joy)
+            payload: BLEDataEncoder.encodePetStatus(fixtures.pet, companionCharacter: .joy, customActive: true)
         )
         let petStatus = try hardware.receiveSingleAppPacket(petPacket).parsePetStatus()
         #expect(petStatus.name == "Tiko")
         #expect(petStatus.moodByte == Character("H").asciiValue)
         #expect(petStatus.characterId == "joy")
+        // v2.5.32 CustomActive tail byte round-trips.
+        #expect(petStatus.customActive == true)
 
         let taskPacket = BLESimpleEncoder.encode(
             type: BLEDataType.taskList.rawValue,

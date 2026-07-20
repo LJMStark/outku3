@@ -136,7 +136,9 @@ public final class BLESyncCoordinator {
             try await bleService.syncTime()
             try await bleService.sendPetStatus(
                 appState.pet,
-                companionCharacter: appState.userProfile.companionCharacter
+                companionCharacter: appState.userProfile.companionCharacter,
+                // v2.5.32: 例行 sync 恒重申自定义激活态——0x01 不再把用户图刷回内置。
+                customActive: appState.userProfile.customCompanionId != nil
             )
             // 顶栏天气走独立 Weather(0x04) 帧（协议 §4.5），每轮发送。此前 sendWeather 只挂在
             // 零调用的 syncAllData 上——硬件顶栏天气从未被更新过（2026-07-04 审计 F1）。

@@ -507,8 +507,8 @@ public final class BLEService: NSObject {
     // MARK: - Data Transfer
 
     /// 发送宠物状态到 E-ink 设备
-    public func sendPetStatus(_ pet: Pet, companionCharacter: CompanionCharacter) async throws {
-        let data = BLEDataEncoder.encodePetStatus(pet, companionCharacter: companionCharacter)
+    public func sendPetStatus(_ pet: Pet, companionCharacter: CompanionCharacter, customActive: Bool) async throws {
+        let data = BLEDataEncoder.encodePetStatus(pet, companionCharacter: companionCharacter, customActive: customActive)
         try await writeData(type: .petStatus, data: data)
     }
 

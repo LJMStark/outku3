@@ -253,11 +253,14 @@ struct SimulatedAppPacket {
         let name = try reader.readString()
         let moodByte = try reader.readByte()
         let characterId = try reader.readString()
+        // v2.5.32: CustomActive tail byte (mirror encodePetStatus).
+        let customActive = try reader.readBool()
         try reader.requireEnd()
         return SimulatedPetStatus(
             name: name,
             moodByte: moodByte,
-            characterId: characterId
+            characterId: characterId,
+            customActive: customActive
         )
     }
 
@@ -509,6 +512,7 @@ struct SimulatedPetStatus {
     let name: String
     let moodByte: UInt8?
     let characterId: String
+    let customActive: Bool
 }
 
 struct SimulatedTaskList {

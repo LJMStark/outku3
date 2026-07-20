@@ -3,8 +3,9 @@ import Testing
 @testable import KiroleFeature
 
 /// 客户 docx「页面四 当日结算」：日程无法打卡，但只要客户未取消即算完成一项任务。
-/// 覆盖 DayPackGenerator.settlementCounts 的统计语义 —— 含「只计已结束日程」的时序口径，
-/// 防止结算数据在每次 BLE 同步重算时把当天尚未发生的日程提前算成已完成。
+/// 覆盖 DayPackGenerator.settlementCounts 的统计语义（v2.5.32 口径）：
+/// **分子**只计已完成任务 + 已结束日程（防清晨把未发生日程算成已完成）；
+/// **分母**含全部任务 + 全部今日日程（4 个日程过了 1 个显示 1/4，客户 mock 的 50% 中间态语义）。
 @Suite("Settlement Counts")
 struct SettlementCountsTests {
 
@@ -40,18 +41,18 @@ struct SettlementCountsTests {
         #expect(counts.total == 4)     // 2 任务 + 2 已结束日程
     }
 
-    @Test("尚未发生的日程不计入（修复清晨误显示 Perfect day / 满分）")
+    @Test("未来日程入分母不入分子（清晨 0/N 而非 0/0；v2.5.32 审核修正）")
     func futureEventsAreNotCounted() {
         let counts = DayPackGenerator.settlementCounts(
             tasks: [],
             events: [futureEvent(), futureEvent(), futureEvent()],
             now: now
         )
-        #expect(counts.completed == 0)
-        #expect(counts.total == 0)
+        #expect(counts.completed == 0) // 未发生不算完成——防清晨 Perfect day 的原始动机
+        #expect(counts.total == 3)     // 分母含全部今日日程 → 清晨 0/3 = 0%
     }
 
-    @Test("混合：仅已结束日程计入，未来日程忽略")
+    @Test("混合：4 项过了 2 项显示 2/3（进度中间态，白天不再恒 100%）")
     func mixedPastAndFutureEvents() {
         let counts = DayPackGenerator.settlementCounts(
             tasks: [task(done: true)],
@@ -59,7 +60,7 @@ struct SettlementCountsTests {
             now: now
         )
         #expect(counts.completed == 2) // 1 完成任务 + 1 已结束日程
-        #expect(counts.total == 2)     // 1 任务 + 1 已结束日程
+        #expect(counts.total == 3)     // 1 任务 + 2 日程（含未来）
     }
 
     @Test("无日程时退化为仅任务统计")
