@@ -409,7 +409,8 @@ enum FocusCompanionPhrases {
     }
 
     /// `character == nil` = 自定义伴侣激活，用中性池。
-    /// 活跃会话的第 1 分钟 FocusPhase.from 会短暂返回 .idle，映射到 warmup 池兜底。
+    /// idle 映射 warmup 池仅为防御：活跃会话的 phase 已在 progressSnapshot 钳为 ≥warmup
+    /// （第 0 分钟/打断清零那一分钟不再对外报 idle）。
     static func phrase(character: CompanionCharacter?, phase: FocusPhase, elapsedMinutes: Int) -> String {
         let pool = pool(character: character, phase: phase)
         let index = (max(0, elapsedMinutes) / rotationMinutes) % pool.count

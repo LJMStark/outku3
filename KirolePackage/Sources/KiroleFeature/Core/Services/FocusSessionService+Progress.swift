@@ -38,13 +38,17 @@ extension FocusSessionService {
         let segmentSeconds = max(0, calculationEnd.timeIntervalSince(segmentStart))
         let elapsedMinutes = Int(elapsedSeconds / 60)
         let segmentMinutes = Int(segmentSeconds / 60)
+        // 活跃会话恒不报 idle：会话第 0 分钟与打断后段清零的那一分钟都属 warmup（客户
+        // 三阶段 0-5 分钟从 0 起算；协议侧 Phase 0=idle 是"无会话"，固件以 Phase≠0 判
+        // 会话活跃——§8.7 问题 5）。真 idle 只走顶部的 `guard let session` 分支。
+        let rawPhase = FocusPhase.from(elapsedMinutes: segmentMinutes)
 
         return FocusProgressSnapshot(
             elapsedSeconds: elapsedSeconds,
             segmentSeconds: segmentSeconds,
             elapsedMinutes: elapsedMinutes,
             segmentMinutes: segmentMinutes,
-            phase: FocusPhase.from(elapsedMinutes: segmentMinutes),
+            phase: rawPhase == .idle ? .warmup : rawPhase,
             earnedEnergyBottles: FocusTimeCalculator.countableBottles(
                 sessionStart: session.startTime,
                 sessionEnd: calculationEnd,

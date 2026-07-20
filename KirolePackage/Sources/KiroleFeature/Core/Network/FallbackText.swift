@@ -32,13 +32,14 @@ enum FallbackText {
     }
 
     /// Offline fallback for the events-only day summary (box②). Events only — never tasks.
+    /// 客户规则（2026-07-20）：繁忙给休息建议，不繁忙提醒喝水——空日/单事件分支落实喝水侧。
     static func daySummary(events: [EventSummary]) -> String {
         guard let first = events.first else {
-            return "An open day ahead - a little room to breathe."
+            return "An open day ahead - a little room to breathe. Remember to drink some water."
         }
         let firstLabel = first.time.isEmpty ? first.title : "\(first.time) \(first.title)"
         if events.count == 1 {
-            return "One thing on the calendar today: \(firstLabel). A calm, focused day."
+            return "One thing on the calendar today: \(firstLabel). A calm day - keep some water nearby."
         }
         return "\(events.count) events today, starting with \(firstLabel). Pace yourself and take a short break between them."
     }

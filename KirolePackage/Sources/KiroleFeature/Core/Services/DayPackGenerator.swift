@@ -111,8 +111,9 @@ public final class DayPackGenerator {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd"
+        // key 含 endTime（v2.5.31）：digest 已喂结束时间给 AI，改期改时长同样要触发重新生成。
         let key = formatter.string(from: Date()) + "#"
-            + events.map { "\($0.time)|\($0.title)" }.joined(separator: "\u{1F}")
+            + events.map { "\($0.time)|\($0.endTime)|\($0.title)" }.joined(separator: "\u{1F}")
         if let cache = daySummaryCache, cache.key == key { return cache.text }
         let text = await textService.generateDaySummary(events: events)
         daySummaryCache = (key, text)
@@ -160,13 +161,13 @@ public final class DayPackGenerator {
     }
 
     public func generateTaskInPage(task: TaskItem, pet: Pet, userProfile: UserProfile = .default) async -> TaskInPageData {
-        // Two independent AI texts — run them concurrently so the TaskIn page does not wait twice.
-        async let encouragement = textService.generateTaskEncouragement(taskTitle: task.title, petName: pet.name, petMood: pet.mood, userProfile: userProfile)
-        async let overview = taskOverview(for: task.notes)
-        return await TaskInPageData(
+        // 客户拍板（2026-07-20）：专注页 Tips（encouragement）不要了——App 停止生成、恒发
+        // 空串；wire 字段保留占位（0x11 已联调，撤字段代价大于收益），固件收到空串不渲染。
+        let overview = await taskOverview(for: task.notes)
+        return TaskInPageData(
             taskId: task.id, taskTitle: task.title,
             taskDescription: overview,
-            encouragement: encouragement
+            encouragement: ""
         )
     }
 

@@ -54,8 +54,12 @@ public final class CompanionTextService {
     /// dedicated neutral summarizer so the companion persona stays confined to the bubble.
     public func generateDaySummary(events: [EventSummary]) async -> String {
         guard await openAI.isConfigured else { return FallbackText.daySummary(events: events) }
+        // v2.5.31: digest 带结束时间 "HH:mm-HH:mm"——AI 判断"繁忙/紧凑"需要时段长度与
+        // 间隙（客户示例：两个连续日程之间应建议插 break），只给开始时间判不出来。
         let digest = events.prefix(8).map { event in
-            event.time.isEmpty ? event.title : "\(event.time) \(event.title)"
+            if event.time.isEmpty { return event.title }
+            let span = event.endTime.isEmpty ? event.time : "\(event.time)-\(event.endTime)"
+            return "\(span) \(event.title)"
         }
         do {
             let raw = try await openAI.generateDaySummaryText(eventDigest: Array(digest))

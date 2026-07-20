@@ -186,10 +186,11 @@ public actor OpenAIService {
         let systemPrompt = PromptSanitizer.systemPrompt(containingUserContent: """
             Write ONE short, warm "day at a glance" line for a calendar panel, in plain neutral \
             English — you are NOT a character speaking, just a helpful panel. Note how full or open \
-            the day looks. If the day looks busy or tightly packed, add ONE short rest suggestion \
-            (such as when to take a break); if the day looks open or light, remind them to drink \
-            some water instead. Talk only about the calendar events inside <user_content>, never \
-            to-do tasks. Do not invent events. Output only the one line — no quotes, no preamble.
+            the day looks. If the day looks busy or tightly packed — for example two events running \
+            back-to-back — add ONE short rest suggestion (such as a break between those events); \
+            if the day looks open or light, remind them to drink some water instead. Talk only \
+            about the calendar events inside <user_content>, never to-do tasks. Do not invent \
+            events. Output only the one line — no quotes, no preamble.
             """)
         let eventsText = eventDigest.isEmpty
             ? "No events scheduled today."
