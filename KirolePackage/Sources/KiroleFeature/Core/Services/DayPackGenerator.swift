@@ -184,6 +184,19 @@ public final class DayPackGenerator {
     /// 只是任务定多了」；不超过则给「日程满时少排任务」的固定建议。
     nonisolated static let overloadedDayThresholdMinutes = 240
 
+    /// 客户口径：当日专注累计**超过** 2 小时时，每日总结概况必须提到专注时长。
+    nonisolated static let focusMentionThresholdMinutes = 120
+
+    /// 人读时长标签："2h 15m" / "2h" / "45m"。供每日总结概况（prompt 事实块与兜底模板）使用。
+    nonisolated static func focusDurationLabel(minutes: Int) -> String {
+        let clamped = max(0, minutes)
+        let hours = clamped / 60
+        let remainder = clamped % 60
+        if hours > 0 && remainder > 0 { return "\(hours)h \(remainder)m" }
+        if hours > 0 { return "\(hours)h" }
+        return "\(remainder)m"
+    }
+
     /// 今日日程时长合计（分钟），供金句分支的 4 小时阈值使用。
     /// 只累计**非全天**事件的 `endTime - startTime` —— 全天事件（24h）会一票冲垮阈值，排除；
     /// 负跨度（脏数据）忽略。
@@ -196,7 +209,7 @@ public final class DayPackGenerator {
     }
 
     /// 「页面四 每日总结」第二行金句/明日鼓励的三个分支。
-    enum SettlementQuoteBranch: Sendable, Equatable {
+    public enum SettlementQuoteBranch: Sendable, Equatable {
         /// 日程和任务全部完成 → 庆祝式金句（IP 风格）。
         case celebration
         /// 未全部完成，但日程时间+专注时长 > 4h → IP 风格表达「努力了，只是任务太满」。

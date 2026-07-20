@@ -170,6 +170,90 @@ public final class CompanionTextService {
         return FallbackText.settlementMessage(tasksCompleted: tasksCompleted, tasksTotal: tasksTotal)
     }
 
+    // MARK: - Settlement Review / Quote（硬件"页面四 每日总结"两段文案，v2.5.30）
+
+    /// Settlement page part 1: neutral review of today's schedule + focus (NOT the pet's voice).
+    /// Client hard rules — deadline events must be mentioned, focus beyond 2h must state the
+    /// duration — are prompt-injected on the LLM path and deterministically satisfied by the
+    /// fallback template.
+    public func generateSettlementReview(
+        events: [EventSummary], focusMinutes: Int,
+        tasksCompleted: Int, tasksTotal: Int
+    ) async -> String {
+        let deadlineTitles = events.filter { $0.category == .deadline }.map(\.title)
+        let fallback = FallbackText.settlementReview(
+            deadlineTitles: deadlineTitles, focusMinutes: focusMinutes,
+            tasksCompleted: tasksCompleted, tasksTotal: tasksTotal
+        )
+        guard await openAI.isConfigured else { return fallback }
+        let digest = events.prefix(8).map { event in
+            event.time.isEmpty ? event.title : "\(event.time) \(event.title)"
+        }
+        do {
+            let raw = try await openAI.generateSettlementReviewText(
+                eventDigest: Array(digest), deadlineTitles: deadlineTitles,
+                focusMinutes: focusMinutes,
+                tasksCompleted: tasksCompleted, tasksTotal: tasksTotal
+            )
+            let text = CompanionTextService.enforceByteBudget(raw, maxBytes: DayPackTextBudget.settlementReview)
+            if CompanionTextService.isDisplayablePanelText(text) { return text }
+        } catch {
+            ErrorReporter.log(
+                .sync(component: "SettlementReview", underlying: "generate failed: \(error.localizedDescription)"),
+                context: "CompanionTextService.generateSettlementReview"
+            )
+        }
+        return fallback
+    }
+
+    /// Settlement page part 2: the quote / tomorrow-encouragement line, branched per client spec.
+    /// `.fullSchedule` is a client-fixed template and never calls the AI; the other branches use
+    /// the companion-IP persona pipeline with template fallbacks.
+    public func generateSettlementQuote(
+        branch: DayPackGenerator.SettlementQuoteBranch,
+        petName: String, petMood: PetMood,
+        tasksCompleted: Int, tasksTotal: Int,
+        focusMinutes: Int,
+        userProfile: UserProfile = .default
+    ) async -> String {
+        switch branch {
+        case .fullSchedule:
+            return FallbackText.settlementQuoteFullSchedule()
+        case .celebration:
+            if let aiText = await generateAIText(
+                type: .settlementQuoteCelebration,
+                petName: petName, petMood: petMood,
+                userProfile: userProfile,
+                completedTasks: tasksCompleted, totalTasks: tasksTotal,
+                episodicMemories: ["The user completed every task and event today."],
+                focusTimeToday: focusMinutes,
+                maxBytes: DayPackTextBudget.settlementQuote
+            ), CompanionTextService.isDisplayablePanelText(aiText) {
+                return aiText
+            }
+            return FallbackText.settlementQuoteCelebration()
+        case .overloadedDay:
+            if let aiText = await generateAIText(
+                type: .settlementQuoteOverloaded,
+                petName: petName, petMood: petMood,
+                userProfile: userProfile,
+                completedTasks: tasksCompleted, totalTasks: tasksTotal,
+                episodicMemories: ["The user put in over four hours today but the plan was too packed to finish."],
+                focusTimeToday: focusMinutes,
+                maxBytes: DayPackTextBudget.settlementQuote
+            ), CompanionTextService.isDisplayablePanelText(aiText) {
+                return aiText
+            }
+            return FallbackText.settlementQuoteOverloaded()
+        }
+    }
+
+    /// 硬件面板文本可显示性：非空、非错误占位、无 CJK（English-only wire）。
+    nonisolated static func isDisplayablePanelText(_ text: String) -> Bool {
+        !text.isEmpty && !text.hasPrefix("[Error]")
+            && !CompanionDialogueDisplayPolicy.containsCJKScript(text)
+    }
+
     // MARK: - Smart Reminder
 
     public func generateSmartReminder(

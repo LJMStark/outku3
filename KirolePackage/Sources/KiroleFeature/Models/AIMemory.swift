@@ -12,6 +12,10 @@ public enum AITextType: String, Codable, Sendable {
     case scheduleReminder
     case settlementSummary
     case smartReminder
+    /// 硬件"页面四 每日总结"金句：全部完成 → IP 风格庆祝收尾。
+    case settlementQuoteCelebration
+    /// 硬件"页面四 每日总结"金句：未完成但日程+专注 > 4h → IP 风格"努力了，只是任务太满"。
+    case settlementQuoteOverloaded
 }
 
 // MARK: - AI Context

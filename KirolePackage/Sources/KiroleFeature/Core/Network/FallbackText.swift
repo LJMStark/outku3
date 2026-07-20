@@ -67,6 +67,47 @@ enum FallbackText {
         }
     }
 
+    // MARK: - Settlement page texts（硬件"页面四 每日总结"，v2.5.30）
+
+    /// Deterministic review that ALWAYS satisfies the two client hard rules: mentions a deadline
+    /// item when one exists, and states the focus duration when it exceeds 2h. The LLM path only
+    /// promises these at prompt level; this template is the guarantee.
+    static func settlementReview(
+        deadlineTitles: [String], focusMinutes: Int,
+        tasksCompleted: Int, tasksTotal: Int
+    ) -> String {
+        var parts: [String] = []
+        parts.append(tasksTotal > 0
+            ? "Today you completed \(tasksCompleted) of \(tasksTotal) planned items."
+            : "A light day with nothing planned.")
+        if let deadline = deadlineTitles.first, !deadline.isEmpty {
+            parts.append("On the deadline side: \(deadline).")
+        }
+        if focusMinutes > DayPackGenerator.focusMentionThresholdMinutes {
+            parts.append("You focused for \(DayPackGenerator.focusDurationLabel(minutes: focusMinutes)) today.")
+        }
+        return parts.joined(separator: " ")
+    }
+
+    /// 全部完成 → 庆祝收尾（离线兜底；在线走 IP 人格管线）。
+    static func settlementQuoteCelebration() -> String {
+        pick([
+            "Everything done - today was a win worth savoring!",
+            "All clear! You finished everything you set out to do.",
+            "A full sweep today. Great work, truly."
+        ])
+    }
+
+    /// 未完成但投入 > 4h → 客户指定的方向，固定英文表达（在线走 IP 人格管线润色）。
+    static func settlementQuoteOverloaded() -> String {
+        "You really worked hard today - the plan was just packed. Try fewer or easier tasks tomorrow and start from steady wins."
+    }
+
+    /// 未完成且投入 ≤ 4h → 客户逐字指定的建议，固定文案，不走 AI。
+    static func settlementQuoteFullSchedule() -> String {
+        "When the schedule is full, plan fewer tasks to leave room for focus."
+    }
+
     static func smartReminder(reason: ReminderReason, petName: String, taskTitle: String?) -> String {
         switch reason {
         case .idle:

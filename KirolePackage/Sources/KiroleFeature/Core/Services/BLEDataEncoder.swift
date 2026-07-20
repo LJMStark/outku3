@@ -10,6 +10,10 @@ public enum DayPackTextBudget {
     public static let petDialogue = 120
     public static let daySummary = 180
     public static let taskDescription = 100
+    /// v2.5.30 页面四概况点评（§4.7 SettlementReview）。
+    public static let settlementReview = 180
+    /// v2.5.30 页面四金句/明日鼓励（§4.7 SettlementQuote）。
+    public static let settlementQuote = 120
 }
 
 // MARK: - BLE Data Encoder

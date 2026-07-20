@@ -182,12 +182,14 @@ public actor OpenAIService {
     /// persona prompt (the pet's voice lives only in the bubble / PetDialogue). Summarizes the day
     /// from the user's calendar events: how full or open it looks, plus one practical suggestion.
     public func generateDaySummaryText(eventDigest: [String]) async throws -> String {
+        // 客户 2026-07-20「页面一」：繁忙/紧凑 → 给休息建议；否则 → 提醒喝水。
         let systemPrompt = PromptSanitizer.systemPrompt(containingUserContent: """
             Write ONE short, warm "day at a glance" line for a calendar panel, in plain neutral \
             English — you are NOT a character speaking, just a helpful panel. Note how full or open \
-            the day looks and add ONE practical suggestion (such as when to take a break). Talk only \
-            about the calendar events inside <user_content>, never to-do tasks. Do not invent \
-            events. Output only the one line — no quotes, no preamble.
+            the day looks. If the day looks busy or tightly packed, add ONE short rest suggestion \
+            (such as when to take a break); if the day looks open or light, remind them to drink \
+            some water instead. Talk only about the calendar events inside <user_content>, never \
+            to-do tasks. Do not invent events. Output only the one line — no quotes, no preamble.
             """)
         let eventsText = eventDigest.isEmpty
             ? "No events scheduled today."
@@ -197,6 +199,52 @@ public actor OpenAIService {
             userPrompt: PromptSanitizer.userContent(eventsText, maxLen: 400),
             temperature: 0.4,
             maxTokens: 80
+        )
+        return content.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Neutral review for the hardware settlement page (页面四第一部分, v2.5.30) — NOT the pet's
+    /// voice; the persona lives in the quote line. Reviews today's schedule + focus with the two
+    /// client hard rules injected conditionally: deadline-category events must be mentioned, and
+    /// focus beyond 2h must state the total focus time.
+    public func generateSettlementReviewText(
+        eventDigest: [String],
+        deadlineTitles: [String],
+        focusMinutes: Int,
+        tasksCompleted: Int,
+        tasksTotal: Int
+    ) async throws -> String {
+        var instructions = """
+            Write ONE or TWO short sentences reviewing the user's day for an end-of-day panel, in \
+            plain neutral English — you are NOT a character speaking, just a helpful panel. Review \
+            only the facts inside <user_content>: today's calendar events and focus stats. Do not \
+            invent events or numbers. Output only the review — no quotes, no preamble.
+            """
+        if !deadlineTitles.isEmpty {
+            instructions += "\nYou MUST mention the deadline item(s) listed in the facts."
+        }
+        if focusMinutes > DayPackGenerator.focusMentionThresholdMinutes {
+            instructions += "\nYou MUST state the total focus time exactly as given in the facts."
+        }
+        let systemPrompt = PromptSanitizer.systemPrompt(containingUserContent: instructions)
+
+        var facts: [String] = []
+        facts.append(eventDigest.isEmpty
+            ? "No events were scheduled today."
+            : "Today's events: " + eventDigest.prefix(8).joined(separator: "; "))
+        if !deadlineTitles.isEmpty {
+            facts.append("Deadline items: " + deadlineTitles.prefix(3).joined(separator: "; "))
+        }
+        facts.append("Items completed: \(tasksCompleted) of \(tasksTotal).")
+        if focusMinutes > 0 {
+            facts.append("Total focus time: \(DayPackGenerator.focusDurationLabel(minutes: focusMinutes)).")
+        }
+
+        let content = try await chatCompletion(
+            systemPrompt: systemPrompt,
+            userPrompt: PromptSanitizer.userContent(facts.joined(separator: "\n"), maxLen: 500),
+            temperature: 0.5,
+            maxTokens: 110
         )
         return content.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -596,6 +644,10 @@ public actor OpenAIService {
             scene = "It's time for: \(PromptSanitizer.userContent(rawEventName, maxLen: 80)). React to this thing happening now."
         case .settlementSummary:
             scene = "The day is ending. You watched them all day. Say goodnight in your way."
+        case .settlementQuoteCelebration:
+            scene = "The user finished everything today - every task and every event. Give ONE short celebratory line in your voice to close the day."
+        case .settlementQuoteOverloaded:
+            scene = "The user worked hard today but the plan was too packed to finish everything. In ONE short line, in your voice, tell them: they really did work hard - the plan was just overloaded - and tomorrow they can plan fewer or easier tasks and start from steady completion."
         case .smartReminder:
             scene = "The user glanced at you. You have nothing urgent to say. Just be yourself."
         }
