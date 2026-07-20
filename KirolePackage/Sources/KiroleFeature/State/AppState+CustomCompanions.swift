@@ -101,6 +101,11 @@ extension AppState {
             var profile = userProfile
             profile.customCompanionId = nil
             updateUserProfile(profile)
+            // v2.5.33（复审 P1）：删除**激活中**的自定义形象 = 一次身份切换，与选内置/选自定义
+            // 同待遇立即单发 0x01（CustomActive=0），否则硬件继续显示刚删掉的用户图直到下一个
+            // 节流窗（最长 1h/4h）；再补一轮 sync 兜底。
+            sendPetStatusNow(customActive: false, context: "AppState.deleteCustomCompanion")
+            requestBLESync(reason: "deleteCustomCompanion")
         }
 
         Task { @MainActor in
@@ -111,6 +116,25 @@ extension AppState {
             }
         }
         persistCustomCompanionsList()
+    }
+
+    /// 立即单发一帧 PetStatus(0x01)（不等 1h/4h 节流窗）。断连时静默跳过——下一轮
+    /// sync 每轮都携带最新 CustomActive 状态兜底。CharacterId 恒为最近内置选择
+    /// （调用方均在 updateUserProfile 之后调用，userProfile 已是目标状态）。
+    private func sendPetStatusNow(customActive: Bool, context: String) {
+        Task { @MainActor in
+            guard BLEService.shared.connectionState.isConnected else { return }
+            do {
+                try await BLEService.shared.sendPetStatus(
+                    pet, companionCharacter: userProfile.companionCharacter, customActive: customActive
+                )
+            } catch {
+                ErrorReporter.log(
+                    .sync(component: "BLE PetStatus", underlying: error.localizedDescription),
+                    context: context
+                )
+            }
+        }
     }
 
     // MARK: - Selection
@@ -137,19 +161,8 @@ extension AppState {
         updateUserProfile(profile)
         // v2.5.20: 伙伴切换不再等节流窗——立即单发一帧 PetStatus(0x01) 携带新 characterId
         // （与自定义头像的立即推送 0x15 同待遇）。character 仍被有意排除在 DayPack 指纹外
-        // （2026-07-04 审计 F2 决定保留），常规每轮 sync 照发兜底；断连时跳过即可，
-        // 下一轮 sync 自带最新值。
-        Task { @MainActor in
-            guard BLEService.shared.connectionState.isConnected else { return }
-            do {
-                try await BLEService.shared.sendPetStatus(pet, companionCharacter: character, customActive: false)
-            } catch {
-                ErrorReporter.log(
-                    .sync(component: "BLE PetStatus", underlying: error.localizedDescription),
-                    context: "AppState.selectBuiltInCompanion"
-                )
-            }
-        }
+        // （2026-07-04 审计 F2 决定保留），常规每轮 sync 照发兜底。
+        sendPetStatusNow(customActive: false, context: "AppState.selectBuiltInCompanion")
         requestBLESync(reason: "selectBuiltInCompanion")
     }
 
@@ -164,22 +177,9 @@ extension AppState {
         updateUserProfile(profile)
         requestBLESync(reason: "selectCustomCompanion")
 
-        // v2.5.32: 选自定义同样立即单发 0x01（CustomActive=1，与 selectBuiltInCompanion 的
-        // v2.5.20 待遇对齐）——固件收到即切换到"自定义显示"模式（图用已持久化的 0x15）；
-        // CharacterId 仍是最近内置选择（专注页美术）。断连跳过，下一轮 sync 兜底。
-        Task { @MainActor in
-            guard BLEService.shared.connectionState.isConnected else { return }
-            do {
-                try await BLEService.shared.sendPetStatus(
-                    pet, companionCharacter: userProfile.companionCharacter, customActive: true
-                )
-            } catch {
-                ErrorReporter.log(
-                    .sync(component: "BLE PetStatus", underlying: error.localizedDescription),
-                    context: "AppState.selectCustomCompanion"
-                )
-            }
-        }
+        // v2.5.32: 选自定义同样立即单发 0x01（CustomActive=1）——固件收到即切换到
+        // "自定义显示"模式（图用已持久化的 0x15）；CharacterId 仍是最近内置选择（专注页美术）。
+        sendPetStatusNow(customActive: true, context: "AppState.selectCustomCompanion")
 
         // Re-push the avatar PNG so the device shows the newly active avatar.
         // Cancel any in-flight push first: BLE 写锁只串行单个 packet，两条 ~2000 片的
@@ -240,6 +240,10 @@ extension AppState {
             await localStorage.clearPendingCustomCompanionPush()
             isCustomAvatarPendingBLEPush = false
             customAvatarFlushAttempts = 0
+            // v2.5.33: 记录这张图成功送达的设备——连接到不同设备时据此触发自动重推。
+            if let deviceID = BLEService.shared.connectedDeviceID?.uuidString {
+                await localStorage.saveCustomAvatarLastPushedDeviceID(deviceID)
+            }
         } catch is CancellationError {
             // 被更新的选择/flush 取消：新任务已接管重试状态，这里不标 pending、不记错——
             // 否则旧任务会把新选择刚清掉的待重发标记又写回去。
@@ -273,6 +277,16 @@ extension AppState {
     /// Called by BLESyncCoordinator after establishing a connection.
     /// Re-sends the avatar frame for the active custom companion when a previous push failed.
     public func flushPendingCustomCompanionPushIfNeeded() async {
+        // v2.5.33（复审 P1"换硬件不恢复"）：固件持久化只救同一台重启；连接的设备与上次
+        // 成功收图的设备不同（含从未记录）且自定义激活时，重新标记待推。存储被清空但
+        // 设备没换的场景 App 侧无法感知——已记录为已知边界，需固件上报"无图"信号才能闭环。
+        if !isCustomAvatarPendingBLEPush,
+           userProfile.customCompanionId != nil,
+           let connectedID = BLEService.shared.connectedDeviceID?.uuidString,
+           await localStorage.loadCustomAvatarLastPushedDeviceID() != connectedID {
+            isCustomAvatarPendingBLEPush = true
+            customAvatarFlushAttempts = 0
+        }
         guard isCustomAvatarPendingBLEPush,
               let id = userProfile.customCompanionId,
               let imageData = await localStorage.loadCustomCompanionImageData(id: id) else {

@@ -130,11 +130,7 @@ public final class DayPackGenerator {
     ) async -> (review: String, quote: String) {
         let combinedMinutes = Self.scheduledEventMinutes(events: todayEvents) + settlement.totalFocusMinutes
         let unfinishedEvents = todayEvents.filter { $0.endTime > now }.count
-        // v2.5.32: wire 只带前 8 条事件，但"死线必提"覆盖**全部**今日日程——第 9 条起
-        // 没跑 AI 分类，用关键词启发式零成本兜底（宁多提不漏提）。
-        let overflowDeadlineTitles = todayEvents.dropFirst(8)
-            .filter { EventCategory.heuristic(for: $0.title) == .deadline }
-            .map(\.title)
+        let overflowDeadlineTitles = Self.overflowDeadlineTitles(events: todayEvents)
         let branch = Self.settlementQuoteBranch(
             completed: settlement.tasksCompleted, total: settlement.tasksTotal,
             unfinishedEvents: unfinishedEvents, combinedMinutes: combinedMinutes
@@ -146,9 +142,19 @@ public final class DayPackGenerator {
         // 或编辑自定义人设（updatedAt 递增，见 CustomCompanion 注释约定）后必须重新生成。
         let customStamp: String = await {
             guard let id = userProfile.customCompanionId else { return "-" }
-            let all = (try? await LocalStorage.shared.loadCustomCompanions()) ?? []
-            guard let companion = all.first(where: { $0.id == id }) else { return id.uuidString }
-            return "\(id.uuidString)@\(companion.updatedAt.timeIntervalSince1970)"
+            do {
+                let all = try await LocalStorage.shared.loadCustomCompanions()
+                guard let companion = all.first(where: { $0.id == id }) else { return id.uuidString }
+                return "\(id.uuidString)@\(companion.updatedAt.timeIntervalSince1970)"
+            } catch {
+                // 读取失败退回 id-only key（可能多用一轮旧口吻文案）；必须留痕，
+                // 不许静默吞（coding-style "never silently swallow errors"）。
+                ErrorReporter.log(
+                    .persistence(operation: "load", target: "custom_companions.json", underlying: error.localizedDescription),
+                    context: "DayPackGenerator.settlementTextCache"
+                )
+                return id.uuidString
+            }
         }()
         let key = formatter.string(from: Date()) + "#"
             + events.map { "\($0.time)|\($0.title)|\($0.category.rawValue)" }.joined(separator: "\u{1F}")
@@ -296,6 +302,15 @@ public final class DayPackGenerator {
         }
         totalSeconds += current.end.timeIntervalSince(current.start)
         return Int(totalSeconds / 60)
+    }
+
+    /// wire 只带前 8 条事件；第 9 条起用关键词启发式补死线检测（v2.5.32，复审修订：
+    /// **标题+描述一起看**——标题 "Q3 filing" 描述 "Final submission due today" 也要命中）。
+    /// 纯函数便于直接单测发现过程（不依赖 AI/存储）。
+    nonisolated static func overflowDeadlineTitles(events: [CalendarEvent]) -> [String] {
+        events.dropFirst(8)
+            .filter { EventCategory.heuristic(for: "\($0.title) \($0.description ?? "")") == .deadline }
+            .map(\.title)
     }
 
     /// 「页面四 每日总结」第二行金句/明日鼓励的三个分支。

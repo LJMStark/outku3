@@ -76,7 +76,10 @@ struct DayPackSettlementTextTests {
             FallbackText.settlementQuoteCelebration(style: .silas),
             FallbackText.settlementQuoteCelebration(style: .nova),
             FallbackText.settlementQuoteCelebration(style: nil),
-            FallbackText.settlementQuoteOverloaded(),
+            FallbackText.settlementQuoteOverloaded(style: .joy),
+            FallbackText.settlementQuoteOverloaded(style: .silas),
+            FallbackText.settlementQuoteOverloaded(style: .nova),
+            FallbackText.settlementQuoteOverloaded(style: nil),
             FallbackText.settlementQuoteFullSchedule()
         ]
         for quote in quotes {
@@ -117,7 +120,84 @@ struct DayPackSettlementTextTests {
             tasksCompleted: 1, tasksTotal: 3, focusMinutes: 300
         )
         #expect(!celebration.isEmpty)
-        #expect(overloaded == FallbackText.settlementQuoteOverloaded())
+        #expect(overloaded == FallbackText.settlementQuoteOverloaded(
+            style: CompanionTextService.fallbackStyle(for: .default)
+        ))
+    }
+
+    // MARK: - CJK 死线（v2.5.33：wire 净化预览）
+
+    @Test("全 CJK 死线标题：兜底退化为通用表述，不再输出空点名")
+    func cjkDeadlineFallsBackToGenericMention() {
+        let text = FallbackText.settlementReview(
+            deadlineTitles: ["合同付款截止"], focusMinutes: 0,
+            tasksCompleted: 1, tasksTotal: 2
+        )
+        #expect(text.contains("Don't forget today's deadline item."))
+        #expect(!text.contains("On the deadline side: ."))
+    }
+
+    @Test("混合标题：跳过 CJK 用第一个可上 wire 的标题")
+    func mixedDeadlineTitlesPickWireRepresentable() {
+        let text = FallbackText.settlementReview(
+            deadlineTitles: ["合同付款截止", "Ship v3"], focusMinutes: 0,
+            tasksCompleted: 1, tasksTotal: 2
+        )
+        #expect(text.contains("Ship v3"))
+    }
+
+    @Test("校验器：全 CJK 标题改验 'deadline' 一词；可上 wire 标题仍验包含")
+    func validatorHandlesCJKTitles() {
+        #expect(CompanionTextService.reviewSatisfiesHardRules(
+            "You closed out today's contract deadline.", deadlineTitles: ["合同付款截止"], focusMinutes: 0))
+        #expect(!CompanionTextService.reviewSatisfiesHardRules(
+            "A steady, quiet day overall.", deadlineTitles: ["合同付款截止"], focusMinutes: 0))
+        #expect(!CompanionTextService.reviewSatisfiesHardRules(
+            "Deadline handled nicely.", deadlineTitles: ["Ship v3"], focusMinutes: 0))
+    }
+
+    // MARK: - 死线溢出发现过程（v2.5.33：纯函数直测）
+
+    @Test("第 9 条事件标题+描述含死线关键词 → 被 overflow 发现；前 8 条不参与")
+    func overflowDeadlineDiscovery() {
+        let base = Date(timeIntervalSince1970: 1_700_000_000)
+        var events: [CalendarEvent] = (0..<8).map { index in
+            CalendarEvent(title: "Deadline meeting \(index)",
+                          startTime: base.addingTimeInterval(Double(index) * 3600),
+                          endTime: base.addingTimeInterval(Double(index) * 3600 + 1800))
+        }
+        events.append(CalendarEvent(title: "Q3 filing",
+                                    startTime: base.addingTimeInterval(9 * 3600),
+                                    endTime: base.addingTimeInterval(9 * 3600 + 1800),
+                                    description: "Final submission due today"))
+        let overflow = DayPackGenerator.overflowDeadlineTitles(events: events)
+        #expect(overflow == ["Q3 filing"]) // 仅第 9 条；标题无关键词、靠描述命中
+    }
+
+    // MARK: - 离线 daySummary 兜底（v2.5.33：间隔判紧凑）
+
+    @Test("两场松散（间隔≥1h）→ 提醒喝水；两场紧凑（<1h）→ 建议休息")
+    func daySummaryGapHeuristic() {
+        let loose = [
+            EventSummary(time: "09:00", endTime: "10:00", title: "A", description: ""),
+            EventSummary(time: "19:00", endTime: "20:00", title: "B", description: "")
+        ]
+        #expect(FallbackText.daySummary(events: loose).contains("water"))
+
+        let tight = [
+            EventSummary(time: "09:00", endTime: "10:00", title: "A", description: ""),
+            EventSummary(time: "10:30", endTime: "11:30", title: "B", description: "")
+        ]
+        #expect(FallbackText.daySummary(events: tight).contains("break"))
+    }
+
+    @Test("含全天事件（无法解析时段）按紧凑保守处理 → 建议休息")
+    func daySummaryConservativeOnUnparseable() {
+        let events = [
+            EventSummary(time: "", endTime: "", title: "All day", description: ""),
+            EventSummary(time: "19:00", endTime: "20:00", title: "B", description: "")
+        ]
+        #expect(FallbackText.daySummary(events: events).contains("break"))
     }
 
     @Test("review 编排离线走兜底且带死线（generateSettlementReview 全链路）")

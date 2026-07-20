@@ -32,7 +32,9 @@ enum FallbackText {
     }
 
     /// Offline fallback for the events-only day summary (box②). Events only — never tasks.
-    /// 客户规则（2026-07-20）：繁忙给休息建议，不繁忙提醒喝水——空日/单事件分支落实喝水侧。
+    /// 客户规则（2026-07-20）：繁忙给休息建议，不繁忙提醒喝水。v2.5.33 复审修订：两场以上
+    /// 不再一律判"繁忙"——相邻间隔 <60 分钟（紧凑）或 ≥4 场才给休息建议；上午晚上各一场
+    /// 的松散日提醒喝水。仅离线降级用，精细判断在 AI 路径（digest 带完整时段）。
     static func daySummary(events: [EventSummary]) -> String {
         guard let first = events.first else {
             return "An open day ahead - a little room to breathe. Remember to drink some water."
@@ -41,7 +43,30 @@ enum FallbackText {
         if events.count == 1 {
             return "One thing on the calendar today: \(firstLabel). A calm day - keep some water nearby."
         }
-        return "\(events.count) events today, starting with \(firstLabel). Pace yourself and take a short break between them."
+        if events.count >= 4 || hasTightGap(events) {
+            return "\(events.count) events today, starting with \(firstLabel). Pace yourself and take a short break between them."
+        }
+        return "\(events.count) events today, starting with \(firstLabel). Looks manageable - remember to drink some water."
+    }
+
+    /// 相邻两场间隔 <60 分钟（前一场 endTime → 后一场 time）判紧凑；含全天事件或
+    /// "HH:mm" 解析失败时按紧凑保守处理（宁给休息建议，不误报清闲）。
+    static func hasTightGap(_ events: [EventSummary]) -> Bool {
+        let spans = events.compactMap { event -> (start: Int, end: Int)? in
+            guard let start = minutesOfDay(event.time) else { return nil }
+            return (start, minutesOfDay(event.endTime) ?? start)
+        }.sorted { $0.start < $1.start }
+        guard spans.count == events.count, spans.count >= 2 else { return true }
+        for index in 1..<spans.count where spans[index].start - spans[index - 1].end < 60 {
+            return true
+        }
+        return false
+    }
+
+    private static func minutesOfDay(_ hhmm: String) -> Int? {
+        let parts = hhmm.split(separator: ":")
+        guard parts.count == 2, let hours = Int(parts[0]), let minutes = Int(parts[1]) else { return nil }
+        return hours * 60 + minutes
     }
 
     static func companionPhrase(for timeOfDay: TimeOfDay) -> String {
@@ -82,12 +107,16 @@ enum FallbackText {
             ? "Today you completed \(tasksCompleted) of \(tasksTotal) planned items."
             : "A light day with nothing planned.")
         // 预算感知（v2.5.32）：死线标题截 ≤60B——三句合计恒 <180B，专注句永不被编码器
-        // 的 180B 截断挤掉（"专注 >2h 必提"是硬规则，不能败给一个超长日历标题）。
+        // 的 180B 截断挤掉。v2.5.33（复审 P1）：先按 wire 同款 ASCII 净化预览——全 CJK
+        // 标题（如"合同付款截止"）净化后为空，硬插原文只会在硬件上剩 "On the deadline
+        // side: ."；此时退化为通用表述，保住"必提死线"这件事本身。
         let deadline = deadlineTitles
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .map { $0.asciiSanitizedForEInk().trimmingCharacters(in: .whitespacesAndNewlines) }
             .first { !$0.isEmpty }
         if let deadline {
             parts.append("On the deadline side: \(CompanionTextService.enforceByteBudget(deadline, maxBytes: 60)).")
+        } else if deadlineTitles.contains(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+            parts.append("Don't forget today's deadline item.")
         }
         if focusMinutes > DayPackGenerator.focusMentionThresholdMinutes {
             parts.append("You focused for \(DayPackGenerator.focusDurationLabel(minutes: focusMinutes)) today.")
@@ -126,9 +155,19 @@ enum FallbackText {
         }
     }
 
-    /// 未完成但投入 > 4h → 客户指定的方向，固定英文表达（在线走 IP 人格管线润色）。
-    static func settlementQuoteOverloaded() -> String {
-        "You really worked hard today - the plan was just packed. Try fewer or easier tasks tomorrow and start from steady wins."
+    /// 未完成但投入 > 4h → 客户指定的方向（"今天已努力，任务定多了，明天减量、从稳定完成开始"）。
+    /// v2.5.33: 按 IP 分池（客户原话"用IP风格表达这个点"）；`style == nil` = 自定义伴侣，中性池。
+    static func settlementQuoteOverloaded(style: CompanionStyle?) -> String {
+        switch style {
+        case .joy:
+            return "You worked so hard today! The list was just a bit much - let's plan a lighter one tomorrow and win it together."
+        case .silas:
+            return "You gave today real effort; the plan was heavier than one day can hold. Choose less tomorrow and finish in peace."
+        case .nova:
+            return "Effort was there. The plan was overloaded. Cut tomorrow's list and start from steady completion."
+        case nil:
+            return "You really worked hard today - the plan was just packed. Try fewer or easier tasks tomorrow and start from steady wins."
+        }
     }
 
     /// 未完成且投入 ≤ 4h → 客户逐字指定的建议，固定文案，不走 AI。

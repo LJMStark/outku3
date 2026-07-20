@@ -227,9 +227,17 @@ public final class CompanionTextService {
         let meaningfulTitles = deadlineTitles
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
-        if !meaningfulTitles.isEmpty,
-           !meaningfulTitles.contains(where: { text.localizedCaseInsensitiveContains($0) }) {
-            return false
+        // v2.5.33: 全 CJK 标题上不了 wire（ASCII 净化会清空），英文 AI 文本也不可能逐字
+        // 包含——它们不参与"包含标题"判定；此时退而要求文本至少出现 "deadline" 一词
+        // （保证"必提死线"这件事），兜底模板则用通用表述。
+        let wireRepresentable = meaningfulTitles
+            .filter { !$0.asciiSanitizedForEInk().trimmingCharacters(in: .whitespaces).isEmpty }
+        if !wireRepresentable.isEmpty {
+            if !wireRepresentable.contains(where: { text.localizedCaseInsensitiveContains($0) }) {
+                return false
+            }
+        } else if !meaningfulTitles.isEmpty {
+            if text.range(of: "deadline", options: .caseInsensitive) == nil { return false }
         }
         if focusMinutes > DayPackGenerator.focusMentionThresholdMinutes,
            !text.contains(DayPackGenerator.focusDurationLabel(minutes: focusMinutes)) {
@@ -264,9 +272,7 @@ public final class CompanionTextService {
                 return aiText
             }
             // v2.5.32: 兜底按 IP 分池——自定义激活走中性池（有限模板装不下任意人设）。
-            return FallbackText.settlementQuoteCelebration(
-                style: userProfile.customCompanionId == nil ? userProfile.companionCharacter.resolvedStyle : nil
-            )
+            return FallbackText.settlementQuoteCelebration(style: Self.fallbackStyle(for: userProfile))
         case .overloadedDay:
             if let aiText = await generateAIText(
                 type: .settlementQuoteOverloaded,
@@ -279,8 +285,14 @@ public final class CompanionTextService {
             ), CompanionTextService.isDisplayablePanelText(aiText) {
                 return aiText
             }
-            return FallbackText.settlementQuoteOverloaded()
+            // v2.5.33: overloaded 分支同样按 IP 分池（客户原话"用IP风格表达"）。
+            return FallbackText.settlementQuoteOverloaded(style: Self.fallbackStyle(for: userProfile))
         }
+    }
+
+    /// 兜底分池的统一取 style 口径：内置 → 对应 CompanionStyle；自定义激活 → nil（中性池）。
+    nonisolated static func fallbackStyle(for userProfile: UserProfile) -> CompanionStyle? {
+        userProfile.customCompanionId == nil ? userProfile.companionCharacter.resolvedStyle : nil
     }
 
     /// 硬件面板文本可显示性：非空、非错误占位、无 CJK（English-only wire）。

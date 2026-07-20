@@ -23,6 +23,10 @@ public final class BLEService: NSObject {
     // MARK: - Published State
 
     public private(set) var connectionState: BLEConnectionState = .disconnected
+
+    /// 当前连接外设的系统标识（未连接为 nil）。v2.5.33 用于"换硬件后自动重推 0x15 头像"：
+    /// 固件持久化只救同一台重启，连上**另一台**设备时 App 侧要能察觉并重推。
+    public var connectedDeviceID: UUID? { connectedPeripheral?.identifier }
     public private(set) var discoveredDevices: [BLEDevice] = []
     public private(set) var connectedDevice: BLEDevice?
     public private(set) var lastSyncTime: Date?

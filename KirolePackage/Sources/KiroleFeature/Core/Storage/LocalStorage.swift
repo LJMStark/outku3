@@ -25,6 +25,7 @@ public actor LocalStorage {
         static let lastCelebratedUnlockCount = "lastCelebratedUnlockCount"
         static let lastHomeHaikuShownDate = "lastHomeHaikuShownDate"
         static let pendingCustomCompanionPushId = "pendingCustomCompanionPushId"
+        static let customAvatarLastPushedDeviceId = "customAvatarLastPushedDeviceId"
     }
 
     private enum Files {
@@ -100,6 +101,7 @@ public actor LocalStorage {
         Keys.lastCelebratedUnlockCount,
         Keys.lastHomeHaikuShownDate,
         Keys.pendingCustomCompanionPushId,
+        Keys.customAvatarLastPushedDeviceId,
         "isOnboardingCompleted",
     ]
 
@@ -703,6 +705,15 @@ public actor LocalStorage {
 
     /// Saves the companion ID whose avatar PNG frame failed to reach the hardware.
     /// Cleared automatically when the push succeeds on the next BLE connection.
+    /// v2.5.33: 最近一次成功收到 0x15 头像的设备 id——连接到不同设备时触发自动重推。
+    public func saveCustomAvatarLastPushedDeviceID(_ id: String) {
+        userDefaults.set(id, forKey: Keys.customAvatarLastPushedDeviceId)
+    }
+
+    public func loadCustomAvatarLastPushedDeviceID() -> String? {
+        userDefaults.string(forKey: Keys.customAvatarLastPushedDeviceId)
+    }
+
     public func savePendingCustomCompanionPush(id: UUID) {
         userDefaults.set(id.uuidString, forKey: Keys.pendingCustomCompanionPushId)
     }

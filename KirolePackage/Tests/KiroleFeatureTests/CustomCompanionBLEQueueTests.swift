@@ -31,6 +31,41 @@ struct CustomCompanionBLEQueueTests {
         }
     }
 
+    @Test("customAvatarLastPushedDeviceID round-trips (v2.5.33 换硬件重推依据)")
+    func lastPushedDeviceIDRoundTrips() async {
+        await SharedPersistenceTestLock.shared.withLock {
+            let deviceID = UUID().uuidString
+            await LocalStorage.shared.saveCustomAvatarLastPushedDeviceID(deviceID)
+            let loaded = await LocalStorage.shared.loadCustomAvatarLastPushedDeviceID()
+            #expect(loaded == deviceID)
+        }
+    }
+
+    @Test("删除激活中的自定义伙伴：清空选择与待推状态（v2.5.33 复审 P1 行为测试）")
+    func deleteActiveCustomCompanionClearsSelection() async {
+        await SharedPersistenceTestLock.shared.withLock {
+            let savedProfile = AppState.shared.userProfile
+            let savedPending = AppState.shared.isCustomAvatarPendingBLEPush
+            defer {
+                AppState.shared.updateUserProfile(savedProfile)
+                AppState.shared.isCustomAvatarPendingBLEPush = savedPending
+            }
+
+            // 造一个"激活中的自定义 id"（不入 customCompanions 列表，避免真实资产/持久化竞态）。
+            let activeId = UUID()
+            var profile = AppState.shared.userProfile
+            profile.customCompanionId = activeId
+            AppState.shared.updateUserProfile(profile)
+            AppState.shared.isCustomAvatarPendingBLEPush = true
+
+            AppState.shared.deleteCustomCompanion(id: activeId)
+
+            // 身份切回内置 + 待推流状态清空（0x01 立即帧在断连下静默跳过，state 是可测面）。
+            #expect(AppState.shared.userProfile.customCompanionId == nil)
+            #expect(AppState.shared.isCustomAvatarPendingBLEPush == false)
+        }
+    }
+
     @Test("given no pending push saved, when loaded, returns nil")
     func givenNoPendingPush_whenLoaded_returnsNil() async {
         await SharedPersistenceTestLock.shared.withLock {
