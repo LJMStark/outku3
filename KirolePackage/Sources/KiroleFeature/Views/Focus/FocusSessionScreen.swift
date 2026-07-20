@@ -50,6 +50,9 @@ public struct FocusSessionScreen: View {
     @ViewBuilder
     private func sessionContent(session: FocusSession, now: Date) -> some View {
         let progress = focusService.progressSnapshot(now: now)
+        // 与硬件端一致：瓶子数展示封顶 5（客户 2026-07），复用 0x14 出口同一折算。
+        // 段位填充条（BottleProgressTrack）走 segmentSeconds、不受此限。
+        let displayedBottles = FocusEnergyCalculator.displayBottles(forEarned: progress.earnedEnergyBottles)
 
         GeometryReader { geometry in
             ScrollView(.vertical, showsIndicators: false) {
@@ -104,9 +107,9 @@ public struct FocusSessionScreen: View {
                             Text(progress.phase.displayString)
                             Text("·")
                             Text(
-                                progress.earnedEnergyBottles == 1
+                                displayedBottles == 1
                                 ? "1 bottle collected"
-                                : "\(progress.earnedEnergyBottles) bottles collected"
+                                : "\(displayedBottles) bottles collected"
                             )
                         }
                         .font(.system(size: 13, weight: .medium))
