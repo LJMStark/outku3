@@ -220,6 +220,17 @@ struct SettlementCountsTests {
         #expect(total == 120)
     }
 
+    @Test("scheduledEventMinutes: 跨午夜日程裁剪到开始日当天（23:00-次日08:00 只计到午夜）")
+    func scheduledMinutesClampsCrossMidnight() {
+        let calendar = Calendar.current
+        let dayStart = calendar.startOfDay(for: now)
+        let elevenPM = dayStart.addingTimeInterval(23 * 3600)
+        let nextDay8AM = dayStart.addingTimeInterval(32 * 3600)
+        let crossMidnight = CalendarEvent(title: "night shift", startTime: elevenPM, endTime: nextDay8AM)
+        let total = DayPackGenerator.scheduledEventMinutes(events: [crossMidnight])
+        #expect(total == 60) // 只计 23:00-24:00，不给"今天"灌 9 小时
+    }
+
     @Test("scheduledEventMinutes: 相接区间合并、分离区间相加")
     func scheduledMinutesAdjacentAndDisjoint() {
         // 0-60 与 60-90 相接 → 90；120-150 分离 → +30 = 120

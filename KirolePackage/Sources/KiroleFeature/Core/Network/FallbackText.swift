@@ -81,8 +81,13 @@ enum FallbackText {
         parts.append(tasksTotal > 0
             ? "Today you completed \(tasksCompleted) of \(tasksTotal) planned items."
             : "A light day with nothing planned.")
-        if let deadline = deadlineTitles.first, !deadline.isEmpty {
-            parts.append("On the deadline side: \(deadline).")
+        // 预算感知（v2.5.32）：死线标题截 ≤60B——三句合计恒 <180B，专注句永不被编码器
+        // 的 180B 截断挤掉（"专注 >2h 必提"是硬规则，不能败给一个超长日历标题）。
+        let deadline = deadlineTitles
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty }
+        if let deadline {
+            parts.append("On the deadline side: \(CompanionTextService.enforceByteBudget(deadline, maxBytes: 60)).")
         }
         if focusMinutes > DayPackGenerator.focusMentionThresholdMinutes {
             parts.append("You focused for \(DayPackGenerator.focusDurationLabel(minutes: focusMinutes)) today.")
@@ -91,12 +96,34 @@ enum FallbackText {
     }
 
     /// 全部完成 → 庆祝收尾（离线兜底；在线走 IP 人格管线）。
-    static func settlementQuoteCelebration() -> String {
-        pick([
-            "Everything done - today was a win worth savoring!",
-            "All clear! You finished everything you set out to do.",
-            "A full sweep today. Great work, truly."
-        ])
+    /// v2.5.32: 按 IP 分池——`style == nil` = 自定义伴侣激活，用中性池（同 sharedPetDialogue 约定）。
+    static func settlementQuoteCelebration(style: CompanionStyle?) -> String {
+        switch style {
+        case .joy:
+            return pick([
+                "You did it - every single one! I'm so proud of you!",
+                "All done! Let's soak up that finished feeling together.",
+                "Everything wrapped - today deserves a little celebration!"
+            ])
+        case .silas:
+            return pick([
+                "The day is complete, and you were faithful to all of it.",
+                "Everything you carried today reached its end. Rest well.",
+                "All is finished. Let the evening be gentle with you."
+            ])
+        case .nova:
+            return pick([
+                "All tasks and events closed. Clean execution.",
+                "Everything cleared. That is how a day is done.",
+                "Full completion. Note what worked - repeat it tomorrow."
+            ])
+        case nil:
+            return pick([
+                "Everything done - today was a win worth savoring!",
+                "All clear! You finished everything you set out to do.",
+                "A full sweep today. Great work, truly."
+            ])
+        }
     }
 
     /// 未完成但投入 > 4h → 客户指定的方向，固定英文表达（在线走 IP 人格管线润色）。

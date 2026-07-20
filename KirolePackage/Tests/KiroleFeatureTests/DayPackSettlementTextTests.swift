@@ -10,6 +10,16 @@ struct DayPackSettlementTextTests {
 
     // MARK: - FallbackText.settlementReview（硬规则的确定性保证）
 
+    @Test("死线超 8 条：第 9 条起经 overflow 参数并入 review（离线兜底可见）")
+    @MainActor func overflowDeadlineReachesReview() async {
+        let text = await CompanionTextService.shared.generateSettlementReview(
+            events: [EventSummary(time: "09:00", title: "Standup", description: "", category: .meetings)],
+            overflowDeadlineTitles: ["Contract payment due"],
+            focusMinutes: 0, tasksCompleted: 0, tasksTotal: 2
+        )
+        #expect(text.contains("Contract payment due"))
+    }
+
     @Test("review 兜底：有死线事件必须点名")
     func reviewMentionsDeadline() {
         let text = FallbackText.settlementReview(
@@ -59,10 +69,13 @@ struct DayPackSettlementTextTests {
 
     // MARK: - 金句模板（非空、ASCII、预算内）
 
-    @Test("三个金句模板均非空、纯 ASCII、不超 120B 预算")
+    @Test("金句模板（含三 IP 庆祝池与中性池）均非空、纯 ASCII、不超 120B 预算")
     func quoteTemplatesAreWireSafe() {
         let quotes = [
-            FallbackText.settlementQuoteCelebration(),
+            FallbackText.settlementQuoteCelebration(style: .joy),
+            FallbackText.settlementQuoteCelebration(style: .silas),
+            FallbackText.settlementQuoteCelebration(style: .nova),
+            FallbackText.settlementQuoteCelebration(style: nil),
             FallbackText.settlementQuoteOverloaded(),
             FallbackText.settlementQuoteFullSchedule()
         ]
@@ -71,6 +84,17 @@ struct DayPackSettlementTextTests {
             #expect(quote.utf8.count <= DayPackTextBudget.settlementQuote)
             #expect(quote.allSatisfy { $0.isASCII })
         }
+    }
+
+    @Test("review 兜底预算感知：超长死线标题被截 60B，专注句仍在 180B 内保留")
+    func reviewFallbackKeepsFocusUnderBudget() {
+        let longTitle = String(repeating: "Quarterly compliance filing ", count: 8) // ~224 chars
+        let text = FallbackText.settlementReview(
+            deadlineTitles: [longTitle], focusMinutes: 150,
+            tasksCompleted: 1, tasksTotal: 4
+        )
+        #expect(text.utf8.count <= DayPackTextBudget.settlementReview)
+        #expect(text.contains("2h 30m")) // 专注硬规则不被超长标题挤掉
     }
 
     @Test("fullSchedule 分支返回客户指定文案（不走 AI，离线在线一致）")

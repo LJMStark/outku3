@@ -181,10 +181,12 @@ public final class CompanionTextService {
     /// duration — are prompt-injected on the LLM path and deterministically satisfied by the
     /// fallback template.
     public func generateSettlementReview(
-        events: [EventSummary], focusMinutes: Int,
+        events: [EventSummary], overflowDeadlineTitles: [String] = [],
+        focusMinutes: Int,
         tasksCompleted: Int, tasksTotal: Int
     ) async -> String {
-        let deadlineTitles = events.filter { $0.category == .deadline }.map(\.title)
+        // wire 前 8 条走 AI 分类，第 9 条起由调用方用启发式补充（v2.5.32 死线不漏提）。
+        let deadlineTitles = events.filter { $0.category == .deadline }.map(\.title) + overflowDeadlineTitles
         let fallback = FallbackText.settlementReview(
             deadlineTitles: deadlineTitles, focusMinutes: focusMinutes,
             tasksCompleted: tasksCompleted, tasksTotal: tasksTotal
@@ -261,7 +263,10 @@ public final class CompanionTextService {
             ), CompanionTextService.isDisplayablePanelText(aiText) {
                 return aiText
             }
-            return FallbackText.settlementQuoteCelebration()
+            // v2.5.32: 兜底按 IP 分池——自定义激活走中性池（有限模板装不下任意人设）。
+            return FallbackText.settlementQuoteCelebration(
+                style: userProfile.customCompanionId == nil ? userProfile.companionCharacter.resolvedStyle : nil
+            )
         case .overloadedDay:
             if let aiText = await generateAIText(
                 type: .settlementQuoteOverloaded,

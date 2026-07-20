@@ -130,6 +130,11 @@ public final class DayPackGenerator {
     ) async -> (review: String, quote: String) {
         let combinedMinutes = Self.scheduledEventMinutes(events: todayEvents) + settlement.totalFocusMinutes
         let unfinishedEvents = todayEvents.filter { $0.endTime > now }.count
+        // v2.5.32: wire 只带前 8 条事件，但"死线必提"覆盖**全部**今日日程——第 9 条起
+        // 没跑 AI 分类，用关键词启发式零成本兜底（宁多提不漏提）。
+        let overflowDeadlineTitles = todayEvents.dropFirst(8)
+            .filter { EventCategory.heuristic(for: $0.title) == .deadline }
+            .map(\.title)
         let branch = Self.settlementQuoteBranch(
             completed: settlement.tasksCompleted, total: settlement.tasksTotal,
             unfinishedEvents: unfinishedEvents, combinedMinutes: combinedMinutes
@@ -137,17 +142,25 @@ public final class DayPackGenerator {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd"
-        // key 含当前 IP（内置 rawValue + 自定义 id）：金句是人格口吻，切换伙伴/自定义角色后
-        // 必须重新生成，否则旧角色的口吻会一直缓存到其他素材变化为止。
+        // key 含当前 IP（内置 rawValue + 自定义 id@updatedAt）：金句是人格口吻，切换伙伴、
+        // 或编辑自定义人设（updatedAt 递增，见 CustomCompanion 注释约定）后必须重新生成。
+        let customStamp: String = await {
+            guard let id = userProfile.customCompanionId else { return "-" }
+            let all = (try? await LocalStorage.shared.loadCustomCompanions()) ?? []
+            guard let companion = all.first(where: { $0.id == id }) else { return id.uuidString }
+            return "\(id.uuidString)@\(companion.updatedAt.timeIntervalSince1970)"
+        }()
         let key = formatter.string(from: Date()) + "#"
             + events.map { "\($0.time)|\($0.title)|\($0.category.rawValue)" }.joined(separator: "\u{1F}")
             + "#\(settlement.tasksCompleted)/\(settlement.tasksTotal)#\(settlement.totalFocusMinutes)#\(branch)"
-            + "#\(userProfile.companionCharacter.rawValue)#\(userProfile.customCompanionId?.uuidString ?? "-")"
+            + "#\(overflowDeadlineTitles.joined(separator: "|"))"
+            + "#\(userProfile.companionCharacter.rawValue)#\(customStamp)"
         if let cache = settlementTextCache, cache.key == key { return (cache.review, cache.quote) }
 
         // 两段文案互不依赖，并发生成（同 categorize/daySummary 的既有并发模式）。
         async let review = textService.generateSettlementReview(
-            events: events, focusMinutes: settlement.totalFocusMinutes,
+            events: events, overflowDeadlineTitles: overflowDeadlineTitles,
+            focusMinutes: settlement.totalFocusMinutes,
             tasksCompleted: settlement.tasksCompleted, tasksTotal: settlement.tasksTotal
         )
         async let quote = textService.generateSettlementQuote(
@@ -261,7 +274,15 @@ public final class DayPackGenerator {
     nonisolated static func scheduledEventMinutes(events: [CalendarEvent]) -> Int {
         let intervals = events
             .filter { !$0.isAllDay && $0.endTime > $0.startTime }
-            .map { (start: $0.startTime, end: $0.endTime) }
+            .map { event -> (start: Date, end: Date) in
+                // v2.5.32: 跨午夜日程裁剪到开始日当天——23:00-次日08:00 只给"今天"计 1 小时，
+                // 不把 9 小时灌进 4h 阈值（次日部分归次日口径，当前不重复计）。
+                let calendar = Calendar.current
+                let dayEnd = calendar.date(
+                    byAdding: .day, value: 1, to: calendar.startOfDay(for: event.startTime)
+                ) ?? event.endTime
+                return (event.startTime, min(event.endTime, dayEnd))
+            }
             .sorted { $0.start < $1.start }
         guard var current = intervals.first else { return 0 }
         var totalSeconds: TimeInterval = 0
