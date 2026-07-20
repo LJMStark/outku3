@@ -124,19 +124,24 @@ public final class DayPackGenerator {
     /// Category 进指纹的既有约定同一逻辑，保证死线事件"必提"不被过期缓存吞掉。
     private func cachedSettlementTexts(
         events: [EventSummary], todayEvents: [CalendarEvent],
-        settlement: SettlementData, pet: Pet, userProfile: UserProfile
+        settlement: SettlementData, pet: Pet, userProfile: UserProfile,
+        now: Date = Date()
     ) async -> (review: String, quote: String) {
         let combinedMinutes = Self.scheduledEventMinutes(events: todayEvents) + settlement.totalFocusMinutes
+        let unfinishedEvents = todayEvents.filter { $0.endTime > now }.count
         let branch = Self.settlementQuoteBranch(
             completed: settlement.tasksCompleted, total: settlement.tasksTotal,
-            combinedMinutes: combinedMinutes
+            unfinishedEvents: unfinishedEvents, combinedMinutes: combinedMinutes
         )
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd"
+        // key 含当前 IP（内置 rawValue + 自定义 id）：金句是人格口吻，切换伙伴/自定义角色后
+        // 必须重新生成，否则旧角色的口吻会一直缓存到其他素材变化为止。
         let key = formatter.string(from: Date()) + "#"
             + events.map { "\($0.time)|\($0.title)|\($0.category.rawValue)" }.joined(separator: "\u{1F}")
             + "#\(settlement.tasksCompleted)/\(settlement.tasksTotal)#\(settlement.totalFocusMinutes)#\(branch)"
+            + "#\(userProfile.companionCharacter.rawValue)#\(userProfile.customCompanionId?.uuidString ?? "-")"
         if let cache = settlementTextCache, cache.key == key { return (cache.review, cache.quote) }
 
         // 两段文案互不依赖，并发生成（同 categorize/daySummary 的既有并发模式）。
@@ -245,14 +250,26 @@ public final class DayPackGenerator {
     }
 
     /// 今日日程时长合计（分钟），供金句分支的 4 小时阈值使用。
-    /// 只累计**非全天**事件的 `endTime - startTime` —— 全天事件（24h）会一票冲垮阈值，排除；
-    /// 负跨度（脏数据）忽略。
+    /// 只累计**非全天**事件——全天事件（24h）会一票冲垮阈值，排除；负跨度（脏数据）忽略。
+    /// 客户拍板（2026-07-20）：**重叠时段不重复计**——先合并重叠/相接区间再求和
+    /// （两个 2-4 点的会各 2h，实占仍是 2h 不是 4h）。
     nonisolated static func scheduledEventMinutes(events: [CalendarEvent]) -> Int {
-        events.reduce(0) { sum, event in
-            guard !event.isAllDay else { return sum }
-            let minutes = Int(event.endTime.timeIntervalSince(event.startTime) / 60)
-            return minutes > 0 ? sum + minutes : sum
+        let intervals = events
+            .filter { !$0.isAllDay && $0.endTime > $0.startTime }
+            .map { (start: $0.startTime, end: $0.endTime) }
+            .sorted { $0.start < $1.start }
+        guard var current = intervals.first else { return 0 }
+        var totalSeconds: TimeInterval = 0
+        for interval in intervals.dropFirst() {
+            if interval.start <= current.end {
+                current.end = max(current.end, interval.end)
+            } else {
+                totalSeconds += current.end.timeIntervalSince(current.start)
+                current = interval
+            }
         }
+        totalSeconds += current.end.timeIntervalSince(current.start)
+        return Int(totalSeconds / 60)
     }
 
     /// 「页面四 每日总结」第二行金句/明日鼓励的三个分支。
@@ -266,11 +283,14 @@ public final class DayPackGenerator {
     }
 
     /// 三分支判定。`completed`/`total` 沿用 `settlementCounts` 口径（任务 + 已结束日程）；
+    /// `unfinishedEvents` = 今日尚未结束（`endTime > now`）的日程数——客户拍板（2026-07-20）：
+    /// 还有未开始/进行中的日程就**不算**「日程和任务全部完成」，不出庆祝语（settlementCounts
+    /// 不计未来日程是防清晨误报满分的显示口径，庆祝判定必须额外把它们挡回来）；
     /// `combinedMinutes` = `scheduledEventMinutes` + 今日专注分钟。
     nonisolated static func settlementQuoteBranch(
-        completed: Int, total: Int, combinedMinutes: Int
+        completed: Int, total: Int, unfinishedEvents: Int, combinedMinutes: Int
     ) -> SettlementQuoteBranch {
-        if total > 0 && completed >= total { return .celebration }
+        if total > 0 && completed >= total && unfinishedEvents == 0 { return .celebration }
         if combinedMinutes > overloadedDayThresholdMinutes { return .overloadedDay }
         return .fullSchedule
     }

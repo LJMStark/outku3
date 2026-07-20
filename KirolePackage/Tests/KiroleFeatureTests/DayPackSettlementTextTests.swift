@@ -120,6 +120,28 @@ struct DayPackSettlementTextTests {
         #expect(DayPackGenerator.focusDurationLabel(minutes: -30) == "0m")
     }
 
+    @Test("硬规则输出校验：死线未提/时长未提 → 拒收，兜底模板恒通过")
+    func reviewHardRuleValidator() {
+        // 死线：至少提到一个标题（大小写不敏感）
+        #expect(CompanionTextService.reviewSatisfiesHardRules(
+            "You wrapped up the launch deadline today.", deadlineTitles: ["Launch Deadline"], focusMinutes: 0))
+        #expect(!CompanionTextService.reviewSatisfiesHardRules(
+            "A busy but steady day overall.", deadlineTitles: ["Launch Deadline"], focusMinutes: 0))
+        // 专注 >2h：必须出现时长标签
+        #expect(CompanionTextService.reviewSatisfiesHardRules(
+            "You focused for 2h 5m today.", deadlineTitles: [], focusMinutes: 125))
+        #expect(!CompanionTextService.reviewSatisfiesHardRules(
+            "Great focus today.", deadlineTitles: [], focusMinutes: 125))
+        // 恰 120 分钟不触发规则
+        #expect(CompanionTextService.reviewSatisfiesHardRules(
+            "Great focus today.", deadlineTitles: [], focusMinutes: 120))
+        // 兜底模板自身恒满足
+        let fallback = FallbackText.settlementReview(
+            deadlineTitles: ["Ship v3"], focusMinutes: 130, tasksCompleted: 1, tasksTotal: 2)
+        #expect(CompanionTextService.reviewSatisfiesHardRules(
+            fallback, deadlineTitles: ["Ship v3"], focusMinutes: 130))
+    }
+
     @Test("isDisplayablePanelText：拒空、拒错误占位、拒 CJK，收正常英文")
     func displayablePanelTextGuard() {
         #expect(CompanionTextService.isDisplayablePanelText("A fine day."))

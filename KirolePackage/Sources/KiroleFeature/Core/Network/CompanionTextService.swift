@@ -196,7 +196,12 @@ public final class CompanionTextService {
                 tasksCompleted: tasksCompleted, tasksTotal: tasksTotal
             )
             let text = CompanionTextService.enforceByteBudget(raw, maxBytes: DayPackTextBudget.settlementReview)
-            if CompanionTextService.isDisplayablePanelText(text) { return text }
+            if CompanionTextService.isDisplayablePanelText(text),
+               CompanionTextService.reviewSatisfiesHardRules(
+                   text, deadlineTitles: deadlineTitles, focusMinutes: focusMinutes
+               ) {
+                return text
+            }
         } catch {
             ErrorReporter.log(
                 .sync(component: "SettlementReview", underlying: "generate failed: \(error.localizedDescription)"),
@@ -204,6 +209,27 @@ public final class CompanionTextService {
             )
         }
         return fallback
+    }
+
+    /// 客户硬规则的**输出侧**校验（prompt 只是承诺，这里才是保证）：有死线日程时文本必须
+    /// 出现至少一个死线标题（与兜底模板"提第一个死线"同一口径；LLM 换措辞不提原标题
+    /// 即判失败）；专注 >2h 时必须出现给 prompt 的那个时长标签（如 "2h 5m"）。
+    /// 校验失败 → 调用方回退确定性兜底模板（恒满足两条规则），宁保规则不保文采。
+    nonisolated static func reviewSatisfiesHardRules(
+        _ text: String, deadlineTitles: [String], focusMinutes: Int
+    ) -> Bool {
+        let meaningfulTitles = deadlineTitles
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        if !meaningfulTitles.isEmpty,
+           !meaningfulTitles.contains(where: { text.localizedCaseInsensitiveContains($0) }) {
+            return false
+        }
+        if focusMinutes > DayPackGenerator.focusMentionThresholdMinutes,
+           !text.contains(DayPackGenerator.focusDurationLabel(minutes: focusMinutes)) {
+            return false
+        }
+        return true
     }
 
     /// Settlement page part 2: the quote / tomorrow-encouragement line, branched per client spec.
