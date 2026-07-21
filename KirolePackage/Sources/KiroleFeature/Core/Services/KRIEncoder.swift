@@ -9,6 +9,7 @@ public enum KRIError: Error, Equatable {
     case invalidSize
     case invalidPixelBuffer
     case undecodableImage
+    case unsupportedImageFormat
 }
 
 // MARK: - KRI Encoder
@@ -17,13 +18,13 @@ public enum KRIError: Error, Equatable {
 /// 12 字节小端文件头 + 左上角起始、逐行、直通（非预乘）alpha 的 BGRA 裸像素，
 /// 无压缩、无行 padding、无尾部数据，总长恒为 `12 + width × height × 4`。
 ///
-/// ⚠️ 传输边界（规范 §1.1）：当前 BLE `CustomAvatarFrame (0x15, SubVersion 0x02)`
+/// 传输边界（规范 §1.1）：当前 BLE `CustomAvatarFrame (0x15, SubVersion 0x02)`
 /// 只接收 PNG，**不能**直接装 KRI bytes——固件补充新 subversion/命令前，本编码器
 /// 只作为独立转换能力存在，不接入任何现有 BLE 出口。
 ///
 /// 与 `AvatarImageProcessor` 一样不绑 main actor：Data 进 Data 出，800×700 图约
-/// 2.2 MB 像素区，调用方应经 `Task.detached` 执行。输入 PNG 预期为管线自产
-/// （方向已烘焙、8-bit sRGB）；本层不做缩放/裁剪/旋转，也不应用 EXIF 方向。
+/// 2.2 MB 像素区，调用方应经 `Task.detached` 执行。本层会烘焙 PNG 方向元数据，
+/// 但不做额外缩放、裁剪、旋转或抖动。
 public enum KRIEncoder {
 
     /// `KRI\x01`（规范 §2 Magic）。
@@ -73,14 +74,36 @@ public enum KRIEncoder {
     /// 解码器给出其他格式时退到 sRGB 预乘重绘 + 反预乘（±1 舍入，规范明示可接受）。
     public static func encode(pngData: Data) throws -> Data {
         let options = [kCGImageSourceShouldCache: false] as CFDictionary
-        guard let source = CGImageSourceCreateWithData(pngData as CFData, options),
-              let image = CGImageSourceCreateImageAtIndex(source, 0, options) else {
+        guard let source = CGImageSourceCreateWithData(pngData as CFData, options) else {
             throw KRIError.undecodableImage
+        }
+        guard let sourceType = CGImageSourceGetType(source) else {
+            throw KRIError.undecodableImage
+        }
+        guard sourceType as String == "public.png" else {
+            throw KRIError.unsupportedImageFormat
+        }
+        guard let image = CGImageSourceCreateImageAtIndex(source, 0, options) else {
+            throw KRIError.undecodableImage
+        }
+        guard image.width > 0, image.width <= Int(UInt16.max),
+              image.height > 0, image.height <= Int(UInt16.max) else {
+            throw KRIError.invalidSize
         }
         guard let rgba = directStraightRGBA(from: image) ?? redrawnStraightRGBA(from: image) else {
             throw KRIError.undecodableImage
         }
-        return try encode(width: image.width, height: image.height, straightRGBA: rgba)
+        let oriented = applyingOrientation(
+            imageOrientation(from: source),
+            width: image.width,
+            height: image.height,
+            straightRGBA: rgba
+        )
+        return try encode(
+            width: oriented.width,
+            height: oriented.height,
+            straightRGBA: oriented.rgba
+        )
     }
 
     // MARK: Post-encode validation（规范 §7 下发前检查 1-6）
@@ -108,30 +131,113 @@ public enum KRIEncoder {
     /// 序（byteOrderDefault / 32Big 对 8-bit 分量等价）→ 按行拷出，跳过 stride padding。
     /// PNG 本身只存 straight alpha，ImageIO 解码 PNG 通常命中此路径，逐字节无损。
     private static func directStraightRGBA(from image: CGImage) -> [UInt8]? {
-        guard image.bitsPerComponent == 8,
-              image.bitsPerPixel == 32,
-              image.colorSpace?.model == .rgb,
-              image.alphaInfo == .last else {
+        guard image.bitsPerComponent == 8 else { return nil }
+        let byteOrder = image.bitmapInfo.intersection(.byteOrderMask)
+
+        if image.bitsPerPixel == 32,
+           image.colorSpace?.model == .rgb,
+           image.alphaInfo == .last,
+           byteOrder == [] || byteOrder == .byteOrder32Big {
+            return tightlyPackedBytes(from: image, bytesPerPixel: 4)
+        }
+
+        if image.bitsPerPixel == 16,
+           image.colorSpace?.model == .monochrome,
+           image.alphaInfo == .last,
+           byteOrder == [] || byteOrder == .byteOrder16Big,
+           let grayAlpha = tightlyPackedBytes(from: image, bytesPerPixel: 2) {
+            var rgba = [UInt8]()
+            rgba.reserveCapacity(image.width * image.height * 4)
+            for pixel in stride(from: 0, to: grayAlpha.count, by: 2) {
+                let gray = grayAlpha[pixel]
+                rgba.append(contentsOf: [gray, gray, gray, grayAlpha[pixel + 1]])
+            }
+            return rgba
+        }
+
+        return nil
+    }
+
+    private static func tightlyPackedBytes(from image: CGImage, bytesPerPixel: Int) -> [UInt8]? {
+        guard let cfData = image.dataProvider?.data else { return nil }
+        let source = cfData as Data
+        let rowBytes = image.width * bytesPerPixel
+        let rowStride = image.bytesPerRow
+        guard image.height > 0,
+              rowStride >= rowBytes,
+              source.count >= rowStride * (image.height - 1) + rowBytes else {
             return nil
         }
-        let byteOrder = image.bitmapInfo.intersection(.byteOrderMask)
-        guard byteOrder == [] || byteOrder == .byteOrder32Big else { return nil }
-        guard let cfData = image.dataProvider?.data else { return nil }
-
-        let source = cfData as Data
-        let width = image.width
-        let height = image.height
-        let rowStride = image.bytesPerRow
-        let rowBytes = width * 4
-        guard height > 0, source.count >= rowStride * (height - 1) + rowBytes else { return nil }
 
         var pixels = [UInt8]()
-        pixels.reserveCapacity(rowBytes * height)
-        for row in 0..<height {
+        pixels.reserveCapacity(rowBytes * image.height)
+        for row in 0..<image.height {
             let start = source.startIndex + row * rowStride
             pixels.append(contentsOf: source[start..<(start + rowBytes)])
         }
         return pixels
+    }
+
+    private static func imageOrientation(from source: CGImageSource) -> CGImagePropertyOrientation {
+        guard let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil)
+                as? [CFString: Any],
+              let number = properties[kCGImagePropertyOrientation] as? NSNumber,
+              let orientation = CGImagePropertyOrientation(rawValue: number.uint32Value) else {
+            return .up
+        }
+        return orientation
+    }
+
+    private static func applyingOrientation(
+        _ orientation: CGImagePropertyOrientation,
+        width: Int,
+        height: Int,
+        straightRGBA: [UInt8]
+    ) -> (width: Int, height: Int, rgba: [UInt8]) {
+        guard orientation != .up else {
+            return (width, height, straightRGBA)
+        }
+
+        let swapsAxes = switch orientation {
+        case .leftMirrored, .right, .rightMirrored, .left: true
+        default: false
+        }
+        let outputWidth = swapsAxes ? height : width
+        let outputHeight = swapsAxes ? width : height
+        var output = [UInt8](repeating: 0, count: straightRGBA.count)
+
+        for outputY in 0..<outputHeight {
+            for outputX in 0..<outputWidth {
+                let sourcePoint: (x: Int, y: Int) = switch orientation {
+                case .up:
+                    (outputX, outputY)
+                case .upMirrored:
+                    (width - 1 - outputX, outputY)
+                case .down:
+                    (width - 1 - outputX, height - 1 - outputY)
+                case .downMirrored:
+                    (outputX, height - 1 - outputY)
+                case .leftMirrored:
+                    (outputY, outputX)
+                case .right:
+                    (outputY, height - 1 - outputX)
+                case .rightMirrored:
+                    (width - 1 - outputY, height - 1 - outputX)
+                case .left:
+                    (width - 1 - outputY, outputX)
+                @unknown default:
+                    (outputX, outputY)
+                }
+                let sourceOffset = (sourcePoint.y * width + sourcePoint.x) * 4
+                let outputOffset = (outputY * outputWidth + outputX) * 4
+                output[outputOffset] = straightRGBA[sourceOffset]
+                output[outputOffset + 1] = straightRGBA[sourceOffset + 1]
+                output[outputOffset + 2] = straightRGBA[sourceOffset + 2]
+                output[outputOffset + 3] = straightRGBA[sourceOffset + 3]
+            }
+        }
+
+        return (outputWidth, outputHeight, output)
     }
 
     /// 兜底路径：CGBitmapContext 不支持 straight-alpha 绘制，先绘入 sRGB 预乘

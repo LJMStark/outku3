@@ -38,6 +38,53 @@ struct KRIEncoderTests {
         #expect(kri == Self.standardKRI)
     }
 
+    @Test("PNG 方向元数据：8 种 EXIF orientation 均烘焙为 top-down 像素")
+    func imageOrientationIsApplied() throws {
+        let sourceRGBA: [UInt8] = [
+            10, 0, 0, 255,   20, 0, 0, 255,   30, 0, 0, 255,
+            40, 0, 0, 255,   50, 0, 0, 255,   60, 0, 0, 255
+        ]
+        let cases: [(orientation: UInt32, width: Int, height: Int, red: [UInt8])] = [
+            (1, 3, 2, [10, 20, 30, 40, 50, 60]),
+            (2, 3, 2, [30, 20, 10, 60, 50, 40]),
+            (3, 3, 2, [60, 50, 40, 30, 20, 10]),
+            (4, 3, 2, [40, 50, 60, 10, 20, 30]),
+            (5, 2, 3, [10, 40, 20, 50, 30, 60]),
+            (6, 2, 3, [40, 10, 50, 20, 60, 30]),
+            (7, 2, 3, [60, 30, 50, 20, 40, 10]),
+            (8, 2, 3, [30, 60, 20, 50, 10, 40])
+        ]
+
+        for item in cases {
+            let properties = [kCGImagePropertyOrientation: item.orientation] as CFDictionary
+            let png = try Self.makePNG(
+                width: 3,
+                height: 2,
+                straightRGBA: sourceRGBA,
+                properties: properties
+            )
+            let bytes = [UInt8](try KRIEncoder.encode(pngData: png))
+            let width = Int(bytes[4]) | (Int(bytes[5]) << 8)
+            let height = Int(bytes[6]) | (Int(bytes[7]) << 8)
+            let red = stride(from: 14, to: bytes.count, by: 4).map { bytes[$0] }
+
+            #expect(width == item.width, "orientation \(item.orientation) width")
+            #expect(height == item.height, "orientation \(item.orientation) height")
+            #expect(red == item.red, "orientation \(item.orientation) pixels")
+        }
+    }
+
+    @Test("灰度+Alpha PNG：直通样本不经预乘损失")
+    func grayAlphaPreservesStraightSamples() throws {
+        let png = try Self.makeGrayAlphaPNG(straightGrayAlpha: [200, 0, 200, 128])
+        let kri = try KRIEncoder.encode(pngData: png)
+
+        #expect(Array(kri.dropFirst(12)) == [
+            200, 200, 200, 0,
+            200, 200, 200, 128
+        ])
+    }
+
     @Test("宽度 300 的小端编码：Width 字段为 2C 01")
     func widthLittleEndianBeyondOneByte() throws {
         let rgba = [UInt8](repeating: 0x7F, count: 300 * 2 * 4)
@@ -72,6 +119,19 @@ struct KRIEncoderTests {
     func junkPNGThrows() {
         #expect(throws: KRIError.undecodableImage) {
             try KRIEncoder.encode(pngData: Data("not a png".utf8))
+        }
+    }
+
+    @Test("JPEG 即使可被 ImageIO 解码，也不能进入 PNG→KRI 接口")
+    func nonPNGImageThrows() throws {
+        let jpeg = try Self.makeImageData(
+            typeIdentifier: "public.jpeg" as CFString,
+            width: 2,
+            height: 2,
+            straightRGBA: Self.standardRGBA
+        )
+        #expect(throws: KRIError.unsupportedImageFormat) {
+            try KRIEncoder.encode(pngData: jpeg)
         }
     }
 
@@ -131,13 +191,59 @@ struct KRIEncoderTests {
 
     /// 用 ImageIO 从 straight RGBA 造一张 sRGB PNG（CGImage 支持 straight alpha，
     /// PNG 格式本身只存 straight alpha——写读均无预乘损耗）。
-    private static func makePNG(width: Int, height: Int, straightRGBA: [UInt8]) throws -> Data {
+    private static func makePNG(
+        width: Int,
+        height: Int,
+        straightRGBA: [UInt8],
+        properties: CFDictionary? = nil
+    ) throws -> Data {
+        try makeImageData(
+            typeIdentifier: "public.png" as CFString,
+            width: width,
+            height: height,
+            straightRGBA: straightRGBA,
+            properties: properties
+        )
+    }
+
+    private static func makeImageData(
+        typeIdentifier: CFString,
+        width: Int,
+        height: Int,
+        straightRGBA: [UInt8],
+        properties: CFDictionary? = nil
+    ) throws -> Data {
         guard let provider = CGDataProvider(data: Data(straightRGBA) as CFData),
               let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
               let image = CGImage(
                   width: width, height: height,
                   bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4,
                   space: colorSpace,
+                  bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.last.rawValue),
+                  provider: provider, decode: nil,
+                  shouldInterpolate: false, intent: .defaultIntent
+              ) else {
+            throw KRIError.undecodableImage
+        }
+        let output = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(
+            output as CFMutableData, typeIdentifier, 1, nil
+        ) else {
+            throw KRIError.undecodableImage
+        }
+        CGImageDestinationAddImage(destination, image, properties)
+        guard CGImageDestinationFinalize(destination) else {
+            throw KRIError.undecodableImage
+        }
+        return output as Data
+    }
+
+    private static func makeGrayAlphaPNG(straightGrayAlpha: [UInt8]) throws -> Data {
+        guard let provider = CGDataProvider(data: Data(straightGrayAlpha) as CFData),
+              let image = CGImage(
+                  width: 2, height: 1,
+                  bitsPerComponent: 8, bitsPerPixel: 16, bytesPerRow: 4,
+                  space: CGColorSpaceCreateDeviceGray(),
                   bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.last.rawValue),
                   provider: provider, decode: nil,
                   shouldInterpolate: false, intent: .defaultIntent
