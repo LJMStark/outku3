@@ -86,4 +86,43 @@ struct BLESyncPolicyTests {
 
         #expect(result == false)
     }
+
+    @Test("custom avatar validation and commit keep the BLE connection open")
+    func customAvatarTransactionHoldsConnectionBeyondChunkTransfer() {
+        #expect(policy.shouldHoldConnectionForCustomAvatar(
+            chunkedTransferInFlight: true,
+            operationState: .idle
+        ))
+        #expect(policy.shouldHoldConnectionForCustomAvatar(
+            chunkedTransferInFlight: false,
+            operationState: .validating
+        ))
+        #expect(policy.shouldHoldConnectionForCustomAvatar(
+            chunkedTransferInFlight: false,
+            operationState: .committing
+        ))
+        #expect(!policy.shouldHoldConnectionForCustomAvatar(
+            chunkedTransferInFlight: false,
+            operationState: .failed("offline")
+        ))
+    }
+
+    @Test("pending erase or abort bypasses the normal sync interval")
+    func priorityCustomAvatarOperationForcesSyncAdmission() {
+        let now = Date()
+        #expect(policy.shouldSync(
+            now: now,
+            lastSync: now,
+            contentChanged: false,
+            force: false,
+            hasPriorityCustomAvatarOperation: true
+        ))
+        #expect(!policy.shouldSync(
+            now: now,
+            lastSync: now,
+            contentChanged: false,
+            force: false,
+            hasPriorityCustomAvatarOperation: false
+        ))
+    }
 }

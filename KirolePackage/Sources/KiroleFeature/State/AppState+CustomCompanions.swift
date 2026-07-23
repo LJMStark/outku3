@@ -2,13 +2,10 @@
 import Foundation
 
 extension AppState {
+    // MARK: - Public lifecycle
 
-    // MARK: - Lifecycle
-
-    /// Create a new custom companion, persist its metadata + assets, and make it active.
-    /// Throws on persistence failure so the UI can surface the error and the user can retry —
-    /// silently swallowing the error here used to leave a customCompanionId pointing at a
-    /// companion that had never been written to disk.
+    /// Creates and applies a companion as one firmware-confirmed transaction. Neither the
+    /// companion list nor active identity changes before the device reports `committed`.
     @discardableResult
     public func addCustomCompanion(
         name: String,
@@ -38,385 +35,577 @@ extension AppState {
             avatarPreviewFileName: LocalStorage.customCompanionPreviewFileName(for: id),
             avatarPixelsFileName: LocalStorage.customCompanionPixelsFileName(for: id)
         )
-
-        // Persist assets first; if this fails we never touch in-memory or selection state.
-        try await localStorage.saveCustomCompanionAssets(
-            id: id,
+        try await applyCustomCompanion(
+            companion,
             previewData: previewData,
             imageData: imageData
         )
-
-        // Build the would-be list and try to persist before mutating shared state. If list
-        // persistence fails, roll back the asset write so we don't leak orphan files.
-        let updatedList = customCompanions + [companion]
-        do {
-            try await localStorage.saveCustomCompanions(updatedList)
-        } catch {
-            let listSaveError = error
-            do {
-                try await localStorage.deleteCustomCompanionAssets(id: id)
-            } catch {
-                reportPersistenceError(error, operation: "delete", target: "custom_companion_assets")
-                ErrorReporter.log(error, context: "AppState.addCustomCompanion.rollback")
-            }
-            throw listSaveError
-        }
-
-        customCompanions = updatedList
-        selectCustomCompanion(id: id)
         return companion
     }
 
-    /// Replace an existing custom companion's metadata (name / relationship / voice / roast).
-    /// Avatar assets are immutable here — re-upload requires deleting and recreating.
-    /// Bumps `updatedAt` so downstream caches (e.g. home dialogue fingerprint) invalidate
-    /// even if the caller forgot to set it.
-    public func updateCustomCompanion(_ updated: CustomCompanion) {
+    /// Metadata is local-only and remains editable offline. Immutable identity, asset names and
+    /// creation time come from the stored record, not from a potentially stale UI draft.
+    @discardableResult
+    public func updateCustomCompanionMetadata(
+        _ updated: CustomCompanion
+    ) async throws -> CustomCompanion {
         guard let index = customCompanions.firstIndex(where: { $0.id == updated.id }) else {
+            throw CustomAvatarOperationError.companionNotFound
+        }
+        let existing = customCompanions[index]
+        let merged = existing.updatingMetadata(from: updated, updatedAt: Date())
+        var newList = customCompanions
+        newList[index] = merged
+        try await localStorage.saveCustomCompanions(newList)
+        customCompanions = newList
+        if userProfile.customCompanionId == merged.id {
+            await refreshSharedPetDialogueIfNeeded()
+            await refreshHomeCompanionPresentation()
+        }
+        return merged
+    }
+
+    @discardableResult
+    public func saveCustomCompanionAsNew(
+        from companion: CustomCompanion,
+        previewData: Data,
+        imageData: Data
+    ) async throws -> CustomCompanion {
+        try await addCustomCompanion(
+            name: companion.name,
+            relationship: companion.relationship,
+            personaVoice: companion.personaVoice,
+            customPrompt: companion.customPrompt,
+            curiosityLevel: companion.curiosityLevel,
+            humorLevel: companion.humorLevel,
+            strictnessLevel: companion.strictnessLevel,
+            backstory: companion.backstory,
+            sensitiveBoundary: companion.sensitiveBoundary,
+            previewData: previewData,
+            imageData: imageData
+        )
+    }
+
+    /// Replaces metadata and photo as one firmware-confirmed transaction. The stored companion
+    /// remains unchanged until the device commits the candidate image.
+    @discardableResult
+    public func replaceCustomCompanion(
+        _ updated: CustomCompanion,
+        previewData: Data,
+        imageData: Data
+    ) async throws -> CustomCompanion {
+        guard let companion = customCompanions.first(where: { $0.id == updated.id }) else {
+            throw CustomAvatarOperationError.companionNotFound
+        }
+        // Product rule: an inactive companion must be applied first; the device owns one slot.
+        guard userProfile.customCompanionId == companion.id else {
+            throw CustomAvatarOperationError.deviceRejected(
+                "Apply this companion before replacing its photo."
+            )
+        }
+        let candidate = companion.updatingMetadata(from: updated, updatedAt: Date())
+        try await applyCustomCompanion(
+            candidate,
+            previewData: previewData,
+            imageData: imageData
+        )
+        return candidate
+    }
+
+    public func replaceCustomCompanionPhoto(
+        id: UUID,
+        previewData: Data,
+        imageData: Data
+    ) async throws {
+        guard let companion = customCompanions.first(where: { $0.id == id }) else {
+            throw CustomAvatarOperationError.companionNotFound
+        }
+        _ = try await replaceCustomCompanion(
+            companion,
+            previewData: previewData,
+            imageData: imageData
+        )
+    }
+
+    /// Applies an existing custom companion. The prior App identity remains authoritative for
+    /// the entire transfer and only changes after a matching firmware `committed` result.
+    public func selectCustomCompanion(id: UUID) async throws {
+        guard let companion = customCompanions.first(where: { $0.id == id }) else {
+            throw CustomAvatarOperationError.companionNotFound
+        }
+        guard userProfile.customCompanionId != id else { return }
+        guard let previewData = await localStorage.loadCustomCompanionPreview(id: id),
+              let imageData = await localStorage.loadCustomCompanionImageData(id: id) else {
+            throw CustomAvatarOperationError.missingAvatarData
+        }
+        try await applyCustomCompanion(
+            companion,
+            previewData: previewData,
+            imageData: imageData
+        )
+    }
+
+    /// Online deletion waits for an idempotent `eraseExact` result before touching local data.
+    /// Offline deletion removes local personal data immediately and, when the target device is
+    /// known, leaves a UUID-only marker for the next connection.
+    public func deleteCustomCompanion(id: UUID) async throws {
+        guard customCompanions.contains(where: { $0.id == id }) else {
+            if pendingCustomAvatarOperation?.kind == .eraseExact,
+               pendingCustomAvatarOperation?.avatarID == id {
+                return
+            }
             return
         }
-        var bumped = updated
-        bumped.updatedAt = Date()
-        customCompanions[index] = bumped
-        persistCustomCompanionsList()
-    }
+        try ensureNoCustomAvatarOperation()
+        let connection = customAvatarConnectionProvider()
+        guard let deviceID = connection.deviceID else {
+            try await removeLocalCustomCompanion(id: id)
+            ErrorReporter.log(
+                .sync(
+                    component: "Custom Avatar Cleanup",
+                    underlying: "Deleted local companion data without scheduling hardware erase because no device identity is known."
+                ),
+                context: "AppState.deleteCustomCompanion.noDeviceIdentity"
+            )
+            customAvatarOperationState = .idle
+            return
+        }
+        let operation = PendingCustomAvatarOperation(
+            kind: .eraseExact,
+            phase: .awaitingEraseResult,
+            operationID: nextCustomAvatarOperationID(),
+            avatarID: id,
+            deviceID: deviceID,
+            fileCRC32: 0,
+            fileLength: 0,
+            candidateCompanion: nil,
+            candidatePreviewFileName: nil,
+            candidateImageFileName: nil,
+            oldSelection: CustomAvatarSelectionSnapshot(profile: userProfile)
+        )
+        pendingCustomAvatarOperation = operation
 
-    /// Delete a custom companion (its metadata + assets) and snap back to the built-in
-    /// character if it was active.
-    public func deleteCustomCompanion(id: UUID) async {
-        let wasActive = userProfile.customCompanionId == id
-        if wasActive {
-            // 0x15 PNG 最坏要发 1-2 分钟；删除时若不取消，半路中的旧流会在删除后继续写完，
-            // 反过来覆盖设备身份。先停流并清掉待重发状态，旧头像不能再赢回来。
-            customAvatarPushTask?.cancel()
-            isCustomAvatarPendingBLEPush = false
-            customAvatarFlushAttempts = 0
-        }
-        customCompanions.removeAll { $0.id == id }
-
-        var updatedProfile: UserProfile?
-        if wasActive {
-            var profile = userProfile
-            profile.customCompanionId = nil
-            userProfile = profile
-            updatedProfile = profile
-            // v2.5.33（复审 P1）：删除**激活中**的自定义形象 = 一次身份切换，与选内置/选自定义
-            // 同待遇立即单发 0x01（CustomActive=0），否则硬件继续显示刚删掉的用户图直到下一个
-            // 节流窗（最长 1h/4h）；再补一轮 sync 兜底。
-            sendPetStatusNow(customActive: false, context: "AppState.deleteCustomCompanion")
-            requestBLESync(reason: "deleteCustomCompanion")
-        }
-
-        if wasActive {
-            await localStorage.clearPendingCustomCompanionPush()
-            if let updatedProfile {
-                do {
-                    try await localStorage.saveUserProfile(updatedProfile)
-                } catch {
-                    reportPersistenceError(error, operation: "save", target: "user_profile.json")
-                }
-            }
-        }
-        do {
-            try await localStorage.deleteCustomCompanionAssets(id: id)
-        } catch {
-            reportPersistenceError(error, operation: "delete", target: "custom_companion_assets")
-        }
-        do {
-            try await localStorage.saveCustomCompanions(customCompanions)
-        } catch {
-            reportPersistenceError(error, operation: "save", target: "custom_companions.json")
-        }
-    }
-
-    /// 立即单发一帧 PetStatus(0x01)（不等 1h/4h 节流窗）。每次调用先截取目标身份，
-    /// 再按调用顺序发送；快速切换时旧任务不能读取到新 profile，也不能晚于新帧完成。
-    func sendPetStatusNow(customActive: Bool, context: String) {
-        let petSnapshot = pet
-        let characterSnapshot = userProfile.companionCharacter
-        let previousTask = companionIdentityStatusSendTask
-        let sender = companionIdentityStatusSender
-        companionIdentityStatusSendTask = Task { @MainActor in
-            await previousTask?.value
+        if !connection.isConnected {
             do {
-                try await sender(petSnapshot, characterSnapshot, customActive)
+                try await persistPendingCustomAvatarOperation(operation)
+                try await removeLocalCustomCompanion(id: id)
+                // Deletion is complete from the user's point of view. Keep the erase marker
+                // silent; BLESyncCoordinator consumes it automatically after reconnect.
+                customAvatarOperationState = .idle
             } catch {
-                ErrorReporter.log(
-                    .sync(component: "BLE PetStatus", underlying: error.localizedDescription),
-                    context: context
-                )
+                markCustomAvatarOperationFailure(error)
+                throw error
             }
+            return
+        }
+
+        let generation = beginCustomAvatarOperationGeneration()
+        do {
+            try await persistPendingCustomAvatarOperation(operation)
+            try await runPendingErase(operation, generation: generation)
+        } catch {
+            if isCurrentCustomAvatarOperation(
+                operationID: operation.operationID,
+                generation: generation
+            ) {
+                markCustomAvatarOperationFailure(error)
+            }
+            throw error
         }
     }
 
-    // MARK: - Selection
+    // MARK: - Built-in selection
 
-    /// Switching to a new companion identity resets intimacy back to acquaintance —
-    /// staying at "close friend" while meeting a brand-new persona would make the AI
-    /// open with an unearned tone. Selecting the same companion again is a no-op for intimacy.
-    public func selectBuiltInCompanion(_ character: CompanionCharacter) {
-        // 0x15 PNG 最坏要发 1-2 分钟；切回内置伙伴时必须停掉半路中的自定义头像流，
-        // 否则旧流稍后写完会覆盖刚切换的内置身份，形成 stale-stream-wins。
-        customAvatarPushTask?.cancel()
-        isCustomAvatarPendingBLEPush = false
-        customAvatarFlushAttempts = 0
-        Task { @MainActor in
-            await localStorage.clearPendingCustomCompanionPush()
+    public func selectBuiltInCompanion(_ character: CompanionCharacter) async throws {
+        guard !customAvatarOperationState.isInProgress
+                || customAvatarOperationState.canCancel else {
+            throw CustomAvatarOperationError.commitAlreadyStarted
         }
+        if pendingCustomAvatarOperation?.kind == .apply {
+            try await cancelCustomAvatarOperation()
+            guard pendingCustomAvatarOperation == nil else {
+                throw CustomAvatarOperationError.deviceNotConnected
+            }
+        }
+
         let isDifferentIdentity = userProfile.currentSelection != .builtIn(character)
         var profile = userProfile
         profile.companionCharacter = character
         profile.customCompanionId = nil
         if isDifferentIdentity {
-            profile.intimacyStage = .acquaintance
+            let usage = try await localStorage.loadCompanionUsageState()
+                ?? CompanionUsageState()
+            profile.intimacyStage = IntimacyStage.from(
+                bindingDays: usage.progress(for: character).totalUsedDays
+            )
         }
-        updateUserProfile(profile)
-        // v2.5.20: 伙伴切换不再等节流窗——立即单发一帧 PetStatus(0x01) 携带新 characterId
-        // （与自定义头像的立即推送 0x15 同待遇）。character 仍被有意排除在 DayPack 指纹外
-        // （2026-07-04 审计 F2 决定保留），常规每轮 sync 照发兜底。
+        try await localStorage.saveUserProfile(profile)
+        userProfile = profile
         sendPetStatusNow(customActive: false, context: "AppState.selectBuiltInCompanion")
         requestBLESync(reason: "selectBuiltInCompanion")
     }
 
-    public func selectCustomCompanion(id: UUID) {
-        guard customCompanions.contains(where: { $0.id == id }) else { return }
-        let isDifferentIdentity = userProfile.currentSelection != .custom(id)
-        var profile = userProfile
-        profile.customCompanionId = id
-        if isDifferentIdentity {
-            profile.intimacyStage = .acquaintance
-        }
-        updateUserProfile(profile)
-        requestBLESync(reason: "selectCustomCompanion")
+    // MARK: - Operation controls
 
-        // v2.5.32: 选自定义同样立即单发 0x01（CustomActive=1）——固件收到即切换到
-        // "自定义显示"模式（图用已持久化的 0x15）；CharacterId 仍是最近内置选择（专注页美术）。
-        sendPetStatusNow(customActive: true, context: "AppState.selectCustomCompanion")
+    public func retryCustomAvatarOperation() async {
+        guard !isCustomAvatarRetryRunning else { return }
+        isCustomAvatarRetryRunning = true
+        defer { isCustomAvatarRetryRunning = false }
+        do {
+            if pendingCustomAvatarOperation == nil {
+                await restorePendingCustomAvatarOperation()
+            }
+            guard let operation = pendingCustomAvatarOperation else { return }
+            try ensureExpectedDeviceConnected(operation)
+            let generation = beginCustomAvatarOperationGeneration()
 
-        // Re-push the avatar so the device shows the newly active companion.
-        // Cancel any in-flight push first: BLE 写锁只串行单个 packet，两条数千片的
-        // 0x15 流会逐片交错，旧选择可能最后完成反杀新选择（写循环见 Task.checkCancellation）。
-        customAvatarPushTask?.cancel()
-        customAvatarPushTask = Task { @MainActor in
-            guard let imageData = await localStorage.loadCustomCompanionImageData(id: id) else { return }
-            customAvatarFlushAttempts = 0  // fresh retry budget for the newly selected avatar
-            await pushCustomAvatarFrame(imageData: imageData, companionId: id)
+            switch operation.kind {
+            case .apply:
+                if operation.phase == .awaitingAbortResult {
+                    try await runPendingAbort(operation, generation: generation)
+                    return
+                }
+                guard let candidate = operation.candidateCompanion,
+                      await localStorage.loadPendingCustomAvatarPreviewData() != nil,
+                      let imageData = await localStorage.loadPendingCustomAvatarImageData() else {
+                    throw CustomAvatarOperationError.missingAvatarData
+                }
+                if operation.phase == .preparing || operation.fileLength == 0 {
+                    try await runApplyTransaction(
+                        operation,
+                        companion: candidate,
+                        imageData: imageData,
+                        generation: generation
+                    )
+                    return
+                }
+                customAvatarOperationState = .validating
+                switch try await pendingApplyRecoveryDisposition(
+                    operation,
+                    generation: generation
+                ) {
+                case .committed:
+                    // Query proved the device commit. Claim the non-cancellable local finalizer
+                    // before its first storage await so sign-out cannot replace this operation.
+                    customAvatarOperationState = .committing
+                    try await finalizeCommittedApply(operation)
+                case .staged:
+                    try await commitStagedApply(operation, generation: generation)
+                case .retransmit:
+                    try await runApplyTransaction(
+                        operation,
+                        companion: candidate,
+                        imageData: imageData,
+                        generation: generation
+                    )
+                }
+            case .eraseExact, .eraseAll:
+                try await runPendingErase(operation, generation: generation)
+            }
+        } catch {
+            if pendingCustomAvatarOperation != nil,
+               !(error is CancellationError) {
+                markCustomAvatarOperationFailure(error)
+            }
         }
     }
 
-    // MARK: - Helpers
+    public func cancelCustomAvatarOperation() async throws {
+        guard var operation = pendingCustomAvatarOperation else {
+            invalidateCustomAvatarOperationGeneration()
+            customAvatarPushTask?.cancel()
+            customAvatarPushTask = nil
+            resumeAvatarControlWaiter(throwing: CancellationError())
+            customAvatarOperationState = .idle
+            return
+        }
+        guard operation.kind == .apply else {
+            throw CustomAvatarOperationError.commitAlreadyStarted
+        }
+        guard operation.phase != .awaitingCommitResult else {
+            throw CustomAvatarOperationError.commitAlreadyStarted
+        }
+
+        invalidateCustomAvatarOperationGeneration()
+        customAvatarPushTask?.cancel()
+        customAvatarPushTask = nil
+        resumeAvatarControlWaiter(throwing: CancellationError())
+
+        if operation.phase == .preparing || operation.phase == .prepared {
+            try await clearPendingCustomAvatarOperation()
+            customAvatarOperationState = .idle
+            return
+        }
+
+        guard operation.phase == .transferring
+                || operation.phase == .awaitingValidation
+                || operation.phase == .awaitingAbortResult else {
+            throw CustomAvatarOperationError.commitAlreadyStarted
+        }
+        operation.phase = .awaitingAbortResult
+        try await persistPendingCustomAvatarOperation(operation)
+
+        let connection = customAvatarConnectionProvider()
+        guard connection.isConnected,
+              let expectedDeviceID = operation.deviceID,
+              expectedDeviceID == connection.deviceID else {
+            let error: CustomAvatarOperationError = connection.isConnected
+                ? .wrongDevice
+                : .deviceNotConnected
+            lastError = error.localizedDescription
+            customAvatarOperationState = .idle
+            return
+        }
+
+        let generation = beginCustomAvatarOperationGeneration()
+        do {
+            try await runPendingAbort(operation, generation: generation)
+        } catch {
+            if isCurrentCustomAvatarOperation(
+                operationID: operation.operationID,
+                generation: generation
+            ) {
+                markCustomAvatarOperationFailure(error)
+            }
+            throw error
+        }
+    }
+
+    /// iOS does not guarantee a multi-minute BLE transfer in the background. Pre-commit work
+    /// stops immediately but remains durable for query/retry when the app returns.
+    public func interruptCustomAvatarOperationForBackground() {
+        guard customAvatarOperationState.canCancel,
+              pendingCustomAvatarOperation?.kind == .apply else { return }
+        interruptCustomAvatarOperation(
+            message: "Photo transfer paused when Kirole moved to the background. Reconnect and retry."
+        )
+    }
+
+    /// Called by BLEService on an actual disconnect. Commit/erase results are recovered by query;
+    /// no abort is sent because the peripheral is already unavailable.
+    public func handleCustomAvatarDeviceDisconnected() {
+        guard pendingCustomAvatarOperation != nil,
+              customAvatarOperationState.isInProgress else { return }
+        interruptCustomAvatarOperation(
+            message: "Kirole disconnected. Reconnect it to verify or resend the companion image."
+        )
+    }
+
+    public var canCancelCustomAvatarOperation: Bool {
+        guard let operation = pendingCustomAvatarOperation,
+              operation.kind == .apply,
+              operation.phase != .awaitingCommitResult else {
+            return false
+        }
+        return customAvatarOperationState.canCancel
+            || !customAvatarOperationState.isInProgress
+    }
+
+    public func resetCustomAvatarOperationState() {
+        guard !customAvatarOperationState.isInProgress,
+              pendingCustomAvatarOperation?.kind != .apply else { return }
+        customAvatarOperationState = .idle
+    }
+
+    /// Called by `BLEService` after decrypting and decoding a v2.7 result. A late result for an
+    /// old operation is ignored and can never commit a newer candidate.
+    public func handleAvatarControlResult(_ result: AvatarControlResult) {
+        guard let operation = pendingCustomAvatarOperation,
+              operation.operationID == result.operationID else { return }
+        let connection = customAvatarConnectionProvider()
+        guard connection.isConnected else { return }
+        guard let expectedDeviceID = operation.deviceID,
+              expectedDeviceID == connection.deviceID else {
+            let error = CustomAvatarOperationError.wrongDevice
+            resumeAvatarControlWaiter(throwing: error)
+            customAvatarOperationState = .failed(
+                error.localizedDescription
+            )
+            return
+        }
+        if let waiter = avatarControlResultWaiter,
+           waiter.operationID == result.operationID,
+           waiter.expectedStatus == result.status {
+            avatarControlResultWaiter = nil
+            avatarControlTimeoutTask?.cancel()
+            avatarControlTimeoutTask = nil
+            avatarControlExpectedBufferedStatus = nil
+            waiter.continuation.resume(returning: result)
+            return
+        }
+        guard canBufferAvatarControlResult(result, operation: operation) else { return }
+        bufferedAvatarControlResults[result.operationID, default: []].append(result)
+    }
+
+    /// BLESyncCoordinator invokes this after reconnect. The old UUID retry/back-off queue is
+    /// retired; v2.7 resumes the single durable apply/erase transaction instead.
+    public func flushPendingCustomCompanionPushIfNeeded() async {
+        if pendingCustomAvatarOperation == nil {
+            await restorePendingCustomAvatarOperation()
+        }
+        guard pendingCustomAvatarOperation != nil,
+              customAvatarConnectionProvider().isConnected,
+              !customAvatarOperationState.isInProgress else { return }
+        await retryCustomAvatarOperation()
+    }
+
+    /// Erases and pending cancellations run before routine Time/PetStatus/DayPack writes.
+    /// A normal apply stays in the later slot so its multi-minute transfer does not block sync.
+    public func flushPriorityCustomAvatarOperationIfNeeded() async {
+        if pendingCustomAvatarOperation == nil {
+            await restorePendingCustomAvatarOperation()
+        }
+        guard let operation = pendingCustomAvatarOperation,
+              operation.requiresPriorityBLEFlush,
+              customAvatarConnectionProvider().isConnected,
+              !customAvatarOperationState.isInProgress else { return }
+        await retryCustomAvatarOperation()
+    }
+
+    /// DeviceWake inventory is only a recovery hint. It lacks `CustomActive`, so matching bytes
+    /// cannot prove that firmware activated the candidate. The returned flag asks the sync
+    /// coordinator to resume the durable operation through `AvatarControl.query`.
+    @discardableResult
+    public func reconcileCustomAvatarInventory(
+        hasImage _: Bool,
+        avatarID _: UUID?,
+        byteLength _: UInt32,
+        reportedCRC32 _: UInt32
+    ) async -> Bool {
+        guard let operation = pendingCustomAvatarOperation else { return false }
+        let connection = customAvatarConnectionProvider()
+        guard connection.isConnected,
+              let expectedDeviceID = operation.deviceID,
+              expectedDeviceID == connection.deviceID else {
+            customAvatarOperationState = .failed(
+                CustomAvatarOperationError.wrongDevice.localizedDescription
+            )
+            return false
+        }
+        // Never race the transaction that already owns the same operation. Its staged/committed
+        // 0x22 result remains authoritative; a later DeviceWake can trigger query recovery.
+        guard !customAvatarOperationState.isInProgress else { return false }
+        return true
+    }
+
+    // MARK: - Sign out / account removal
+
+    /// Erases all custom-avatar data. If the device is unavailable, only a small `eraseAll`
+    /// marker survives sign-out so the next connection can finish the hardware cleanup.
+    public func prepareCustomCompanionDataForSignOut() async throws {
+        try await prepareCustomCompanionDataForAccountRemoval()
+    }
+
+    /// Reserved for the future account-deletion UI; intentionally shares the exact cleanup path.
+    public func prepareCustomCompanionDataForAccountRemoval() async throws {
+        guard customAvatarOperationState != .erasing,
+              customAvatarOperationState != .committing else {
+            throw CustomAvatarOperationError.operationInProgress
+        }
+        // Claim and invalidate the single avatar-operation slot before the first suspension.
+        // A commit that already reached its non-cancellable local finalizer must finish first.
+        customAvatarOperationState = .erasing
+        invalidateCustomAvatarOperationGeneration()
+        customAvatarPushTask?.cancel()
+        customAvatarPushTask = nil
+        resumeAvatarControlWaiter(throwing: CancellationError())
+        await ensureInitialLoadComplete()
+        let connection = customAvatarConnectionProvider()
+        let oldOperation = pendingCustomAvatarOperation
+        let hasLocalCustomData = !customCompanions.isEmpty
+            || userProfile.customCompanionId != nil
+            || oldOperation != nil
+        if !hasLocalCustomData, connection.deviceID == nil {
+            do {
+                // The JSON index and operation marker are not authoritative for private bytes:
+                // either may be missing after a partial write or development reset.
+                try await localStorage.deleteCustomCompanionIndex()
+                try await localStorage.deleteAllCustomCompanionAssets()
+                try await clearPendingCustomAvatarOperation()
+                customAvatarOperationState = .idle
+                return
+            } catch {
+                markCustomAvatarOperationFailure(error)
+                throw error
+            }
+        }
+        guard let targetDeviceID = oldOperation?.deviceID ?? connection.deviceID else {
+            do {
+                try await removeAllLocalCustomCompanionData()
+                try await clearPendingCustomAvatarOperation()
+                customAvatarOperationState = .idle
+                ErrorReporter.log(
+                    .sync(
+                        component: "Custom Avatar Cleanup",
+                        underlying: "Deleted local companion data without scheduling hardware erase because no device identity is known."
+                    ),
+                    context: "AppState.accountRemoval.noDeviceIdentity"
+                )
+                return
+            } catch {
+                markCustomAvatarOperationFailure(error)
+                throw error
+            }
+        }
+        if connection.isConnected, connection.deviceID != targetDeviceID {
+            let error = CustomAvatarOperationError.wrongDevice
+            customAvatarOperationState = .failed(error.localizedDescription)
+            lastError = error.localizedDescription
+            throw error
+        }
+        if let oldOperation,
+           oldOperation.kind == .apply,
+           oldOperation.phase != .awaitingCommitResult,
+           customAvatarConnectionProvider().isConnected {
+            do {
+                try await avatarControlSender(.abort(operationID: oldOperation.operationID))
+            } catch {
+                ErrorReporter.log(error, context: "AppState.accountRemoval.abortAvatar")
+            }
+        }
+        try await clearPendingCustomAvatarOperation()
+
+        let operation = PendingCustomAvatarOperation(
+            kind: .eraseAll,
+            phase: .awaitingEraseResult,
+            operationID: nextCustomAvatarOperationID(),
+            avatarID: nil,
+            deviceID: targetDeviceID,
+            fileCRC32: 0,
+            fileLength: 0,
+            candidateCompanion: nil,
+            candidatePreviewFileName: nil,
+            candidateImageFileName: nil,
+            oldSelection: CustomAvatarSelectionSnapshot(profile: userProfile)
+        )
+        let generation = beginCustomAvatarOperationGeneration()
+        do {
+            try await persistPendingCustomAvatarOperation(operation)
+            if connection.isConnected {
+                try await runPendingErase(operation, generation: generation)
+            } else {
+                customAvatarOperationState = .interrupted(
+                    "Kirole will erase the saved photo when it reconnects."
+                )
+            }
+        } catch {
+            if isCurrentCustomAvatarOperation(
+                operationID: operation.operationID,
+                generation: generation
+            ) {
+                markCustomAvatarOperationFailure(error)
+            }
+            throw error
+        }
+        if !connection.isConnected {
+            try await removeAllLocalCustomCompanionData()
+        }
+    }
+
+    // MARK: - Derived state
 
     public var activeCustomCompanion: CustomCompanion? {
         guard let id = userProfile.customCompanionId else { return nil }
         return customCompanions.first { $0.id == id }
-    }
-
-    private func persistCustomCompanionsList() {
-        let snapshot = customCompanions
-        Task { @MainActor in
-            do {
-                try await localStorage.saveCustomCompanions(snapshot)
-            } catch {
-                reportPersistenceError(error, operation: "save", target: "custom_companions.json")
-            }
-        }
-    }
-
-    /// Sends the avatar frame via BLE. KRI remains pending until DeviceWake confirms its CRC;
-    /// transport failures queue the companion ID for a later retry.
-    private func pushCustomAvatarFrame(imageData: Data, companionId: UUID) async {
-        guard !Task.isCancelled else { return }
-        // Wire-contract guard (v2.5.24): the persisted asset must be a PNG within the
-        // documented ≤1MiB budget before it touches BLE.
-        // - Non-PNG bytes = pre-PNG installs' 4bpp pixel data (can never start with the
-        //   PNG signature) — sending them as SubVersion 0x02 would hand firmware garbage.
-        // - Oversize with a valid signature = corrupted/replaced file; §4.12 promises the
-        //   device never receives >1,048,576 PNG bytes, so enforce it at the BLE exit too.
-        // Either way: drop the push (and any pending marker) instead of retrying forever;
-        // re-creating the companion regenerates a proper PNG.
-        guard AvatarImageProcessor.isPNGData(imageData),
-              imageData.count <= AvatarImageProcessor.maxEncodedByteCount else {
-            await dropCorruptAvatarPush(
-                reason: "Persisted avatar asset rejected (not PNG or >1MiB; \(imageData.count)B) — dropping push; re-create the companion to fix",
-                companionId: companionId
-            )
-            return
-        }
-        do {
-            let usesKRI = BLEService.shared.avatarKRIPushEnabled
-            if usesKRI {
-                // KRI 默认路径（协议 §4.12 SubVersion 0x03，v2.6.1 flag-day）：持久化资产
-                // 恒为 PNG（预览/对账真源），推送前现场转换，按 KRI 规范 §7 校验后发送。
-                // 转换/校验失败 = 资产损坏（签名合法但解码不出），与非 PNG 同策略弃推——
-                // 重试无意义，重建伴侣即恢复。开关 OFF 走下方旧 0x02 PNG（仅联调对拍）。
-                let sourcePNG = imageData
-                let kriData: Data
-                do {
-                    kriData = try await Task.detached(priority: .userInitiated) {
-                        try KRIEncoder.encode(pngData: sourcePNG)
-                    }.value
-                } catch {
-                    guard !Task.isCancelled else { return }
-                    await dropCorruptAvatarPush(
-                        reason: "PNG→KRI conversion failed (\(error.localizedDescription)) — dropping push; re-create the companion to fix",
-                        companionId: companionId
-                    )
-                    return
-                }
-                guard !Task.isCancelled else { return }
-                guard AvatarImageProcessor.isValidAvatarKRI(kriData) else {
-                    await dropCorruptAvatarPush(
-                        reason: "KRI output rejected (invalid file or >\(AvatarImageProcessor.maxKRIEncodedByteCount)B; \(kriData.count)B) — dropping push; re-create the companion to fix",
-                        companionId: companionId
-                    )
-                    return
-                }
-                try Task.checkCancellation()
-                // GATT write ACK only confirms transport. Keep this durable marker until a
-                // DeviceWake inventory CRC proves that firmware persisted the KRI file.
-                isCustomAvatarPendingBLEPush = true
-                await localStorage.savePendingCustomCompanionPush(id: companionId)
-                try Task.checkCancellation()
-                try await BLEService.shared.sendCustomAvatarKRIFrame(kriData: kriData)
-            } else {
-                try await BLEService.shared.sendCustomAvatarFrame(imageData: imageData)
-            }
-
-            guard !usesKRI else { return }
-            await localStorage.clearPendingCustomCompanionPush()
-            isCustomAvatarPendingBLEPush = false
-            customAvatarFlushAttempts = 0
-            // v2.5.33: 记录这张图成功送达的设备——连接到不同设备时据此触发自动重推。
-            if let deviceID = BLEService.shared.connectedDeviceID?.uuidString {
-                await localStorage.saveCustomAvatarLastPushedDeviceID(deviceID)
-            }
-        } catch is CancellationError {
-            // 被更新的选择/flush 取消：新任务已接管重试状态，这里不标 pending、不记错——
-            // 否则旧任务会把新选择刚清掉的待重发标记又写回去。
-            return
-        } catch {
-            await localStorage.savePendingCustomCompanionPush(id: companionId)
-            isCustomAvatarPendingBLEPush = true
-            ErrorReporter.log(
-                .sync(component: "BLE CustomAvatarFrame", underlying: error.localizedDescription),
-                context: "AppState.pushCustomAvatarFrame id=\(companionId)"
-            )
-        }
-    }
-
-    /// 资产级永久失败（非 PNG / 超限 / KRI 转换失败）统一处置：记日志、弃推、
-    /// 清待重发标记并重置退避计数。与传输级失败（进重试队列）严格区分——
-    /// 损坏资产重试到天荒地老也发不出去，用户重新创建该伴侣即恢复。
-    private func dropCorruptAvatarPush(reason: String, companionId: UUID) async {
-        ErrorReporter.log(
-            .sync(component: "BLE CustomAvatarFrame", underlying: reason),
-            context: "AppState.pushCustomAvatarFrame id=\(companionId)"
-        )
-        await localStorage.clearPendingCustomCompanionPush()
-        isCustomAvatarPendingBLEPush = false
-        customAvatarFlushAttempts = 0
-    }
-
-    /// v2.6.0: 设备侧头像库存比对的纯判定——无图 or CRC 不一致（存储被清/图过期损坏）即需重推。
-    nonisolated static func avatarNeedsRepush(hasImage: Bool, reportedCRC32: UInt32, localCRC32: UInt32) -> Bool {
-        !hasImage || reportedCRC32 != localCRC32
-    }
-
-    /// v2.6.0: DeviceWake 上报设备头像库存（AvatarState + CRC32）后对账。自定义激活且设备
-    /// 侧无图/CRC 与本地激活头像不一致 → 重新标记 0x15 待推，随本轮 sync 的 flush 补发。
-    /// 内置激活时设备报什么都不管（CustomActive=0 已让固件不显示自定义图）。
-    @discardableResult
-    public func reconcileCustomAvatarInventory(hasImage: Bool, reportedCRC32: UInt32) async -> Bool {
-        guard let id = userProfile.customCompanionId,
-              let imageData = await localStorage.loadCustomCompanionImageData(id: id) else { return false }
-        // CRC 口径跟随当前推送格式（协议 §4.12）：设备持久化并回报的是"最近一次 0x15
-        // 送达的文件字节"——KRI 开关开启时须对转换后的 KRI 字节求 CRC，否则本地 PNG CRC
-        // 与设备 KRI CRC 永远不等，每次 DeviceWake 都误判重推。转换失败按 0 处理 →
-        // 必然 mismatch → 标记重推，最终由推送路径统一判废弃推（那里会记日志）。
-        let useKRICRC = BLEService.shared.avatarKRIPushEnabled
-        let localCRC32: UInt32
-        if hasImage {
-            localCRC32 = await Task.detached(priority: .utility) {
-                guard useKRICRC else { return CRC32.ieee(imageData) }
-                do {
-                    return CRC32.ieee(try KRIEncoder.encode(pngData: imageData))
-                } catch {
-                    return .zero
-                }
-            }.value
-        } else {
-            localCRC32 = .zero
-        }
-        guard userProfile.customCompanionId == id else { return false }
-        let needsRepush = Self.avatarNeedsRepush(
-            hasImage: hasImage, reportedCRC32: reportedCRC32, localCRC32: localCRC32
-        )
-        if !needsRepush {
-            await localStorage.clearPendingCustomCompanionPush()
-            guard userProfile.customCompanionId == id else { return false }
-            isCustomAvatarPendingBLEPush = false
-            customAvatarFlushAttempts = 0
-            if let deviceID = BLEService.shared.connectedDeviceID?.uuidString {
-                await localStorage.saveCustomAvatarLastPushedDeviceID(deviceID)
-            }
-            return false
-        }
-        let savedPendingID = await localStorage.loadPendingCustomCompanionPush()
-        guard userProfile.customCompanionId == id else { return false }
-        if isCustomAvatarPendingBLEPush, savedPendingID == id {
-            return false
-        }
-        await localStorage.savePendingCustomCompanionPush(id: id)
-        guard userProfile.customCompanionId == id else { return false }
-        isCustomAvatarPendingBLEPush = true
-        customAvatarFlushAttempts = 0
-        return true
-    }
-
-    /// Flush back-off policy. Re-push the 0x15 frame on every sync for the first
-    /// `maxImmediateFlushAttempts`, then drop to once every `periodicFlushRetryInterval` syncs.
-    /// This stops the frame from being re-sent on every single sync while firmware can't accept
-    /// 0x15 yet, WITHOUT ever permanently giving up: a hard cap would strand a pending push
-    /// forever once hit — a transient failure streak (hardware briefly unready) would then never
-    /// self-heal even after the hardware recovers, leaving the device on the old avatar until the
-    /// user manually re-selects a companion. Counter resets on a successful push or new selection.
-    private static let maxImmediateFlushAttempts = 5
-    private static let periodicFlushRetryInterval = 20
-
-    /// Whether the `attempt`-th consecutive flush should actually re-push. Pure + static so the
-    /// back-off schedule is unit-testable without driving real BLE. `attempt` is 1-based.
-    static func shouldAttemptCustomAvatarFlush(attempt: Int) -> Bool {
-        attempt <= maxImmediateFlushAttempts || attempt % periodicFlushRetryInterval == 0
-    }
-
-    /// Called by BLESyncCoordinator after establishing a connection.
-    /// Re-sends the avatar frame for the active custom companion when a previous push failed.
-    public func flushPendingCustomCompanionPushIfNeeded() async {
-        // v2.5.33（复审 P1"换硬件不恢复"）：固件持久化只救同一台重启；连接的设备与上次
-        // 成功收图的设备不同（含从未记录）且自定义激活时，重新标记待推。存储被清空但
-        // 设备没换的场景 App 侧无法感知——已记录为已知边界，需固件上报"无图"信号才能闭环。
-        if !isCustomAvatarPendingBLEPush,
-           userProfile.customCompanionId != nil,
-           let connectedID = BLEService.shared.connectedDeviceID?.uuidString,
-           await localStorage.loadCustomAvatarLastPushedDeviceID() != connectedID {
-            isCustomAvatarPendingBLEPush = true
-            customAvatarFlushAttempts = 0
-        }
-        guard isCustomAvatarPendingBLEPush,
-              let id = userProfile.customCompanionId,
-              let imageData = await localStorage.loadCustomCompanionImageData(id: id) else {
-            return
-        }
-        // Count every flush opportunity (even skipped ones) so the periodic retry keeps advancing.
-        customAvatarFlushAttempts += 1
-        guard Self.shouldAttemptCustomAvatarFlush(attempt: customAvatarFlushAttempts) else { return }
-        // 与 selectCustomCompanion 共用同一任务槽：flush 也可能与手动切换赛跑，
-        // 同一时刻只允许一条 0x15 大帧流在发。仍然 await 完成，调用方语义不变。
-        customAvatarPushTask?.cancel()
-        let task = Task { @MainActor in
-            await pushCustomAvatarFrame(imageData: imageData, companionId: id)
-        }
-        customAvatarPushTask = task
-        await task.value
     }
 }

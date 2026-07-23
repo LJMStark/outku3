@@ -18,17 +18,20 @@ public struct EventLog: Codable, Sendable, Identifiable {
     /// 仅实时 `DeviceWake(0x30)` 且固件 ≥ 协议 v2.5.19（4B payload）时非 nil。
     /// 批量补传（0x21）里的 0x30 记录恒为 2B、不带版本，此字段为 nil。
     public let firmwareVersion: FirmwareVersion?
-    /// 设备侧自定义头像库存（v2.6.0，仅实时 DeviceWake ≥9B payload）：
-    /// `hasImage` = 设备本地是否持久化有 0x15 图；`crc32` = 该图的 CRC-32/IEEE
-    /// （无图时固件填 0）。App 据此比对本地激活头像，覆盖"存储被清/图过期损坏"盲区。
+    /// 设备侧自定义头像库存（v2.7，仅实时 DeviceWake ≥29B payload）。AvatarID 避免
+    /// 两个内容相同（CRC 相同）的伴侣被误认为同一身份；长度+CRC 用于断线后的库存对账。
     public let avatarInventory: AvatarInventory?
 
     public struct AvatarInventory: Codable, Sendable, Equatable {
         public let hasImage: Bool
+        public let avatarID: UUID?
+        public let byteLength: UInt32
         public let crc32: UInt32
 
-        public init(hasImage: Bool, crc32: UInt32) {
+        public init(hasImage: Bool, avatarID: UUID?, byteLength: UInt32, crc32: UInt32) {
             self.hasImage = hasImage
+            self.avatarID = avatarID
+            self.byteLength = byteLength
             self.crc32 = crc32
         }
     }
@@ -209,15 +212,33 @@ public extension EventLog {
             let version: FirmwareVersion? = payload.count >= 4
                 ? FirmwareVersion(major: payload[1], minor: payload[2], patch: payload[3])
                 : nil
-            // v2.6.0: payload[4] = AvatarState（0x00 无图/0x01 有图），payload[5..8] =
-            // AvatarCRC32（BE）。仅实时帧；批量 0x21 中的 0x30 恒 2B（同版本字节铁律）。
-            let inventory: AvatarInventory? = payload.count >= 9
-                ? AvatarInventory(
-                    hasImage: payload[4] == 0x01,
-                    crc32: UInt32(payload[5]) << 24 | UInt32(payload[6]) << 16
-                        | UInt32(payload[7]) << 8 | UInt32(payload[8])
-                )
-                : nil
+            // v2.7: AvatarState(1) | AvatarID(16 raw UUID; empty 时全 0) |
+            // FileLength(4 BE) | FileCRC32(4 BE)。仅实时帧；旧 9B 库存格式不兼容。
+            let inventory: AvatarInventory?
+            if payload.count == 29, payload[4] <= 0x01 {
+                let hasImage = payload[4] == 0x01
+                let avatarBytes = payload.subdata(in: 5..<21)
+                let avatarID = avatarBytes.allSatisfy { $0 == 0 }
+                    ? nil
+                    : UUIDWireCodec.decode(avatarBytes)
+                let byteLength = payload.bigEndianUInt32(at: 21)
+                let crc32 = payload.bigEndianUInt32(at: 25)
+                let isConsistent = hasImage
+                    ? avatarID != nil
+                        && byteLength >= UInt32(KRIEncoder.headerByteCount)
+                        && byteLength <= UInt32(AvatarImageProcessor.maxKRIEncodedByteCount)
+                    : avatarID == nil && byteLength == 0 && crc32 == 0
+                inventory = isConsistent
+                    ? AvatarInventory(
+                        hasImage: hasImage,
+                        avatarID: avatarID,
+                        byteLength: byteLength,
+                        crc32: crc32
+                    )
+                    : nil
+            } else {
+                inventory = nil
+            }
             return EventLog(eventType: eventType, value: level, firmwareVersion: version, avatarInventory: inventory)
 
         default:

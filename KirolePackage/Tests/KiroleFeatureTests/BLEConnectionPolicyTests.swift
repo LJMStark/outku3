@@ -40,6 +40,23 @@ struct BLEConnectionPolicyTests {
         #expect(!BLEConnectionPolicy.canBeginConnect(state: .connected))
     }
 
+    @Test("a connecting candidate never replaces the last successfully connected device")
+    func lastKnownDeviceIgnoresConnectingCandidate() {
+        let lastConnected = UUID()
+        let connectingCandidate = UUID()
+
+        #expect(BLEConnectionPolicy.lastKnownDeviceID(
+            state: .connecting,
+            connectedDeviceID: connectingCandidate,
+            lastConnectedDeviceID: lastConnected
+        ) == lastConnected)
+        #expect(BLEConnectionPolicy.lastKnownDeviceID(
+            state: .connected,
+            connectedDeviceID: connectingCandidate,
+            lastConnectedDeviceID: lastConnected
+        ) == connectingCandidate)
+    }
+
     // MARK: - shouldAutoReconnect
 
     @Test("given intentional disconnect, when shouldAutoReconnect, then never reconnects")

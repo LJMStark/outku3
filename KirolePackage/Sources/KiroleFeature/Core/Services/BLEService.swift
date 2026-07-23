@@ -27,6 +27,15 @@ public final class BLEService: NSObject {
     /// 当前连接外设的系统标识（未连接为 nil）。v2.5.33 用于"换硬件后自动重推 0x15 头像"：
     /// 固件持久化只救同一台重启，连上**另一台**设备时 App 侧要能察觉并重推。
     public var connectedDeviceID: UUID? { connectedPeripheral?.identifier }
+    /// Connected device, or the last device selected by this single-device account.
+    /// Durable avatar operations use it to avoid replaying device A's transaction on device B.
+    public var lastKnownDeviceID: UUID? {
+        BLEConnectionPolicy.lastKnownDeviceID(
+            state: connectionState,
+            connectedDeviceID: connectedDeviceID,
+            lastConnectedDeviceID: lastConnectedDeviceID
+        )
+    }
     public private(set) var discoveredDevices: [BLEDevice] = []
     public private(set) var connectedDevice: BLEDevice?
     public private(set) var lastSyncTime: Date?
@@ -39,6 +48,9 @@ public final class BLEService: NSObject {
     public internal(set) var deviceBatteryLevel: Int?
     /// 最近一次实时 DeviceWake(0x30) 上报的固件版本（协议 v2.5.19+；旧固件为 nil）。
     public internal(set) var deviceFirmwareVersion: FirmwareVersion?
+    /// 0x22 设备结果回调。AppState 按 operationID 过滤迟到结果并推进持久化操作状态。
+    @ObservationIgnored
+    public var onAvatarControlResult: (@MainActor @Sendable (AvatarControlResult) -> Void)?
 
     // MARK: - Private Properties
 
@@ -62,9 +74,9 @@ public final class BLEService: NSObject {
     private var staleWriteAckFilter = BLEStaleWriteAckFilter()
     private var nextMessageId: UInt16 = 1
 
-    /// 进行中的分包消息数（@MainActor 串行，无并发写）。大帧（0x15 头像 ≤1MiB ≈ 2093 片、
-    /// 限流下 1-2 分钟）传输期间，BLESyncCoordinator 的 30s 超时断连 / 同步收尾断连据此
-    /// 让路，否则大头像永远只能发出前几百片就被掐线、整帧无限重试。
+    /// 进行中的分包消息数（@MainActor 串行，无并发写）。最坏 800×700 KRI
+    /// 约 2.24MB / 4472 片，限流下需 4–5 分钟。传输期间 BLESyncCoordinator 不得因
+    /// 30s 同步超时主动断连；真实断线后由用户从第 0 片重发。
     private var inFlightChunkedTransfers = 0
     var isChunkedTransferInFlight: Bool { inFlightChunkedTransfers > 0 }
     /// flag-day 取证去重：本连接内已记过"固件还在发 9B 旧分包头"即不再重复（cleanup 复位）。
@@ -95,7 +107,6 @@ public final class BLEService: NSObject {
         static let autoReconnect = "bleAutoReconnect"
         static let keepAliveDebugMode = "bleKeepAliveDebugMode"
         static let hardwareScreenSize = "bleHardwareScreenSize"
-        static let avatarKRIPushEnabled = "bleAvatarKRIPushEnabled"
     }
 
     // MARK: - Timing
@@ -145,25 +156,6 @@ public final class BLEService: NSObject {
             return true
         }
         set { UserDefaults.standard.set(newValue, forKey: Keys.keepAliveDebugMode) }
-    }
-
-    /// 自定义头像 wire 格式开关（协议 §4.12）。**默认 true = 发 KRI 载荷（SubVersion 0x03，
-    /// v2.6.1 flag-day 默认格式）**，关闭 = 回退旧 0x02 PNG（仅供联调同机 A/B 对拍）。
-    ///
-    /// 规范即契约：固件按 App 实际发出的字节实现，不做双格式等待期——与 v2.5.24
-    /// 4bpp→PNG 切换同款 flag-day 节奏；固件实现 0x03 前的空窗由 §4.12 既有
-    /// 退避重试（永不放弃）兜住，固件就绪即自愈。
-    /// getter 与 keep-alive 同款闸门：正式包忽略本地残留、恒走默认 KRI；
-    /// 联调包里用户显式切过则以其选择为准。
-    public var avatarKRIPushEnabled: Bool {
-        get {
-            guard AppBuildEnvironment.showsHardwareDebugTools else { return true }
-            if let stored = UserDefaults.standard.object(forKey: Keys.avatarKRIPushEnabled) as? Bool {
-                return stored
-            }
-            return true
-        }
-        set { UserDefaults.standard.set(newValue, forKey: Keys.avatarKRIPushEnabled) }
     }
 
     /// 同步收尾和看门狗是否应保留 BLE。Wi-Fi 调试已开启或正在切换时必须保留，
@@ -636,22 +628,36 @@ public final class BLEService: NSObject {
         try await writeData(type: .sceneUnlock, data: payload)
     }
 
-    /// 推送用户自定义伴侣头像 PNG 到 E-ink 设备（v2.5.24，协议 §4.12）。
-    /// imageData 为 `AvatarImageProcessor.process` 产出的 PNG（≤800×700 保比例、≤1MiB）；
-    /// 帧 payload = `0x02 | PNG 字节`，恒走 §3.2 分包（11B 头）。1MiB 最坏情况约 2093 片，
-    /// 在写限流下约 1-2 分钟发完——调用方（AppState.pushCustomAvatarFrame）已有失败重试队列。
-    public func sendCustomAvatarFrame(imageData: Data) async throws {
-        let payload = BLEDataEncoder.encodeCustomAvatarFrame(pngData: imageData)
-        try await writeData(type: .customAvatarFrame, data: payload)
+    /// v2.7 暂存 KRI 头像。进度只统计 KRI 文件字节（不含 29B v4 元数据、BLE 分片头与
+    /// SecureEnvelope）；每个 `.withResponse` ACK 后更新，不会把排队字节算成已发送。
+    public func sendCustomAvatarKRIFrame(
+        operationID: UInt32,
+        avatarID: UUID,
+        kriData: Data,
+        progress: @escaping @MainActor @Sendable (_ sentBytes: Int, _ totalBytes: Int) -> Void
+    ) async throws {
+        let payload = try BLEDataEncoder.encodeCustomAvatarFrame(
+            operationID: operationID,
+            avatarID: avatarID,
+            kriData: kriData
+        )
+        progress(0, kriData.count)
+        try await writeData(type: .customAvatarFrame, data: payload) { sentPayloadBytes, _ in
+            let sentKRIBytes = min(
+                kriData.count,
+                max(0, sentPayloadBytes - CustomAvatarFrameV4Codec.headerLength)
+            )
+            progress(sentKRIBytes, kriData.count)
+        }
     }
 
-    /// 推送用户自定义伴侣头像 KRI 到 E-ink 设备（协议 §4.12 SubVersion 0x03，v2.6.1 起默认格式）。
-    /// kriData 为 `KRIEncoder.encode(pngData:)` 产出的完整 KRI v1 文件（≤2,240,012B）；
-    /// 帧 payload = `0x03 | KRI 字节`，与 PNG 路径同走 §3.2 分包（11B 头）。最坏情况
-    /// 2,240,013B ≈ 4,472 片 @501B/片，写限流下约 4 分钟——重试/对账复用 PNG 路径全套机制。
-    public func sendCustomAvatarKRIFrame(kriData: Data) async throws {
-        let payload = BLEDataEncoder.encodeCustomAvatarFrame(kriData: kriData)
-        try await writeData(type: .customAvatarFrame, data: payload)
+    /// 写成功只表示命令到达特征值；设备落盘结果由 0x22 回包经
+    /// `onAvatarControlResult` 交给 AppState。
+    public func sendAvatarControl(_ command: AvatarControlCommand) async throws {
+        try await writeData(
+            type: .avatarControl,
+            data: BLEDataEncoder.encodeAvatarControlCommand(command)
+        )
     }
 
     /// 推送屏保金句/明信片到 E-ink 设备。
@@ -676,7 +682,11 @@ public final class BLEService: NSObject {
 
     // MARK: - Private Methods
 
-    private func writeData(type: BLEDataType, data: Data) async throws {
+    private func writeData(
+        type: BLEDataType,
+        data: Data,
+        progress: (@MainActor @Sendable (_ sentBytes: Int, _ totalBytes: Int) -> Void)? = nil
+    ) async throws {
         guard connectionState.isConnected,
               let characteristic = writeCharacteristic,
               let peripheral = connectedPeripheral else {
@@ -684,7 +694,13 @@ public final class BLEService: NSObject {
         }
 
         guard requiresSecureChannel else {
-            try await writeUnsignedData(type: type, data: data, peripheral: peripheral, characteristic: characteristic)
+            try await writeUnsignedData(
+                type: type,
+                data: data,
+                peripheral: peripheral,
+                characteristic: characteristic,
+                progress: progress
+            )
             return
         }
 
@@ -692,8 +708,35 @@ public final class BLEService: NSObject {
             throw BLEError.securityHandshakeFailed("Secure BLE session not established")
         }
 
-        let securePayload = try securityManager.securePayload(type: type.rawValue, payload: data)
         let maxLength = peripheral.maximumWriteValueLength(for: .withResponse)
+
+        if type == .customAvatarFrame {
+            let plainPackets = try securityManager.packetizeForSecureTransport(
+                type: type.rawValue,
+                messageId: allocateMessageID(),
+                payload: data,
+                maxWriteLength: maxLength
+            )
+            inFlightChunkedTransfers += 1
+            defer { inFlightChunkedTransfers -= 1 }
+            var sentBytes = 0
+            for plainPacket in plainPackets {
+                try Task.checkCancellation()
+                // 必须临写前即时签名。整批预签会让 4–5 分钟传输后半段的 issuedAt
+                // 超过 SecureEnvelope 的 120 秒接收窗口。
+                let packet = try securityManager.secureChunkPacket(
+                    type: type.rawValue,
+                    plainPacket: plainPacket,
+                    maxWriteLength: maxLength
+                )
+                try await writePacket(packet, peripheral: peripheral, characteristic: characteristic)
+                sentBytes += chunkPayloadLength(plainPacket)
+                progress?(min(sentBytes, data.count), data.count)
+            }
+            return
+        }
+
+        let securePayload = try securityManager.securePayload(type: type.rawValue, payload: data)
 
         if shouldUseChunkedPacket(type: type, payloadSize: securePayload.count, maxWriteLength: maxLength) {
             let maxChunkPayloadSize = maxLength - BLEPacketizer.headerSize
@@ -722,7 +765,8 @@ public final class BLEService: NSObject {
         type: BLEDataType,
         data: Data,
         peripheral: CBPeripheral,
-        characteristic: CBCharacteristic
+        characteristic: CBCharacteristic,
+        progress: (@MainActor @Sendable (_ sentBytes: Int, _ totalBytes: Int) -> Void)?
     ) async throws {
         let maxLength = peripheral.maximumWriteValueLength(for: .withResponse)
 
@@ -736,16 +780,25 @@ public final class BLEService: NSObject {
             )
             inFlightChunkedTransfers += 1
             defer { inFlightChunkedTransfers -= 1 }
+            var sentBytes = 0
             for packet in packets {
                 // 同 writeData：任务取消即停发，防多条大帧流逐片交错。
                 try Task.checkCancellation()
                 try await writePacket(packet, peripheral: peripheral, characteristic: characteristic)
+                sentBytes += chunkPayloadLength(packet)
+                progress?(min(sentBytes, data.count), data.count)
             }
             return
         }
 
         let packet = BLESimpleEncoder.encode(type: type.rawValue, payload: data)
         try await writePacket(packet, peripheral: peripheral, characteristic: characteristic)
+        progress?(data.count, data.count)
+    }
+
+    private func chunkPayloadLength(_ packet: Data) -> Int {
+        guard packet.count >= BLEPacketizer.headerSize else { return 0 }
+        return Int(packet.bigEndianUInt16(at: 7))
     }
 
     // 旧 `writeDevelopmentDisplayPacket`（0xAA 开发命令出口，secure 下被禁用）已于 v2.5.11 移除：
@@ -902,6 +955,10 @@ public final class BLEService: NSObject {
         try decodeReceivedMessage(receivedData)
     }
 
+    func handleAvatarControlResult(_ result: AvatarControlResult) {
+        onAvatarControlResult?(result)
+    }
+
     private func decodeReceivedMessage(_ receivedData: Data) throws -> BLEReceivedMessage? {
         let decodedMessage: BLEReceivedMessage?
         if let message = packetAssembler.append(packetData: receivedData) {
@@ -958,6 +1015,7 @@ public final class BLEService: NSObject {
 
     private func cleanup() {
         BLEWiFiDebugCoordinator.shared.handleDisconnected()
+        AppState.shared.handleCustomAvatarDeviceDisconnected()
         handshakeTimeoutTask?.cancel()
         handshakeTimeoutTask = nil
         writeCompletion?(.failure(.disconnected))

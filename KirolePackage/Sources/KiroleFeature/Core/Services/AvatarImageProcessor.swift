@@ -10,7 +10,7 @@ import ImageIO
 public struct AvatarProcessResult: Sendable {
     /// PNG for in-app UI display (same bytes as `imageData`; single Data instance, CoW).
     public let previewData: Data
-    /// Wire PNG pushed to hardware via CustomAvatarFrame (0x15, SubVersion 0x02).
+    /// Persisted source PNG; converted to KRI when a v2.7 avatar operation starts.
     public let imageData: Data
 }
 
@@ -28,7 +28,7 @@ public enum AvatarImageProcessor {
     public static let maxPixelHeight = 700
     /// Hard cap for the encoded PNG (hardware asks "尽量 1MB 内"; we never exceed it).
     public static let maxEncodedByteCount = 1_048_576
-    /// Hard cap for the KRI wire file (protocol §4.12 SubVersion 0x03): the KRI size is
+    /// Hard cap for the KRI wire file (protocol v2.7 §4.12 SubVersion 0x04): the KRI size is
     /// fully determined by dimensions — 12B header + 800×700×4 BGRA = 2,240,012 bytes.
     /// Anything larger means the source PNG escaped the bounding box; drop, never send.
     public static let maxKRIEncodedByteCount = 12 + maxPixelWidth * maxPixelHeight * 4

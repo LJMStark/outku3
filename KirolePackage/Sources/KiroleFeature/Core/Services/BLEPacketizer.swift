@@ -45,13 +45,11 @@ public enum BLESimpleDecoder {
 // MARK: - BLE Packetizer
 
 public enum BLEPacketizer {
-    /// v2.5.24: 头部 9B→11B —— Seq/Total 各由 1B 扩为 2B BE，分包总数上限 255→65535，
-    /// 以承载 CustomAvatarFrame(0x15) 的 ≤1MiB PNG（协议 §3.2，双向破坏性变更）。
+    /// Seq/Total 各为 2B BE，分包总数上限 65535，可承载 v2.7 CustomAvatarFrame。
     public static let headerSize: Int = 11
 
     /// Estimated chunk counts with negotiated BLE 5.0 MTU (512 - 11B header = 501 bytes/chunk):
-    /// - 1MiB avatar PNG (1,048,577 bytes incl. SubVersion): ~2,093 packets
-    /// - Worst-case avatar KRI (2,240,013 bytes incl. SubVersion, §4.12 0x03): ~4,472 packets
+    /// - Worst-case avatar v4 (2,240,041 bytes incl. metadata): ~4,472 packets
     /// - Spectra 6 frame buffers: 4寸 120,000 bytes ≈ 240 / 7.3寸 192,000 bytes ≈ 384 packets
     /// All far below the 65,535-chunk ceiling; tiny MTUs shrink per-chunk payload and can
     /// still overflow the ceiling for MiB-scale payloads — packetize then throws payloadTooLarge.
@@ -105,8 +103,8 @@ public final class BLEPacketAssembler {
     private enum Limits {
         static let maxInFlightMessages = 8
         static let maxAssembledPayloadBytes = 256 * 1024
-        // 协议未规定重组 idle 超时。取 5 分钟：高于项目对最大 1MiB 出站头像帧
-        // 1-2 分钟整包时间的估算；入站又受 256KiB 帽限制，只有连续 5 分钟没有
+        // 协议未规定 App 入站重组 idle 超时。取 5 分钟；入站受 256KiB 帽限制，
+        // 不承载流式写入设备的 0x15 出站头像。只有连续 5 分钟没有
         // 有效分片才驱逐，既照顾慢链路，也避免缺片消息永久占槽。
         static let assemblyIdleTimeout: TimeInterval = 5 * 60
         static let droppedMessageRetention: TimeInterval = assemblyIdleTimeout

@@ -105,4 +105,30 @@ struct LocalStoragePersistenceTests {
             #expect(fileManager.fileExists(atPath: sentinel.path))
         }
     }
+
+    @Test("orphan custom companion assets are swept without deleting pending candidates")
+    func orphanCustomCompanionAssetsAreSweptByPrefix() throws {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("custom-avatar-sweep-\(UUID().uuidString)")
+        defer { try? fileManager.removeItem(at: directory) }
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        let orphanPreview = directory.appendingPathComponent("custom_companion_orphan_preview.png")
+        let orphanImage = directory.appendingPathComponent("custom_companion_orphan_pixels.dat")
+        let pendingCandidate = directory.appendingPathComponent("pending_custom_avatar_image.dat")
+        let unrelated = directory.appendingPathComponent("user_profile.json")
+        for url in [orphanPreview, orphanImage, pendingCandidate, unrelated] {
+            try Data("fixture".utf8).write(to: url)
+        }
+
+        try LocalStorage.deleteAllCustomCompanionAssets(
+            fileManager: fileManager,
+            documentsDirectory: directory
+        )
+
+        #expect(!fileManager.fileExists(atPath: orphanPreview.path))
+        #expect(!fileManager.fileExists(atPath: orphanImage.path))
+        #expect(fileManager.fileExists(atPath: pendingCandidate.path))
+        #expect(fileManager.fileExists(atPath: unrelated.path))
+    }
 }

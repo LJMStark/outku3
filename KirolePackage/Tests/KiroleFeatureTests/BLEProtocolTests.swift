@@ -1356,39 +1356,30 @@ struct BLEProtocolTests {
         #expect(screen.maxTasks == 5)
     }
 
-    // MARK: - BLEDataEncoder Custom Avatar Frame Tests (0x15, v2.5.24)
+    // MARK: - BLEDataEncoder Custom Avatar Frame Tests (0x15, v2.7)
 
-    @Test("encodeCustomAvatarFrame prefixes SubVersion 0x02 and passes PNG bytes through")
-    func encodeCustomAvatarFrameLayout() {
-        let pngSignature: [UInt8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
-        let pngData = Data(pngSignature + [0xAB, 0xCD, 0xEF])
-        let payload = BLEDataEncoder.encodeCustomAvatarFrame(pngData: pngData)
-
-        #expect(payload.count == 1 + pngData.count)
-        #expect(payload[0] == 0x02) // SubVersion v2：PNG 载荷（协议 §4.12）
-        #expect(payload.dropFirst() == pngData)
-    }
-
-    @Test("encodeCustomAvatarFrame(kriData:) prefixes SubVersion 0x03 and passes KRI bytes through")
+    @Test("encodeCustomAvatarFrame v4 carries identity metadata and KRI")
     func encodeCustomAvatarKRIFrameLayout() throws {
-        // KRI 规范 §6 的 2×2 标准向量：同时钉住 SubVersion 前缀与 KRI 字节逐位直通。
         let standardRGBA: [UInt8] = [
             255, 0, 0, 255,   0, 255, 0, 255,
             0, 0, 255, 255,   255, 255, 255, 128,
         ]
         let kriData = try KRIEncoder.encode(width: 2, height: 2, straightRGBA: standardRGBA)
-        let payload = BLEDataEncoder.encodeCustomAvatarFrame(kriData: kriData)
+        let avatarID = UUID(uuidString: "00112233-4455-6677-8899-AABBCCDDEEFF")!
+        let payload = try BLEDataEncoder.encodeCustomAvatarFrame(
+            operationID: 0x1020_3040,
+            avatarID: avatarID,
+            kriData: kriData
+        )
 
-        #expect(payload.count == 1 + kriData.count)
-        #expect(payload[0] == 0x03) // SubVersion v3：KRI 载荷（协议 §4.12）
-        #expect(payload.dropFirst() == kriData)
-        // 载荷去前缀后仍是合法 KRI（魔数/尺寸/总长严格校验）。
-        #expect(KRIEncoder.isValidKRI(Data(payload.dropFirst())))
+        #expect(payload.count == CustomAvatarFrameV4Codec.headerLength + kriData.count)
+        #expect(payload[0] == 0x04)
+        #expect(try CustomAvatarFrameV4Codec.decode(payload).kriData == kriData)
     }
 
     @Test("Avatar KRI wire budget equals 12B header plus 800×700×4 BGRA")
     func avatarKRIWireBudget() {
-        // 协议 §4.12 SubVersion 0x03 的最大 KRI 文件长度真源：尺寸封顶即字节封顶。
+        // 协议 §4.12 v4 的最大 KRI 文件长度真源：尺寸封顶即字节封顶。
         #expect(AvatarImageProcessor.maxKRIEncodedByteCount == 2_240_012)
     }
 

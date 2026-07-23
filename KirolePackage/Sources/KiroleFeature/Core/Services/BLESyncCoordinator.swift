@@ -87,16 +87,28 @@ public final class BLESyncCoordinator {
             : nil
         let weatherChanged = weatherFingerprint != nil && weatherFingerprint != lastSentWeatherFingerprint
 
-        guard policy.shouldSync(now: now, lastSync: lastSync, contentChanged: contentChanged || weatherChanged, force: force) else {
+        let hasPriorityCustomAvatarOperation = appState.pendingCustomAvatarOperation?
+            .requiresPriorityBLEFlush == true
+        guard policy.shouldSync(
+            now: now,
+            lastSync: lastSync,
+            contentChanged: contentChanged || weatherChanged,
+            force: force,
+            hasPriorityCustomAvatarOperation: hasPriorityCustomAvatarOperation
+        ) else {
             return
         }
 
         let timeoutTask = Task { @MainActor in
             try? await Task.sleep(for: .seconds(self.connectionTimeoutSeconds))
             guard !Task.isCancelled else { return }
-            // 大帧（0x15 头像 ≤1MiB ≈ 2093 片、限流下 1-2 分钟）传输中不掐线：
-            // 30s 超时到点先等它结束再评估，否则大头像永远发不完、整帧无限重试。
-            while !Task.isCancelled, self.bleService.isChunkedTransferInFlight {
+            // 最坏 0x15 KRI 约 2.24MB / 4472 片，限流下需 4–5 分钟。
+            // 30s 超时到点先等它结束，否则同步收尾会主动提前掐断每次头像传输。
+            while !Task.isCancelled,
+                  self.policy.shouldHoldConnectionForCustomAvatar(
+                    chunkedTransferInFlight: self.bleService.isChunkedTransferInFlight,
+                    operationState: appState.customAvatarOperationState
+                  ) {
                 try? await Task.sleep(for: .seconds(5))
             }
             guard !Task.isCancelled else { return }
@@ -134,6 +146,7 @@ public final class BLESyncCoordinator {
                 guard connected else { throw BLEError.connectionFailed(lastConnectError) }
             }
 
+            await appState.flushPriorityCustomAvatarOperationIfNeeded()
             try await bleService.syncTime()
             try await bleService.sendPetStatus(
                 appState.pet,
@@ -235,7 +248,10 @@ public final class BLESyncCoordinator {
            FocusSessionService.shared.activeSession == nil,
            // 头像大帧还在发就不断——由超时任务等它收尾（发完后连接闲置到下一轮 sync 收口，
            // 只是电池成本、无正确性问题）。
-           !bleService.isChunkedTransferInFlight {
+           !policy.shouldHoldConnectionForCustomAvatar(
+            chunkedTransferInFlight: bleService.isChunkedTransferInFlight,
+            operationState: appState.customAvatarOperationState
+           ) {
             bleService.disconnect()
         }
     }
@@ -308,7 +324,10 @@ public extension BLESyncCoordinator {
                 guard let self,
                       FocusSessionService.shared.activeSession == nil,
                       !self.bleService.shouldKeepConnectionOpenForDebug,
-                      !self.bleService.isChunkedTransferInFlight else { return }
+                      !self.policy.shouldHoldConnectionForCustomAvatar(
+                        chunkedTransferInFlight: self.bleService.isChunkedTransferInFlight,
+                        operationState: AppState.shared.customAvatarOperationState
+                      ) else { return }
                 self.bleService.disconnect()
             }
         }

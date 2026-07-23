@@ -10,6 +10,21 @@ typealias CompanionIdentityStatusSender = @MainActor (
     Pet, CompanionCharacter, Bool
 ) async throws -> Void
 
+typealias CustomAvatarConnectionProvider = @MainActor () -> (isConnected: Bool, deviceID: UUID?)
+typealias CustomAvatarFrameSender = @MainActor (
+    UInt32,
+    UUID,
+    Data,
+    @escaping @MainActor @Sendable (Int, Int) -> Void
+) async throws -> Void
+typealias AvatarControlSender = @MainActor (AvatarControlCommand) async throws -> Void
+
+struct AvatarControlResultWaiter {
+    let operationID: UInt32
+    let expectedStatus: AvatarControlStatus
+    let continuation: CheckedContinuation<AvatarControlResult, any Error>
+}
+
 // MARK: - Home Companion Display Mode
 
 public enum HomeCompanionDisplayMode: String, Codable, Sendable {
@@ -105,18 +120,40 @@ public final class AppState {
     public var remoteSyncWarnings: [String: String] = [:]
     /// 各集成最近一次成功应用数据的时间，key 与 remoteSyncErrors 的 provider 显示名一致。
     public var integrationLastSyncedAt: [String: Date] = [:]
-    /// True when the active custom companion's avatar PNG frame failed to reach the hardware
-    /// and is queued for re-delivery on the next BLE reconnect.
-    public var isCustomAvatarPendingBLEPush: Bool = false
-    /// Consecutive flush opportunities for the pending custom-avatar frame. Drives the back-off
-    /// schedule in `shouldAttemptCustomAvatarFlush` (re-push every sync at first, then periodically)
-    /// so we don't re-push every sync forever while firmware can't accept the 0x15 frame yet —
-    /// without ever permanently giving up. Reset to 0 on a successful push or a new companion.
-    public var customAvatarFlushAttempts: Int = 0
-    /// The single in-flight avatar 0x15 push (≤1MiB PNG ≈ 2093 chunks, 1-2 min). A new
-    /// selection/flush cancels the previous task first — without this, two multi-thousand-chunk
-    /// streams interleave packet-by-packet and the OLD avatar can finish last and win the screen.
-    @ObservationIgnored var customAvatarPushTask: Task<Void, Never>?
+    /// The only user-visible custom-avatar operation. Firmware confirmation, not GATT ACK,
+    /// decides when identity and local assets are committed.
+    public internal(set) var customAvatarOperationState: CustomAvatarOperationState = .idle
+    /// Durable mirror of `pending_custom_avatar_operation.json` for launch recovery and UI.
+    public internal(set) var pendingCustomAvatarOperation: PendingCustomAvatarOperation?
+    /// The single in-flight v2.7 0x15 transfer. A new operation is rejected while this exists.
+    @ObservationIgnored var customAvatarPushTask: Task<Void, any Error>?
+    @ObservationIgnored var avatarControlResultWaiter: AvatarControlResultWaiter?
+    @ObservationIgnored var bufferedAvatarControlResults: [UInt32: [AvatarControlResult]] = [:]
+    @ObservationIgnored var avatarControlExpectedBufferedStatus: AvatarControlStatus?
+    @ObservationIgnored var avatarControlTimeoutTask: Task<Void, Never>?
+    @ObservationIgnored var customAvatarOperationGeneration: UInt64 = 0
+    @ObservationIgnored var isCustomAvatarRetryRunning = false
+    @ObservationIgnored var customAvatarOperationIDProvider: @MainActor () -> UInt32 = {
+        UInt32.random(in: 1...UInt32.max)
+    }
+    @ObservationIgnored var customAvatarConnectionProvider: CustomAvatarConnectionProvider = {
+        (
+            BLEService.shared.connectionState.isConnected,
+            BLEService.shared.lastKnownDeviceID
+        )
+    }
+    @ObservationIgnored var customAvatarFrameSender: CustomAvatarFrameSender = {
+        operationID, avatarID, kriData, progress in
+        try await BLEService.shared.sendCustomAvatarKRIFrame(
+            operationID: operationID,
+            avatarID: avatarID,
+            kriData: kriData,
+            progress: progress
+        )
+    }
+    @ObservationIgnored var avatarControlSender: AvatarControlSender = { command in
+        try await BLEService.shared.sendAvatarControl(command)
+    }
     /// Serializes immediate identity-status frames so rapid companion switches cannot finish
     /// out of order and leave hardware showing an older identity.
     @ObservationIgnored var companionIdentityStatusSendTask: Task<Void, Never>?
@@ -178,6 +215,10 @@ public final class AppState {
         guard loadLocalDataOnInit else { return }
         initialLoadTask = Task { @MainActor in
             await loadLocalData()
+            await restorePendingCustomAvatarOperation()
+            BLEService.shared.onAvatarControlResult = { [weak self] result in
+                self?.handleAvatarControlResult(result)
+            }
         }
     }
 

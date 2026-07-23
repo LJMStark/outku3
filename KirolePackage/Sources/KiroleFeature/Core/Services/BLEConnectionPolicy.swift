@@ -39,6 +39,15 @@ public enum BLEConnectionPolicy {
         isIdle(state)
     }
 
+    /// Only a completed connection may replace the durable single-device identity.
+    public static func lastKnownDeviceID(
+        state: BLEConnectionState,
+        connectedDeviceID: UUID?,
+        lastConnectedDeviceID: UUID?
+    ) -> UUID? {
+        state.isConnected ? (connectedDeviceID ?? lastConnectedDeviceID) : lastConnectedDeviceID
+    }
+
     /// 设备断开后是否应当自动重连。
     ///
     /// 主动断开（sync 收尾、用户点击断开、后台任务到期）**不**应触发自动重连，否则会形成

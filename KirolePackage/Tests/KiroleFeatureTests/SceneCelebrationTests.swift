@@ -78,7 +78,7 @@ struct CelebrationStorageTests {
 
         // Hold the lock across the reset itself, not just setup: resetForRapidDevelopment
         // wipes every resettable key on global .standard (now including
-        // pendingCustomCompanionPushId), so it must be serialized against other suites
+        // avatar-operation files), so it must be serialized against other suites
         // that read/write those keys (e.g. CustomCompanionBLEQueueTests).
         try await SharedPersistenceTestLock.shared.withLock {
             defaults.set(1, forKey: schemaKey)

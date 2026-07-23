@@ -47,6 +47,9 @@ public final class AuthManager {
     private let taskadeAuthService = TaskadeAuthService.shared
     private let keychainService = KeychainService.shared
     private let supabaseService = SupabaseService.shared
+    @ObservationIgnored var customCompanionSignOutCleanup: @MainActor () async throws -> Void = {
+        try await AppState.shared.prepareCustomCompanionDataForSignOut()
+    }
 
     private init() {}
 
@@ -415,6 +418,16 @@ public final class AuthManager {
 
     /// 完全登出
     public func signOut() async {
+        // Custom photos are user data. Online we wait for firmware erase confirmation; offline
+        // AppState removes local bytes immediately and keeps only an eraseAll marker.
+        do {
+            try await customCompanionSignOutCleanup()
+        } catch {
+            AppState.shared.lastError = error.localizedDescription
+            ErrorReporter.log(error, context: "AuthManager.signOut.eraseCustomAvatar")
+            return
+        }
+
         do {
             try await supabaseService.signOut()
         } catch {
@@ -442,6 +455,12 @@ public final class AuthManager {
         // 重置状态
         currentUser = nil
         authState = .unauthenticated
+    }
+
+    /// Reserved for a future account-deletion surface. No backend deletion is introduced here;
+    /// this only guarantees that companion photos follow the same device/local cleanup contract.
+    public func prepareCustomCompanionDataForAccountDeletion() async throws {
+        try await AppState.shared.prepareCustomCompanionDataForAccountRemoval()
     }
 
     // MARK: - Handle URL

@@ -23,6 +23,18 @@ public enum BLEEventHandler {
             return
         }
 
+        // 0x22 与 Wi-Fi 调试相同，是当前连接内的业务结果，不进入可离线重放的 Event Log。
+        // 必须在 0x21 批次和 EventLogType 解析之前截获；AppState 负责按 operationID
+        // 丢弃迟到的旧操作结果。
+        if message.type == BLEDataType.avatarControl.rawValue {
+            do {
+                service.handleAvatarControlResult(try AvatarControlCodec.decodeResult(message.payload))
+            } catch {
+                ErrorReporter.log(error, context: "BLEEventHandler.avatarControl")
+            }
+            return
+        }
+
         // Handle event log batch (0x21) separately -- keep existing batch logic
         if message.type == BLEDataType.eventLogBatch.rawValue {
             await handleEventLogBatch(message.payload, service: service)
@@ -106,15 +118,18 @@ public enum BLEEventHandler {
                     service.deviceFirmwareVersion = firmware
                 }
                 BLEOTACoordinator.shared.handleDeviceWake(reportedVersion: eventLog.firmwareVersion)
-                // v2.6.0: 头像库存对账——设备报"无图/CRC 不一致"且自定义激活时标记 0x15 重推，
-                // 随本次唤醒触发的 sync 补发（关闭"同设备存储被清空 App 无感知"盲区）。
-                let avatarNeedsRepush: Bool
+                // v2.7: DeviceWake 库存不含 CustomActive，只能提示有待恢复操作；最终状态
+                // 必须由本轮 sync 发 0x22 query 判定，不能在这里提交 App 身份。
+                let avatarNeedsRecovery: Bool
                 if let inventory = eventLog.avatarInventory {
-                    avatarNeedsRepush = await AppState.shared.reconcileCustomAvatarInventory(
-                        hasImage: inventory.hasImage, reportedCRC32: inventory.crc32
+                    avatarNeedsRecovery = await AppState.shared.reconcileCustomAvatarInventory(
+                        hasImage: inventory.hasImage,
+                        avatarID: inventory.avatarID,
+                        byteLength: inventory.byteLength,
+                        reportedCRC32: inventory.crc32
                     )
                 } else {
-                    avatarNeedsRepush = false
+                    avatarNeedsRecovery = false
                 }
                 do {
                     try await service.syncTime()
@@ -125,8 +140,8 @@ public enum BLEEventHandler {
                     )
                 }
                 await AppState.shared.handleHardwareWake(now: eventLog.timestamp)
-                // 普通唤醒经退避节流；头像库存不一致时强制本轮恢复，不能再等 1h/4h。
-                if !avatarNeedsRepush {
+                // 普通唤醒经退避节流；存在待办头像事务时强制本轮 query 恢复。
+                if !avatarNeedsRecovery {
                     guard await BLERateLimiter.shared.allowSyncTrigger() else {
                         ErrorReporter.log(
                             .sync(component: "BLE DeviceWake", underlying: "throttled"),
@@ -135,7 +150,7 @@ public enum BLEEventHandler {
                         return
                     }
                 }
-                await BLESyncCoordinator.shared.performSync(force: avatarNeedsRepush)
+                await BLESyncCoordinator.shared.performSync(force: avatarNeedsRecovery)
             }
 
         case .deviceSleep:

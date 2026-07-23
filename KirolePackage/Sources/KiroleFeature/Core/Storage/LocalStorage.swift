@@ -24,8 +24,6 @@ public actor LocalStorage {
         static let energyBottles = "energyBottles"
         static let lastCelebratedUnlockCount = "lastCelebratedUnlockCount"
         static let lastHomeHaikuShownDate = "lastHomeHaikuShownDate"
-        static let pendingCustomCompanionPushId = "pendingCustomCompanionPushId"
-        static let customAvatarLastPushedDeviceId = "customAvatarLastPushedDeviceId"
     }
 
     private enum Files {
@@ -49,6 +47,9 @@ public actor LocalStorage {
         static let sharedCompanionDialogue = "shared_companion_dialogue.json"
         static let customCompanions = "custom_companions.json"
         static let integrationSyncTimes = "integration_sync_times.json"
+        static let pendingCustomAvatarOperation = "pending_custom_avatar_operation.json"
+        static let pendingCustomAvatarPreview = "pending_custom_avatar_preview.png"
+        static let pendingCustomAvatarImage = "pending_custom_avatar_image.dat"
         /// Prefix for per-companion avatar image/preview blobs (PNG since v2.5.24).
         /// Actual filenames are built from CustomCompanion.avatarPixelsFileName / avatarPreviewFileName.
         static let customCompanionAssetPrefix = "custom_companion_"
@@ -71,6 +72,9 @@ public actor LocalStorage {
             sharedCompanionDialogue,
             customCompanions,
             integrationSyncTimes,
+            pendingCustomAvatarOperation,
+            pendingCustomAvatarPreview,
+            pendingCustomAvatarImage,
         ]
 
         /// Filenames the app no longer writes but that may still exist on disk from
@@ -84,7 +88,7 @@ public actor LocalStorage {
     }
 
     enum DevelopmentStorageSchema {
-        static let currentVersion = 5
+        static let currentVersion = 6
     }
 
     private nonisolated static let resettableUserDefaultKeys = [
@@ -100,8 +104,6 @@ public actor LocalStorage {
         Keys.energyBottles,
         Keys.lastCelebratedUnlockCount,
         Keys.lastHomeHaikuShownDate,
-        Keys.pendingCustomCompanionPushId,
-        Keys.customAvatarLastPushedDeviceId,
         "isOnboardingCompleted",
     ]
 
@@ -649,6 +651,13 @@ public actor LocalStorage {
         try load([CustomCompanion].self, from: Files.customCompanions) ?? []
     }
 
+    /// Account cleanup must remove both the live index and a quarantined decode failure because
+    /// either can contain names, prompts, backstory, and sensitive-boundary text.
+    public func deleteCustomCompanionIndex() throws {
+        try deleteFile(named: Files.customCompanions)
+        try deleteFile(named: Files.customCompanions + ".corrupt")
+    }
+
     /// Filenames are derived from the companion id so they're stable across renames and
     /// safe to share between code that only holds the id (e.g. BLE push) and code that
     /// holds the full struct.
@@ -701,30 +710,82 @@ public actor LocalStorage {
         try deleteFile(named: Self.customCompanionPixelsFileName(for: id))
     }
 
-    // MARK: - Pending Custom Companion BLE Push
-
-    /// Saves the companion ID whose avatar PNG frame failed to reach the hardware.
-    /// Cleared automatically when the push succeeds on the next BLE connection.
-    /// v2.5.33: 最近一次成功收到 0x15 头像的设备 id——连接到不同设备时触发自动重推。
-    public func saveCustomAvatarLastPushedDeviceID(_ id: String) {
-        userDefaults.set(id, forKey: Keys.customAvatarLastPushedDeviceId)
+    /// Sign-out cleanup cannot trust `custom_companions.json` to enumerate every private image:
+    /// a missing or quarantined index may leave orphan files. Sweep only direct Documents
+    /// children with the fixed companion prefix; pending candidate files use another prefix.
+    public func deleteAllCustomCompanionAssets() throws {
+        try Self.deleteAllCustomCompanionAssets(
+            fileManager: fileManager,
+            documentsDirectory: documentsDirectory
+        )
     }
 
-    public func loadCustomAvatarLastPushedDeviceID() -> String? {
-        userDefaults.string(forKey: Keys.customAvatarLastPushedDeviceId)
+    nonisolated static func deleteAllCustomCompanionAssets(
+        fileManager: FileManager,
+        documentsDirectory: URL
+    ) throws {
+        let names = try fileManager.contentsOfDirectory(atPath: documentsDirectory.path)
+        for name in names where name.hasPrefix(Files.customCompanionAssetPrefix) {
+            try fileManager.removeItem(at: documentsDirectory.appendingPathComponent(name))
+        }
     }
 
-    public func savePendingCustomCompanionPush(id: UUID) {
-        userDefaults.set(id.uuidString, forKey: Keys.pendingCustomCompanionPushId)
+    // MARK: - Pending Custom Avatar Operation
+
+    public nonisolated static var pendingCustomAvatarPreviewFileName: String {
+        Files.pendingCustomAvatarPreview
     }
 
-    public func loadPendingCustomCompanionPush() -> UUID? {
-        guard let uuidString = userDefaults.string(forKey: Keys.pendingCustomCompanionPushId) else { return nil }
-        return UUID(uuidString: uuidString)
+    public nonisolated static var pendingCustomAvatarImageFileName: String {
+        Files.pendingCustomAvatarImage
     }
 
-    public func clearPendingCustomCompanionPush() {
-        userDefaults.removeObject(forKey: Keys.pendingCustomCompanionPushId)
+    public func savePendingCustomAvatarOperation(
+        _ operation: PendingCustomAvatarOperation
+    ) throws {
+        try save(operation, to: Files.pendingCustomAvatarOperation)
+    }
+
+    public func loadPendingCustomAvatarOperation() throws -> PendingCustomAvatarOperation? {
+        try load(PendingCustomAvatarOperation.self, from: Files.pendingCustomAvatarOperation)
+    }
+
+    public func savePendingCustomAvatarAssets(
+        previewData: Data,
+        imageData: Data
+    ) throws {
+        let previewURL = documentsDirectory.appendingPathComponent(Files.pendingCustomAvatarPreview)
+        let imageURL = documentsDirectory.appendingPathComponent(Files.pendingCustomAvatarImage)
+        try previewData.write(to: previewURL, options: [.atomic])
+        try imageData.write(to: imageURL, options: [.atomic])
+    }
+
+    public func loadPendingCustomAvatarPreviewData() -> Data? {
+        try? Data(contentsOf: documentsDirectory.appendingPathComponent(Files.pendingCustomAvatarPreview))
+    }
+
+    public func loadPendingCustomAvatarImageData() -> Data? {
+        try? Data(contentsOf: documentsDirectory.appendingPathComponent(Files.pendingCustomAvatarImage))
+    }
+
+    /// Promotes the staged source PNG files only after firmware confirms `committed`.
+    public func commitPendingCustomAvatarAssets(to id: UUID) throws {
+        guard let previewData = loadPendingCustomAvatarPreviewData(),
+              let imageData = loadPendingCustomAvatarImageData() else {
+            throw CustomAvatarOperationError.missingAvatarData
+        }
+        try saveCustomCompanionAssets(id: id, previewData: previewData, imageData: imageData)
+    }
+
+    /// Removes the JSON transaction and its candidate files. Offline erase operations contain
+    /// only the JSON marker, so calling this is idempotent for every operation kind.
+    public func clearPendingCustomAvatarOperation() throws {
+        // Delete sensitive candidate bytes first and the durable operation marker last. If a
+        // filesystem error interrupts cleanup, launch recovery still has a record to inspect;
+        // deleting JSON first could leave untracked personal photos behind permanently.
+        try deleteFile(named: Files.pendingCustomAvatarPreview)
+        try deleteFile(named: Files.pendingCustomAvatarImage)
+        try deleteFile(named: Files.pendingCustomAvatarOperation)
     }
 
     // MARK: - Clear All

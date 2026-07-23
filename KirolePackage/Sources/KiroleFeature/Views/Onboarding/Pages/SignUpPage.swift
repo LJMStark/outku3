@@ -6,6 +6,7 @@ public struct SignUpPage: View {
     @Environment(AuthManager.self) private var authManager
     @Environment(ThemeManager.self) private var theme
 
+    @State private var bleService = BLEService.shared
     @State private var isSigningIn = false
     @State private var signInError: String?
 
@@ -85,6 +86,7 @@ public struct SignUpPage: View {
                                     onboardingState.currentPage = incompletePage
                                     return
                                 }
+                                guard validateCustomCompanionConnection() else { return }
                                 isSigningIn = true
                                 Task { @MainActor in
                                     do {
@@ -101,7 +103,7 @@ public struct SignUpPage: View {
                                         )
                                     }
                                     if authManager.isGoogleConnected {
-                                        appState.completeOnboarding(with: onboardingState.profile)
+                                        completeOnboardingIfReady()
                                     }
                                     isSigningIn = false
                                 }
@@ -130,11 +132,12 @@ public struct SignUpPage: View {
                                     onboardingState.currentPage = incompletePage
                                     return
                                 }
+                                guard validateCustomCompanionConnection() else { return }
                                 isSigningIn = true
                                 Task { @MainActor in
                                     do {
                                         try await authManager.signInWithApple()
-                                        appState.completeOnboarding(with: onboardingState.profile)
+                                        completeOnboardingIfReady()
                                     } catch AppleSignInError.canceled {
                                         // User canceled, do nothing
                                     } catch {
@@ -177,7 +180,7 @@ public struct SignUpPage: View {
                                 onboardingState.currentPage = incompletePage
                                 return
                             }
-                            appState.completeOnboarding(with: onboardingState.profile)
+                            completeOnboardingIfReady()
                         } label: {
                             Text("Skip for now")
                                 .font(.system(size: 16, weight: .medium, design: .rounded))
@@ -192,5 +195,32 @@ public struct SignUpPage: View {
                 }
             }
         }
+    }
+
+    private func completeOnboardingIfReady() {
+        guard validateCustomCompanionConnection() else { return }
+        signInError = nil
+        appState.completeOnboarding(with: onboardingState.profile)
+    }
+
+    private func validateCustomCompanionConnection() -> Bool {
+        if let validationMessage = OnboardingCustomCompanionGuard.validationMessage(
+            hasCustomCompanionDraft: onboardingState.profile.hasCustomCompanionDraft,
+            isDeviceConnected: bleService.connectionState.isConnected
+        ) {
+            signInError = validationMessage
+            return false
+        }
+        return true
+    }
+}
+
+enum OnboardingCustomCompanionGuard {
+    static func validationMessage(
+        hasCustomCompanionDraft: Bool,
+        isDeviceConnected: Bool
+    ) -> String? {
+        guard hasCustomCompanionDraft, !isDeviceConnected else { return nil }
+        return "Connect Kirole before creating this custom companion, or go back and choose Joy, Silas, or Nova."
     }
 }

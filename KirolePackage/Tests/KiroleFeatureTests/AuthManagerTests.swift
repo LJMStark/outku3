@@ -142,12 +142,21 @@ struct AuthManagerTests {
     @Test("Sign out clears all state")
     @MainActor
     func signOutClearsState() async {
-        let manager = AuthManager.shared
+        await SharedPersistenceTestLock.shared.withLock {
+            let manager = AuthManager.shared
+            let originalCleanup = manager.customCompanionSignOutCleanup
+            var didRequestCustomCompanionCleanup = false
+            manager.customCompanionSignOutCleanup = {
+                didRequestCustomCompanionCleanup = true
+            }
+            defer { manager.customCompanionSignOutCleanup = originalCleanup }
 
-        await manager.signOut()
+            await manager.signOut()
 
-        #expect(manager.authState == .unauthenticated)
-        #expect(manager.currentUser == nil)
-        #expect(manager.isGoogleConnected == false)
+            #expect(didRequestCustomCompanionCleanup)
+            #expect(manager.authState == .unauthenticated)
+            #expect(manager.currentUser == nil)
+            #expect(manager.isGoogleConnected == false)
+        }
     }
 }

@@ -85,8 +85,8 @@ public struct OnboardingProfile: Sendable, Codable, Equatable {
     public var customCompanionRoast: Bool
     /// PNG preview produced by AvatarImageProcessor.process — feeds Settings avatar art.
     public var customAvatarPreviewData: Data?
-    /// Wire PNG produced by AvatarImageProcessor.process — pushed to the E-ink display
-    /// via CustomAvatarFrame (0x15, SubVersion 0x02).
+    /// Source PNG produced by AvatarImageProcessor.process; converted to KRI for the
+    /// v2.7 CustomAvatarFrame transaction after onboarding completes.
     public var customAvatarImageData: Data?
 
     public init(

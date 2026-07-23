@@ -378,68 +378,16 @@ struct BLEProtocolSimulationTests {
         #expect(opened.payload == payload)
     }
 
-    // 旧 4bpp pixel helper 仿真已随量化链删除（v2.5.24 起 0x15 改传 PNG）。
-
-    @Test("Virtual hardware reassembles a chunked CustomAvatarFrame PNG payload")
-    func virtualHardwareReassemblesChunkedCustomAvatarFrame() throws {
-        // 小合成 PNG：8 字节签名 + 确定性填充，足以验证 0x15 分包→重组→载荷布局全链路。
-        let pngSignature: [UInt8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
-        let pngData = Data(pngSignature + (0..<300).map { UInt8($0 % 251) })
-        let payload = BLEDataEncoder.encodeCustomAvatarFrame(pngData: pngData)
-
-        let packets = try BLEPacketizer.packetize(
-            type: BLEDataType.customAvatarFrame.rawValue,
-            messageId: 0x0007,
-            payload: payload,
-            maxChunkSize: 24
-        )
-        #expect(packets.count > 1) // 0x15 恒走分包（§4.12）
-
-        var hardware = SimulatedHardware()
-        let message = try hardware.receiveAppPacketStream(packets)
-        #expect(message?.type == BLEDataType.customAvatarFrame.rawValue)
-        #expect(message?.transport == .chunked)
-        #expect(message?.payload.first == 0x02) // SubVersion v2 = PNG
-        #expect(message.map { Data($0.payload.dropFirst()) } == pngData)
-    }
-
-    @Test("Simulated firmware reassembles a 1MiB PNG avatar frame across 2093 chunks")
-    func simulatedFirmwareReassemblesMegabytePNGAvatarFrame() throws {
-        // 1MiB 上限用例走固件视角镜像重组器（SimulatedFirmwareChunkReassembler）：
-        // 生产 BLEPacketAssembler 的 256KiB 帽只管 Device→App 入站、故意不抬。
-        let pngSignature: [UInt8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
-        var pngData = Data(capacity: 1_048_576)
-        pngData.append(contentsOf: pngSignature)
-        pngData.append(Data((0..<(1_048_576 - pngSignature.count)).map { UInt8($0 % 251) }))
-        let payload = BLEDataEncoder.encodeCustomAvatarFrame(pngData: pngData)
-        #expect(payload.count == 1_048_577)
-
-        // 协商 512B 写长度 - 11B 分包头 = 501B/片 → ceil(1,048,577 / 501) = 2093 片。
-        let packets = try BLEPacketizer.packetize(
-            type: BLEDataType.customAvatarFrame.rawValue,
-            messageId: 0x0100,
-            payload: payload,
-            maxChunkSize: 501
-        )
-        #expect(packets.count == 2093)
-
-        var reassembler = SimulatedFirmwareChunkReassembler()
-        var assembled: Data?
-        for packet in packets {
-            if let complete = try reassembler.receive(packet) {
-                assembled = complete
-            }
-        }
-        #expect(assembled?.count == payload.count)
-        #expect(assembled == payload)
-    }
-
-    @Test("Virtual hardware reassembles a chunked CustomAvatarFrame KRI payload (SubVersion 0x03)")
+    @Test("Virtual hardware reassembles and validates CustomAvatarFrame v4")
     func virtualHardwareReassemblesChunkedCustomAvatarKRIFrame() throws {
-        // 10×10 确定性像素 KRI：验证 0x03 分包→重组→载荷布局→KRI 严格校验全链路。
         let rgba = (0..<(10 * 10 * 4)).map { UInt8($0 % 251) }
         let kriData = try KRIEncoder.encode(width: 10, height: 10, straightRGBA: rgba)
-        let payload = BLEDataEncoder.encodeCustomAvatarFrame(kriData: kriData)
+        let avatarID = UUID(uuidString: "00112233-4455-6677-8899-AABBCCDDEEFF")!
+        let payload = try BLEDataEncoder.encodeCustomAvatarFrame(
+            operationID: 0x1020_3040,
+            avatarID: avatarID,
+            kriData: kriData
+        )
 
         let packets = try BLEPacketizer.packetize(
             type: BLEDataType.customAvatarFrame.rawValue,
@@ -453,26 +401,25 @@ struct BLEProtocolSimulationTests {
         let message = try hardware.receiveAppPacketStream(packets)
         #expect(message?.type == BLEDataType.customAvatarFrame.rawValue)
         #expect(message?.transport == .chunked)
-        #expect(message?.payload.first == 0x03) // SubVersion v3 = KRI
-        let reassembledKRI = message.map { Data($0.payload.dropFirst()) }
-        #expect(reassembledKRI == kriData)
-        // 固件收帧后的验收步骤（KRI 规范 §7）：重组产物必须仍是严格合法的 KRI。
-        #expect(reassembledKRI.map(KRIEncoder.isValidKRI) == true)
+        let decoded = try message.map { try CustomAvatarFrameV4Codec.decode($0.payload) }
+        #expect(decoded?.avatarID == avatarID)
+        #expect(decoded?.kriData == kriData)
     }
 
-    @Test("Simulated firmware reassembles a worst-case 800×700 KRI avatar frame across 4472 chunks")
+    @Test("Simulated firmware reassembles a worst-case 800×700 v4 avatar across 4472 chunks")
     func simulatedFirmwareReassemblesWorstCaseKRIAvatarFrame() throws {
-        // 最坏情况 = 尺寸封顶 800×700：KRI 恒为 12 + 800×700×4 = 2,240,012B，
-        // +1B SubVersion → payload 2,240,013B。与 1MiB PNG 用例同走固件视角镜像重组器。
         let pixelBytes = 800 * 700 * 4
         let rgba = (0..<pixelBytes).map { UInt8($0 % 251) }
         let kriData = try KRIEncoder.encode(width: 800, height: 700, straightRGBA: rgba)
         #expect(kriData.count == AvatarImageProcessor.maxKRIEncodedByteCount)
-        let payload = BLEDataEncoder.encodeCustomAvatarFrame(kriData: kriData)
-        #expect(payload.count == 2_240_013)
+        let payload = try BLEDataEncoder.encodeCustomAvatarFrame(
+            operationID: 0x1020_3040,
+            avatarID: UUID(uuidString: "00112233-4455-6677-8899-AABBCCDDEEFF")!,
+            kriData: kriData
+        )
+        #expect(payload.count == 2_240_041)
 
-        // 协商 512B 写长度 - 11B 分包头 = 501B/片 → ceil(2,240,013 / 501) = 4472 片，
-        // 远低于 65,535 片上限（§3.2）。
+        // 512B 写长度 - 11B 分包头 = 501B/片，v4 元数据加入后仍为 4472 片。
         let packets = try BLEPacketizer.packetize(
             type: BLEDataType.customAvatarFrame.rawValue,
             messageId: 0x0101,
@@ -490,6 +437,194 @@ struct BLEProtocolSimulationTests {
         }
         #expect(assembled?.count == payload.count)
         #expect(assembled == payload)
+    }
+
+    @Test("Avatar v2.7 keeps the old committed image until atomic commit")
+    func avatarAtomicCommitKeepsOldImage() throws {
+        let oldID = UUID()
+        let newID = UUID()
+        var firmware = SimulatedAvatarFirmware()
+
+        let oldPayload = try makeAvatarPayload(operationID: 1, avatarID: oldID, seed: 1)
+        _ = try firmware.receiveAvatarFrame(oldPayload)
+        _ = try firmware.handle(.commit(operationID: 1, avatarID: oldID))
+
+        let newPayload = try makeAvatarPayload(operationID: 2, avatarID: newID, seed: 2)
+        let staged = try firmware.receiveAvatarFrame(newPayload)
+        #expect(staged.status == .staged)
+        #expect(firmware.committedAvatarID == oldID)
+        #expect(firmware.stagedAvatarID == newID)
+
+        let committed = try firmware.handle(.commit(operationID: 2, avatarID: newID))
+        #expect(committed.status == .committed)
+        #expect(firmware.committedAvatarID == newID)
+        #expect(firmware.stagedAvatarID == nil)
+    }
+
+    @Test("Truncated or CRC-corrupt staging never replaces the committed image")
+    func avatarStagingFailurePreservesCommittedImage() throws {
+        let oldID = UUID()
+        var firmware = SimulatedAvatarFirmware()
+        let oldPayload = try makeAvatarPayload(operationID: 1, avatarID: oldID, seed: 1)
+        _ = try firmware.receiveAvatarFrame(oldPayload)
+        _ = try firmware.handle(.commit(operationID: 1, avatarID: oldID))
+
+        var corrupt = try makeAvatarPayload(operationID: 2, avatarID: UUID(), seed: 2)
+        corrupt[corrupt.count - 1] ^= 0xFF
+        #expect(throws: BLEAvatarProtocolError.self) {
+            _ = try firmware.receiveAvatarFrame(corrupt)
+        }
+
+        let truncated = Data(corrupt.dropLast(8))
+        #expect(throws: BLEAvatarProtocolError.self) {
+            _ = try firmware.receiveAvatarFrame(truncated)
+        }
+        #expect(firmware.committedAvatarID == oldID)
+    }
+
+    @Test("Interrupted chunk writing never stages or replaces the committed image")
+    func avatarChunkWriteInterruptionPreservesCommittedImage() throws {
+        let oldID = UUID()
+        var firmware = SimulatedAvatarFirmware()
+        _ = try firmware.receiveAvatarFrame(
+            makeAvatarPayload(operationID: 1, avatarID: oldID, seed: 1)
+        )
+        _ = try firmware.handle(.commit(operationID: 1, avatarID: oldID))
+
+        let candidatePayload = try makeAvatarPayload(
+            operationID: 2,
+            avatarID: UUID(),
+            seed: 2
+        )
+        let packets = try BLEPacketizer.packetize(
+            type: BLEDataType.customAvatarFrame.rawValue,
+            messageId: 0x2202,
+            payload: candidatePayload,
+            maxChunkSize: 24
+        )
+        var reassembler = SimulatedFirmwareChunkReassembler()
+        var assembled: Data?
+        for packet in packets.dropLast() {
+            assembled = try reassembler.receive(packet)
+        }
+
+        #expect(assembled == nil)
+        #expect(firmware.stagedAvatarID == nil)
+        #expect(firmware.committedAvatarID == oldID)
+    }
+
+    @Test("Abort discards only the staged candidate and keeps the committed image")
+    func avatarAbortPreservesCommittedImage() throws {
+        let oldID = UUID()
+        let candidateID = UUID()
+        var firmware = SimulatedAvatarFirmware()
+        _ = try firmware.receiveAvatarFrame(
+            makeAvatarPayload(operationID: 1, avatarID: oldID, seed: 1)
+        )
+        _ = try firmware.handle(.commit(operationID: 1, avatarID: oldID))
+        _ = try firmware.receiveAvatarFrame(
+            makeAvatarPayload(operationID: 2, avatarID: candidateID, seed: 2)
+        )
+
+        let aborted = try firmware.handle(.abort(operationID: 2))
+
+        #expect(aborted.status == .aborted)
+        #expect(aborted.avatarState == .committed)
+        #expect(aborted.avatarID == oldID)
+        #expect(firmware.stagedAvatarID == nil)
+        #expect(firmware.committedAvatarID == oldID)
+    }
+
+    @Test("Lost commit confirmation recovers through query and repeated commit is idempotent")
+    func avatarLostConfirmationRecovery() throws {
+        let avatarID = UUID()
+        var firmware = SimulatedAvatarFirmware()
+        _ = try firmware.receiveAvatarFrame(
+            makeAvatarPayload(operationID: 7, avatarID: avatarID, seed: 7)
+        )
+
+        _ = try firmware.handle(.commit(operationID: 7, avatarID: avatarID)) // result dropped
+        let recovered = try firmware.handle(.query(operationID: 7))
+        #expect(recovered.status == .state)
+        #expect(recovered.avatarState == .committed)
+        #expect(recovered.avatarID == avatarID)
+
+        let repeated = try firmware.handle(.commit(operationID: 7, avatarID: avatarID))
+        #expect(repeated.status == .committed)
+        #expect(repeated.avatarID == avatarID)
+    }
+
+    @Test("Power loss drops only the staged temp file and retains last known good image")
+    func avatarPowerLossRecovery() throws {
+        let oldID = UUID()
+        let candidateID = UUID()
+        var firmware = SimulatedAvatarFirmware()
+        _ = try firmware.receiveAvatarFrame(
+            makeAvatarPayload(operationID: 1, avatarID: oldID, seed: 1)
+        )
+        _ = try firmware.handle(.commit(operationID: 1, avatarID: oldID))
+        _ = try firmware.receiveAvatarFrame(
+            makeAvatarPayload(operationID: 2, avatarID: candidateID, seed: 2)
+        )
+
+        firmware.simulatePowerCycle()
+        #expect(firmware.committedAvatarID == oldID)
+        #expect(firmware.stagedAvatarID == nil)
+        #expect(throws: SimulationError.avatarOperationRejected) {
+            _ = try firmware.handle(.commit(operationID: 2, avatarID: candidateID))
+        }
+    }
+
+    @Test("Exact erase is an idempotent no-op for another identity; erase-all clears the partition")
+    func avatarEraseSemantics() throws {
+        let avatarID = UUID()
+        var firmware = SimulatedAvatarFirmware()
+        _ = try firmware.receiveAvatarFrame(
+            makeAvatarPayload(operationID: 1, avatarID: avatarID, seed: 1)
+        )
+        _ = try firmware.handle(.commit(operationID: 1, avatarID: avatarID))
+
+        let unrelatedErase = try firmware.handle(
+            .eraseExact(operationID: 2, avatarID: UUID())
+        )
+        #expect(unrelatedErase.status == .erased)
+        #expect(unrelatedErase.avatarState == .committed)
+        #expect(unrelatedErase.avatarID == avatarID)
+        #expect(firmware.committedAvatarID == avatarID)
+
+        let erased = try firmware.handle(.eraseExact(operationID: 3, avatarID: avatarID))
+        #expect(erased.status == .erased)
+        #expect(!firmware.hasCommittedAvatar)
+        let repeated = try firmware.handle(.eraseExact(operationID: 3, avatarID: avatarID))
+        #expect(repeated.status == .erased)
+
+        _ = try firmware.receiveAvatarFrame(
+            makeAvatarPayload(operationID: 4, avatarID: UUID(), seed: 4)
+        )
+        _ = try firmware.handle(.eraseAll(operationID: 5))
+        #expect(firmware.committedAvatarID == nil)
+        #expect(firmware.stagedAvatarID == nil)
+        let wake = EventLog.fromBLEPayload(
+            type: EventLogType.deviceWake.rawByte,
+            payload: firmware.makeDeviceWakePayload(
+                battery: 88,
+                firmware: FirmwareVersion(major: 2, minor: 7, patch: 0)
+            )
+        )
+        #expect(wake?.avatarInventory?.hasImage == false)
+        #expect(wake?.avatarInventory?.avatarID == nil)
+        #expect(wake?.avatarInventory?.byteLength == 0)
+        #expect(wake?.avatarInventory?.crc32 == 0)
+    }
+
+    private func makeAvatarPayload(operationID: UInt32, avatarID: UUID, seed: UInt8) throws -> Data {
+        let rgba = (0..<(4 * 4 * 4)).map { UInt8((Int(seed) + $0) % 251) }
+        let kriData = try KRIEncoder.encode(width: 4, height: 4, straightRGBA: rgba)
+        return try BLEDataEncoder.encodeCustomAvatarFrame(
+            operationID: operationID,
+            avatarID: avatarID,
+            kriData: kriData
+        )
     }
 
     private static func deviceNotifyPacket(type: UInt8, payload: Data) -> Data {

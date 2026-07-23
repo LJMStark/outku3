@@ -10,7 +10,12 @@ public struct CharacterSwitcherSheet: View {
     @Environment(ThemeManager.self) private var theme
     @Environment(\.dismiss) private var dismiss
 
-    @State private var showCreateCustom = false
+    @State private var bleService = BLEService.shared
+    @State private var editorTarget: CompanionEditorTarget?
+    @State private var companionPendingDeletion: CustomCompanion?
+    @State private var showConnectionRequired = false
+    @State private var actionError: String?
+    @State private var showActionError = false
 
     public init() {}
 
@@ -30,12 +35,44 @@ public struct CharacterSwitcherSheet: View {
             }
         }
         .background(theme.colors.background)
-        .sheet(isPresented: $showCreateCustom) {
-            CreateCustomCompanionSheet()
+        .sheet(item: $editorTarget) { target in
+            CreateCustomCompanionSheet(editing: target.companion)
                 .injectAppEnvironment()
                 .presentationDetents([.large])
                 .presentationDragIndicator(.hidden)
                 .presentationCornerRadius(24)
+        }
+        .alert(item: $companionPendingDeletion) { companion in
+            Alert(
+                title: Text("Delete \(companion.name)?"),
+                message: Text(deleteConfirmationMessage(for: companion)),
+                primaryButton: .destructive(Text("Delete")) {
+                    Task {
+                        do {
+                            try await appState.deleteCustomCompanion(id: companion.id)
+                        } catch {
+                            ErrorReporter.log(error, context: "CharacterSwitcherSheet.deleteCustomCompanion")
+                            actionError = error.localizedDescription
+                            showActionError = true
+                        }
+                    }
+                },
+                secondaryButton: .cancel()
+            )
+        }
+        .alert("Kirole Not Connected", isPresented: $showConnectionRequired) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Connect your Kirole before creating or applying a custom companion.")
+        }
+        .alert("Couldn't Update Companion", isPresented: $showActionError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(actionError ?? "Please try again.")
+        }
+        .onChange(of: appState.customAvatarOperationState) { _, state in
+            guard state != .idle else { return }
+            dismiss()
         }
     }
 
@@ -74,24 +111,13 @@ public struct CharacterSwitcherSheet: View {
                         isSelected: appState.userProfile.currentSelection == .custom(companion.id)
                     ) {
                         selectCustom(companion.id)
+                    } onEdit: {
+                        editorTarget = CompanionEditorTarget(companion: companion)
                     } onDelete: {
-                        Task { await appState.deleteCustomCompanion(id: companion.id) }
+                        companionPendingDeletion = companion
                     }
                 }
 
-                if appState.isCustomAvatarPendingBLEPush {
-                    HStack(spacing: 6) {
-                        Image(systemName: "wifi.slash")
-                            .font(.system(size: 11))
-                            .foregroundStyle(theme.colors.secondaryText)
-                        Text("Hardware will show default companion until next sync")
-                            .font(.system(size: 11))
-                            .foregroundStyle(theme.colors.secondaryText)
-                    }
-                    .padding(.top, 4)
-                    .accessibilityLabel("Custom avatar pending hardware sync")
-                    .accessibilityIdentifier("companion.pendingHardwareSync")
-                }
             }
             .padding(.horizontal, 24)
         }
@@ -102,7 +128,11 @@ public struct CharacterSwitcherSheet: View {
     @ViewBuilder
     private var createButton: some View {
         Button {
-            showCreateCustom = true
+            guard bleService.connectionState.isConnected else {
+                showConnectionRequired = true
+                return
+            }
+            editorTarget = CompanionEditorTarget(companion: nil)
         } label: {
             HStack(spacing: 10) {
                 Image(systemName: "plus.circle.fill")
@@ -122,6 +152,9 @@ public struct CharacterSwitcherSheet: View {
         .buttonStyle(.plain)
         .padding(.horizontal, 24)
         .padding(.top, 20)
+        .accessibilityHint(bleService.connectionState.isConnected
+                           ? "Opens the custom companion creator"
+                           : "Connect Kirole before creating a companion")
         .accessibilityIdentifier("Settings_CreateCustomCompanion")
     }
 
@@ -141,8 +174,16 @@ public struct CharacterSwitcherSheet: View {
             dismiss()
             return
         }
-        appState.selectBuiltInCompanion(character)
-        dismiss()
+        Task {
+            do {
+                try await appState.selectBuiltInCompanion(character)
+                dismiss()
+            } catch {
+                ErrorReporter.log(error, context: "CharacterSwitcherSheet.selectBuiltInCompanion")
+                actionError = error.localizedDescription
+                showActionError = true
+            }
+        }
     }
 
     private func selectCustom(_ id: UUID) {
@@ -150,9 +191,45 @@ public struct CharacterSwitcherSheet: View {
             dismiss()
             return
         }
-        appState.selectCustomCompanion(id: id)
-        dismiss()
+        guard bleService.connectionState.isConnected else {
+            showConnectionRequired = true
+            return
+        }
+        Task {
+            do {
+                try await appState.selectCustomCompanion(id: id)
+            } catch {
+                ErrorReporter.log(error, context: "CharacterSwitcherSheet.selectCustomCompanion")
+                actionError = error.localizedDescription
+                showActionError = true
+            }
+        }
     }
+
+    private func deleteConfirmationMessage(for _: CustomCompanion) -> String {
+        return Self.deleteConfirmationMessage(
+            isConnected: bleService.connectionState.isConnected,
+            hasKnownDevice: bleService.lastKnownDeviceID != nil
+        )
+    }
+
+    nonisolated static func deleteConfirmationMessage(
+        isConnected: Bool,
+        hasKnownDevice: Bool
+    ) -> String {
+        if isConnected {
+            return "This removes the companion from the app and erases its saved photo from Kirole."
+        }
+        if hasKnownDevice {
+            return "This removes the companion from the app now. Kirole will erase its saved photo the next time it connects."
+        }
+        return "This removes the companion from this iPhone. No known Kirole device is scheduled for photo removal."
+    }
+}
+
+private struct CompanionEditorTarget: Identifiable {
+    let id = UUID()
+    let companion: CustomCompanion?
 }
 
 // MARK: - Character Card (built-in)
@@ -249,52 +326,66 @@ private struct CustomCompanionCard: View {
     let companion: CustomCompanion
     let isSelected: Bool
     let onSelect: () -> Void
+    let onEdit: () -> Void
     let onDelete: () -> Void
     @Environment(ThemeManager.self) private var theme
     @State private var previewData: Data?
 
     var body: some View {
-        Button(action: onSelect) {
-            HStack(spacing: 16) {
-                avatar
+        HStack(spacing: 8) {
+            Button(action: onSelect) {
+                HStack(spacing: 16) {
+                    avatar
 
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: 4) {
                         Text(companion.name)
                             .font(.system(size: 17, weight: .bold))
                             .foregroundStyle(theme.colors.primaryText)
                             .lineLimit(1)
 
+                        Text("\(companion.relationship.displayName) · \(companion.personaVoice.displayName)")
+                            .font(.system(size: 13))
+                            .foregroundStyle(theme.colors.secondaryText)
+                            .lineLimit(1)
                     }
 
-                    Text("\(companion.relationship.displayName) · \(companion.personaVoice.displayName)")
-                        .font(.system(size: 13))
-                        .foregroundStyle(theme.colors.secondaryText)
-                        .lineLimit(1)
-                }
+                    Spacer()
 
-                Spacer()
-
-                if isSelected {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 22))
-                        .foregroundStyle(theme.colors.accent)
+                    if isSelected {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 22))
+                            .foregroundStyle(theme.colors.accent)
+                            .accessibilityHidden(true)
+                    }
                 }
+                .contentShape(Rectangle())
             }
-            .padding(16)
-            .background(cardBackground)
-        }
-        .buttonStyle(.plain)
-        .contextMenu {
-            Button(role: .destructive) {
-                onDelete()
+            .buttonStyle(.plain)
+            .accessibilityLabel(isSelected ? "Current companion: \(companion.name)" : "Select \(companion.name)")
+            .accessibilityHint(isSelected ? "Already selected" : "Applies this companion to the app and Kirole")
+            .accessibilityIdentifier("Settings_CustomCompanion_\(companion.id.uuidString)")
+
+            Menu {
+                Button(action: onEdit) {
+                    Label("Edit", systemImage: "pencil")
+                }
+                Button(role: .destructive, action: onDelete) {
+                    Label("Delete", systemImage: "trash")
+                }
             } label: {
-                Label("Delete", systemImage: "trash")
+                Image(systemName: "ellipsis.circle")
+                    .font(.system(size: 22, weight: .medium))
+                    .foregroundStyle(theme.colors.secondaryText)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
+            .accessibilityLabel("More options for \(companion.name)")
+            .accessibilityHint("Edit or delete this companion")
+            .accessibilityIdentifier("Settings_CustomCompanionMenu_\(companion.id.uuidString)")
         }
-        .accessibilityLabel(isSelected ? "Current companion: \(companion.name)" : "Select \(companion.name)")
-        .accessibilityIdentifier("Settings_CustomCompanion_\(companion.id.uuidString)")
-        .task(id: companion.id) {
+        .padding(16)
+        .background(cardBackground)
+        .task(id: companion.avatarRevisionKey) {
             previewData = await LocalStorage.shared.loadCustomCompanionPreview(id: companion.id)
         }
     }

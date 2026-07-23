@@ -26,16 +26,16 @@ ESP32 校验文件头和总长度后交给 LVGL
 - Alpha 必须为直通/非预乘 alpha；
 - KRI 阶段不做电子纸六色量化或抖动，这些处理由设备最终刷新时完成。
 
-### 1.1 BLE 传输通道（v2.6.1 定案）
+### 1.1 BLE 传输通道（v2.7 定案）
 
-转换算法与传输协议是两层独立定义。BLE 传输通道已在《BLE通信协议规格文档》**v2.6.1 §4.12** 定案：
+转换算法与传输协议是两层独立定义。BLE 传输通道已在《BLE通信协议规格文档》**v2.7 §4.12** 定案：
 
-- **`CustomAvatarFrame (0x15)` SubVersion `0x03`** = 本文生成的完整 KRI v1 文件字节（≤2,240,012 B，尺寸封顶 800×700 即字节封顶），**默认 wire 格式，App 默认即发**；
-- SubVersion `0x02`（PNG ≤1 MiB，固件保存为 `/assets/characters/custom/avatar.png`）保留为**联调回退通道**——App 调试开关切 OFF 时发送，供固件开发期同机 A/B 对拍；
-- **不能**把 KRI bytes 放进 `0x02`——两个 SubVersion 载荷格式互斥，固件按首字节分发；
-- 最大长度、目标路径（建议 `/assets/characters/custom/avatar.kri`）、完整性校验（本文 §7 + DeviceWake `AvatarCRC32` 格式无关口径）、提交时机（选用/换机/重连补推，复用既有推送机制）均已写入协议文档 §4.12「固件实现要点」。App 在 GATT 写完后仍保留待确认标记，收到匹配 `AvatarCRC32` 才停止重发。
+- **`CustomAvatarFrame (0x15)` 只接受 SubVersion `0x04`**：`OperationID | AvatarID | FileLength | FileCRC32 | KRI`；`0x02` PNG 和 `0x03` KRI 旧分支已删除；
+- 固件边收分片边写入临时文件，收完后校验本文 §7、800×700 尺寸上限、`FileLength` 和 `FileCRC32`，通过后用 `0x22 staged` 回包；
+- `staged` 不改当前图片。App 发送 `0x22 commit` 后，固件才原子替换正式文件并回 `committed`；
+- App 在 GATT 写完后仍保留待操作记录。回包丢失时用 `0x22 query` 和 29B `DeviceWake` 的 `AvatarID + Length + CRC32` 对账；断线后从第 0 片重发，不做断点续传。
 
-App 侧已完整实现并默认启用：`KRIEncoder`（本文 §2–§5 的参考实现即其镜像）+ 发送前 §7 校验 + `BLEService.sendCustomAvatarKRIFrame` 发送；硬件调试开关「Avatar KRI Push」切 OFF 可临时回退 PNG 对拍。固件实现 `0x03` 前丢弃未知 SubVersion 帧即可，App 的退避重发会在固件就绪后自动补推。
+App 侧已实现 `KRIEncoder`（本文 §2–§5 的参考实现即其镜像）、发送前 §7 校验和 `BLEService.sendCustomAvatarKRIFrame` v4 发送。固件需与 v2.7 同步升级；不保留旧 PNG/KRI wire 兼容分支。
 
 ## 2. KRI v1 文件格式
 

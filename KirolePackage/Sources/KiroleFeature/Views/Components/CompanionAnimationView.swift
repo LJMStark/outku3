@@ -100,7 +100,7 @@ public struct CompanionAnimationView: View {
             .task(id: playbackTaskID) {
                 await playFrames()
             }
-            .task(id: customCompanionID) {
+            .task(id: customCompanionAvatarRevisionKey) {
                 guard let customCompanionID else {
                     customPreviewData = nil
                     return
@@ -192,6 +192,13 @@ public struct CompanionAnimationView: View {
     private var customCompanionID: UUID? {
         if case .custom(let id) = selection { return id }
         return nil
+    }
+
+    private var customCompanionAvatarRevisionKey: String? {
+        guard let customCompanionID else { return nil }
+        return appState.customCompanions
+            .first(where: { $0.id == customCompanionID })?
+            .avatarRevisionKey ?? customCompanionID.uuidString
     }
 
     private var activeMotion: CompanionMotion {

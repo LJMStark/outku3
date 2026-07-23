@@ -74,11 +74,9 @@ public final class BLESecurityManager {
         guard isSessionEstablished else {
             throw AppError.bleSecurity("BLE secure session has not been established")
         }
-        // SecureEnvelope 的长度字段是 2 字节（signingBytes 里 `UInt16(payload.count)` 为
-        // trapping 转换）：payload > 65535B 会直接崩进程，而 v2.5.24 的 0x15 头像 PNG
-        // 可达 ~1MiB。信封 wire 格式结构上装不下大帧——在与固件重新设计 secure 大帧
-        // 封装（加宽长度字段 / 分片签名）之前，这里抛错而非崩溃：调用方按普通发送失败
-        // 处理（0x15 走待重发队列），不会发出损坏帧。见协议 §4.12 secure 模式备注。
+        // 单个 SecureEnvelope 的长度字段仍为 2B。v2.7 的 0x15 不调用本方法封装整帧，
+        // 而由 packetizeForSecureTransport 先分片、secureChunkPacket 临写前逐片签名；
+        // 这里的守卫继续保护其他调用方。
         guard payload.count <= Int(UInt16.max) else {
             throw AppError.bleSecurity(
                 "SecureEnvelope cannot carry \(payload.count)B payload (2-byte length field, max 65535B); large-frame secure design pending with firmware"
@@ -103,6 +101,54 @@ public final class BLESecurityManager {
         )
 
         return signed.encoded()
+    }
+
+    /// 按 SecureEnvelope 与外层简单帧开销计算 11B 业务分片。这里只生成普通分片；
+    /// BLEService 必须在每片实际写入前调用 `secureChunkPacket`，不能一次性预签全部分片，
+    /// 否则 4–5 分钟传输的后半段会超过 120 秒时间戳窗口。
+    public func packetizeForSecureTransport(
+        type: UInt8,
+        messageId: UInt16,
+        payload: Data,
+        maxWriteLength: Int
+    ) throws -> [Data] {
+        let outerHeaderLength = 3
+        let maximumEnvelopeLength = min(
+            maxWriteLength - outerHeaderLength,
+            Int(UInt16.max)
+        )
+        let maximumPlainPacketLength = min(
+            maximumEnvelopeLength - BLESecureEnvelope.encodedOverhead,
+            Int(UInt16.max)
+        )
+        let maximumChunkLength = maximumPlainPacketLength - BLEPacketizer.headerSize
+        guard maximumChunkLength > 0 else {
+            throw BLEAvatarProtocolError.writeLengthTooSmall(maxWriteLength)
+        }
+
+        return try BLEPacketizer.packetize(
+            type: type,
+            messageId: messageId,
+            payload: payload,
+            maxChunkSize: maximumChunkLength
+        )
+    }
+
+    /// 即时为一个已带 11B 分包头的普通包生成 nonce、时间戳与 HMAC。
+    public func secureChunkPacket(
+        type: UInt8,
+        plainPacket: Data,
+        maxWriteLength: Int
+    ) throws -> Data {
+        let envelope = try securePayload(type: type, payload: plainPacket)
+        let wirePacket = BLESimpleEncoder.encode(
+            type: BLEDataType.secureData.rawValue,
+            payload: envelope
+        )
+        guard wirePacket.count <= maxWriteLength else {
+            throw BLEAvatarProtocolError.writeLengthTooSmall(maxWriteLength)
+        }
+        return wirePacket
     }
 
     public func openSecurePayload(_ data: Data) throws -> BLEReceivedMessage {

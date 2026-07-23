@@ -66,6 +66,35 @@ public struct CustomCompanion: Sendable, Codable, Identifiable, Equatable {
 }
 
 extension CustomCompanion {
+    /// Changes when either the companion identity or its persisted content is replaced. Views use
+    /// it to reload same-UUID avatar files after a firmware-confirmed photo update.
+    var avatarRevisionKey: String {
+        "\(id.uuidString)|\(updatedAt.timeIntervalSinceReferenceDate)"
+    }
+
+    /// Applies editable persona fields while preserving identity, asset paths and creation time.
+    public func updatingMetadata(
+        from draft: CustomCompanion,
+        updatedAt: Date = Date()
+    ) -> CustomCompanion {
+        CustomCompanion(
+            id: id,
+            name: draft.name,
+            relationship: draft.relationship,
+            personaVoice: draft.personaVoice,
+            customPrompt: draft.customPrompt,
+            curiosityLevel: draft.curiosityLevel,
+            humorLevel: draft.humorLevel,
+            strictnessLevel: draft.strictnessLevel,
+            backstory: draft.backstory,
+            sensitiveBoundary: draft.sensitiveBoundary,
+            avatarPreviewFileName: avatarPreviewFileName,
+            avatarPixelsFileName: avatarPixelsFileName,
+            createdAt: createdAt,
+            updatedAt: updatedAt
+        )
+    }
+
     /// Decoder tolerates pre-Kindroid JSON (missing sliders / backstory / sensitiveBoundary)
     /// and pre-updatedAt JSON. All new fields default gracefully so existing companions
     /// continue to load without any migration step.

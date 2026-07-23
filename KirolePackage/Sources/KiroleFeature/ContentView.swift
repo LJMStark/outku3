@@ -12,6 +12,7 @@ public struct ContentView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var sceneCelebrationConfettiTrigger = 0
     @State private var sceneCelebrationDismissTask: Task<Void, Never>?
+    @State private var isCustomAvatarActionLocked = false
     /// User tapped "hide" on the focus screen. Resets on a new session and on
     /// app foreground so an in-progress session always lands back on the focus
     /// screen when the app is (re)opened — 专注界面自动落位（spec 任务1）。
@@ -28,6 +29,52 @@ public struct ContentView: View {
             } else {
                 OnboardingContainerView()
                     .injectAppEnvironment()
+            }
+        }
+        // Custom-avatar work can also begin while onboarding is finishing. Keep the
+        // operation surface above the onboarding/main-app branch so every transaction
+        // has the same visible, non-dismissible progress and recovery UI.
+        .modifier(CustomAvatarTransferPresentationModifier(
+            state: appState.customAvatarOperationState,
+            operationKind: appState.pendingCustomAvatarOperation?.kind,
+            canCancelOperation: appState.canCancelCustomAvatarOperation,
+            actionsDisabled: isCustomAvatarActionLocked,
+            onRetry: {
+                guard !isCustomAvatarActionLocked else { return }
+                isCustomAvatarActionLocked = true
+                Task {
+                    await appState.retryCustomAvatarOperation()
+                    isCustomAvatarActionLocked = false
+                }
+            },
+            onCancel: {
+                if let kind = appState.pendingCustomAvatarOperation?.kind,
+                   kind == .eraseExact || kind == .eraseAll {
+                    // An unconfirmed erase cannot be undone safely. "Close" dismisses
+                    // only the status surface while the exact pending marker survives.
+                    appState.resetCustomAvatarOperationState()
+                    return
+                }
+                guard !isCustomAvatarActionLocked else { return }
+                isCustomAvatarActionLocked = true
+                Task {
+                    do {
+                        try await appState.cancelCustomAvatarOperation()
+                    } catch {
+                        ErrorReporter.log(error, context: "ContentView.cancelCustomAvatarOperation")
+                    }
+                    isCustomAvatarActionLocked = false
+                }
+            },
+            onFinish: {
+                appState.resetCustomAvatarOperationState()
+            }
+        ))
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .background {
+                // This observer belongs above the onboarding/main-app branch: onboarding
+                // can also start the same multi-minute avatar transaction.
+                appState.interruptCustomAvatarOperationForBackground()
             }
         }
         .task {
@@ -259,6 +306,66 @@ private struct FocusScreenPresentationModifier: ViewModifier {
                 .injectAppEnvironment()
         }
         #endif
+    }
+}
+
+// MARK: - Custom Avatar Transfer Presentation
+
+/// Avatar operations are app-level transactions, not settings-sheet loading states.
+/// Presenting from `ContentView` keeps progress visible after the editor and switcher close.
+private struct CustomAvatarTransferPresentationModifier: ViewModifier {
+    let state: CustomAvatarOperationState
+    let operationKind: CustomAvatarOperationKind?
+    let canCancelOperation: Bool
+    let actionsDisabled: Bool
+    let onRetry: () -> Void
+    let onCancel: () -> Void
+    let onFinish: () -> Void
+
+    private var isPresented: Binding<Bool> {
+        Binding(
+            get: { state != .idle },
+            set: { _ in }
+        )
+    }
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        #if os(iOS)
+        content.fullScreenCover(isPresented: isPresented) {
+            transferView
+        }
+        #else
+        content.sheet(isPresented: isPresented) {
+            transferView
+        }
+        #endif
+    }
+
+    @ViewBuilder
+    private var transferView: some View {
+        if let transferContent = state.transferContent(for: operationKind) {
+            let isPendingErase = operationKind == .eraseExact || operationKind == .eraseAll
+            let hasNoPendingOperation = operationKind == nil
+            CustomAvatarTransferView(
+                content: transferContent,
+                actionsDisabled: actionsDisabled,
+                allowsSecondaryAction: hasNoPendingOperation || isPendingErase || canCancelOperation,
+                retryActionTitle: isPendingErase ? "Try Again" : "Send Again",
+                retryActionHint: isPendingErase
+                    ? "Retries the pending removal"
+                    : "Restarts the photo transfer from the beginning",
+                secondaryActionTitle: hasNoPendingOperation || isPendingErase ? "Close" : "Cancel",
+                secondaryActionHint: hasNoPendingOperation || isPendingErase
+                    ? "Closes this screen"
+                    : "Keeps the previous companion unchanged",
+                onRetry: onRetry,
+                onCancel: onCancel,
+                onFinish: onFinish
+            )
+            .injectAppEnvironment()
+            .interactiveDismissDisabled(true)
+        }
     }
 }
 

@@ -18,10 +18,9 @@ public enum KRIError: Error, Equatable {
 /// 12 字节小端文件头 + 左上角起始、逐行、直通（非预乘）alpha 的 BGRA 裸像素，
 /// 无压缩、无行 padding、无尾部数据，总长恒为 `12 + width × height × 4`。
 ///
-/// 传输通道（协议 §4.12 SubVersion 0x03，**v2.6.1 起默认 wire 格式**）：KRI bytes 经
-/// `CustomAvatarFrame (0x15)` 以 `0x03 | KRI` 下发（`BLEService.sendCustomAvatarKRIFrame`），
-/// 固件按此实现。**不得**装进 PNG 专用的 SubVersion 0x02；旧 0x02 PNG 仅剩联调回退
-/// 通道（`BLEService.avatarKRIPushEnabled` 切 OFF 时走）。
+/// 传输通道（协议 v2.7 §4.12）：KRI bytes 放入
+/// `CustomAvatarFrame (0x15, SubVersion 0x04)`，并与 OperationID、AvatarID、长度和
+/// CRC 一起发送。旧 0x02 PNG 与 0x03 匿名 KRI 通道已删除。
 ///
 /// 与 `AvatarImageProcessor` 一样不绑 main actor：Data 进 Data 出，800×700 图约
 /// 2.2 MB 像素区，调用方应经 `Task.detached` 执行。本层会烘焙 PNG 方向元数据，

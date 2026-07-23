@@ -48,7 +48,7 @@ public struct SettingsAccountSection: View {
                 .presentationDragIndicator(.hidden)
                 .presentationCornerRadius(24)
         }
-        .task(id: appState.userProfile.customCompanionId) {
+        .task(id: customPreviewRevisionKey) {
             await refreshCustomPreview()
         }
     }
@@ -91,8 +91,7 @@ public struct SettingsAccountSection: View {
     }
 
     /// Shows the custom companion preview when one is active; otherwise the built-in hero art.
-    /// `customPreviewData` is loaded by `.task(id:)` whenever `customCompanionId` changes,
-    /// so switching companions refreshes the image without a manual reload call.
+    /// `customPreviewData` is loaded whenever the active identity or its content revision changes.
     @ViewBuilder
     @MainActor
     private var activeAvatarImage: some View {
@@ -163,6 +162,11 @@ public struct SettingsAccountSection: View {
     private var activeName: String {
         appState.activeCustomCompanion?.name
             ?? appState.userProfile.companionCharacter.displayName
+    }
+
+    private var customPreviewRevisionKey: String? {
+        appState.activeCustomCompanion?.avatarRevisionKey
+            ?? appState.userProfile.customCompanionId?.uuidString
     }
 
     private func refreshCustomPreview() async {

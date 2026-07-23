@@ -185,7 +185,7 @@ struct SimulatedHardware {
 /// 11 字节头逐字段读取、`count == 11 + len` 的 requireEnd 纪律、逐片 CRC16 校验、
 /// 跨片 type/messageId/total 一致性检查、按 Seq 升序拼接。
 /// 生产 Assembler 的 256KiB 入站帽只管 Device→App 方向，本重组器不设帽——
-/// 专用于仿真 App→Device 的 ≤1MiB CustomAvatarFrame(0x15) 大载荷传输。
+/// 专用于仿真 App→Device 最坏约 2.24MiB 的 CustomAvatarFrame(0x15) 传输。
 struct SimulatedFirmwareChunkReassembler {
     private var expectedType: UInt8?
     private var expectedMessageId: UInt16?
@@ -239,6 +239,160 @@ struct SimulatedFirmwareChunkReassembler {
             payload.append(part)
         }
         return payload
+    }
+}
+
+/// v2.7 固件头像存储的最小事务模型：0x15 只写临时区，0x22 commit 才原子替换正式图；
+/// 掉电丢临时区但保留最后一次成功提交，erase 命令清空正式区。
+struct SimulatedAvatarFirmware {
+    private var stagedFrame: CustomAvatarFrameV4?
+    private var committedFrame: CustomAvatarFrameV4?
+    private var lastCommittedOperationID: UInt32?
+
+    var committedAvatarID: UUID? { committedFrame?.avatarID }
+    var stagedAvatarID: UUID? { stagedFrame?.avatarID }
+    var hasCommittedAvatar: Bool { committedFrame != nil }
+
+    mutating func receiveAvatarFrame(_ payload: Data) throws -> AvatarControlResult {
+        let frame = try CustomAvatarFrameV4Codec.decode(payload)
+        stagedFrame = frame
+        return result(
+            operationID: frame.operationID,
+            status: .staged,
+            state: .staged,
+            frame: frame,
+            customActive: committedFrame != nil
+        )
+    }
+
+    mutating func handle(_ command: AvatarControlCommand) throws -> AvatarControlResult {
+        switch command {
+        case .commit(let operationID, let avatarID):
+            if lastCommittedOperationID == operationID,
+               committedFrame?.avatarID == avatarID {
+                return result(
+                    operationID: operationID,
+                    status: .committed,
+                    state: .committed,
+                    frame: committedFrame,
+                    customActive: true
+                )
+            }
+            guard let stagedFrame,
+                  stagedFrame.operationID == operationID,
+                  stagedFrame.avatarID == avatarID else {
+                throw SimulationError.avatarOperationRejected
+            }
+            committedFrame = stagedFrame
+            self.stagedFrame = nil
+            lastCommittedOperationID = operationID
+            return result(
+                operationID: operationID,
+                status: .committed,
+                state: .committed,
+                frame: committedFrame,
+                customActive: true
+            )
+
+        case .eraseExact(let operationID, let avatarID):
+            if let committedFrame, committedFrame.avatarID != avatarID {
+                // The requested identity is already absent. Return an idempotent success with
+                // the untouched current inventory so deleting an inactive App companion cannot
+                // erase or block the one hardware slot.
+                return result(
+                    operationID: operationID,
+                    status: .erased,
+                    state: .committed,
+                    frame: committedFrame,
+                    customActive: true
+                )
+            }
+            if stagedFrame?.avatarID == avatarID {
+                stagedFrame = nil
+            }
+            committedFrame = nil
+            lastCommittedOperationID = nil
+            return result(
+                operationID: operationID,
+                status: .erased,
+                state: .empty,
+                frame: nil,
+                customActive: false
+            )
+
+        case .eraseAll(let operationID):
+            stagedFrame = nil
+            committedFrame = nil
+            lastCommittedOperationID = nil
+            return result(
+                operationID: operationID,
+                status: .erased,
+                state: .empty,
+                frame: nil,
+                customActive: false
+            )
+
+        case .query(let operationID):
+            if let stagedFrame, stagedFrame.operationID == operationID {
+                return result(
+                    operationID: operationID,
+                    status: .state,
+                    state: .staged,
+                    frame: stagedFrame,
+                    customActive: committedFrame != nil
+                )
+            }
+            return result(
+                operationID: operationID,
+                status: .state,
+                state: committedFrame == nil ? .empty : .committed,
+                frame: committedFrame,
+                customActive: committedFrame != nil
+            )
+
+        case .abort(let operationID):
+            if stagedFrame?.operationID == operationID {
+                stagedFrame = nil
+            }
+            return result(
+                operationID: operationID,
+                status: .aborted,
+                state: committedFrame == nil ? .empty : .committed,
+                frame: committedFrame,
+                customActive: committedFrame != nil
+            )
+        }
+    }
+
+    mutating func simulatePowerCycle() {
+        stagedFrame = nil
+    }
+
+    func makeDeviceWakePayload(battery: UInt8, firmware: FirmwareVersion) -> Data {
+        var payload = Data([battery, firmware.major, firmware.minor, firmware.patch])
+        payload.append(committedFrame == nil ? 0x00 : 0x01)
+        payload.append(committedFrame.map { UUIDWireCodec.encode($0.avatarID) } ?? Data(repeating: 0, count: 16))
+        payload.appendBigEndian(committedFrame?.fileLength ?? 0)
+        payload.appendBigEndian(committedFrame?.fileCRC32 ?? 0)
+        return payload
+    }
+
+    private func result(
+        operationID: UInt32,
+        status: AvatarControlStatus,
+        state: AvatarControlState,
+        frame: CustomAvatarFrameV4?,
+        customActive: Bool
+    ) -> AvatarControlResult {
+        AvatarControlResult(
+            operationID: operationID,
+            status: status,
+            avatarState: state,
+            customActive: customActive,
+            avatarID: frame?.avatarID,
+            byteLength: frame?.fileLength ?? 0,
+            crc32: frame?.fileCRC32 ?? 0
+        )
     }
 }
 
@@ -615,4 +769,5 @@ enum SimulationError: Error, Equatable {
     case unexpectedType(expected: UInt8, actual: UInt8)
     case chunkCRCMismatch
     case chunkHeaderMismatch
+    case avatarOperationRejected
 }

@@ -7,36 +7,57 @@ import UIKit
 // MARK: - Create Custom Companion Sheet
 
 /// 4-step flow to create a user-uploaded companion (Kindroid-inspired):
-/// Step 1 — pick a photo (processed into the hardware PNG by AvatarImageProcessor).
+/// Step 1 — pick a photo (processed into the hardware avatar source by AvatarImageProcessor).
 /// Step 2 — name + pick relationship.
 /// Step 3 — pick persona voice.
 /// Step 4 — persona dimensions (sliders + backstory + sensitive boundary).
 /// Confirm persists to AppState and switches the active companion.
 public struct CreateCustomCompanionSheet: View {
-    private static let customPromptLimit = 1200
+    static let customPromptLimit = 1200
+    let editingCompanion: CustomCompanion?
 
-    @Environment(AppState.self) private var appState
+    @Environment(AppState.self) var appState
     @Environment(ThemeManager.self) private var theme
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismiss) var dismiss
 
-    @State private var step: Step = .upload
-    @State private var selectedPhoto: PhotosPickerItem?
-    @State private var isProcessing = false
-    @State private var photoRequestTracker = LatestPhotoRequestTracker()
-    @State private var processResult: AvatarProcessResult?
-    @State private var name: String = ""
-    @State private var relationship: CompanionRelationship = .pet
-    @State private var personaVoice: CompanionPersonaVoice = .companion
-    @State private var customPrompt: String = ""
-    @State private var curiosityLevel: Double = 0.5
-    @State private var humorLevel: Double = 0.5
-    @State private var strictnessLevel: Double = 0.3
-    @State private var backstory: String = ""
-    @State private var sensitiveBoundary: String = ""
-    @State private var isSaving = false
-    @State private var saveError: String?
+    @State var bleService = BLEService.shared
+    @State var step: Step = .upload
+    @State var selectedPhoto: PhotosPickerItem?
+    @State var isProcessing = false
+    @State var photoRequestTracker = LatestPhotoRequestTracker()
+    @State var processResult: AvatarProcessResult?
+    @State var name: String = ""
+    @State var relationship: CompanionRelationship = .pet
+    @State var personaVoice: CompanionPersonaVoice = .companion
+    @State var customPrompt: String = ""
+    @State var curiosityLevel: Double = 0.5
+    @State var humorLevel: Double = 0.5
+    @State var strictnessLevel: Double = 0.3
+    @State var backstory: String = ""
+    @State var sensitiveBoundary: String = ""
+    @State var isSaving = false
+    @State var saveError: String?
+    @State var didReplacePhoto = false
+    @State var showConnectionRequired = false
 
-    public init() {}
+    public init(editing companion: CustomCompanion? = nil) {
+        editingCompanion = companion
+        let draft = CustomCompanionFormDraft(companion: companion)
+        _isProcessing = State(initialValue: companion != nil)
+        _name = State(initialValue: draft.name)
+        _relationship = State(initialValue: draft.relationship)
+        _personaVoice = State(initialValue: draft.personaVoice)
+        _customPrompt = State(initialValue: draft.customPrompt)
+        _curiosityLevel = State(initialValue: draft.curiosityLevel)
+        _humorLevel = State(initialValue: draft.humorLevel)
+        _strictnessLevel = State(initialValue: draft.strictnessLevel)
+        _backstory = State(initialValue: draft.backstory)
+        _sensitiveBoundary = State(initialValue: draft.sensitiveBoundary)
+    }
+
+    static func shouldDismissEditor(for state: CustomAvatarOperationState) -> Bool {
+        state.isInProgress
+    }
 
     public var body: some View {
         VStack(spacing: 0) {
@@ -47,6 +68,18 @@ public struct CreateCustomCompanionSheet: View {
         .background(theme.colors.background)
         .onChange(of: selectedPhoto) { _, newValue in
             handlePhotoSelection(newValue)
+        }
+        .onChange(of: appState.customAvatarOperationState) { _, state in
+            guard Self.shouldDismissEditor(for: state) else { return }
+            dismiss()
+        }
+        .task(id: editingCompanion?.id) {
+            await loadExistingPhotoIfNeeded()
+        }
+        .alert("Kirole Not Connected", isPresented: $showConnectionRequired) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Reconnect Kirole before sending or replacing a companion photo. Text changes can still be saved offline.")
         }
     }
 
@@ -123,7 +156,7 @@ public struct CreateCustomCompanionSheet: View {
     @ViewBuilder
     private var uploadStep: some View {
         VStack(spacing: 16) {
-            Text("Upload anyone — your pet, your kid, yourself. They become your desk companion.")
+            Text(uploadDescription)
                 .font(.system(size: 14))
                 .foregroundStyle(theme.colors.secondaryText)
                 .multilineTextAlignment(.center)
@@ -161,22 +194,26 @@ public struct CreateCustomCompanionSheet: View {
                 // matches SettingsAccountSection avatar upload pattern. Without this,
                 // the placeholder "Tap to choose photo" lies: tap is bound to the
                 // text link below instead of the obvious visual target.
-                PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                    Color.clear
+                if canChoosePhoto {
+                    PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                        Color.clear
+                    }
+                    .disabled(isProcessing)
+                    .frame(width: 200, height: 200)
+                    .accessibilityLabel(processResult == nil ? "Choose companion photo" : "Change companion photo")
+                    .accessibilityHint("The photo will be prepared for Kirole's E-ink display")
+                    .accessibilityIdentifier("CreateCompanion_PickPhoto")
                 }
-                .disabled(isProcessing)
-                .frame(width: 200, height: 200)
-                .accessibilityLabel(processResult == nil ? "Choose companion photo" : "Change companion photo")
-                .accessibilityIdentifier("CreateCompanion_PickPhoto")
             }
             .contentShape(RoundedRectangle(cornerRadius: 24))
 
             if processResult != nil {
-                Text("Tap photo to change. Kirole's 6-color E-ink screen shows it softer and more muted than your photo — that's expected.")
+                Text(photoHelpText)
                     .font(.system(size: 12))
                     .foregroundStyle(theme.colors.secondaryText)
                     .multilineTextAlignment(.center)
                     .padding(.top, 4)
+                    .accessibilityIdentifier("CreateCompanion_PhotoHelp")
             }
         }
     }
@@ -429,181 +466,76 @@ public struct CreateCustomCompanionSheet: View {
 
     @ViewBuilder
     private var footer: some View {
-        HStack(spacing: 12) {
-            Button(action: handleBack) {
-                Text(step == .upload ? "Cancel" : "Back")
-                    .font(.system(size: 16, weight: .semibold))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(theme.colors.primaryText.opacity(0.05))
-                    .foregroundStyle(theme.colors.secondaryText)
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
+        VStack(spacing: 10) {
+            HStack(spacing: 12) {
+                backButton
+                primaryButton
             }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("CreateCompanion_Back")
 
-            Button(action: handleNext) {
-                Group {
-                    if isSaving {
-                        ProgressView().tint(.white)
-                    } else {
-                        Text(step == .personality ? "Create" : "Next")
-                            .font(.system(size: 16, weight: .semibold))
-                    }
+            if isEditing, step == .personality {
+                Button(action: saveAsNewAndDismiss) {
+                    Text("Save as New Companion")
+                        .font(.system(size: 15, weight: .semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 13)
+                        .background(theme.colors.accentLight)
+                        .foregroundStyle(canSaveAsNew ? theme.colors.accent : theme.colors.secondaryText)
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .background(canAdvance && !isSaving
-                            ? theme.colors.accent
-                            : theme.colors.secondaryText.opacity(0.3))
-                .foregroundStyle(.white)
-                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .buttonStyle(.plain)
+                .disabled(!canSaveAsNew || isSaving)
+                .accessibilityHint(canSaveAsNew
+                                   ? "Creates a separate companion and applies it to Kirole"
+                                   : "Connect Kirole before saving a new companion")
+                .accessibilityIdentifier("CreateCompanion_SaveAsNew")
             }
-            .buttonStyle(.plain)
-            .disabled(!canAdvance || isSaving)
-            .accessibilityIdentifier("CreateCompanion_Next")
         }
         .padding(.horizontal, 24)
         .padding(.bottom, 24)
         .padding(.top, 12)
     }
 
-    // MARK: - Logic
-
-    private var stepTitle: String {
-        switch step {
-        case .upload: return "Pick a Photo"
-        case .identity: return "Who Is This?"
-        case .voice: return "How Do They Speak?"
-        case .personality: return "Shape Their Personality"
+    @ViewBuilder
+    private var backButton: some View {
+        Button(action: handleBack) {
+            Text(step == .upload ? "Cancel" : "Back")
+                .font(.system(size: 16, weight: .semibold))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(theme.colors.primaryText.opacity(0.05))
+                .foregroundStyle(theme.colors.secondaryText)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
         }
+        .buttonStyle(.plain)
+        .disabled(isSaving)
+        .accessibilityIdentifier("CreateCompanion_Back")
     }
 
-    private var canAdvance: Bool {
-        switch step {
-        case .upload: return processResult != nil
-        case .identity:
-            return !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        case .voice:
-            return personaVoice != .customPrompt || !customPromptTrimmed.isEmpty
-        case .personality: return true
-        }
-    }
-
-    private func handleBack() {
-        // Clear any error before changing steps. The error view renders step-agnostically,
-        // so a stale message (e.g. "Save failed") would otherwise bleed onto an unrelated step.
-        saveError = nil
-        switch step {
-        case .upload:
-            dismiss()
-        case .identity:
-            step = .upload
-        case .voice:
-            step = .identity
-        case .personality:
-            step = .voice
-        }
-    }
-
-    private func handleNext() {
-        guard canAdvance else { return }
-        // Clear stale errors when advancing so a prior step's message doesn't follow the user.
-        saveError = nil
-        switch step {
-        case .upload:
-            step = .identity
-        case .identity:
-            step = .voice
-        case .voice:
-            step = .personality
-        case .personality:
-            createAndDismiss()
-        }
-    }
-
-    private func createAndDismiss() {
-        guard let result = processResult, !isSaving else { return }
-        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        isSaving = true
-        saveError = nil
-        Task {
-            do {
-                _ = try await appState.addCustomCompanion(
-                    name: trimmedName,
-                    relationship: relationship,
-                    personaVoice: personaVoice,
-                    customPrompt: personaVoice == .customPrompt ? customPromptTrimmed : "",
-                    curiosityLevel: curiosityLevel,
-                    humorLevel: humorLevel,
-                    strictnessLevel: strictnessLevel,
-                    backstory: backstory,
-                    sensitiveBoundary: sensitiveBoundary,
-                    previewData: result.previewData,
-                    imageData: result.imageData
-                )
-                dismiss()
-            } catch {
-                saveError = "Save failed. Please try again."
-                isSaving = false
-            }
-        }
-    }
-
-    private func handlePhotoSelection(_ item: PhotosPickerItem?) {
-        guard let item else { return }
-        let requestID = photoRequestTracker.begin()
-        isProcessing = true
-        saveError = nil
-        Task {
-            do {
-                let data = try await item.loadTransferable(type: Data.self)
-                // Heavy decode + multi-round PNG encode runs OFF the main actor
-                // (ImageIO downsample inside the processor bounds memory even for
-                // huge panoramas) — a 48MP photo would otherwise freeze the UI.
-                var result: AvatarProcessResult?
-                #if canImport(UIKit)
-                if let data {
-                    result = await Task.detached(priority: .userInitiated) {
-                        AvatarImageProcessor.process(imageData: data)
-                    }.value
-                }
-                #endif
-                await MainActor.run {
-                    // Drop stale results: only the most recent selection may apply. A late
-                    // earlier load must not overwrite the newer pick's preview/result, nor
-                    // clear isProcessing while the newer request is still running.
-                    guard photoRequestTracker.isCurrent(requestID) else { return }
-                    if let result {
-                        processResult = result
-                    } else {
-                        // Load succeeded but the bytes weren't a usable image (unsupported
-                        // format, decode failure, or the processor rejected it).
-                        saveError = "Couldn't use that photo. Try a different image."
-                    }
-                    isProcessing = false
-                }
-            } catch {
-                // loadTransferable threw (permission, transfer failure) — previously
-                // swallowed by try?, leaving the user with a disabled Next and no reason.
-                await MainActor.run {
-                    guard photoRequestTracker.isCurrent(requestID) else { return }
-                    saveError = "Couldn't load that photo. Please try again."
-                    isProcessing = false
+    @ViewBuilder
+    private var primaryButton: some View {
+        Button(action: handleNext) {
+            Group {
+                if isSaving {
+                    ProgressView().tint(.white)
+                } else {
+                    Text(primaryButtonTitle)
+                        .font(.system(size: 16, weight: .semibold))
                 }
             }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .background(canAdvance && !isSaving
+                        ? theme.colors.accent
+                        : theme.colors.secondaryText.opacity(0.3))
+            .foregroundStyle(.white)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
         }
-    }
-
-    private var customPromptTrimmed: String {
-        customPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private var customPromptBinding: Binding<String> {
-        Binding(
-            get: { customPrompt },
-            set: { customPrompt = String($0.prefix(Self.customPromptLimit)) }
-        )
+        .buttonStyle(.plain)
+        .disabled(!canAdvance || isSaving)
+        .accessibilityHint(primaryAccessibilityHint)
+        .accessibilityIdentifier(isEditing && step == .personality
+                                 ? "CreateCompanion_SaveChanges"
+                                 : "CreateCompanion_Next")
     }
 
     @ViewBuilder
@@ -616,16 +548,5 @@ public struct CreateCustomCompanionSheet: View {
                 .font(.system(size: 13))
                 .foregroundStyle(theme.colors.secondaryText)
         }
-    }
-}
-
-// MARK: - Step Enum
-
-private extension CreateCustomCompanionSheet {
-    enum Step: Int, CaseIterable {
-        case upload = 0
-        case identity = 1
-        case voice = 2
-        case personality = 3
     }
 }

@@ -4,7 +4,6 @@ extension AppState {
     func registerUsageActivity(now: Date = Date()) async {
         let savedConsecutiveDays = await localStorage.loadConsecutiveDays()
         let savedLastUsageDate = await localStorage.loadLastUsageDate()
-        let currentCharacter = userProfile.companionCharacter
 
         var overallUsage = ConsecutiveUsageProgress(
             currentStreak: savedConsecutiveDays,
@@ -26,26 +25,33 @@ extension AppState {
             reportPersistenceError(error, operation: "read", target: "companion_usage_state.json")
             return
         }
-        var characterUsage = usageState.progress(for: currentCharacter)
-        let didAdvanceCharacterUsage = characterUsage.registerUse(on: now)
-        if didAdvanceCharacterUsage {
-            usageState.setProgress(characterUsage, for: currentCharacter)
-            do {
-                try await localStorage.saveCompanionUsageState(usageState)
-            } catch {
-                reportPersistenceError(error, operation: "save", target: "companion_usage_state.json")
+        let bindingProgress: CompanionBindingProgress
+        if let customID = userProfile.customCompanionId {
+            var progress = usageState.progress(forCustomCompanion: customID)
+            if progress.registerUse(on: now) {
+                usageState.setProgress(progress, forCustomCompanion: customID)
+                do {
+                    try await localStorage.saveCompanionUsageState(usageState)
+                } catch {
+                    reportPersistenceError(error, operation: "save", target: "companion_usage_state.json")
+                }
             }
+            bindingProgress = progress
+        } else {
+            let currentCharacter = userProfile.companionCharacter
+            var progress = usageState.progress(for: currentCharacter)
+            if progress.registerUse(on: now) {
+                usageState.setProgress(progress, for: currentCharacter)
+                do {
+                    try await localStorage.saveCompanionUsageState(usageState)
+                } catch {
+                    reportPersistenceError(error, operation: "save", target: "companion_usage_state.json")
+                }
+            }
+            bindingProgress = progress
         }
 
-        // Binding-day driven intimacy escalation is a 3-IP-only mechanic: there is no
-        // designed progression model for custom companions yet, and `userProfile.companionCharacter`
-        // still points at the user's last built-in pick (so we can snap back on switch).
-        // Without this guard, switching to a custom companion and backgrounding the app would
-        // immediately re-apply the prior built-in's closeFriend stage and overwrite the
-        // acquaintance reset that selectCustomCompanion just performed.
-        guard userProfile.customCompanionId == nil else { return }
-
-        let updatedStage = IntimacyStage.from(bindingDays: characterUsage.totalUsedDays)
+        let updatedStage = IntimacyStage.from(bindingDays: bindingProgress.totalUsedDays)
         if userProfile.intimacyStage != updatedStage {
             var updatedProfile = userProfile
             updatedProfile.intimacyStage = updatedStage

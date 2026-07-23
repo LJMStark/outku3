@@ -28,9 +28,9 @@ extension AppState {
             // that ContentView's @AppStorage reads. All three steps live in ONE do
             // block: if the process dies or ANY step throws (including custom
             // companion creation), the flag stays false and the user redoes
-            // onboarding on next launch (anything already persisted survives on
-            // disk; a retry may recreate the companion — orphan is deletable in
-            // Settings). The old order set the gate flag synchronously up front,
+            // onboarding on next launch. A recovered avatar commit finishes this
+            // gate idempotently, and a repeated completion reuses the matching active
+            // companion instead of creating another UUID. The old order set the gate flag synchronously up front,
             // stranding failed users in the main app with a default profile and
             // no way back into onboarding.
             do {
@@ -66,6 +66,17 @@ extension AppState {
         let voice = profile.customCompanionVoice ?? .companion
         let customPrompt = voice == .customPrompt ? profile.customCompanionPrompt ?? "" : ""
 
+        // A retry from the app-level avatar recovery screen may already have committed this
+        // onboarding draft after the original completion task returned. Treat that identity as
+        // the same creation attempt so a second tap cannot mint another UUID.
+        if let active = activeCustomCompanion,
+           active.name == trimmedName,
+           active.relationship == relationship,
+           active.personaVoice == voice,
+           active.customPrompt == customPrompt {
+            return
+        }
+
         // 失败向上抛给 completeOnboarding 的 do 块——在这里吞掉会导致完成勾照打、
         // 用户带着默认 IP 进主界面且再也回不到上传流程（addCustomCompanion 的
         // 设计就是抛错让用户重试）。
@@ -77,6 +88,26 @@ extension AppState {
             previewData: preview,
             imageData: imageData
         )
+    }
+
+    /// Finishes the onboarding gate when a recovered avatar transaction commits after the
+    /// original completion task has already returned. Repeated calls are harmless.
+    func completePendingOnboardingAfterCustomAvatarCommitIfNeeded() async {
+        guard !UserDefaults.standard.bool(forKey: "isOnboardingCompleted"),
+              let completedProfile = onboardingProfile,
+              completedProfile.onboardingCompletedAt != nil,
+              completedProfile.hasCustomCompanionDraft,
+              activeCustomCompanion != nil else {
+            return
+        }
+        do {
+            try await localStorage.saveOnboardingProfile(completedProfile)
+            try await localStorage.saveUserProfile(userProfile)
+            UserDefaults.standard.set(true, forKey: "isOnboardingCompleted")
+        } catch {
+            reportPersistenceError(error, operation: "save", target: "onboarding_completion")
+            ErrorReporter.log(error, context: "AppState.completeRecoveredCustomAvatarOnboarding")
+        }
     }
 
     /// UserProfile is the authoritative source for onboarding completion

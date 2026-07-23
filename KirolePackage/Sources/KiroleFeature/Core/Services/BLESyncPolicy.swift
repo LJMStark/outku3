@@ -9,11 +9,24 @@ struct BLESyncPolicy {
         return lastSync.addingTimeInterval(interval)
     }
 
-    func shouldSync(now: Date, lastSync: Date?, contentChanged: Bool, force: Bool) -> Bool {
-        if force { return true }
+    func shouldSync(
+        now: Date,
+        lastSync: Date?,
+        contentChanged: Bool,
+        force: Bool,
+        hasPriorityCustomAvatarOperation: Bool = false
+    ) -> Bool {
+        if force || hasPriorityCustomAvatarOperation { return true }
         if contentChanged { return true }
         let next = nextSyncTime(now: now, lastSync: lastSync)
         return now >= next
+    }
+
+    func shouldHoldConnectionForCustomAvatar(
+        chunkedTransferInFlight: Bool,
+        operationState: CustomAvatarOperationState
+    ) -> Bool {
+        chunkedTransferInFlight || operationState.isInProgress
     }
 
     private func syncInterval(for date: Date) -> TimeInterval {

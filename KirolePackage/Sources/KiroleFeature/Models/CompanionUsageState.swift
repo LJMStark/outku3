@@ -54,15 +54,20 @@ public struct CompanionUsageState: Sendable, Codable, Equatable {
     public var joy: CompanionBindingProgress
     public var silas: CompanionBindingProgress
     public var nova: CompanionBindingProgress
+    /// Custom companions are separate identities. Their binding days must not inherit the
+    /// last built-in character's progress or another custom companion's relationship history.
+    public var customCompanions: [UUID: CompanionBindingProgress]
 
     public init(
         joy: CompanionBindingProgress = CompanionBindingProgress(),
         silas: CompanionBindingProgress = CompanionBindingProgress(),
-        nova: CompanionBindingProgress = CompanionBindingProgress()
+        nova: CompanionBindingProgress = CompanionBindingProgress(),
+        customCompanions: [UUID: CompanionBindingProgress] = [:]
     ) {
         self.joy = joy
         self.silas = silas
         self.nova = nova
+        self.customCompanions = customCompanions
     }
 
     public func progress(for character: CompanionCharacter) -> CompanionBindingProgress {
@@ -85,5 +90,20 @@ public struct CompanionUsageState: Sendable, Codable, Equatable {
         case .nova:
             nova = progress
         }
+    }
+
+    public func progress(forCustomCompanion id: UUID) -> CompanionBindingProgress {
+        customCompanions[id] ?? CompanionBindingProgress()
+    }
+
+    public mutating func setProgress(
+        _ progress: CompanionBindingProgress,
+        forCustomCompanion id: UUID
+    ) {
+        customCompanions[id] = progress
+    }
+
+    public mutating func removeProgress(forCustomCompanion id: UUID) {
+        customCompanions[id] = nil
     }
 }

@@ -2,10 +2,8 @@ import Foundation
 import Testing
 @testable import KiroleFeature
 
-/// v2.6.0 设备头像库存对账：DeviceWake(0x30) 追加 AvatarState(1B)+AvatarCRC32(4B BE)，
-/// App 比对本地激活头像的 CRC-32/IEEE，无图或不一致即重推 0x15——关闭"同设备存储
-/// 被清空 App 无感知"盲区（行业惯例：设备上报所持资产校验和，主机差异重传）。
-@Suite("Avatar Inventory (DeviceWake v2.6.0)", .serialized)
+/// v2.7 设备头像库存对账：DeviceWake(0x30) 追加 AvatarState、AvatarID、长度和 CRC。
+@Suite("Avatar Inventory (DeviceWake v2.7)", .serialized)
 struct AvatarInventoryTests {
 
     @Test("CRC-32/IEEE 标准校验向量：\"123456789\" → 0xCBF43926")
@@ -14,101 +12,194 @@ struct AvatarInventoryTests {
         #expect(CRC32.ieee(Data()) == 0x0000_0000)
     }
 
-    @Test("DeviceWake 9B payload：解析电量+固件版本+头像库存（BE CRC）")
+    @Test("DeviceWake 29B payload：解析电量、固件版本、头像身份、长度与 CRC")
     func deviceWakeParsesAvatarInventory() {
-        let payload = Data([0x64, 0x01, 0x02, 0x03, 0x01, 0xCB, 0xF4, 0x39, 0x26])
+        let avatarID = UUID(uuidString: "00112233-4455-6677-8899-AABBCCDDEEFF")!
+        var rawUUID = avatarID.uuid
+        var payload = Data([0x64, 0x01, 0x02, 0x03, 0x01])
+        payload.append(withUnsafeBytes(of: &rawUUID) { Data($0) })
+        payload.appendBigEndian(UInt32(2_240_012))
+        payload.appendBigEndian(UInt32(0xCBF4_3926))
         let event = EventLog.fromBLEPayload(type: 0x30, payload: payload)
         #expect(event?.value == 100)
         #expect(event?.firmwareVersion == FirmwareVersion(major: 1, minor: 2, patch: 3))
-        #expect(event?.avatarInventory == EventLog.AvatarInventory(hasImage: true, crc32: 0xCBF4_3926))
+        #expect(event?.avatarInventory == EventLog.AvatarInventory(
+            hasImage: true,
+            avatarID: avatarID,
+            byteLength: 2_240_012,
+            crc32: 0xCBF4_3926
+        ))
     }
 
-    @Test("旧固件 payload（0B/1B/4B）：库存为 nil，不触发对账")
+    @Test("短 payload 与旧 9B 库存格式均不按 v2.7 解析")
     func shorterPayloadsHaveNoInventory() {
         #expect(EventLog.fromBLEPayload(type: 0x30, payload: Data())?.avatarInventory == nil)
         #expect(EventLog.fromBLEPayload(type: 0x30, payload: Data([0x50]))?.avatarInventory == nil)
         #expect(EventLog.fromBLEPayload(type: 0x30, payload: Data([0x50, 0x01, 0x00, 0x00]))?.avatarInventory == nil)
+        #expect(EventLog.fromBLEPayload(
+            type: 0x30,
+            payload: Data([0x50, 0x01, 0x00, 0x00, 0x01, 0xCB, 0xF4, 0x39, 0x26])
+        )?.avatarInventory == nil)
     }
 
-    @Test("重推判定：无图必重推；有图但 CRC 不一致重推；一致不重推")
-    func repushDecisionTable() {
-        #expect(AppState.avatarNeedsRepush(hasImage: false, reportedCRC32: 0, localCRC32: 0xAB))
-        #expect(AppState.avatarNeedsRepush(hasImage: true, reportedCRC32: 0x11, localCRC32: 0x22))
-        #expect(!AppState.avatarNeedsRepush(hasImage: true, reportedCRC32: 0xAB, localCRC32: 0xAB))
+    @Test("DeviceWake 拒绝非法布尔值、矛盾库存和尾部字节")
+    func inconsistentInventoryIsIgnored() {
+        let avatarID = UUID()
+        var rawUUID = avatarID.uuid
+        let uuidData = withUnsafeBytes(of: &rawUUID) { Data($0) }
+
+        var invalidBoolean = Data([80, 2, 7, 0, 2])
+        invalidBoolean.append(Data(repeating: 0, count: 24))
+        #expect(EventLog.fromBLEPayload(type: 0x30, payload: invalidBoolean)?.avatarInventory == nil)
+
+        var emptyWithIdentity = Data([80, 2, 7, 0, 0])
+        emptyWithIdentity.append(uuidData)
+        emptyWithIdentity.appendBigEndian(UInt32(16))
+        emptyWithIdentity.appendBigEndian(UInt32(1))
+        #expect(EventLog.fromBLEPayload(type: 0x30, payload: emptyWithIdentity)?.avatarInventory == nil)
+
+        var imageWithoutIdentity = Data([80, 2, 7, 0, 1])
+        imageWithoutIdentity.append(Data(repeating: 0, count: 16))
+        imageWithoutIdentity.appendBigEndian(UInt32(16))
+        imageWithoutIdentity.appendBigEndian(UInt32(1))
+        #expect(EventLog.fromBLEPayload(type: 0x30, payload: imageWithoutIdentity)?.avatarInventory == nil)
+
+        var trailing = Data([80, 2, 7, 0, 1])
+        trailing.append(uuidData)
+        trailing.appendBigEndian(UInt32(16))
+        trailing.appendBigEndian(UInt32(1))
+        trailing.append(0)
+        #expect(EventLog.fromBLEPayload(type: 0x30, payload: trailing)?.avatarInventory == nil)
     }
 
-    @Test("库存不一致会持久化待重推标记，并要求本次唤醒强制同步")
-    @MainActor func mismatchPersistsPendingPushAndRequestsImmediateSync() async throws {
+    @Test("DeviceWake 库存匹配只触发 query 恢复，不直接切换本地身份")
+    @MainActor func matchingInventoryRequestsQueryRecovery() async throws {
         try await SharedPersistenceTestLock.shared.withLock {
-            let state = AppState.makeForTesting()
+            let storage = LocalStorage.shared
+            let previousProfile = try await storage.loadUserProfile()
+            let previousCompanions = try await storage.loadCustomCompanions()
             let id = UUID()
-            let imageData = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x01])
-            try await LocalStorage.shared.saveCustomCompanionAssets(
-                id: id, previewData: imageData, imageData: imageData
-            )
-            await LocalStorage.shared.clearPendingCustomCompanionPush()
-            state.userProfile.customCompanionId = id
-
-            let needsImmediateSync = await state.reconcileCustomAvatarInventory(
-                hasImage: false, reportedCRC32: 0
-            )
-
-            #expect(needsImmediateSync)
-            #expect(state.isCustomAvatarPendingBLEPush)
-            #expect(await LocalStorage.shared.loadPendingCustomCompanionPush() == id)
-
-            state.customAvatarFlushAttempts = 7
-            let repeatedMismatch = await state.reconcileCustomAvatarInventory(
-                hasImage: false, reportedCRC32: 0
-            )
-            #expect(!repeatedMismatch)
-            #expect(state.customAvatarFlushAttempts == 7)
-
-            try await LocalStorage.shared.deleteCustomCompanionAssets(id: id)
-            await LocalStorage.shared.clearPendingCustomCompanionPush()
-        }
-    }
-
-    @Test("KRI CRC 一致后才清除待确认状态")
-    @MainActor func matchingKRICRCClearsPendingConfirmation() async throws {
-        try await SharedPersistenceTestLock.shared.withLock {
-            let state = AppState.makeForTesting()
-            let id = UUID()
-            let key = "bleAvatarKRIPushEnabled"
-            let previousFlag = UserDefaults.standard.object(forKey: key)
-            defer {
-                if let previousFlag {
-                    UserDefaults.standard.set(previousFlag, forKey: key)
-                } else {
-                    UserDefaults.standard.removeObject(forKey: key)
-                }
-            }
-
             let png = try #require(Data(base64Encoded:
                 "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL9WQAAAABJRU5ErkJggg=="
             ))
             let kri = try KRIEncoder.encode(pngData: png)
-            try await LocalStorage.shared.saveCustomCompanionAssets(
-                id: id, previewData: png, imageData: png
+            let companion = makeCompanion(id: id)
+            let operation = makeApplyOperation(
+                companion: companion,
+                fileLength: kri.count,
+                crc32: CRC32.ieee(kri)
             )
-            await LocalStorage.shared.savePendingCustomCompanionPush(id: id)
-            UserDefaults.standard.set(true, forKey: key)
-            state.userProfile.customCompanionId = id
-            state.isCustomAvatarPendingBLEPush = true
-            state.customAvatarFlushAttempts = 7
+            try await storage.savePendingCustomAvatarAssets(previewData: png, imageData: png)
+            try await storage.savePendingCustomAvatarOperation(operation)
+            let state = AppState.makeForTesting()
+            state.pendingCustomAvatarOperation = operation
+            state.customAvatarConnectionProvider = { (true, operation.deviceID) }
 
-            let needsImmediateSync = await state.reconcileCustomAvatarInventory(
+            let shouldRecover = await state.reconcileCustomAvatarInventory(
                 hasImage: true,
+                avatarID: id,
+                byteLength: UInt32(kri.count),
                 reportedCRC32: CRC32.ieee(kri)
             )
 
-            #expect(!needsImmediateSync)
-            #expect(!state.isCustomAvatarPendingBLEPush)
-            #expect(state.customAvatarFlushAttempts == 0)
-            #expect(await LocalStorage.shared.loadPendingCustomCompanionPush() == nil)
+            #expect(shouldRecover)
+            #expect(state.userProfile.customCompanionId != id)
+            #expect(state.pendingCustomAvatarOperation == operation)
+            #expect(state.customAvatarOperationState == .idle)
+            #expect(await storage.loadCustomCompanionImageData(id: id) == nil)
 
-            try await LocalStorage.shared.deleteCustomCompanionAssets(id: id)
-            await LocalStorage.shared.clearPendingCustomCompanionPush()
+            try await storage.deleteCustomCompanionAssets(id: id)
+            try await storage.saveUserProfile(previousProfile ?? .default)
+            try await storage.saveCustomCompanions(previousCompanions)
+            try await storage.clearPendingCustomAvatarOperation()
         }
+    }
+
+    @Test("DeviceWake 不判断第三方库存，统一交给 query 恢复")
+    @MainActor func inventoryMismatchStillRequestsQueryRecovery() async throws {
+        let state = AppState.makeForTesting()
+        let candidate = makeCompanion(id: UUID())
+        let oldID = UUID()
+        var profile = UserProfile.default
+        profile.customCompanionId = oldID
+        state.userProfile = profile
+        let operation = makeApplyOperation(
+            companion: candidate,
+            fileLength: 128,
+            crc32: 0xCBF4_3926,
+            oldProfile: profile
+        )
+        state.pendingCustomAvatarOperation = operation
+        state.customAvatarConnectionProvider = { (true, operation.deviceID) }
+
+        let shouldRecover = await state.reconcileCustomAvatarInventory(
+            hasImage: true,
+            avatarID: oldID,
+            byteLength: 128,
+            reportedCRC32: 0xCBF4_3926
+        )
+
+        #expect(shouldRecover)
+        #expect(state.userProfile.customCompanionId == oldID)
+        #expect(state.pendingCustomAvatarOperation == operation)
+        #expect(state.customAvatarOperationState == .idle)
+    }
+
+    @Test("活跃传输期间的 DeviceWake 不抢占事务所有权")
+    @MainActor func activeTransferIgnoresDeviceWakeInventory() async {
+        let state = AppState.makeForTesting()
+        let candidate = makeCompanion(id: UUID())
+        let operation = makeApplyOperation(
+            companion: candidate,
+            fileLength: 128,
+            crc32: 0xCBF4_3926
+        )
+        state.pendingCustomAvatarOperation = operation
+        state.customAvatarOperationState = .transferring(sentBytes: 64, totalBytes: 128)
+        state.customAvatarConnectionProvider = { (true, operation.deviceID) }
+
+        let shouldRecover = await state.reconcileCustomAvatarInventory(
+            hasImage: true,
+            avatarID: candidate.id,
+            byteLength: 128,
+            reportedCRC32: 0xCBF4_3926
+        )
+
+        #expect(!shouldRecover)
+        #expect(state.pendingCustomAvatarOperation == operation)
+        #expect(state.userProfile.customCompanionId != candidate.id)
+        #expect(state.customAvatarOperationState == .transferring(sentBytes: 64, totalBytes: 128))
+    }
+
+    private func makeCompanion(id: UUID) -> CustomCompanion {
+        CustomCompanion(
+            id: id,
+            name: "Mochi",
+            relationship: .pet,
+            personaVoice: .companion,
+            avatarPreviewFileName: LocalStorage.customCompanionPreviewFileName(for: id),
+            avatarPixelsFileName: LocalStorage.customCompanionPixelsFileName(for: id)
+        )
+    }
+
+    private func makeApplyOperation(
+        companion: CustomCompanion,
+        fileLength: Int,
+        crc32: UInt32,
+        oldProfile: UserProfile = .default
+    ) -> PendingCustomAvatarOperation {
+        PendingCustomAvatarOperation(
+            kind: .apply,
+            phase: .awaitingCommitResult,
+            operationID: 0x1020_3040,
+            avatarID: companion.id,
+            deviceID: UUID(),
+            fileCRC32: crc32,
+            fileLength: fileLength,
+            candidateCompanion: companion,
+            candidatePreviewFileName: LocalStorage.pendingCustomAvatarPreviewFileName,
+            candidateImageFileName: LocalStorage.pendingCustomAvatarImageFileName,
+            oldSelection: CustomAvatarSelectionSnapshot(profile: oldProfile)
+        )
     }
 }

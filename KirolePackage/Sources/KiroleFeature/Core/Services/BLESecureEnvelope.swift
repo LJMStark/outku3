@@ -3,6 +3,8 @@ import Foundation
 public struct BLESecureEnvelope: Sendable {
     public static let protocolVersion: UInt8 = 2
     public static let signatureLength: Int = 32
+    public static let fixedHeaderLength = 1 + 1 + 8 + 4 + 2
+    public static let encodedOverhead = fixedHeaderLength + signatureLength
 
     public let version: UInt8
     public let payloadType: UInt8
@@ -45,7 +47,6 @@ public struct BLESecureEnvelope: Sendable {
     }
 
     public static func decode(_ data: Data) throws -> BLESecureEnvelope {
-        let fixedHeaderLength = 1 + 1 + 8 + 4 + 2
         let minimumLength = fixedHeaderLength + signatureLength
         guard data.count >= minimumLength else {
             throw AppError.bleSecurity("Secure envelope too short")
