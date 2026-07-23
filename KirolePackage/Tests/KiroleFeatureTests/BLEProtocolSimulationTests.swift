@@ -434,6 +434,64 @@ struct BLEProtocolSimulationTests {
         #expect(assembled == payload)
     }
 
+    @Test("Virtual hardware reassembles a chunked CustomAvatarFrame KRI payload (SubVersion 0x03)")
+    func virtualHardwareReassemblesChunkedCustomAvatarKRIFrame() throws {
+        // 10×10 确定性像素 KRI：验证 0x03 分包→重组→载荷布局→KRI 严格校验全链路。
+        let rgba = (0..<(10 * 10 * 4)).map { UInt8($0 % 251) }
+        let kriData = try KRIEncoder.encode(width: 10, height: 10, straightRGBA: rgba)
+        let payload = BLEDataEncoder.encodeCustomAvatarFrame(kriData: kriData)
+
+        let packets = try BLEPacketizer.packetize(
+            type: BLEDataType.customAvatarFrame.rawValue,
+            messageId: 0x0008,
+            payload: payload,
+            maxChunkSize: 24
+        )
+        #expect(packets.count > 1) // 0x15 恒走分包（§4.12）
+
+        var hardware = SimulatedHardware()
+        let message = try hardware.receiveAppPacketStream(packets)
+        #expect(message?.type == BLEDataType.customAvatarFrame.rawValue)
+        #expect(message?.transport == .chunked)
+        #expect(message?.payload.first == 0x03) // SubVersion v3 = KRI
+        let reassembledKRI = message.map { Data($0.payload.dropFirst()) }
+        #expect(reassembledKRI == kriData)
+        // 固件收帧后的验收步骤（KRI 规范 §7）：重组产物必须仍是严格合法的 KRI。
+        #expect(reassembledKRI.map(KRIEncoder.isValidKRI) == true)
+    }
+
+    @Test("Simulated firmware reassembles a worst-case 800×700 KRI avatar frame across 4472 chunks")
+    func simulatedFirmwareReassemblesWorstCaseKRIAvatarFrame() throws {
+        // 最坏情况 = 尺寸封顶 800×700：KRI 恒为 12 + 800×700×4 = 2,240,012B，
+        // +1B SubVersion → payload 2,240,013B。与 1MiB PNG 用例同走固件视角镜像重组器。
+        let pixelBytes = 800 * 700 * 4
+        let rgba = (0..<pixelBytes).map { UInt8($0 % 251) }
+        let kriData = try KRIEncoder.encode(width: 800, height: 700, straightRGBA: rgba)
+        #expect(kriData.count == AvatarImageProcessor.maxKRIEncodedByteCount)
+        let payload = BLEDataEncoder.encodeCustomAvatarFrame(kriData: kriData)
+        #expect(payload.count == 2_240_013)
+
+        // 协商 512B 写长度 - 11B 分包头 = 501B/片 → ceil(2,240,013 / 501) = 4472 片，
+        // 远低于 65,535 片上限（§3.2）。
+        let packets = try BLEPacketizer.packetize(
+            type: BLEDataType.customAvatarFrame.rawValue,
+            messageId: 0x0101,
+            payload: payload,
+            maxChunkSize: 501
+        )
+        #expect(packets.count == 4472)
+
+        var reassembler = SimulatedFirmwareChunkReassembler()
+        var assembled: Data?
+        for packet in packets {
+            if let complete = try reassembler.receive(packet) {
+                assembled = complete
+            }
+        }
+        #expect(assembled?.count == payload.count)
+        #expect(assembled == payload)
+    }
+
     private static func deviceNotifyPacket(type: UInt8, payload: Data) -> Data {
         var data = Data([type, UInt8(payload.count)])
         data.append(payload)

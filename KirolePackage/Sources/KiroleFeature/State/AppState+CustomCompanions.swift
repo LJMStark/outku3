@@ -235,20 +235,42 @@ extension AppState {
         // re-creating the companion regenerates a proper PNG.
         guard AvatarImageProcessor.isPNGData(imageData),
               imageData.count <= AvatarImageProcessor.maxEncodedByteCount else {
-            ErrorReporter.log(
-                .sync(
-                    component: "BLE CustomAvatarFrame",
-                    underlying: "Persisted avatar asset rejected (not PNG or >1MiB; \(imageData.count)B) — dropping push; re-create the companion to fix"
-                ),
-                context: "AppState.pushCustomAvatarFrame id=\(companionId)"
+            await dropCorruptAvatarPush(
+                reason: "Persisted avatar asset rejected (not PNG or >1MiB; \(imageData.count)B) — dropping push; re-create the companion to fix",
+                companionId: companionId
             )
-            await localStorage.clearPendingCustomCompanionPush()
-            isCustomAvatarPendingBLEPush = false
-            customAvatarFlushAttempts = 0
             return
         }
         do {
-            try await BLEService.shared.sendCustomAvatarFrame(imageData: imageData)
+            if BLEService.shared.avatarKRIPushEnabled {
+                // KRI 联调路径（协议 §4.12 SubVersion 0x03）：PNG 推送前现场转换，
+                // 按 KRI 规范 §7 校验后发送。转换/校验失败 = 资产损坏（签名合法但
+                // 解码不出），与非 PNG 同策略弃推——重试无意义，重建伴侣即恢复。
+                let sourcePNG = imageData
+                let kriData: Data
+                do {
+                    kriData = try await Task.detached(priority: .userInitiated) {
+                        try KRIEncoder.encode(pngData: sourcePNG)
+                    }.value
+                } catch {
+                    await dropCorruptAvatarPush(
+                        reason: "PNG→KRI conversion failed (\(error.localizedDescription)) — dropping push; re-create the companion to fix",
+                        companionId: companionId
+                    )
+                    return
+                }
+                guard KRIEncoder.isValidKRI(kriData),
+                      kriData.count <= AvatarImageProcessor.maxKRIEncodedByteCount else {
+                    await dropCorruptAvatarPush(
+                        reason: "KRI output rejected (invalid file or >\(AvatarImageProcessor.maxKRIEncodedByteCount)B; \(kriData.count)B) — dropping push; re-create the companion to fix",
+                        companionId: companionId
+                    )
+                    return
+                }
+                try await BLEService.shared.sendCustomAvatarKRIFrame(kriData: kriData)
+            } else {
+                try await BLEService.shared.sendCustomAvatarFrame(imageData: imageData)
+            }
             await localStorage.clearPendingCustomCompanionPush()
             isCustomAvatarPendingBLEPush = false
             customAvatarFlushAttempts = 0
@@ -270,6 +292,19 @@ extension AppState {
         }
     }
 
+    /// 资产级永久失败（非 PNG / 超限 / KRI 转换失败）统一处置：记日志、弃推、
+    /// 清待重发标记并重置退避计数。与传输级失败（进重试队列）严格区分——
+    /// 损坏资产重试到天荒地老也发不出去，用户重新创建该伴侣即恢复。
+    private func dropCorruptAvatarPush(reason: String, companionId: UUID) async {
+        ErrorReporter.log(
+            .sync(component: "BLE CustomAvatarFrame", underlying: reason),
+            context: "AppState.pushCustomAvatarFrame id=\(companionId)"
+        )
+        await localStorage.clearPendingCustomCompanionPush()
+        isCustomAvatarPendingBLEPush = false
+        customAvatarFlushAttempts = 0
+    }
+
     /// v2.6.0: 设备侧头像库存比对的纯判定——无图 or CRC 不一致（存储被清/图过期损坏）即需重推。
     nonisolated static func avatarNeedsRepush(hasImage: Bool, reportedCRC32: UInt32, localCRC32: UInt32) -> Bool {
         !hasImage || reportedCRC32 != localCRC32
@@ -282,10 +317,23 @@ extension AppState {
     public func reconcileCustomAvatarInventory(hasImage: Bool, reportedCRC32: UInt32) async -> Bool {
         guard let id = userProfile.customCompanionId,
               let imageData = await localStorage.loadCustomCompanionImageData(id: id) else { return false }
-        let localCRC32 = if hasImage {
-            await Task.detached(priority: .utility) { CRC32.ieee(imageData) }.value
+        // CRC 口径跟随当前推送格式（协议 §4.12）：设备持久化并回报的是"最近一次 0x15
+        // 送达的文件字节"——KRI 开关开启时须对转换后的 KRI 字节求 CRC，否则本地 PNG CRC
+        // 与设备 KRI CRC 永远不等，每次 DeviceWake 都误判重推。转换失败按 0 处理 →
+        // 必然 mismatch → 标记重推，最终由推送路径统一判废弃推（那里会记日志）。
+        let useKRICRC = BLEService.shared.avatarKRIPushEnabled
+        let localCRC32: UInt32
+        if hasImage {
+            localCRC32 = await Task.detached(priority: .utility) {
+                guard useKRICRC else { return CRC32.ieee(imageData) }
+                do {
+                    return CRC32.ieee(try KRIEncoder.encode(pngData: imageData))
+                } catch {
+                    return .zero
+                }
+            }.value
         } else {
-            UInt32.zero
+            localCRC32 = .zero
         }
         guard userProfile.customCompanionId == id else { return false }
         guard Self.avatarNeedsRepush(

@@ -15,7 +15,7 @@ import Foundation
 //   0x12 deviceMode      设备运行模式
 //   0x13 smartReminder   AI 智能提醒
 //   0x14 focusStatus     专注状态与能量瓶子数（App→Device 实时推送）
-//   0x15 customAvatarFrame 用户自定义伴侣头像 PNG v2（SubVersion 0x02 | PNG，≤800×700 保比例，≤1MiB）
+//   0x15 customAvatarFrame 用户自定义伴侣头像（SubVersion 0x02 | PNG ≤1MiB 默认；0x03 | KRI ≤2,240,012B 联调开关，均 ≤800×700 保比例）
 //   0x16 screensaver     屏保金句/明信片（业务帧，secure 模式可发；替代旧 0xAA 开发命令）
 //   0x17 sceneUnlock     场景解锁（业务帧，secure 模式可发；替代旧 0xAA 开发命令）
 //   0x18 otaReboot       触发固件升级重启（零 payload；固件校验包后应答并重启，不等 App 确认）
@@ -64,9 +64,11 @@ public enum BLEDataType: UInt8, Sendable {
     case smartReminder = 0x13
     /// App→Device: 推送当前专注状态和能量瓶子数
     case focusStatus = 0x14
-    /// App→Device: 推送用户自定义伴侣头像 PNG（≤800×700 保比例、尽力 ≤1MiB）
-    /// v2.5.24 起 payload = 1B subVersion(0x02) | PNG 文件字节（IHDR 自描述宽高），
-    /// 见协议 §4.12 / `AvatarImageProcessor` / `BLEDataEncoder.encodeCustomAvatarFrame`。
+    /// App→Device: 推送用户自定义伴侣头像（≤800×700 保比例）。
+    /// v2.5.24 起默认 payload = 1B subVersion(0x02) | PNG 文件字节（IHDR 自描述宽高，≤1MiB）；
+    /// §4.12 另定义 subVersion(0x03) | KRI v1 文件字节（≤2,240,012B，联调开关
+    /// `BLEService.avatarKRIPushEnabled` 启用，固件验收后 flag-day 切默认），
+    /// 见协议 §4.12 / `AvatarImageProcessor` / `KRIEncoder` / `BLEDataEncoder.encodeCustomAvatarFrame`。
     case customAvatarFrame = 0x15
     /// App→Device: 屏保金句/明信片业务帧（替代旧 `0xAA 01 02` 开发命令）。
     /// 经 SecureEnvelope 走 `writeData`，secure 模式可发；payload 见 `BLEDataEncoder.encodeScreensaver`。

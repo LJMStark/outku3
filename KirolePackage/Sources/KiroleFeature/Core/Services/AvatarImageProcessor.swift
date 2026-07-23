@@ -28,6 +28,10 @@ public enum AvatarImageProcessor {
     public static let maxPixelHeight = 700
     /// Hard cap for the encoded PNG (hardware asks "尽量 1MB 内"; we never exceed it).
     public static let maxEncodedByteCount = 1_048_576
+    /// Hard cap for the KRI wire file (protocol §4.12 SubVersion 0x03): the KRI size is
+    /// fully determined by dimensions — 12B header + 800×700×4 BGRA = 2,240,012 bytes.
+    /// Anything larger means the source PNG escaped the bounding box; drop, never send.
+    public static let maxKRIEncodedByteCount = 12 + maxPixelWidth * maxPixelHeight * 4
     /// Per-iteration scale factor when the encoded PNG is still over the byte cap.
     static let shrinkFactor: CGFloat = 0.9
     /// Loop-termination floor. A ≤50px PNG can't plausibly exceed 1 MiB, so this is

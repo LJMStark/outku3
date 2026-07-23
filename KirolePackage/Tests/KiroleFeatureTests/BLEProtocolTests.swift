@@ -1369,6 +1369,29 @@ struct BLEProtocolTests {
         #expect(payload.dropFirst() == pngData)
     }
 
+    @Test("encodeCustomAvatarFrame(kriData:) prefixes SubVersion 0x03 and passes KRI bytes through")
+    func encodeCustomAvatarKRIFrameLayout() throws {
+        // KRI 规范 §6 的 2×2 标准向量：同时钉住 SubVersion 前缀与 KRI 字节逐位直通。
+        let standardRGBA: [UInt8] = [
+            255, 0, 0, 255,   0, 255, 0, 255,
+            0, 0, 255, 255,   255, 255, 255, 128,
+        ]
+        let kriData = try KRIEncoder.encode(width: 2, height: 2, straightRGBA: standardRGBA)
+        let payload = BLEDataEncoder.encodeCustomAvatarFrame(kriData: kriData)
+
+        #expect(payload.count == 1 + kriData.count)
+        #expect(payload[0] == 0x03) // SubVersion v3：KRI 载荷（协议 §4.12）
+        #expect(payload.dropFirst() == kriData)
+        // 载荷去前缀后仍是合法 KRI（魔数/尺寸/总长严格校验）。
+        #expect(KRIEncoder.isValidKRI(Data(payload.dropFirst())))
+    }
+
+    @Test("Avatar KRI wire budget equals 12B header plus 800×700×4 BGRA")
+    func avatarKRIWireBudget() {
+        // 协议 §4.12 SubVersion 0x03 的最大 KRI 文件长度真源：尺寸封顶即字节封顶。
+        #expect(AvatarImageProcessor.maxKRIEncodedByteCount == 2_240_012)
+    }
+
     // encodeScreenConfig 及其格式测试已删（2026-07-04 审计 D2）：该函数无发送路径、
     // BLEDataType 也没有对应帧字节，且断言的是已过时的旧面板分辨率。
 

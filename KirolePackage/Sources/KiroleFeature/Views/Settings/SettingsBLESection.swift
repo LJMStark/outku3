@@ -13,6 +13,7 @@ public struct SettingsBLESection: View {
     @State private var showClearIdentityConfirmation = false
     @State private var showOTAUpgradeConfirmation = false
     @State private var keepAliveEnabled = false
+    @State private var avatarKRIEnabled = false
     @State private var screenSize: ScreenSize = .fourInch
 
     public init() {}
@@ -32,6 +33,7 @@ public struct SettingsBLESection: View {
             if AppBuildEnvironment.showsHardwareDebugTools {
                 wifiDebugCard
                 keepAliveCard
+                avatarKRICard
             }
 
             #if DEBUG
@@ -41,6 +43,7 @@ public struct SettingsBLESection: View {
         .task {
             energyBottles = await LocalStorage.shared.loadEnergyBottles()
             keepAliveEnabled = bleService.keepAliveDebugMode
+            avatarKRIEnabled = bleService.avatarKRIPushEnabled
             screenSize = bleService.hardwareScreenSize
             await refreshIdentityCounts()
             if AppBuildEnvironment.showsHardwareDebugTools,
@@ -520,6 +523,45 @@ public struct SettingsBLESection: View {
             if newValue, !bleService.connectionState.isConnected {
                 Task { await bleService.attemptAutoReconnect() }
             }
+        }
+    }
+
+    /// KRI 联调开关（协议 §4.12 SubVersion 0x03）。默认 OFF = 既有 PNG 路径；
+    /// 固件实现 0x03 后打开做同机 A/B 联调。切换后重选伴侣即触发新格式推送。
+    @MainActor
+    private var avatarKRICard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: "photo.on.rectangle.angled")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(avatarKRIEnabled ? Color.orange : theme.colors.secondaryText)
+
+                Text("Avatar KRI Push")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(theme.colors.primaryText)
+
+                Spacer()
+
+                Toggle("", isOn: $avatarKRIEnabled)
+                    .labelsHidden()
+                    .tint(Color.orange)
+                    .accessibilityLabel("Send custom avatar as KRI raw image instead of PNG")
+                    .accessibilityIdentifier("Settings_BLEAvatarKRIPushToggle")
+            }
+
+            Text("Firmware debug aid. ON: custom avatars are converted to KRI raw pixels (SubVersion 0x03) before sending — requires firmware support. OFF (default): avatars are sent as PNG (SubVersion 0x02). Re-select the companion to push a fresh frame after switching.")
+                .font(.system(size: 12))
+                .foregroundStyle(theme.colors.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(16)
+        .background(theme.colors.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 24))
+        .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
+        .onChange(of: avatarKRIEnabled) { _, newValue in
+            // 同 keep-alive：仅在与生效值不同时落库，防止 .task 初始化误写显式设置。
+            guard newValue != bleService.avatarKRIPushEnabled else { return }
+            bleService.avatarKRIPushEnabled = newValue
         }
     }
 

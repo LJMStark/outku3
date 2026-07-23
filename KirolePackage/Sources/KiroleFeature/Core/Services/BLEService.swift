@@ -95,6 +95,7 @@ public final class BLEService: NSObject {
         static let autoReconnect = "bleAutoReconnect"
         static let keepAliveDebugMode = "bleKeepAliveDebugMode"
         static let hardwareScreenSize = "bleHardwareScreenSize"
+        static let avatarKRIPushEnabled = "bleAvatarKRIPushEnabled"
     }
 
     // MARK: - Timing
@@ -144,6 +145,20 @@ public final class BLEService: NSObject {
             return true
         }
         set { UserDefaults.standard.set(newValue, forKey: Keys.keepAliveDebugMode) }
+    }
+
+    /// KRI 联调开关（协议 §4.12 SubVersion 0x03）：开启后自定义头像改发 KRI 载荷
+    /// （PNG 推送前现场转换），关闭（默认）走既有 0x02 PNG 路径。
+    ///
+    /// 与 keep-alive 不同，**默认恒为 false**——固件实现 0x03 前默认路径不能变；
+    /// 固件就绪后由本开关做同机 A/B 联调，双方验收通过再 flag-day 切默认。
+    /// getter 同样以 `showsHardwareDebugTools` 为闸门：正式包即使本地残留 true 也不启用。
+    public var avatarKRIPushEnabled: Bool {
+        get {
+            guard AppBuildEnvironment.showsHardwareDebugTools else { return false }
+            return UserDefaults.standard.bool(forKey: Keys.avatarKRIPushEnabled)
+        }
+        set { UserDefaults.standard.set(newValue, forKey: Keys.avatarKRIPushEnabled) }
     }
 
     /// 同步收尾和看门狗是否应保留 BLE。Wi-Fi 调试已开启或正在切换时必须保留，
@@ -622,6 +637,15 @@ public final class BLEService: NSObject {
     /// 在写限流下约 1-2 分钟发完——调用方（AppState.pushCustomAvatarFrame）已有失败重试队列。
     public func sendCustomAvatarFrame(imageData: Data) async throws {
         let payload = BLEDataEncoder.encodeCustomAvatarFrame(pngData: imageData)
+        try await writeData(type: .customAvatarFrame, data: payload)
+    }
+
+    /// 推送用户自定义伴侣头像 KRI 到 E-ink 设备（协议 §4.12 SubVersion 0x03 提案）。
+    /// kriData 为 `KRIEncoder.encode(pngData:)` 产出的完整 KRI v1 文件（≤2,240,012B）；
+    /// 帧 payload = `0x03 | KRI 字节`，与 PNG 路径同走 §3.2 分包（11B 头）。最坏情况
+    /// 2,240,013B ≈ 4,472 片 @501B/片，写限流下约 4 分钟——重试/对账复用 PNG 路径全套机制。
+    public func sendCustomAvatarKRIFrame(kriData: Data) async throws {
+        let payload = BLEDataEncoder.encodeCustomAvatarFrame(kriData: kriData)
         try await writeData(type: .customAvatarFrame, data: payload)
     }
 

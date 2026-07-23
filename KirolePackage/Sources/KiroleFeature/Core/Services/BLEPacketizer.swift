@@ -51,9 +51,10 @@ public enum BLEPacketizer {
 
     /// Estimated chunk counts with negotiated BLE 5.0 MTU (512 - 11B header = 501 bytes/chunk):
     /// - 1MiB avatar PNG (1,048,577 bytes incl. SubVersion): ~2,093 packets
+    /// - Worst-case avatar KRI (2,240,013 bytes incl. SubVersion, §4.12 0x03): ~4,472 packets
     /// - Spectra 6 frame buffers: 4寸 120,000 bytes ≈ 240 / 7.3寸 192,000 bytes ≈ 384 packets
     /// All far below the 65,535-chunk ceiling; tiny MTUs shrink per-chunk payload and can
-    /// still overflow the ceiling for ~1MiB payloads — packetize then throws payloadTooLarge.
+    /// still overflow the ceiling for MiB-scale payloads — packetize then throws payloadTooLarge.
 
     public static func packetize(
         type: UInt8,
