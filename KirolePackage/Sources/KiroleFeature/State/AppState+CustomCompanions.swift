@@ -243,9 +243,10 @@ extension AppState {
         }
         do {
             if BLEService.shared.avatarKRIPushEnabled {
-                // KRI 联调路径（协议 §4.12 SubVersion 0x03）：PNG 推送前现场转换，
-                // 按 KRI 规范 §7 校验后发送。转换/校验失败 = 资产损坏（签名合法但
-                // 解码不出），与非 PNG 同策略弃推——重试无意义，重建伴侣即恢复。
+                // KRI 默认路径（协议 §4.12 SubVersion 0x03，v2.6.1 flag-day）：持久化资产
+                // 恒为 PNG（预览/对账真源），推送前现场转换，按 KRI 规范 §7 校验后发送。
+                // 转换/校验失败 = 资产损坏（签名合法但解码不出），与非 PNG 同策略弃推——
+                // 重试无意义，重建伴侣即恢复。开关 OFF 走下方旧 0x02 PNG（仅联调对拍）。
                 let sourcePNG = imageData
                 let kriData: Data
                 do {

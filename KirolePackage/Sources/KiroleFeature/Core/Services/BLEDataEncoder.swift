@@ -270,10 +270,11 @@ public enum BLEDataEncoder {
 
     // MARK: - Custom Avatar Frame (0x15)
 
-    /// 编码自定义伴侣头像帧（v2.5.24 起 SubVersion 0x02，协议 §4.12）。
+    /// 编码自定义伴侣头像帧 PNG 载荷（SubVersion 0x02，协议 §4.12 v2）。
     /// Payload 布局：`SubVersion(1B)=0x02 | PNG 文件字节`。
     /// 宽高由 PNG IHDR 自描述（App 保证 ≤800×700、保持原图比例、尽力 ≤1MiB，
     /// 见 `AvatarImageProcessor`）；旧 4bpp 96×96 v1（SubVersion 0x01）已废弃。
+    /// **v2.6.1 起默认发 0x03 KRI（见下）**，本路径仅剩联调回退通道（开关切 OFF）。
     public static func encodeCustomAvatarFrame(pngData: Data) -> Data {
         var data = Data()
         data.append(0x02)
@@ -281,12 +282,12 @@ public enum BLEDataEncoder {
         return data
     }
 
-    /// 编码自定义伴侣头像帧 KRI 载荷（SubVersion 0x03，协议 §4.12 v3 提案）。
+    /// 编码自定义伴侣头像帧 KRI 载荷（SubVersion 0x03，协议 §4.12 v3，**v2.6.1 起默认格式**）。
     /// Payload 布局：`SubVersion(1B)=0x03 | KRI v1 文件字节`（12B 小端文件头 +
     /// 左上起始逐行 BGRA 直通 alpha 裸像素，见 docs/KRI_图片转换规范.md）。
     /// 宽高由 KRI 文件头自描述；总长恒为 `1 + 12 + width × height × 4`
-    /// （≤800×700 → payload ≤2,240,013B）。当前默认仍发 0x02 PNG，本路径由
-    /// `BLEService.avatarKRIPushEnabled` 调试开关启用，待固件实现后 flag-day 切换。
+    /// （≤800×700 → payload ≤2,240,013B）。旧 0x02 PNG 仅剩联调回退通道
+    /// （`BLEService.avatarKRIPushEnabled` 切 OFF），固件按本格式实现。
     public static func encodeCustomAvatarFrame(kriData: Data) -> Data {
         var data = Data()
         data.append(0x03)

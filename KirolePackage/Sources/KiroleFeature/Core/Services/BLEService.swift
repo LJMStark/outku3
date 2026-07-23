@@ -147,16 +147,21 @@ public final class BLEService: NSObject {
         set { UserDefaults.standard.set(newValue, forKey: Keys.keepAliveDebugMode) }
     }
 
-    /// KRI 联调开关（协议 §4.12 SubVersion 0x03）：开启后自定义头像改发 KRI 载荷
-    /// （PNG 推送前现场转换），关闭（默认）走既有 0x02 PNG 路径。
+    /// 自定义头像 wire 格式开关（协议 §4.12）。**默认 true = 发 KRI 载荷（SubVersion 0x03，
+    /// v2.6.1 flag-day 默认格式）**，关闭 = 回退旧 0x02 PNG（仅供联调同机 A/B 对拍）。
     ///
-    /// 与 keep-alive 不同，**默认恒为 false**——固件实现 0x03 前默认路径不能变；
-    /// 固件就绪后由本开关做同机 A/B 联调，双方验收通过再 flag-day 切默认。
-    /// getter 同样以 `showsHardwareDebugTools` 为闸门：正式包即使本地残留 true 也不启用。
+    /// 规范即契约：固件按 App 实际发出的字节实现，不做双格式等待期——与 v2.5.24
+    /// 4bpp→PNG 切换同款 flag-day 节奏；固件实现 0x03 前的空窗由 §4.12 既有
+    /// 退避重试（永不放弃）兜住，固件就绪即自愈。
+    /// getter 与 keep-alive 同款闸门：正式包忽略本地残留、恒走默认 KRI；
+    /// 联调包里用户显式切过则以其选择为准。
     public var avatarKRIPushEnabled: Bool {
         get {
-            guard AppBuildEnvironment.showsHardwareDebugTools else { return false }
-            return UserDefaults.standard.bool(forKey: Keys.avatarKRIPushEnabled)
+            guard AppBuildEnvironment.showsHardwareDebugTools else { return true }
+            if let stored = UserDefaults.standard.object(forKey: Keys.avatarKRIPushEnabled) as? Bool {
+                return stored
+            }
+            return true
         }
         set { UserDefaults.standard.set(newValue, forKey: Keys.avatarKRIPushEnabled) }
     }
@@ -640,7 +645,7 @@ public final class BLEService: NSObject {
         try await writeData(type: .customAvatarFrame, data: payload)
     }
 
-    /// 推送用户自定义伴侣头像 KRI 到 E-ink 设备（协议 §4.12 SubVersion 0x03 提案）。
+    /// 推送用户自定义伴侣头像 KRI 到 E-ink 设备（协议 §4.12 SubVersion 0x03，v2.6.1 起默认格式）。
     /// kriData 为 `KRIEncoder.encode(pngData:)` 产出的完整 KRI v1 文件（≤2,240,012B）；
     /// 帧 payload = `0x03 | KRI 字节`，与 PNG 路径同走 §3.2 分包（11B 头）。最坏情况
     /// 2,240,013B ≈ 4,472 片 @501B/片，写限流下约 4 分钟——重试/对账复用 PNG 路径全套机制。

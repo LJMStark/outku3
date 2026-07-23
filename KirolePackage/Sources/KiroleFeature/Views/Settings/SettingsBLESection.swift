@@ -526,8 +526,8 @@ public struct SettingsBLESection: View {
         }
     }
 
-    /// KRI 联调开关（协议 §4.12 SubVersion 0x03）。默认 OFF = 既有 PNG 路径；
-    /// 固件实现 0x03 后打开做同机 A/B 联调。切换后重选伴侣即触发新格式推送。
+    /// 头像 wire 格式开关（协议 §4.12）。默认 ON = KRI（SubVersion 0x03，v2.6.1 默认格式）；
+    /// OFF = 回退旧 0x02 PNG，仅供固件联调同机 A/B 对拍。切换后重选伴侣即触发新格式推送。
     @MainActor
     private var avatarKRICard: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -549,7 +549,7 @@ public struct SettingsBLESection: View {
                     .accessibilityIdentifier("Settings_BLEAvatarKRIPushToggle")
             }
 
-            Text("Firmware debug aid. ON: custom avatars are converted to KRI raw pixels (SubVersion 0x03) before sending — requires firmware support. OFF (default): avatars are sent as PNG (SubVersion 0x02). Re-select the companion to push a fresh frame after switching.")
+            Text("ON (default): custom avatars are sent as KRI raw pixels (SubVersion 0x03) — the current wire format. OFF: fall back to legacy PNG (SubVersion 0x02) for firmware A/B debugging only. Re-select the companion to push a fresh frame after switching.")
                 .font(.system(size: 12))
                 .foregroundStyle(theme.colors.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
