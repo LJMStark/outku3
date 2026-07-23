@@ -26,16 +26,16 @@ ESP32 校验文件头和总长度后交给 LVGL
 - Alpha 必须为直通/非预乘 alpha；
 - KRI 阶段不做电子纸六色量化或抖动，这些处理由设备最终刷新时完成。
 
-### 1.1 当前 BLE 协议边界
+### 1.1 BLE 传输通道（已定案，v2.6.1）
 
-转换算法与传输协议是两层独立定义。当前固件的 BLE `CustomAvatarFrame (0x15)` 不能直接接收本文生成的 KRI：
+转换算法与传输协议是两层独立定义。BLE 传输通道已在《BLE通信协议规格文档》**v2.6.1 §4.12** 定案：
 
-- 当前 payload 固定为 `SubVersion 0x02 + PNG bytes`；
-- PNG 上限为 1 MiB；
-- 固件只将其保存为 `/assets/characters/custom/avatar.png`；
-- 当前不会将该 PNG 转为页面使用的 KRI，也不会自动切换角色资源。
+- **`CustomAvatarFrame (0x15)` SubVersion `0x03`** = 本文生成的完整 KRI v1 文件字节（≤2,240,012 B，尺寸封顶 800×700 即字节封顶）；
+- SubVersion `0x02`（PNG ≤1 MiB，固件保存为 `/assets/characters/custom/avatar.png`）仍是**当前默认路径**；固件实现 `0x03` 并双方同机 A/B 验收后 flag-day 切换默认；
+- **不能**把 KRI bytes 放进 `0x02`——两个 SubVersion 载荷格式互斥，固件按首字节分发；
+- 最大长度、目标路径（建议 `/assets/characters/custom/avatar.kri`）、完整性校验（本文 §7 + DeviceWake `AvatarCRC32` 格式无关口径）、提交时机（选用/换机/重连补推，复用 PNG 全套机制）均已写入协议文档 §4.12「固件实现要点」。
 
-如果 App 计划通过 BLE 下发 KRI，需要先与固件团队补充对应的 subversion/命令、最大长度、目标路径、完整性校验和提交时机。不能把 KRI bytes 直接放进现有 `0x15 / SubVersion 0x02`。
+App 侧已完整实现：`KRIEncoder`（本文 §2–§5 的参考实现即其镜像）+ 发送前 §7 校验 + `BLEService.sendCustomAvatarKRIFrame` 发送，由硬件调试开关「Avatar KRI Push」启用（默认关闭 = 仍发 PNG）。
 
 ## 2. KRI v1 文件格式
 
