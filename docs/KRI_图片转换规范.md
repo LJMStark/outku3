@@ -33,7 +33,7 @@ ESP32 校验文件头和总长度后交给 LVGL
 - **`CustomAvatarFrame (0x15)` SubVersion `0x03`** = 本文生成的完整 KRI v1 文件字节（≤2,240,012 B，尺寸封顶 800×700 即字节封顶），**默认 wire 格式，App 默认即发**；
 - SubVersion `0x02`（PNG ≤1 MiB，固件保存为 `/assets/characters/custom/avatar.png`）保留为**联调回退通道**——App 调试开关切 OFF 时发送，供固件开发期同机 A/B 对拍；
 - **不能**把 KRI bytes 放进 `0x02`——两个 SubVersion 载荷格式互斥，固件按首字节分发；
-- 最大长度、目标路径（建议 `/assets/characters/custom/avatar.kri`）、完整性校验（本文 §7 + DeviceWake `AvatarCRC32` 格式无关口径）、提交时机（选用/换机/重连补推，复用既有推送机制）均已写入协议文档 §4.12「固件实现要点」。
+- 最大长度、目标路径（建议 `/assets/characters/custom/avatar.kri`）、完整性校验（本文 §7 + DeviceWake `AvatarCRC32` 格式无关口径）、提交时机（选用/换机/重连补推，复用既有推送机制）均已写入协议文档 §4.12「固件实现要点」。App 在 GATT 写完后仍保留待确认标记，收到匹配 `AvatarCRC32` 才停止重发。
 
 App 侧已完整实现并默认启用：`KRIEncoder`（本文 §2–§5 的参考实现即其镜像）+ 发送前 §7 校验 + `BLEService.sendCustomAvatarKRIFrame` 发送；硬件调试开关「Avatar KRI Push」切 OFF 可临时回退 PNG 对拍。固件实现 `0x03` 前丢弃未知 SubVersion 帧即可，App 的退避重发会在固件就绪后自动补推。
 

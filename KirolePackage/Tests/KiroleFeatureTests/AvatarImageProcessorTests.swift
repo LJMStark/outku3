@@ -78,6 +78,29 @@ struct AvatarImageProcessorTests {
         #expect(!AvatarImageProcessor.isPNGData(Data()))
     }
 
+    @Test("avatar KRI validation enforces the 800×700 wire bounds independently")
+    func avatarKRIValidationEnforcesDimensions() throws {
+        let withinBounds = try KRIEncoder.encode(
+            width: 800,
+            height: 700,
+            straightRGBA: [UInt8](repeating: 0xFF, count: 800 * 700 * 4)
+        )
+        let tooWideButUnderByteCap = try KRIEncoder.encode(
+            width: 1_000,
+            height: 500,
+            straightRGBA: [UInt8](repeating: 0xFF, count: 1_000 * 500 * 4)
+        )
+        let tooTallButUnderByteCap = try KRIEncoder.encode(
+            width: 500,
+            height: 800,
+            straightRGBA: [UInt8](repeating: 0xFF, count: 500 * 800 * 4)
+        )
+
+        #expect(AvatarImageProcessor.isValidAvatarKRI(withinBounds))
+        #expect(!AvatarImageProcessor.isValidAvatarKRI(tooWideButUnderByteCap))
+        #expect(!AvatarImageProcessor.isValidAvatarKRI(tooTallButUnderByteCap))
+    }
+
     // MARK: - 收缩循环终止性
 
     @Test("nextShrunkSize drives dimensions below the floor within the loop bound")

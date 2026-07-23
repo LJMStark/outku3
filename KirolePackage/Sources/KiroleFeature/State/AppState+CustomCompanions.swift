@@ -193,8 +193,8 @@ extension AppState {
         // "自定义显示"模式（图用已持久化的 0x15）；CharacterId 仍是最近内置选择（专注页美术）。
         sendPetStatusNow(customActive: true, context: "AppState.selectCustomCompanion")
 
-        // Re-push the avatar PNG so the device shows the newly active avatar.
-        // Cancel any in-flight push first: BLE 写锁只串行单个 packet，两条 ~2000 片的
+        // Re-push the avatar so the device shows the newly active companion.
+        // Cancel any in-flight push first: BLE 写锁只串行单个 packet，两条数千片的
         // 0x15 流会逐片交错，旧选择可能最后完成反杀新选择（写循环见 Task.checkCancellation）。
         customAvatarPushTask?.cancel()
         customAvatarPushTask = Task { @MainActor in
@@ -222,9 +222,10 @@ extension AppState {
         }
     }
 
-    /// Sends the avatar PNG frame via BLE. On failure, queues the companion ID in LocalStorage
-    /// so `flushPendingCustomCompanionPushIfNeeded` can retry on the next BLE reconnect.
+    /// Sends the avatar frame via BLE. KRI remains pending until DeviceWake confirms its CRC;
+    /// transport failures queue the companion ID for a later retry.
     private func pushCustomAvatarFrame(imageData: Data, companionId: UUID) async {
+        guard !Task.isCancelled else { return }
         // Wire-contract guard (v2.5.24): the persisted asset must be a PNG within the
         // documented ≤1MiB budget before it touches BLE.
         // - Non-PNG bytes = pre-PNG installs' 4bpp pixel data (can never start with the
@@ -242,7 +243,8 @@ extension AppState {
             return
         }
         do {
-            if BLEService.shared.avatarKRIPushEnabled {
+            let usesKRI = BLEService.shared.avatarKRIPushEnabled
+            if usesKRI {
                 // KRI 默认路径（协议 §4.12 SubVersion 0x03，v2.6.1 flag-day）：持久化资产
                 // 恒为 PNG（预览/对账真源），推送前现场转换，按 KRI 规范 §7 校验后发送。
                 // 转换/校验失败 = 资产损坏（签名合法但解码不出），与非 PNG 同策略弃推——
@@ -254,24 +256,33 @@ extension AppState {
                         try KRIEncoder.encode(pngData: sourcePNG)
                     }.value
                 } catch {
+                    guard !Task.isCancelled else { return }
                     await dropCorruptAvatarPush(
                         reason: "PNG→KRI conversion failed (\(error.localizedDescription)) — dropping push; re-create the companion to fix",
                         companionId: companionId
                     )
                     return
                 }
-                guard KRIEncoder.isValidKRI(kriData),
-                      kriData.count <= AvatarImageProcessor.maxKRIEncodedByteCount else {
+                guard !Task.isCancelled else { return }
+                guard AvatarImageProcessor.isValidAvatarKRI(kriData) else {
                     await dropCorruptAvatarPush(
                         reason: "KRI output rejected (invalid file or >\(AvatarImageProcessor.maxKRIEncodedByteCount)B; \(kriData.count)B) — dropping push; re-create the companion to fix",
                         companionId: companionId
                     )
                     return
                 }
+                try Task.checkCancellation()
+                // GATT write ACK only confirms transport. Keep this durable marker until a
+                // DeviceWake inventory CRC proves that firmware persisted the KRI file.
+                isCustomAvatarPendingBLEPush = true
+                await localStorage.savePendingCustomCompanionPush(id: companionId)
+                try Task.checkCancellation()
                 try await BLEService.shared.sendCustomAvatarKRIFrame(kriData: kriData)
             } else {
                 try await BLEService.shared.sendCustomAvatarFrame(imageData: imageData)
             }
+
+            guard !usesKRI else { return }
             await localStorage.clearPendingCustomCompanionPush()
             isCustomAvatarPendingBLEPush = false
             customAvatarFlushAttempts = 0
@@ -337,9 +348,19 @@ extension AppState {
             localCRC32 = .zero
         }
         guard userProfile.customCompanionId == id else { return false }
-        guard Self.avatarNeedsRepush(
+        let needsRepush = Self.avatarNeedsRepush(
             hasImage: hasImage, reportedCRC32: reportedCRC32, localCRC32: localCRC32
-        ) else { return false }
+        )
+        if !needsRepush {
+            await localStorage.clearPendingCustomCompanionPush()
+            guard userProfile.customCompanionId == id else { return false }
+            isCustomAvatarPendingBLEPush = false
+            customAvatarFlushAttempts = 0
+            if let deviceID = BLEService.shared.connectedDeviceID?.uuidString {
+                await localStorage.saveCustomAvatarLastPushedDeviceID(deviceID)
+            }
+            return false
+        }
         let savedPendingID = await localStorage.loadPendingCustomCompanionPush()
         guard userProfile.customCompanionId == id else { return false }
         if isCustomAvatarPendingBLEPush, savedPendingID == id {

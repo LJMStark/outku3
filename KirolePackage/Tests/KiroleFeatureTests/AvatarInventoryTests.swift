@@ -68,4 +68,47 @@ struct AvatarInventoryTests {
             await LocalStorage.shared.clearPendingCustomCompanionPush()
         }
     }
+
+    @Test("KRI CRC 一致后才清除待确认状态")
+    @MainActor func matchingKRICRCClearsPendingConfirmation() async throws {
+        try await SharedPersistenceTestLock.shared.withLock {
+            let state = AppState.makeForTesting()
+            let id = UUID()
+            let key = "bleAvatarKRIPushEnabled"
+            let previousFlag = UserDefaults.standard.object(forKey: key)
+            defer {
+                if let previousFlag {
+                    UserDefaults.standard.set(previousFlag, forKey: key)
+                } else {
+                    UserDefaults.standard.removeObject(forKey: key)
+                }
+            }
+
+            let png = try #require(Data(base64Encoded:
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL9WQAAAABJRU5ErkJggg=="
+            ))
+            let kri = try KRIEncoder.encode(pngData: png)
+            try await LocalStorage.shared.saveCustomCompanionAssets(
+                id: id, previewData: png, imageData: png
+            )
+            await LocalStorage.shared.savePendingCustomCompanionPush(id: id)
+            UserDefaults.standard.set(true, forKey: key)
+            state.userProfile.customCompanionId = id
+            state.isCustomAvatarPendingBLEPush = true
+            state.customAvatarFlushAttempts = 7
+
+            let needsImmediateSync = await state.reconcileCustomAvatarInventory(
+                hasImage: true,
+                reportedCRC32: CRC32.ieee(kri)
+            )
+
+            #expect(!needsImmediateSync)
+            #expect(!state.isCustomAvatarPendingBLEPush)
+            #expect(state.customAvatarFlushAttempts == 0)
+            #expect(await LocalStorage.shared.loadPendingCustomCompanionPush() == nil)
+
+            try await LocalStorage.shared.deleteCustomCompanionAssets(id: id)
+            await LocalStorage.shared.clearPendingCustomCompanionPush()
+        }
+    }
 }

@@ -49,6 +49,17 @@ public enum AvatarImageProcessor {
         return data.prefix(signature.count).elementsEqual(signature)
     }
 
+    /// KRI format validity plus the avatar-specific 800×700 wire bounds.
+    /// Generic KRI files may use the full UInt16 size range; only 0x15 avatars are bounded here.
+    static func isValidAvatarKRI(_ data: Data) -> Bool {
+        guard data.count <= maxKRIEncodedByteCount,
+              KRIEncoder.isValidKRI(data) else { return false }
+        let header = [UInt8](data.prefix(12))
+        let width = Int(header[4]) | (Int(header[5]) << 8)
+        let height = Int(header[6]) | (Int(header[7]) << 8)
+        return width <= maxPixelWidth && height <= maxPixelHeight
+    }
+
     /// Aspect-fit `original` into the bounding box, preserving ratio. Never upscales
     /// (scale clamped to 1.0). Floor-rounded to integer pixels, minimum 1×1.
     static func fitSize(
