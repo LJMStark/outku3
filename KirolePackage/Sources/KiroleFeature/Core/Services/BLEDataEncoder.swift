@@ -21,6 +21,12 @@ public enum DayPackTextBudget {
 /// BLE 数据编码器，负责将应用数据编码为 E-ink 设备可识别的二进制格式
 public enum BLEDataEncoder {
 
+    private enum HardwareTitleFallback {
+        static let event = "Calendar Event"
+        static let task = "Task"
+        static let nextItem = "Next item"
+    }
+
     // MARK: - Pet Status
 
     /// 编码宠物状态数据。
@@ -46,7 +52,11 @@ public enum BLEDataEncoder {
         data.append(UInt8(min(todayTasks.count, 10)))
 
         for task in todayTasks.prefix(10) {
-            data.appendString(task.title, maxLength: 30)
+            data.appendString(
+                task.title,
+                maxLength: 30,
+                fallbackIfSanitizedEmpty: HardwareTitleFallback.task
+            )
             data.append(task.isCompleted ? 1 : 0)
         }
         return data
@@ -70,7 +80,11 @@ public enum BLEDataEncoder {
         formatter.dateFormat = "HH:mm"
 
         for event in todayEvents.prefix(8) {
-            data.appendString(event.title, maxLength: 25)
+            data.appendString(
+                event.title,
+                maxLength: 25,
+                fallbackIfSanitizedEmpty: HardwareTitleFallback.event
+            )
             data.append(formatter.string(from: event.startTime).data(using: .utf8) ?? Data())
         }
         return data
@@ -138,7 +152,11 @@ public enum BLEDataEncoder {
         data.appendClampedUInt8(min(dayPack.events.count, maxEvents))
         for event in dayPack.events.prefix(maxEvents) {
             data.appendString(event.time, maxLength: 8)
-            data.appendString(event.title, maxLength: 40)
+            data.appendString(
+                event.title,
+                maxLength: 40,
+                fallbackIfSanitizedEmpty: HardwareTitleFallback.event
+            )
             data.appendString(event.description, maxLength: 120)
             // v2.5.27: Category byte (0x00=untagged/no icon, 0x01-0x06 = customer's six classes).
             // Signal only — the six icons are firmware-built-in art. Breaking change: the strict
@@ -155,7 +173,11 @@ public enum BLEDataEncoder {
         data.appendClampedUInt8(min(dayPack.topTasks.count, maxTasks))
         for task in dayPack.topTasks.prefix(maxTasks) {
             data.appendString(task.id, maxLength: 36)
-            data.appendString(task.title, maxLength: 30)
+            data.appendString(
+                task.title,
+                maxLength: 30,
+                fallbackIfSanitizedEmpty: HardwareTitleFallback.task
+            )
             data.append(task.isCompleted ? 0x01 : 0x00)
             data.appendClampedUInt8(task.priority)
         }
@@ -180,7 +202,11 @@ public enum BLEDataEncoder {
 
         // v2.5.8: FirstUp (box③ "First up:" label), appended after DaySummary.
         // Same strict-reader contract: a reader must read it to reach end.
-        data.appendString(dayPack.firstUp, maxLength: 60)
+        data.appendString(
+            hardwareFirstUpLabel(dayPack.firstUp),
+            maxLength: 60,
+            fallbackIfSanitizedEmpty: dayPack.firstUp.isEmpty ? nil : HardwareTitleFallback.nextItem
+        )
 
         // v2.5.30/v2.5.31: 每日总结页两段文案（尾部追加，SettlementData 定长偏移保持稳定）。
         // SettlementQuote 是当前 DayPack 最后一个字段——严格读取方必须依次读完这两个
@@ -192,13 +218,39 @@ public enum BLEDataEncoder {
         return data
     }
 
+    private static func hardwareFirstUpLabel(_ label: String) -> String {
+        let trimmed = label.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+
+        let parts = trimmed.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
+        guard parts.count == 2, isTimePrefix(parts[0]) else { return trimmed }
+
+        let title = String(parts[1])
+        if title.needsHardwareTitleFallback() {
+            return "\(parts[0]) \(HardwareTitleFallback.nextItem)"
+        }
+        return trimmed
+    }
+
+    private static func isTimePrefix(_ value: Substring) -> Bool {
+        let characters = Array(value)
+        guard characters.count == 5, characters[2] == ":" else { return false }
+        return characters.enumerated().allSatisfy { index, character in
+            index == 2 || character.isNumber
+        }
+    }
+
     // MARK: - Task In Page
 
     /// 编码 TaskInPage 数据
     public static func encodeTaskInPage(_ taskInPage: TaskInPageData) -> Data {
         var data = Data()
         data.appendString(taskInPage.taskId, maxLength: 36)
-        data.appendString(taskInPage.taskTitle, maxLength: 40)
+        data.appendString(
+            taskInPage.taskTitle,
+            maxLength: 40,
+            fallbackIfSanitizedEmpty: HardwareTitleFallback.task
+        )
         data.appendString(taskInPage.taskDescription ?? "", maxLength: DayPackTextBudget.taskDescription)
         data.appendString(taskInPage.encouragement, maxLength: 50)
         data.append(taskInPage.focusChallengeActive ? 0x01 : 0x00)
@@ -261,7 +313,15 @@ public enum BLEDataEncoder {
         data.append(phaseByte)
         data.appendClampedUInt8(energyBottles)
         data.appendBigEndian(UInt16(clamping: elapsedMinutes))
-        data.appendString(taskTitle ?? "", maxLength: 40)
+        if let taskTitle {
+            data.appendString(
+                taskTitle,
+                maxLength: 40,
+                fallbackIfSanitizedEmpty: HardwareTitleFallback.task
+            )
+        } else {
+            data.appendString("", maxLength: 40)
+        }
         // SegmentMinutes appended after the variable-length TaskTitle so older firmware that
         // stops at TaskTitle simply ignores the trailing bytes (forward-compatible).
         data.appendBigEndian(UInt16(clamping: segmentMinutes))

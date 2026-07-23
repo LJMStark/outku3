@@ -199,7 +199,7 @@ public struct EventDetailModal: View {
                     EventDetailCard {
                         VStack(spacing: 0) {
                             EventDetailRow(icon: "calendar.badge.clock", showPencil: true, onPencilTap: { showEditSheet = true }) {
-                                Text("\(AppDateFormatters.eventDetailDate.string(from: event.startTime)) · \(AppDateFormatters.time.string(from: event.startTime))-\(AppDateFormatters.time.string(from: event.endTime)) · \(event.durationText)")
+                                Text(eventTimeText(event))
                                     .font(.system(size: 14))
                                     .foregroundStyle(theme.colors.primaryText)
                             }
@@ -250,6 +250,9 @@ public struct EventDetailModal: View {
     }
 
     private func startStatusText(_ event: CalendarEvent) -> String {
+        if event.isAllDay {
+            return "All-day event"
+        }
         let diff = event.startTime.timeIntervalSinceNow
         if diff <= 0 {
             return "Started"
@@ -260,6 +263,16 @@ public struct EventDetailModal: View {
         }
         let mins = max(1, Int(diff) / 60)
         return "Starts in \(mins)m"
+    }
+
+    private func eventTimeText(_ event: CalendarEvent) -> String {
+        let date = AppDateFormatters.eventDetailDate.string(from: event.startTime)
+        if event.isAllDay {
+            return "\(date) · All Day"
+        }
+        let start = AppDateFormatters.time.string(from: event.startTime)
+        let end = AppDateFormatters.time.string(from: event.endTime)
+        return "\(date) · \(start)-\(end) · \(event.durationText)"
     }
 }
 

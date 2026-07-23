@@ -844,6 +844,106 @@ struct BLEProtocolTests {
         #expect(data[cursor] == 0x02)
     }
 
+    @Test("CJK-only event and task titles use nonempty hardware fallbacks")
+    func cjkOnlyDayPackTitlesUseFallbacks() {
+        let pack = DayPack(
+            date: Date(timeIntervalSince1970: 1_700_000_000),
+            petDialogue: "",
+            events: [
+                EventSummary(time: "", endTime: "", title: "大暑。", description: "")
+            ],
+            topTasks: [
+                TaskSummary(id: "task-cjk", title: "写报告！", isCompleted: false, priority: 1)
+            ],
+            settlementData: SettlementData(
+                tasksCompleted: 0,
+                tasksTotal: 2,
+                pointsEarned: 0,
+                petMood: "happy",
+                summaryMessage: "",
+                encouragementMessage: ""
+            )
+        )
+        let data = BLEDataEncoder.encodeDayPack(pack)
+
+        var cursor = 5
+        #expect(readString(from: data, cursor: &cursor) == "")
+        #expect(data[cursor] == 1)
+        cursor += 1
+        #expect(readString(from: data, cursor: &cursor) == "")
+        #expect(readString(from: data, cursor: &cursor) == "Calendar Event")
+        #expect(readString(from: data, cursor: &cursor) == "")
+        #expect(data[cursor] == EventCategory.unknown.rawValue)
+        cursor += 1
+        #expect(readString(from: data, cursor: &cursor) == "")
+        #expect(data[cursor] == 1)
+        cursor += 1
+        #expect(readString(from: data, cursor: &cursor) == "task-cjk")
+        #expect(readString(from: data, cursor: &cursor) == "Task")
+    }
+
+    @Test("CJK-only FirstUp title keeps its time and uses a hardware fallback")
+    func cjkOnlyFirstUpTitleUsesFallback() {
+        let pack = DayPack(
+            date: Date(timeIntervalSince1970: 1_700_000_000),
+            petDialogue: "",
+            firstUp: "09:30 大暑。",
+            settlementData: SettlementData(
+                tasksCompleted: 0,
+                tasksTotal: 0,
+                pointsEarned: 0,
+                petMood: "happy",
+                summaryMessage: "",
+                encouragementMessage: ""
+            )
+        )
+        let data = BLEDataEncoder.encodeDayPack(pack)
+
+        var cursor = 5
+        _ = readString(from: data, cursor: &cursor)
+        cursor += 1
+        cursor += 1
+        cursor += 10
+        _ = readString(from: data, cursor: &cursor)
+        #expect(readString(from: data, cursor: &cursor) == "09:30 Next item")
+    }
+
+    @Test("CJK-only task titles use fallback in task detail and focus frames")
+    func cjkOnlyDynamicTaskTitlesUseFallbacks() {
+        let taskPage = BLEDataEncoder.encodeTaskInPage(
+            TaskInPageData(
+                taskId: "task-cjk",
+                taskTitle: "写报告",
+                taskDescription: nil,
+                encouragement: "",
+                focusChallengeActive: false
+            )
+        )
+        var taskCursor = 0
+        #expect(readString(from: taskPage, cursor: &taskCursor) == "task-cjk")
+        #expect(readString(from: taskPage, cursor: &taskCursor) == "Task")
+
+        let focus = BLEDataEncoder.encodeFocusStatus(
+            phase: .warmup,
+            energyBottles: 0,
+            elapsedMinutes: 1,
+            taskTitle: "写报告",
+            segmentMinutes: 1
+        )
+        var focusCursor = 4
+        #expect(readString(from: focus, cursor: &focusCursor) == "Task")
+
+        let idle = BLEDataEncoder.encodeFocusStatus(
+            phase: .idle,
+            energyBottles: 0,
+            elapsedMinutes: 0,
+            taskTitle: nil,
+            segmentMinutes: 0
+        )
+        var idleCursor = 4
+        #expect(readString(from: idle, cursor: &idleCursor) == "")
+    }
+
     @Test("BLEDataEncoder encodeDayPack appends DaySummary at the tail (v2.5.7)")
     func encodeDayPackAppendsDaySummaryTail() {
         let settlement = SettlementData(

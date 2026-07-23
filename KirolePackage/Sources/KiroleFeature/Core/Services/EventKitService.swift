@@ -64,10 +64,19 @@ public actor EventKitService {
 
     private func queryEvents(from startDate: Date, to endDate: Date) throws -> [CalendarEvent] {
         let calendars = eventStore.calendars(for: .event)
+        guard !calendars.isEmpty else { return [] }
         let predicate = eventStore.predicateForEvents(withStart: startDate, end: endDate, calendars: calendars)
         let ekEvents = eventStore.events(matching: predicate)
 
-        return ekEvents.map { event in
+        return ekEvents.compactMap { event in
+            guard Self.shouldSyncEvent(
+                title: event.title ?? "",
+                calendarType: event.calendar.type,
+                isSubscribed: event.calendar.isSubscribed,
+                calendarTitle: event.calendar.title
+            ) else {
+                return nil
+            }
             let eventIdentifier = event.eventIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
             let safeEventId: String
             if !eventIdentifier.isEmpty {
@@ -96,6 +105,42 @@ public actor EventKitService {
                 videoMeetingURL: videoURL
             )
         }
+    }
+
+    /// Excludes Apple reference data while retaining useful subscribed calendars such as
+    /// team schedules. A locally-created event is never rejected just because its title is CJK.
+    nonisolated static func shouldSyncEvent(
+        title: String,
+        calendarType: EKCalendarType,
+        isSubscribed: Bool,
+        calendarTitle: String
+    ) -> Bool {
+        if calendarType == .birthday { return false }
+
+        let isSubscription = isSubscribed || calendarType == .subscription
+        guard isSubscription else { return true }
+
+        let normalizedCalendarTitle = calendarTitle
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        let holidayCalendarTitles: Set<String> = [
+            "holiday", "holidays", "china holidays", "chinese holidays", "holidays in china",
+            "节假日", "中国节假日", "中国大陆节假日", "节日", "中国节日", "节气",
+            "節假日", "中國節假日", "中國大陸節假日", "節日", "中國節日", "節氣",
+            "休日", "祝日", "공휴일", "대한민국 공휴일", "휴일"
+        ]
+        if holidayCalendarTitles.contains(normalizedCalendarTitle) {
+            return false
+        }
+
+        let solarTerms: Set<String> = [
+            "立春", "雨水", "惊蛰", "驚蟄", "春分", "清明", "谷雨", "穀雨",
+            "立夏", "小满", "小滿", "芒种", "芒種", "夏至", "小暑", "大暑",
+            "立秋", "处暑", "處暑", "白露", "秋分", "寒露", "霜降", "立冬",
+            "小雪", "大雪", "冬至", "小寒", "大寒"
+        ]
+        let normalizedEventTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !solarTerms.contains(normalizedEventTitle)
     }
 
     /// Fetch events for a custom date range (used by AppleSyncEngine)

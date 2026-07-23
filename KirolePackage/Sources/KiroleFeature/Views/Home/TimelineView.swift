@@ -150,7 +150,7 @@ struct TimelineEventCardRow: View {
         VStack(alignment: .leading, spacing: 0) {
             // Time header
             HStack {
-                Text(AppDateFormatters.time.string(from: event.startTime))
+                Text(event.isAllDay ? "All Day" : AppDateFormatters.time.string(from: event.startTime))
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(theme.colors.secondaryText)
                     .frame(width: 64, alignment: .leading)
@@ -166,7 +166,7 @@ struct TimelineEventCardRow: View {
 
                 EventCardView(
                     title: event.title,
-                    duration: event.durationText,
+                    duration: event.isAllDay ? "All Day" : event.durationText,
                     participants: event.participants.count,
                     description: event.description ?? "",
                     source: event.source,

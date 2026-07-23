@@ -20,8 +20,8 @@ extension String {
     /// 3. **Diacritic-fold** accented Latin to base letters (`café` → `cafe`), plus an explicit
     ///    map for ligatures that do not canonically decompose (`ß` → `ss`, `æ` → `ae`).
     /// 4. **Drop** anything still outside `0x20`–`0x7E` (emoji, CJK/Cyrillic/Greek/…, currency,
-    ///    math, zero-width & directional-format characters). For an English-only product an empty
-    ///    field is better than a row of tofu; romanization is intentionally out of scope.
+    ///    math, zero-width & directional-format characters). Romanization is intentionally out of
+    ///    scope; hardware-visible title fields add a role-specific English fallback after this step.
     ///
     /// Must run BEFORE the `maxLength` byte truncation in `appendString`: a transform can grow
     /// (`…` → `...`) or shrink (`café` → `cafe`) the byte count, so truncation clamps the final
@@ -49,6 +49,16 @@ extension String {
             //       incl. DEL 0x7F — intentionally excluded as a non-printing control) → dropped
         }
         return out
+    }
+
+    /// Hardware title fields need a readable word, not punctuation left behind after CJK removal.
+    func needsHardwareTitleFallback(asciiSanitized: String? = nil) -> Bool {
+        let ascii = asciiSanitized ?? asciiSanitizedForEInk()
+        if ascii.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
+
+        let containedNonASCII = unicodeScalars.contains { $0.value > 0x7E }
+        guard containedNonASCII else { return false }
+        return !ascii.contains { $0.isLetter || $0.isNumber }
     }
 
     /// True when every UTF-8 byte is printable ASCII (`0x20`–`0x7E`).

@@ -1,9 +1,56 @@
 import Testing
 import Foundation
+import EventKit
 @testable import KiroleFeature
 
 @Suite("Apple Sync Merge (B16)")
 struct AppleSyncMergeTests {
+
+    @Test("Apple reference events are excluded without dropping useful subscriptions")
+    func systemReferenceEventsAreExcluded() {
+        #expect(EventKitService.shouldSyncEvent(
+            title: "大暑",
+            calendarType: .subscription,
+            isSubscribed: true,
+            calendarTitle: "中国大陆节假日"
+        ) == false)
+        #expect(EventKitService.shouldSyncEvent(
+            title: "Birthday",
+            calendarType: .birthday,
+            isSubscribed: false,
+            calendarTitle: "Birthdays"
+        ) == false)
+        #expect(EventKitService.shouldSyncEvent(
+            title: "Team practice",
+            calendarType: .subscription,
+            isSubscribed: true,
+            calendarTitle: "Team Schedule"
+        ))
+        #expect(EventKitService.shouldSyncEvent(
+            title: "League match",
+            calendarType: .calDAV,
+            isSubscribed: true,
+            calendarTitle: "League Matches"
+        ))
+        #expect(EventKitService.shouldSyncEvent(
+            title: "Campaign review",
+            calendarType: .subscription,
+            isSubscribed: true,
+            calendarTitle: "Working Holiday Team Schedule"
+        ))
+        #expect(EventKitService.shouldSyncEvent(
+            title: "大暑",
+            calendarType: .subscription,
+            isSubscribed: true,
+            calendarTitle: "Team Schedule"
+        ) == false)
+        #expect(EventKitService.shouldSyncEvent(
+            title: "大暑项目复盘",
+            calendarType: .local,
+            isSubscribed: false,
+            calendarTitle: "Work"
+        ))
+    }
 
     private func makeTask(
         id: String,
