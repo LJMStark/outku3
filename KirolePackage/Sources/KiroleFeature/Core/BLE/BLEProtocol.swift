@@ -20,6 +20,7 @@ import Foundation
 //   0x17 sceneUnlock     场景解锁（业务帧，secure 模式可发；替代旧 0xAA 开发命令）
 //   0x18 otaReboot       触发固件升级重启（零 payload；固件校验包后应答并重启，不等 App 确认）
 //   0x19 wifiDebugMode   Wi-Fi PC 调试模式（App 命令 00/01/02；Device 应答 enabled+status）
+//   0x1A wifiAvatarSession SoftAP 头像快传会话（App close/open/query+OpID；Device status+凭据/端点）
 //   0x20 eventLogRequest 请求增量 Event Log
 //   0x21 eventLogBatch   批量回传 Event Log（Device→App，此 type 仅出现在入站方向）
 //   0x22 avatarControl   自定义头像提交、擦除、查询、取消与设备结果
@@ -79,6 +80,9 @@ public enum BLEDataType: UInt8, Sendable {
     case otaReboot = 0x18
     /// 双向实时帧：App payload 为 disable(00)/enable(01)/query(02)，设备应答为 enabled(1B)+status(1B)。
     case wifiDebugMode = 0x19
+    /// 双向实时帧：App 发 close(00)/open(01)/query(02) + OperationID，设备回 status + SoftAP 凭据/端点。
+    /// SoftAP 头像快传会话握手，见 §4.20/§5.20 与 `WiFiAvatarSessionCodec`。
+    case wifiAvatarSession = 0x1A
     case eventLogRequest = 0x20
     case eventLogBatch = 0x21
     /// 双向实时帧：App 发 commit/erase/query/abort，设备回 staged/committed/erased/state/aborted。
