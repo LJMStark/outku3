@@ -461,6 +461,53 @@ struct BLEProtocolSimulationTests {
         #expect(firmware.stagedAvatarID == nil)
     }
 
+    @Test("Avatar query reports a matching staged candidate before the old committed image")
+    func avatarQueryPrefersMatchingStagedCandidate() throws {
+        let oldID = UUID()
+        let newID = UUID()
+        var firmware = SimulatedAvatarFirmware()
+
+        let oldPayload = try makeAvatarPayload(operationID: 1, avatarID: oldID, seed: 1)
+        let oldFrame = try CustomAvatarFrameV4Codec.decode(oldPayload)
+        _ = try firmware.receiveAvatarFrame(oldPayload)
+        _ = try firmware.handle(.commit(operationID: 1, avatarID: oldID))
+
+        let newPayload = try makeAvatarPayload(operationID: 2, avatarID: newID, seed: 2)
+        let newFrame = try CustomAvatarFrameV4Codec.decode(newPayload)
+        _ = try firmware.receiveAvatarFrame(newPayload)
+
+        let matchingState = try firmware.handle(.query(operationID: 2))
+        #expect(matchingState.operationID == 2)
+        #expect(matchingState.status == .state)
+        #expect(matchingState.avatarState == .staged)
+        #expect(matchingState.avatarID == newID)
+        #expect(matchingState.byteLength == newFrame.fileLength)
+        #expect(matchingState.crc32 == newFrame.fileCRC32)
+        #expect(matchingState.customActive)
+
+        let unrelatedState = try firmware.handle(.query(operationID: 3))
+        #expect(unrelatedState.operationID == 3)
+        #expect(unrelatedState.status == .state)
+        #expect(unrelatedState.avatarState == .committed)
+        #expect(unrelatedState.avatarID == oldID)
+        #expect(unrelatedState.byteLength == oldFrame.fileLength)
+        #expect(unrelatedState.crc32 == oldFrame.fileCRC32)
+        #expect(unrelatedState.customActive)
+
+        #expect(firmware.committedAvatarID == oldID)
+        #expect(firmware.stagedAvatarID == newID)
+
+        _ = try firmware.handle(.commit(operationID: 2, avatarID: newID))
+        let refreshedState = try firmware.handle(.query(operationID: 2))
+        #expect(refreshedState.operationID == 2)
+        #expect(refreshedState.status == .state)
+        #expect(refreshedState.avatarState == .committed)
+        #expect(refreshedState.avatarID == newID)
+        #expect(refreshedState.byteLength == newFrame.fileLength)
+        #expect(refreshedState.crc32 == newFrame.fileCRC32)
+        #expect(refreshedState.customActive)
+    }
+
     @Test("Truncated or CRC-corrupt staging never replaces the committed image")
     func avatarStagingFailurePreservesCommittedImage() throws {
         let oldID = UUID()
