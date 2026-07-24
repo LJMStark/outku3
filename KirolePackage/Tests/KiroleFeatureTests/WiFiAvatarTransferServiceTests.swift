@@ -12,12 +12,16 @@ struct WiFiAvatarTransferServiceTests {
         let openResult: Result<WiFiAvatarSessionCredentials, any Error>
         private(set) var openCount = 0
         private(set) var closeCount = 0
+        private(set) var closeWasCancelled = false
         init(_ openResult: Result<WiFiAvatarSessionCredentials, any Error>) { self.openResult = openResult }
         func openSession(operationID: UInt32) async throws -> WiFiAvatarSessionCredentials {
             openCount += 1
             return try openResult.get()
         }
-        func closeSession(operationID: UInt32) async { closeCount += 1 }
+        func closeSession(operationID: UInt32) async {
+            closeCount += 1
+            closeWasCancelled = Task.isCancelled
+        }
     }
 
     final class MockHotspot: HotspotJoining, @unchecked Sendable {
@@ -33,14 +37,25 @@ struct WiFiAvatarTransferServiceTests {
     }
 
     final class MockReachability: WiFiReachability, @unchecked Sendable {
-        let available: Bool
-        let pathSatisfied: Bool
-        init(available: Bool = true, pathSatisfied: Bool = true) {
-            self.available = available
-            self.pathSatisfied = pathSatisfied
+        let associationSatisfied: Bool
+        private(set) var expectedSSIDs: [String] = []
+        init(associationSatisfied: Bool = true) {
+            self.associationSatisfied = associationSatisfied
         }
-        func isWiFiInterfaceAvailable() async -> Bool { available }
-        func waitForWiFiPath(timeout: Duration) async -> Bool { pathSatisfied }
+        func waitUntilAssociated(to ssid: String, timeout: Duration) async -> Bool {
+            expectedSSIDs.append(ssid)
+            return associationSatisfied
+        }
+    }
+
+    final class CancellationAwareReachability: WiFiReachability, @unchecked Sendable {
+        private(set) var didStart = false
+
+        func waitUntilAssociated(to ssid: String, timeout: Duration) async -> Bool {
+            didStart = true
+            while !Task.isCancelled { await Task.yield() }
+            return false
+        }
     }
 
     final class MockUploader: AvatarHTTPUploading, @unchecked Sendable {
@@ -89,7 +104,7 @@ struct WiFiAvatarTransferServiceTests {
     private func makeService(
         session: MockSession,
         hotspot: MockHotspot = MockHotspot(),
-        reachability: MockReachability = MockReachability(),
+        reachability: any WiFiReachability = MockReachability(),
         uploader: MockUploader = MockUploader()
     ) -> WiFiAvatarTransferService {
         WiFiAvatarTransferService(
@@ -126,40 +141,49 @@ struct WiFiAvatarTransferServiceTests {
         // cleanup always runs
         #expect(hotspot.leaveCount == 1)
         #expect(session.closeCount == 1)
+        #expect(!session.closeWasCancelled)
         #expect(uploader.lastEndpoint?.absoluteString == "http://192.168.4.1:8080/avatar")
     }
 
-    @Test("WiFi disabled throws before opening a session")
-    func wifiDisabled() async {
+    @Test("No current WiFi path does not block opening the device hotspot")
+    func noCurrentWiFiPathDoesNotBlockSession() async throws {
         let session = MockSession(.success(Self.credentials()))
         let hotspot = MockHotspot()
         let service = makeService(
             session: session,
             hotspot: hotspot,
-            reachability: MockReachability(available: false)
+            reachability: MockReachability(associationSatisfied: true)
         )
 
-        await #expect(throws: WiFiTransferError.wifiDisabled) {
-            try await service.send(operationID: 1, avatarID: UUID(), kriData: Data(), onPhase: { _ in }, onProgress: { _, _ in })
-        }
-        #expect(session.openCount == 0)
-        #expect(hotspot.joinCount == 0)
-        #expect(hotspot.leaveCount == 0) // no session opened → no cleanup
-        #expect(session.closeCount == 0)
+        try await service.send(
+            operationID: 1,
+            avatarID: UUID(),
+            kriData: Data(),
+            onPhase: { _ in },
+            onProgress: { _, _ in }
+        )
+
+        #expect(session.openCount == 1)
+        #expect(hotspot.joinCount == 1)
+        #expect(hotspot.leaveCount == 1)
+        #expect(session.closeCount == 1)
+        #expect(!session.closeWasCancelled)
     }
 
-    @Test("Session handshake failure propagates and skips the transfer")
-    func sessionHandshakeFails() async {
+    @Test("Session handshake failure closes the operation and skips the transfer")
+    func sessionHandshakeFailsAndCloses() async {
         let session = MockSession(.failure(WiFiAvatarSessionError.timedOut))
         let hotspot = MockHotspot()
-        let service = makeService(session: session, hotspot: hotspot)
+        let uploader = MockUploader()
+        let service = makeService(session: session, hotspot: hotspot, uploader: uploader)
 
         await #expect(throws: WiFiTransferError.self) {
             try await service.send(operationID: 1, avatarID: UUID(), kriData: Data(), onPhase: { _ in }, onProgress: { _, _ in })
         }
         #expect(hotspot.joinCount == 0)
-        #expect(hotspot.leaveCount == 0) // session never opened
-        #expect(session.closeCount == 0)
+        #expect(uploader.uploadCount == 0)
+        #expect(hotspot.leaveCount == 0)
+        #expect(session.closeCount == 1)
     }
 
     @Test("Hotspot join failure cleans up the opened session")
@@ -185,7 +209,7 @@ struct WiFiAvatarTransferServiceTests {
         let service = makeService(
             session: session,
             hotspot: hotspot,
-            reachability: MockReachability(available: true, pathSatisfied: false),
+            reachability: MockReachability(associationSatisfied: false),
             uploader: uploader
         )
 
@@ -195,6 +219,71 @@ struct WiFiAvatarTransferServiceTests {
         #expect(uploader.uploadCount == 0)
         #expect(hotspot.leaveCount == 1)
         #expect(session.closeCount == 1)
+        #expect(!session.closeWasCancelled)
+    }
+
+    @Test("A WiFi path on another SSID never uploads the avatar")
+    func differentSSIDDoesNotUpload() async {
+        let session = MockSession(.success(Self.credentials()))
+        let hotspot = MockHotspot()
+        let reachability = MockReachability(associationSatisfied: false)
+        let uploader = MockUploader()
+        let service = makeService(
+            session: session,
+            hotspot: hotspot,
+            reachability: reachability,
+            uploader: uploader
+        )
+
+        await #expect(throws: WiFiTransferError.unreachable) {
+            try await service.send(
+                operationID: 1,
+                avatarID: UUID(),
+                kriData: Data([1]),
+                onPhase: { _ in },
+                onProgress: { _, _ in }
+            )
+        }
+
+        #expect(reachability.expectedSSIDs == ["Kirole-TEST"])
+        #expect(uploader.uploadCount == 0)
+        #expect(hotspot.leaveCount == 1)
+        #expect(session.closeCount == 1)
+        #expect(!session.closeWasCancelled)
+    }
+
+    @Test("Cancellation while waiting for the target SSID does not fall back as unreachable")
+    func associationCancellationRemainsCancellation() async {
+        let session = MockSession(.success(Self.credentials()))
+        let hotspot = MockHotspot()
+        let reachability = CancellationAwareReachability()
+        let uploader = MockUploader()
+        let service = makeService(
+            session: session,
+            hotspot: hotspot,
+            reachability: reachability,
+            uploader: uploader
+        )
+
+        let task = Task {
+            try await service.send(
+                operationID: 1,
+                avatarID: UUID(),
+                kriData: Data([1]),
+                onPhase: { _ in },
+                onProgress: { _, _ in }
+            )
+        }
+        while !reachability.didStart { await Task.yield() }
+        task.cancel()
+
+        await #expect(throws: CancellationError.self) {
+            try await task.value
+        }
+        #expect(uploader.uploadCount == 0)
+        #expect(hotspot.leaveCount == 1)
+        #expect(session.closeCount == 1)
+        #expect(!session.closeWasCancelled)
     }
 
     @Test("HTTP upload failure cleans up")
@@ -209,6 +298,27 @@ struct WiFiAvatarTransferServiceTests {
         }
         #expect(hotspot.leaveCount == 1)
         #expect(session.closeCount == 1)
+    }
+
+    @Test("Cancellation during upload cleans up and remains cancellation")
+    func uploadCancellationCleansUp() async {
+        let session = MockSession(.success(Self.credentials()))
+        let hotspot = MockHotspot()
+        let uploader = MockUploader(uploadError: CancellationError())
+        let service = makeService(session: session, hotspot: hotspot, uploader: uploader)
+
+        await #expect(throws: CancellationError.self) {
+            try await service.send(
+                operationID: 1,
+                avatarID: UUID(),
+                kriData: Data([9]),
+                onPhase: { _ in },
+                onProgress: { _, _ in }
+            )
+        }
+        #expect(hotspot.leaveCount == 1)
+        #expect(session.closeCount == 1)
+        #expect(!session.closeWasCancelled)
     }
 
     @Test("Upload progress is forwarded to the caller")
@@ -252,13 +362,15 @@ struct WiFiAvatarTransferServiceTests {
         #expect(headers[WiFiAvatarHTTPContract.fileCRC32Header] == "12345678")
     }
 
-    @Test("Only userInterrupted is not recoverable to BLE")
-    func recoverability() {
-        #expect(WiFiTransferError.wifiDisabled.isRecoverableToBLE)
-        #expect(WiFiTransferError.sessionHandshakeFailed("x").isRecoverableToBLE)
-        #expect(WiFiTransferError.hotspotJoinFailed(.userDenied).isRecoverableToBLE)
-        #expect(WiFiTransferError.unreachable.isRecoverableToBLE)
-        #expect(WiFiTransferError.httpFailed(.invalidResponse).isRecoverableToBLE)
-        #expect(!WiFiTransferError.userInterrupted.isRecoverableToBLE)
+    @Test("SSID association requires identical UTF-8 bytes")
+    func ssidAssociationUsesExactBytes() {
+        let composed = "Caf\u{00E9}-AP"
+        let decomposed = "Cafe\u{0301}-AP"
+
+        #expect(composed == decomposed) // Swift String equality is normalization-aware.
+        #expect(WiFiSSIDMatcher.matches(composed, expected: composed))
+        #expect(!WiFiSSIDMatcher.matches(decomposed, expected: composed))
+        #expect(!WiFiSSIDMatcher.matches(nil, expected: composed))
     }
+
 }

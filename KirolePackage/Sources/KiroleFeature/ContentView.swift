@@ -10,7 +10,6 @@ public struct ContentView: View {
     @AppStorage("isOnboardingCompleted") private var isOnboardingCompleted: Bool = false
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.openURL) private var openURL
     @State private var sceneCelebrationConfettiTrigger = 0
     @State private var sceneCelebrationDismissTask: Task<Void, Never>?
     @State private var isCustomAvatarActionLocked = false
@@ -77,35 +76,6 @@ public struct ContentView: View {
                 // can also start the same multi-minute avatar transaction.
                 appState.interruptCustomAvatarOperationForBackground()
             }
-        }
-        .alert(
-            "Turn on Wi-Fi to Transfer",
-            isPresented: Binding(
-                get: { appState.isWiFiEnablePromptPresented },
-                set: { presented in
-                    if !presented { appState.resolveWiFiEnablePrompt(.cancel) }
-                }
-            )
-        ) {
-            Button("Open Settings") {
-                appState.resolveWiFiEnablePrompt(.openSettings)
-                #if os(iOS)
-                if let url = URL(string: UIApplication.openSettingsURLString) {
-                    openURL(url)
-                }
-                #endif
-            }
-            .accessibilityIdentifier("WiFiEnablePrompt_OpenSettings")
-            Button("Send over Bluetooth") {
-                appState.resolveWiFiEnablePrompt(.useBluetooth)
-            }
-            .accessibilityIdentifier("WiFiEnablePrompt_UseBluetooth")
-            Button("Cancel", role: .cancel) {
-                appState.resolveWiFiEnablePrompt(.cancel)
-            }
-            .accessibilityIdentifier("WiFiEnablePrompt_Cancel")
-        } message: {
-            Text("Kirole sends companions quickly over Wi-Fi. Turn on Wi-Fi in Settings, or send it over Bluetooth (slower).")
         }
         .task {
             _ = FocusSessionService.shared

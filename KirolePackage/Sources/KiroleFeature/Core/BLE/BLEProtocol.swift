@@ -20,7 +20,7 @@ import Foundation
 //   0x17 sceneUnlock     场景解锁（业务帧，secure 模式可发；替代旧 0xAA 开发命令）
 //   0x18 otaReboot       触发固件升级重启（零 payload；固件校验包后应答并重启，不等 App 确认）
 //   0x19 wifiDebugMode   Wi-Fi PC 调试模式（App 命令 00/01/02；Device 应答 enabled+status）
-//   0x1A wifiAvatarSession SoftAP 头像快传会话（App close/open/query+OpID；Device status+凭据/端点）
+//   0x1A wifiAvatarSession SoftAP 头像快传会话（双向回显 command+OpID；Device 再带 status+凭据/端点）
 //   0x20 eventLogRequest 请求增量 Event Log
 //   0x21 eventLogBatch   批量回传 Event Log（Device→App，此 type 仅出现在入站方向）
 //   0x22 avatarControl   自定义头像提交、擦除、查询、取消与设备结果
@@ -80,7 +80,7 @@ public enum BLEDataType: UInt8, Sendable {
     case otaReboot = 0x18
     /// 双向实时帧：App payload 为 disable(00)/enable(01)/query(02)，设备应答为 enabled(1B)+status(1B)。
     case wifiDebugMode = 0x19
-    /// 双向实时帧：App 发 close(00)/open(01)/query(02) + OperationID，设备回 status + SoftAP 凭据/端点。
+    /// 双向实时帧：App 发 command + OperationID，设备回显两者后带 status + SoftAP 凭据/端点。
     /// SoftAP 头像快传会话握手，见 §4.20/§5.20 与 `WiFiAvatarSessionCodec`。
     case wifiAvatarSession = 0x1A
     case eventLogRequest = 0x20
@@ -89,6 +89,272 @@ public enum BLEDataType: UInt8, Sendable {
     case avatarControl = 0x22
     case secureData = 0x7E
     case securityHandshake = 0x7F
+}
+
+// MARK: - WiFi Avatar Session (0x1A)
+//
+// App 经 `0x1A` 让设备启/停 SoftAP 并索取一次性热点凭据与 HTTP 端点；头像字节
+// 走 WiFi，事务确认仍走 `0x22 AvatarControl`。完整协议见 BLE 规格 §4.20 / §5.20。
+// SSID、密码、path、token 是凭据，按原始 UTF-8 编解码，不能经过显示文本净化。
+
+/// App→Device：SoftAP 头像传输会话命令（§4.20）。
+public enum WiFiAvatarSessionCommand: UInt8, Sendable, Equatable, CaseIterable {
+    case close = 0x00
+    case open = 0x01
+    case query = 0x02
+}
+
+/// Device→App：会话应答状态码（§5.20）。
+public enum WiFiAvatarSessionStatus: UInt8, Sendable, Equatable {
+    case ok = 0x00
+    case unsupported = 0x01
+    case busy = 0x02
+    case wifiInitFailed = 0x03
+    case invalidCommand = 0x04
+    case unknownError = 0xFF
+}
+
+/// SoftAP 网关 IPv4（大端 4 字节，通常 192.168.4.1）。
+public struct IPv4Address: Sendable, Equatable, CustomStringConvertible {
+    public let a: UInt8
+    public let b: UInt8
+    public let c: UInt8
+    public let d: UInt8
+
+    public init(_ a: UInt8, _ b: UInt8, _ c: UInt8, _ d: UInt8) {
+        self.a = a
+        self.b = b
+        self.c = c
+        self.d = d
+    }
+
+    public var description: String { "\(a).\(b).\(c).\(d)" }
+}
+
+/// App→Device 请求（固定 5 字节：Command(1) + OperationID(4 BE)）。
+public struct WiFiAvatarSessionRequest: Sendable, Equatable {
+    public let command: WiFiAvatarSessionCommand
+    public let operationID: UInt32
+
+    public init(command: WiFiAvatarSessionCommand, operationID: UInt32) {
+        self.command = command
+        self.operationID = operationID
+    }
+}
+
+/// `open` 成功时设备回报的一次性热点凭据与 HTTP 端点。
+public struct WiFiAvatarSessionCredentials: Sendable, Equatable {
+    public let ssid: String
+    public let passphrase: String
+    public let gateway: IPv4Address
+    public let port: UInt16
+    public let path: String
+    public let token: String
+    public let ttlSeconds: UInt16
+
+    public init(
+        ssid: String,
+        passphrase: String,
+        gateway: IPv4Address,
+        port: UInt16,
+        path: String,
+        token: String,
+        ttlSeconds: UInt16
+    ) {
+        self.ssid = ssid
+        self.passphrase = passphrase
+        self.gateway = gateway
+        self.port = port
+        self.path = path
+        self.token = token
+        self.ttlSeconds = ttlSeconds
+    }
+
+    public var endpointURL: URL? {
+        var components = URLComponents()
+        components.scheme = "http"
+        components.host = gateway.description
+        components.port = Int(port)
+        components.path = path.hasPrefix("/") ? path : "/\(path)"
+        return components.url
+    }
+}
+
+/// Device→App 应答（§5.20）。回显命令和 OperationID，`status == .ok` 时携带凭据。
+public struct WiFiAvatarSessionResponse: Sendable, Equatable {
+    public let command: WiFiAvatarSessionCommand
+    public let operationID: UInt32
+    public let status: WiFiAvatarSessionStatus
+    public let credentials: WiFiAvatarSessionCredentials?
+
+    public init(
+        command: WiFiAvatarSessionCommand,
+        operationID: UInt32,
+        status: WiFiAvatarSessionStatus,
+        credentials: WiFiAvatarSessionCredentials?
+    ) {
+        self.command = command
+        self.operationID = operationID
+        self.status = status
+        self.credentials = credentials
+    }
+}
+
+public enum WiFiAvatarSessionCodecError: Error, Equatable, Sendable {
+    case invalidRequestLength(Int)
+    case invalidCommand(UInt8)
+    case emptyResponse
+    case truncatedResponse(field: String)
+    case invalidStatus(UInt8)
+    case invalidUTF8(field: String)
+    case fieldTooLong(field: String, length: Int, max: Int)
+    case trailingBytes(Int)
+}
+
+/// `0x1A` 请求/应答的 wire 编解码，测试与 Swift 模拟固件共用。
+public enum WiFiAvatarSessionCodec {
+    public static let requestLength = 1 + 4
+    public static let maxSSIDLength = 32
+    public static let maxPassphraseLength = 63
+    public static let maxPathLength = 32
+    public static let maxTokenLength = 64
+
+    public static func encodeRequest(_ request: WiFiAvatarSessionRequest) -> Data {
+        var payload = Data(capacity: requestLength)
+        payload.append(request.command.rawValue)
+        payload.appendBigEndian(request.operationID)
+        return payload
+    }
+
+    public static func decodeRequest(_ payload: Data) throws -> WiFiAvatarSessionRequest {
+        let bytes = [UInt8](payload)
+        guard bytes.count == requestLength else {
+            throw WiFiAvatarSessionCodecError.invalidRequestLength(bytes.count)
+        }
+        guard let command = WiFiAvatarSessionCommand(rawValue: bytes[0]) else {
+            throw WiFiAvatarSessionCodecError.invalidCommand(bytes[0])
+        }
+        let operationID = (UInt32(bytes[1]) << 24)
+            | (UInt32(bytes[2]) << 16)
+            | (UInt32(bytes[3]) << 8)
+            | UInt32(bytes[4])
+        return WiFiAvatarSessionRequest(command: command, operationID: operationID)
+    }
+
+    /// 供模拟固件和测试编码应答镜像。
+    public static func encodeResponse(_ response: WiFiAvatarSessionResponse) -> Data {
+        var payload = Data()
+        payload.append(response.command.rawValue)
+        payload.appendBigEndian(response.operationID)
+        payload.append(response.status.rawValue)
+        let credentials = response.credentials
+        appendLengthPrefixed(&payload, credentials?.ssid ?? "")
+        appendLengthPrefixed(&payload, credentials?.passphrase ?? "")
+        let gateway = credentials?.gateway
+        payload.append(contentsOf: [gateway?.a ?? 0, gateway?.b ?? 0, gateway?.c ?? 0, gateway?.d ?? 0])
+        payload.appendBigEndian(credentials?.port ?? 0)
+        appendLengthPrefixed(&payload, credentials?.path ?? "")
+        appendLengthPrefixed(&payload, credentials?.token ?? "")
+        payload.appendBigEndian(credentials?.ttlSeconds ?? 0)
+        return payload
+    }
+
+    public static func decodeResponse(_ payload: Data) throws -> WiFiAvatarSessionResponse {
+        let bytes = [UInt8](payload)
+        guard !bytes.isEmpty else { throw WiFiAvatarSessionCodecError.emptyResponse }
+
+        var offset = 0
+        func requireBytes(_ count: Int, field: String) throws {
+            guard offset + count <= bytes.count else {
+                throw WiFiAvatarSessionCodecError.truncatedResponse(field: field)
+            }
+        }
+        func readString(field: String, max: Int) throws -> String {
+            try requireBytes(1, field: field)
+            let length = Int(bytes[offset])
+            offset += 1
+            guard length <= max else {
+                throw WiFiAvatarSessionCodecError.fieldTooLong(field: field, length: length, max: max)
+            }
+            try requireBytes(length, field: field)
+            let slice = bytes[offset ..< offset + length]
+            offset += length
+            guard let string = String(bytes: slice, encoding: .utf8) else {
+                throw WiFiAvatarSessionCodecError.invalidUTF8(field: field)
+            }
+            return string
+        }
+        func readUInt16(field: String) throws -> UInt16 {
+            try requireBytes(2, field: field)
+            let value = UInt16(bytes[offset]) << 8 | UInt16(bytes[offset + 1])
+            offset += 2
+            return value
+        }
+
+        func readUInt32(field: String) throws -> UInt32 {
+            try requireBytes(4, field: field)
+            let value = (UInt32(bytes[offset]) << 24)
+                | (UInt32(bytes[offset + 1]) << 16)
+                | (UInt32(bytes[offset + 2]) << 8)
+                | UInt32(bytes[offset + 3])
+            offset += 4
+            return value
+        }
+
+        try requireBytes(1, field: "command")
+        let commandByte = bytes[offset]
+        offset += 1
+        guard let command = WiFiAvatarSessionCommand(rawValue: commandByte) else {
+            throw WiFiAvatarSessionCodecError.invalidCommand(commandByte)
+        }
+        let operationID = try readUInt32(field: "operationID")
+
+        try requireBytes(1, field: "status")
+        let statusByte = bytes[offset]
+        offset += 1
+        guard let status = WiFiAvatarSessionStatus(rawValue: statusByte) else {
+            throw WiFiAvatarSessionCodecError.invalidStatus(statusByte)
+        }
+
+        let ssid = try readString(field: "ssid", max: maxSSIDLength)
+        let passphrase = try readString(field: "passphrase", max: maxPassphraseLength)
+        try requireBytes(4, field: "gateway")
+        let gateway = IPv4Address(bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3])
+        offset += 4
+        let port = try readUInt16(field: "port")
+        let path = try readString(field: "path", max: maxPathLength)
+        let token = try readString(field: "token", max: maxTokenLength)
+        let ttl = try readUInt16(field: "ttl")
+
+        guard offset == bytes.count else {
+            throw WiFiAvatarSessionCodecError.trailingBytes(bytes.count - offset)
+        }
+
+        let credentials: WiFiAvatarSessionCredentials? = status == .ok
+            ? WiFiAvatarSessionCredentials(
+                ssid: ssid,
+                passphrase: passphrase,
+                gateway: gateway,
+                port: port,
+                path: path,
+                token: token,
+                ttlSeconds: ttl
+            )
+            : nil
+        return WiFiAvatarSessionResponse(
+            command: command,
+            operationID: operationID,
+            status: status,
+            credentials: credentials
+        )
+    }
+
+    private static func appendLengthPrefixed(_ data: inout Data, _ string: String) {
+        let stringBytes = Data(string.utf8)
+        let clamped = stringBytes.prefix(255)
+        data.append(UInt8(clamped.count))
+        data.append(contentsOf: clamped)
+    }
 }
 
 // MARK: - Custom Avatar Protocol v2.7

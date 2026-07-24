@@ -10,7 +10,8 @@ struct AppStateWiFiTransportRouterTests {
     final class MockTransport: WiFiAvatarTransporting {
         enum Behavior {
             case success
-            case wifiDisabled
+            case cancelled
+            case cancelledThenRecoverable
             case recoverable(WiFiTransferError)
         }
         let behavior: Behavior
@@ -28,8 +29,11 @@ struct AppStateWiFiTransportRouterTests {
             switch behavior {
             case .success:
                 return
-            case .wifiDisabled:
-                throw WiFiTransferError.wifiDisabled
+            case .cancelled:
+                throw CancellationError()
+            case .cancelledThenRecoverable:
+                withUnsafeCurrentTask { $0?.cancel() }
+                throw WiFiTransferError.unreachable
             case .recoverable(let error):
                 throw error
             }
@@ -91,50 +95,32 @@ struct AppStateWiFiTransportRouterTests {
         try await route(appState, bleFlag: bleFlag)
 
         #expect(bleFlag.count == 1)
-        #expect(!appState.isWiFiEnablePromptPresented)
     }
 
-    // MARK: - WiFi-off prompt
-
-    @Test("wifiDisabled prompts, then Send over Bluetooth falls back to BLE")
-    func wifiDisabledUseBluetooth() async throws {
+    @Test("Cancellation interrupts without falling back to BLE")
+    func cancellationDoesNotFallback() async {
         let appState = AppState.makeForTesting()
-        appState.wifiAvatarTransport = MockTransport(.wifiDisabled)
+        appState.wifiAvatarTransport = MockTransport(.cancelled)
         appState.avatarTransferPreference = .wifiPreferred
 
         let bleFlag = CallFlag()
-        let task = Task { try await self.route(appState, bleFlag: bleFlag) }
-        while !appState.isWiFiEnablePromptPresented { await Task.yield() }
-        appState.resolveWiFiEnablePrompt(.useBluetooth)
-        try await task.value
-
-        #expect(bleFlag.count == 1)
-        #expect(!appState.isWiFiEnablePromptPresented)
-    }
-
-    @Test("wifiDisabled Cancel interrupts (CancellationError) without BLE fallback")
-    func wifiDisabledCancel() async {
-        let appState = AppState.makeForTesting()
-        appState.wifiAvatarTransport = MockTransport(.wifiDisabled)
-        appState.avatarTransferPreference = .wifiPreferred
-
-        let bleFlag = CallFlag()
-        let task = Task { try await self.route(appState, bleFlag: bleFlag) }
-        while !appState.isWiFiEnablePromptPresented { await Task.yield() }
-        appState.resolveWiFiEnablePrompt(.cancel)
-
         await #expect(throws: CancellationError.self) {
-            try await task.value
+            try await route(appState, bleFlag: bleFlag)
         }
         #expect(bleFlag.count == 0)
-        #expect(!appState.isWiFiEnablePromptPresented)
     }
 
-    @Test("resolveWiFiEnablePrompt with no pending prompt is a no-op")
-    func resolveNoPending() {
+    @Test("Cancellation wins when a WiFi failure arrives at the same time")
+    func cancellationWinsOverRecoverableFailure() async {
         let appState = AppState.makeForTesting()
-        appState.resolveWiFiEnablePrompt(.cancel)
-        #expect(!appState.isWiFiEnablePromptPresented)
+        appState.wifiAvatarTransport = MockTransport(.cancelledThenRecoverable)
+        appState.avatarTransferPreference = .wifiPreferred
+
+        let bleFlag = CallFlag()
+        await #expect(throws: CancellationError.self) {
+            try await route(appState, bleFlag: bleFlag)
+        }
+        #expect(bleFlag.count == 0)
     }
 
     // MARK: - Phase bridging

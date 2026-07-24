@@ -1,12 +1,5 @@
 import Foundation
 
-/// WiFi 未开启弹窗的用户选择。
-public enum WiFiEnableChoice: Sendable {
-    case openSettings
-    case useBluetooth
-    case cancel
-}
-
 extension AppState {
     /// 把 `customAvatarFrameSender` seam 换成 WiFi-优先路由闭包（失败自动回退 BLE），
     /// 并从 UserDefaults 载入传输偏好。生产实例在 init 调用；测试实例可按需手动调用。
@@ -28,7 +21,7 @@ extension AppState {
         }
     }
 
-    /// 按偏好路由头像帧传输：WiFi 优先，失败按类型回退 BLE 或弹窗引导。
+    /// 按偏好路由头像帧传输：WiFi 优先，技术性失败自动回退 BLE。
     func routeCustomAvatarFrame(
         operationID: UInt32,
         avatarID: UUID,
@@ -48,15 +41,9 @@ extension AppState {
                     onPhase: { [weak self] phase in self?.applyWiFiTransferPhase(phase) },
                     onProgress: progress
                 )
-            } catch WiFiTransferError.wifiDisabled {
-                switch await promptWiFiEnable() {
-                case .useBluetooth:
-                    try await bleSender(operationID, avatarID, kriData, progress)
-                case .openSettings, .cancel:
-                    // 用户选择不走 WiFi：中断本次（→ .interrupted，可 Send Again / 开 WiFi 后重试）。
-                    throw CancellationError()
-                }
-            } catch let error as WiFiTransferError where error.isRecoverableToBLE {
+            } catch let error as WiFiTransferError {
+                // 用户取消与技术性失败可能同时到达；取消优先，不能再启动昂贵的 BLE 分包。
+                try Task.checkCancellation()
                 ErrorReporter.log(
                     .sync(component: "WiFi Avatar", underlying: String(describing: error)),
                     context: "AppState.routeCustomAvatarFrame.fallbackBLE"
@@ -79,19 +66,4 @@ extension AppState {
         }
     }
 
-    /// 挂起路由决策，展示 WiFi-off 引导弹窗，直到用户在 ContentView `.alert` 做出选择。
-    func promptWiFiEnable() async -> WiFiEnableChoice {
-        await withCheckedContinuation { continuation in
-            wifiEnableContinuation = continuation
-            isWiFiEnablePromptPresented = true
-        }
-    }
-
-    /// ContentView `.alert` 按钮回调：resume 挂起的路由决策。
-    public func resolveWiFiEnablePrompt(_ choice: WiFiEnableChoice) {
-        guard let continuation = wifiEnableContinuation else { return }
-        wifiEnableContinuation = nil
-        isWiFiEnablePromptPresented = false
-        continuation.resume(returning: choice)
-    }
 }

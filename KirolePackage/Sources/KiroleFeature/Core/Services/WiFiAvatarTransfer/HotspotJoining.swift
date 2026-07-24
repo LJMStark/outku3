@@ -23,7 +23,11 @@ public struct SystemHotspotJoiner: HotspotJoining {
     public init() {}
 
     public func join(ssid: String, passphrase: String) async throws {
-        let configuration = NEHotspotConfiguration(ssid: ssid, passphrase: passphrase, isWEP: false)
+        let configuration = if passphrase.isEmpty {
+            NEHotspotConfiguration(ssid: ssid)
+        } else {
+            NEHotspotConfiguration(ssid: ssid, passphrase: passphrase, isWEP: false)
+        }
         configuration.joinOnce = true // 传输结束即断开，不保存进已知网络
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in

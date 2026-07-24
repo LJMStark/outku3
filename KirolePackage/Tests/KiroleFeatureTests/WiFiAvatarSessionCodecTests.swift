@@ -50,11 +50,17 @@ struct WiFiAvatarSessionCodecTests {
             token: "tok_0123456789",
             ttlSeconds: 120
         )
-        let response = WiFiAvatarSessionResponse(status: .ok, credentials: credentials)
+        let response = WiFiAvatarSessionResponse(
+            command: .open,
+            operationID: 0xA1B2_C3D4,
+            status: .ok,
+            credentials: credentials
+        )
 
         let encoded = WiFiAvatarSessionCodec.encodeResponse(response)
         let decoded = try WiFiAvatarSessionCodec.decodeResponse(encoded)
 
+        #expect(Array(encoded.prefix(6)) == [0x01, 0xA1, 0xB2, 0xC3, 0xD4, 0x00])
         #expect(decoded == response)
         #expect(decoded.credentials?.endpointURL?.absoluteString == "http://192.168.4.1:8080/avatar")
     }
@@ -62,7 +68,12 @@ struct WiFiAvatarSessionCodecTests {
     @Test("Non-OK response carries no credentials and round-trips")
     func errorResponseRoundTrips() throws {
         for status in [WiFiAvatarSessionStatus.unsupported, .busy, .wifiInitFailed, .invalidCommand, .unknownError] {
-            let response = WiFiAvatarSessionResponse(status: status, credentials: nil)
+            let response = WiFiAvatarSessionResponse(
+                command: .query,
+                operationID: 7,
+                status: status,
+                credentials: nil
+            )
             let encoded = WiFiAvatarSessionCodec.encodeResponse(response)
             let decoded = try WiFiAvatarSessionCodec.decodeResponse(encoded)
             #expect(decoded.status == status)
@@ -83,7 +94,12 @@ struct WiFiAvatarSessionCodecTests {
             ttlSeconds: 60
         )
         let encoded = WiFiAvatarSessionCodec.encodeResponse(
-            WiFiAvatarSessionResponse(status: .ok, credentials: credentials)
+            WiFiAvatarSessionResponse(
+                command: .open,
+                operationID: 1,
+                status: .ok,
+                credentials: credentials
+            )
         )
         let decoded = try WiFiAvatarSessionCodec.decodeResponse(encoded)
         #expect(decoded.credentials?.ssid == "Café-Net")
@@ -100,22 +116,27 @@ struct WiFiAvatarSessionCodecTests {
     @Test("Unknown status byte is rejected")
     func unknownStatusRejected() {
         #expect(throws: WiFiAvatarSessionCodecError.invalidStatus(0x7A)) {
-            try WiFiAvatarSessionCodec.decodeResponse(Data([0x7A]))
+            try WiFiAvatarSessionCodec.decodeResponse(Data([0x01, 0x00, 0x00, 0x00, 0x01, 0x7A]))
         }
     }
 
     @Test("Truncated response is rejected")
     func truncatedResponseRejected() {
-        // Status OK but missing the SSID length byte and everything after.
+        // Command 后缺 OperationID / Status 及其余字段。
         #expect(throws: (any Error).self) {
-            try WiFiAvatarSessionCodec.decodeResponse(Data([0x00]))
+            try WiFiAvatarSessionCodec.decodeResponse(Data([0x01]))
         }
     }
 
     @Test("Trailing bytes after a well-formed response are rejected")
     func trailingBytesRejected() throws {
         let valid = WiFiAvatarSessionCodec.encodeResponse(
-            WiFiAvatarSessionResponse(status: .unsupported, credentials: nil)
+            WiFiAvatarSessionResponse(
+                command: .query,
+                operationID: 1,
+                status: .unsupported,
+                credentials: nil
+            )
         )
         let withTail = valid + Data([0xFF])
         #expect(throws: WiFiAvatarSessionCodecError.trailingBytes(1)) {
@@ -125,9 +146,9 @@ struct WiFiAvatarSessionCodecTests {
 
     @Test("Field length prefix exceeding the max is rejected")
     func fieldTooLongRejected() {
-        // Status OK, SSID length byte = 200 (> 32 max), no body follows.
+        // Command + OperationID + Status OK 后，SSID 长度 200（> 32）。
         #expect(throws: WiFiAvatarSessionCodecError.fieldTooLong(field: "ssid", length: 200, max: 32)) {
-            try WiFiAvatarSessionCodec.decodeResponse(Data([0x00, 200]))
+            try WiFiAvatarSessionCodec.decodeResponse(Data([0x01, 0, 0, 0, 1, 0x00, 200]))
         }
     }
 

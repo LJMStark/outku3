@@ -54,10 +54,12 @@ public final class WiFiAvatarSessionCoordinator {
     private let responseTimeout: Duration
     private let sendCommand: SendCommand
     private var pendingWaiter: Waiter?
+    private var requestSendTask: Task<Void, Never>?
     private var responseTimeoutTask: Task<Void, Never>?
 
     private struct Waiter {
         let id: UUID
+        let request: WiFiAvatarSessionRequest
         let continuation: CheckedContinuation<WiFiAvatarSessionResponse, any Error>
     }
 
@@ -84,6 +86,7 @@ public final class WiFiAvatarSessionCoordinator {
     /// 失败（设备拒绝 / 超时 / 断连 / 写失败）抛 `WiFiAvatarSessionError`，调用方回退 BLE。
     public func openSession(operationID: UInt32) async throws -> WiFiAvatarSessionCredentials {
         let response = try await sendRequest(command: .open, operationID: operationID)
+        try Task.checkCancellation()
         guard response.status == .ok, let credentials = response.credentials else {
             throw WiFiAvatarSessionError.deviceRejected(response.status)
         }
@@ -108,9 +111,22 @@ public final class WiFiAvatarSessionCoordinator {
     // MARK: - BLE inbound
 
     public func handleResponse(payload: Data) {
-        guard pendingWaiter != nil else { return }
+        guard let waiter = pendingWaiter else { return }
         do {
             let response = try WiFiAvatarSessionCodec.decodeResponse(payload)
+            guard
+                response.command == waiter.request.command,
+                response.operationID == waiter.request.operationID
+            else {
+                ErrorReporter.log(
+                    .sync(
+                        component: "BLE WiFi Avatar",
+                        underlying: "stale 0x1A response for command=\(response.command.rawValue) operationID=\(response.operationID)"
+                    ),
+                    context: "WiFiAvatarSessionCoordinator.handleResponse"
+                )
+                return
+            }
             finish(returning: response)
         } catch {
             ErrorReporter.log(
@@ -132,21 +148,37 @@ public final class WiFiAvatarSessionCoordinator {
         command: WiFiAvatarSessionCommand,
         operationID: UInt32
     ) async throws -> WiFiAvatarSessionResponse {
+        try Task.checkCancellation()
         guard pendingWaiter == nil else { throw WiFiAvatarSessionError.busy }
         let request = WiFiAvatarSessionRequest(command: command, operationID: operationID)
         let waiterID = UUID()
-        return try await withCheckedThrowingContinuation { continuation in
-            pendingWaiter = Waiter(id: waiterID, continuation: continuation)
-            Task { @MainActor in
-                do {
-                    try await sendCommand(request)
-                    // Notify 可能早于 CoreBluetooth 写 ACK 到达；应答已结束则不再挂超时。
-                    guard pendingWaiter?.id == waiterID else { return }
-                    scheduleTimeout(waiterID: waiterID)
-                } catch {
-                    guard pendingWaiter?.id == waiterID else { return }
-                    finish(throwing: WiFiAvatarSessionError.writeFailed(error.localizedDescription))
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                guard !Task.isCancelled else {
+                    continuation.resume(throwing: CancellationError())
+                    return
                 }
+                pendingWaiter = Waiter(id: waiterID, request: request, continuation: continuation)
+                requestSendTask = Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    do {
+                        try Task.checkCancellation()
+                        try await self.sendCommand(request)
+                        try Task.checkCancellation()
+                        // Notify 可能早于 CoreBluetooth 写 ACK 到达；应答已结束则不再挂超时。
+                        guard self.pendingWaiter?.id == waiterID else { return }
+                        self.scheduleTimeout(waiterID: waiterID)
+                    } catch is CancellationError {
+                        self.cancelWaiter(id: waiterID)
+                    } catch {
+                        guard self.pendingWaiter?.id == waiterID else { return }
+                        self.finish(throwing: WiFiAvatarSessionError.writeFailed(error.localizedDescription))
+                    }
+                }
+            }
+        } onCancel: { [weak self] in
+            Task { @MainActor in
+                self?.cancelWaiter(id: waiterID)
             }
         }
     }
@@ -177,7 +209,14 @@ public final class WiFiAvatarSessionCoordinator {
         waiter.continuation.resume(throwing: error)
     }
 
+    private func cancelWaiter(id: UUID) {
+        guard pendingWaiter?.id == id else { return }
+        finish(throwing: CancellationError())
+    }
+
     private func clearPending() {
+        requestSendTask?.cancel()
+        requestSendTask = nil
         responseTimeoutTask?.cancel()
         responseTimeoutTask = nil
         pendingWaiter = nil

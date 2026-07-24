@@ -7,22 +7,10 @@ public enum WiFiTransferPhase: Sendable, Equatable {
 }
 
 public enum WiFiTransferError: Error, Sendable, Equatable {
-    case wifiDisabled
     case sessionHandshakeFailed(String)
     case hotspotJoinFailed(HotspotJoinError)
     case unreachable
     case httpFailed(AvatarHTTPUploadError)
-    /// 用户在 WiFi-off 弹窗选择取消/去设置（Router 层构造）——用户意图，不自动回退 BLE。
-    case userInterrupted
-
-    /// 技术性失败可自动回退 BLE；`userInterrupted` 是用户意图，冒泡成 `.interrupted`。
-    /// 注：`wifiDisabled` 由 Router 优先单独处理（弹窗），不走自动回退路径。
-    public var isRecoverableToBLE: Bool {
-        switch self {
-        case .userInterrupted: return false
-        default: return true
-        }
-    }
 }
 
 /// Service 依赖的会话握手契约（nonisolated，便于测试注入非 `@MainActor` mock）。
@@ -51,8 +39,8 @@ extension WiFiAvatarTransferService: WiFiAvatarTransporting {}
 ///
 /// 装进 `AppState.customAvatarFrameSender` seam。职责边界 = **把字节送到设备并返回**；
 /// 设备收完 KRI 后经 BLE 发 `0x22 staged`，由 `runApplyTransaction` 的事务机 await 确认——
-/// 与 BLE 路径逐字节相同。任一步失败抛 `WiFiTransferError`，Router 据 `isRecoverableToBLE`
-/// 回退 BLE。**无论成败（含取消）都清理**：leave 热点 + close 会话（会话另有 TTL 兜底）。
+/// 与 BLE 路径逐字节相同。任一步技术性失败都抛 `WiFiTransferError`，Router 回退 BLE。
+/// **无论成败（含取消）都清理**：leave 热点 + close 会话（会话另有 TTL 兜底）。
 @MainActor
 public final class WiFiAvatarTransferService {
     private let session: any WiFiAvatarSessionHandshaking
@@ -82,15 +70,17 @@ public final class WiFiAvatarTransferService {
         onPhase: @escaping @MainActor (WiFiTransferPhase) -> Void,
         onProgress: @escaping @MainActor @Sendable (Int, Int) -> Void
     ) async throws {
-        guard await reachability.isWiFiInterfaceAvailable() else {
-            throw WiFiTransferError.wifiDisabled
-        }
-
         let credentials: WiFiAvatarSessionCredentials
         do {
             credentials = try await session.openSession(operationID: operationID)
-        } catch let error as WiFiAvatarSessionError {
-            throw WiFiTransferError.sessionHandshakeFailed(error.message)
+        } catch {
+            // 设备可能已经执行 open，只是应答丢失或调用方取消。无论 App 是否拿到凭据，
+            // 都按同一个 OperationID best-effort close；未开启会话时设备应幂等忽略。
+            await closeSessionBestEffort(operationID: operationID)
+            if let sessionError = error as? WiFiAvatarSessionError {
+                throw WiFiTransferError.sessionHandshakeFailed(sessionError.message)
+            }
+            throw error
         }
 
         // 会话已开——此后任何路径（成功 / 失败 / 取消）都要清理。
@@ -125,7 +115,13 @@ public final class WiFiAvatarTransferService {
             throw WiFiTransferError.hotspotJoinFailed(error)
         }
 
-        guard await reachability.waitForWiFiPath(timeout: pathTimeout) else {
+        try Task.checkCancellation()
+        let isAssociated = await reachability.waitUntilAssociated(
+            to: credentials.ssid,
+            timeout: pathTimeout
+        )
+        try Task.checkCancellation()
+        guard isAssociated else {
             throw WiFiTransferError.unreachable
         }
         guard let endpoint = credentials.endpointURL else {
@@ -157,11 +153,24 @@ public final class WiFiAvatarTransferService {
     }
 
     private func cleanup(credentials: WiFiAvatarSessionCredentials, operationID: UInt32) async {
-        await hotspot.leave(ssid: credentials.ssid)
-        await session.closeSession(operationID: operationID)
+        let hotspot = hotspot
+        let session = session
+        // `Task {}` 是非结构化任务，不继承调用方的取消状态。清理必须在用户取消后仍能
+        // removeConfiguration 并发送 close；否则设备只能等 TTL 才关 SoftAP。
+        await Task {
+            await hotspot.leave(ssid: credentials.ssid)
+            await session.closeSession(operationID: operationID)
+        }.value
     }
 
-    /// 构造 HTTP 上传头（见 `docs/WiFi头像传输协议契约草案.md` §3.1）。
+    private func closeSessionBestEffort(operationID: UInt32) async {
+        let session = session
+        await Task {
+            await session.closeSession(operationID: operationID)
+        }.value
+    }
+
+    /// 构造 HTTP 上传头（见 `docs/BLE通信协议规格文档.md` §4.20）。
     static func uploadHeaders(
         operationID: UInt32,
         avatarID: UUID,

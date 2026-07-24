@@ -167,9 +167,6 @@ public final class AppState {
     @ObservationIgnored var wifiAvatarTransport: any WiFiAvatarTransporting = WiFiAvatarTransferService()
     /// WiFi vs BLE 传输偏好。生产 install 时从 UserDefaults 加载；默认 WiFi 优先。
     @ObservationIgnored var avatarTransferPreference: AvatarTransferPreference = .wifiPreferred
-    /// WiFi 未开启时展示引导弹窗（ContentView `.alert` 绑定）。
-    public var isWiFiEnablePromptPresented = false
-    @ObservationIgnored var wifiEnableContinuation: CheckedContinuation<WiFiEnableChoice, Never>?
     @ObservationIgnored var avatarControlSender: AvatarControlSender = { command in
         try await BLEService.shared.sendAvatarControl(command)
     }

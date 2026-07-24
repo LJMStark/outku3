@@ -22,9 +22,27 @@ struct WiFiAvatarSessionCoordinatorTests {
         ttlSeconds: 120
     )
 
+    private static func response(
+        command: WiFiAvatarSessionCommand = .open,
+        operationID: UInt32,
+        status: WiFiAvatarSessionStatus = .ok,
+        credentials: WiFiAvatarSessionCredentials? = sampleCredentials
+    ) -> WiFiAvatarSessionResponse {
+        WiFiAvatarSessionResponse(
+            command: command,
+            operationID: operationID,
+            status: status,
+            credentials: credentials
+        )
+    }
+
     /// Spins the cooperative executor until the coordinator has an in-flight request.
     private func waitForInFlightRequest(_ coordinator: WiFiAvatarSessionCoordinator) async {
         while !coordinator.requiresBLEConnection { await Task.yield() }
+    }
+
+    private func waitForRecordedRequest(_ recorder: RequestRecorder) async {
+        while recorder.requests.isEmpty { await Task.yield() }
     }
 
     @Test("openSession returns credentials and activates on OK response")
@@ -33,10 +51,10 @@ struct WiFiAvatarSessionCoordinatorTests {
         let coordinator = WiFiAvatarSessionCoordinator.makeForTesting { recorder.record($0) }
 
         async let credentials = coordinator.openSession(operationID: 0x1234_5678)
-        await waitForInFlightRequest(coordinator)
+        await waitForRecordedRequest(recorder)
         coordinator.handleResponse(
             payload: WiFiAvatarSessionCodec.encodeResponse(
-                WiFiAvatarSessionResponse(status: .ok, credentials: Self.sampleCredentials)
+                Self.response(operationID: 0x1234_5678)
             )
         )
 
@@ -54,7 +72,7 @@ struct WiFiAvatarSessionCoordinatorTests {
         await waitForInFlightRequest(coordinator)
         coordinator.handleResponse(
             payload: WiFiAvatarSessionCodec.encodeResponse(
-                WiFiAvatarSessionResponse(status: .busy, credentials: nil)
+                Self.response(operationID: 1, status: .busy, credentials: nil)
             )
         )
 
@@ -101,6 +119,67 @@ struct WiFiAvatarSessionCoordinatorTests {
         #expect(!coordinator.isSessionActive)
     }
 
+    @Test("Cancelling an in-flight open releases the waiter and ignores a late response")
+    func cancellingOpenReleasesWaiter() async {
+        let coordinator = WiFiAvatarSessionCoordinator.makeForTesting(
+            responseTimeout: .milliseconds(100)
+        ) { _ in }
+
+        let task = Task { try await coordinator.openSession(operationID: 1) }
+        await waitForInFlightRequest(coordinator)
+        task.cancel()
+
+        await #expect(throws: CancellationError.self) {
+            _ = try await task.value
+        }
+        #expect(!coordinator.requiresBLEConnection)
+        #expect(!coordinator.isSessionActive)
+
+        coordinator.handleResponse(
+            payload: WiFiAvatarSessionCodec.encodeResponse(
+                Self.response(operationID: 1)
+            )
+        )
+        #expect(!coordinator.requiresBLEConnection)
+        #expect(!coordinator.isSessionActive)
+    }
+
+    @Test("An already-cancelled open sends no BLE command")
+    func alreadyCancelledOpenSendsNothing() async {
+        let recorder = RequestRecorder()
+        let coordinator = WiFiAvatarSessionCoordinator.makeForTesting { recorder.record($0) }
+
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await coordinator.openSession(operationID: 1)
+        }
+
+        await #expect(throws: CancellationError.self) {
+            _ = try await task.value
+        }
+        #expect(recorder.requests.isEmpty)
+        #expect(!coordinator.requiresBLEConnection)
+    }
+
+    @Test("Cancellation after the response arrives does not activate the session")
+    func cancellationAfterResponseDoesNotActivate() async {
+        let coordinator = WiFiAvatarSessionCoordinator.makeForTesting { _ in }
+        let task = Task { try await coordinator.openSession(operationID: 1) }
+        await waitForInFlightRequest(coordinator)
+
+        coordinator.handleResponse(
+            payload: WiFiAvatarSessionCodec.encodeResponse(
+                Self.response(operationID: 1)
+            )
+        )
+        task.cancel()
+
+        await #expect(throws: CancellationError.self) {
+            _ = try await task.value
+        }
+        #expect(!coordinator.isSessionActive)
+    }
+
     @Test("A second request while one is in flight is rejected as busy")
     func concurrentRequestRejected() async throws {
         let coordinator = WiFiAvatarSessionCoordinator.makeForTesting { _ in }
@@ -123,10 +202,10 @@ struct WiFiAvatarSessionCoordinatorTests {
 
         // Bring the session up first.
         async let credentials = coordinator.openSession(operationID: 7)
-        await waitForInFlightRequest(coordinator)
+        await waitForRecordedRequest(recorder)
         coordinator.handleResponse(
             payload: WiFiAvatarSessionCodec.encodeResponse(
-                WiFiAvatarSessionResponse(status: .ok, credentials: Self.sampleCredentials)
+                Self.response(operationID: 7)
             )
         )
         _ = try await credentials
@@ -143,7 +222,7 @@ struct WiFiAvatarSessionCoordinatorTests {
         // Must not crash or flip state.
         coordinator.handleResponse(
             payload: WiFiAvatarSessionCodec.encodeResponse(
-                WiFiAvatarSessionResponse(status: .ok, credentials: Self.sampleCredentials)
+                Self.response(operationID: 1)
             )
         )
         #expect(!coordinator.isSessionActive)
@@ -161,7 +240,7 @@ struct WiFiAvatarSessionCoordinatorTests {
 
         coordinator.handleResponse(
             payload: WiFiAvatarSessionCodec.encodeResponse(
-                WiFiAvatarSessionResponse(status: .ok, credentials: Self.sampleCredentials)
+                Self.response(operationID: 9)
             )
         )
         _ = try await credentials
@@ -169,5 +248,32 @@ struct WiFiAvatarSessionCoordinatorTests {
 
         coordinator.handleDisconnected()
         #expect(!coordinator.requiresBLEConnection)
+    }
+
+    @Test("A stale response cannot satisfy the next operation")
+    func staleResponseCannotCrossOperations() async throws {
+        let coordinator = WiFiAvatarSessionCoordinator.makeForTesting { _ in }
+
+        let first = Task { try await coordinator.openSession(operationID: 1) }
+        await waitForInFlightRequest(coordinator)
+        first.cancel()
+        await #expect(throws: CancellationError.self) {
+            _ = try await first.value
+        }
+
+        let second = Task { try await coordinator.openSession(operationID: 2) }
+        await waitForInFlightRequest(coordinator)
+        coordinator.handleResponse(
+            payload: WiFiAvatarSessionCodec.encodeResponse(Self.response(operationID: 1))
+        )
+
+        #expect(coordinator.requiresBLEConnection)
+        #expect(!coordinator.isSessionActive)
+
+        coordinator.handleResponse(
+            payload: WiFiAvatarSessionCodec.encodeResponse(Self.response(operationID: 2))
+        )
+        #expect(try await second.value == Self.sampleCredentials)
+        #expect(coordinator.isSessionActive)
     }
 }

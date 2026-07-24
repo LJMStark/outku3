@@ -1,9 +1,23 @@
 import Foundation
 
+/// 设备 HTTP 收图端点的请求约定（BLE 规格 §4.20）。
+public enum WiFiAvatarHTTPContract {
+    public static let contentType = "application/octet-stream"
+    public static let authorizationHeader = "Authorization"
+    public static let operationIDHeader = "X-Kirole-Operation-Id"
+    public static let avatarIDHeader = "X-Kirole-Avatar-Id"
+    public static let fileLengthHeader = "X-Kirole-File-Length"
+    public static let fileCRC32Header = "X-Kirole-File-CRC32"
+    public static let stagingStatus = "staging"
+
+    public static func bearer(_ token: String) -> String { "Bearer \(token)" }
+    public static func hex(_ value: UInt32) -> String { String(format: "%08x", value) }
+}
+
 /// 把裸 KRI 一次整块 POST 到设备 HTTP 收图端点的抽象。便于测试注入 mock。
 public protocol AvatarHTTPUploading: Sendable {
     /// 上传裸 KRI 到 `endpoint`。`onProgress(sentBytes, totalBytes)` 在后台线程回调，
-    /// 调用方负责 hop 到主线程更新 UI。非 2xx / 传输失败抛 `AvatarHTTPUploadError`。
+    /// 调用方负责 hop 到主线程更新 UI。非 200 / 传输失败抛 `AvatarHTTPUploadError`。
     func upload(
         kriData: Data,
         to endpoint: URL,
@@ -21,10 +35,21 @@ public enum AvatarHTTPUploadError: Error, Sendable, Equatable {
 /// 用 `URLSession.upload(for:from:)` 上传，进度经 `URLSessionTaskDelegate` 回调。
 /// `allowsCellularAccess = false`：设备热点无互联网，强制走 WiFi 接口、不让请求漏到蜂窝。
 public struct URLSessionAvatarUploader: AvatarHTTPUploading {
+    typealias ConfigurationFactory = @Sendable () -> URLSessionConfiguration
+
     private let timeout: TimeInterval
+    private let makeConfiguration: ConfigurationFactory
 
     public init(timeout: TimeInterval = 30) {
+        self.init(timeout: timeout) { URLSessionConfiguration.ephemeral }
+    }
+
+    init(
+        timeout: TimeInterval,
+        configurationFactory: @escaping ConfigurationFactory
+    ) {
         self.timeout = timeout
+        self.makeConfiguration = configurationFactory
     }
 
     public func upload(
@@ -41,9 +66,9 @@ public struct URLSessionAvatarUploader: AvatarHTTPUploading {
             request.setValue(value, forHTTPHeaderField: field)
         }
 
-        let configuration = URLSessionConfiguration.ephemeral
+        let configuration = makeConfiguration()
         configuration.allowsCellularAccess = false
-        configuration.waitsForConnectivity = false
+        configuration.waitsForConnectivity = true
         configuration.timeoutIntervalForRequest = timeout
         configuration.timeoutIntervalForResource = timeout
 
@@ -55,6 +80,10 @@ public struct URLSessionAvatarUploader: AvatarHTTPUploading {
         let response: URLResponse
         do {
             (data, response) = try await session.upload(for: request, from: kriData)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as URLError where error.code == .cancelled {
+            throw CancellationError()
         } catch {
             throw AvatarHTTPUploadError.transportFailed(error.localizedDescription)
         }
@@ -62,17 +91,17 @@ public struct URLSessionAvatarUploader: AvatarHTTPUploading {
         guard let http = response as? HTTPURLResponse else {
             throw AvatarHTTPUploadError.invalidResponse
         }
-        guard (200 ... 299).contains(http.statusCode) else {
+        guard http.statusCode == 200 else {
             throw AvatarHTTPUploadError.httpStatus(http.statusCode)
         }
         // 响应体 {"status":"staging",...} 暂不解析：持久化成功由 BLE 0x22 staged 权威确认，
-        // HTTP 200 仅表示"字节已收"（见 WiFi头像传输协议契约草案 §4）。
+        // HTTP 200 仅表示"字节已收"（见 BLE 通信协议规格文档 §4.20）。
         _ = data
     }
 }
 
 /// URLSession 上传进度桥接。`didSendBodyData` 在 delegate 队列（后台）回调 onProgress。
-private final class UploadProgressDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+final class UploadProgressDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     private let onProgress: @Sendable (Int, Int) -> Void
 
     init(onProgress: @escaping @Sendable (Int, Int) -> Void) {
@@ -87,5 +116,17 @@ private final class UploadProgressDelegate: NSObject, URLSessionTaskDelegate, @u
         totalBytesExpectedToSend: Int64
     ) {
         onProgress(Int(totalBytesSent), Int(totalBytesExpectedToSend))
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        // 设备端点是握手返回的固定局域网地址。拒绝任何重定向，避免把 KRI 和 Bearer
+        // token 转发到非握手目标；upload(for:) 随后会把原始 3xx 交给状态码校验。
+        completionHandler(nil)
     }
 }
