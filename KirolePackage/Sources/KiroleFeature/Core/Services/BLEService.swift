@@ -161,9 +161,12 @@ public final class BLEService: NSObject {
     /// 同步收尾和看门狗是否应保留 BLE。Wi-Fi 调试已开启或正在切换时必须保留，
     /// 否则 App 会失去关闭热点与查询状态的控制通道。
     var shouldKeepConnectionOpenForDebug: Bool {
+        // Wi-Fi PC 调试(0x19) 或 WiFi 头像会话(0x1A) 任一需要连接时都必须保住 BLE：
+        // SoftAP 期间不主动断连，否则无法再发 close 停热点或收 0x22 staged。
         BLEConnectionPolicy.shouldKeepConnectionOpenForDebug(
             keepAliveEnabled: keepAliveDebugMode,
             wifiDebugRequiresConnection: BLEWiFiDebugCoordinator.shared.requiresBLEConnection
+                || WiFiAvatarSessionCoordinator.shared.requiresBLEConnection
         )
     }
 
@@ -680,6 +683,16 @@ public final class BLEService: NSObject {
         try await writeData(type: .wifiDebugMode, data: command.payload)
     }
 
+    /// 发送 WiFiAvatarSession (0x1A) 会话命令（close/open/query + OperationID）。
+    /// 统一走 writeData，secure 模式自动封装为 0x7E。设备经 Notify 回 0x1A 应答，
+    /// 由 `WiFiAvatarSessionCoordinator.handleResponse` 处理。
+    public func sendWiFiAvatarSessionCommand(_ request: WiFiAvatarSessionRequest) async throws {
+        try await writeData(
+            type: .wifiAvatarSession,
+            data: WiFiAvatarSessionCodec.encodeRequest(request)
+        )
+    }
+
     // MARK: - Private Methods
 
     private func writeData(
@@ -1015,6 +1028,7 @@ public final class BLEService: NSObject {
 
     private func cleanup() {
         BLEWiFiDebugCoordinator.shared.handleDisconnected()
+        WiFiAvatarSessionCoordinator.shared.handleDisconnected()
         AppState.shared.handleCustomAvatarDeviceDisconnected()
         handshakeTimeoutTask?.cancel()
         handshakeTimeoutTask = nil

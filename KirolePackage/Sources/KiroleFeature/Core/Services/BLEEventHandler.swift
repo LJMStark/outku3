@@ -14,12 +14,19 @@ public enum BLEEventHandler {
     static func handleReceivedPayload(
         _ message: BLEReceivedMessage,
         service: BLEService,
-        wifiDebugCoordinator: BLEWiFiDebugCoordinator = .shared
+        wifiDebugCoordinator: BLEWiFiDebugCoordinator = .shared,
+        wifiAvatarSessionCoordinator: WiFiAvatarSessionCoordinator = .shared
     ) async {
         // 0x19 是当前连接内的实时控制应答，不属于可离线重放的 Event Log。
         // 必须在 EventLog 解析之前截获，否则可能被误丢弃或将来撞上同字节的新事件。
         if message.type == BLEDataType.wifiDebugMode.rawValue {
             wifiDebugCoordinator.handleResponse(payload: message.payload)
+            return
+        }
+
+        // 0x1A WiFiAvatarSession 应答同为连接内实时握手结果，不进入离线 Event Log。
+        if message.type == BLEDataType.wifiAvatarSession.rawValue {
+            wifiAvatarSessionCoordinator.handleResponse(payload: message.payload)
             return
         }
 
