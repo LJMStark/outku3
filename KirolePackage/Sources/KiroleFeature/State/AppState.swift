@@ -142,6 +142,18 @@ public final class AppState {
             BLEService.shared.lastKnownDeviceID
         )
     }
+    /// BLE 分包传输（0x15）。WiFi 传输失败/不可用时的回退通道；`.bleOnly` 偏好也直接用它。
+    @ObservationIgnored var bleCustomAvatarFrameSender: CustomAvatarFrameSender = {
+        operationID, avatarID, kriData, progress in
+        try await BLEService.shared.sendCustomAvatarKRIFrame(
+            operationID: operationID,
+            avatarID: avatarID,
+            kriData: kriData,
+            progress: progress
+        )
+    }
+    /// 头像帧传输 seam。默认 BLE；生产实例在 init 里 `installCustomAvatarTransportRouter()`
+    /// 换成 WiFi-优先路由（失败自动回退 `bleCustomAvatarFrameSender`）。
     @ObservationIgnored var customAvatarFrameSender: CustomAvatarFrameSender = {
         operationID, avatarID, kriData, progress in
         try await BLEService.shared.sendCustomAvatarKRIFrame(
@@ -151,6 +163,13 @@ public final class AppState {
             progress: progress
         )
     }
+    /// WiFi(SoftAP) 头像传输编排器（可注入 mock）。
+    @ObservationIgnored var wifiAvatarTransport: any WiFiAvatarTransporting = WiFiAvatarTransferService()
+    /// WiFi vs BLE 传输偏好。生产 install 时从 UserDefaults 加载；默认 WiFi 优先。
+    @ObservationIgnored var avatarTransferPreference: AvatarTransferPreference = .wifiPreferred
+    /// WiFi 未开启时展示引导弹窗（ContentView `.alert` 绑定）。
+    public var isWiFiEnablePromptPresented = false
+    @ObservationIgnored var wifiEnableContinuation: CheckedContinuation<WiFiEnableChoice, Never>?
     @ObservationIgnored var avatarControlSender: AvatarControlSender = { command in
         try await BLEService.shared.sendAvatarControl(command)
     }
@@ -213,6 +232,7 @@ public final class AppState {
 
     private init(loadLocalDataOnInit: Bool = true) {
         guard loadLocalDataOnInit else { return }
+        installCustomAvatarTransportRouter()
         initialLoadTask = Task { @MainActor in
             await loadLocalData()
             await restorePendingCustomAvatarOperation()

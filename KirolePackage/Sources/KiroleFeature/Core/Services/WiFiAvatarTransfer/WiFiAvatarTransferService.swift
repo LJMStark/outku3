@@ -34,6 +34,19 @@ public protocol WiFiAvatarSessionHandshaking: Sendable {
 
 extension WiFiAvatarSessionCoordinator: WiFiAvatarSessionHandshaking {}
 
+/// Service 的传输契约，便于 Router 测试注入 mock transport。
+public protocol WiFiAvatarTransporting: Sendable {
+    @MainActor func send(
+        operationID: UInt32,
+        avatarID: UUID,
+        kriData: Data,
+        onPhase: @escaping @MainActor (WiFiTransferPhase) -> Void,
+        onProgress: @escaping @MainActor @Sendable (Int, Int) -> Void
+    ) async throws
+}
+
+extension WiFiAvatarTransferService: WiFiAvatarTransporting {}
+
 /// 编排 WiFi(SoftAP) 头像传输：BLE `0x1A` 握手拿凭据 → 加入设备热点 → HTTP 整块上传 KRI。
 ///
 /// 装进 `AppState.customAvatarFrameSender` seam。职责边界 = **把字节送到设备并返回**；
