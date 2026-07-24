@@ -149,7 +149,11 @@ struct CustomCompanionBLEQueueTests {
             draft.avatarPreviewFileName = "tampered-preview.png"
             draft.avatarPixelsFileName = "tampered-image.dat"
             draft.createdAt = Date()
-            state.customCompanions = [original]
+            let otherCompanions = [
+                makeCompanion(id: UUID(), name: "Second"),
+                makeCompanion(id: UUID(), name: "Third"),
+            ]
+            state.customCompanions = [original] + otherCompanions
             state.customAvatarConnectionProvider = { (false, nil) }
 
             let saved = try await state.updateCustomCompanionMetadata(draft)
@@ -161,8 +165,9 @@ struct CustomCompanionBLEQueueTests {
             #expect(saved.avatarPreviewFileName == "fixed-preview.png")
             #expect(saved.avatarPixelsFileName == "fixed-image.dat")
             #expect(saved.updatedAt > createdAt)
+            #expect(state.customCompanions.count == CustomCompanion.maximumCount)
 
-            try await snapshot.restore(removingAssetIDs: [id])
+            try await snapshot.restore(removingAssetIDs: [id] + otherCompanions.map(\.id))
         }
     }
 
@@ -179,7 +184,11 @@ struct CustomCompanionBLEQueueTests {
             draft.relationship = .mentor
             let png = try validPNG()
             let kriData = try KRIEncoder.encode(pngData: png)
-            state.customCompanions = [original]
+            let otherCompanions = [
+                makeCompanion(id: UUID(), name: "Second"),
+                makeCompanion(id: UUID(), name: "Third"),
+            ]
+            state.customCompanions = [original] + otherCompanions
             state.userProfile.customCompanionId = id
             state.userProfile.intimacyStage = .closeFriend
             state.customAvatarOperationIDProvider = { 95 }
@@ -226,9 +235,10 @@ struct CustomCompanionBLEQueueTests {
             #expect(committed.name == "After")
             #expect(state.customCompanions.first?.name == "After")
             #expect(state.customCompanions.first?.relationship == .mentor)
+            #expect(state.customCompanions.count == CustomCompanion.maximumCount)
             #expect(state.userProfile.intimacyStage == .closeFriend)
 
-            try await snapshot.restore(removingAssetIDs: [id])
+            try await snapshot.restore(removingAssetIDs: [id] + otherCompanions.map(\.id))
         }
     }
 
@@ -505,17 +515,25 @@ struct CustomCompanionBLEQueueTests {
             let snapshot = try await PersistenceSnapshot.capture()
             let state = AppState.makeForTesting()
             let id = UUID()
-            state.customCompanions = [makeCompanion(id: id, name: "Keep Me")]
+            let companions = [
+                makeCompanion(id: id, name: "Remove Me"),
+                makeCompanion(id: UUID(), name: "Second"),
+                makeCompanion(id: UUID(), name: "Third"),
+            ]
+            state.customCompanions = companions
             state.userProfile.customCompanionId = id
             state.customAvatarConnectionProvider = { (false, nil) }
 
             try await state.deleteCustomCompanion(id: id)
 
-            #expect(state.customCompanions.isEmpty)
+            #expect(state.customCompanions.count == 2)
+            #expect(!state.customCompanions.contains(where: { $0.id == id }))
+            #expect(state.canCreateCustomCompanion)
+            #expect(state.customCompanionLimitMessage == nil)
             #expect(state.userProfile.customCompanionId == nil)
             #expect(state.pendingCustomAvatarOperation == nil)
 
-            try await snapshot.restore(removingAssetIDs: [id])
+            try await snapshot.restore(removingAssetIDs: companions.map(\.id))
         }
     }
 

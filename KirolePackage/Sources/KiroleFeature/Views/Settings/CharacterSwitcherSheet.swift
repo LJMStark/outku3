@@ -127,35 +127,59 @@ public struct CharacterSwitcherSheet: View {
 
     @ViewBuilder
     private var createButton: some View {
-        Button {
-            guard bleService.connectionState.isConnected else {
-                showConnectionRequired = true
-                return
+        VStack(spacing: 8) {
+            Button {
+                guard bleService.connectionState.isConnected else {
+                    showConnectionRequired = true
+                    return
+                }
+                editorTarget = CompanionEditorTarget(companion: nil)
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 18))
+                    Text(appState.canCreateCustomCompanion
+                         ? "Create Your Own"
+                         : "\(CustomCompanion.maximumCount) Companion Limit Reached")
+                        .font(.system(size: 15, weight: .semibold))
+                }
+                .foregroundStyle(appState.canCreateCustomCompanion
+                                 ? theme.colors.accent
+                                 : theme.colors.secondaryText)
+                .padding(.vertical, 14)
+                .frame(maxWidth: .infinity)
+                .background(
+                    RoundedRectangle(cornerRadius: 18)
+                        .stroke(appState.canCreateCustomCompanion
+                                ? theme.colors.accent
+                                : theme.colors.borderStrong, lineWidth: 1.5)
+                        .background(theme.colors.accentLight.clipShape(RoundedRectangle(cornerRadius: 18)))
+                )
             }
-            editorTarget = CompanionEditorTarget(companion: nil)
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: "plus.circle.fill")
-                    .font(.system(size: 18))
-                Text("Create Your Own")
-                    .font(.system(size: 15, weight: .semibold))
+            .buttonStyle(.plain)
+            .disabled(!appState.canCreateCustomCompanion)
+            .accessibilityHint(createButtonAccessibilityHint)
+            .accessibilityIdentifier("Settings_CreateCustomCompanion")
+
+            if let limitMessage = appState.customCompanionLimitMessage {
+                Text(limitMessage)
+                    .font(.system(size: 12))
+                    .foregroundStyle(theme.colors.secondaryText)
+                    .multilineTextAlignment(.center)
+                    .accessibilityIdentifier("Settings_CustomCompanionLimitMessage")
             }
-            .foregroundStyle(theme.colors.accent)
-            .padding(.vertical, 14)
-            .frame(maxWidth: .infinity)
-            .background(
-                RoundedRectangle(cornerRadius: 18)
-                    .stroke(theme.colors.accent, lineWidth: 1.5)
-                    .background(theme.colors.accentLight.clipShape(RoundedRectangle(cornerRadius: 18)))
-            )
         }
-        .buttonStyle(.plain)
         .padding(.horizontal, 24)
         .padding(.top, 20)
-        .accessibilityHint(bleService.connectionState.isConnected
-                           ? "Opens the custom companion creator"
-                           : "Connect Kirole before creating a companion")
-        .accessibilityIdentifier("Settings_CreateCustomCompanion")
+    }
+
+    private var createButtonAccessibilityHint: String {
+        if let limitMessage = appState.customCompanionLimitMessage {
+            return limitMessage
+        }
+        return bleService.connectionState.isConnected
+            ? "Opens the custom companion creator"
+            : "Connect Kirole before creating a companion"
     }
 
     // MARK: - Helpers

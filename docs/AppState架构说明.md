@@ -14,7 +14,7 @@ AppState 是 Kirole App 的全局状态中心，跨 8 个扩展文件，约 2100
 | `AppState.swift` | 属性定义、服务引用、持久化助手 |
 | `AppState+Actions.swift` | 任务/事件的增删改、同步触发 |
 | `AppState+Companion.swift` | 宠物对话、Haiku、共享对话缓存刷新 |
-| `AppState+CustomCompanions.swift` | 自定义伴侣创建/编辑/选择/删除，v2.7 `0x15` 暂存 + `0x22` 提交/擦除/查询，以及单条持久化操作的断线恢复 |
+| `AppState+CustomCompanions.swift` | 自定义伴侣创建/编辑/选择/删除（最多 3 个；编辑不占新名额），v2.7 `0x15` 暂存 + `0x22` 提交/擦除/查询，以及单条持久化操作的断线恢复 |
 | `AppState+HardwareDisplay.swift` | BLE/硬件同步触发（sendFocusStatus、sendScreensaverConfig 等） |
 | `AppState+Integrations.swift` | Google/Apple/Notion/Taskade 集成状态判断 |
 | `AppState+Loading.swift` | 本地数据加载、统计刷新、天气更新 |

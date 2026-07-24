@@ -4,6 +4,14 @@ import Foundation
 extension AppState {
     // MARK: - Public lifecycle
 
+    public var canCreateCustomCompanion: Bool {
+        customCompanions.count < CustomCompanion.maximumCount
+    }
+
+    public var customCompanionLimitMessage: String? {
+        canCreateCustomCompanion ? nil : CustomCompanion.limitMessage
+    }
+
     /// Creates and applies a companion as one firmware-confirmed transaction. Neither the
     /// companion list nor active identity changes before the device reports `committed`.
     @discardableResult
@@ -20,6 +28,9 @@ extension AppState {
         previewData: Data,
         imageData: Data
     ) async throws -> CustomCompanion {
+        guard canCreateCustomCompanion else {
+            throw CustomAvatarOperationError.companionLimitReached
+        }
         let id = UUID()
         let companion = CustomCompanion(
             id: id,

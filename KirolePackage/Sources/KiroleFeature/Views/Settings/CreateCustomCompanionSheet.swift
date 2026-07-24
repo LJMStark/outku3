@@ -484,15 +484,30 @@ public struct CreateCustomCompanionSheet: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(!canSaveAsNew || isSaving)
-                .accessibilityHint(canSaveAsNew
-                                   ? "Creates a separate companion and applies it to Kirole"
-                                   : "Connect Kirole before saving a new companion")
+                .accessibilityHint(saveAsNewAccessibilityHint)
                 .accessibilityIdentifier("CreateCompanion_SaveAsNew")
+
+                if let limitMessage = appState.customCompanionLimitMessage {
+                    Text(limitMessage)
+                        .font(.system(size: 12))
+                        .foregroundStyle(theme.colors.secondaryText)
+                        .multilineTextAlignment(.center)
+                        .accessibilityIdentifier("CreateCompanion_LimitMessage")
+                }
             }
         }
         .padding(.horizontal, 24)
         .padding(.bottom, 24)
         .padding(.top, 12)
+    }
+
+    private var saveAsNewAccessibilityHint: String {
+        if let limitMessage = appState.customCompanionLimitMessage {
+            return limitMessage
+        }
+        return canSaveAsNew
+            ? "Creates a separate companion and applies it to Kirole"
+            : "Connect Kirole before saving a new companion"
     }
 
     @ViewBuilder

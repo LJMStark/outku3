@@ -128,6 +128,7 @@ public struct PendingCustomAvatarOperation: Sendable, Codable, Equatable {
 public enum CustomAvatarOperationError: LocalizedError, Sendable, Equatable {
     case deviceNotConnected
     case operationInProgress
+    case companionLimitReached
     case companionNotFound
     case missingAvatarData
     case commitAlreadyStarted
@@ -141,6 +142,8 @@ public enum CustomAvatarOperationError: LocalizedError, Sendable, Equatable {
             return "Connect your Kirole device before changing its companion image."
         case .operationInProgress:
             return "Another companion image operation is still in progress."
+        case .companionLimitReached:
+            return CustomCompanion.limitMessage
         case .companionNotFound:
             return "This custom companion no longer exists."
         case .missingAvatarData:

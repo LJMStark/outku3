@@ -2,9 +2,13 @@ import Foundation
 
 // MARK: - Custom Companion
 
-/// User-created companion (4th option alongside Joy/Silas/Nova).
+/// User-created companion alongside Joy/Silas/Nova.
 /// Inspired by Kindroid's multi-dimensional persona model: structured dials + backstory + boundary.
 public struct CustomCompanion: Sendable, Codable, Identifiable, Equatable {
+    public static let maximumCount = 3
+    public static let limitMessage =
+        "You can keep up to \(maximumCount) custom companions. Delete until fewer than \(maximumCount) remain before creating another."
+
     public let id: UUID
     public var name: String
     public var relationship: CompanionRelationship

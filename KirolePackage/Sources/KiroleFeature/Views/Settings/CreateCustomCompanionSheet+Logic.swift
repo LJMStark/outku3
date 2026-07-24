@@ -28,6 +28,9 @@ extension CreateCustomCompanionSheet {
                 ? "Saves the changes after Kirole confirms the replacement photo"
                 : "Saves text changes without sending a photo"
         }
+        if let limitMessage = appState.customCompanionLimitMessage {
+            return limitMessage
+        }
         return "Creates and applies this companion to Kirole"
     }
 
@@ -39,12 +42,15 @@ extension CreateCustomCompanionSheet {
     }
 
     var canChoosePhoto: Bool {
-        guard isEditing else { return true }
+        guard isEditing else { return appState.canCreateCustomCompanion }
         return isEditingActiveCompanion && bleService.connectionState.isConnected
     }
 
     var uploadDescription: String {
         guard isEditing else {
+            if let limitMessage = appState.customCompanionLimitMessage {
+                return limitMessage
+            }
             return "Upload anyone — your pet, your kid, yourself. They become your desk companion."
         }
         if !isEditingActiveCompanion {
@@ -60,6 +66,9 @@ extension CreateCustomCompanionSheet {
         if canChoosePhoto {
             return "Tap photo to change. Kirole's 6-color E-ink screen shows it softer and more muted than your photo — that's expected."
         }
+        if !isEditing, let limitMessage = appState.customCompanionLimitMessage {
+            return limitMessage
+        }
         return isEditingActiveCompanion
             ? "Photo replacement is available after Kirole reconnects."
             : "Select this companion from the companion list before replacing its photo."
@@ -67,6 +76,7 @@ extension CreateCustomCompanionSheet {
 
     var canSaveAsNew: Bool {
         isEditing
+            && appState.canCreateCustomCompanion
             && !isProcessing
             && processResult != nil
             && bleService.connectionState.isConnected
@@ -77,12 +87,13 @@ extension CreateCustomCompanionSheet {
     var canAdvance: Bool {
         guard !isProcessing else { return false }
         switch step {
-        case .upload: return isEditing || processResult != nil
+        case .upload:
+            return isEditing || (appState.canCreateCustomCompanion && processResult != nil)
         case .identity:
             return !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case .voice:
             return personaVoice != .customPrompt || !customPromptTrimmed.isEmpty
-        case .personality: return true
+        case .personality: return isEditing || appState.canCreateCustomCompanion
         }
     }
 
@@ -123,6 +134,10 @@ extension CreateCustomCompanionSheet {
     }
 
     func createAndDismiss() {
+        guard appState.canCreateCustomCompanion else {
+            saveError = CustomCompanion.limitMessage
+            return
+        }
         guard let result = processResult, !isSaving else { return }
         guard bleService.connectionState.isConnected else {
             showConnectionRequired = true

@@ -137,23 +137,33 @@ public struct SettingsAccountSection: View {
                     .fill(theme.colors.primaryText.opacity(0.05))
 
                 VStack(spacing: 8) {
-                    Image(systemName: "icloud.and.arrow.up")
+                    Image(systemName: appState.canCreateCustomCompanion
+                          ? "icloud.and.arrow.up"
+                          : "person.3.fill")
                         .font(.system(size: 40, weight: .medium))
                         .foregroundStyle(theme.colors.secondaryText)
                         .frame(width: 80, height: 80)
 
-                    Text("Create")
+                    Text(appState.canCreateCustomCompanion
+                         ? "Create"
+                         : "\(CustomCompanion.maximumCount) max")
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(theme.colors.primaryText)
+                        .foregroundStyle(appState.canCreateCustomCompanion
+                                         ? theme.colors.primaryText
+                                         : theme.colors.secondaryText)
                         .padding(.bottom, 8)
                 }
                 .padding(.top, 16)
             }
         }
         .buttonStyle(.plain)
+        .disabled(!appState.canCreateCustomCompanion)
         .frame(maxWidth: .infinity)
         .aspectRatio(1, contentMode: .fit)
-        .accessibilityLabel("Create custom companion")
+        .accessibilityLabel(appState.canCreateCustomCompanion
+                            ? "Create custom companion"
+                            : "Custom companion limit reached")
+        .accessibilityHint(appState.customCompanionLimitMessage ?? "Opens the custom companion creator")
         .accessibilityIdentifier("Settings_CompanionCreateCard")
     }
 
