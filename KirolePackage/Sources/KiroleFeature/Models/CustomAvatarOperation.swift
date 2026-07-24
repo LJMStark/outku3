@@ -5,6 +5,8 @@ import Foundation
 public enum CustomAvatarOperationState: Sendable, Equatable {
     case idle
     case preparing
+    /// WiFi(SoftAP) 传输：加入设备热点、建立快速链路阶段（BLE 路径不经过此态）。
+    case joiningHotspot
     case transferring(sentBytes: Int, totalBytes: Int)
     case validating
     case committing
@@ -15,7 +17,7 @@ public enum CustomAvatarOperationState: Sendable, Equatable {
 
     public var isInProgress: Bool {
         switch self {
-        case .preparing, .transferring, .validating, .committing, .erasing:
+        case .preparing, .joiningHotspot, .transferring, .validating, .committing, .erasing:
             return true
         case .idle, .success, .interrupted, .failed:
             return false
@@ -24,7 +26,7 @@ public enum CustomAvatarOperationState: Sendable, Equatable {
 
     public var canCancel: Bool {
         switch self {
-        case .preparing, .transferring, .validating:
+        case .preparing, .joiningHotspot, .transferring, .validating:
             return true
         case .idle, .committing, .erasing, .success, .interrupted, .failed:
             return false

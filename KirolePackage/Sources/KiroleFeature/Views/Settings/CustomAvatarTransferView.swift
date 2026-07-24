@@ -31,6 +31,17 @@ struct CustomAvatarTransferContent: Equatable, Sendable {
         kind: .working
     )
 
+    static let joiningHotspot = Self(
+        title: "Connecting to Kirole's Wi-Fi",
+        message: "Setting up a fast Wi-Fi link with Kirole. Keep the app open.",
+        progress: nil,
+        progressLabel: nil,
+        showsRetry: false,
+        showsCancel: true,
+        isCompleted: false,
+        kind: .working
+    )
+
     static func transferring(sentBytes: Int, totalBytes: Int) -> Self {
         let safeTotal = max(totalBytes, 0)
         let fraction: Double
@@ -162,6 +173,8 @@ extension CustomAvatarOperationState {
             return nil
         case .preparing:
             return .preparing
+        case .joiningHotspot:
+            return .joiningHotspot
         case let .transferring(sentBytes, totalBytes):
             return .transferring(sentBytes: sentBytes, totalBytes: totalBytes)
         case .validating:
