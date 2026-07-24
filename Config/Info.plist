@@ -55,6 +55,8 @@
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
 		<false/>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
 	</dict>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Kirole uses Bluetooth to connect with your E-ink companion device and display your pet.</string>
@@ -68,6 +70,8 @@
 	<string>Kirole needs calendar write access to create events for your tasks and habits.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Kirole uses your location to show local weather conditions for your pet companion.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Kirole connects to your companion device over Wi-Fi to send custom avatars quickly.</string>
 	<key>NSFamilyControlsUsageDescription</key>
 	<string>Kirole 需要访问屏幕使用时间权限,以便在专注模式下帮助你屏蔽分心应用,让你和你的宠物伙伴一起保持专注。</string>
 	<key>NSRemindersFullAccessUsageDescription</key>

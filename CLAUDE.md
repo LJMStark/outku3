@@ -218,7 +218,7 @@ For TestFlight automation, copy `fastlane/.env.template` → `fastlane/.env` and
 
 **Build settings & entitlements (separate from `Secrets.xcconfig`):**
 - Build config is layered across `Config/Shared.xcconfig` (bundle id, versions, `IPHONEOS_DEPLOYMENT_TARGET = 17.0`), `Config/Debug.xcconfig`, `Config/Release.xcconfig`, `Config/Tests.xcconfig`.
-- App capabilities live in `Config/Kirole.entitlements` — declarative XML you can edit directly without touching the Xcode project. Family Controls + App Group are already enabled; the DeviceActivity extension carries its own `KiroleDeviceActivityMonitor/KiroleDeviceActivityMonitor.entitlements` (must keep the same App Group).
+- App capabilities live in `Config/Kirole.entitlements` — declarative XML you can edit directly without touching the Xcode project. Family Controls + App Group + WeatherKit are already enabled. **Hotspot Configuration** (`com.apple.developer.networking.HotspotConfiguration`, added for WiFi custom-avatar transfer via `0x1A`) is declared in the entitlements too, but a **device** build additionally requires enabling the Hotspot Configuration capability on the App ID in the Apple Developer portal (signing team `93SL23NPNG`) and re-signing the provisioning profile — the entitlement XML alone does not grant it on device (sim builds ignore it). The DeviceActivity extension carries its own `KiroleDeviceActivityMonitor/KiroleDeviceActivityMonitor.entitlements` (must keep the same App Group).
 - **Platform floor:** Swift 6.1 toolchain, **iOS 17+** (`KirolePackage` declares `platforms: [.iOS(.v17), .macOS(.v14)]`).
 
 ## Where to Look Next
