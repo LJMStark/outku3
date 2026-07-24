@@ -1,8 +1,8 @@
 # Kirole BLE 通信协议规格文档
 
-**版本:** v2.7.0
-**更新日期:** 2026-07-23
-**状态:** v2.7 自定义形象事务协议待固件联调。`0x15` 只暂存候选 KRI，`0x22` 负责校验结果、原子提交、精确擦除和恢复查询；App 不再把 GATT 写回执当作设备持久化成功。电子墨水屏五页结构继续按 v2.6.0 执行。
+**版本:** v2.8.0
+**更新日期:** 2026-07-24
+**状态:** v2.8 新增 **WiFi(SoftAP) 头像快速传输通道**（`0x1A WiFiAvatarSession` 握手 + 设备 HTTP 收图端点，见 §4.20 / §5.20 与 `WiFi头像传输协议契约草案.md`）：App 经 BLE `0x1A` 让设备开 SoftAP 并回报热点凭据与端点，加入热点后一次整块 HTTP 上传 KRI，把 BLE 分包传输的 4–5 分钟压到秒级。**`0x22 AvatarControl` 事务确认层完全不变**——设备 HTTP 收完整块 KRI 且 CRC 校验通过后，仍按 BLE 路径主动发一帧 `0x22 staged`；HTTP 200 仅表示"字节已收"，非持久化成功。BLE `0x15` 分包传输保留为**自动回退通道**（WiFi 不可用/失败/旧固件时启用），非 flag-day。v2.7 自定义形象事务协议待固件联调。`0x15` 只暂存候选 KRI，`0x22` 负责校验结果、原子提交、精确擦除和恢复查询；App 不再把 GATT 写回执当作设备持久化成功。电子墨水屏五页结构继续按 v2.6.0 执行。
 
 ---
 
@@ -92,6 +92,7 @@
 | v2.6.0 | 2026-07-20 | **电子墨水屏五页对齐定稿（合并发布；同日内部迭代 v2.5.30–v2.5.33 未曾对固件发布，全部并入本版，App 代码注释中的 v2.5.3x 标号与本版同义）。破坏性变更，与固件解析器一次 flag-day 切换：** ① **DayPack(0x10)**：Events[] 每条在 Category 后追加 `EndTime`（≤8B "HH:mm"，全天空串、跨午夜按 23:59 封顶）；payload 末尾 FirstUp 后追加 `SettlementReview`（≤180B，每日总结页概况：死线必提、专注>2h 必提，App 输出侧校验保证）与 `SettlementQuote`（≤120B，金句三分支，**最后一个字段**）；`SettlementData` 口径修正：TasksTotal 分母含全部今日日程、分子只计已结束（进度条呈真实中间态）。② **PetStatus(0x01)**：CharacterId 后追加 `CustomActive`（1B）——1=自定义激活（除专注页显示已持久化的 0x15 用户图、不触发内置重绘），0=按 CharacterId 内置；CharacterId 恒为最近内置选择（专注页美术）；固件须持久化 0x15 PNG。③ **DeviceWake(0x30)**：FwPatch 后追加 `AvatarState`（1B）+`AvatarCRC32`（4B BE，CRC-32/IEEE，无图填 0）——设备上报头像库存，App 比对后差异重推（0x21 批量 0x30 恒 2B 不变）。④ **页面/文案规则**（客户 2026-07-20 十条答复，记录见 docs/电子墨水屏需求/客户答复-2026-07-20.md）：日程间隔恰 10 分钟归任务清单布局；投入恰 4 小时归固定文案分支；庆祝语要求当日无未结束日程；日程时长重叠合并计；总结页两段（"分3部分"系客户笔误）；专注三阶段=Phase 1/2/3、活跃会话恒 ≥1；全 CJK 死线标题退化为英文通用表述（ASCII wire 约束）。⑤ **App 行为**：0x11 encouragement（Tips）客户拍板停用恒空串（固件收到空串不渲染）；§5.9 修正——App 收到 0x31 会回发 0x16 屏保金句帧，固件断连前留收帧窗口；删除激活自定义/换设备均自动补发对应帧。⑥ 进度条口径第 11 问**客户已确认（2026-07-20 晚）：任务+日程混算，任务=当日任务**——与实现默认一致、零改动 |
 | v2.6.1 | 2026-07-23 | **CustomAvatarFrame(`0x15`) 头像载荷切换为 KRI（SubVersion `0x03`，破坏性变更，固件对照 §4.12 实现；flag-day 节奏同 v2.5.24）**：payload = `SubVersion(0x03) \| KRI v1 文件字节`（≤2,240,012B；KRI = 12B 小端文件头 + 左上起始、逐行、直通 alpha 的 BGRA 裸像素，完整格式与转换规范见 `docs/KRI_图片转换规范.md`）——固件免 PNG 解码，校验文件头与总长后直接交 LVGL（ARGB8888）。**App 默认即发 `0x03`**（推送前由 wire PNG 现场转换 + KRI 规范 §7 严格校验；GATT 写完仍保留待确认标记，直到 §5.8 `AvatarCRC32` 证明固件已持久化）；旧 `0x02` PNG 转为**联调回退通道**（App 调试开关「Avatar KRI Push」切 OFF 时发送，供同机 A/B 对拍）。固件实现 `0x03` 前按既有规则丢弃未知 SubVersion 整帧即可——未确认帧由 §4.12 退避重发（永不放弃）兜住，固件就绪即自愈补推。§3.2 传输预估补 KRI 最坏情况 ≈4,472 片 / 约 4–5 分钟；§5.8 `AvatarCRC32` 口径明确为「最近一次成功接收并持久化的 0x15 文件字节」（PNG 或 KRI，格式无关）。§4.1/§4.12/§3.2/§5.8 |
 | v2.7.0 | 2026-07-23 | **自定义形象生命周期升级（破坏性 flag-day）**：`0x15` 固定为 SubVersion `0x04`，加入 `OperationID` / `AvatarID` / 文件长度 / CRC32，旧 `0x02` PNG 与 `0x03` 匿名 KRI 发送路径全部删除；新增双向 `0x22 AvatarControl`，提供 `commit / eraseExact / eraseAll / query / abort` 与 `staged / committed / erased / state / aborted`。固件先写临时文件并严格校验，收到 commit 后才原子替换并启用。DeviceWake 库存扩展为 AvatarID+长度+CRC，丢结果包后可 query 恢复。secure 大帧改为先按 11B 头分片、再逐片独立 SecureEnvelope，不再受整帧 65,535B/±120s 限制。§3.4/§4.12/§4.19/§5.8/§5.19 |
+| v2.8.0 | 2026-07-24 | **新增 WiFi(SoftAP) 头像快速传输通道 `0x1A WiFiAvatarSession` + 设备 HTTP 收图端点（App 先行、固件照做；BLE `0x15` 保留为自动回退，非 flag-day）**：修复自定义头像走 BLE 分包传输太慢——单张 800×700 KRI ≈2.14 MiB，切成 ~5000 分包 + 逐包 ACK + 20 写/秒限流 + secure 逐包 HMAC，硬地板 4–5 分钟。新链路：App 经 BLE `0x1A open` 让设备启 SoftAP 并**回报临时热点凭据（SSID/密码/网关/端口/路径/一次性 token/TTL，见 §5.20）**→ App 用 `NEHotspotConfiguration` 加入设备热点 → 一次整块 HTTP `POST` 裸 KRI 到设备端点（见 `WiFi头像传输协议契约草案.md`）→ 传输结束 App 发 `0x1A close` 停 SoftAP。**关键约束（复用现有事务确认层，App 侧零改动）：设备 HTTP 收完整块且 CRC-32/IEEE 校验通过后，必须照 BLE 路径主动发一帧 `0x22 staged`（字节与 `0x15` 路径完全相同），App 随后 `0x22 commit`；HTTP 200 仅表示"字节已收、正在暂存"，不作为持久化成功。** `0x1A` 与 PC 调试 `0x19 WiFiDebugMode` **共用 SoftAP 硬件、逻辑互斥**（另一个占用时回 `Status=busy`）；SoftAP 期间必须保持 BLE 可用（同 §4.18 约束），状态不持久化、重启默认关闭；应答只走实时 Notify，**不得写入 `0x21 EventLogBatch`**；secure 模式请求与应答均封装 `SecureEnvelope(0x7E)`。密码经 BLE 传输是本地临时 AP 的一次性凭据（token 绑 OperationID、TTL 短），dev 明文 / secure 加密。回退：固件未实现 `0x1A`/HTTP 端点时，`open` 收 `unsupported` 或超时，App 自动回退 BLE `0x15`（旧固件照常工作）。方向双义见 §2.4，帧格式见 §4.20 / §5.20，HTTP 端点契约见 `WiFi头像传输协议契约草案.md`，KRI 传输通道升级见 `KRI_图片转换规范.md`。§2.4/§4.1/§4.20/§5.2/§5.20/附录 A |
 
 | 术语 | 定义 |
 |---------------|------------------------------------------------------|
@@ -153,6 +154,7 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 | `0x17` | SceneUnlock | ReminderDismissed |
 | `0x18` | OTAReboot | OTAResult |
 | `0x19` | WiFiDebugMode | WiFiDebugResult |
+| `0x1A` | WiFiAvatarSession | WiFiAvatarSessionResult |
 | `0x20` | EventLogRequest | RequestRefresh |
 | `0x21` | 暂无 App 出站业务使用 | EventLogBatch |
 | `0x22` | AvatarControl | AvatarControlResult |
@@ -302,6 +304,7 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 | `0x17` | SceneUnlock  | 场景解锁业务帧（替代旧 `0xAA 01 01` 开发命令，secure 模式可发；详见 §4.16） |
 | `0x18` | OTAReboot | 触发固件升级重启（零 payload；固件校验升级包合法后发应答并重启进入升级，不等待 App 确认；详见 §4.17） |
 | `0x19` | WiFiDebugMode | 开启、关闭或查询设备的 PC Wi-Fi 调试模式（1B 命令；详见 §4.18） |
+| `0x1A` | WiFiAvatarSession | 开启/关闭/查询 SoftAP 头像快速传输会话（5B 命令）；`open` 时设备回报热点凭据 + HTTP 收图端点，详见 §4.20 |
 | `0x20` | EventLogRequest | 请求指定时间戳之后的事件日志 |
 | `0x22` | AvatarControl | 提交、精确擦除、全部擦除、查询或取消头像事务，详见 §4.19 |
 | `0x7E` | SecureData | 安全业务封装（v2） |
@@ -871,6 +874,51 @@ Command(1) | OperationID(4 BE) | AvatarID(16)
 
 ---
 
+### 4.20 WiFiAvatarSession (0x1A)
+
+App→Device 控制 **SoftAP 头像快速传输会话**：让设备启/停 SoftAP 并索取一次性热点凭据 + HTTP 收图端点，用于把自定义头像 KRI 一次整块经 WiFi 上传（替代 `0x15` 的 ~5000 分包 4–5 分钟传输）。**本帧只负责建立/拆除 WiFi 通道；头像字节走 HTTP（见 `WiFi头像传输协议契约草案.md`），事务确认仍走 `0x22`（见 §4.19 / §5.19）。**
+
+**Payload：** 固定 5 字节。
+
+```text
+Command(1) | OperationID(4 BE)
+```
+
+| Offset | Field | Size | 值 | 说明 |
+|--------|-------|------|----|------|
+| 0 | Command | 1 byte | `0x00` | close：停止 SoftAP、结束会话（无论传输成败都发） |
+| 0 | Command | 1 byte | `0x01` | open：启动 SoftAP 并在应答中回报热点凭据 + 端点 |
+| 0 | Command | 1 byte | `0x02` | query：查询当前会话实际状态，不改变设备状态 |
+| 1 | OperationID | 4 bytes BE | — | 绑定本次头像事务（同 `0x15`/`0x22` 的 OperationID）；设备据此拒绝 HTTP 上传里 OperationID 不匹配的请求 |
+
+**明文帧示例（App→Device 的 Length 为 2B Big Endian）：**
+
+| 操作 | 完整帧 | 说明 |
+|------|--------|------|
+| 开启 | `1A 00 05 01 <OperationID 4B>` | `Type=0x1A, Length=5, Command=0x01` |
+| 关闭 | `1A 00 05 00 <OperationID 4B>` | 传输结束后停 SoftAP |
+| 查询 | `1A 00 05 02 <OperationID 4B>` | 只读当前会话状态 |
+
+**固件行为：**
+
+1. 每次收到合法 `0x1A` 命令后，都通过 Notify 回一帧 `WiFiAvatarSessionResult(0x1A)`（见 §5.20）；`open` 成功时 payload 携带热点凭据 + HTTP 端点，`close`/`query`/失败时按 §5.20 回报状态（凭据字段可为空）。
+2. `open` 成功后启动 SoftAP（网关通常 `192.168.4.1`）与一个**程序化 HTTP 收图端点**（`POST <path>`，契约见 `WiFi头像传输协议契约草案.md`），并生成本次会话专用的**一次性 token**（绑定 OperationID，`close` 或 TTL 到期即失效）。
+3. **收到 HTTP 上传、整块 KRI 落盘且 CRC-32/IEEE 与 header 声明一致后，必须照 BLE `0x15` 路径主动发一帧 `0x22 staged`（§5.19），字节完全相同。** App 侧不区分头像是经 WiFi 还是 BLE 到达，一律 `awaitAvatarControlResult(.staged)` 后 `commit`。
+4. `0x1A` 与 `0x19 WiFiDebugMode` **共用 SoftAP 硬件、逻辑互斥**：另一个正开启时，`open` 回 `Status=0x02`（busy），不启新会话。
+5. SoftAP 期间必须保持 BLE 可用（继续接收 `close`/`query`/`0x22` 及其他业务命令），**不得因开启 SoftAP 主动断开 BLE**（同 §4.18）。
+6. 会话状态不持久化；设备重启默认关闭。App 断连即视会话结束，重连后按需重开。
+7. 未知命令值、payload 长度不等于 5 时不执行状态变更，回 `Status=0x04`（非法命令）。
+
+**App 侧处理：**
+
+- App 仅在 BLE 已连接时发送 `0x1A`；`open` 应答的凭据用于 `NEHotspotConfiguration` 加入设备热点，随后向端点 `POST` 裸 KRI。
+- WiFi 任一步失败（`open` 回 `unsupported`/`busy`/`wifiInitFailed`、加入热点失败、HTTP 失败）→ App 发 `close` 收尾并**自动回退 BLE `0x15`**（旧固件不实现 `0x1A` 时同样回退）。
+- 传输结束或失败，App 都发 `close` 停 SoftAP、`removeConfiguration` 退出热点恢复家庭网。
+
+**安全模式：** `BLE_SHARED_SECRET` 已配置时，`0x1A` 请求与应答均封装进 `SecureEnvelope(0x7E)`（见 §3.4），不能发送明文 `0x1A`。热点凭据（含密码、token）经 secure 通道加密下发；dev 模式为本地临时 AP 的明文一次性凭据。`open` 应答携带凭据，长度较大时按 §3.2 对外层 `0x7E` payload 分包，App 重组后再解封。
+
+---
+
 ## 5. Device → App 事件
 
 事件通过 Notify characteristic 从设备发送至 App。
@@ -904,6 +952,7 @@ Command(1) | OperationID(4 BE) | AvatarID(16)
 | `0x17` | ReminderDismissed   | 智能提醒自动消失（超时） |
 | `0x18` | OTAResult           | 固件升级重启应答（1B 状态码，详见 §5.17） |
 | `0x19` | WiFiDebugResult     | Wi-Fi 调试模式实时应答（Enabled + StatusCode，详见 §5.18） |
+| `0x1A` | WiFiAvatarSessionResult | SoftAP 头像传输会话实时应答（Status + 热点凭据 + HTTP 端点，详见 §5.20） |
 | `0x20` | RequestRefresh      | 设备请求数据刷新 |
 | `0x21` | EventLogBatch       | 批量回传事件日志 |
 | `0x22` | AvatarControlResult | 头像暂存、提交、擦除、查询或取消的实时结果，详见 §5.19 |
@@ -1259,6 +1308,47 @@ AvatarID(16) | FileLength(4 BE) | FileCRC32(4 BE)
 **App 验证：** 长度、Status、AvatarState、CustomActive 非法时丢弃整帧。App 只处理与持久化待办操作 OperationID 匹配的结果；apply 还必须同时匹配 AvatarID、FileLength 和 FileCRC32。`staged` 后转为正在应用并发 commit；`committed` 后才保存候选伴侣、更改当前身份并刷新 PetStatus/AI 文案缓存。`erased` 后才完成在线删除或退出登录。
 
 **发送约束：** 本结果只走当前 Notify，不写入 EventLogBatch。secure 模式必须作为普通短 payload 放入 SecureEnvelope。
+
+---
+
+### 5.20 WiFiAvatarSessionResult (0x1A)
+
+Device→App，`WiFiAvatarSession(0x1A)` 的实时应答（方向双义，见 §2.4）。设备对 `open`/`close`/`query` 各回复一次；`open` 成功时携带**本次会话专用的一次性热点凭据 + HTTP 收图端点**，供 App 加入设备热点并上传 KRI。本事件只表示设备**当前这次连接中的实时状态**。
+
+**Payload：** 变长，长度前缀字段用于所有可变文本。
+
+```text
+Status(1) | SSIDLen(1) | SSID(N1) | PassLen(1) | Passphrase(N2) |
+Gateway(4) | Port(2 BE) | PathLen(1) | Path(N3) | TokenLen(1) | Token(N4) | TTL(2 BE)
+```
+
+| 字段 | 大小 | 说明 |
+|------|------|------|
+| Status | 1 byte | 本次命令处理结果，见状态码表 |
+| SSIDLen / SSID | 1 + N1 | SoftAP 名称（UTF-8，N1 ≤ 32）；非 `open` 成功时 N1=0 |
+| PassLen / Passphrase | 1 + N2 | SoftAP 密码（UTF-8，N2 ≤ 63，WPA2；0 表示开放网络，不推荐）；非 `open` 成功时 N2=0 |
+| Gateway | 4 bytes | SoftAP 网关 IPv4（大端 4 字节，通常 `C0 A8 04 01` = 192.168.4.1）；非 `open` 成功时填 0 |
+| Port | 2 bytes BE | HTTP 收图端点端口（如 80 / 8080）；非 `open` 成功时填 0 |
+| PathLen / Path | 1 + N3 | HTTP 收图端点路径（UTF-8，N3 ≤ 32，如 `/avatar`）；非 `open` 成功时 N3=0 |
+| TokenLen / Token | 1 + N4 | 会话一次性 Bearer token（UTF-8，N4 ≤ 64，绑 OperationID）；非 `open` 成功时 N4=0 |
+| TTL | 2 bytes BE | SoftAP 等待上传的存活秒数（如 120）；到期未收上传则自动关闭会话 |
+
+**状态码：**
+
+| 值 | 名称 | 说明 |
+|----|------|------|
+| `0x00` | OK | 命令处理成功；`open` 时凭据字段有效，`close`/`query`-off 时凭据字段为空 |
+| `0x01` | ERR_UNSUPPORTED | 当前固件或硬件不支持 WiFi 头像传输（App 回退 BLE） |
+| `0x02` | ERR_BUSY | SoftAP 被 `0x19` PC 调试占用或另一会话进行中，本次未启动 |
+| `0x03` | ERR_WIFI_INIT_FAILED | WiFi / SoftAP 初始化失败 |
+| `0x04` | ERR_INVALID_COMMAND | 命令值或 payload 长度非法 |
+| `0xFF` | ERR_UNKNOWN | 未知错误 |
+
+`Status != 0x00` 时所有凭据字段（含各长度前缀）均置 0，App 据 `Status` 回退 BLE 或提示。
+
+**实时事件约束：** `WiFiAvatarSessionResult` 只通过当前 BLE 连接的 Notify characteristic 实时发送，**不得写入、排队或重放到 `EventLogBatch(0x21)`**。原因同 §5.18：会话状态与一次性 token 在重启后失效，离线回放旧凭据会把 App 引向已失效的热点/端点。
+
+**安全模式：** 安全模式下应答封装进 `SecureEnvelope(0x7E)`，热点密码与 token 随之加密。凭据较长导致外层帧超过协商 MTU 时，设备按 §3.2 对外层 `0x7E` payload 分包，App 重组完成后再解封。
 
 ---
 
@@ -1813,6 +1903,7 @@ public enum BLEDataType: UInt8, Sendable {
     case sceneUnlock = 0x17        // App→Device: 场景解锁业务帧（替代旧 0xAA 01 01，见 §4.16）
     case otaReboot = 0x18          // App→Device: 触发固件升级重启（零 payload），见 §4.17
     case wifiDebugMode = 0x19      // App→Device: 开启/关闭/查询 PC Wi-Fi 调试模式，见 §4.18
+    case wifiAvatarSession = 0x1A  // 双向：SoftAP 头像快传会话开关 + 热点凭据/端点应答，见 §4.20/§5.20
     case eventLogRequest = 0x20
     case avatarControl = 0x22      // 双向：提交/擦除/查询/取消及结果
     case eventLogBatch = 0x21
