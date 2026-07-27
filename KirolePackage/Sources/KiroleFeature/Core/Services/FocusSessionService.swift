@@ -6,6 +6,12 @@ import Foundation
 import UIKit
 #endif
 
+enum HardwareFocusSettlementResult: Sendable, Equatable {
+    case durable
+    case supersededByApp
+    case persistenceFailed
+}
+
 // MARK: - Focus Session Service
 
 /// 专注会话服务，管理任务专注时间追踪
@@ -17,10 +23,10 @@ public final class FocusSessionService {
     // MARK: - State
 
     /// 当前活跃的专注会话
-    public private(set) var activeSession: FocusSession?
+    public internal(set) var activeSession: FocusSession?
 
     /// 今日所有专注会话
-    public private(set) var todaySessions: [FocusSession] = []
+    public internal(set) var todaySessions: [FocusSession] = []
 
     /// 专注统计数据
     public private(set) var statistics: FocusStatistics = FocusStatistics()
@@ -36,22 +42,37 @@ public final class FocusSessionService {
 
     // MARK: - Private Properties
 
-    private let localStorage: LocalStorage
-    private let focusGuardService: any FocusGuardService
-    private let interruptionDetector: any FocusInterruptionDetecting
-    private let persistenceEnabled: Bool
+    let localStorage: LocalStorage
+    let focusPersistence: any FocusSessionPersisting
+    let taskOperationLedger: TaskOperationLedger
+    let focusGuardService: any FocusGuardService
+    let interruptionDetector: any FocusInterruptionDetecting
+    let persistenceEnabled: Bool
     /// 当前会话内已检测到的打断（由 interruptionDetector 产出）。
     /// v2.5.20 打断判定重做：打断 = 专注期间使用自选分心 App；
     /// 旧的「Kirole 回前台即打断」ScreenActivityTracker 路径已整体移除（spec D-2 禁止回退）。
-    private var sessionInterruptions: [ScreenUnlockEvent] = []
+    var sessionInterruptions: [ScreenUnlockEvent] = []
     /// App 回前台可能早于异步恢复旧会话。恢复完成前先暂存检测器回调，避免它们在
     /// `activeSession == nil` 时被丢弃；恢复时与 App Group 中尚未取出的记录一起合并。
-    private var preRecoveryInterruptions: [ScreenUnlockEvent] = []
-    private var hasCompletedLaunchRecovery: Bool
+    var preRecoveryInterruptions: [ScreenUnlockEvent] = []
+    var hasCompletedLaunchRecovery: Bool
     private var launchRecoveryTask: Task<Void, Never>?
-    private var pendingSessionPersistenceTask: Task<Void, Never>?
+    struct PendingFocusSettlement {
+        let session: FocusSession
+        let endTime: Date
+        let clearPersistedActiveSession: Bool
+        let operationKey: String?
+        let historyAlreadyPersisted: Bool
+    }
+
+    var pendingFocusSettlement: PendingFocusSettlement?
+    var loadedFocusSessionHistory: [UUID: FocusSession] = [:]
+    var pendingSessionPersistenceTask: Task<Bool, Never>?
     private var focusDisplaySyncTask: Task<Void, Never>?
     var debugTimeline: FocusDebugTimeline?
+    /// In-memory monotonic clock used only to detect a same-task session that starts while a
+    /// versioned Complete/Skip transaction is suspended in persistence.
+    @ObservationIgnored private var sessionStartGenerations: [String: UInt64] = [:]
 
     // MARK: - Constants
 
@@ -65,6 +86,8 @@ public final class FocusSessionService {
 
     private init(
         localStorage: LocalStorage = .shared,
+        focusPersistence: (any FocusSessionPersisting)? = nil,
+        taskOperationLedger: TaskOperationLedger = .shared,
         focusGuardService: any FocusGuardService = ScreenTimeFocusGuardService.shared,
         interruptionDetector: (any FocusInterruptionDetecting)? = nil,
         persistenceEnabled: Bool = true,
@@ -72,6 +95,8 @@ public final class FocusSessionService {
         launchRecoveryCompleted: Bool? = nil
     ) {
         self.localStorage = localStorage
+        self.focusPersistence = focusPersistence ?? LocalFocusSessionPersistence(storage: localStorage)
+        self.taskOperationLedger = taskOperationLedger
         self.focusGuardService = focusGuardService
         self.interruptionDetector = interruptionDetector ?? ScreenTimeInterruptionDetector.shared
         self.persistenceEnabled = persistenceEnabled
@@ -96,10 +121,14 @@ public final class FocusSessionService {
         focusGuardService: any FocusGuardService,
         interruptionDetector: (any FocusInterruptionDetecting)? = nil,
         persistenceEnabled: Bool = false,
-        launchRecoveryCompleted: Bool = true
+        launchRecoveryCompleted: Bool = true,
+        focusPersistence: (any FocusSessionPersisting)? = nil,
+        taskOperationLedger: TaskOperationLedger = .shared
     ) -> FocusSessionService {
         FocusSessionService(
             localStorage: .shared,
+            focusPersistence: focusPersistence,
+            taskOperationLedger: taskOperationLedger,
             focusGuardService: focusGuardService,
             interruptionDetector: interruptionDetector,
             persistenceEnabled: persistenceEnabled,
@@ -114,8 +143,11 @@ public final class FocusSessionService {
     }
 
     func installLaunchRecoveryBarrierForTesting(_ task: Task<Void, Never>) {
-        launchRecoveryTask = task
         hasCompletedLaunchRecovery = false
+        launchRecoveryTask = Task { @MainActor [weak self] in
+            await task.value
+            self?.hasCompletedLaunchRecovery = true
+        }
     }
 
     /// 打断检测当前状态（专注界面据此明示"检测是否开启"，spec D-2）。
@@ -240,6 +272,17 @@ public final class FocusSessionService {
         // and saved the previous session. Starting sooner can make recovery settle or delete the
         // brand-new session that arrived from hardware during launch.
         await launchRecoveryTask?.value
+        guard hasCompletedLaunchRecovery else {
+            ErrorReporter.log(
+                .persistence(
+                    operation: "start",
+                    target: "focus_session_active.json",
+                    underlying: "previous focus settlement is not durable"
+                ),
+                context: "FocusSessionService.startSession"
+            )
+            return
+        }
 
         // 幂等保护：同一任务已有活跃会话时，重复投递的 enterTaskIn（BLE 重传 / 固件重发）
         // 不应切断当前会话再以 .timeout 重开——那会写入一个假的 timeout 会话、污染专注统计。
@@ -252,6 +295,10 @@ public final class FocusSessionService {
             endSession(reason: .timeout, endTime: startTime)
         }
 
+        // Never overwrite the active-session recovery file until the previous ended session has
+        // reached history and that file has been removed successfully.
+        guard await retryPendingFocusSettlementIfNeeded() else { return }
+
         let protectionContext = await resolveProtectionContext(requestedMode: requestedMode)
         let session = FocusSession(
             taskId: taskId,
@@ -262,18 +309,36 @@ public final class FocusSessionService {
             interruptionSource: protectionContext.interruptionSource
         )
 
+        advanceSessionStartGeneration(for: taskId)
         activeSession = session
         sessionInterruptions.removeAll()
         resetDebugTimeline(sessionStart: startTime)
         interruptionDetector.startMonitoring()
         startFocusDisplaySyncLoop()
-        await waitForPendingSessionPersistence()
         await persistActiveSessionIfNeeded(session)
+    }
+
+    func sessionStartGeneration(for taskID: String) -> UInt64 {
+        sessionStartGenerations[taskID, default: 0]
+    }
+
+    private func advanceSessionStartGeneration(for taskID: String) {
+        let current = sessionStartGenerations[taskID, default: 0]
+        sessionStartGenerations[taskID] = current == .max ? .max : current + 1
     }
 
     /// 结束当前专注会话（当收到 CompleteTask 或 SkipTask 事件时调用）
     public func endSession(reason: FocusEndReason, endTime: Date = Date()) {
-        guard var session = activeSession else { return }
+        _ = endActiveSession(reason: reason, endTime: endTime, operationKey: nil)
+    }
+
+    @discardableResult
+    private func endActiveSession(
+        reason: FocusEndReason,
+        endTime: Date,
+        operationKey: String?
+    ) -> Bool {
+        guard var session = activeSession else { return false }
         // 结束时间不得早于会话开始：固件 RTC 错乱时 completeTask/skipTask 可能携带远古时间戳
         // （1970 级），而 live 开始时间已被夹到 now-2h——不夹结束侧会算出**负专注时长**写进
         // 结算（FocusTimeCalculator 无解锁事件时直接 end-start）。单点防御全部结束路径
@@ -306,7 +371,13 @@ public final class FocusSessionService {
         )
         session.calculatedFocusTime = progress.countableFocusTime
         session.earnedEnergyBottles = progress.earnedEnergyBottles
-        completeSession(session, endTime: endTime, clearPersistedActiveSession: true)
+        completeSession(
+            session,
+            endTime: endTime,
+            clearPersistedActiveSession: true,
+            operationKey: operationKey
+        )
+        return true
     }
 
     /// Interruption events recorded so far in the active session window.
@@ -318,15 +389,88 @@ public final class FocusSessionService {
     }
 
     /// 完成任务（短按滚轮）
-    public func completeTask(taskId: String, endTime: Date = Date()) {
-        guard let session = activeSession, session.taskId == taskId else { return }
+    @discardableResult
+    public func completeTask(taskId: String, endTime: Date = Date()) -> Bool {
+        guard let session = activeSession, session.taskId == taskId else { return false }
         endSession(reason: .completed, endTime: endTime)
+        return true
     }
 
     /// 跳过任务（长按滚轮）
-    public func skipTask(taskId: String, endTime: Date = Date()) {
-        guard let session = activeSession, session.taskId == taskId else { return }
+    @discardableResult
+    public func skipTask(taskId: String, endTime: Date = Date()) -> Bool {
+        guard let session = activeSession, session.taskId == taskId else { return false }
         endSession(reason: .skipped, endTime: endTime)
+        return true
+    }
+
+    /// Settles the focus portion of a versioned hardware task operation. This is called for both
+    /// first delivery and exact retries, including retries after `activeSession` was cleared in
+    /// memory but history persistence failed.
+    func settleHardwareTaskOperation(
+        _ entry: TaskOperationLedgerEntry
+    ) async -> HardwareFocusSettlementResult {
+        await launchRecoveryTask?.value
+        if !hasCompletedLaunchRecovery {
+            if pendingFocusSettlement != nil {
+                hasCompletedLaunchRecovery = await retryPendingFocusSettlementIfNeeded()
+            } else {
+                await recoverSessionOnLaunchIfNeeded()
+            }
+        }
+        guard hasCompletedLaunchRecovery else { return .persistenceFailed }
+
+        if let pending = pendingFocusSettlement {
+            guard pending.operationKey == entry.operationKey else {
+                return await retryPendingFocusSettlementIfNeeded()
+                    ? .durable
+                    : .persistenceFailed
+            }
+            let persisted = await retryPendingFocusSettlementIfNeeded()
+            if persisted { hasCompletedLaunchRecovery = true }
+            return persisted ? .durable : .persistenceFailed
+        }
+
+        if focusOperationIsSuperseded(entry) {
+            return .supersededByApp
+        }
+
+        guard let active = activeSession, active.taskId == entry.taskID else {
+            return .durable
+        }
+        let reason: FocusEndReason = entry.action == .completeTask ? .completed : .skipped
+        let eventTime = Date(timeIntervalSince1970: TimeInterval(entry.deviceTimestamp))
+        let endTime = max(active.startTime, min(eventTime, min(entry.recordedAt, Date())))
+        guard endActiveSession(
+            reason: reason,
+            endTime: endTime,
+            operationKey: entry.operationKey
+        ) else {
+            return .durable
+        }
+
+        let persisted = await waitForPendingSessionPersistence()
+        if persisted { hasCompletedLaunchRecovery = true }
+        return persisted ? .durable : .persistenceFailed
+    }
+
+    private func focusOperationIsSuperseded(_ entry: TaskOperationLedgerEntry) -> Bool {
+        let eventTime = Date(timeIntervalSince1970: TimeInterval(entry.deviceTimestamp))
+        let orderingTolerance: TimeInterval = 2
+        let futureTolerance: TimeInterval = 5 * 60
+        guard eventTime <= entry.recordedAt.addingTimeInterval(futureTolerance) else {
+            return true
+        }
+
+        let matchingStart = activeSession?.taskId == entry.taskID
+            ? activeSession?.startTime
+            : todaySessions
+                .filter { $0.taskId == entry.taskID }
+                .map(\.startTime)
+                .max()
+        guard let matchingStart else { return false }
+        return eventTime.addingTimeInterval(orderingTolerance) < matchingStart
+            || entry.recordedAt.addingTimeInterval(orderingTolerance) < matchingStart
     }
 
     /// 设备断开连接时结束会话
@@ -498,231 +642,6 @@ public final class FocusSessionService {
         )
     }
 
-    // MARK: - Persistence
-
-    private func loadTodaySessions() async {
-        guard persistenceEnabled else { return }
-
-        do {
-            if let sessions = try await localStorage.loadFocusSessions() {
-                let calendar = Calendar.current
-                let today = calendar.startOfDay(for: Date())
-                todaySessions = sessions.filter { session in
-                    calendar.isDate(session.startTime, inSameDayAs: today)
-                }
-                updateStatistics()
-            }
-        } catch {
-            ErrorReporter.log(
-                .persistence(
-                    operation: "load",
-                    target: "focus_sessions.json",
-                    underlying: error.localizedDescription
-                ),
-                context: "FocusSessionService.loadTodaySessions"
-            )
-        }
-    }
-
-    private func saveSessions() async {
-        guard persistenceEnabled else { return }
-
-        do {
-            try await localStorage.saveFocusSessions(todaySessions)
-            try await localStorage.saveFocusSessionsForDate(todaySessions, date: Date())
-        } catch {
-            ErrorReporter.log(
-                .persistence(
-                    operation: "save",
-                    target: "focus_sessions",
-                    underlying: error.localizedDescription
-                ),
-                context: "FocusSessionService.saveSessions"
-            )
-        }
-    }
-
-    private func scheduleSessionPersistence(_ operation: @escaping @MainActor () async -> Void) {
-        let previousTask = pendingSessionPersistenceTask
-        pendingSessionPersistenceTask = Task { @MainActor in
-            _ = await previousTask?.result
-            await operation()
-        }
-    }
-
-    private func waitForPendingSessionPersistence() async {
-        _ = await pendingSessionPersistenceTask?.result
-    }
-
-    func waitForPendingPersistenceForTesting() async {
-        await waitForPendingSessionPersistence()
-    }
-
-    /// Persists the active session with the interruptions recorded so far, so a crash recovery
-    /// settles against the real interruption history instead of assuming an uninterrupted session
-    /// (which over-credits bottles). Best practice: persist in-progress state early.
-    private func persistActiveSessionWithInterruptions(now: Date = Date()) async {
-        guard persistenceEnabled, let session = activeSession else { return }
-        var snapshot = session
-        snapshot.screenUnlockEvents = currentUnlockEvents(until: now)
-        await persistActiveSessionIfNeeded(snapshot)
-    }
-
-    private func persistActiveSessionIfNeeded(_ session: FocusSession) async {
-        guard persistenceEnabled else { return }
-
-        do {
-            try await localStorage.saveActiveFocusSession(session)
-        } catch {
-            ErrorReporter.log(
-                .persistence(
-                    operation: "save",
-                    target: "focus_session_active.json",
-                    underlying: error.localizedDescription
-                ),
-                context: "FocusSessionService.persistActiveSessionIfNeeded"
-            )
-        }
-    }
-
-    private func clearPersistedActiveSessionIfNeeded() async {
-        guard persistenceEnabled else { return }
-
-        do {
-            try await localStorage.clearActiveFocusSession()
-        } catch {
-            ErrorReporter.log(
-                .persistence(
-                    operation: "delete",
-                    target: "focus_session_active.json",
-                    underlying: error.localizedDescription
-                ),
-                context: "FocusSessionService.clearPersistedActiveSessionIfNeeded"
-            )
-        }
-    }
-
-    private func recoverSessionOnLaunchIfNeeded() async {
-        guard persistenceEnabled else {
-            preRecoveryInterruptions.removeAll()
-            hasCompletedLaunchRecovery = true
-            return
-        }
-
-        let wasShieldActive = await localStorage.loadDeepFocusShieldActive()
-        if wasShieldActive {
-            focusGuardService.clearShield()
-            await localStorage.saveDeepFocusShieldActive(false)
-        }
-
-        let recovered: FocusSession?
-        do {
-            recovered = try await localStorage.loadActiveFocusSession()
-        } catch {
-            ErrorReporter.log(
-                .persistence(operation: "load", target: "active_focus_session", underlying: error.localizedDescription),
-                context: "FocusSessionService.recoverSessionOnLaunchIfNeeded"
-            )
-            recovered = nil
-        }
-        let pendingInterruptions = takeLaunchRecoveryInterruptions()
-        guard let recovered else {
-            hasCompletedLaunchRecovery = true
-            return
-        }
-
-        applyRecoveredSession(
-            recovered,
-            pendingInterruptions: pendingInterruptions,
-            wasShieldActive: wasShieldActive,
-            endTime: Date()
-        )
-
-        await clearPersistedActiveSessionIfNeeded()
-        await saveSessions()
-        hasCompletedLaunchRecovery = true
-    }
-
-    func recoverPersistedSessionForTesting(
-        _ persistedSession: FocusSession,
-        wasShieldActive: Bool,
-        endTime: Date = Date()
-    ) {
-        if wasShieldActive {
-            focusGuardService.clearShield()
-        }
-        let pendingInterruptions = takeLaunchRecoveryInterruptions()
-        applyRecoveredSession(
-            persistedSession,
-            pendingInterruptions: pendingInterruptions,
-            wasShieldActive: wasShieldActive,
-            endTime: endTime
-        )
-        hasCompletedLaunchRecovery = true
-    }
-
-    private func takeLaunchRecoveryInterruptions() -> [ScreenUnlockEvent] {
-        let pending = preRecoveryInterruptions + interruptionDetector.takePendingInterruptions()
-        preRecoveryInterruptions.removeAll()
-        return pending
-    }
-
-    private func applyRecoveredSession(
-        _ persistedSession: FocusSession,
-        pendingInterruptions: [ScreenUnlockEvent],
-        wasShieldActive: Bool,
-        endTime: Date
-    ) {
-        var recovered = persistedSession
-        recovered.endTime = endTime
-        recovered.endReason = .recoveredOnLaunch
-        // Merge the last persisted snapshot with App Group records written after that snapshot.
-        // Recovery consumes these records without the live callback, so no intermediate hardware
-        // push or duplicate persistence runs while the old session is being finalized.
-        let recoveredUnlocks = mergeRecoveredInterruptions(
-            persisted: persistedSession.screenUnlockEvents,
-            pending: pendingInterruptions,
-            sessionStart: recovered.startTime,
-            sessionEnd: endTime
-        )
-        recovered.screenUnlockEvents = recoveredUnlocks
-        recovered.calculatedFocusTime = calculateFocusTime(
-            sessionStart: recovered.startTime,
-            sessionEnd: endTime,
-            screenUnlockEvents: recoveredUnlocks
-        )
-        recovered.earnedEnergyBottles = FocusTimeCalculator.countableBottles(
-            sessionStart: recovered.startTime,
-            sessionEnd: endTime,
-            screenUnlockEvents: recoveredUnlocks
-        )
-        if wasShieldActive || recovered.protectionState == .protected {
-            recovered.mode = .standard
-            recovered.protectionState = .fallback
-            recovered.interruptionSource = .recoveredOnLaunch
-        }
-
-        completeSession(recovered, endTime: endTime, clearPersistedActiveSession: false)
-    }
-
-    private func mergeRecoveredInterruptions(
-        persisted: [ScreenUnlockEvent],
-        pending: [ScreenUnlockEvent],
-        sessionStart: Date,
-        sessionEnd: Date
-    ) -> [ScreenUnlockEvent] {
-        let pendingInSession = pending.filter {
-            $0.timestamp >= sessionStart && $0.timestamp <= sessionEnd
-        }
-        var seenTimestampSeconds = Set<Int64>()
-        return (persisted + pendingInSession)
-            .sorted { $0.timestamp < $1.timestamp }
-            .filter {
-                let timestampSecond = Int64($0.timestamp.timeIntervalSince1970.rounded(.down))
-                return seenTimestampSeconds.insert(timestampSecond).inserted
-            }
-    }
-
     // MARK: - Protection Resolution
 
     private struct ProtectionContext {
@@ -816,62 +735,35 @@ public final class FocusSessionService {
         )
     }
 
-    private func completeSession(
+    func completeSession(
         _ session: FocusSession,
         endTime: Date,
-        clearPersistedActiveSession: Bool
+        clearPersistedActiveSession: Bool,
+        operationKey: String?
     ) {
-        todaySessions.append(session)
+        var durableSession = session
+        if persistenceEnabled, durableSession.energyAwardReceiptID == nil {
+            durableSession.energyAwardReceiptID = durableSession.id
+        }
+        if let existingIndex = todaySessions.firstIndex(where: { $0.id == durableSession.id }) {
+            todaySessions[existingIndex] = durableSession
+        } else {
+            todaySessions.append(durableSession)
+        }
         activeSession = nil
         resetDebugTimeline()
         updateStatistics()
 
-        let bottlesToAdd = session.earnedEnergyBottles
-        scheduleSessionPersistence { [weak self] in
-            guard let self else { return }
-            let (totalEnergyBottles, newlyUnlocked) = await self.updateStoredEnergyBottles(adding: bottlesToAdd)
-            if clearPersistedActiveSession {
-                await self.clearPersistedActiveSessionIfNeeded()
-            }
-            await self.saveSessions()
-            await AppState.shared.handleFocusSessionDidEnd(
-                totalEnergyBottles: totalEnergyBottles,
-                newlyUnlocked: newlyUnlocked,
-                now: endTime
-            )
-        }
+        pendingFocusSettlement = PendingFocusSettlement(
+            session: durableSession,
+            endTime: endTime,
+            clearPersistedActiveSession: clearPersistedActiveSession,
+            operationKey: operationKey,
+            historyAlreadyPersisted: false
+        )
+        schedulePendingFocusSettlement()
     }
 
-    /// 累加能量瓶并诊断"这次累加是否跨过了未庆祝的解锁阈值"。
-    /// 返回值的 newlyUnlocked 仅在还未庆祝过的解锁档触发，已庆祝的会被去重过滤。
-    private func updateStoredEnergyBottles(
-        adding bottlesToAdd: Int
-    ) async -> (total: Int, newlyUnlocked: [String]) {
-        // 与本类其余持久化函数同一守卫策略：persistenceEnabled=false 的测试实例
-        // 不得读写全局 UserDefaults 里的能量瓶/庆祝水位，否则污染并行测试。
-        guard persistenceEnabled else { return (0, []) }
-        let before = await localStorage.loadEnergyBottles()
-        guard bottlesToAdd > 0 else {
-            return (before, [])
-        }
-
-        let after = before + bottlesToAdd
-        await localStorage.saveEnergyBottles(after)
-
-        let alreadyCelebrated = await localStorage.loadLastCelebratedUnlockCount()
-        let totalUnlockedNow = DisplayScene.unlockedScenes(for: after).count
-        guard totalUnlockedNow > alreadyCelebrated else {
-            return (after, [])
-        }
-
-        let newlyUnlocked = Array(
-            DisplayScene.allCases
-                .dropFirst(alreadyCelebrated)
-                .prefix(totalUnlockedNow - alreadyCelebrated)
-        ).map(\.rawValue)
-        await localStorage.saveLastCelebratedUnlockCount(totalUnlockedNow)
-        return (after, newlyUnlocked)
-    }
 }
 
 // ScreenActivityTracker（「Kirole 回前台即打断」的旧信号）已于 v2.5.20 整体删除：

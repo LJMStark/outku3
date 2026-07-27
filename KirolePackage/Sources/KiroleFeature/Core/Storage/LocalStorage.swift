@@ -15,6 +15,8 @@ public actor LocalStorage {
         static let developmentStorageSchemaVersion = "developmentStorageSchemaVersion"
         static let lastEventLogTimestamp = "lastEventLogTimestamp"
         static let lastDayPackHash = "lastDayPackHash"
+        static let taskListSnapshotEpoch = "taskListSnapshotEpoch"
+        static let taskListSnapshotRevision = "taskListSnapshotRevision"
         static let lastBleSyncTime = "lastBleSyncTime"
         static let focusEnforcementMode = "focusEnforcementMode"
         static let deepFocusShieldActive = "deepFocusShieldActive"
@@ -35,6 +37,9 @@ public actor LocalStorage {
         static let userProfile = "user_profile.json"
         static let focusSessions = "focus_sessions.json"
         static let eventLogs = "event_logs.json"
+        static let taskOperationLedger = "task_operation_ledger.json"
+        static let taskListSnapshotVersion = "task_list_snapshot_version.json"
+        static let focusEnergyAwardReceipts = "focus_energy_award_receipts.json"
         static let aiInteractions = "ai_interactions.json"
         static let behaviorSummary = "behavior_summary.json"
         static let onboardingProfile = "onboarding_profile.json"
@@ -64,7 +69,8 @@ public actor LocalStorage {
         static let persisted = [
             pet, tasks, events,
             syncState, haikuCache, userProfile,
-            focusSessions, eventLogs, aiInteractions,
+            focusSessions, eventLogs, taskOperationLedger, taskListSnapshotVersion,
+            focusEnergyAwardReceipts, aiInteractions,
             behaviorSummary, onboardingProfile,
             deepFocusSelection, activeFocusSession,
             outbox, googleSyncMetadata, companionUsageState,
@@ -95,6 +101,8 @@ public actor LocalStorage {
         Keys.developmentStorageSchemaVersion,
         Keys.lastEventLogTimestamp,
         Keys.lastDayPackHash,
+        Keys.taskListSnapshotEpoch,
+        Keys.taskListSnapshotRevision,
         Keys.lastBleSyncTime,
         Keys.focusEnforcementMode,
         Keys.deepFocusShieldActive,
@@ -258,6 +266,14 @@ public actor LocalStorage {
 
     public func loadTasks() throws -> [TaskItem]? {
         try load([TaskItem].self, from: Files.tasks)
+    }
+
+    func saveTaskOperationLedger(_ entries: [TaskOperationLedgerEntry]) throws {
+        try save(entries, to: Files.taskOperationLedger)
+    }
+
+    func loadTaskOperationLedger() throws -> [TaskOperationLedgerEntry]? {
+        try load([TaskOperationLedgerEntry].self, from: Files.taskOperationLedger)
     }
 
     // MARK: - Events
@@ -539,6 +555,30 @@ public actor LocalStorage {
         userDefaults.integer(forKey: Keys.energyBottles)
     }
 
+    /// Atomically records the cumulative target before updating UserDefaults. If the process dies
+    /// between those writes, the same receipt restores the target; if it dies afterwards, replay
+    /// observes the receipt and never increments twice.
+    func applyFocusEnergyReward(receiptID: UUID, bottles: Int) throws -> Int {
+        var targets = try load([String: Int].self, from: Files.focusEnergyAwardReceipts) ?? [:]
+        let durableMaximum = targets.values.max() ?? 0
+        let currentTotal = max(userDefaults.integer(forKey: Keys.energyBottles), durableMaximum)
+        let key = receiptID.uuidString
+
+        if let existingTarget = targets[key] {
+            let repairedTotal = max(currentTotal, existingTarget)
+            userDefaults.set(repairedTotal, forKey: Keys.energyBottles)
+            return repairedTotal
+        }
+
+        let increment = max(0, bottles)
+        let (sum, overflow) = currentTotal.addingReportingOverflow(increment)
+        let target = overflow ? Int.max : sum
+        targets[key] = target
+        try save(targets, to: Files.focusEnergyAwardReceipts)
+        userDefaults.set(target, forKey: Keys.energyBottles)
+        return target
+    }
+
     public func saveLastCelebratedUnlockCount(_ count: Int) {
         userDefaults.set(count, forKey: Keys.lastCelebratedUnlockCount)
     }
@@ -566,6 +606,34 @@ public actor LocalStorage {
 
     public func loadLastDayPackHash() -> String? {
         userDefaults.string(forKey: Keys.lastDayPackHash)
+    }
+
+    /// Atomically advances the durable version used by `0x1B TaskListSnapshotAck`.
+    /// Epoch and revision live in one atomically-replaced JSON document; two independent
+    /// UserDefaults writes could expose a mixed pair after process termination.
+    public func nextTaskListSnapshotVersion() throws -> TaskListSnapshotVersion {
+        let current: TaskListSnapshotVersion?
+        do {
+            current = try loadTaskListSnapshotVersion()
+        } catch {
+            try quarantineCorruptFile(named: Files.taskListSnapshotVersion)
+            current = nil
+        }
+        var newEpoch = UInt32.random(in: 1...UInt32.max)
+        if newEpoch == current?.epoch {
+            newEpoch = newEpoch == UInt32.max ? 1 : newEpoch + 1
+        }
+        let next = TaskListSnapshotVersion.advanced(from: current, newEpoch: newEpoch)
+        try saveTaskListSnapshotVersion(next)
+        return next
+    }
+
+    func saveTaskListSnapshotVersion(_ version: TaskListSnapshotVersion) throws {
+        try save(version, to: Files.taskListSnapshotVersion)
+    }
+
+    func loadTaskListSnapshotVersion() throws -> TaskListSnapshotVersion? {
+        try load(TaskListSnapshotVersion.self, from: Files.taskListSnapshotVersion)
     }
 
     public func saveLastBleSyncTime(_ date: Date) {
@@ -799,6 +867,8 @@ public actor LocalStorage {
         )
     }
 }
+
+extension LocalStorage: TaskListSnapshotVersionProviding {}
 
 // MARK: - Haiku Cache
 

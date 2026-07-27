@@ -304,6 +304,31 @@ import Foundation
     #expect(resolved.taskTitle == "Latest Synced Task")
 }
 
+@Test func testResolveActiveTaskMapsOpaqueHardwareIDBackToProviderTask() async throws {
+    let task = TaskItem(
+        id: "外部任务-\(String(repeating: "provider-segment-", count: 4))",
+        title: "Correct Provider Task",
+        lastModified: Date(timeIntervalSince1970: 100)
+    )
+    let unrelated = TaskItem(
+        id: "unrelated-newer-task",
+        title: "Wrong Fallback Task",
+        lastModified: Date(timeIntervalSince1970: 200)
+    )
+    let activeSession = FocusSession(
+        taskId: task.hardwareIdentifier,
+        taskTitle: "Wire Snapshot Title"
+    )
+
+    let resolved = AppState.resolveActiveTask(
+        activeSession: activeSession,
+        tasks: [task, unrelated]
+    )
+
+    #expect(resolved.taskId == task.id)
+    #expect(resolved.taskTitle == task.title)
+}
+
 @Test func testResolveActiveTaskFallsBackToSessionSnapshot() async throws {
     let activeSession = FocusSession(
         taskId: "missing-task",

@@ -10,6 +10,10 @@ public struct Pet: Sendable, Codable {
     public var scene: PetScene
     public var lastInteraction: Date
     public var points: Int // accumulated points from completing tasks
+    /// Most recent hardware completion whose reward is already included in this snapshot.
+    /// Hardware task operations are serialized, so one marker is enough to recover the only
+    /// operation that can be pending between `tasks.json` and `pet.json` writes.
+    public var lastHardwareTaskOperationKey: String?
 
     public init(
         name: String = "Baby Waffle",
@@ -20,7 +24,8 @@ public struct Pet: Sendable, Codable {
         mood: PetMood = .happy,
         scene: PetScene = .indoor,
         lastInteraction: Date = Date(),
-        points: Int = 0
+        points: Int = 0,
+        lastHardwareTaskOperationKey: String? = nil
     ) {
         self.name = name
         self.pronouns = pronouns
@@ -31,6 +36,7 @@ public struct Pet: Sendable, Codable {
         self.scene = scene
         self.lastInteraction = lastInteraction
         self.points = points
+        self.lastHardwareTaskOperationKey = lastHardwareTaskOperationKey
     }
 }
 

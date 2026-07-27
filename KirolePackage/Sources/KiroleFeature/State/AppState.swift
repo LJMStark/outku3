@@ -61,8 +61,18 @@ public final class AppState {
 
     // Tasks & Events
     public var events: [CalendarEvent] = []
-    public var tasks: [TaskItem] = []
+    public var tasks: [TaskItem] = [] {
+        didSet {
+            recordTaskMutations(from: oldValue, to: tasks)
+        }
+    }
     public var statistics: TaskStatistics = TaskStatistics()
+
+    /// Per-task monotonic clock for App-authoritative mutations. Hardware completion writes are
+    /// excluded explicitly, so a BLE transaction can tell whether an App edit/undo/delete landed
+    /// while one of its persistence awaits was suspended.
+    @ObservationIgnored private var taskMutationGenerations: [String: UInt64] = [:]
+    @ObservationIgnored private var suppressesTaskMutationTracking = false
 
     // Weather & Sun
     public var weather: Weather = Weather()
@@ -248,6 +258,62 @@ public final class AppState {
         AppState(loadLocalDataOnInit: false)
     }
 
+    func taskMutationGeneration(for taskID: String) -> UInt64 {
+        taskMutationGenerations[taskID, default: 0]
+    }
+
+    /// Runs one synchronous hardware-owned task mutation without advancing the App-authoritative
+    /// generation. Awaiting work must stay outside this closure.
+    func performHardwareTaskMutation(_ mutation: () -> Void) {
+        let previous = suppressesTaskMutationTracking
+        suppressesTaskMutationTracking = true
+        defer { suppressesTaskMutationTracking = previous }
+        mutation()
+    }
+
+    private func recordTaskMutations(from oldTasks: [TaskItem], to newTasks: [TaskItem]) {
+        guard !suppressesTaskMutationTracking else { return }
+
+        var oldFingerprints: [String: TaskMutationFingerprint] = [:]
+        var newFingerprints: [String: TaskMutationFingerprint] = [:]
+        for task in oldTasks {
+            oldFingerprints[task.id] = TaskMutationFingerprint(task)
+        }
+        for task in newTasks {
+            newFingerprints[task.id] = TaskMutationFingerprint(task)
+        }
+
+        for taskID in Set(oldFingerprints.keys).union(newFingerprints.keys)
+            where oldFingerprints[taskID] != newFingerprints[taskID] {
+            let current = taskMutationGenerations[taskID, default: 0]
+            taskMutationGenerations[taskID] = current == .max ? .max : current + 1
+        }
+    }
+
+}
+
+private struct TaskMutationFingerprint: Equatable {
+    let title: String
+    let isCompleted: Bool
+    let dueDate: Date?
+    let priority: TaskPriority
+    let pendingDeletion: Bool
+    let lastModified: Date
+    let notes: String?
+    let todayDisplayDate: Date?
+    let hardwareCompletionOperationKey: String?
+
+    init(_ task: TaskItem) {
+        title = task.title
+        isCompleted = task.isCompleted
+        dueDate = task.dueDate
+        priority = task.priority
+        pendingDeletion = task.pendingDeletion
+        lastModified = task.lastModified
+        notes = task.notes
+        todayDisplayDate = task.todayDisplayDate
+        hardwareCompletionOperationKey = task.hardwareCompletionOperationKey
+    }
 }
 
 // MARK: - Persistence Helpers

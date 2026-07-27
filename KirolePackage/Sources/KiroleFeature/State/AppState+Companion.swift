@@ -344,8 +344,8 @@ extension AppState {
             return (nil, nil)
         }
 
-        if let taskTitle = resolveLatestTask(taskId: activeSession.taskId, in: tasks)?.title {
-            return (activeSession.taskId, taskTitle)
+        if let task = resolveLatestTask(taskId: activeSession.taskId, in: tasks) {
+            return (task.id, task.title)
         }
 
         if let latestIncompleteTask = latestIncompleteTask(in: tasks) {
@@ -358,7 +358,7 @@ extension AppState {
 
     nonisolated static func resolveLatestTask(taskId: String, in tasks: [TaskItem]) -> TaskItem? {
         tasks
-            .filter { $0.id == taskId }
+            .filter { $0.id == taskId || $0.hardwareIdentifier == taskId }
             .max { lhs, rhs in
                 let lhsRecency = taskRecency(lhs)
                 let rhsRecency = taskRecency(rhs)

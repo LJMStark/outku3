@@ -193,7 +193,7 @@ public struct TaskSummary: Codable, Sendable, Identifiable {
     }
 
     public init(from task: TaskItem) {
-        self.id = task.id
+        self.id = task.hardwareIdentifier
         self.title = task.title
         self.isCompleted = task.isCompleted
         self.priority = task.priority.rawValue

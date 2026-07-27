@@ -16,6 +16,9 @@ public struct FocusSession: Identifiable, Codable, Sendable {
     public var protectionState: FocusProtectionState
     public var interruptionSource: FocusInterruptionSource?
     public var earnedEnergyBottles: Int
+    /// Present only on sessions ended by versions that use the crash-safe energy award receipt.
+    /// The receipt ID makes the history write and energy increment idempotent across relaunches.
+    var energyAwardReceiptID: UUID?
 
     public init(
         id: UUID = UUID(),
@@ -29,7 +32,8 @@ public struct FocusSession: Identifiable, Codable, Sendable {
         mode: FocusEnforcementMode = .standard,
         protectionState: FocusProtectionState = .unprotected,
         interruptionSource: FocusInterruptionSource? = nil,
-        earnedEnergyBottles: Int = 0
+        earnedEnergyBottles: Int = 0,
+        energyAwardReceiptID: UUID? = nil
     ) {
         self.id = id
         self.taskId = taskId
@@ -43,6 +47,7 @@ public struct FocusSession: Identifiable, Codable, Sendable {
         self.protectionState = protectionState
         self.interruptionSource = interruptionSource
         self.earnedEnergyBottles = earnedEnergyBottles
+        self.energyAwardReceiptID = energyAwardReceiptID
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -58,6 +63,7 @@ public struct FocusSession: Identifiable, Codable, Sendable {
         case protectionState
         case interruptionSource
         case earnedEnergyBottles
+        case energyAwardReceiptID
     }
 
     public init(from decoder: any Decoder) throws {
@@ -74,6 +80,7 @@ public struct FocusSession: Identifiable, Codable, Sendable {
         protectionState = try container.decodeIfPresent(FocusProtectionState.self, forKey: .protectionState) ?? .unprotected
         interruptionSource = try container.decodeIfPresent(FocusInterruptionSource.self, forKey: .interruptionSource)
         earnedEnergyBottles = try container.decodeIfPresent(Int.self, forKey: .earnedEnergyBottles) ?? 0
+        energyAwardReceiptID = try container.decodeIfPresent(UUID.self, forKey: .energyAwardReceiptID)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -90,6 +97,7 @@ public struct FocusSession: Identifiable, Codable, Sendable {
         try container.encode(protectionState, forKey: .protectionState)
         try container.encodeIfPresent(interruptionSource, forKey: .interruptionSource)
         try container.encode(earnedEnergyBottles, forKey: .earnedEnergyBottles)
+        try container.encodeIfPresent(energyAwardReceiptID, forKey: .energyAwardReceiptID)
     }
 
     /// 会话总时长（从进入到退出）

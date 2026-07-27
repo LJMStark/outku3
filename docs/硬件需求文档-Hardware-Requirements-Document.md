@@ -2,10 +2,11 @@
 
 **Hardware Requirements Document**
 
-**版本:** v0.7
-**更新日期:** 2026-07-23
+**版本:** v0.8
+**更新日期:** 2026-07-27
 **状态:** Draft
-**前序版本:** v0.6 (2026-07-14)
+**前序版本:** v0.7 (2026-07-23)
+**v0.8 变更:** 对齐 BLE v2.9.0 任务权威快照 flag-day：任务完成/跳过/刷新使用非零 OperationID/RequestID；新增 `0x1B TaskListSnapshotAck` 业务确认与 `StateEpoch + Revision` 原子替换；设备 pending 不得自行提交最终删除；`0x20` 禁止进入离线 Event Log，升级时清空旧格式环形缓冲。
 **v0.7 变更:** 对齐 BLE v2.7 自定义头像事务：`0x15/0x04` 只传 KRI，`0x22` 负责暂存、提交、精确擦除、全部擦除、查询与取消；增加独立头像 LittleFS 分区（默认至少 6 MiB）。
 
 ---
@@ -205,8 +206,10 @@ Kirole 是一款面向深度知识工具用户的专注力伴侣设备。iOS App
 | 操作 | 功能 |
 |------|------|
 | 旋转 | 上下选择 / 页面内滚动（反色高亮，纯本地处理） |
-| 短按 | 确认选择 / 完成任务（发送 BLE 事件） |
-| 长按 (>1s) | 返回 / 跳过任务（由状态机定义） |
+| 短按 | 确认选择 / 请求完成任务（发送 v1 BLE 事件；等待 `0x1B` 前只显示 pending） |
+| 长按 (>1s) | 返回 / 请求跳过任务（由状态机定义；跳过不删除任务） |
+
+任务动作边界：App 是任务最终状态来源。设备可在按键后立即返回 Overview 并显示 pending，但不能永久提交本地任务减除。只有收到 Action+OperationID 匹配且 `StateEpoch + Revision` 更新的 `TaskListSnapshotAck(0x1B)`，才能原子替换整个 Overview 清单。
 
 ### 5.2 电源/功能复合按键
 
@@ -245,17 +248,19 @@ Kirole 是一款面向深度知识工具用户的专注力伴侣设备。iOS App
 
 功能：
 
-- 页面数据下发（DayPack、TaskInPage、SmartReminder）
+- 页面数据下发（DayPack、TaskInPage、SmartReminder、TaskListSnapshotAck）
 - Event Log 回传（增量同步，基于时间戳）
 - 状态同步（任务完成、滚轮选择、提醒确认/关闭）
+- 任务动作业务确认（`0x1B` 回显 Action + OperationID，并携带版本化完整 Overview 清单）
 
 要求：
 
 - 掉线自动重连
 - 大数据分包与 CRC16 校验（CRC16-CCITT-FALSE，poly `0x1021`，init `0xFFFF`）
 - 包头格式：type (1B) + messageId (2B BE) + seq (2B BE) + total (2B BE) + payloadLen (2B BE) + crc16 (2B BE) = 11 字节（v2.5.24 起；分包总数上限 65535）
+- GATT withResponse 只作为传输确认；任务完成、跳过、刷新必须以匹配且版本更新的 `0x1B` 作为业务确认
 
-详细协议参考 `BLE通信协议规格文档.md` (v2.5.24)。第一次硬件联调先参考 `BLE初次联调指南.md`。
+详细协议参考 `BLE通信协议规格文档.md` (v2.9.0)。第一次硬件联调先参考 `BLE初次联调指南.md` (v0.2.0)。
 
 ---
 
@@ -343,23 +348,51 @@ RTC 用于：
 |--------|----------|---------|------|
 | 0x01-0x06 | 按键事件 | 无 | 编码器旋转/按压 (0x01-0x04)、电源键 (0x05-0x06) |
 | 0x10 | EnterTaskIn | Length(1B) + TaskId(NB) + Timestamp(4B) | 进入任务详情页 |
-| 0x11 | CompleteTask | Length(1B) + TaskId(NB) + Timestamp(4B) | 完成任务 |
-| 0x12 | SkipTask | Length(1B) + TaskId(NB) + Timestamp(4B) | 跳过任务 |
+| 0x11 | CompleteTask v1 | SubVersion(01) + OperationID(4B BE, nonzero) + TaskIdLength(1B) + TaskId(NB) + Timestamp(4B BE) | 请求完成任务，可离线补传 |
+| 0x12 | SkipTask v1 | SubVersion(01) + OperationID(4B BE, nonzero) + TaskIdLength(1B) + TaskId(NB) + Timestamp(4B BE) | 请求跳过任务，可离线补传 |
 | 0x13-0x15 | 交互事件 | Length(1B) + Id(NB) | 选中变更/滚轮选择/查看日程 |
 | 0x16 | ReminderAcknowledged | Timestamp(4B) | 用户确认智能提醒 |
 | 0x17 | ReminderDismissed | Timestamp(4B) | 提醒超时自动关闭 |
-| 0x20 | RequestRefresh | 无 | 请求刷新数据 |
 | 0x30-0x31 | 设备状态 | 无 | 设备唤醒/休眠 |
 | 0x40 | LowBattery | BatteryLevel(1B) | 低电量通知 |
 
-> 方向说明：`0x20` 在 App→Device 方向用于 `EventLogRequest(sinceTimestamp)`，在 Device→App 方向用于 `RequestRefresh`，需按方向区分。
+> `RequestRefresh(0x20)` 自 BLE v2.9.0 起是**实时控制请求**，payload 固定为 `SubVersion(0x01) + RequestID(4B BE, nonzero)`，只走 Notify，禁止写入、排队或重放到 EventLogBatch。App→Device 的 `0x20` 仍是 `EventLogRequest(sinceTimestamp)`，需按方向区分。
+
+App→Device `TaskListSnapshotAck(0x1B)` 是任务动作/刷新业务确认，payload 为：
+
+```text
+SubVersion(1) | Action(1) | OperationID(4B BE) | Result(1) |
+StateEpoch(4B BE) | Revision(4B BE) | TaskCount(1) | Tasks[]
+```
+
+Task 为 `TaskId LP≤36 + Title LP≤30 + IsCompleted(1) + Priority(1)`（LP=`Length(1B)+UTF-8 bytes`）。Result：`00 applied`、`01 alreadyApplied`、`02 taskNotFound`、`03 invalidRequest`、`04 supersededByApp`、`FF internalError`。设备只接受与 pending 的 Action+OperationID 匹配的帧；epoch 改变时只接受新 epoch 的 `revision=1`，同 epoch 只接受严格更大的 revision，整包校验后原子替换清单。该清单与 DayPack.TopTasks 同源：只含当天未完成任务，4 寸最多 3 项、7.3 寸最多 5 项。Complete 移除任务，Skip 保留任务；`supersededByApp` 表示 App 新状态获胜，固件结束 pending、采用快照且不再重试旧动作；`0x02 TaskList` 为 legacy，不参与新状态机。
 
 要求：
 
 - 掉电不丢失
 - BLE 重连后可增量回传（基于 lastEventLogTimestamp）
 - App 通过 EventLogRequest 命令请求指定时间戳之后的日志
+- OperationID 在同一设备 + 动作范围内必须非零；业务确认丢失时原样重发相同 Action/OperationID/TaskId/Timestamp
+- v2.9.0 固件升级时清空含旧 `0x11/0x12/0x20` 格式的环形缓冲；新批次只允许严格 v1 Complete/Skip，不允许 RequestRefresh
+- App 持久化幂等账本；同 OperationID 同 payload 返回首次缓存的 Result，同 ID 不同 payload 返回 invalidRequest
+- App 账本采用 `pending → 状态落盘 → committed` 写前流程；中途退出后，相同请求恢复并幂等补做，不会误报已完成
+- App 状态落盘顺序为专注历史 → 清 active 标记 → 任务/宠物状态；任一步失败返回 internalError 并等待原请求重试。当前无固件 apply ACK，App 不按条数静默淘汰 committed OperationID
+- EventLogBatch 保持记录线序，不按设备 RTC Timestamp 重排；每条离线任务动作分别用 Action+OperationID 匹配确认
+- DayPack 与 `0x1B` 按完整消息串行；固件完整重组、校验后才原子应用。同一 revision 的 App 短重试必须是逐字节相同的 `0x1B`
+- 固件把已应用的 StateEpoch、Revision 与完整 Overview 清单一起原子落盘，防止断电后版本和列表分裂
 - 详细 payload 格式参见 `BLE通信协议规格文档.md` Section 5
+
+v2.9.0 硬件验收：
+
+- 空 payload `0x20`、旧格式 `0x11/0x12`、零 ID 和尾部多余字节均不改变 App 任务状态。
+- 合法 Refresh v1 立即收到 Action+RequestID 匹配的 `0x1B`；无 DayPack 重发也不算失败。
+- Complete 的匹配新版本快照移除任务；Skip 的匹配新版本快照保留任务。
+- 丢确认后原样重发得到首次缓存的 Result，不重复执行；同 ID 改 payload 得到 invalidRequest。
+- App 在设备请求期间执行更新撤销/任务修改，或同任务已有更新专注会话时，返回 supersededByApp；固件采用快照并停止重试旧动作。
+- 同 epoch 的旧/相同 revision 不应用；更大 revision 应用；epoch 变化只接受 revision=1。
+- 升级后旧环形缓冲已清空，新 EventLogBatch 不含 RequestRefresh。
+- 构造 RTC 倒序但 Records 线序为 Complete→Skip 的批次，确认仍按线序结算和回执；不得按 Timestamp 反转。
+- 模拟 App 在 pending 后退出、以及 GATT 回调丢失：前者原样重试可恢复动作，后者相同 revision 的 `0x1B` 字节完全一致。
 
 ---
 
@@ -381,14 +414,16 @@ RTC 用于：
 | v0.3 | 2026-02-12 | Event Log 格式修正为可变长度 payload（与代码和 BLE通信协议规格文档对齐）；补充完整事件类型表含字节码和 payload 格式 |
 | v0.4 | 2026-05-07 | 对齐当前 App 协议和产品 IP：硬件侧支持 Joy / Silas / Nova，删除旧多形态资源要求 |
 | v0.5 | 2026-06-25 | **7.3 寸面板分辨率更正为 1600×1200（4:3）**（原误为 800×480）：同步更新帧缓冲 192,000→960,000、Flash 单页缓存 192KB→960KB、PSRAM 余量提示、续航重估提示；面板型号待补、功耗按新分辨率待重测。**4 寸（400×600）暂未确定，保持不动。** |
+| v0.7 | 2026-07-23 | 对齐 BLE v2.7 自定义头像事务与独立 LittleFS 头像分区 |
+| v0.8 | 2026-07-27 | 对齐 BLE v2.9.0 任务权威快照：严格 OperationID/RequestID、0x1B 业务确认、版本化原子替换、pending 边界和旧离线日志迁移 |
 
 ### 关联文档
 
 | 文档 | 版本 | 描述 |
 |------|------|------|
-| 固件功能规格文档.md | v1.4.1 | 产品功能规格（页面设计、交互流程、伴侣显示系统） |
-| BLE初次联调指南.md | v0.1.0 | 第一次硬件联调用，限定基础扫描、连接、收发范围 |
-| BLE通信协议规格文档.md | v2.3.5 | BLE 通信协议（命令格式、数据结构、事件定义） |
+| 固件功能规格文档.md | v1.8.0 | 产品功能规格与任务快照状态机 |
+| BLE初次联调指南.md | v0.2.0 | 第一次硬件联调与 v2.9 请求/确认验收 |
+| BLE通信协议规格文档.md | v2.9.0 | BLE 通信协议（严格任务动作、幂等 OperationID、权威快照） |
 
 ---
 

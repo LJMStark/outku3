@@ -7,6 +7,9 @@ public struct EventLog: Codable, Sendable, Identifiable {
     public let id: UUID
     public let eventType: EventLogType
     public let taskId: String?
+    /// v1 task operation / refresh correlation ID. Firmware retries reuse the same non-zero ID;
+    /// App echoes it in `0x1B TaskListSnapshotAck` so a late response cannot confirm a newer action.
+    public let operationID: UInt32?
     public let timestamp: Date
     public let value: Int
     /// 仅当 `timestamp` 是从设备自身时钟（BLE payload 里的 4 字节时间戳）解析出来时为 true。
@@ -40,6 +43,7 @@ public struct EventLog: Codable, Sendable, Identifiable {
         id: UUID = UUID(),
         eventType: EventLogType,
         taskId: String? = nil,
+        operationID: UInt32? = nil,
         timestamp: Date = Date(),
         value: Int = 0,
         hasDeviceTimestamp: Bool = false,
@@ -49,6 +53,7 @@ public struct EventLog: Codable, Sendable, Identifiable {
         self.id = id
         self.eventType = eventType
         self.taskId = taskId
+        self.operationID = operationID
         self.timestamp = timestamp
         self.value = value
         self.hasDeviceTimestamp = hasDeviceTimestamp
@@ -63,6 +68,7 @@ public struct EventLog: Codable, Sendable, Identifiable {
         self.id = try container.decode(UUID.self, forKey: .id)
         self.eventType = try container.decode(EventLogType.self, forKey: .eventType)
         self.taskId = try container.decodeIfPresent(String.self, forKey: .taskId)
+        self.operationID = try container.decodeIfPresent(UInt32.self, forKey: .operationID)
         self.timestamp = try container.decode(Date.self, forKey: .timestamp)
         self.value = try container.decodeIfPresent(Int.self, forKey: .value) ?? 0
         self.hasDeviceTimestamp = try container.decodeIfPresent(Bool.self, forKey: .hasDeviceTimestamp) ?? false
@@ -187,8 +193,11 @@ public extension EventLog {
         guard let eventType = EventLogType(rawByte: type) else { return nil }
 
         switch eventType {
-        case .enterTaskIn, .completeTask, .skipTask:
-            return parseTaskEvent(eventType: eventType, payload: payload)
+        case .enterTaskIn:
+            return parseEnterTaskEvent(payload: payload)
+
+        case .completeTask, .skipTask:
+            return parseVersionedTaskOperation(eventType: eventType, payload: payload)
 
         case .selectedTaskChanged, .wheelSelect, .viewEventDetail:
             return parseIdOnlyEvent(eventType: eventType, payload: payload)
@@ -203,6 +212,9 @@ public extension EventLog {
         case .otaResult:
             let code = payload.isEmpty ? 0xFF : payload[0]
             return EventLog(eventType: eventType, value: Int(code))
+
+        case .requestRefresh:
+            return parseRefreshRequest(payload: payload)
 
         case .deviceWake:
             // v2.3.0+: payload[0] = battery level (0-100). Older/empty payloads → 0.
@@ -246,7 +258,7 @@ public extension EventLog {
         }
     }
 
-    private static func parseTaskEvent(eventType: EventLogType, payload: Data) -> EventLog? {
+    private static func parseEnterTaskEvent(payload: Data) -> EventLog? {
         guard payload.count >= 1 else { return nil }
         let taskIdLength = Int(payload[0])
         guard payload.count >= 1 + taskIdLength else { return nil }
@@ -267,10 +279,49 @@ public extension EventLog {
         }
 
         return EventLog(
-            eventType: eventType,
+            eventType: .enterTaskIn,
             taskId: taskId,
             timestamp: timestamp,
             hasDeviceTimestamp: hasDeviceTimestamp
+        )
+    }
+
+    /// v1 payload: `SubVersion(0x01) | OperationID(4B BE) | TaskIdLength(1B) |
+    /// TaskId(NB UTF-8) | Timestamp(4B BE)`. Strict total length prevents App and firmware
+    /// from accepting different interpretations of one operation record.
+    private static func parseVersionedTaskOperation(
+        eventType: EventLogType,
+        payload: Data
+    ) -> EventLog? {
+        guard payload.count >= 10, payload[0] == 0x01 else { return nil }
+        let operationID = payload.bigEndianUInt32(at: 1)
+        let taskIDLength = Int(payload[5])
+        guard operationID != 0, (1...36).contains(taskIDLength) else { return nil }
+        let expectedLength = 1 + 4 + 1 + taskIDLength + 4
+        guard payload.count == expectedLength else { return nil }
+
+        let taskIDData = payload.subdata(in: 6..<(6 + taskIDLength))
+        guard let taskID = String(data: taskIDData, encoding: .utf8) else { return nil }
+        let timestamp = payload.bigEndianUInt32(at: 6 + taskIDLength)
+        return EventLog(
+            eventType: eventType,
+            taskId: taskID,
+            operationID: operationID,
+            timestamp: Date(timeIntervalSince1970: TimeInterval(timestamp)),
+            hasDeviceTimestamp: true
+        )
+    }
+
+    /// Physical refresh requests carry `SubVersion(0x01) | RequestID(4B BE)` and receive a
+    /// correlated 0x1B snapshot immediately. Protocol v2.9 is a coordinated flag-day: the empty
+    /// legacy payload is rejected so both peers have exactly one interpretation.
+    private static func parseRefreshRequest(payload: Data) -> EventLog? {
+        guard payload.count == 5, payload[0] == 0x01 else { return nil }
+        let requestID = payload.bigEndianUInt32(at: 1)
+        guard requestID != 0 else { return nil }
+        return EventLog(
+            eventType: .requestRefresh,
+            operationID: requestID
         )
     }
 

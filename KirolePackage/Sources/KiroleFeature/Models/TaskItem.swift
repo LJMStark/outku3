@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 private nonisolated(unsafe) let iso8601Formatter = ISO8601DateFormatter()
@@ -29,6 +30,10 @@ public struct TaskItem: Identifiable, Sendable, Codable {
     /// This is deliberately separate from `dueDate`: changing it must never write to the
     /// external task provider or alter the task's real deadline.
     public var todayDisplayDate: Date?
+    /// Identifies the durable hardware completion that produced `isCompleted=true`.
+    /// It lets a pending BLE operation finish a task→pet split write after a crash without
+    /// awarding points twice. User-driven toggles clear it.
+    public var hardwareCompletionOperationKey: String?
 
     public init(
         id: String = UUID().uuidString,
@@ -53,7 +58,8 @@ public struct TaskItem: Identifiable, Sendable, Codable {
         remoteUpdatedAt: Date? = nil,
         remoteEtag: String? = nil,
         notes: String? = nil,
-        todayDisplayDate: Date? = nil
+        todayDisplayDate: Date? = nil,
+        hardwareCompletionOperationKey: String? = nil
     ) {
         self.id = id
         self.localId = localId
@@ -78,6 +84,7 @@ public struct TaskItem: Identifiable, Sendable, Codable {
         self.remoteEtag = remoteEtag
         self.notes = notes
         self.todayDisplayDate = todayDisplayDate
+        self.hardwareCompletionOperationKey = hardwareCompletionOperationKey
     }
 
     // 从 Google API 响应创建
@@ -104,6 +111,18 @@ public struct TaskItem: Identifiable, Sendable, Codable {
 }
 
 extension TaskItem {
+    /// Stable identifier used on the fixed-width BLE wire. Provider IDs are opaque and may be
+    /// longer than 36 bytes or non-ASCII, so those IDs are hashed instead of silently truncated.
+    public var hardwareIdentifier: String {
+        let bytes = Array(id.utf8)
+        if !bytes.isEmpty, bytes.count <= 36, bytes.allSatisfy({ $0 < 0x80 }) {
+            return id
+        }
+        let digest = SHA256.hash(data: Data(bytes))
+        let prefix = digest.prefix(16).map { String(format: "%02x", $0) }.joined()
+        return "h-\(prefix)"
+    }
+
     public func isNaturallyDueToday(
         on date: Date = Date(),
         calendar: Calendar = .current

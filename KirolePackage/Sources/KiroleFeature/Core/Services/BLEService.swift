@@ -16,7 +16,7 @@ private enum KiroleBLEUUIDs {
 /// BLE 服务，管理与 E-ink 硬件设备的通信
 @Observable
 @MainActor
-public final class BLEService: NSObject {
+public final class BLEService: NSObject, TaskListSnapshotSending {
     public static let shared = BLEService()
     private static let bleLogger = Logger(subsystem: "com.kirole.app", category: "BLE")
 
@@ -66,6 +66,9 @@ public final class BLEService: NSObject {
     private let deviceIdentityStore = BLEDeviceIdentityStore.shared
     private let rateLimiter = BLERateLimiter.shared
     private let writeGate = BLEWriteGate()
+    /// Serializes complete task-state messages. The packet gate below is intentionally finer
+    /// grained; without this second gate, a simple 0x1B could land between DayPack chunks.
+    private let taskStateMessageGate = BLEWriteGate()
 
     private var scanCompletion: (([BLEDevice]) -> Void)?
     private var connectCompletion: ((Result<Void, BLEError>) -> Void)?
@@ -555,8 +558,36 @@ public final class BLEService: NSObject {
 
     /// 发送 Day Pack 到 E-ink 设备
     public func sendDayPack(_ dayPack: DayPack) async throws {
-        let data = BLEDataEncoder.encodeDayPack(dayPack, screenSize: hardwareScreenSize)
-        try await writeData(type: .dayPack, data: data)
+        try await withTaskStateMessageGate {
+            let latestTasks = DayPackGenerator.topTaskSummaries(
+                from: AppState.shared.tasks,
+                screenSize: hardwareScreenSize
+            )
+            guard TaskListSnapshotContent.isEquivalent(dayPack.topTasks, latestTasks) else {
+                throw BLEError.staleTaskSnapshot
+            }
+            let data = BLEDataEncoder.encodeDayPack(dayPack, screenSize: hardwareScreenSize)
+            try await writeData(type: .dayPack, data: data)
+        }
+    }
+
+    /// Immediate business acknowledgement for CompleteTask / SkipTask / versioned RequestRefresh.
+    /// This path is independent from DayPack fingerprinting and refresh throttling.
+    func withTaskStateMessageGate(
+        _ operation: @MainActor () async throws -> Void
+    ) async throws {
+        try await taskStateMessageGate.acquire()
+        do {
+            try await operation()
+        } catch {
+            await taskStateMessageGate.release()
+            throw error
+        }
+        await taskStateMessageGate.release()
+    }
+
+    func writeTaskListSnapshotAckPayload(_ payload: Data) async throws {
+        try await writeData(type: .taskListSnapshotAck, data: payload)
     }
 
     /// 发送 Task In 页面数据到 E-ink 设备。只应由 BLEEventHandler 在收到 0x10 EnterTaskIn 事件后调用。

@@ -98,7 +98,9 @@ struct BLEEventHandlerTests {
     // MARK: - hasDeviceTimestamp parsing (A1)
 
     private func taskPayload(taskId: String, deviceTimestamp ts: UInt32?) -> Data {
-        var data = Data([UInt8(taskId.utf8.count)])
+        var data = Data([0x01])
+        data.appendBigEndian(UInt32(7))
+        data.append(UInt8(taskId.utf8.count))
         data.append(contentsOf: Array(taskId.utf8))
         if let ts {
             data.append(contentsOf: [
@@ -117,11 +119,11 @@ struct BLEEventHandlerTests {
         #expect(log?.timestamp == Date(timeIntervalSince1970: 1_700_000_000))
     }
 
-    @Test("given completeTask payload without timestamp bytes, when parsed, then hasDeviceTimestamp is false")
-    func givenCompleteTaskWithoutTimestamp_whenParsed_thenHasDeviceTimestampFalse() {
+    @Test("given completeTask payload without timestamp bytes, when parsed, then the strict v1 record is rejected")
+    func givenCompleteTaskWithoutTimestamp_whenParsed_thenRejected() {
         let payload = taskPayload(taskId: "t1", deviceTimestamp: nil)
         let log = EventLog.fromBLEPayload(type: EventLogType.completeTask.rawByte, payload: payload)
-        #expect(log?.hasDeviceTimestamp == false)
+        #expect(log == nil)
     }
 
     @Test("given a deviceWake event, when parsed, then it never carries a device timestamp")

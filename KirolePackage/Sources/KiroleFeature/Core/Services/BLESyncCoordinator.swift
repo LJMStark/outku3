@@ -17,7 +17,9 @@ public final class BLESyncCoordinator {
     private var lastSentWeatherFingerprint: String?
     /// In-flight 守卫：防止并发 performSync 重复发整轮（keep-alive 常驻连接后更易触发）。
     private var isSyncing = false
-    /// 在途同步期间被丢弃的 force:true 请求；当前同步收尾后补跑一次，避免硬件 requestRefresh 被吞。
+    /// 在途同步期间到达的请求；当前同步收尾后补跑一次。普通内容变化也不能被吞，否则旧
+    /// DayPack 被判定过期后可能没有后续轮次发送最新清单。
+    private var pendingSync = false
     private var pendingForceSync = false
 
     /// Connection timeout in seconds. Configurable for larger screen sizes
@@ -37,15 +39,18 @@ public final class BLESyncCoordinator {
         // @MainActor 下在首个 await 前同步置位，保证原子。被丢弃的 force:true 记下、收尾后补跑一次——
         // 否则在途的 force:false 若随后被 shouldSync 拦下，硬件的强制刷新就丢了。
         guard !isSyncing else {
+            pendingSync = true
             if force { pendingForceSync = true }
             return
         }
         isSyncing = true
         defer {
             isSyncing = false
-            if pendingForceSync {
+            if pendingSync {
+                let shouldForce = pendingForceSync
+                pendingSync = false
                 pendingForceSync = false
-                Task { @MainActor in await self.performSync(force: true) }
+                Task { @MainActor in await self.performSync(force: shouldForce) }
             }
         }
 
@@ -174,6 +179,7 @@ public final class BLESyncCoordinator {
             if contentChanged {
                 // Send DayPack with retry: 2 attempts, 500ms/1s backoff
                 var sent = false
+                var superseded = false
                 var lastWriteError: Error?
                 for attempt in 0..<2 {
                     do {
@@ -181,6 +187,12 @@ public final class BLESyncCoordinator {
                         sent = true
                         break
                     } catch {
+                        if let bleError = error as? BLEError,
+                           case .staleTaskSnapshot = bleError {
+                            superseded = true
+                            pendingSync = true
+                            break
+                        }
                         lastWriteError = error
                         #if DEBUG
                         print("[BLESyncCoordinator] Write attempt \(attempt + 1)/2 failed: \(error.localizedDescription)")
@@ -192,7 +204,7 @@ public final class BLESyncCoordinator {
                 }
                 if sent {
                     await localStorage.saveLastDayPackHash(fingerprint)
-                } else {
+                } else if !superseded {
                     // DayPack 是 App→硬件最核心的帧；两次写失败必须留痕，否则硬件一直显示旧数据、
                     // App 端在 Release 下毫无信号（下轮会重试，但失败本身不可见）。
                     // 不在此处 throw：后面的事件补传（requestEventLogsIfNeeded）是核心功能，

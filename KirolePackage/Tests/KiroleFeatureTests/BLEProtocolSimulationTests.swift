@@ -83,6 +83,32 @@ struct BLEProtocolSimulationTests {
             payload: BLEDataEncoder.encodeEventLogRequest(since: fixtures.timestamp)
         )
         #expect(try hardware.receiveSingleAppPacket(eventRequestPacket).parseEventLogRequestSince() == fixtures.timestamp)
+
+        let snapshotPacket = BLESimpleEncoder.encode(
+            type: BLEDataType.taskListSnapshotAck.rawValue,
+            payload: BLEDataEncoder.encodeTaskListSnapshotAck(
+                TaskListSnapshotAck(
+                    action: .completeTask,
+                    operationID: 77,
+                    result: .applied,
+                    version: TaskListSnapshotVersion(epoch: 8, revision: 1),
+                    tasks: [TaskSummary(id: fixtures.taskId, title: "Plan BLE", isCompleted: false, priority: 2)]
+                )
+            )
+        )
+        var snapshotFirmware = SimulatedTaskListSnapshotFirmware()
+        try snapshotFirmware.beginPending(action: .completeTask, operationID: 77)
+        let snapshot = try hardware.receiveSingleAppPacket(snapshotPacket).parseTaskListSnapshotAck()
+        try snapshotFirmware.apply(snapshot, screenSize: .fourInch)
+        #expect(snapshot.action == .completeTask)
+        #expect(snapshot.operationID == 77)
+        #expect(snapshot.result == .applied)
+        #expect(snapshot.epoch == 8)
+        #expect(snapshot.revision == 1)
+        #expect(snapshot.tasks.map(\.id) == [fixtures.taskId])
+        #expect(snapshotFirmware.pendingOperationID == nil)
+        #expect(snapshotFirmware.version == TaskListSnapshotVersion(epoch: 8, revision: 1))
+        #expect(snapshotFirmware.tasks.map(\.id) == [fixtures.taskId])
     }
 
     @Test("Virtual hardware reassembles and parses chunked DayPack and TaskInPage")
@@ -229,15 +255,15 @@ struct BLEProtocolSimulationTests {
             (.encoderLongPress, Data(), nil),
             (.powerShortPress, Data(), nil),
             (.powerLongPress, Data(), nil),
-            (.enterTaskIn, Self.taskEventPayload(id: fixtures.taskId, timestamp: fixtures.timestamp), fixtures.taskId),
-            (.completeTask, Self.taskEventPayload(id: fixtures.taskId, timestamp: fixtures.timestamp), fixtures.taskId),
-            (.skipTask, Self.taskEventPayload(id: fixtures.taskId, timestamp: fixtures.timestamp), fixtures.taskId),
+            (.enterTaskIn, Self.enterTaskPayload(id: fixtures.taskId, timestamp: fixtures.timestamp), fixtures.taskId),
+            (.completeTask, Self.taskOperationPayload(id: fixtures.taskId, operationID: 10, timestamp: fixtures.timestamp), fixtures.taskId),
+            (.skipTask, Self.taskOperationPayload(id: fixtures.taskId, operationID: 11, timestamp: fixtures.timestamp), fixtures.taskId),
             (.selectedTaskChanged, Self.idOnlyPayload(id: fixtures.taskId), fixtures.taskId),
             (.wheelSelect, Self.idOnlyPayload(id: fixtures.taskId), fixtures.taskId),
             (.viewEventDetail, Self.idOnlyPayload(id: fixtures.eventId), fixtures.eventId),
             (.reminderAcknowledged, Self.timestampPayload(fixtures.timestamp), nil),
             (.reminderDismissed, Self.timestampPayload(fixtures.timestamp), nil),
-            (.requestRefresh, Data(), nil),
+            (.requestRefresh, Self.refreshRequestPayload(requestID: 12), nil),
             (.deviceWake, Data(), nil),
             (.deviceSleep, Data(), nil),
             (.lowBattery, Data([17]), nil),
@@ -278,7 +304,7 @@ struct BLEProtocolSimulationTests {
         batchPayload.append(EventLogType.lowBattery.rawByte)
         batchPayload.append(9)
         batchPayload.append(EventLogType.completeTask.rawByte)
-        batchPayload.append(Self.taskEventPayload(id: fixtures.taskId, timestamp: fixtures.timestamp))
+        batchPayload.append(Self.taskOperationPayload(id: fixtures.taskId, operationID: 12, timestamp: fixtures.timestamp))
         batchPayload.append(EventLogType.reminderDismissed.rawByte)
         batchPayload.append(Self.timestampPayload(fixtures.timestamp + 1))
 
@@ -680,9 +706,27 @@ struct BLEProtocolSimulationTests {
         return data
     }
 
-    private static func taskEventPayload(id: String, timestamp: UInt32) -> Data {
+    private static func enterTaskPayload(id: String, timestamp: UInt32) -> Data {
         var data = idOnlyPayload(id: id)
         data.append(timestampPayload(timestamp))
+        return data
+    }
+
+    private static func taskOperationPayload(
+        id: String,
+        operationID: UInt32,
+        timestamp: UInt32
+    ) -> Data {
+        var data = Data([0x01])
+        data.appendBigEndian(operationID)
+        data.append(idOnlyPayload(id: id))
+        data.append(timestampPayload(timestamp))
+        return data
+    }
+
+    private static func refreshRequestPayload(requestID: UInt32) -> Data {
+        var data = Data([0x01])
+        data.appendBigEndian(requestID)
         return data
     }
 

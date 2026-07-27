@@ -7,6 +7,10 @@ import Foundation
 public enum BLEEventHandler {
 
     private static let localStorage = LocalStorage.shared
+    struct EventProcessingResult {
+        let logs: [EventLog]
+        let taskOperationReceipts: [TaskOperationReceipt]
+    }
 
     // MARK: - Payload Handling
 
@@ -65,8 +69,19 @@ public enum BLEEventHandler {
 
     /// 处理单个设备事件，路由到对应的处理逻辑
     private static func handleSingleEvent(_ eventLog: EventLog, service: BLEService) async {
-        // Persist the event and handle focus session (existing logic)
-        await handleEventLogs([eventLog], service: service)
+        // BLE can deliver immediately after a cold launch. Do not answer taskNotFound from the
+        // temporary empty state before local tasks have loaded.
+        if eventLog.eventType == .completeTask
+            || eventLog.eventType == .skipTask
+            || (eventLog.eventType == .requestRefresh && eventLog.operationID != nil) {
+            await AppState.shared.ensureInitialLoadComplete()
+        }
+
+        let processing = await processEventLogs([eventLog], service: service)
+        await TaskListSnapshotResponder.respond(
+            to: processing.taskOperationReceipts,
+            sender: service
+        )
 
         // Route to type-specific handlers
         switch eventLog.eventType {
@@ -93,6 +108,7 @@ public enum BLEEventHandler {
             #endif
 
         case .requestRefresh:
+            guard eventLog.operationID != 0 else { break }
             Task { @MainActor in
                 // 息屏后台链路：专注会话进行中，硬件周期性发 0x20（notify）唤醒被 iOS 挂起的 App。
                 // 先在合并闸之前推一帧最新专注状态，让瓶子/段位按 30 分钟递增不被 60s 去抖饿死；
@@ -105,9 +121,8 @@ public enum BLEEventHandler {
                     await AppState.shared.handleFocusRefreshRequest()
                 }
                 // 0x20 用独立的 refresh 闸（非 deviceWake 的 10s 闸），不被频繁唤醒饿死。
-                // 联调期固件把 0x20 当 ~2s 心跳狂发；refresh 闸用 60s 合并窗把整轮 sync 去抖为
-                // 每分钟最多一次——既挡住心跳刷屏，又保留用户物理刷新（固件停止心跳后，一次按键
-                // 即时触发）。根因在固件侧（0x20 不应心跳化），此为 App 侧临时兜底，见协议 §8.5。
+                // 0x1B 业务确认已在本 Task 之外立即返回；这里的 60s 合并窗只约束附加的完整
+                // DayPack 同步，不能延迟或吞掉任务清单确认。
                 guard await BLERateLimiter.shared.allowRefreshTrigger() else {
                     ErrorReporter.log(
                         .sync(component: "BLE RequestRefresh", underlying: "coalesced (min 60s)"),
@@ -276,7 +291,14 @@ public enum BLEEventHandler {
             .batteryLevel {
             service.deviceBatteryLevel = latestBattery
         }
-        await handleEventLogs(logs, service: service, isReplay: true)
+        if logs.contains(where: { $0.eventType == .completeTask || $0.eventType == .skipTask }) {
+            await AppState.shared.ensureInitialLoadComplete()
+        }
+        let processing = await processEventLogs(logs, service: service, isReplay: true)
+        await TaskListSnapshotResponder.respond(
+            to: processing.taskOperationReceipts,
+            sender: service
+        )
     }
 
     /// 解析 Event Log 批次 payload:
@@ -310,7 +332,7 @@ public enum BLEEventHandler {
         let type = payload[offset]
 
         switch type {
-        case 0x01...0x06, 0x20, 0x31:
+        case 0x01...0x06, 0x31:
             return 1
         case 0x30:
             // type(1B) + BatteryLevel(1B), v2.3.0+。协议 v2.5.19 的固件版本 3 字节
@@ -320,10 +342,17 @@ public enum BLEEventHandler {
             return 2
         case 0x16, 0x17:
             return 5
-        case 0x10...0x12:
+        case 0x10:
             guard offset + 1 < payload.count else { return nil }
             let idLength = Int(payload[offset + 1])
             return 2 + idLength + 4
+        case 0x11, 0x12:
+            // type | SubVersion(1) | OperationID(4) | TaskIdLength(1) | TaskId | Timestamp(4)
+            guard offset + 6 < payload.count, payload[offset + 1] == 0x01 else { return nil }
+            let idLength = Int(payload[offset + 6])
+            guard payload.bigEndianUInt32(at: offset + 2) != 0,
+                  (1...36).contains(idLength) else { return nil }
+            return 11 + idLength
         case 0x13...0x15:
             guard offset + 1 < payload.count else { return nil }
             let idLength = Int(payload[offset + 1])
@@ -354,8 +383,38 @@ public enum BLEEventHandler {
         focusService: FocusSessionService = .shared,
         isReplay: Bool = false,
         lastTimestampOverride: UInt32? = nil,
-        tasksOverride: [TaskItem]? = nil
+        tasksOverride: [TaskItem]? = nil,
+        persistLogs: Bool = true,
+        operationLedger: TaskOperationLedger = .shared,
+        deviceIDOverride: String? = nil,
+        appState: AppState = .shared
     ) async -> [EventLog] {
+        await processEventLogs(
+            logs,
+            service: service,
+            focusService: focusService,
+            isReplay: isReplay,
+            lastTimestampOverride: lastTimestampOverride,
+            tasksOverride: tasksOverride,
+            persistLogs: persistLogs,
+            operationLedger: operationLedger,
+            deviceIDOverride: deviceIDOverride,
+            appState: appState
+        ).logs
+    }
+
+    static func processEventLogs(
+        _ logs: [EventLog],
+        service: BLEService,
+        focusService: FocusSessionService = .shared,
+        isReplay: Bool = false,
+        lastTimestampOverride: UInt32? = nil,
+        tasksOverride: [TaskItem]? = nil,
+        persistLogs: Bool = true,
+        operationLedger: TaskOperationLedger = .shared,
+        deviceIDOverride: String? = nil,
+        appState: AppState = .shared
+    ) async -> EventProcessingResult {
         let processable: [EventLog]
         if isReplay {
             // 0x21 重放批次：按高水位去重过滤，防离线积压事件被重复应用。
@@ -365,7 +424,15 @@ public enum BLEEventHandler {
             } else {
                 lastTimestamp = await localStorage.loadLastEventLogTimestamp() ?? 0
             }
-            processable = BLEEventHandler.filterAndSortForMutation(logs, since: lastTimestamp)
+            // Versioned task operations use the durable OperationID ledger, not the second-level
+            // timestamp watermark. Otherwise a lost 0x1B followed by offline-ring replay at an
+            // already-advanced timestamp would be filtered forever and could never be re-ACKed.
+            processable = BLEEventHandler.deduplicatePreservingInputOrder(
+                logs.filter {
+                    Self.isVersionedTaskOperation($0)
+                        || UInt32($0.timestamp.timeIntervalSince1970) > lastTimestamp
+                }
+            )
         } else {
             // 实时单事件路径不按高水位过滤：completeTask 自带 !isCompleted 幂等，
             // 同一秒内到达的后续事件（如旋钮选中后紧接短按完成）不能因秒级水位被误丢。
@@ -375,17 +442,51 @@ public enum BLEEventHandler {
         // 持久化在后台进行，不阻塞状态变更。实时事件只写日志；只有 0x21 重放批次
         // 才能推进离线重放水位，否则先到的较新实时事件会吞掉更早的离线积压事件。
         // 放在 processable 计算之后启动，也避免本批先抬高水位、再过滤掉自己。
-        Task {
-            await persistEventLogs(logs, advancesReplayWatermark: isReplay)
+        if persistLogs {
+            Task {
+                await persistEventLogs(logs, advancesReplayWatermark: isReplay)
+            }
         }
 
+        let deviceID = deviceIDOverride
+            ?? service.connectedDeviceID?.uuidString
+            ?? service.lastKnownDeviceID?.uuidString
+            ?? "unidentified-device"
+        var receipts: [TaskOperationReceipt] = []
         for log in processable {
-            await handleFocusSessionEvent(log, focusService: focusService, isReplay: isReplay, tasksOverride: tasksOverride)
-            applyEventStateMutation(log, isReplay: isReplay)
-            applyReminderInteractionCooldown(log)
+            // Hardware echoes the bounded ASCII ID advertised by DayPack/TaskInPage/0x1B. Resolve
+            // it once at the domain boundary so focus history and App persistence always retain the
+            // provider's original task ID instead of the wire hash.
+            let resolvedLog = resolvingTaskIdentifier(
+                in: log,
+                tasks: tasksOverride ?? appState.tasks
+            )
+            if let plannedReceipt = plannedTaskOperationReceipt(resolvedLog, tasks: appState.tasks) {
+                receipts.append(await BLETaskOperationProcessor.process(
+                    resolvedLog,
+                    plannedReceipt: plannedReceipt,
+                    deviceID: deviceID,
+                    focusService: focusService,
+                    isReplay: isReplay,
+                    operationLedger: operationLedger,
+                    appState: appState
+                ))
+                continue
+            }
+
+            _ = await handleFocusSessionEvent(
+                resolvedLog,
+                focusService: focusService,
+                isReplay: isReplay,
+                tasksOverride: tasksOverride
+            )
+            if let receipt = refreshReceipt(resolvedLog) {
+                receipts.append(receipt)
+            }
+            applyReminderInteractionCooldown(resolvedLog)
         }
 
-        return processable
+        return EventProcessingResult(logs: processable, taskOperationReceipts: receipts)
     }
 
     /// Filters to events newer than `lastTimestamp`, sorts ascending by timestamp,
@@ -408,6 +509,14 @@ public enum BLEEventHandler {
         return logs
             .sorted { $0.timestamp < $1.timestamp }
             .filter { seen.insert(eventContentKey($0)).inserted }
+    }
+
+    /// A firmware EventLogBatch is an ordered command stream. RTC timestamps are data, not an
+    /// ordering key: sorting them can acknowledge a later pending operation first and change focus
+    /// completion semantics. Preserve wire order while still dropping exact duplicate records.
+    nonisolated static func deduplicatePreservingInputOrder(_ logs: [EventLog]) -> [EventLog] {
+        var seen = Set<String>()
+        return logs.filter { seen.insert(eventContentKey($0)).inserted }
     }
 
     /// 允许的设备时间戳未来向偏移上限（秒）。超过 now + 此值的时间戳视为固件 RTC 错乱，
@@ -437,18 +546,49 @@ public enum BLEEventHandler {
 
     /// A stable deduplication key derived from event content rather than EventLog.id.
     nonisolated static func eventContentKey(_ log: EventLog) -> String {
-        "\(log.eventType.rawValue)|\(log.taskId ?? "")|\(UInt32(log.timestamp.timeIntervalSince1970))"
+        if let operationID = log.operationID,
+           TaskListSnapshotAction(eventType: log.eventType) != nil {
+            return "\(log.eventType.rawValue)|operation=\(operationID)|task=\(log.taskId ?? "")|timestamp=\(UInt32(log.timestamp.timeIntervalSince1970))"
+        }
+        return "\(log.eventType.rawValue)|\(log.taskId ?? "")|\(UInt32(log.timestamp.timeIntervalSince1970))"
     }
 
-    /// State changes that must apply for both live and replayed events.
-    /// Replay applies the same state mutation but suppresses feedback side
-    /// effects (sound/haptic, completion haiku) via `.hardwareReplay`.
-    private static func applyEventStateMutation(_ log: EventLog, isReplay: Bool) {
-        guard log.eventType == .completeTask,
-              let taskId = log.taskId,
-              let task = resolveTask(taskId: taskId),
-              !task.isCompleted else { return }
-        AppState.shared.toggleTaskCompletion(task, source: isReplay ? .hardwareReplay : .user)
+    private nonisolated static func isVersionedTaskOperation(_ log: EventLog) -> Bool {
+        log.operationID != nil && (log.eventType == .completeTask || log.eventType == .skipTask)
+    }
+
+    static func plannedTaskOperationReceipt(
+        _ log: EventLog,
+        tasks: [TaskItem] = AppState.shared.tasks
+    ) -> TaskOperationReceipt? {
+        guard let action = TaskListSnapshotAction(eventType: log.eventType),
+              action == .completeTask || action == .skipTask,
+              let operationID = log.operationID else {
+            return nil
+        }
+        guard operationID != 0 else {
+            return TaskOperationReceipt(action: action, operationID: 0, result: .invalidRequest)
+        }
+
+        guard let taskID = log.taskId, !taskID.isEmpty else {
+            return TaskOperationReceipt(action: action, operationID: operationID, result: .invalidRequest)
+        }
+        guard let task = resolveTask(taskId: taskID, in: tasks) else {
+            return TaskOperationReceipt(action: action, operationID: operationID, result: .taskNotFound)
+        }
+        let result: TaskListSnapshotResultCode = action == .completeTask && task.isCompleted
+            ? .alreadyApplied
+            : .applied
+        return TaskOperationReceipt(action: action, operationID: operationID, result: result)
+    }
+
+    private static func refreshReceipt(_ log: EventLog) -> TaskOperationReceipt? {
+        guard log.eventType == .requestRefresh, let operationID = log.operationID else { return nil }
+        return TaskOperationReceipt(
+            action: .requestRefresh,
+            operationID: operationID,
+            result: operationID == 0 ? .invalidRequest : .applied
+        )
     }
 
     /// Reminder ack/dismiss must reset the SmartReminder cooldown on BOTH live and replay
@@ -499,12 +639,13 @@ public enum BLEEventHandler {
         min(raw, now)
     }
 
+    @discardableResult
     private static func handleFocusSessionEvent(
         _ eventLog: EventLog,
         focusService: FocusSessionService,
         isReplay: Bool = false,
         tasksOverride: [TaskItem]? = nil
-    ) async {
+    ) async -> Bool {
         // 设备时间戳不可信：夹到不晚于 now，防未来偏移凭空铸造专注时长 / 能量瓶（见 focusEventTimestamp）。
         let sessionTimestamp = focusEventTimestamp(eventLog.timestamp, now: Date())
         switch eventLog.eventType {
@@ -516,7 +657,7 @@ public enum BLEEventHandler {
             // NOT fabricate it. Skipping also avoids a stale activeSession. The Inku
             // competitive review's "back-fill offline focus" suggestion was rejected
             // for this reason. (See memory: project_focus_app_authoritative.)
-            guard !isReplay else { break }
+            guard !isReplay else { return false }
             // 与 handleEnterTaskIn 的 guard 对称：任务解析失败不得开会话。联调实测（2026-07-04）：
             // 固件 EnterTaskIn payload 未按 §5.3 带 UUID 时，首字节 0x00 解析成空 taskId + 错位读出
             // 1970 时间戳——旧逻辑仍以 "Unknown Task" 开会话，0x14 推出 elapsed=65535/bottles=255
@@ -535,6 +676,7 @@ public enum BLEEventHandler {
                     mode: focusService.focusEnforcementMode,
                     startTime: startTime
                 )
+                return false
             } else {
                 ErrorReporter.log(
                     .sync(
@@ -544,25 +686,28 @@ public enum BLEEventHandler {
                     context: "BLEEventHandler.handleFocusSessionEvent"
                 )
             }
+            return false
 
         case .completeTask:
             if let taskId = eventLog.taskId {
-                focusService.completeTask(taskId: taskId, endTime: sessionTimestamp)
+                return focusService.completeTask(taskId: taskId, endTime: sessionTimestamp)
             }
+            return false
 
         case .skipTask:
             if let taskId = eventLog.taskId {
-                focusService.skipTask(taskId: taskId, endTime: sessionTimestamp)
+                return focusService.skipTask(taskId: taskId, endTime: sessionTimestamp)
             }
+            return false
 
         default:
-            break
+            return false
         }
     }
 
     nonisolated static func resolveTask(taskId: String, in tasks: [TaskItem]) -> TaskItem? {
         tasks
-            .filter { $0.id == taskId }
+            .filter { $0.id == taskId || $0.hardwareIdentifier == taskId }
             .max { lhs, rhs in
                 let lhsRecency = lhs.remoteUpdatedAt ?? lhs.lastModified
                 let rhsRecency = rhs.remoteUpdatedAt ?? rhs.lastModified
@@ -573,7 +718,33 @@ public enum BLEEventHandler {
             }
     }
 
+    private nonisolated static func resolvingTaskIdentifier(
+        in event: EventLog,
+        tasks: [TaskItem]
+    ) -> EventLog {
+        guard event.eventType == .enterTaskIn
+                || event.eventType == .completeTask
+                || event.eventType == .skipTask,
+              let taskID = event.taskId,
+              let task = resolveTask(taskId: taskID, in: tasks),
+              task.id != taskID else {
+            return event
+        }
+        return EventLog(
+            id: event.id,
+            eventType: event.eventType,
+            taskId: task.id,
+            operationID: event.operationID,
+            timestamp: event.timestamp,
+            value: event.value,
+            hasDeviceTimestamp: event.hasDeviceTimestamp,
+            firmwareVersion: event.firmwareVersion,
+            avatarInventory: event.avatarInventory
+        )
+    }
+
     private static func resolveTask(taskId: String) -> TaskItem? {
         resolveTask(taskId: taskId, in: AppState.shared.tasks)
     }
+
 }

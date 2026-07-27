@@ -1,6 +1,5 @@
 import Foundation
 @testable import KiroleFeature
-
 struct ProtocolFixtures {
     let timestamp: UInt32 = 1_767_225_600
     let taskId = "task-ble-plan"
@@ -158,9 +157,7 @@ struct SimulatedHardware {
         return result
     }
 
-    // 旧 `parseDevelopmentDisplayPacket`（解析 0xAA 开发命令）已于 v2.5.11 移除：屏保（0x16）与
-    // 场景解锁（0x17）均已升级为业务帧，不再有 0xAA 命令。`receiveSingleAppPacket` / `receiveAppPacket`
-    // 仍以 `developmentDisplayCommandNotStandard` 守卫拒收任何残留 0xAA 包。
+    // 0xAA 开发命令已移除；接收入口继续拒绝残留包。
 
     private static func parseSimpleAppPacket(_ data: Data) throws -> SimulatedAppPacket {
         guard data.count >= 3 else {
@@ -584,6 +581,52 @@ struct SimulatedAppPacket {
         return timestamp
     }
 
+    func parseTaskListSnapshotAck() throws -> SimulatedTaskListSnapshotAck {
+        try requireType(BLEDataType.taskListSnapshotAck)
+        var reader = PayloadReader(data: payload)
+        try reader.expectByte(TaskListSnapshotAck.subVersion)
+        guard let action = TaskListSnapshotAction(rawValue: try reader.readByte()) else {
+            throw SimulationError.invalidEnumValue
+        }
+        let operationID = try reader.readUInt32BE()
+        guard operationID != 0 else { throw SimulationError.invalidSnapshotState }
+        guard let result = TaskListSnapshotResultCode(rawValue: try reader.readByte()) else {
+            throw SimulationError.invalidEnumValue
+        }
+        let epoch = try reader.readUInt32BE()
+        let revision = try reader.readUInt32BE()
+        guard epoch != 0, revision != 0 else { throw SimulationError.invalidSnapshotState }
+        let count = Int(try reader.readByte())
+        var tasks: [SimulatedTaskListSnapshotAck.Task] = []
+        for _ in 0..<count {
+            let id = try reader.readString()
+            let title = try reader.readString()
+            let completedByte = try reader.readByte()
+            let priority = try reader.readByte()
+            guard !id.isEmpty, id.utf8.count <= 36,
+                  title.utf8.count <= 30,
+                  completedByte == 0 || completedByte == 1,
+                  TaskPriority(rawValue: Int(priority)) != nil else {
+                throw SimulationError.invalidSnapshotState
+            }
+            tasks.append(.init(
+                id: id,
+                title: title,
+                isCompleted: completedByte == 1,
+                priority: priority
+            ))
+        }
+        try reader.requireEnd()
+        return SimulatedTaskListSnapshotAck(
+            action: action,
+            operationID: operationID,
+            result: result,
+            epoch: epoch,
+            revision: revision,
+            tasks: tasks
+        )
+    }
+
     private func requireType(_ expectedType: BLEDataType) throws {
         guard type == expectedType.rawValue else {
             throw SimulationError.unexpectedType(expected: expectedType.rawValue, actual: type)
@@ -754,20 +797,4 @@ struct SimulatedSmartReminder {
     let text: String
     let urgency: ReminderUrgency
     let petMoodByte: UInt8?
-}
-
-enum SimulationError: Error, Equatable {
-    case truncatedPacket
-    case truncatedPayload
-    case lengthMismatch(expected: Int, actual: Int)
-    case incompleteChunkedMessage
-    case trailingBytes
-    case invalidUTF8
-    case invalidEnumValue
-    case developmentDisplayCommandNotStandard
-    case invalidSecureHandshake
-    case unexpectedType(expected: UInt8, actual: UInt8)
-    case chunkCRCMismatch
-    case chunkHeaderMismatch
-    case avatarOperationRejected
 }

@@ -286,6 +286,32 @@ public enum BLEDataEncoder {
         return data
     }
 
+    // MARK: - Task List Snapshot Acknowledgement (0x1B)
+
+    /// `SubVersion | Action | OperationID | Result | Epoch | Revision | TaskCount | Tasks[]`.
+    /// Each task uses the same Overview fields as DayPack TopTasks: ID, title, completed, priority.
+    public static func encodeTaskListSnapshotAck(_ acknowledgement: TaskListSnapshotAck) -> Data {
+        var data = Data()
+        data.append(TaskListSnapshotAck.subVersion)
+        data.append(acknowledgement.action.rawValue)
+        data.appendBigEndian(acknowledgement.operationID)
+        data.append(acknowledgement.result.rawValue)
+        data.appendBigEndian(acknowledgement.version.epoch)
+        data.appendBigEndian(acknowledgement.version.revision)
+        data.appendClampedUInt8(acknowledgement.tasks.count)
+        for task in acknowledgement.tasks.prefix(Int(UInt8.max)) {
+            data.appendString(task.id, maxLength: 36)
+            data.appendString(
+                task.title,
+                maxLength: 30,
+                fallbackIfSanitizedEmpty: HardwareTitleFallback.task
+            )
+            data.append(task.isCompleted ? 0x01 : 0x00)
+            data.appendClampedUInt8(task.priority)
+        }
+        return data
+    }
+
     // MARK: - Focus Status (0x14)
 
     /// 编码专注状态，用于实时推送当前专注状态和能量瓶子数给硬件。

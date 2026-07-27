@@ -27,6 +27,35 @@ public enum TaskToggleSource: Equatable {
     }
 }
 
+enum HardwareTaskCompletionPersistenceResult: Sendable, Equatable {
+    case applied
+    case alreadyApplied
+    case supersededByApp
+    case taskNotFound
+    case persistenceFailed
+}
+
+protocol HardwareTaskStatePersisting: Sendable {
+    func saveTasks(_ tasks: [TaskItem]) async throws
+    func savePet(_ pet: Pet) async throws
+}
+
+private struct LocalHardwareTaskStatePersistence: HardwareTaskStatePersisting {
+    let storage: LocalStorage
+
+    init(storage: LocalStorage = .shared) {
+        self.storage = storage
+    }
+
+    func saveTasks(_ tasks: [TaskItem]) async throws {
+        try await storage.saveTasks(tasks)
+    }
+
+    func savePet(_ pet: Pet) async throws {
+        try await storage.savePet(pet)
+    }
+}
+
 extension AppState {
     private enum TaskSyncSupport {
         case localOnly
@@ -38,6 +67,9 @@ extension AppState {
 
         var updatedTask = existingTask
         updatedTask.isCompleted.toggle()
+        // A user/App toggle is a newer authoritative decision. Clearing the marker prevents a
+        // delayed retry of the old hardware operation from claiming this state as its own.
+        updatedTask.hardwareCompletionOperationKey = nil
         updatedTask.lastModified = Date()
         let syncSupport = taskSyncSupport(for: updatedTask, action: .updateCompletion)
         updatedTask.syncStatus = syncSupport == .remote ? .pending : .error
@@ -84,6 +116,168 @@ extension AppState {
                 )
             }
         }
+    }
+
+    /// Applies a hardware completion idempotently and does not return until the task/pet snapshot
+    /// has reached durable storage. BLE operation receipts stay `pending` until this succeeds, so
+    /// an App crash cannot persist "already handled" while losing the actual task state.
+    func persistHardwareTaskCompletion(
+        taskID: String,
+        operationKey: String,
+        deviceTimestamp: UInt32? = nil,
+        reservedAt: Date,
+        source: TaskToggleSource,
+        persistence: any HardwareTaskStatePersisting = LocalHardwareTaskStatePersistence()
+    ) async -> HardwareTaskCompletionPersistenceResult {
+        guard let initialTask = tasks.first(where: { $0.id == taskID }) else {
+            return .taskNotFound
+        }
+
+        let eventTimestamp = deviceTimestamp
+            ?? UInt32(max(0, reservedAt.timeIntervalSince1970))
+
+        if initialTask.isCompleted,
+           initialTask.hardwareCompletionOperationKey != operationKey {
+            return hardwareCompletionIsSuperseded(
+                initialTask,
+                operationKey: operationKey,
+                deviceTimestamp: eventTimestamp,
+                reservedAt: reservedAt
+            ) ? .supersededByApp : .alreadyApplied
+        }
+        if hardwareCompletionIsSuperseded(
+            initialTask,
+            operationKey: operationKey,
+            deviceTimestamp: eventTimestamp,
+            reservedAt: reservedAt
+        ) {
+            return .supersededByApp
+        }
+
+        var didApplyDomainState = false
+        var expectedLastModified = initialTask.lastModified
+        if !initialTask.isCompleted {
+            var completedTask = initialTask
+            completedTask.isCompleted = true
+            completedTask.hardwareCompletionOperationKey = operationKey
+            completedTask.lastModified = Date()
+            expectedLastModified = completedTask.lastModified
+            let syncSupport = taskSyncSupport(for: completedTask, action: .updateCompletion)
+            completedTask.syncStatus = syncSupport == .remote ? .pending : .error
+            completedTask.pendingDeletion = false
+            performHardwareTaskMutation {
+                tasks = taskManager.withTask(tasks, updatedTask: completedTask)
+            }
+
+            updatePetForTaskToggle(isCompleted: true, playFeedback: false)
+            pet.lastHardwareTaskOperationKey = operationKey
+            didApplyDomainState = true
+        } else if pet.lastHardwareTaskOperationKey != operationKey {
+            // `tasks.json` reached disk but `pet.json` did not before a crash. The task marker makes
+            // this one missing reward distinguishable from a duplicate retry.
+            updatePetForHardwareCompletionRecovery(operationKey: operationKey)
+            didApplyDomainState = true
+        }
+
+        do {
+            try await persistence.saveTasks(tasks)
+            guard hardwareCompletionStillOwnsTask(
+                taskID: taskID,
+                operationKey: operationKey,
+                expectedLastModified: expectedLastModified
+            ) else {
+                return await repairSupersededHardwareCompletion(using: persistence)
+            }
+            try await persistence.savePet(pet)
+            guard hardwareCompletionStillOwnsTask(
+                taskID: taskID,
+                operationKey: operationKey,
+                expectedLastModified: expectedLastModified
+            ) else {
+                return await repairSupersededHardwareCompletion(using: persistence)
+            }
+        } catch {
+            reportPersistenceError(error, operation: "save", target: "tasks/pet")
+            ErrorReporter.log(error, context: "AppState.persistHardwareTaskCompletion")
+            return .persistenceFailed
+        }
+
+        if didApplyDomainState {
+            updateStatistics()
+            requestBLESync(reason: "hardwareTaskCompletion")
+            if source == .user {
+                SoundService.shared.playWithHaptic(.taskComplete, haptic: .success)
+                emitCompanionMotion(.celebrate)
+            }
+        }
+
+        // External-provider updates and companion copy are not part of the BLE durability point.
+        // They start only after tasks/pet reached disk, so a slow network cannot hold the firmware
+        // acknowledgement transaction open or race an App undo during WAL persistence.
+        if let durableTask = tasks.first(where: { $0.id == taskID }) {
+            let expectedLastModified = durableTask.lastModified
+            let externalSyncTask = taskExternalSyncQueue.enqueue(for: durableTask.id) { [weak self] in
+                guard let self else { return }
+                await self.syncTaskToExternalService(
+                    durableTask,
+                    action: .updateCompletion,
+                    expectedLastModified: expectedLastModified
+                )
+            }
+            Task { @MainActor [weak self] in
+                await externalSyncTask.value
+                await self?.updatePetState()
+            }
+        }
+        return .applied
+    }
+
+    private func hardwareCompletionIsSuperseded(
+        _ task: TaskItem,
+        operationKey: String,
+        deviceTimestamp: UInt32,
+        reservedAt: Date
+    ) -> Bool {
+        guard task.hardwareCompletionOperationKey != operationKey else { return false }
+        let eventTime = Date(timeIntervalSince1970: TimeInterval(deviceTimestamp))
+        let orderingTolerance: TimeInterval = 2
+        let futureTolerance: TimeInterval = 5 * 60
+        guard eventTime <= reservedAt.addingTimeInterval(futureTolerance) else { return true }
+        if task.lastModified > reservedAt { return true }
+        return task.lastModified > eventTime.addingTimeInterval(orderingTolerance)
+    }
+
+    private func hardwareCompletionStillOwnsTask(
+        taskID: String,
+        operationKey: String,
+        expectedLastModified: Date
+    ) -> Bool {
+        guard let current = tasks.first(where: { $0.id == taskID }) else { return false }
+        return current.isCompleted
+            && current.hardwareCompletionOperationKey == operationKey
+            && current.lastModified == expectedLastModified
+    }
+
+    private func repairSupersededHardwareCompletion(
+        using persistence: any HardwareTaskStatePersisting
+    ) async -> HardwareTaskCompletionPersistenceResult {
+        do {
+            try await persistence.saveTasks(tasks)
+            try await persistence.savePet(pet)
+            return .supersededByApp
+        } catch {
+            reportPersistenceError(error, operation: "repair", target: "tasks/pet")
+            ErrorReporter.log(error, context: "AppState.repairSupersededHardwareCompletion")
+            return .persistenceFailed
+        }
+    }
+
+    private func updatePetForHardwareCompletionRecovery(operationKey: String) {
+        guard pet.lastHardwareTaskOperationKey != operationKey else { return }
+        pet.adventuresCount += 1
+        pet.points += ProgressConstants.pointsPerTask
+        pet.lastInteraction = Date()
+        pet.lastHardwareTaskOperationKey = operationKey
     }
 
     /// Emits one non-overlapping companion motion. Repeated events are coalesced while the

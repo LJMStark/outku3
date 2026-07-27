@@ -64,22 +64,7 @@ public final class DayPackGenerator {
 
         // 手动加入 Today 的任务先于自然到期任务；组内再按 priority、dueDate、id 定序。
         // Swift sort 不稳定，保留完整兜底顺序，确保截断到 maxTasks 后结果可复现。
-        let topTasks = todayTasks
-            .filter { !$0.isCompleted }
-            .sorted {
-                let lhsManual = $0.isManuallySelectedForToday()
-                let rhsManual = $1.isManuallySelectedForToday()
-                if lhsManual != rhsManual { return lhsManual }
-                if $0.priority.rawValue != $1.priority.rawValue {
-                    return $0.priority.rawValue > $1.priority.rawValue
-                }
-                let lhsDue = $0.dueDate ?? .distantFuture
-                let rhsDue = $1.dueDate ?? .distantFuture
-                if lhsDue != rhsDue { return lhsDue < rhsDue }
-                return $0.id < $1.id
-            }
-            .prefix(screenSize.maxTasks)
-            .map { TaskSummary(from: $0) }
+        let topTasks = Self.topTaskSummaries(from: tasks, screenSize: screenSize)
 
         // box③ "First up": next upcoming event, else the top (highest-priority) incomplete task.
         let firstUp = Self.firstUpLabel(events: todayEvents, fallbackTaskTitle: topTasks.first?.title)
@@ -108,6 +93,32 @@ public final class DayPackGenerator {
             topTasks: Array(topTasks),
             settlementData: settlementData
         )
+    }
+
+    /// The single source of truth for the task rows shown on hardware Overview. DayPack and the
+    /// immediate `0x1B` business acknowledgement must select and order the exact same rows.
+    nonisolated static func topTaskSummaries(
+        from tasks: [TaskItem],
+        screenSize: ScreenSize,
+        on date: Date = Date(),
+        calendar: Calendar = .current
+    ) -> [TaskSummary] {
+        tasks
+            .filter { $0.isInTodayDisplay(on: date, calendar: calendar) && !$0.isCompleted }
+            .sorted {
+                let lhsManual = $0.isManuallySelectedForToday(on: date, calendar: calendar)
+                let rhsManual = $1.isManuallySelectedForToday(on: date, calendar: calendar)
+                if lhsManual != rhsManual { return lhsManual }
+                if $0.priority.rawValue != $1.priority.rawValue {
+                    return $0.priority.rawValue > $1.priority.rawValue
+                }
+                let lhsDue = $0.dueDate ?? .distantFuture
+                let rhsDue = $1.dueDate ?? .distantFuture
+                if lhsDue != rhsDue { return lhsDue < rhsDue }
+                return $0.id < $1.id
+            }
+            .prefix(screenSize.maxTasks)
+            .map(TaskSummary.init(from:))
     }
 
     /// Returns the box② DaySummary for `events`, reusing the cached text while today's event digest
@@ -178,7 +189,7 @@ public final class DayPackGenerator {
         // 空串；wire 字段保留占位（0x11 已联调，撤字段代价大于收益），固件收到空串不渲染。
         let overview = await taskOverview(for: task.notes)
         return TaskInPageData(
-            taskId: task.id, taskTitle: task.title,
+            taskId: task.hardwareIdentifier, taskTitle: task.title,
             taskDescription: overview,
             encouragement: ""
         )

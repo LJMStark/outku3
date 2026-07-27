@@ -74,6 +74,7 @@ public enum BLEError: LocalizedError, Sendable {
     case writeTimeout
     case scanAlreadyInProgress
     case connectionInProgress
+    case staleTaskSnapshot
 
     public var errorDescription: String? {
         switch self {
@@ -105,6 +106,8 @@ public enum BLEError: LocalizedError, Sendable {
             return "A BLE scan is already in progress"
         case .connectionInProgress:
             return "A BLE connection is already in progress"
+        case .staleTaskSnapshot:
+            return "Task snapshot was superseded before transmission"
         }
     }
 }

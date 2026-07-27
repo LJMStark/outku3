@@ -1114,21 +1114,23 @@ struct BLEProtocolTests {
         let taskIdData = Data(taskIdString.utf8)
         let timestamp: UInt32 = 1_700_000_100
 
-        var payload = Data()
+        var payload = Data([0x01])
+        payload.appendBigEndian(UInt32(0x1020_3040))
         payload.append(UInt8(taskIdData.count))
         payload.append(taskIdData)
         payload.appendBigEndian(timestamp)
 
         let log = EventLog.fromBLEPayload(type: EventLogType.completeTask.rawByte, payload: payload)
         #expect(log?.eventType == .completeTask)
+        #expect(log?.operationID == 0x1020_3040)
         #expect(log?.taskId == taskIdString)
         #expect(Int(log?.timestamp.timeIntervalSince1970 ?? 0) == Int(timestamp))
     }
 
-    @Test("EventLog no-payload event parsing")
-    func eventLogNoPayloadParsing() throws {
+    @Test("EventLog rejects legacy no-payload requestRefresh")
+    func eventLogRejectsNoPayloadRequestRefresh() throws {
         let log = EventLog.fromBLEPayload(type: EventLogType.requestRefresh.rawByte, payload: Data())
-        #expect(log?.eventType == .requestRefresh)
+        #expect(log == nil)
     }
 
     @Test("EventLog low battery parsing")
@@ -1237,11 +1239,10 @@ struct BLEProtocolTests {
         #expect(event?.value == 0)
     }
 
-    @Test("fromBLEPayload requestRefresh with empty payload")
-    func fromBLEPayloadRequestRefresh() {
+    @Test("fromBLEPayload rejects requestRefresh with empty payload")
+    func fromBLEPayloadRejectsEmptyRequestRefresh() {
         let event = EventLog.fromBLEPayload(type: 0x20, payload: Data())
-        #expect(event != nil)
-        #expect(event?.eventType == .requestRefresh)
+        #expect(event == nil)
     }
 
     @Test("fromBLEPayload invalid type returns nil")
@@ -1268,7 +1269,8 @@ struct BLEProtocolTests {
     func fromBLEPayloadSkipTask() {
         let taskId = "skip-me"
         let taskIdData = taskId.data(using: .utf8)!
-        var payload = Data()
+        var payload = Data([0x01])
+        payload.appendBigEndian(UInt32(9))
         payload.append(UInt8(taskIdData.count))
         payload.append(taskIdData)
         let timestamp: UInt32 = 1_700_001_000
@@ -1277,6 +1279,7 @@ struct BLEProtocolTests {
         let event = EventLog.fromBLEPayload(type: 0x12, payload: payload)
         #expect(event != nil)
         #expect(event?.eventType == .skipTask)
+        #expect(event?.operationID == 9)
         #expect(event?.taskId == "skip-me")
     }
 
@@ -1491,24 +1494,36 @@ struct BLEProtocolTests {
     @Test("Batch replay: completeTask marks task completed in AppState")
     @MainActor
     func batchReplayCompleteTaskMarksTaskCompleted() async {
-        let taskId = "ble-replay-complete-\(UUID().uuidString)"
-        let task = TaskItem(id: taskId, title: "Replay Complete Test", isCompleted: false, dueDate: nil)
-        AppState.shared.addTask(task)
-        defer { AppState.shared.deleteTask(task) }
+        await SharedPersistenceTestLock.shared.withLock {
+            await AppState.shared.ensureInitialLoadComplete()
+            let taskId = "ble-replay-complete-\(UUID().uuidString)"
+            let task = TaskItem(id: taskId, title: "Replay Complete Test", isCompleted: false, dueDate: nil)
+            AppState.shared.tasks.append(task)
+            defer { AppState.shared.tasks.removeAll { $0.id == taskId } }
 
-        let event = EventLog(eventType: .completeTask, taskId: taskId, timestamp: Date())
-        let focusService = FocusSessionService.makeForTesting(
-            focusGuardService: BLEProtocolMockFocusGuardService(),
-            persistenceEnabled: false
-        )
-        await BLEEventHandler.handleEventLogs(
-            [event], service: BLEService.shared,
-            focusService: focusService, isReplay: true,
-            lastTimestampOverride: 0
-        )
+            let event = EventLog(
+                eventType: .completeTask,
+                taskId: taskId,
+                operationID: UInt32.random(in: 1...UInt32.max),
+                timestamp: Date(),
+                hasDeviceTimestamp: true
+            )
+            let focusService = FocusSessionService.makeForTesting(
+                focusGuardService: BLEProtocolMockFocusGuardService(),
+                persistenceEnabled: false
+            )
+            await BLEEventHandler.handleEventLogs(
+                [event], service: BLEService.shared,
+                focusService: focusService, isReplay: true,
+                lastTimestampOverride: 0,
+                persistLogs: false,
+                operationLedger: TaskOperationLedger(persistenceEnabled: false),
+                deviceIDOverride: "test-device"
+            )
 
-        let found = AppState.shared.tasks.first { $0.id == taskId }
-        #expect(found?.isCompleted == true)
+            let found = AppState.shared.tasks.first { $0.id == taskId }
+            #expect(found?.isCompleted == true)
+        }
     }
 
     @Test("Batch replay: enterTaskIn does NOT start a focus session")
@@ -1549,6 +1564,35 @@ struct BLEProtocolTests {
         )
 
         #expect(focusService.activeSession?.taskId == taskId)
+    }
+
+    @Test("Live enterTaskIn resolves an opaque wire ID before starting focus")
+    @MainActor
+    func liveEnterTaskInOpaqueWireIDStartsOriginalTaskSession() async {
+        let task = TaskItem(
+            id: "外部任务-\(String(repeating: "provider-segment-", count: 4))",
+            title: "Resolved Provider Task"
+        )
+        let event = EventLog(
+            eventType: .enterTaskIn,
+            taskId: task.hardwareIdentifier,
+            timestamp: Date()
+        )
+        let focusService = FocusSessionService.makeForTesting(
+            focusGuardService: BLEProtocolMockFocusGuardService(),
+            persistenceEnabled: false
+        )
+
+        await BLEEventHandler.handleEventLogs(
+            [event],
+            service: BLEService.shared,
+            focusService: focusService,
+            isReplay: false,
+            tasksOverride: [task]
+        )
+
+        #expect(focusService.activeSession?.taskId == task.id)
+        #expect(focusService.activeSession?.taskTitle == task.title)
     }
 
     @Test("Live enterTaskIn with empty taskId (malformed 0x10) does not start a session")
