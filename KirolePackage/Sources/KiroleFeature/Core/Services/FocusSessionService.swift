@@ -408,7 +408,8 @@ public final class FocusSessionService {
     /// first delivery and exact retries, including retries after `activeSession` was cleared in
     /// memory but history persistence failed.
     func settleHardwareTaskOperation(
-        _ entry: TaskOperationLedgerEntry
+        _ entry: TaskOperationLedgerEntry,
+        expectedSessionStartGeneration: UInt64? = nil
     ) async -> HardwareFocusSettlementResult {
         await launchRecoveryTask?.value
         if !hasCompletedLaunchRecovery {
@@ -438,9 +439,23 @@ public final class FocusSessionService {
         guard let active = activeSession, active.taskId == entry.taskID else {
             return .durable
         }
+        // The recovery and persistence waits above yield MainActor. A new focus for the same task
+        // can start in that window, so revalidate the generation at the last point before ending
+        // the active session. Changing the ACK afterwards cannot restore an ended session.
+        if let expectedSessionStartGeneration,
+           sessionStartGeneration(for: entry.taskID) != expectedSessionStartGeneration {
+            return .supersededByApp
+        }
         let reason: FocusEndReason = entry.action == .completeTask ? .completed : .skipped
         let eventTime = Date(timeIntervalSince1970: TimeInterval(entry.deviceTimestamp))
-        let endTime = max(active.startTime, min(eventTime, min(entry.recordedAt, Date())))
+        // A live button press is authoritative at App receipt time. Firmware RTC can lag until
+        // Time(0x05) is applied; using that stale value would reject a fresh press as superseded
+        // or settle a real session at zero seconds. Offline replay keeps the device timestamp
+        // because it is the only ordering signal for an operation received after the fact.
+        let operationTime = entry.timestampAuthority == .deviceClock
+            ? eventTime
+            : entry.recordedAt
+        let endTime = max(active.startTime, min(operationTime, min(entry.recordedAt, Date())))
         guard endActiveSession(
             reason: reason,
             endTime: endTime,
@@ -458,7 +473,8 @@ public final class FocusSessionService {
         let eventTime = Date(timeIntervalSince1970: TimeInterval(entry.deviceTimestamp))
         let orderingTolerance: TimeInterval = 2
         let futureTolerance: TimeInterval = 5 * 60
-        guard eventTime <= entry.recordedAt.addingTimeInterval(futureTolerance) else {
+        if entry.timestampAuthority == .deviceClock,
+           eventTime > entry.recordedAt.addingTimeInterval(futureTolerance) {
             return true
         }
 
@@ -469,8 +485,15 @@ public final class FocusSessionService {
                 .map(\.startTime)
                 .max()
         guard let matchingStart else { return false }
-        return eventTime.addingTimeInterval(orderingTolerance) < matchingStart
-            || entry.recordedAt.addingTimeInterval(orderingTolerance) < matchingStart
+        switch entry.timestampAuthority {
+        case .appReceipt:
+            // Both values come from the App clock. Any strictly newer session wins; applying an
+            // RTC tolerance here lets a retry of the previous press end a replacement session.
+            return entry.recordedAt < matchingStart
+        case .deviceClock:
+            return entry.recordedAt.addingTimeInterval(orderingTolerance) < matchingStart
+                || eventTime.addingTimeInterval(orderingTolerance) < matchingStart
+        }
     }
 
     /// 设备断开连接时结束会话

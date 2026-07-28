@@ -292,21 +292,35 @@ extension FocusSessionService {
                 operationKey: nil
             )
         }
-        let eventTime = Date(timeIntervalSince1970: TimeInterval(entry.deviceTimestamp))
-        let orderingTolerance: TimeInterval = 2
-        let futureTolerance: TimeInterval = 5 * 60
-        guard entry.recordedAt.addingTimeInterval(orderingTolerance) >= session.startTime,
-              eventTime.addingTimeInterval(orderingTolerance) >= session.startTime,
-              eventTime <= entry.recordedAt.addingTimeInterval(futureTolerance) else {
-            return LaunchRecoveryResolution(
-                endTime: now,
-                endReason: .recoveredOnLaunch,
-                operationKey: nil
-            )
+        let operationTime: Date
+        switch entry.timestampAuthority {
+        case .appReceipt:
+            guard entry.recordedAt >= session.startTime else {
+                return LaunchRecoveryResolution(
+                    endTime: now,
+                    endReason: .recoveredOnLaunch,
+                    operationKey: nil
+                )
+            }
+            operationTime = entry.recordedAt
+        case .deviceClock:
+            let eventTime = Date(timeIntervalSince1970: TimeInterval(entry.deviceTimestamp))
+            let orderingTolerance: TimeInterval = 2
+            let futureTolerance: TimeInterval = 5 * 60
+            guard entry.recordedAt.addingTimeInterval(orderingTolerance) >= session.startTime,
+                  eventTime.addingTimeInterval(orderingTolerance) >= session.startTime,
+                  eventTime <= entry.recordedAt.addingTimeInterval(futureTolerance) else {
+                return LaunchRecoveryResolution(
+                    endTime: now,
+                    endReason: .recoveredOnLaunch,
+                    operationKey: nil
+                )
+            }
+            operationTime = eventTime
         }
         let endReason: FocusEndReason = entry.action == .completeTask ? .completed : .skipped
         return LaunchRecoveryResolution(
-            endTime: max(session.startTime, min(eventTime, min(entry.recordedAt, now))),
+            endTime: max(session.startTime, min(operationTime, min(entry.recordedAt, now))),
             endReason: endReason,
             operationKey: entry.operationKey
         )

@@ -4,6 +4,88 @@ import Testing
 
 @Suite("Task operation recovery", .serialized)
 struct TaskOperationRecoveryTests {
+    @Test("A live completion uses App receipt time when the hardware RTC lags")
+    @MainActor
+    func liveCompletionIgnoresLaggingHardwareClock() async throws {
+        let fixture = try Self.loadLaggingClockFixture()
+        let appState = AppState.makeForTesting()
+        let receivedAt = Date()
+        let sessionStart = receivedAt.addingTimeInterval(-fixture.sessionElapsedSeconds)
+        let task = TaskItem(
+            id: "live-lagging-rtc-\(UUID().uuidString)",
+            title: "Complete from hardware",
+            dueDate: receivedAt,
+            lastModified: receivedAt.addingTimeInterval(-fixture.taskModifiedSecondsAgo)
+        )
+        appState.tasks = [task]
+
+        let focus = makeFocusService()
+        await focus.startSession(
+            taskId: task.id,
+            taskTitle: task.title,
+            startTime: sessionStart
+        )
+        let operation = EventLog(
+            eventType: .completeTask,
+            taskId: task.id,
+            operationID: 711,
+            timestamp: receivedAt.addingTimeInterval(-fixture.hardwareClockLagSeconds),
+            hasDeviceTimestamp: true
+        )
+
+        let processing = await BLEEventHandler.processEventLogs(
+            [operation],
+            service: .shared,
+            focusService: focus,
+            isReplay: false,
+            persistLogs: false,
+            operationLedger: TaskOperationLedger(persistenceEnabled: false),
+            deviceIDOverride: "test-device",
+            appState: appState
+        )
+
+        #expect(processing.taskOperationReceipts.map(\.result) == [.applied])
+        #expect(appState.tasks.first?.isCompleted == true)
+        #expect(focus.activeSession == nil)
+        #expect(
+            focus.todaySessions.last?.endTime?.timeIntervalSince(sessionStart) ?? 0
+                >= fixture.minimumSettledSeconds
+        )
+    }
+
+    @Test("A live completion ignores an implausible future hardware clock")
+    @MainActor
+    func liveCompletionIgnoresFutureHardwareClock() async {
+        let appState = AppState.makeForTesting()
+        let task = TaskItem(
+            id: "live-future-rtc-\(UUID().uuidString)",
+            title: "Complete despite RTC skew",
+            dueDate: Date()
+        )
+        appState.tasks = [task]
+        let operation = EventLog(
+            eventType: .completeTask,
+            taskId: task.id,
+            operationID: 712,
+            timestamp: Date().addingTimeInterval(8 * 60 * 60),
+            hasDeviceTimestamp: true
+        )
+
+        let processing = await BLEEventHandler.processEventLogs(
+            [operation],
+            service: .shared,
+            focusService: makeFocusService(),
+            isReplay: false,
+            persistLogs: false,
+            operationLedger: TaskOperationLedger(persistenceEnabled: false),
+            deviceIDOverride: "test-device",
+            appState: appState
+        )
+
+        #expect(processing.taskOperationReceipts.map(\.result) == [.applied])
+        #expect(appState.tasks.first?.isCompleted == true)
+    }
+
     @Test("A pending completion never overwrites a newer App undo")
     @MainActor
     func pendingCompletionRespectsNewerAppState() async {
@@ -79,6 +161,7 @@ struct TaskOperationRecoveryTests {
             [operation],
             service: .shared,
             focusService: makeFocusService(),
+            isReplay: true,
             persistLogs: false,
             operationLedger: TaskOperationLedger(persistenceEnabled: false),
             deviceIDOverride: "test-device",
@@ -111,6 +194,7 @@ struct TaskOperationRecoveryTests {
             [operation],
             service: .shared,
             focusService: focus,
+            isReplay: true,
             persistLogs: false,
             operationLedger: TaskOperationLedger(persistenceEnabled: false),
             deviceIDOverride: "test-device",
@@ -143,6 +227,7 @@ struct TaskOperationRecoveryTests {
             [operation],
             service: .shared,
             focusService: focus,
+            isReplay: true,
             persistLogs: false,
             operationLedger: TaskOperationLedger(persistenceEnabled: false),
             deviceIDOverride: "test-device",
@@ -151,6 +236,192 @@ struct TaskOperationRecoveryTests {
 
         #expect(processing.taskOperationReceipts.map(\.result) == [.supersededByApp])
         #expect(focus.activeSession?.id != nil)
+    }
+
+    @Test("A newer focus start during reservation survives the older operation")
+    @MainActor
+    func newerFocusDuringReservationWins() async {
+        let appState = AppState.makeForTesting()
+        let task = TaskItem(
+            id: "focus-during-reserve-\(UUID().uuidString)",
+            title: "New focus survives",
+            dueDate: Date()
+        )
+        appState.tasks = [task]
+        let focus = makeFocusService()
+        await focus.startSession(
+            taskId: task.id,
+            taskTitle: task.title,
+            startTime: Date().addingTimeInterval(-60)
+        )
+        let originalSessionID = focus.activeSession?.id
+        let persistence = RecoveryBlockingLedgerPersistence()
+        let operation = EventLog(
+            eventType: .skipTask,
+            taskId: task.id,
+            operationID: 713,
+            timestamp: Date(),
+            hasDeviceTimestamp: true
+        )
+        let processing = Task { @MainActor in
+            await BLEEventHandler.processEventLogs(
+                [operation],
+                service: .shared,
+                focusService: focus,
+                persistLogs: false,
+                operationLedger: TaskOperationLedger(
+                    persistenceEnabled: true,
+                    initialEntries: [],
+                    persistence: persistence
+                ),
+                deviceIDOverride: "test-device",
+                appState: appState
+            )
+        }
+
+        await persistence.waitForFirstSaveToStart()
+        focus.endSession(reason: .manual)
+        await focus.startSession(taskId: task.id, taskTitle: task.title)
+        let newerSessionID = focus.activeSession?.id
+        await persistence.releaseFirstSave()
+
+        #expect(await processing.value.taskOperationReceipts.map(\.result) == [.supersededByApp])
+        #expect(newerSessionID != originalSessionID)
+        #expect(focus.activeSession?.id == newerSessionID)
+    }
+
+    @Test("A live pending retry cannot end a same-task focus started one second later")
+    @MainActor
+    func pendingLiveRetryProtectsNewerFocusWithoutClockTolerance() async {
+        let appState = AppState.makeForTesting()
+        let task = TaskItem(
+            id: "focus-after-failed-reserve-\(UUID().uuidString)",
+            title: "Replacement focus",
+            dueDate: Date()
+        )
+        appState.tasks = [task]
+        let focus = makeFocusService()
+        await focus.startSession(
+            taskId: task.id,
+            taskTitle: task.title,
+            startTime: Date().addingTimeInterval(-60)
+        )
+        let persistence = RecoveryFirstSaveFailingLedgerPersistence()
+        let ledger = TaskOperationLedger(
+            persistenceEnabled: true,
+            initialEntries: [],
+            persistence: persistence
+        )
+        let operation = EventLog(
+            eventType: .skipTask,
+            taskId: task.id,
+            operationID: 716,
+            timestamp: Date(),
+            hasDeviceTimestamp: true
+        )
+
+        let first = await BLEEventHandler.processEventLogs(
+            [operation],
+            service: .shared,
+            focusService: focus,
+            persistLogs: false,
+            operationLedger: ledger,
+            deviceIDOverride: "test-device",
+            appState: appState
+        )
+        #expect(first.taskOperationReceipts.map(\.result) == [.internalError])
+
+        focus.endSession(reason: .manual)
+        await focus.startSession(
+            taskId: task.id,
+            taskTitle: task.title,
+            startTime: Date().addingTimeInterval(1)
+        )
+        let replacementID = focus.activeSession?.id
+
+        let retry = await BLEEventHandler.processEventLogs(
+            [operation],
+            service: .shared,
+            focusService: focus,
+            persistLogs: false,
+            operationLedger: ledger,
+            deviceIDOverride: "test-device",
+            appState: appState
+        )
+
+        #expect(retry.taskOperationReceipts.map(\.result) == [.supersededByApp])
+        #expect(focus.activeSession?.id == replacementID)
+    }
+
+    @Test("A pending operation keeps its first timestamp authority across another carrier")
+    func pendingOperationKeepsFirstTimestampAuthority() async throws {
+        let deliveries: [
+            (UInt32, TaskOperationTimestampAuthority, TaskOperationTimestampAuthority)
+        ] = [
+            (714, .appReceipt, .deviceClock),
+            (715, .deviceClock, .appReceipt),
+        ]
+        for (operationID, first, retry) in deliveries {
+            let operation = EventLog(
+                eventType: .completeTask,
+                taskId: "carrier-\(operationID)",
+                operationID: operationID,
+                timestamp: Date().addingTimeInterval(-8 * 60 * 60),
+                hasDeviceTimestamp: true
+            )
+            let ledger = TaskOperationLedger(persistenceEnabled: false)
+            guard case .new(let entry) = await ledger.reserve(
+                event: operation,
+                deviceID: "test-device",
+                result: .applied,
+                timestampAuthority: first
+            ) else {
+                Issue.record("The first delivery must reserve a pending entry")
+                continue
+            }
+
+            let persisted = try JSONDecoder().decode(
+                TaskOperationLedgerEntry.self,
+                from: JSONEncoder().encode(entry)
+            )
+            let restarted = TaskOperationLedger(
+                persistenceEnabled: false,
+                initialEntries: [persisted]
+            )
+            guard case .resume(let resumed) = await restarted.reserve(
+                event: operation,
+                deviceID: "test-device",
+                result: .applied,
+                timestampAuthority: retry
+            ) else {
+                Issue.record("The retry must resume the persisted pending entry")
+                continue
+            }
+
+            #expect(resumed.timestampAuthority == first)
+        }
+
+        let legacyEntry = TaskOperationLedgerEntry(
+            deviceID: "test-device",
+            action: .completeTask,
+            operationID: 716,
+            taskID: "legacy-carrier",
+            deviceTimestamp: 1_700_000_000,
+            result: .applied,
+            state: .pending,
+            recordedAt: Date(),
+            timestampAuthority: .appReceipt
+        )
+        var legacyJSON = try #require(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(legacyEntry))
+                as? [String: Any]
+        )
+        legacyJSON.removeValue(forKey: "timestampAuthority")
+        let decodedLegacy = try JSONDecoder().decode(
+            TaskOperationLedgerEntry.self,
+            from: JSONSerialization.data(withJSONObject: legacyJSON)
+        )
+        #expect(decodedLegacy.timestampAuthority == .deviceClock)
     }
 
     @Test("Committed operation receipts are not silently evicted after 256 newer operations")
@@ -588,6 +859,26 @@ struct TaskOperationRecoveryTests {
         )
     }
 
+    private static func loadLaggingClockFixture() throws -> LaggingClockFixture {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let fixtureURL = repositoryRoot
+            .appendingPathComponent("test/fixtures/ios-fix/ble-live-complete-lagging-rtc.json")
+        return try JSONDecoder().decode(
+            LaggingClockFixture.self,
+            from: Data(contentsOf: fixtureURL)
+        )
+    }
+}
+
+private struct LaggingClockFixture: Decodable {
+    let hardwareClockLagSeconds: TimeInterval
+    let sessionElapsedSeconds: TimeInterval
+    let taskModifiedSecondsAgo: TimeInterval
+    let minimumSettledSeconds: TimeInterval
 }
 
 private actor RecoveryBlockingLedgerPersistence: TaskOperationLedgerPersisting {
@@ -690,6 +981,23 @@ private actor RecoverySecondSaveFailingLedgerPersistence: TaskOperationLedgerPer
     }
 
     func latestEntries() -> [TaskOperationLedgerEntry] { snapshots.last ?? [] }
+}
+
+private actor RecoveryFirstSaveFailingLedgerPersistence: TaskOperationLedgerPersisting {
+    private var saveCount = 0
+    private var snapshots: [[TaskOperationLedgerEntry]] = []
+
+    func loadTaskOperationLedger() async throws -> [TaskOperationLedgerEntry]? {
+        snapshots.last
+    }
+
+    func saveTaskOperationLedger(_ entries: [TaskOperationLedgerEntry]) async throws {
+        saveCount += 1
+        if saveCount == 1 {
+            throw RecoveryLedgerPersistenceError.injectedCommitFailure
+        }
+        snapshots.append(entries)
+    }
 }
 
 private actor RecoverySecondSaveBlockingLedgerPersistence: TaskOperationLedgerPersisting {

@@ -66,6 +66,111 @@ struct FocusTaskOperationPersistenceTests {
         await verifyLaunchRecovery(action: .skipTask, expected: .skipped, operationID: 804)
     }
 
+    @Test("Launch recovery uses App receipt time for a live Complete with lagging device RTC")
+    @MainActor
+    func liveCompleteWithLaggingRTCRecoversAsCompleted() async {
+        let start = Date().addingTimeInterval(-120)
+        let active = FocusSession(
+            taskId: "focus-live-lagging-rtc",
+            taskTitle: "Live clock",
+            startTime: start
+        )
+        let recordedAt = Date()
+        let entry = TaskOperationLedgerEntry(
+            deviceID: "test-device",
+            action: .completeTask,
+            operationID: 807,
+            taskID: active.taskId,
+            deviceTimestamp: UInt32(start.addingTimeInterval(-3_600).timeIntervalSince1970),
+            result: .applied,
+            state: .pending,
+            recordedAt: recordedAt,
+            timestampAuthority: .appReceipt
+        )
+        let persistence = FocusPersistenceFailureStub(initialActive: active)
+        let service = makeService(
+            persistence: persistence,
+            ledger: TaskOperationLedger(persistenceEnabled: false, initialEntries: [entry]),
+            launchRecoveryCompleted: false
+        )
+
+        await service.bootstrapForTesting()
+
+        #expect(service.todaySessions.count == 1)
+        #expect(service.todaySessions[0].endReason == .completed)
+        #expect(service.todaySessions[0].endTime == recordedAt)
+        #expect(await persistence.activeSession() == nil)
+    }
+
+    @Test("Launch recovery never applies an earlier live pending operation to a newer focus")
+    @MainActor
+    func earlierLivePendingCannotRecoverNewerFocus() async {
+        let start = Date()
+        let active = FocusSession(
+            taskId: "focus-live-newer-session",
+            taskTitle: "Newer focus",
+            startTime: start
+        )
+        let entry = TaskOperationLedgerEntry(
+            deviceID: "test-device",
+            action: .skipTask,
+            operationID: 809,
+            taskID: active.taskId,
+            deviceTimestamp: UInt32(start.timeIntervalSince1970),
+            result: .applied,
+            state: .pending,
+            recordedAt: start.addingTimeInterval(-1),
+            timestampAuthority: .appReceipt
+        )
+        let persistence = FocusPersistenceFailureStub(initialActive: active)
+        let service = makeService(
+            persistence: persistence,
+            ledger: TaskOperationLedger(persistenceEnabled: false, initialEntries: [entry]),
+            launchRecoveryCompleted: false
+        )
+
+        await service.bootstrapForTesting()
+
+        #expect(service.todaySessions.count == 1)
+        #expect(service.todaySessions[0].endReason == .recoveredOnLaunch)
+    }
+
+    @Test("A changed same-task focus generation is rejected at the settlement boundary")
+    @MainActor
+    func changedGenerationCannotEndNewFocus() async {
+        let persistence = FocusPersistenceFailureStub()
+        let service = makeService(persistence: persistence)
+        let start = Date().addingTimeInterval(-60)
+        await service.startSession(
+            taskId: "focus-generation-boundary",
+            taskTitle: "Original",
+            startTime: start
+        )
+        let expectedGeneration = service.sessionStartGeneration(for: "focus-generation-boundary")
+        let entry = operationEntry(
+            taskID: "focus-generation-boundary",
+            operationID: 808,
+            action: .skipTask,
+            start: start
+        )
+
+        service.endSession(reason: .manual)
+        await service.waitForPendingPersistenceForTesting()
+        await service.startSession(
+            taskId: "focus-generation-boundary",
+            taskTitle: "Replacement"
+        )
+        let replacementID = service.activeSession?.id
+
+        let result = await service.settleHardwareTaskOperation(
+            entry,
+            expectedSessionStartGeneration: expectedGeneration
+        )
+
+        #expect(result == .supersededByApp)
+        #expect(service.activeSession?.id == replacementID)
+    }
+
     @Test("History plus active marker on launch is upserted by session ID")
     @MainActor
     func launchRecoveryDoesNotDuplicateHistory() async {

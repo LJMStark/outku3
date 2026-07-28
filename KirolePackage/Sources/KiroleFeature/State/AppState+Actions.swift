@@ -142,14 +142,16 @@ extension AppState {
                 initialTask,
                 operationKey: operationKey,
                 deviceTimestamp: eventTimestamp,
-                reservedAt: reservedAt
+                reservedAt: reservedAt,
+                isReplay: source == .hardwareReplay
             ) ? .supersededByApp : .alreadyApplied
         }
         if hardwareCompletionIsSuperseded(
             initialTask,
             operationKey: operationKey,
             deviceTimestamp: eventTimestamp,
-            reservedAt: reservedAt
+            reservedAt: reservedAt,
+            isReplay: source == .hardwareReplay
         ) {
             return .supersededByApp
         }
@@ -236,14 +238,19 @@ extension AppState {
         _ task: TaskItem,
         operationKey: String,
         deviceTimestamp: UInt32,
-        reservedAt: Date
+        reservedAt: Date,
+        isReplay: Bool
     ) -> Bool {
         guard task.hardwareCompletionOperationKey != operationKey else { return false }
         let eventTime = Date(timeIntervalSince1970: TimeInterval(deviceTimestamp))
         let orderingTolerance: TimeInterval = 2
         let futureTolerance: TimeInterval = 5 * 60
-        guard eventTime <= reservedAt.addingTimeInterval(futureTolerance) else { return true }
         if task.lastModified > reservedAt { return true }
+        guard isReplay else { return false }
+        guard eventTime <= reservedAt.addingTimeInterval(futureTolerance) else { return true }
+        // Live CompleteTask is authoritative when the App receives it. Firmware RTC may still
+        // lag before Time(0x05) takes effect, so only offline replay may use the device timestamp
+        // to decide that a later App edit or undo won.
         return task.lastModified > eventTime.addingTimeInterval(orderingTolerance)
     }
 

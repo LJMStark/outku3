@@ -119,6 +119,13 @@ enum TaskOperationLedgerState: String, Sendable, Equatable, Codable {
     case committed
 }
 
+enum TaskOperationTimestampAuthority: String, Sendable, Equatable, Codable {
+    /// A live button notification is ordered and settled by the App receipt time.
+    case appReceipt
+    /// An offline EventLogBatch operation is ordered by the persisted device timestamp.
+    case deviceClock
+}
+
 struct TaskOperationLedgerEntry: Sendable, Equatable, Codable {
     let deviceID: String
     let action: TaskListSnapshotAction
@@ -128,6 +135,7 @@ struct TaskOperationLedgerEntry: Sendable, Equatable, Codable {
     let result: TaskListSnapshotResultCode
     let state: TaskOperationLedgerState
     let recordedAt: Date
+    let timestampAuthority: TaskOperationTimestampAuthority
 
     init(
         deviceID: String,
@@ -137,7 +145,8 @@ struct TaskOperationLedgerEntry: Sendable, Equatable, Codable {
         deviceTimestamp: UInt32,
         result: TaskListSnapshotResultCode,
         state: TaskOperationLedgerState = .committed,
-        recordedAt: Date
+        recordedAt: Date,
+        timestampAuthority: TaskOperationTimestampAuthority = .appReceipt
     ) {
         self.deviceID = deviceID
         self.action = action
@@ -147,6 +156,7 @@ struct TaskOperationLedgerEntry: Sendable, Equatable, Codable {
         self.result = result
         self.state = state
         self.recordedAt = recordedAt
+        self.timestampAuthority = timestampAuthority
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -158,6 +168,7 @@ struct TaskOperationLedgerEntry: Sendable, Equatable, Codable {
         case result
         case state
         case recordedAt
+        case timestampAuthority
     }
 
     init(from decoder: Decoder) throws {
@@ -170,6 +181,13 @@ struct TaskOperationLedgerEntry: Sendable, Equatable, Codable {
         result = try container.decode(TaskListSnapshotResultCode.self, forKey: .result)
         state = try container.decodeIfPresent(TaskOperationLedgerState.self, forKey: .state) ?? .committed
         recordedAt = try container.decode(Date.self, forKey: .recordedAt)
+        // Pre-fix pending entries did not persist their first delivery carrier. Keep the
+        // conservative replay ordering for that narrow upgrade case so an unknown old operation
+        // cannot overwrite a newer App edit or focus session.
+        timestampAuthority = try container.decodeIfPresent(
+            TaskOperationTimestampAuthority.self,
+            forKey: .timestampAuthority
+        ) ?? .deviceClock
     }
 
     func matchesPayload(of event: EventLog) -> Bool {
@@ -186,7 +204,8 @@ struct TaskOperationLedgerEntry: Sendable, Equatable, Codable {
             deviceTimestamp: deviceTimestamp,
             result: result,
             state: state,
-            recordedAt: recordedAt
+            recordedAt: recordedAt,
+            timestampAuthority: timestampAuthority
         )
     }
 
@@ -202,7 +221,8 @@ struct TaskOperationLedgerEntry: Sendable, Equatable, Codable {
             deviceTimestamp: deviceTimestamp,
             result: result,
             state: state,
-            recordedAt: recordedAt
+            recordedAt: recordedAt,
+            timestampAuthority: timestampAuthority
         )
     }
 
@@ -317,6 +337,7 @@ actor TaskOperationLedger {
         event: EventLog,
         deviceID: String,
         result: TaskListSnapshotResultCode,
+        timestampAuthority: TaskOperationTimestampAuthority = .appReceipt,
         now: Date = Date()
     ) async -> TaskOperationLedgerReservation {
         guard let action = TaskListSnapshotAction(eventType: event.eventType),
@@ -353,7 +374,8 @@ actor TaskOperationLedger {
             deviceTimestamp: UInt32(event.timestamp.timeIntervalSince1970),
             result: result,
             state: .pending,
-            recordedAt: now
+            recordedAt: now,
+            timestampAuthority: timestampAuthority
         )
         var updated = entries ?? []
         updated.append(entry)
@@ -460,9 +482,16 @@ actor TaskOperationLedger {
         event: EventLog,
         deviceID: String,
         result: TaskListSnapshotResultCode,
+        timestampAuthority: TaskOperationTimestampAuthority = .appReceipt,
         now: Date = Date()
     ) async -> Bool {
-        switch await reserve(event: event, deviceID: deviceID, result: result, now: now) {
+        switch await reserve(
+            event: event,
+            deviceID: deviceID,
+            result: result,
+            timestampAuthority: timestampAuthority,
+            now: now
+        ) {
         case .new, .resume:
             return await commit(event: event, deviceID: deviceID)
         case .duplicate:

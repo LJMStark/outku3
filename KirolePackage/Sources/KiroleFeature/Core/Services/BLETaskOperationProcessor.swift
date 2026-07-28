@@ -86,6 +86,7 @@ enum BLETaskOperationProcessor {
             event: log,
             deviceID: deviceID,
             result: currentReceipt.result,
+            timestampAuthority: isReplay ? .deviceClock : .appReceipt,
             now: receivedAt
         )
 
@@ -101,13 +102,19 @@ enum BLETaskOperationProcessor {
             return currentReceipt.withResult(.internalError)
         }
 
-        var finalResult = await applyDurably(
-            log,
-            entry: entry,
-            focusService: focusService,
-            isReplay: isReplay,
-            appState: appState
-        )
+        var finalResult: TaskListSnapshotResultCode
+        if currentReceipt.result.canBeSupersededByApp,
+           authoritySnapshot.isSuperseded(appState: appState, focusService: focusService) {
+            finalResult = .supersededByApp
+        } else {
+            finalResult = await applyDurably(
+                log,
+                entry: entry,
+                expectedFocusStartGeneration: authoritySnapshot.focusStartGeneration,
+                focusService: focusService,
+                appState: appState
+            )
+        }
         if finalResult.canBeSupersededByApp,
            authoritySnapshot.isSuperseded(appState: appState, focusService: focusService) {
             finalResult = .supersededByApp
@@ -161,8 +168,8 @@ enum BLETaskOperationProcessor {
     private static func applyDurably(
         _ log: EventLog,
         entry: TaskOperationLedgerEntry,
+        expectedFocusStartGeneration: UInt64?,
         focusService: FocusSessionService,
-        isReplay: Bool,
         appState: AppState
     ) async -> TaskListSnapshotResultCode {
         guard let action = TaskListSnapshotAction(eventType: log.eventType) else {
@@ -170,7 +177,10 @@ enum BLETaskOperationProcessor {
         }
 
         if entry.result != .invalidRequest {
-            switch await focusService.settleHardwareTaskOperation(entry) {
+            switch await focusService.settleHardwareTaskOperation(
+                entry,
+                expectedSessionStartGeneration: expectedFocusStartGeneration
+            ) {
             case .durable:
                 break
             case .supersededByApp:
@@ -197,7 +207,7 @@ enum BLETaskOperationProcessor {
             operationKey: entry.operationKey,
             deviceTimestamp: entry.deviceTimestamp,
             reservedAt: entry.recordedAt,
-            source: isReplay ? .hardwareReplay : .user
+            source: entry.timestampAuthority == .deviceClock ? .hardwareReplay : .user
         ) {
         case .applied:
             return .applied
