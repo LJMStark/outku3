@@ -9,22 +9,53 @@ extension OpenAIService {
     /// throws (caller falls back to the keyword heuristic).
     public func classifyEventCategories(events: [String]) async throws -> [EventCategory] {
         guard !events.isEmpty else { return [] }
-        let systemPrompt = PromptSanitizer.systemPrompt(containingUserContent: """
-            Classify each numbered calendar event inside <user_content> into exactly ONE category:
-            \(EventCategory.promptDefinitions)
-            Reply with ONLY the category numbers in input order, comma-separated, one per event \
-            (example for 3 events: 2,5,1). No words, no explanation.
-            """)
+        let compiled = compileEventClassificationPrompt(events: events)
+        guard let tool = KirolePromptSpec.tool("eventClassification") else {
+            preconditionFailure("PromptSpec is missing eventClassification")
+        }
+        let content = try await chatCompletion(
+            systemPrompt: compiled.systemPrompt,
+            userPrompt: compiled.userPrompt,
+            temperature: tool.parameters.temperature,
+            maxTokens: tool.parameters.maxTokens
+        )
+        return try Self.parseCategoryReply(content, expectedCount: events.count)
+    }
+
+    private func compileEventClassificationPrompt(
+        events: [String]
+    ) -> (systemPrompt: String, userPrompt: String) {
+        guard let tool = KirolePromptSpec.tool("eventClassification") else {
+            preconditionFailure("PromptSpec is missing eventClassification")
+        }
+        let systemPrompt = PromptSanitizer.systemPrompt(
+            containingUserContent: KirolePromptSpec.render(
+                tool.systemPromptTemplate,
+                values: [
+                    "categoryDefinitions": KirolePromptSpec.document.eventCategoryDefinitions
+                ]
+            )
+        )
         let numberedList = events.enumerated()
             .map { "\($0.offset + 1). \(PromptSanitizer.sanitize($0.element, maxLen: 120))" }
             .joined(separator: "\n")
-        let content = try await chatCompletion(
-            systemPrompt: systemPrompt,
-            userPrompt: "<user_content>\(numberedList)</user_content>",
-            temperature: 0.0,
-            maxTokens: 60
+        guard let userTemplate = tool.userPromptTemplates["default"] else {
+            preconditionFailure("PromptSpec is missing eventClassification.default")
+        }
+        let userPrompt = KirolePromptSpec.render(
+            userTemplate,
+            values: ["numberedEvents": numberedList]
         )
-        return try Self.parseCategoryReply(content, expectedCount: events.count)
+        return (
+            systemPrompt: systemPrompt,
+            userPrompt: "<user_content>\(userPrompt)</user_content>"
+        )
+    }
+
+    func compileEventClassificationPromptForFixture(
+        events: [String]
+    ) -> (systemPrompt: String, userPrompt: String) {
+        compileEventClassificationPrompt(events: events)
     }
 
     /// Parses a strict category-only reply ("2,5,1", with optional whitespace/newlines).

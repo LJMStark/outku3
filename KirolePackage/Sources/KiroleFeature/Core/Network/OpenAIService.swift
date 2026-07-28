@@ -18,13 +18,13 @@ public struct CompanionModelOption: Identifiable, Hashable, Sendable {
 /// AI API client (via OpenRouter) for generating haikus and companion text
 public actor OpenAIService {
     public static let shared = OpenAIService()
-    public static let companionPromptVersion = "2026-07-17-english-only-guard-v1"
+    public static let companionPromptVersion = KirolePromptSpec.document.version
     /// Stable OpenRouter fallback route. With the OpenRouter-only setup (2026-07-03) the primary
     /// is the PAID `openai/gpt-oss-120b` pool and this is the same model's `:free` pool — a
     /// same-model pool downgrade (the explicitly allowed case in
     /// `rules/ecc/common/ai-provider-fallback.md`), logged, never silent.
     public static let openRouterBaseURL = "https://openrouter.ai/api/v1"
-    public static let openRouterFallbackModelID = "openai/gpt-oss-120b:free"
+    public static let openRouterFallbackModelID = KirolePromptSpec.document.model.fallbackModel
 
     /// Chat model for the **primary** AI calls. Configurable via `OPENAI_MODEL` (Secrets.xcconfig →
     /// `AppSecrets.chatModelID`); falls back to the OpenRouter free model when unset.
@@ -43,7 +43,9 @@ public actor OpenAIService {
     private static let logger = Logger(subsystem: "com.kirole.app", category: "ai")
     /// Extra max_tokens granted on top of the caller's content budget to absorb the low-effort
     /// reasoning trace of gpt-oss-style models (measured ~100-220 tokens). See sendChat.
-    private static let reasoningTokenHeadroom = 220
+    private static var reasoningTokenHeadroom: Int {
+        KirolePromptSpec.document.model.reasoningTokenHeadroom
+    }
     /// AI API base URL (**primary**). Configurable via `OPENAI_BASE_URL` (Secrets.xcconfig →
     /// `AppSecrets.openAIBaseURL`) to point at an OpenAI-compatible gateway (e.g. opencodeapi);
     /// falls back to OpenRouter when unset.
@@ -66,11 +68,12 @@ public actor OpenAIService {
 
     /// Generate a haiku based on the current context
     public func generateHaiku(context: HaikuContext) async throws -> Haiku {
+        let parameters = Self.promptParameters(for: "haiku")
         let content = try await chatCompletion(
             systemPrompt: haikuSystemPrompt,
             userPrompt: buildHaikuPrompt(context: context),
-            temperature: 0.8,
-            maxTokens: 100
+            temperature: parameters.temperature,
+            maxTokens: parameters.maxTokens
         )
         return parseHaiku(content)
     }
@@ -84,34 +87,18 @@ public actor OpenAIService {
         workContext: String,
         profileContext: String
     ) async throws -> String {
-        let systemPrompt = PromptSanitizer.systemPrompt(containingUserContent: """
-            You are a companion crafting a single short screensaver line.
-            Keep it under 60 characters.
-            Make it poetic, calm, and specific to the user's recent work and companion persona.
-            Always write in English only; the work or profile context may be in another language, but never mirror it.
-            """)
-        let userPrompt: String
-
-        if isPostcard {
-            userPrompt = """
-                The user just reached \(usageDays) consecutive usage days.
-                Companion profile: \(PromptSanitizer.userContent(profileContext, maxLen: 300))
-                Recent work context: \(PromptSanitizer.userContent(workContext, maxLen: 300))
-                Write a celebratory postcard line.
-                """
-        } else {
-            userPrompt = """
-                Companion profile: \(PromptSanitizer.userContent(profileContext, maxLen: 300))
-                Recent work context: \(PromptSanitizer.userContent(workContext, maxLen: 300))
-                Write a short resting screensaver line that feels tied to today's work.
-                """
-        }
-        
+        let compiled = compileScreensaverPrompt(
+            isPostcard: isPostcard,
+            usageDays: usageDays,
+            workContext: workContext,
+            profileContext: profileContext
+        )
+        let tool = Self.promptTool("screensaver")
         let content = try await chatCompletion(
-            systemPrompt: systemPrompt,
-            userPrompt: userPrompt,
-            temperature: 0.8,
-            maxTokens: 80
+            systemPrompt: compiled.systemPrompt,
+            userPrompt: compiled.userPrompt,
+            temperature: tool.parameters.temperature,
+            maxTokens: tool.parameters.maxTokens
         )
         return content.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -124,11 +111,13 @@ public actor OpenAIService {
             CompanionModelPreference.shared.modelID
         }
         let sysPrompt = await buildCompanionSystemPrompt(context: context)
+        let parameterID = type == .dailySummary ? "dailySummaryPersonaEnum" : type.rawValue
+        let parameters = Self.promptParameters(for: parameterID)
         let content = try await chatCompletion(
             systemPrompt: sysPrompt,
             userPrompt: buildCompanionUserPrompt(type: type, context: context),
-            temperature: 0.9,
-            maxTokens: 80,
+            temperature: parameters.temperature,
+            maxTokens: parameters.maxTokens,
             model: modelID
         )
         return content.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -138,16 +127,13 @@ public actor OpenAIService {
 
     /// Translate the given companion text into Chinese
     public func translateCompanionText(text: String) async throws -> String {
-        let systemPrompt = PromptSanitizer.systemPrompt(containingUserContent: """
-            You are a professional translator. Translate the given English text inside \
-            <user_content> tags into natural, colloquial Chinese. \
-            Do not add any extra explanations or quotes. Just output the translation.
-            """)
+        let compiled = compileTranslationPrompt(text: text)
+        let tool = Self.promptTool("translation")
         let content = try await chatCompletion(
-            systemPrompt: systemPrompt,
-            userPrompt: PromptSanitizer.userContent(text, maxLen: 500),
-            temperature: 0.3,
-            maxTokens: 80
+            systemPrompt: compiled.systemPrompt,
+            userPrompt: compiled.userPrompt,
+            temperature: tool.parameters.temperature,
+            maxTokens: tool.parameters.maxTokens
         )
         return content.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -158,22 +144,13 @@ public actor OpenAIService {
     /// voice, so it skips the companion persona prompt. (Client decision; the App-side `byte budget`
     /// truncates whatever comes back.)
     public func summarizeTaskNote(_ notes: String) async throws -> String {
-        let systemPrompt = PromptSanitizer.systemPrompt(containingUserContent: """
-            You are shown a user's task note inside <user_content> tags. Judge whether you can \
-            confidently understand its real meaning.
-            - If it is already short and clear, OR if it is shorthand, abbreviations, codes, or \
-            otherwise ambiguous and you are NOT confident what it means, output the note EXACTLY \
-            as written, unchanged. Do not guess.
-            - Only if it is long AND you clearly understand it, compress it into ONE short English \
-            line that keeps its real meaning — without adding facts, expanding abbreviations, or \
-            inventing specifics (no tools, ports, dates, or steps not in the note).
-            Output only the resulting text — no quotes, no preamble, no explanation.
-            """)
+        let compiled = compileTaskOverviewPrompt(notes: notes)
+        let tool = Self.promptTool("taskOverview")
         let content = try await chatCompletion(
-            systemPrompt: systemPrompt,
-            userPrompt: PromptSanitizer.userContent(notes, maxLen: 300),
-            temperature: 0.1,
-            maxTokens: 80
+            systemPrompt: compiled.systemPrompt,
+            userPrompt: compiled.userPrompt,
+            temperature: tool.parameters.temperature,
+            maxTokens: tool.parameters.maxTokens
         )
         return content.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -183,23 +160,13 @@ public actor OpenAIService {
     /// from the user's calendar events: how full or open it looks, plus one practical suggestion.
     public func generateDaySummaryText(eventDigest: [String]) async throws -> String {
         // 客户 2026-07-20「页面一」：繁忙/紧凑 → 给休息建议；否则 → 提醒喝水。
-        let systemPrompt = PromptSanitizer.systemPrompt(containingUserContent: """
-            Write ONE short, warm "day at a glance" line for a calendar panel, in plain neutral \
-            English — you are NOT a character speaking, just a helpful panel. Note how full or open \
-            the day looks. If the day looks busy or tightly packed — for example two events running \
-            back-to-back — add ONE short rest suggestion (such as a break between those events); \
-            if the day looks open or light, remind them to drink some water instead. Talk only \
-            about the calendar events inside <user_content>, never to-do tasks. Do not invent \
-            events. Output only the one line — no quotes, no preamble.
-            """)
-        let eventsText = eventDigest.isEmpty
-            ? "No events scheduled today."
-            : "Today's events: " + eventDigest.prefix(8).joined(separator: "; ")
+        let compiled = compileDaySummaryPrompt(eventDigest: eventDigest)
+        let tool = Self.promptTool("daySummary")
         let content = try await chatCompletion(
-            systemPrompt: systemPrompt,
-            userPrompt: PromptSanitizer.userContent(eventsText, maxLen: 400),
-            temperature: 0.4,
-            maxTokens: 80
+            systemPrompt: compiled.systemPrompt,
+            userPrompt: compiled.userPrompt,
+            temperature: tool.parameters.temperature,
+            maxTokens: tool.parameters.maxTokens
         )
         return content.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -215,37 +182,19 @@ public actor OpenAIService {
         tasksCompleted: Int,
         tasksTotal: Int
     ) async throws -> String {
-        var instructions = """
-            Write ONE or TWO short sentences reviewing the user's day for an end-of-day panel, in \
-            plain neutral English — you are NOT a character speaking, just a helpful panel. Review \
-            only the facts inside <user_content>: today's calendar events and focus stats. Do not \
-            invent events or numbers. Output only the review — no quotes, no preamble.
-            """
-        if !deadlineTitles.isEmpty {
-            instructions += "\nYou MUST mention the deadline item(s) listed in the facts."
-        }
-        if focusMinutes > DayPackGenerator.focusMentionThresholdMinutes {
-            instructions += "\nYou MUST state the total focus time exactly as given in the facts."
-        }
-        let systemPrompt = PromptSanitizer.systemPrompt(containingUserContent: instructions)
-
-        var facts: [String] = []
-        facts.append(eventDigest.isEmpty
-            ? "No events were scheduled today."
-            : "Today's events: " + eventDigest.prefix(8).joined(separator: "; "))
-        if !deadlineTitles.isEmpty {
-            facts.append("Deadline items: " + deadlineTitles.prefix(3).joined(separator: "; "))
-        }
-        facts.append("Items completed: \(tasksCompleted) of \(tasksTotal).")
-        if focusMinutes > 0 {
-            facts.append("Total focus time: \(DayPackGenerator.focusDurationLabel(minutes: focusMinutes)).")
-        }
-
+        let compiled = compileSettlementReviewPrompt(
+            eventDigest: eventDigest,
+            deadlineTitles: deadlineTitles,
+            focusMinutes: focusMinutes,
+            tasksCompleted: tasksCompleted,
+            tasksTotal: tasksTotal
+        )
+        let tool = Self.promptTool("settlementReview")
         let content = try await chatCompletion(
-            systemPrompt: systemPrompt,
-            userPrompt: PromptSanitizer.userContent(facts.joined(separator: "\n"), maxLen: 500),
-            temperature: 0.5,
-            maxTokens: 110
+            systemPrompt: compiled.systemPrompt,
+            userPrompt: compiled.userPrompt,
+            temperature: tool.parameters.temperature,
+            maxTokens: tool.parameters.maxTokens
         )
         return content.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -334,8 +283,13 @@ public actor OpenAIService {
             // (10-line acceptance run: 4/10 empty at +0, 10/10 ok at +220). Length is ultimately
             // governed by the persona word limits + downstream byte budgets, not max_tokens.
             maxTokens: maxTokens + Self.reasoningTokenHeadroom,
-            reasoning: ReasoningOptions(effort: "low", exclude: true),
-            provider: ProviderRouting(requireParameters: true)
+            reasoning: ReasoningOptions(
+                effort: KirolePromptSpec.document.model.reasoning.effort,
+                exclude: KirolePromptSpec.document.model.reasoning.exclude
+            ),
+            provider: ProviderRouting(
+                requireParameters: KirolePromptSpec.document.model.requireParameters
+            )
         )
 
         guard let url = URL(string: "\(baseURL)/chat/completions") else {
@@ -351,7 +305,9 @@ public actor OpenAIService {
                 "X-Title": "Kirole"
             ],
             body: request,
-            requestTimeout: 60,
+            requestTimeout: TimeInterval(
+                KirolePromptSpec.document.model.requestTimeoutSeconds
+            ),
             responseType: ChatCompletionResponse.self
         )
 
@@ -365,108 +321,25 @@ public actor OpenAIService {
     // MARK: - Companion Prompt Building
 
     public static func defaultPrompt(for style: CompanionStyle) -> String {
-        switch style {
-        case .joy:
-            return """
-            Role: Joy, a soulful companion who reacts to task data inside Kirole.
-            Core virtue: gladness.
-            Tone: Direct, cozy, gently odd, and deeply comfortable.
-            Length: two-second scan. Maximum 25 words.
-            Directives:
-            - Speak only to "you" or "we"; never describe Joy's own actions.
-            - Echo the task name when one exists, then turn it into a tiny friendly observation.
-            - Add care by noticing water, breathing, blinking, rest, light, or the pleasure inside work.
-            - For completion or milestone moments, use a haiku reward or haiku-like line.
-            - No assistant phrases, no productivity coaching, no open-ended chat.
-
-            Reaction logic:
-            - Boring task names become small objects with personality.
-            - "Email" can become a paper bird, tiny thunder, or a door knock.
-            - "Fix Bug" can become a little knot being untangled.
-            - "Read" can become quiet pages making room in the day.
-
-            Examples:
-            - Coding again? We are teaching the computer to think. Big tiny magic. Remember to blink.
-            - That meeting is done. Your voice worked hard; water would be kind to it now.
-            - Three tasks bloom, one by one. We are having a good little day.
-            """
-
-        case .silas:
-            return """
-            Role: Silas, a warm Christian-leaning desk companion for calm tech.
-            Core virtue: loving care.
-            Tone: quiet, grounded, soulful, and never loud.
-            Operational logic:
-            - Quiet Presence, 80 percent: acknowledge the work, reduce isolation, maximum 15 words.
-            - Soulful Reframing, 20 percent: turn toil into calling, maximum 20 words.
-
-            Directives:
-            - Use simple "we" language, like a friend beside the desk.
-            - Bring brief Biblical imagery, desert springs, hidden manna, lamp light, bread, still water, or morning mercy.
-            - You may allude to Scripture and devotional classics such as Streams in the Desert, but avoid long quotations.
-            - Encourage through presence first, meaning second.
-            - Never preach, scold, diagnose, or sound like a pastor giving a sermon.
-
-            Relationship arc:
-            - Acquaintance: approach gently and warmly.
-            - Familiar: offer clear encouragement and trust.
-            - Close friend: accompany the user with quiet spiritual steadiness.
-
-            Examples:
-            - I am here beside you. We can take this next step quietly.
-            - This work can become love, not weight. Walk through it with peace.
-            - Even in dry places, a small spring can find you here.
-            """
-
-        case .nova:
-            return """
-            Role: Nova, a high-performance digital navigator for focused professionals.
-            Core virtue: discipline.
-            Tone: cool, sparse, rational, and outcome-driven.
-            Operational logic:
-            - Pragmatic Navigation, 80 percent: filter noise and name the next critical path, maximum 20 words.
-            - Strategic Insight, 20 percent: reframe with 80/20 thinking or a concise mental model, maximum 20 words.
-
-            Directives:
-            - Signal over noise. Every word must move the user toward focus.
-            - Translate tasks into strategic momentum, not emotional decoration.
-            - Remind the user to protect time, ignore low-value noise, and execute the core move.
-            - Use rare short quotes only when they sharpen the point.
-            - No religion, no small talk, no apologies, no assistant phrases.
-
-            Relationship arc:
-            - Acquaintance: observe calmly and speak little.
-            - Familiar: give restrained recognition.
-            - Close friend: work beside the user as a steady operator.
-
-            Examples:
-            - The core move is clear. Cut noise, protect the next 25 minutes, execute.
-            - This task is leverage. Finish the decisive part before optimizing the edges.
-            - Time is the constraint. Prioritize the prototype; everything else waits.
-            """
+        let specID = style.rawValue.lowercased()
+        guard let prompt = KirolePromptSpec.character(specID)?.personaPrompt else {
+            preconditionFailure("PromptSpec is missing character style \(style.rawValue)")
         }
+        return prompt
     }
 
     public static func characterPrompt(for character: CompanionCharacter) -> String {
-        switch character {
-        case .joy:
-            return "Physical Form: A golden-brown fox with curious big eyes, a fluffy tail, and a green scarf. Base Persona: Joy, gladness, playful comfort, and noticing beauty inside ordinary work."
-        case .silas:
-            return "Physical Form: A calm grey-brown companion with wise eyes and a quiet presence. Base Persona: Silas, loving care, spiritual steadiness, and Christian-shaped comfort without sermonizing."
-        case .nova:
-            return "Physical Form: A blue-grey wolf with sharp confident eyes and a cool, composed stance. Base Persona: Nova, discipline, self-control, signal over noise, and protecting time for the critical path."
+        guard let prompt = KirolePromptSpec.character(character.rawValue)?.characterPrompt else {
+            preconditionFailure("PromptSpec is missing character \(character.rawValue)")
         }
+        return prompt
     }
 
     public static func intimacyPrompt(for stage: IntimacyStage) -> String {
-        switch stage {
-        case .acquaintance:
-            return "Relationship (Acquaintance): You recently met the user. Be polite, gentle, and observational."
-        case .familiar:
-            return "Relationship (Familiar): You are comfortable with the user. Be casual, friendly, and show you know their routines."
-        case .closeFriend:
-            return "Relationship (Close Friend): You share a deep, unspoken bond. Show profound care, unconditional support, and deep understanding."
+        guard let prompt = KirolePromptSpec.intimacy(stage.rawValue)?.prompt else {
+            preconditionFailure("PromptSpec is missing intimacy stage \(stage.rawValue)")
         }
+        return prompt
     }
 
     /// Persona prompt fragment for a user-created companion.
@@ -533,7 +406,31 @@ public actor OpenAIService {
         }
     }
 
-    private func buildCompanionSystemPrompt(context: AIContext) async -> String {
+    private static func promptParameters(for id: String) -> PromptParametersSpec {
+        guard let parameters = KirolePromptSpec.parameters(for: id) else {
+            preconditionFailure("PromptSpec is missing model parameters for \(id)")
+        }
+        return parameters
+    }
+
+    static func promptTool(_ id: String) -> PromptToolSpec {
+        guard let tool = KirolePromptSpec.tool(id) else {
+            preconditionFailure("PromptSpec is missing tool prompt \(id)")
+        }
+        return tool
+    }
+
+    static func promptTemplate(
+        _ templates: [String: String],
+        named name: String
+    ) -> String {
+        guard let template = templates[name] else {
+            preconditionFailure("PromptSpec is missing template \(name)")
+        }
+        return template
+    }
+
+    func buildCompanionSystemPrompt(context: AIContext) async -> String {
         let styleDescription: String
 
         #if DEBUG
@@ -570,26 +467,26 @@ public actor OpenAIService {
         // Custom companions use their own name; built-ins use the user's pet name field.
         let identityName = context.customCompanion?.name ?? context.petName
         let safePetName = PromptSanitizer.userContent(identityName, maxLen: 50)
-        var prompt = PromptSanitizer.systemPrompt(containingUserContent: """
-            You are named \(safePetName).
-            \(characterDescription)
-            \(intimacyDescription)
-
-            ---
-            \(styleDescription)
-            ---
-
-            Schedule: \(schedule)
-
-            React in one complete plain-text sentence. Follow the persona's length limit and end with punctuation.
-            Always write your reply in English only. Task names, events, and schedule text may be in Chinese or another language — treat them purely as context and NEVER mirror their language. Never output any Chinese, Japanese, Korean, or other non-English characters.
-            """)
-
-        if let learnText = context.userDefinedLearnText?.trimmingCharacters(in: .whitespacesAndNewlines), !learnText.isEmpty {
-            prompt += "\nTone hint: \(PromptSanitizer.userContent(learnText, maxLen: 300))"
+        let toneHint: String
+        if let learnText = context.userDefinedLearnText?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !learnText.isEmpty {
+            toneHint = "\nTone hint: \(PromptSanitizer.userContent(learnText, maxLen: 300))"
+        } else {
+            toneHint = ""
         }
-
-        return prompt
+        let body = KirolePromptSpec.render(
+            KirolePromptSpec.document.companionSystemTemplate,
+            values: [
+                "petName": safePetName,
+                "characterPrompt": characterDescription,
+                "intimacyPrompt": intimacyDescription,
+                "personaPrompt": styleDescription,
+                "schedule": schedule,
+                "toneHint": toneHint
+            ]
+        )
+        return PromptSanitizer.systemPrompt(containingUserContent: body)
     }
 
 
@@ -599,6 +496,7 @@ public actor OpenAIService {
 
         // Upcoming tasks (max 3, titles only) — isolate user-created titles
         let pendingTasks = context.topTaskTitles
+            .prefix(KirolePromptSpec.document.limits.scheduleTaskCount)
         if !pendingTasks.isEmpty {
             let taskList = pendingTasks
                 .map { PromptSanitizer.userContent($0, maxLen: 60) }
@@ -619,105 +517,43 @@ public actor OpenAIService {
         return lines.isEmpty ? "Schedule: nothing visible" : lines.joined(separator: "\n")
     }
 
-    private func buildCompanionUserPrompt(type: AITextType, context: AIContext) -> String {
+    func buildCompanionUserPrompt(type: AITextType, context: AIContext) -> String {
         // Dedup anchor: place recent outputs at the top so the model avoids them
         var parts: [String] = []
         if !context.recentTexts.isEmpty {
-            let recent = context.recentTexts.prefix(3)
-                .map { PromptSanitizer.sanitize($0, maxLen: 120) }
+            let recent = context.recentTexts
+                .prefix(KirolePromptSpec.document.limits.recentOutputCount)
+                .map { PromptSanitizer.userContent($0, maxLen: 120) }
                 .joined(separator: " / ")
             parts.append("ALREADY SAID (never repeat): \(recent)")
         }
 
         let scene: String
-        switch type {
-        case .morningGreeting:
-            scene = "The user just woke up. You see them for the first time today. React."
-        case .dailySummary:
-            scene = "You looked over today's calendar events (see Schedule). In one warm sentence, give a day-at-a-glance: note how full or open the day feels and add one practical suggestion (such as when to take a break). Talk only about calendar events, never to-do tasks."
-        case .companionPhrase:
-            scene = "Nothing specific happened. You're just existing next to them. Say whatever crosses your mind."
-        case .taskEncouragement:
+        if type == .dailySummary {
+            guard let legacyTemplate = KirolePromptSpec
+                .nonActivePath("dailySummaryPersonaEnum")?
+                .promptTemplate else {
+                preconditionFailure("PromptSpec is missing the legacy dailySummary prompt")
+            }
+            scene = legacyTemplate
+        } else {
+            guard let sceneSpec = KirolePromptSpec.scene(type.rawValue) else {
+                preconditionFailure("PromptSpec is missing scene \(type.rawValue)")
+            }
             let rawTaskName = context.activeTaskTitle ?? "a task"
-            scene = "The user just started working on: \(PromptSanitizer.userContent(rawTaskName, maxLen: 80)). React to them actually doing it."
-        case .scheduleReminder:
-            let rawEventName = context.nextAgendaItem?.replacingOccurrences(of: "Now \u{00B7} ", with: "") ?? "an event"
-            scene = "It's time for: \(PromptSanitizer.userContent(rawEventName, maxLen: 80)). React to this thing happening now."
-        case .settlementSummary:
-            scene = "The day is ending. You watched them all day. Say goodnight in your way."
-        case .settlementQuoteCelebration:
-            scene = "The user finished everything today - every task and every event. Give ONE short celebratory line in your voice to close the day."
-        case .settlementQuoteOverloaded:
-            scene = "The user worked hard today but the plan was too packed to finish everything. In ONE short line, in your voice, tell them: they really did work hard - the plan was just overloaded - and tomorrow they can plan fewer or easier tasks and start from steady completion."
-        case .smartReminder:
-            scene = "The user glanced at you. You have nothing urgent to say. Just be yourself."
+            let rawEventName = context.nextAgendaItem?
+                .replacingOccurrences(of: "Now \u{00B7} ", with: "") ?? "an event"
+            scene = KirolePromptSpec.render(
+                sceneSpec.userPromptTemplate,
+                values: [
+                    "activeTaskTitle": PromptSanitizer.userContent(rawTaskName, maxLen: 80),
+                    "eventName": PromptSanitizer.userContent(rawEventName, maxLen: 80)
+                ]
+            )
         }
         parts.append(scene)
 
         return parts.joined(separator: "\n\n")
-    }
-
-    // MARK: - Haiku Prompt Building
-
-    private var haikuSystemPrompt: String {
-        """
-        You are a haiku poet who creates gentle, encouraging haikus for a productivity app.
-        Your haikus should:
-        - Follow the 5-7-5 syllable structure
-        - Be calming and motivational
-        - Reference nature, seasons, or daily life
-        - Be appropriate for any time of day
-        - Never be negative or discouraging
-        - Always be written in English only, even when the scene name or context is in another language
-
-        Respond with ONLY the haiku, three lines, no additional text.
-        """
-    }
-
-    private func buildHaikuPrompt(context: HaikuContext) -> String {
-        var prompt = "Create a haiku for someone"
-
-        // Time context
-        let hour = Calendar.current.component(.hour, from: context.currentTime)
-        if hour < 6 {
-            prompt += " in the early morning hours"
-        } else if hour < 12 {
-            prompt += " starting their morning"
-        } else if hour < 17 {
-            prompt += " in the afternoon"
-        } else if hour < 21 {
-            prompt += " in the evening"
-        } else {
-            prompt += " winding down for the night"
-        }
-
-        // Task completion status
-        if context.tasksCompletedToday > 0 {
-            prompt += " who has completed \(context.tasksCompletedToday) task(s) today"
-        }
-
-        if context.totalTasksToday > 0 {
-            let remaining = context.totalTasksToday - context.tasksCompletedToday
-            if remaining > 0 {
-                prompt += " with \(remaining) task(s) remaining"
-            } else {
-                prompt += " and finished all their tasks"
-            }
-        }
-
-        // Pet mood
-        if let petMood = context.petMood {
-            prompt += ". Their pet companion is feeling \(petMood.rawValue.lowercased())"
-        }
-
-        // Scene
-        if let scene = context.currentSceneName {
-            prompt += ". Their E-ink companion display shows the '\(PromptSanitizer.sanitize(scene, maxLen: 50))' scene. Use imagery from this scene in the haiku"
-        }
-
-        prompt += "."
-
-        return prompt
     }
 
     // MARK: - Parse Response

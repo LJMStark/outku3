@@ -53,6 +53,8 @@ playground.xcworkspace
 
 .build/
 build/
+!prompt-studio/build/
+!prompt-studio/build/sites-vite-plugin.ts
 
 # graphify knowledge graph — derived artifact (~14MB), regenerate with /graphify
 graphify-out/

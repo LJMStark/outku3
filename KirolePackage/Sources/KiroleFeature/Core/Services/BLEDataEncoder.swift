@@ -7,13 +7,27 @@ import Foundation
 /// 同值——两边手写数字曾各写一份，漂移即被 validUTF8Prefix 静默截断。改值需同步
 /// docs/BLE通信协议规格文档.md 对应字段（petDialogue §4.7 bubble / daySummary §4.7 / TaskInPage 描述）。
 public enum DayPackTextBudget {
-    public static let petDialogue = 120
-    public static let daySummary = 180
-    public static let taskDescription = 100
+    public static let petDialogue = requiredSceneBudget("companionPhrase")
+    public static let daySummary = requiredToolBudget("daySummary")
+    public static let taskDescription = requiredToolBudget("taskOverview")
     /// v2.5.30 页面四概况点评（§4.7 SettlementReview）。
-    public static let settlementReview = 180
+    public static let settlementReview = requiredToolBudget("settlementReview")
     /// v2.5.30 页面四金句/明日鼓励（§4.7 SettlementQuote）。
-    public static let settlementQuote = 120
+    public static let settlementQuote = requiredSceneBudget("settlementQuoteCelebration")
+
+    private static func requiredSceneBudget(_ id: String) -> Int {
+        guard let budget = KirolePromptSpec.scene(id)?.outputMaxBytes else {
+            preconditionFailure("PromptSpec is missing the output byte budget for scene \(id)")
+        }
+        return budget
+    }
+
+    private static func requiredToolBudget(_ id: String) -> Int {
+        guard let budget = KirolePromptSpec.tool(id)?.outputMaxBytes else {
+            preconditionFailure("PromptSpec is missing the output byte budget for tool \(id)")
+        }
+        return budget
+    }
 }
 
 // MARK: - BLE Data Encoder

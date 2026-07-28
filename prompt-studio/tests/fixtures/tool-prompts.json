@@ -1,0 +1,9 @@
+[
+  { "scenarioId": "haiku", "expectedSystemSHA256": "8ff1654831802d379f714a1b8970cd3eb6779bc7d28512f0c964742199e7d7d3", "expectedUserSHA256": "01457cbadf897e70a3248bef096db081e0493d2b98bdad13b781f8c267dc685a" },
+  { "scenarioId": "screensaver", "expectedSystemSHA256": "6c47870e5ac676f12c4110343894167f2c93f3400b35f5004ead82dcd9aa8ab0", "expectedUserSHA256": "f71134c6c0a8d627d48797bba34f104ad79bce8a4fa6a0255c3744de12a19c49" },
+  { "scenarioId": "taskOverview", "expectedSystemSHA256": "5a37b818ae74e860d3213a8f779856ff522c9e3513784f7fdfe83186a62918b5", "expectedUserSHA256": "4be2650d3904aed4431c9beaf7c3789405cd2fc4d0f3d0333572c740ca24f87c" },
+  { "scenarioId": "daySummary", "expectedSystemSHA256": "2e41fa497425047471e1c98c1b095f778b630119b71d065afb55370dd8471c0d", "expectedUserSHA256": "c32fd4f8034f094d9b5d873c81b4795f4fc4d3519b36b61ddbba00c540dc0137" },
+  { "scenarioId": "settlementReview", "expectedSystemSHA256": "eac77ad6fb1cb81dbe2ff97e333e50fb3f742dea51af431f604a19de0cc4649b", "expectedUserSHA256": "f5ee170057b5c6eaeb7fd93b9b495e00e53f16a79461a2f544071d37d91a87b4" },
+  { "scenarioId": "eventClassification", "expectedSystemSHA256": "695bcc4f1ac9ebb595b7bdba0763df2f9681c5895581074fef8ddd02244df276", "expectedUserSHA256": "9bd6863f1ae717be883d4ea4ee7dc2ffc676ea4ccc7d76ad2ae2ae3926b0e9fc" },
+  { "scenarioId": "translation", "expectedSystemSHA256": "baf741ee9aa5a0a08e5031a7e59e5677e97db2d78c0a38dd6d86c79d1d05390b", "expectedUserSHA256": "3b6e0ff0726a7a8a83232f40d1573c10b5317a520fc190099d96f2f6888b27db" }
+]
