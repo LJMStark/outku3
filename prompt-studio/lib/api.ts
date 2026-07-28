@@ -22,6 +22,16 @@ export async function parseCompileRequest(request: Request): Promise<CompileRequ
     if (payload.characters.some((id) => !promptSpec.characters.some((character) => character.id === id))) throw new Error("Unknown character");
   }
   if (payload.intimacyStage != null && (typeof payload.intimacyStage !== "string" || !promptSpec.intimacyStages.some((stage) => stage.id === payload.intimacyStage))) throw new Error("Unknown intimacy stage");
+  if (payload.writingMode != null && !promptSpec.writingModes.some((mode) => mode.id === payload.writingMode)) throw new Error("Unknown writing mode");
+  if (payload.quoteIndex != null && (!Number.isInteger(payload.quoteIndex) || payload.quoteIndex < 0)) throw new Error("Invalid quote index");
+  if (payload.quoteIndex != null && payload.writingMode !== "signatureQuote") throw new Error("Invalid quote index for writing mode");
+  if (payload.writingMode === "signatureQuote") {
+    const selectedCharacters = payload.characters ?? ["joy"];
+    if (selectedCharacters.some((id) => {
+      const character = promptSpec.characters.find((item) => item.id === id);
+      return !character || (payload.quoteIndex ?? 0) >= character.approvedQuotes.length;
+    })) throw new Error("Invalid quote index");
+  }
   if (payload.context == null || typeof payload.context !== "object" || Array.isArray(payload.context)) throw new Error("context must be an object");
   for (const value of Object.values(payload.context)) {
     const validPrimitive = typeof value === "string"
@@ -59,6 +69,6 @@ export function apiError(error: unknown): Response {
   if (message === "JSON_CONTENT_TYPE_REQUIRED") return Response.json({ error: "Content-Type must be application/json." }, { status: 415 });
   if (message === "Request body is too large") return Response.json({ error: message }, { status: 413 });
   if (message.includes("not configured")) return Response.json({ error: message }, { status: 503 });
-  if (message.includes("required") || message.includes("Unknown") || message.includes("Select between") || message.includes("Duplicate characters") || message.includes("must be an object") || message === "Invalid JSON body" || message === "Invalid prompt context" || message.includes("Invalid prompt override")) return Response.json({ error: message }, { status: 400 });
+  if (message.includes("required") || message.includes("Unknown") || message.includes("Select between") || message.includes("Duplicate characters") || message.includes("must be an object") || message === "Invalid JSON body" || message === "Invalid prompt context" || message.includes("Invalid prompt override") || message.includes("Invalid quote index")) return Response.json({ error: message }, { status: 400 });
   return Response.json({ error: "The prompt request could not be completed." }, { status: 502 });
 }

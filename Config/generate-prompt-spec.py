@@ -26,6 +26,7 @@ TARGET = (
 
 EXPECTED_CHARACTERS = {"joy", "silas", "nova"}
 EXPECTED_INTIMACY = {"acquaintance", "familiar", "closeFriend"}
+EXPECTED_WRITING_MODES = {"normal": 80, "signatureQuote": 20}
 EXPECTED_SCENES = {
     "morningGreeting",
     "companionPhrase",
@@ -84,6 +85,16 @@ def validate(document: dict) -> None:
         errors.append("characters must be exactly joy, silas, and nova")
     if ids(document.get("intimacyStages", [])) != EXPECTED_INTIMACY:
         errors.append("intimacyStages must contain the three production stages")
+    writing_modes = document.get("writingModes", [])
+    if {item.get("id"): item.get("weight") for item in writing_modes} != EXPECTED_WRITING_MODES:
+        errors.append("writingModes must be exactly 80 percent normal and 20 percent signatureQuote")
+    signature_temperature = next(
+        (item.get("temperatureOverride") for item in writing_modes
+         if item.get("id") == "signatureQuote"),
+        None,
+    )
+    if signature_temperature != 0:
+        errors.append("signatureQuote temperatureOverride must be 0")
     if ids(document.get("personaScenes", [])) != EXPECTED_SCENES:
         errors.append("personaScenes must contain the eight active production scenes")
     if ids(document.get("toolPrompts", [])) != EXPECTED_TOOLS:
@@ -104,7 +115,8 @@ def validate(document: dict) -> None:
         errors.append("nonActivePaths is missing a required legacy/fixed/invisible path")
 
     expected_system_placeholders = {
-        "petName", "characterPrompt", "intimacyPrompt", "personaPrompt", "schedule", "toneHint"
+        "petName", "characterPrompt", "intimacyPrompt", "personaPrompt",
+        "writingModePrompt", "schedule", "toneHint"
     }
     actual_system_placeholders = set(re.findall(
         r"\{\{([A-Za-z][A-Za-z0-9]*)\}\}",
@@ -116,6 +128,27 @@ def validate(document: dict) -> None:
     for character in document.get("characters", []):
         if not character.get("personaPrompt") or not character.get("characterPrompt"):
             errors.append(f"character {character.get('id')} has an empty prompt")
+        quotes = character.get("approvedQuotes", [])
+        if len(quotes) < 3:
+            errors.append(f"character {character.get('id')} requires at least three approved quotes")
+        for quote in quotes:
+            if not quote.get("text") or not quote.get("source"):
+                errors.append(f"character {character.get('id')} has an incomplete approved quote")
+            rendered = f'"{quote.get("text", "")}" ({quote.get("source", "")}).'
+            if len(rendered.encode("utf-8")) > EXPECTED_OUTPUT_BYTES["companionPhrase"]:
+                errors.append(f"character {character.get('id')} has a quote over the 120-byte hardware budget")
+            if not rendered.isascii():
+                errors.append(f"character {character.get('id')} approved quotes must be ASCII")
+
+    signature_mode = next(
+        (item for item in writing_modes if item.get("id") == "signatureQuote"),
+        {},
+    )
+    if set(re.findall(
+        r"\{\{([A-Za-z][A-Za-z0-9]*)\}\}",
+        signature_mode.get("instructionTemplate", ""),
+    )) != {"quoteText", "quoteSource"}:
+        errors.append("signatureQuote instructionTemplate must use quoteText and quoteSource")
 
     parameterized_items = (
         document.get("personaScenes", [])
@@ -173,6 +206,7 @@ public struct PromptSpecDocument: Codable, Sendable {{
     public let model: PromptModelSpec
     public let limits: PromptLimitsSpec
     public let globalRules: [String]
+    public let writingModes: [PromptWritingModeSpec]
     public let companionSystemTemplate: String
     public let characters: [PromptCharacterSpec]
     public let intimacyStages: [PromptIntimacySpec]
@@ -215,6 +249,20 @@ public struct PromptWordLimitsSpec: Codable, Sendable {{
     public let secondaryMode: Int
 }}
 
+public struct PromptWritingModeSpec: Codable, Sendable {{
+    public let id: String
+    public let displayName: String
+    public let displayNameZh: String
+    public let weight: Int
+    public let temperatureOverride: Double?
+    public let instructionTemplate: String
+}}
+
+public struct PromptQuoteSpec: Codable, Sendable, Equatable {{
+    public let text: String
+    public let source: String
+}}
+
 public struct PromptCharacterSpec: Codable, Sendable {{
     public let id: String
     public let displayName: String
@@ -222,6 +270,7 @@ public struct PromptCharacterSpec: Codable, Sendable {{
     public let virtue: String
     public let characterPrompt: String
     public let personaPrompt: String
+    public let approvedQuotes: [PromptQuoteSpec]
     public let wordLimits: PromptWordLimitsSpec
 }}
 
@@ -298,6 +347,10 @@ public enum KirolePromptSpec {{
 
     public static func intimacy(_ id: String) -> PromptIntimacySpec? {{
         document.intimacyStages.first {{ $0.id == id }}
+    }}
+
+    public static func writingMode(_ id: String) -> PromptWritingModeSpec? {{
+        document.writingModes.first {{ $0.id == id }}
     }}
 
     public static func scene(_ id: String) -> PromptSceneSpec? {{

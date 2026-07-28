@@ -190,10 +190,14 @@ extension OpenAIService {
 
     func compilePromptForFixture(
         type: AITextType,
-        context: AIContext
+        context: AIContext,
+        writingSelection: CompanionWritingSelection = .normal
     ) async -> (systemPrompt: String, userPrompt: String) {
         (
-            systemPrompt: await buildCompanionSystemPrompt(context: context),
+            systemPrompt: await buildCompanionSystemPrompt(
+                context: context,
+                writingSelection: writingSelection
+            ),
             userPrompt: buildCompanionUserPrompt(type: type, context: context)
         )
     }

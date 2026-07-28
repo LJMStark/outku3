@@ -351,6 +351,11 @@ public final class CompanionTextService {
     ) async -> String {
         let enrichedBaseContext = await enrichedContext(for: type, baseContext: baseContext)
         let historyTexts = enrichedBaseContext.recentTexts
+        let writingSelection = enrichedBaseContext.customCompanion == nil
+            ? CompanionWritingModeSelector.randomSelection(
+                for: enrichedBaseContext.companionCharacter
+            )
+            : .normal
         var rejectedTexts: [String] = []
 
         for attempt in 0..<Self.dialogueMaxAttempts {
@@ -361,7 +366,11 @@ public final class CompanionTextService {
             )
 
             do {
-                let aiText = try await openAI.generateCompanionText(type: type, context: attemptContext)
+                let aiText = try await openAI.generateCompanionText(
+                    type: type,
+                    context: attemptContext,
+                    writingSelection: writingSelection
+                )
                 let normalized = CompanionDialogueDisplayPolicy.normalized(aiText)
                 let budgeted = CompanionTextService.enforceByteBudget(normalized, maxBytes: DayPackTextBudget.petDialogue)
 

@@ -56,6 +56,23 @@ async function runCompiled(
   requestSignal: AbortSignal,
 ) {
   const startedAt = Date.now();
+  if (compiled.writingMode === "signatureQuote" && compiled.approvedQuote) {
+    const content = `"${compiled.approvedQuote.text}" (${compiled.approvedQuote.source}).`;
+    const maxBytes = outputMaxBytes(compiled);
+    const truncatedOutput = utf8Truncate(content, maxBytes);
+    return {
+      ...compiled,
+      parameters: { ...compiled.parameters, model: primaryModel },
+      rawOutput: content,
+      truncatedOutput,
+      asciiOutput: utf8Prefix(asciiForEInk(truncatedOutput), maxBytes),
+      validation: validateOutput(compiled, content),
+      actualModel: "deterministic/approved-quote",
+      fallbackUsed: false,
+      durationMs: Date.now() - startedAt,
+      usage: undefined,
+    };
+  }
   let actualModel = primaryModel;
   let fallbackUsed = false;
   let response;
@@ -107,13 +124,14 @@ export async function POST(request: Request) {
   try {
     enforceSameOriginRequest(request, true);
     const runtime = await getRuntimeEnv();
-    const apiKey = runtime.OPENROUTER_API_KEY ?? runtime.OPENAI_API_KEY;
-    if (!apiKey) throw new Error("OpenRouter is not configured");
-    const fallbackAPIKey = runtime.FALLBACK_API_KEY ?? apiKey;
     const payload = await parseCompileRequest(request);
     const compiled = compilePrompts(payload);
     await enforceRunLimit(request);
-    await takeGlobalModelCalls(compiled.length);
+    const modelCallCount = compiled.filter((item) => item.writingMode !== "signatureQuote").length;
+    const apiKey = runtime.OPENROUTER_API_KEY ?? runtime.OPENAI_API_KEY ?? "";
+    if (modelCallCount > 0 && !apiKey) throw new Error("OpenRouter is not configured");
+    const fallbackAPIKey = runtime.FALLBACK_API_KEY ?? apiKey;
+    if (modelCallCount > 0) await takeGlobalModelCalls(modelCallCount);
     const primaryModel = runtime.OPENAI_MODEL || "openai/gpt-oss-120b";
     const referer = new URL(request.url).origin;
     const results = await runWithConcurrencyLimit(

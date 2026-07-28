@@ -119,6 +119,8 @@ test("server-renders the finished Prompt Studio", async () => {
   assert.match(html, /Kirole Prompt Studio/);
   assert.match(html, /提示词实验台/);
   assert.match(html, /选择场景/);
+  assert.match(html, /自动 80\/20/);
+  assert.match(html, /已审核金句库/);
   assert.match(html, /\/characters\/joy-head\.png/);
   assert.doesNotMatch(html, /_vinext\/image\?url=/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/i);
@@ -130,6 +132,8 @@ test("meta exposes every active scenario without secrets", async () => {
   assert.equal(response.status, 200);
   const meta = await response.json();
   assert.equal(meta.characters.length, 3);
+  assert.deepEqual(meta.writingModes.map(({ id, weight }) => [id, weight]), [["normal", 80], ["signatureQuote", 20]]);
+  assert.ok(meta.characters.every((character) => character.approvedQuotes.length >= 3));
   assert.equal(meta.personaScenes.length, 8);
   assert.equal(meta.toolPrompts.length, 7);
   assert.ok(meta.personaScenes.every((scenario) => scenario.outputMaxBytes === 120));
@@ -528,6 +532,97 @@ test("compile returns three isolated companion prompts", async () => {
   }
 });
 
+test("compile exposes deterministic normal and signature-quote modes", async () => {
+  const app = await worker();
+  const normalResponse = await app.fetch(new Request("http://localhost/api/compile", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      scenarioId: "companionPhrase",
+      characters: ["silas"],
+      writingMode: "normal",
+      context: {},
+    }),
+  }), environment(), context());
+  const quoteResponse = await app.fetch(new Request("http://localhost/api/compile", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      scenarioId: "companionPhrase",
+      characters: ["silas"],
+      writingMode: "signatureQuote",
+      quoteIndex: 1,
+      context: {},
+    }),
+  }), environment(), context());
+
+  assert.equal(normalResponse.status, 200);
+  assert.equal(quoteResponse.status, 200);
+  const [normal] = (await normalResponse.json()).results;
+  const [signature] = (await quoteResponse.json()).results;
+  assert.equal(normal.writingMode, "normal");
+  assert.equal(normal.approvedQuote, undefined);
+  assert.equal(normal.parameters.temperature, 0.9);
+  assert.match(normal.systemPrompt, /MODE: NORMAL/);
+  assert.equal(signature.writingMode, "signatureQuote");
+  assert.equal(signature.parameters.temperature, 0);
+  assert.equal(signature.approvedQuote.source, "2 Corinthians 12:9");
+  assert.match(signature.systemPrompt, /MODE: SIGNATURE QUOTE/);
+  assert.match(signature.systemPrompt, /My grace is sufficient for thee\./);
+});
+
+test("compile rejects unknown writing modes and invalid quote indexes", async () => {
+  const app = await worker();
+  for (const body of [
+    { scenarioId: "companionPhrase", characters: ["joy"], writingMode: "sometimes", context: {} },
+    { scenarioId: "companionPhrase", characters: ["joy"], writingMode: "signatureQuote", quoteIndex: -1, context: {} },
+    { scenarioId: "companionPhrase", characters: ["joy"], writingMode: "signatureQuote", quoteIndex: 1.5, context: {} },
+  ]) {
+    const response = await app.fetch(new Request("http://localhost/api/compile", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }), environment(), context());
+    assert.equal(response.status, 400);
+  }
+});
+
+test("signature-quote runs are deterministic and do not call OpenRouter", async () => {
+  const app = await worker();
+  const originalFetch = globalThis.fetch;
+  let openRouterCalled = false;
+  globalThis.fetch = async (input, init) => {
+    if (String(input) === "https://openrouter.ai/api/v1/chat/completions") openRouterCalled = true;
+    return originalFetch(input, init);
+  };
+  const runtime = { DB: memoryD1(), RATE_LIMIT_SALT: "test-salt" };
+  globalThis.__promptStudioTestEnv = runtime;
+  try {
+    const response = await app.fetch(new Request("http://localhost/api/run", {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: "http://localhost" },
+      body: JSON.stringify({
+        scenarioId: "companionPhrase",
+        characters: ["silas"],
+        writingMode: "signatureQuote",
+        quoteIndex: 1,
+        context: { deadlineTitles: ["Client demo"], focusMinutes: 135 },
+      }),
+    }), environment(runtime), context());
+    assert.equal(response.status, 200);
+    const [result] = (await response.json()).results;
+    assert.equal(result.parameters.temperature, 0);
+    assert.equal(result.actualModel, "deterministic/approved-quote");
+    assert.equal(result.rawOutput, '"My grace is sufficient for thee." (2 Corinthians 12:9).');
+    assert.equal(result.validation.find((item) => item.id === "approvedQuote")?.passed, true);
+    assert.equal(result.validation.some((item) => item.id === "deadline" || item.id === "focus"), false);
+    assert.equal(openRouterCalled, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+    delete globalThis.__promptStudioTestEnv;
+  }
+});
+
 test("persona compilation matches the Swift OpenAIService golden prompts", async () => {
   const app = await worker();
   const fixtures = JSON.parse(await readFile(new URL("tests/fixtures/companion-prompts.json", projectRoot), "utf8"));
@@ -547,6 +642,8 @@ test("persona compilation matches the Swift OpenAIService golden prompts", async
         scenarioId: fixture.scenarioId,
         characters: [fixture.characterId],
         intimacyStage: "familiar",
+        writingMode: fixture.writingMode,
+        quoteIndex: fixture.quoteIndex,
         context: compileContext,
       }),
     }), environment(), context());

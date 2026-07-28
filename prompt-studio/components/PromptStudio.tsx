@@ -2,13 +2,16 @@
 
 import Image from "next/image";
 import { ChangeEvent, useEffect, useId, useMemo, useRef, useState } from "react";
-import type { CharacterId, CompiledPrompt, PromptContext, PromptOverrides, ValidationItem } from "@/lib/prompt-engine";
+import type { ApprovedQuote, CharacterId, CompiledPrompt, PromptContext, PromptOverrides, ValidationItem, WritingMode } from "@/lib/prompt-engine";
+
+type DraftWritingMode = "auto" | WritingMode;
 
 type Spec = {
   version: string;
   globalRules: string[];
   model: { fallbackModel: string; reasoningTokenHeadroom: number };
-  characters: Array<{ id: CharacterId; displayName: string; displayNameZh: string; virtue: string; characterPrompt: string; personaPrompt: string }>;
+  writingModes: Array<{ id: WritingMode; displayName: string; displayNameZh: string; weight: number; temperatureOverride: number | null; instructionTemplate: string }>;
+  characters: Array<{ id: CharacterId; displayName: string; displayNameZh: string; virtue: string; characterPrompt: string; personaPrompt: string; approvedQuotes: ApprovedQuote[] }>;
   intimacyStages: Array<{ id: string; displayName: string; displayNameZh: string; prompt: string }>;
   personaScenes: Scenario[];
   toolPrompts: Scenario[];
@@ -35,6 +38,7 @@ type Draft = {
   characters: CharacterId[];
   editorCharacter: CharacterId;
   intimacyStage: string;
+  writingMode: DraftWritingMode;
   context: PromptContext;
   overridesByScenario: Record<string, Partial<Record<CharacterId, PromptOverrides>>>;
 };
@@ -87,6 +91,7 @@ function defaultDraft(spec: Spec): Draft {
     characters: ["joy", "silas", "nova"],
     editorCharacter: "joy",
     intimacyStage: "familiar",
+    writingMode: "auto",
     context: baseContext,
     overridesByScenario: {},
   };
@@ -136,6 +141,7 @@ function normalizeImportedDraft(spec: Spec, input: unknown): Draft {
     characters: validCharacters.length ? validCharacters.slice(0, 3) : fallback.characters,
     editorCharacter: ["joy", "silas", "nova"].includes(candidate.editorCharacter ?? "") ? candidate.editorCharacter! : fallback.editorCharacter,
     intimacyStage: spec.intimacyStages.some((item) => item.id === candidate.intimacyStage) ? candidate.intimacyStage! : fallback.intimacyStage,
+    writingMode: ["auto", "normal", "signatureQuote"].includes(candidate.writingMode ?? "") ? candidate.writingMode! : fallback.writingMode,
     context: normalizeContext(candidate.context),
     overridesByScenario: normalizeOverrides(spec, candidate.overridesByScenario),
   };
@@ -143,6 +149,22 @@ function normalizeImportedDraft(spec: Spec, input: unknown): Draft {
 
 function text(locale: Draft["locale"], zh: string, en: string): string {
   return locale === "zh" ? zh : en;
+}
+
+function randomInteger(upperBound: number): number {
+  if (!Number.isInteger(upperBound) || upperBound <= 0) return 0;
+  const range = 2 ** 32;
+  const limit = Math.floor(range / upperBound) * upperBound;
+  const values = new Uint32Array(1);
+  do {
+    crypto.getRandomValues(values);
+  } while (values[0] >= limit);
+  return values[0] % upperBound;
+}
+
+function resolveWritingMode(mode: DraftWritingMode): WritingMode {
+  if (mode !== "auto") return mode;
+  return randomInteger(100) < 20 ? "signatureQuote" : "normal";
 }
 
 function activeToolTemplate(scenario: Scenario | undefined, context: PromptContext): [string, string] {
@@ -169,6 +191,8 @@ export function PromptStudio({ spec }: { spec: Spec }) {
   const fileInput = useRef<HTMLInputElement>(null);
   const requestSequence = useRef(0);
   const activeRequest = useRef<AbortController | null>(null);
+  const autoCompileTimer = useRef<number | null>(null);
+  const lastExplicitDraftSignature = useRef<string | null>(null);
   const scenarios = useMemo(() => [...spec.personaScenes, ...spec.toolPrompts], [spec]);
   const scenario = scenarios.find((item) => item.id === draft.scenarioId) ?? scenarios[0];
   const isPersona = scenario?.group === "character";
@@ -217,14 +241,30 @@ export function PromptStudio({ spec }: { spec: Spec }) {
   useEffect(() => () => activeRequest.current?.abort(), []);
 
   useEffect(() => {
-    if (!hydrated || !scenario) return;
-    const timer = window.setTimeout(() => void compile(), 280);
-    return () => window.clearTimeout(timer);
+    if (!hydrated || !scenario || busy) return;
+    const draftSignature = JSON.stringify(draft);
+    const timer = window.setTimeout(() => {
+      autoCompileTimer.current = null;
+      const followsExplicitRequest = lastExplicitDraftSignature.current === draftSignature;
+      lastExplicitDraftSignature.current = null;
+      if (followsExplicitRequest) return;
+      void compile(false);
+    }, 280);
+    autoCompileTimer.current = timer;
+    return () => {
+      window.clearTimeout(timer);
+      if (autoCompileTimer.current === timer) autoCompileTimer.current = null;
+    };
     // compile is deliberately driven by the serialized draft.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hydrated, draft, scenario?.id]);
+  }, [hydrated, draft, scenario?.id, busy]);
 
   async function request(path: string, signal: AbortSignal): Promise<RunResult[]> {
+    const writingMode = isPersona ? resolveWritingMode(draft.writingMode) : undefined;
+    const quoteCount = isPersona
+      ? Math.min(...draft.characters.map((id) => spec.characters.find((item) => item.id === id)?.approvedQuotes.length ?? 0))
+      : 0;
+    const quoteIndex = writingMode === "signatureQuote" ? randomInteger(quoteCount) : undefined;
     const response = await fetch(path, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -233,6 +273,8 @@ export function PromptStudio({ spec }: { spec: Spec }) {
         scenarioId: draft.scenarioId,
         characters: isPersona ? draft.characters : undefined,
         intimacyStage: draft.intimacyStage,
+        writingMode,
+        quoteIndex,
         context: draft.context,
         overrides: scenarioOverrides,
       }),
@@ -242,12 +284,17 @@ export function PromptStudio({ spec }: { spec: Spec }) {
     return payload.results ?? [];
   }
 
-  async function execute(kind: "compile" | "run", path: string) {
+  async function execute(kind: "compile" | "run", path: string, explicit: boolean) {
+    if (autoCompileTimer.current !== null) {
+      window.clearTimeout(autoCompileTimer.current);
+      autoCompileTimer.current = null;
+    }
+    if (explicit) lastExplicitDraftSignature.current = JSON.stringify(draft);
     const sequence = ++requestSequence.current;
     activeRequest.current?.abort();
     const controller = new AbortController();
     activeRequest.current = controller;
-    setBusy(kind);
+    if (explicit) setBusy(kind);
     setError("");
     try {
       const nextResults = await request(path, controller.signal);
@@ -259,14 +306,14 @@ export function PromptStudio({ spec }: { spec: Spec }) {
     } finally {
       if (sequence === requestSequence.current) {
         activeRequest.current = null;
-        setBusy(null);
+        if (explicit) setBusy(null);
       }
     }
   }
 
-  async function compile() { await execute("compile", "/api/compile"); }
+  async function compile(explicit = true) { await execute("compile", "/api/compile", explicit); }
 
-  async function run() { await execute("run", "/api/run"); }
+  async function run() { await execute("run", "/api/run", true); }
 
   function updateContext(key: string, value: PromptContext[string]) {
     setDraft((valueBefore) => ({ ...valueBefore, context: { ...valueBefore.context, [key]: value } }));
@@ -387,6 +434,20 @@ export function PromptStudio({ spec }: { spec: Spec }) {
               </button>)}
             </div>
             <label className="field compact"><span>{text(draft.locale, "关系阶段", "Relationship stage")}</span><select value={draft.intimacyStage} onChange={(event) => setDraft((value) => ({ ...value, intimacyStage: event.target.value }))}>{spec.intimacyStages.map((item) => <option key={item.id} value={item.id}>{draft.locale === "zh" ? item.displayNameZh : item.displayName}</option>)}</select></label>
+            <fieldset className="mode-control">
+              <legend>{text(draft.locale, "文案模式", "Writing mode")}</legend>
+              <div>
+                {(["auto", "normal", "signatureQuote"] as DraftWritingMode[]).map((mode) => {
+                  const definition = spec.writingModes.find((item) => item.id === mode);
+                  const label = mode === "auto"
+                    ? text(draft.locale, "自动 80/20", "Auto 80/20")
+                    : text(draft.locale, definition?.displayNameZh ?? mode, definition?.displayName ?? mode);
+                  return <button type="button" key={mode} className={draft.writingMode === mode ? "active" : ""} aria-pressed={draft.writingMode === mode} onClick={() => setDraft((value) => ({ ...value, writingMode: mode }))}>{label}</button>;
+                })}
+              </div>
+              <small>{text(draft.locale, "自动模式每次编译或运行重新抽取；需要验收金句时可直接强制。", "Auto rerolls on every compile or run; force quote mode for acceptance testing.")}</small>
+            </fieldset>
+            <details className="quote-bank"><summary>{text(draft.locale, `${currentCharacter.displayName} 已审核金句库`, `${currentCharacter.displayName} approved quote bank`)}</summary>{currentCharacter.approvedQuotes.map((quote) => <p key={`${quote.text}-${quote.source}`}><q>{quote.text}</q><span>{quote.source}</span></p>)}</details>
             <PromptField label={text(draft.locale, `${currentCharacter.displayName} 角色模板`, `${currentCharacter.displayName} persona`)} baseline={currentCharacter.personaPrompt} value={currentOverrides.personaPrompt ?? ""} onChange={(value) => updateOverride("personaPrompt", value)} />
             <PromptField label={text(draft.locale, "外形与身份", "Form and identity")} baseline={currentCharacter.characterPrompt} value={currentOverrides.characterPrompt ?? ""} onChange={(value) => updateOverride("characterPrompt", value)} />
             <PromptField label={text(draft.locale, "亲密度规则", "Intimacy rule")} baseline={currentIntimacy.prompt} value={currentOverrides.intimacyPrompt ?? ""} onChange={(value) => updateOverride("intimacyPrompt", value)} />
@@ -471,7 +532,8 @@ function ResultCard({ result, locale }: { result: RunResult; locale: Draft["loca
   const raw = result.rawOutput ?? "";
   const preview = result.asciiOutput ?? "";
   return <article className={`result-card character-${result.characterId ?? "tool"}`}>
-    <header>{result.characterId ? <Image unoptimized src={`/characters/${result.characterId}-head.png`} alt="" width={48} height={48} /> : <span className="tool-avatar">T</span>}<div><h3>{result.characterId?.toUpperCase() ?? "TOOL"}</h3><p>{result.actualModel ?? result.parameters.model}</p></div>{result.fallbackUsed && <b>FALLBACK</b>}</header>
+    <header>{result.characterId ? <Image unoptimized src={`/characters/${result.characterId}-head.png`} alt="" width={48} height={48} /> : <span className="tool-avatar">T</span>}<div><h3>{result.characterId?.toUpperCase() ?? "TOOL"}</h3><p>{result.actualModel ?? result.parameters.model}</p>{result.writingMode && <em>{result.writingMode === "signatureQuote" ? text(locale, "引用金句", "Signature quote") : text(locale, "正常语气", "Normal voice")}</em>}</div>{result.fallbackUsed && <b>FALLBACK</b>}</header>
+    {result.approvedQuote && <div className="selected-quote"><span>{text(locale, "本次指定金句", "Approved quote for this run")}</span><q>{result.approvedQuote.text}</q><small>{result.approvedQuote.source}</small></div>}
     {raw ? <div className="device-preview"><div className="eink-screen">{result.characterId && <Image unoptimized src={`/characters/${result.characterId}-main.png`} alt="" width={112} height={112} />}<div className="bubble"><span>{preview}</span></div></div><div className="wire-lines"><span>RAW</span><code>{raw}</code><span>{result.outputMaxBytes}B</span><code>{result.truncatedOutput}</code><span>ASCII</span><code>{result.asciiOutput}</code></div></div> : <div className="empty-output">{text(locale, "提示词已编译。点击“运行模型”查看生成文案和设备预览。", "Prompt compiled. Run the model to see copy and device preview.")}</div>}
     {result.validation && <div className="validation-grid">{result.validation.map((item) => <span key={item.id} className={item.passed ? "pass" : "fail"}><i>{item.passed ? "PASS" : "FAIL"}</i>{locale === "zh" ? item.labelZh : item.labelEn}<small>{item.detail}</small></span>)}</div>}
     <details><summary>System Prompt <small>{new TextEncoder().encode(result.systemPrompt).length} B</small></summary><pre>{result.systemPrompt}</pre></details>

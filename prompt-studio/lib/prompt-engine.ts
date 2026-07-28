@@ -2,6 +2,12 @@ import promptSpecJson from "./prompt-spec.json";
 
 export type CharacterId = "joy" | "silas" | "nova";
 export type Locale = "zh" | "en";
+export type WritingMode = "normal" | "signatureQuote";
+
+export type ApprovedQuote = {
+  text: string;
+  source: string;
+};
 
 export type PromptContext = Record<string, string | number | boolean | string[]>;
 
@@ -19,6 +25,8 @@ export interface CompileRequest {
   scenarioId: string;
   characters?: CharacterId[];
   intimacyStage?: string;
+  writingMode?: WritingMode;
+  quoteIndex?: number;
   context?: PromptContext;
   overrides?: Partial<Record<CharacterId, PromptOverrides>>;
 }
@@ -35,6 +43,8 @@ export interface CompiledPrompt {
   scenarioId: string;
   scenarioKind: "persona" | "tool";
   characterId?: CharacterId;
+  writingMode?: WritingMode;
+  approvedQuote?: ApprovedQuote;
   outputMaxBytes: number;
   systemPrompt: string;
   userPrompt: string;
@@ -67,7 +77,17 @@ type CharacterDefinition = {
   virtue: string;
   characterPrompt: string;
   personaPrompt: string;
-  wordLimits?: { default?: number; quiet?: number; soulful?: number } | number;
+  approvedQuotes: ApprovedQuote[];
+  wordLimits?: { default?: number; primaryMode?: number; secondaryMode?: number } | number;
+};
+
+type WritingModeDefinition = {
+  id: WritingMode;
+  displayName: string;
+  displayNameZh: string;
+  weight: number;
+  temperatureOverride: number | null;
+  instructionTemplate: string;
 };
 
 type ScenarioDefinition = {
@@ -101,6 +121,7 @@ type PromptSpec = {
   };
   limits: Record<string, number | string>;
   globalRules: string[];
+  writingModes: WritingModeDefinition[];
   companionSystemTemplate: string;
   characters: CharacterDefinition[];
   intimacyStages: Array<{ id: string; prompt?: string; intimacyPrompt?: string }>;
@@ -209,6 +230,17 @@ function render(template: string, values: Record<string, string>): string {
     .replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, key: string) => values[key] ?? "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+function writingModeInstruction(mode: WritingMode, quote?: ApprovedQuote): string {
+  const definition = promptSpec.writingModes.find((item) => item.id === mode);
+  if (!definition) throw new Error(`Unknown writing mode: ${mode}`);
+  if (mode === "normal") return definition.instructionTemplate;
+  if (!quote) throw new Error("Signature quote mode requires an approved quote");
+  return render(definition.instructionTemplate, {
+    quoteText: quote.text,
+    quoteSource: quote.source,
+  });
 }
 
 function scheduleDigest(inputs: PromptContext): string {
@@ -321,6 +353,10 @@ export function compilePrompts(request: CompileRequest): CompiledPrompt[] {
 
   return characters.map((characterId) => {
     const character = characterId ? promptSpec.characters.find((item) => item.id === characterId) : undefined;
+    const writingMode = found.kind === "persona" ? request.writingMode ?? "normal" : undefined;
+    const approvedQuote = writingMode === "signatureQuote"
+      ? character?.approvedQuotes[request.quoteIndex ?? 0]
+      : undefined;
     const intimacy = promptSpec.intimacyStages.find((item) => item.id === (request.intimacyStage ?? "familiar"));
     const overrides = characterId ? request.overrides?.[characterId] ?? {} : request.overrides?.joy ?? {};
     const values = {
@@ -329,6 +365,7 @@ export function compilePrompts(request: CompileRequest): CompiledPrompt[] {
       characterPrompt: overrides.characterPrompt ?? character?.characterPrompt ?? "",
       intimacyPrompt: overrides.intimacyPrompt ?? intimacy?.prompt ?? intimacy?.intimacyPrompt ?? "",
       personaPrompt: overrides.personaPrompt ?? character?.personaPrompt ?? "",
+      writingModePrompt: writingMode ? writingModeInstruction(writingMode, approvedQuote) : "",
       globalRules: overrides.globalRules ?? "",
       schedule: scheduleDigest(inputs),
       petName: userContent(stringify(inputs.petName ?? character?.displayName ?? "Kirole"), 50),
@@ -358,11 +395,16 @@ export function compilePrompts(request: CompileRequest): CompiledPrompt[] {
     const systemPrompt = systemWithSecurity(systemBody);
     const userPrompt = overrides.userPrompt ?? overrides.scenePrompt ?? defaultUser;
     const primaryModel = promptSpec.model.primaryModel ?? promptSpec.model.model ?? "openai/gpt-oss-120b";
+    const modeTemperature = writingMode
+      ? promptSpec.writingModes.find((item) => item.id === writingMode)?.temperatureOverride
+      : null;
 
     return {
       scenarioId: request.scenarioId,
       scenarioKind: found.kind,
       characterId,
+      writingMode,
+      approvedQuote,
       outputMaxBytes: found.scenario.outputMaxBytes
         ?? Number(promptSpec.limits.defaultHardwareBytes),
       systemPrompt,
@@ -371,7 +413,7 @@ export function compilePrompts(request: CompileRequest): CompiledPrompt[] {
       parameters: {
         model: primaryModel,
         fallbackModel: promptSpec.model.fallbackModel,
-        temperature: found.scenario.parameters.temperature,
+        temperature: modeTemperature ?? found.scenario.parameters.temperature,
         contentMaxTokens: found.scenario.parameters.maxTokens,
         requestMaxTokens: found.scenario.parameters.maxTokens + promptSpec.model.reasoningTokenHeadroom,
         reasoning: promptSpec.model.reasoning,
@@ -493,7 +535,9 @@ export function validateOutput(compiled: CompiledPrompt, output: string): Valida
     : undefined;
   const wordLimit = typeof character?.wordLimits === "number"
     ? character.wordLimits
-    : character?.wordLimits?.default ?? (character?.id === "joy" ? 25 : 20);
+    : compiled.writingMode === "signatureQuote"
+      ? character?.wordLimits?.secondaryMode ?? character?.wordLimits?.default ?? 20
+      : character?.wordLimits?.primaryMode ?? character?.wordLimits?.default ?? (character?.id === "joy" ? 25 : 20);
   const bytes = new TextEncoder().encode(output).length;
   const maxBytes = outputMaxBytes(compiled);
   const checks: ValidationItem[] = [];
@@ -530,30 +574,42 @@ export function validateOutput(compiled: CompiledPrompt, output: string): Valida
   if (character) {
     checks.push({ id: "words", labelZh: "词数限制", labelEn: "Word budget", passed: wordCount(output) <= wordLimit, detail: `${wordCount(output)} / ${wordLimit}` });
   }
-  addHardware();
-
-  const deadlines = compiled.sanitizedInputs.deadlineTitles;
-  if (Array.isArray(deadlines) && deadlines.length) {
+  if (compiled.writingMode === "signatureQuote" && compiled.approvedQuote) {
+    const expected = `"${compiled.approvedQuote.text}" (${compiled.approvedQuote.source}).`;
     checks.push({
-      id: "deadline",
-      labelZh: "提及死线",
-      labelEn: "Deadline mention",
-      passed: deadlines.some((title) => output.toLowerCase().includes(title.toLowerCase())),
-      detail: deadlines.join(", "),
+      id: "approvedQuote",
+      labelZh: "指定金句与出处",
+      labelEn: "Approved quote and source",
+      passed: trimmed === expected,
+      detail: expected,
     });
   }
-  const focusMinutes = Number(compiled.sanitizedInputs.focusMinutes ?? 0);
-  if (focusMinutes > 120) {
-    const hours = Math.floor(focusMinutes / 60);
-    const minutes = focusMinutes % 60;
-    const focusLabel = `${hours}h${minutes > 0 ? ` ${minutes}m` : ""}`;
-    checks.push({
-      id: "focus",
-      labelZh: "提及专注时长",
-      labelEn: "Focus duration",
-      passed: output.toLowerCase().includes(focusLabel.toLowerCase()),
-      detail: focusLabel,
-    });
+  addHardware();
+
+  if (compiled.scenarioId === "settlementReview") {
+    const deadlines = compiled.sanitizedInputs.deadlineTitles;
+    if (Array.isArray(deadlines) && deadlines.length) {
+      checks.push({
+        id: "deadline",
+        labelZh: "提及死线",
+        labelEn: "Deadline mention",
+        passed: deadlines.some((title) => output.toLowerCase().includes(title.toLowerCase())),
+        detail: deadlines.join(", "),
+      });
+    }
+    const focusMinutes = Number(compiled.sanitizedInputs.focusMinutes ?? 0);
+    if (focusMinutes > 120) {
+      const hours = Math.floor(focusMinutes / 60);
+      const minutes = focusMinutes % 60;
+      const focusLabel = `${hours}h${minutes > 0 ? ` ${minutes}m` : ""}`;
+      checks.push({
+        id: "focus",
+        labelZh: "提及专注时长",
+        labelEn: "Focus duration",
+        passed: output.toLowerCase().includes(focusLabel.toLowerCase()),
+        detail: focusLabel,
+      });
+    }
   }
   return checks;
 }

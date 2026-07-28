@@ -8,6 +8,8 @@ struct PromptSpecConsistencyTests {
     private struct CompanionFixture: Decodable {
         let characterId: String
         let scenarioId: String
+        let writingMode: CompanionWritingMode
+        let quoteIndex: Int?
         let expectedSystemSHA256: String
         let expectedUserSHA256: String
     }
@@ -42,6 +44,37 @@ struct PromptSpecConsistencyTests {
         ]))
         #expect(document.characters.allSatisfy { !$0.personaPrompt.isEmpty })
         #expect(document.characters.allSatisfy { !$0.characterPrompt.isEmpty })
+        #expect(document.characters.allSatisfy { $0.approvedQuotes.count >= 3 })
+    }
+
+    @Test("Writing mode assignment is exactly 80 percent normal and 20 percent signature quote")
+    func writingModeAssignment() {
+        let modes = (0..<100).map(CompanionWritingModeSelector.mode(forPercentile:))
+
+        #expect(modes.filter { $0 == .normal }.count == 80)
+        #expect(modes.filter { $0 == .signatureQuote }.count == 20)
+        #expect(CompanionWritingModeSelector.mode(forPercentile: 19) == .signatureQuote)
+        #expect(CompanionWritingModeSelector.mode(forPercentile: 20) == .normal)
+    }
+
+    @Test("Signature quote selection comes from the approved character quote bank")
+    func approvedQuoteSelection() async throws {
+        let selection = try #require(CompanionWritingModeSelector.selection(
+            for: .silas,
+            percentile: 7,
+            quoteIndex: 1
+        ))
+
+        #expect(selection.mode == .signatureQuote)
+        #expect(selection.quote == KirolePromptSpec.character("silas")?.approvedQuotes[1])
+        #expect(selection.deterministicOutput == "\"My grace is sufficient for thee.\" (2 Corinthians 12:9).")
+        #expect(CompanionWritingSelection.normal.deterministicOutput == nil)
+        let generated = try await OpenAIService.shared.generateCompanionText(
+            type: .companionPhrase,
+            context: AIContext(companionCharacter: .silas, intimacyStage: .familiar),
+            writingSelection: selection
+        )
+        #expect(generated == selection.deterministicOutput)
     }
 
     @Test("Canonical spec lists the eight active persona scenes exactly")
@@ -170,6 +203,32 @@ struct PromptSpecConsistencyTests {
         #expect(compiled.userPrompt.contains("<user_content>Finish demo</user_content>"))
     }
 
+    @Test("Compiled companion prompts make the selected writing mode explicit")
+    @MainActor
+    func companionWritingModePrompt() async throws {
+        let context = AIContext(companionCharacter: .nova, intimacyStage: .familiar)
+        let quote = try #require(KirolePromptSpec.character("nova")?.approvedQuotes.first)
+
+        let normal = await OpenAIService.shared.compilePromptForFixture(
+            type: .companionPhrase,
+            context: context,
+            writingSelection: .normal
+        )
+        let signature = await OpenAIService.shared.compilePromptForFixture(
+            type: .companionPhrase,
+            context: context,
+            writingSelection: CompanionWritingSelection(mode: .signatureQuote, quote: quote)
+        )
+
+        #expect(normal.systemPrompt.contains("MODE: NORMAL"))
+        #expect(normal.systemPrompt.contains("Do not use an attributed quotation"))
+        #expect(signature.systemPrompt.contains("MODE: SIGNATURE QUOTE"))
+        #expect(signature.systemPrompt.contains(quote.text))
+        #expect(signature.systemPrompt.contains(quote.source))
+        #expect(KirolePromptSpec.writingMode("normal")?.temperatureOverride == nil)
+        #expect(KirolePromptSpec.writingMode("signatureQuote")?.temperatureOverride == 0)
+    }
+
     @Test("Haiku fixture seam returns the production prompt pair")
     func haikuPromptCompilationSeam() async {
         let context = HaikuContext(
@@ -267,7 +326,7 @@ struct PromptSpecConsistencyTests {
             [CompanionFixture].self,
             from: Data(contentsOf: fixtureURL)
         )
-        #expect(fixtures.count == 24)
+        #expect(fixtures.count == 48)
         for fixture in fixtures {
             let character = try #require(CompanionCharacter(rawValue: fixture.characterId))
             let type = try #require(AITextType(rawValue: fixture.scenarioId))
@@ -282,7 +341,12 @@ struct PromptSpecConsistencyTests {
             )
             let compiled = await OpenAIService.shared.compilePromptForFixture(
                 type: type,
-                context: context
+                context: context,
+                writingSelection: try CompanionWritingModeSelector.forcedSelection(
+                    mode: fixture.writingMode,
+                    character: character,
+                    quoteIndex: fixture.quoteIndex ?? 0
+                )
             )
             #expect(Self.sha256(compiled.systemPrompt) == fixture.expectedSystemSHA256)
             #expect(Self.sha256(compiled.userPrompt) == fixture.expectedUserSHA256)

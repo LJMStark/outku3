@@ -106,17 +106,32 @@ public actor OpenAIService {
     // MARK: - Generate Companion Text
 
     /// Generate AI companion text based on type and context
-    public func generateCompanionText(type: AITextType, context: AIContext) async throws -> String {
+    public func generateCompanionText(
+        type: AITextType,
+        context: AIContext,
+        writingSelection requestedWritingSelection: CompanionWritingSelection? = nil
+    ) async throws -> String {
+        let writingSelection = requestedWritingSelection ?? (context.customCompanion == nil
+            ? CompanionWritingModeSelector.randomSelection(for: context.companionCharacter)
+            : .normal)
+        if let deterministicOutput = writingSelection.deterministicOutput {
+            return deterministicOutput
+        }
         let modelID = await MainActor.run {
             CompanionModelPreference.shared.modelID
         }
-        let sysPrompt = await buildCompanionSystemPrompt(context: context)
+        let sysPrompt = await buildCompanionSystemPrompt(
+            context: context,
+            writingSelection: writingSelection
+        )
         let parameterID = type == .dailySummary ? "dailySummaryPersonaEnum" : type.rawValue
         let parameters = Self.promptParameters(for: parameterID)
+        let temperature = KirolePromptSpec.writingMode(writingSelection.mode.rawValue)?
+            .temperatureOverride ?? parameters.temperature
         let content = try await chatCompletion(
             systemPrompt: sysPrompt,
             userPrompt: buildCompanionUserPrompt(type: type, context: context),
-            temperature: parameters.temperature,
+            temperature: temperature,
             maxTokens: parameters.maxTokens,
             model: modelID
         )
@@ -430,7 +445,10 @@ public actor OpenAIService {
         return template
     }
 
-    func buildCompanionSystemPrompt(context: AIContext) async -> String {
+    func buildCompanionSystemPrompt(
+        context: AIContext,
+        writingSelection: CompanionWritingSelection = .normal
+    ) async -> String {
         let styleDescription: String
 
         #if DEBUG
@@ -482,11 +500,33 @@ public actor OpenAIService {
                 "characterPrompt": characterDescription,
                 "intimacyPrompt": intimacyDescription,
                 "personaPrompt": styleDescription,
+                "writingModePrompt": Self.writingModePrompt(for: writingSelection),
                 "schedule": schedule,
                 "toneHint": toneHint
             ]
         )
         return PromptSanitizer.systemPrompt(containingUserContent: body)
+    }
+
+    static func writingModePrompt(for selection: CompanionWritingSelection) -> String {
+        guard let mode = KirolePromptSpec.writingMode(selection.mode.rawValue) else {
+            preconditionFailure("PromptSpec is missing writing mode \(selection.mode.rawValue)")
+        }
+        switch selection.mode {
+        case .normal:
+            return mode.instructionTemplate
+        case .signatureQuote:
+            guard let quote = selection.quote else {
+                preconditionFailure("Signature quote mode requires an approved quote")
+            }
+            return KirolePromptSpec.render(
+                mode.instructionTemplate,
+                values: [
+                    "quoteText": quote.text,
+                    "quoteSource": quote.source
+                ]
+            )
+        }
     }
 
 
