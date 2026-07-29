@@ -99,6 +99,84 @@ struct FocusProtectionTests {
         #expect(guardService.applyShieldCalls == 0)
     }
 
+    @Test("Strict Deep Focus rejects denied authorization without creating a Standard session")
+    @MainActor
+    func strictDeniedAuthorizationRejectsSession() async {
+        let guardService = MockFocusGuardService(authorizationStatus: .denied)
+        let service = FocusSessionService.makeForTesting(
+            focusGuardService: guardService,
+            persistenceEnabled: false
+        )
+
+        let result = await service.startSession(
+            taskId: "strict-denied",
+            taskTitle: "Strict Denied",
+            mode: .deepFocus,
+            fallbackPolicy: .reject
+        )
+
+        guard case .rejected(.permissionDenied) = result else {
+            Issue.record("Expected strict Deep Focus to reject denied authorization")
+            return
+        }
+        #expect(service.activeSession == nil)
+    }
+
+    @Test("Strict Deep Focus rejects shield errors without creating a Standard session")
+    @MainActor
+    func strictShieldFailureRejectsSession() async {
+        let guardService = MockFocusGuardService(authorizationStatus: .approved)
+        guardService.applyShieldError = .selectionDecodeFailed
+        let service = FocusSessionService.makeForTesting(
+            focusGuardService: guardService,
+            persistenceEnabled: false
+        )
+
+        let result = await service.startSession(
+            taskId: "strict-shield-failure",
+            taskTitle: "Strict Shield Failure",
+            mode: .deepFocus,
+            fallbackPolicy: .reject
+        )
+
+        guard case .rejected(.shieldApplyFailed) = result else {
+            Issue.record("Expected strict Deep Focus to reject a shield failure")
+            return
+        }
+        #expect(service.activeSession == nil)
+    }
+
+    @Test("Strict Deep Focus never replaces a different active hardware session")
+    @MainActor
+    func strictLaunchPreservesActiveHardwareSession() async throws {
+        let guardService = MockFocusGuardService(authorizationStatus: .approved)
+        let service = FocusSessionService.makeForTesting(
+            focusGuardService: guardService,
+            persistenceEnabled: false
+        )
+        await service.startSession(
+            taskId: "hardware-session",
+            taskTitle: "Hardware Session",
+            mode: .standard
+        )
+        let originalSession = try #require(service.activeSession)
+
+        let result = await service.startSession(
+            taskId: "strict-test-session",
+            taskTitle: "Strict Test Session",
+            mode: .deepFocus,
+            fallbackPolicy: .reject
+        )
+
+        guard case .blockedByActiveSession(let blockingSession) = result else {
+            Issue.record("Expected the strict launch to preserve the active hardware session")
+            return
+        }
+        #expect(blockingSession.id == originalSession.id)
+        #expect(service.activeSession?.id == originalSession.id)
+        #expect(service.todaySessions.isEmpty)
+    }
+
     @Test("Revoked authorization during session downgrades to fallback and records source")
     @MainActor
     func revokedAuthorizationDowngradesSession() async throws {

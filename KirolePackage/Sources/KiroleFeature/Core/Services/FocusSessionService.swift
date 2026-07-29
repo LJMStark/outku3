@@ -262,12 +262,14 @@ public final class FocusSessionService {
     // MARK: - Session Management
 
     /// 开始新的专注会话（当收到 EnterTaskIn 事件时调用）
+    @discardableResult
     public func startSession(
         taskId: String,
         taskTitle: String,
         mode requestedMode: FocusEnforcementMode = .standard,
-        startTime: Date = Date()
-    ) async {
+        startTime: Date = Date(),
+        fallbackPolicy: FocusSessionFallbackPolicy = .allowStandard
+    ) async -> FocusSessionStartResult {
         // Cold-start recovery owns the active-session file until it has loaded, settled, cleared,
         // and saved the previous session. Starting sooner can make recovery settle or delete the
         // brand-new session that arrived from hardware during launch.
@@ -281,7 +283,7 @@ public final class FocusSessionService {
                 ),
                 context: "FocusSessionService.startSession"
             )
-            return
+            return .persistenceUnavailable
         }
 
         // 幂等保护：同一任务已有活跃会话时，重复投递的 enterTaskIn（BLE 重传 / 固件重发）
@@ -290,16 +292,41 @@ public final class FocusSessionService {
         // 仅当切换到“不同”任务时才结束旧会话。
         if let active = activeSession {
             if active.taskId == taskId {
-                return
+                return .alreadyActive(active)
+            }
+            if fallbackPolicy == .reject {
+                return .blockedByActiveSession(active)
             }
             endSession(reason: .timeout, endTime: startTime)
         }
 
         // Never overwrite the active-session recovery file until the previous ended session has
         // reached history and that file has been removed successfully.
-        guard await retryPendingFocusSettlementIfNeeded() else { return }
+        guard await retryPendingFocusSettlementIfNeeded() else {
+            return .persistenceUnavailable
+        }
 
         let protectionContext = await resolveProtectionContext(requestedMode: requestedMode)
+        if fallbackPolicy == .reject,
+           protectionContext.protectionState == .fallback,
+           let interruptionSource = protectionContext.interruptionSource {
+            return .rejected(interruptionSource)
+        }
+        // `resolveProtectionContext` awaits Screen Time APIs. A hardware session can begin while
+        // this task is suspended on MainActor; an explicit test launch must never replace it.
+        if let active = activeSession {
+            if fallbackPolicy == .reject {
+                await clearUnusedResolvedProtection(
+                    protectionContext,
+                    activeSession: active
+                )
+                return .blockedByActiveSession(active)
+            }
+            if active.taskId == taskId {
+                return .alreadyActive(active)
+            }
+            endSession(reason: .timeout, endTime: startTime)
+        }
         let session = FocusSession(
             taskId: taskId,
             taskTitle: taskTitle,
@@ -316,6 +343,19 @@ public final class FocusSessionService {
         interruptionDetector.startMonitoring()
         startFocusDisplaySyncLoop()
         await persistActiveSessionIfNeeded(session)
+        return .started(session)
+    }
+
+    private func clearUnusedResolvedProtection(
+        _ protectionContext: ProtectionContext,
+        activeSession: FocusSession
+    ) async {
+        guard protectionContext.protectionState == .protected,
+              activeSession.protectionState != .protected else { return }
+        focusGuardService.clearShield()
+        if persistenceEnabled {
+            await localStorage.saveDeepFocusShieldActive(false)
+        }
     }
 
     func sessionStartGeneration(for taskID: String) -> UInt64 {

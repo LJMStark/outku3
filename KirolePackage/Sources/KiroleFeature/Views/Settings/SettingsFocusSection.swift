@@ -11,6 +11,7 @@ public struct SettingsFocusSection: View {
     @Environment(ThemeManager.self) private var theme
     @Environment(\.focusService) private var focusService
     @State private var guardService = ScreenTimeFocusGuardService.shared
+    @State private var testSessionCoordinator = FocusTestSessionCoordinator()
 
     public init() {}
 
@@ -24,9 +25,31 @@ public struct SettingsFocusSection: View {
                     isPresented: Binding(
                         get: { guardService.isPickerPresented },
                         set: { guardService.isPickerPresented = $0 }
-                    )
+                    ),
+                    onDismiss: {
+                        Task {
+                            await testSessionCoordinator.resumeAfterPickerDismissal()
+                        }
+                    }
                 ) {
                     pickerSheet.injectAppEnvironment()
+                }
+                .alert(
+                    "Couldn't Start Focus",
+                    isPresented: Binding(
+                        get: { testSessionCoordinator.failureMessage != nil },
+                        set: { isPresented in
+                            if !isPresented {
+                                testSessionCoordinator.dismissFailure()
+                            }
+                        }
+                    )
+                ) {
+                    Button("OK") {
+                        testSessionCoordinator.dismissFailure()
+                    }
+                } message: {
+                    Text(testSessionCoordinator.failureMessage ?? "")
                 }
         }
     }
@@ -60,22 +83,16 @@ public struct SettingsFocusSection: View {
     private var debugSessionButton: some View {
         Button {
             Task { @MainActor in
-                if focusService.activeSession == nil {
-                    await focusService.startSession(
-                        taskId: "debug-focus-session",
-                        taskTitle: "Debug Focus Session",
-                        mode: .standard
-                    )
-                } else {
-                    focusService.endSession(reason: .skipped)
-                }
+                await testSessionCoordinator.toggleTestSession()
             }
         } label: {
             HStack {
                 Image(systemName: "timer")
                 Text(
                     focusService.activeSession == nil
-                    ? "Start Test Focus Session"
+                    ? testSessionCoordinator.isBusy
+                        ? "Preparing Focus..."
+                        : "Start Test Focus Session"
                     : "End Test Focus Session"
                 )
             }
@@ -87,6 +104,7 @@ public struct SettingsFocusSection: View {
             .clipShape(RoundedRectangle(cornerRadius: 12))
         }
         .buttonStyle(.plain)
+        .disabled(testSessionCoordinator.isBusy)
         .accessibilityLabel("Start or end a real test focus session")
         .accessibilityHint("Opens the real focus screen with debugging controls")
         .accessibilityIdentifier("Debug_TestFocusSession")
@@ -249,7 +267,7 @@ public struct SettingsFocusSection: View {
         switch guardService.authorizationStatus {
         case .approved:
             if guardService.selectedApplicationCount > 0 {
-                return "Blocks \(guardService.selectedApplicationCount) distracting app(s) during sessions. Restored automatically when done."
+                return "Blocks \(guardService.selectedApplicationCount) selected distraction(s) during sessions. Restored automatically when done."
             }
             return "Select distracting apps to block. Without a selection, Standard mode is used."
         case .denied:

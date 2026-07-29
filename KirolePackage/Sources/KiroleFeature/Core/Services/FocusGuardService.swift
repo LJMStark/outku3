@@ -22,6 +22,30 @@ public struct FocusAppSelection: Codable, Sendable, Equatable {
     public var isEmpty: Bool {
         selectedApplicationCount == 0 || tokenData.isEmpty
     }
+
+    static func selectionCount(
+        applications: Int,
+        categories: Int,
+        webDomains: Int
+    ) -> Int {
+        applications + categories + webDomains
+    }
+
+    static func normalized(
+        tokenData: Data,
+        applications: Int,
+        categories: Int,
+        webDomains: Int
+    ) -> FocusAppSelection {
+        FocusAppSelection(
+            tokenData: tokenData,
+            selectedApplicationCount: selectionCount(
+                applications: applications,
+                categories: categories,
+                webDomains: webDomains
+            )
+        )
+    }
 }
 
 public enum FocusAuthorizationStatus: String, Codable, Sendable {
@@ -166,10 +190,23 @@ public final class ScreenTimeFocusGuardService: FocusGuardService {
         } catch {
             throw FocusGuardError.selectionDecodeFailed
         }
-        guard !decodedSelection.applicationTokens.isEmpty else {
+        guard !decodedSelection.applicationTokens.isEmpty
+                || !decodedSelection.categoryTokens.isEmpty
+                || !decodedSelection.webDomainTokens.isEmpty else {
             throw FocusGuardError.selectionMissing
         }
-        managedSettingsStore.shield.applications = decodedSelection.applicationTokens
+        managedSettingsStore.shield.applications = decodedSelection.applicationTokens.isEmpty
+            ? nil
+            : decodedSelection.applicationTokens
+        managedSettingsStore.shield.applicationCategories = decodedSelection.categoryTokens.isEmpty
+            ? nil
+            : .specific(decodedSelection.categoryTokens)
+        managedSettingsStore.shield.webDomains = decodedSelection.webDomainTokens.isEmpty
+            ? nil
+            : decodedSelection.webDomainTokens
+        managedSettingsStore.shield.webDomainCategories = decodedSelection.categoryTokens.isEmpty
+            ? nil
+            : .specific(decodedSelection.categoryTokens)
         #else
         throw FocusGuardError.capabilityUnavailable
         #endif
@@ -178,6 +215,9 @@ public final class ScreenTimeFocusGuardService: FocusGuardService {
     public func clearShield() {
         #if os(iOS) && canImport(ManagedSettings)
         managedSettingsStore.shield.applications = nil
+        managedSettingsStore.shield.applicationCategories = nil
+        managedSettingsStore.shield.webDomains = nil
+        managedSettingsStore.shield.webDomainCategories = nil
         #endif
     }
 
@@ -209,9 +249,11 @@ public final class ScreenTimeFocusGuardService: FocusGuardService {
         familyActivitySelection = selection
         do {
             let encoded = try PropertyListEncoder().encode(selection)
-            let appSelection = FocusAppSelection(
+            let appSelection = FocusAppSelection.normalized(
                 tokenData: encoded,
-                selectedApplicationCount: selection.applicationTokens.count
+                applications: selection.applicationTokens.count,
+                categories: selection.categoryTokens.count,
+                webDomains: selection.webDomainTokens.count
             )
             saveSelection(appSelection)
         } catch {
@@ -226,13 +268,27 @@ public final class ScreenTimeFocusGuardService: FocusGuardService {
     private func loadPersistedSelection() async {
         do {
             guard let selection = try await localStorage.loadDeepFocusSelection() else { return }
-            cachedSelection = selection
-            selectedApplicationCount = selection.selectedApplicationCount
 
             #if os(iOS) && canImport(FamilyControls)
-            if let decoded = try? PropertyListDecoder().decode(FamilyActivitySelection.self, from: selection.tokenData) {
-                familyActivitySelection = decoded
+            let decoded = try PropertyListDecoder().decode(
+                FamilyActivitySelection.self,
+                from: selection.tokenData
+            )
+            let normalizedSelection = FocusAppSelection.normalized(
+                tokenData: selection.tokenData,
+                applications: decoded.applicationTokens.count,
+                categories: decoded.categoryTokens.count,
+                webDomains: decoded.webDomainTokens.count
+            )
+            cachedSelection = normalizedSelection
+            selectedApplicationCount = normalizedSelection.selectedApplicationCount
+            familyActivitySelection = decoded
+            if normalizedSelection != selection {
+                try await localStorage.saveDeepFocusSelection(normalizedSelection)
             }
+            #else
+            cachedSelection = selection
+            selectedApplicationCount = selection.selectedApplicationCount
             #endif
         } catch {
             ErrorReporter.log(

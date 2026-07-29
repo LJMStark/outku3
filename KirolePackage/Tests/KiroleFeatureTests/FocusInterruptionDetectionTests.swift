@@ -316,7 +316,7 @@ struct FocusInterruptionDetectionTests {
         #expect(service.activeSession == nil)
 
         await gate.open()
-        await startTask.value
+        _ = await startTask.value
         #expect(service.activeSession?.taskId == "new")
     }
 }

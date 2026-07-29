@@ -62,6 +62,13 @@ final class KiroleUITests: XCTestCase {
         XCTAssertTrue(wifiDebugToggle.exists)
         XCTAssertFalse(wifiDebugToggle.isEnabled)
 
+        // Keep this debug-controls test deterministic. Deep Focus now honors the selected mode
+        // and may legitimately open the system Screen Time authorization or app picker first.
+        let standardFocusMode = app.buttons["Settings_FocusMode_Standard"]
+        scrollUntilHittable(standardFocusMode, in: settingsScrollView)
+        XCTAssertTrue(standardFocusMode.isHittable)
+        standardFocusMode.tap()
+
         let testFocusButton = app.buttons["Debug_TestFocusSession"]
         scrollUntilHittable(testFocusButton, in: settingsScrollView)
         XCTAssertTrue(testFocusButton.exists)

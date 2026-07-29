@@ -129,6 +129,23 @@ public enum FocusEnforcementMode: String, Codable, Sendable, CaseIterable {
     }
 }
 
+/// Controls whether a Deep Focus launch may continue as an unprotected Standard session.
+public enum FocusSessionFallbackPolicy: Sendable {
+    /// Hardware-triggered sessions still start so focus tracking remains available.
+    case allowStandard
+    /// Explicit Deep Focus tests must fail visibly instead of pretending protection is active.
+    case reject
+}
+
+/// Observable outcome of starting a focus session.
+public enum FocusSessionStartResult: Sendable {
+    case started(FocusSession)
+    case alreadyActive(FocusSession)
+    case blockedByActiveSession(FocusSession)
+    case rejected(FocusInterruptionSource)
+    case persistenceUnavailable
+}
+
 // MARK: - Focus Protection State
 
 /// 本次会话是否受到系统级保护
