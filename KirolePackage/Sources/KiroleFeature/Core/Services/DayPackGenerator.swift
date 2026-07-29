@@ -201,10 +201,13 @@ public final class DayPackGenerator {
     }
 
     public func generateTaskInPage(task: TaskItem, pet: Pet, userProfile: UserProfile = .default) async -> TaskInPageData {
-        // Encouragement（支持性文字）历史：客户 2026-07-20 拍板停用、App 恒发空串；
-        // 2026-07-28 客户给出六类支持性文字规范后**恢复**——按按钮进入的是 TaskItem，
-        // 而 TaskItem 没有 category 字段（六类只标在日历事件上），客户拍板恒用
-        // Deep Work 规则（"只指向最小的第一步"）。字节预算随之 50 → 80B（§4.8）。
+        // 客户 2026-07-28 要求「按按钮进入 task 期间」也显示支持性文字。按按钮进入的是 TaskItem，
+        // 而 TaskItem 没有 category 字段（六类只标在日历事件上），客户拍板恒用 Deep Work 规则
+        // （"只指向最小的第一步"）。
+        //
+        // 承载它的是协议 §4.8 里原名 `Encouragement` 的槽位——那是 App 侧的实现选择（复用空槽、
+        // 省一次 wire 变更），**不代表「鼓励语 / Tips」功能恢复**：该功能仍按客户 2026-07-20 的
+        // 决定停用。字节预算随之 50 → 80B。
         // 支持文字**绝不阻塞这一帧**。设备已经停在任务详情页等 0x11，而无备注时 taskOverview
         // 立即返回——那样支持文字就是唯一的等待，最坏 60 秒（model.requestTimeoutSeconds）白屏。
         // 用缓存命中值，未命中直接取确定性模板：真正的 AI 文案在 sync 时由
@@ -217,7 +220,7 @@ public final class DayPackGenerator {
         return TaskInPageData(
             taskId: task.hardwareIdentifier, taskTitle: task.title,
             taskDescription: overview,
-            encouragement: support
+            supportText: support
         )
     }
 

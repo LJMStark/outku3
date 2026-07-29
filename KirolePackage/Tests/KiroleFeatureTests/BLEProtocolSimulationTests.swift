@@ -164,7 +164,7 @@ struct BLEProtocolSimulationTests {
         #expect(parsedTaskIn.taskId == "task-ble-plan")
         #expect(parsedTaskIn.taskTitle == "Plan BLE")
         #expect(parsedTaskIn.taskDescription == "Check every packet before hardware.")
-        #expect(parsedTaskIn.encouragement == "Stay with the next byte.")
+        #expect(parsedTaskIn.supportText == "Stay with the next byte.")
         #expect(parsedTaskIn.focusChallengeActive == true)
     }
 

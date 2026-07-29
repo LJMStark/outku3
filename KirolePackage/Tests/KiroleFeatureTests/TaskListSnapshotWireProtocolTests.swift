@@ -30,11 +30,11 @@ struct TaskListSnapshotWireProtocolTests {
         let first = await DayPackGenerator.shared.generateTaskInPage(task: task, pet: Pet())
         let second = await DayPackGenerator.shared.generateTaskInPage(task: task, pet: Pet())
 
-        #expect(first.encouragement == expected)
-        #expect(second.encouragement == expected)
+        #expect(first.supportText == expected)
+        #expect(second.supportText == expected)
         #expect(!expected.isEmpty)
         #expect(expected.utf8.allSatisfy { (0x20...0x7E).contains($0) })
-        #expect(expected.utf8.count <= DayPackTextBudget.taskEncouragement)
+        #expect(expected.utf8.count <= DayPackTextBudget.taskSupportText)
     }
 
     @Test("Snapshot version increments monotonically and changes epoch on overflow")

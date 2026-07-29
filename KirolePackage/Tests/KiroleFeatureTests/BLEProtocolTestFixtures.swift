@@ -107,7 +107,7 @@ struct ProtocolFixtures {
             taskId: taskId,
             taskTitle: "Plan BLE",
             taskDescription: "Check every packet before hardware.",
-            encouragement: "Stay with the next byte.",
+            supportText: "Stay with the next byte.",
             focusChallengeActive: true
         )
     }

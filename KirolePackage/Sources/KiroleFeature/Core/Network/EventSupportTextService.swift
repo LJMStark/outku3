@@ -165,7 +165,7 @@ public final class EventSupportTextService {
             )
             let evaluation = Self.evaluateAIReply(
                 lines, expectedCount: missing.count,
-                maxBytes: DayPackTextBudget.taskEncouragement,
+                maxBytes: DayPackTextBudget.taskSupportText,
                 now: Date()
             )
             aiRetryAfter = evaluation.retryAfter

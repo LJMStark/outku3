@@ -17,9 +17,10 @@ public enum DayPackTextBudget {
     /// v2.10.0 每条日程支持性文字（§4.7 Events[] SupportText，按六大类规则生成，
     /// 追加在 endTime 之后；空串 = 固件不渲染该行）。
     public static let eventSupportText = requiredToolBudget("eventSupportText")
-    /// v2.10.0 TaskInPage Encouragement（§4.8）——按按钮进入任务时的支持性文字，恒 Deep Work
-    /// 风格。独立于 eventSupportText 的 120B：0x11 帧只需容纳单句（客户例句最长 70B）。
-    public static let taskEncouragement = 80
+    /// v2.10.0 按按钮进入任务时的支持性文字，恒 Deep Work 规则。走协议 §4.8 里原名
+    /// `Encouragement` 的槽位（复用空槽，非「鼓励语 / Tips」恢复——那个功能仍停用）。
+    /// 独立于 eventSupportText 的 120B：0x11 帧只需容纳单句（客户例句最长 70B）。
+    public static let taskSupportText = 80
 
     private static func requiredSceneBudget(_ id: String) -> Int {
         guard let budget = KirolePromptSpec.scene(id)?.outputMaxBytes else {
@@ -276,11 +277,14 @@ public enum BLEDataEncoder {
             fallbackIfSanitizedEmpty: HardwareTitleFallback.task
         )
         data.appendString(taskInPage.taskDescription ?? "", maxLength: DayPackTextBudget.taskDescription)
-        // v2.10.0: Encouragement 复活（客户 2026-07-28 推翻 2026-07-20 的停用决定）。现在承载
-        // 按按钮进入任务时的支持性文字，恒用 Deep Work 风格（TaskItem 无 category，客户拍板）。
-        // 预算 50→80B：客户给的 Deep Work 例句最长 70B，50B 会被静默截断。长度前缀不变，
-        // 固件按前缀读，不构成 wire 形状变更。
-        data.appendString(taskInPage.encouragement, maxLength: DayPackTextBudget.taskEncouragement)
+        // v2.10.0: 这个槽位（协议 §4.8 原名 `Encouragement`）改装支持性文字——按按钮进入任务时
+        // 显示，恒用 Deep Work 规则（TaskItem 无 category，客户拍板）。
+        //
+        // **不是把「鼓励语 / Tips」恢复**：那个功能仍按客户 2026-07-20 的决定停用。这里是 App 侧
+        // 选择复用它留下的空槽承载新功能，省一次 wire 变更；固件不应据此恢复当年为 Tips 写的
+        // 渲染逻辑或位置。预算 50→80B（客户 Deep Work 例句最长 70B，50B 会被静默截断）；长度前缀
+        // 不变，固件按前缀读，故非 wire 形状变更。
+        data.appendString(taskInPage.supportText, maxLength: DayPackTextBudget.taskSupportText)
         data.append(taskInPage.focusChallengeActive ? 0x01 : 0x00)
         return data
     }

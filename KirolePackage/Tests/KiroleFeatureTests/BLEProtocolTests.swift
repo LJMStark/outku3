@@ -917,7 +917,7 @@ struct BLEProtocolTests {
                 taskId: "task-cjk",
                 taskTitle: "写报告",
                 taskDescription: nil,
-                encouragement: "",
+                supportText: "",
                 focusChallengeActive: false
             )
         )
@@ -1067,7 +1067,7 @@ struct BLEProtocolTests {
             taskId: "task-1",
             taskTitle: "Write BLE tests",
             taskDescription: "Add comprehensive tests",
-            encouragement: "Go for it!",
+            supportText: "Go for it!",
             focusChallengeActive: true
         )
         let data = BLEDataEncoder.encodeTaskInPage(taskInPage)

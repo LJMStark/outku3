@@ -434,14 +434,14 @@ struct SimulatedAppPacket {
         let taskId = try reader.readString()
         let taskTitle = try reader.readString()
         let taskDescription = try reader.readString()
-        let encouragement = try reader.readString()
+        let supportText = try reader.readString()
         let focusChallengeActive = try reader.readBool()
         try reader.requireEnd()
         return SimulatedTaskInPage(
             taskId: taskId,
             taskTitle: taskTitle,
             taskDescription: taskDescription,
-            encouragement: encouragement,
+            supportText: supportText,
             focusChallengeActive: focusChallengeActive
         )
     }
@@ -684,7 +684,9 @@ struct SimulatedTaskInPage {
     let taskId: String
     let taskTitle: String
     let taskDescription: String
-    let encouragement: String
+    /// Protocol §4.8 still names this slot `Encouragement`; it now carries support text
+    /// (the Tips feature it was built for stays disabled). Named for the payload, not the slot.
+    let supportText: String
     let focusChallengeActive: Bool
 }
 
