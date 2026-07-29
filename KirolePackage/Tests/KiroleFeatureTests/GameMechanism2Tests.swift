@@ -525,7 +525,8 @@ struct GameMechanism2Tests {
             service: BLEService.shared,
             focusService: focusService,
             lastTimestampOverride: 0,
-            tasksOverride: [TaskItem(id: taskId, title: "Replay Task")]
+            tasksOverride: [TaskItem(id: taskId, title: "Replay Task")],
+            persistLogs: false
         )
         #expect(focusService.activeSession?.startTime == startTime)
 
@@ -534,7 +535,8 @@ struct GameMechanism2Tests {
             [completeLog],
             service: BLEService.shared,
             focusService: focusService,
-            lastTimestampOverride: 0
+            lastTimestampOverride: 0,
+            persistLogs: false
         )
         await focusService.waitForPendingPersistenceForTesting()
 
@@ -558,7 +560,8 @@ struct GameMechanism2Tests {
             [ackLog],
             service: BLEService.shared,
             isReplay: true,
-            lastTimestampOverride: 0
+            lastTimestampOverride: 0,
+            persistLogs: false
         )
 
         // Regression guard: before the fix the replay path (isReplay: true) only ran

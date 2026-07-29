@@ -106,7 +106,7 @@ struct BLEWiFiDebugCoordinatorTests {
         ) { _ in }
 
         await coordinator.setEnabled(true)
-        try await Task.sleep(for: .milliseconds(60))
+        try await waitForFailure(.timedOut, from: coordinator)
 
         #expect(coordinator.state == .failed)
         #expect(coordinator.failure == .timedOut)
@@ -125,7 +125,7 @@ struct BLEWiFiDebugCoordinatorTests {
         #expect(coordinator.state == .enabling)
         #expect(coordinator.failure == nil)
 
-        try await Task.sleep(for: .milliseconds(30))
+        try await waitForFailure(.timedOut, from: coordinator)
         #expect(coordinator.failure == .timedOut)
     }
 
@@ -221,6 +221,17 @@ struct BLEWiFiDebugCoordinatorTests {
         coordinator.handleResponse(payload: Data([0x01, 0x00]))
         #expect(coordinator.state == .unknown)
         #expect(!coordinator.isEnabled)
+    }
+
+    private func waitForFailure(
+        _ expectedFailure: BLEWiFiDebugCoordinator.Failure,
+        from coordinator: BLEWiFiDebugCoordinator,
+        timeout: Duration = .seconds(1)
+    ) async throws {
+        let deadline = ContinuousClock.now + timeout
+        while coordinator.failure != expectedFailure, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
     }
 
 }

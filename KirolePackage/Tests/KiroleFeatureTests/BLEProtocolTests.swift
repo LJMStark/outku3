@@ -1542,7 +1542,8 @@ struct BLEProtocolTests {
         )
         await BLEEventHandler.handleEventLogs(
             [event], service: BLEService.shared,
-            focusService: focusService, isReplay: true
+            focusService: focusService, isReplay: true,
+            persistLogs: false
         )
 
         #expect(focusService.activeSession == nil)
@@ -1562,7 +1563,8 @@ struct BLEProtocolTests {
         await BLEEventHandler.handleEventLogs(
             [event], service: BLEService.shared,
             focusService: focusService, isReplay: false,
-            tasksOverride: [TaskItem(id: taskId, title: "Live Enter Task")]
+            tasksOverride: [TaskItem(id: taskId, title: "Live Enter Task")],
+            persistLogs: false
         )
 
         #expect(focusService.activeSession?.taskId == taskId)
@@ -1590,7 +1592,8 @@ struct BLEProtocolTests {
             service: BLEService.shared,
             focusService: focusService,
             isReplay: false,
-            tasksOverride: [task]
+            tasksOverride: [task],
+            persistLogs: false
         )
 
         #expect(focusService.activeSession?.taskId == task.id)
@@ -1610,7 +1613,8 @@ struct BLEProtocolTests {
         await BLEEventHandler.handleEventLogs(
             [event], service: BLEService.shared,
             focusService: focusService, isReplay: false,
-            tasksOverride: []
+            tasksOverride: [],
+            persistLogs: false
         )
         #expect(focusService.activeSession == nil)
     }
@@ -1630,7 +1634,8 @@ struct BLEProtocolTests {
         await BLEEventHandler.handleEventLogs(
             [EventLog(eventType: .enterTaskIn, taskId: taskId, timestamp: ancient)],
             service: BLEService.shared, focusService: focusService, isReplay: false,
-            tasksOverride: tasks
+            tasksOverride: tasks,
+            persistLogs: false
         )
         let start = focusService.activeSession?.startTime
         #expect(start != nil)
@@ -1641,7 +1646,8 @@ struct BLEProtocolTests {
         await BLEEventHandler.handleEventLogs(
             [EventLog(eventType: .completeTask, taskId: taskId, timestamp: ancient)],
             service: BLEService.shared, focusService: focusService, isReplay: false,
-            tasksOverride: tasks
+            tasksOverride: tasks,
+            persistLogs: false
         )
         await focusService.waitForPendingPersistenceForTesting()
         let ended = focusService.todaySessions.last { $0.taskId == taskId }
