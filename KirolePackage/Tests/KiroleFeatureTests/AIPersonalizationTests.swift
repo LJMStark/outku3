@@ -161,6 +161,20 @@ import Foundation
     #expect(CompanionDialogueDisplayPolicy.isValidForDisplay(text))
 }
 
+@Test func testCompanionDialogueDisplayPolicyAcceptsOnlyTheExpectedApprovedQuoteAttribution() async throws {
+    let approvedQuote = "\"Grace is sufficient for thee.\" - 2 Corinthians 12:9"
+
+    #expect(CompanionDialogueDisplayPolicy.isValidForDisplay(
+        approvedQuote,
+        expectedApprovedQuote: approvedQuote
+    ))
+    #expect(!CompanionDialogueDisplayPolicy.isValidForDisplay(approvedQuote))
+    #expect(!CompanionDialogueDisplayPolicy.isValidForDisplay(
+        "\"Another line.\" - Unknown",
+        expectedApprovedQuote: approvedQuote
+    ))
+}
+
 @Test func testCompanionDialogueDisplayPolicyRejectsChineseOutput() async throws {
     // Real regression: the model mirrored Chinese calendar titles and produced Chinese prose,
     // which slipped through because the terminal-punctuation gate accepts "。！？".

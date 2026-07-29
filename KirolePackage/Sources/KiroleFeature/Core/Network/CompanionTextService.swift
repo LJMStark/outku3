@@ -351,11 +351,10 @@ public final class CompanionTextService {
     ) async -> String {
         let enrichedBaseContext = await enrichedContext(for: type, baseContext: baseContext)
         let historyTexts = enrichedBaseContext.recentTexts
-        let writingSelection = enrichedBaseContext.customCompanion == nil
-            ? CompanionWritingModeSelector.randomSelection(
-                for: enrichedBaseContext.companionCharacter
-            )
-            : .normal
+        // 掷一次，重试循环内复用同一档——模型额度与事后词数校验必须同源。
+        let writingSelection = CompanionWritingModeSelector.selectionForGeneration(
+            context: enrichedBaseContext, type: type
+        )
         var rejectedTexts: [String] = []
 
         for attempt in 0..<Self.dialogueMaxAttempts {
@@ -374,7 +373,13 @@ public final class CompanionTextService {
                 let normalized = CompanionDialogueDisplayPolicy.normalized(aiText)
                 let budgeted = CompanionTextService.enforceByteBudget(normalized, maxBytes: DayPackTextBudget.petDialogue)
 
-                if CompanionDialogueDisplayPolicy.isValidForDisplay(budgeted) {
+                if CompanionDialogueDisplayPolicy.isValidForDisplay(
+                    budgeted,
+                    expectedApprovedQuote: writingSelection.deterministicOutput,
+                    wordLimit: CompanionWritingModeSelector.wordLimit(
+                        for: enrichedBaseContext, mode: writingSelection.mode
+                    )
+                ) {
                     if mode.shouldPersistInteractions {
                         await saveInteraction(
                             type: type,
@@ -562,9 +567,31 @@ public final class CompanionTextService {
         guard await openAI.isConfigured else { return nil }
         let context = await enrichedContext(for: type, baseContext: baseContext)
 
+        // 写作模式在**这里**定，而不是留给 OpenAIService 内部随机：模型拿到的额度和事后校验的
+        // 额度必须同源。此前这里按 `.normal` 猜，nova 掷到 Mode B（25 词额度）写出 21 词的合法
+        // 引用，会被 Mode A 的 20 词门槛拒掉并降级——同一次生成两套标准。
+        let writingSelection = CompanionWritingModeSelector.selectionForGeneration(
+            context: context, type: type
+        )
+
         do {
-            let text = try await openAI.generateCompanionText(type: type, context: context)
+            let text = try await openAI.generateCompanionText(
+                type: type, context: context, writingSelection: writingSelection
+            )
             let enforced = CompanionTextService.enforceByteBudget(text, maxBytes: maxBytes)
+            // 词数上限（客户 2026-07-28：joy 25 / silas 15·20 / nova 20·25）。这条路径供早安、
+            // 任务鼓励、结算金句等使用，此前只截字节——120B 装得下远超 15 词的句子，超词会直上
+            // 硬件。超了就返回 nil，让各调用方走自己的 FallbackText（我们自己写的兜底不受此限）。
+            //
+            // 用 `writingSelection.mode`（本次实际给模型的那档）而非固定 `.normal`。白名单引用
+            // **会**走到这里——`deterministicOutput` 只跳过模型请求，字符串照样返回给调用方并
+            // 参与校验；它能通过是因为生成器已按 120B 预算逐句核过，不是因为被绕开了。
+            if let wordLimit = CompanionWritingModeSelector.wordLimit(
+                for: context, mode: writingSelection.mode
+            ), CompanionDialogueDisplayPolicy.wordCount(enforced) > wordLimit {
+                Log.ai.warning("\(type.rawValue, privacy: .public) exceeded the \(wordLimit, privacy: .public)-word budget in \(writingSelection.mode.rawValue, privacy: .public) mode — falling back to template copy")
+                return nil
+            }
             if mode.shouldPersistInteractions {
                 await saveInteraction(
                     type: type,

@@ -21,6 +21,22 @@ struct TaskListSnapshotWireProtocolTests {
         #expect(page.taskId == TaskSummary(from: task).id)
     }
 
+    @Test("TaskInPage uses the immediate deterministic Deep Work fallback")
+    @MainActor
+    func taskInPageUsesImmediateDeterministicSupportText() async {
+        let task = TaskItem(id: "task-immediate-support", title: "Write release notes")
+        let expected = FallbackText.eventSupportText(for: .deepWork, seed: task.title)
+
+        let first = await DayPackGenerator.shared.generateTaskInPage(task: task, pet: Pet())
+        let second = await DayPackGenerator.shared.generateTaskInPage(task: task, pet: Pet())
+
+        #expect(first.encouragement == expected)
+        #expect(second.encouragement == expected)
+        #expect(!expected.isEmpty)
+        #expect(expected.utf8.allSatisfy { (0x20...0x7E).contains($0) })
+        #expect(expected.utf8.count <= DayPackTextBudget.taskEncouragement)
+    }
+
     @Test("Snapshot version increments monotonically and changes epoch on overflow")
     func snapshotVersionAdvancement() {
         let first = TaskListSnapshotVersion.advanced(from: nil, newEpoch: 11)

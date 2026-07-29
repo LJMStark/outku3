@@ -7,6 +7,10 @@ export type WritingMode = "normal" | "signatureQuote";
 export type ApprovedQuote = {
   text: string;
   source: string;
+  /** Emotional tones this line fits. The App filters the bank by the current Mode B moment's
+   *  tones (`modeBMomentTones`) so a celebration never draws a consolation line. Studio surfaces
+   *  them for review; the filtering itself is App-side because quote-style Mode B skips the LLM. */
+  tones: string[];
 };
 
 export type PromptContext = Record<string, string | number | boolean | string[]>;
@@ -79,6 +83,10 @@ type CharacterDefinition = {
   personaPrompt: string;
   approvedQuotes: ApprovedQuote[];
   wordLimits?: { default?: number; primaryMode?: number; secondaryMode?: number } | number;
+  /** How Mode B is fulfilled: "quote" recites an approvedQuotes entry verbatim (deterministic,
+   *  temperature 0); "generative" has the LLM write an original quotable line in the character's
+   *  own voice, so approvedQuotes is empty by design. */
+  secondaryModeStyle?: "quote" | "generative";
 };
 
 type WritingModeDefinition = {
@@ -88,6 +96,9 @@ type WritingModeDefinition = {
   weight: number;
   temperatureOverride: number | null;
   instructionTemplate: string;
+  /** Mode B variant for characters whose secondaryModeStyle is "generative" (joy writes an
+   *  original quotable line instead of reciting an approved quotation). */
+  generativeInstructionTemplate?: string | null;
 };
 
 type ScenarioDefinition = {
@@ -128,6 +139,9 @@ type PromptSpec = {
   personaScenes: ScenarioDefinition[];
   toolPrompts: ScenarioDefinition[];
   nonActivePaths: unknown[];
+  /** Mode B moment id -> acceptable emotional tones. Consumed by the App when narrowing the
+   *  approved-quote bank; mirrored here so Studio can display and validate the same mapping. */
+  modeBMomentTones: Record<string, string[]>;
 };
 
 export const promptSpec = promptSpecJson as unknown as PromptSpec;
@@ -236,7 +250,13 @@ function writingModeInstruction(mode: WritingMode, quote?: ApprovedQuote): strin
   const definition = promptSpec.writingModes.find((item) => item.id === mode);
   if (!definition) throw new Error(`Unknown writing mode: ${mode}`);
   if (mode === "normal") return definition.instructionTemplate;
-  if (!quote) throw new Error("Signature quote mode requires an approved quote");
+  // Generative Mode B (joy): no approved quote exists — the model writes an original quotable
+  // line in the character's own voice. Mirrors OpenAIService.writingModePrompt(for:).
+  if (!quote) {
+    const generative = definition.generativeInstructionTemplate;
+    if (!generative) throw new Error("Generative signature mode requires generativeInstructionTemplate");
+    return generative;
+  }
   return render(definition.instructionTemplate, {
     quoteText: quote.text,
     quoteSource: quote.source,
@@ -323,9 +343,42 @@ function toolValues(scenario: ScenarioDefinition, inputs: PromptContext): Record
     focusFacts: focusMinutes > 0 ? `\nTotal focus time: ${focusLabel}.` : "",
     deadlineInstruction: deadlines.length ? "\nYou MUST mention the deadline item(s) listed in the facts." : "",
     focusInstruction: focusMinutes > 120 ? "\nYou MUST state the total focus time exactly as given in the facts." : "",
-    numberedEvents: `<user_content>${events.map((item, index) => `${index + 1}. ${sanitize(item, 120)}`).join("\n")}</user_content>`,
+    numberedEvents: numberedEventList(scenario, events, inputs),
     categoryDefinitions,
   };
+}
+
+// eventSupportText prefixes each event with its category number: the six writing rules are
+// dispatched by category, so the model needs it inline. Must stay byte-identical to the Swift
+// builder (OpenAIService+EventSupportText.compileEventSupportTextPrompt) or the cross-runtime
+// golden fixtures diverge. Other tools (eventClassification) send the bare numbered list.
+function numberedEventList(
+  scenario: ScenarioDefinition,
+  events: string[],
+  inputs: PromptContext,
+): string {
+  if (scenario.id !== "eventSupportText") {
+    return `<user_content>${events.map((item, index) => `${index + 1}. ${sanitize(item, 120)}`).join("\n")}</user_content>`;
+  }
+  const categories = (Array.isArray(inputs.eventCategories)
+    ? inputs.eventCategories
+    : stringify(inputs.eventCategories ?? "").split(/[,\s]+/).filter(Boolean)
+  ).map((item) => Number(item));
+  // Day-density hint for categories 5 and 6 only. Mirrors Swift
+  // OpenAIService.densityHint(for:) — the golden fixtures compare compiled prompts byte for byte,
+  // so the tag text and the categories it applies to must match exactly.
+  const isDayPacked = inputs.isDayPacked === true || stringify(inputs.isDayPacked ?? "") === "true";
+  // Category 5 (Wellness) only — the one category whose client rule reads the schedule. Rest (6)
+  // grants permission regardless of how the day went, so it gets no hint.
+  const densityHint = (category: number) =>
+    category === 5 ? (isDayPacked ? ", packed day" : ", open day") : "";
+  // Absent category falls back to 3 (Administrative & Routine) — the same "uncategorized shows as
+  // admin" decision the App applies in EventCategoryService before reaching this prompt.
+  const lines = events.map((item, index) => {
+    const category = categories[index] ?? 3;
+    return `${index + 1}. [category ${category}${densityHint(category)}] ${sanitize(item, 120)}`;
+  });
+  return `<user_content>${lines.join("\n")}</user_content>`;
 }
 
 function buildToolUserPrompt(scenario: ScenarioDefinition, inputs: PromptContext, values: Record<string, string>): string {
@@ -459,6 +512,81 @@ export function outputMaxBytes(compiled: CompiledPrompt): number {
   return compiled.outputMaxBytes;
 }
 
+type NumberedEventSupportLine = { index: number; text: string };
+
+function expectedEventSupportCount(compiled: CompiledPrompt): number {
+  const source = compiled.sanitizedInputs.events;
+  return Array.isArray(source)
+    ? source.length
+    : stringify(source ?? "").split(/\n|;/).map((item) => item.trim()).filter(Boolean).length;
+}
+
+function parseEventSupportLines(compiled: CompiledPrompt, output: string): {
+  lines: NumberedEventSupportLine[];
+  expectedCount: number;
+  formatPassed: boolean;
+} {
+  const expectedCount = expectedEventSupportCount(compiled);
+  const byIndex = new Map<number, string>();
+  let formatPassed = true;
+  for (const rawLine of output.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const separator = line.indexOf("|");
+    if (separator < 0) {
+      formatPassed = false;
+      continue;
+    }
+    const rawIndex = line.slice(0, separator).trim();
+    if (!/^\d+$/.test(rawIndex)) {
+      formatPassed = false;
+      continue;
+    }
+    const index = Number(rawIndex);
+    const text = line.slice(separator + 1).trim();
+    if (index < 1 || index > expectedCount || byIndex.has(index) || !text) {
+      formatPassed = false;
+      continue;
+    }
+    byIndex.set(index, text);
+  }
+  return {
+    lines: [...byIndex.entries()]
+      .sort(([left], [right]) => left - right)
+      .map(([index, text]) => ({ index, text })),
+    expectedCount,
+    formatPassed,
+  };
+}
+
+export function deviceOutputs(compiled: CompiledPrompt, output: string): {
+  truncatedOutput: string;
+  asciiOutput: string;
+} {
+  const maxBytes = outputMaxBytes(compiled);
+  if (compiled.scenarioId !== "eventSupportText") {
+    const truncatedOutput = utf8Truncate(output, maxBytes);
+    return {
+      truncatedOutput,
+      asciiOutput: utf8Prefix(asciiForEInk(truncatedOutput), maxBytes),
+    };
+  }
+
+  const { lines } = parseEventSupportLines(compiled, output);
+  const truncatedLines = lines.map(({ index, text }) => ({
+    index,
+    text: utf8Truncate(text, maxBytes),
+  }));
+  return {
+    truncatedOutput: truncatedLines.map(({ index, text }) => `${index}|${text}`).join("\n"),
+    // The App's wire path sanitizes first, then clamps the final ASCII bytes. Use the original
+    // per-line text here; truncating raw UTF-8 first loses expanding mappings at the boundary.
+    asciiOutput: lines
+      .map(({ index, text }) => `${index}|${utf8Prefix(asciiForEInk(text), maxBytes)}`)
+      .join("\n"),
+  };
+}
+
 const asciiMap: Record<string, string> = {
   "\t": " ", "\n": " ", "\r": " ",
   " ": " ", " ": " ", " ": " ", " ": " ", " ": " ", " ": " ", " ": " ", " ": " ", " ": " ", " ": " ", " ": " ", " ": " ", " ": " ", " ": " ", " ": " ", "　": " ",
@@ -529,6 +657,36 @@ export function validateOutput(compiled: CompiledPrompt, output: string): Valida
       { id: "count", labelZh: "分类数量", labelEn: "Category count", passed: formatPassed && values.length === expected, detail: `${formatPassed ? values.length : -1} / ${expected}` },
     ];
   }
+  if (compiled.scenarioId === "eventSupportText") {
+    const { lines, expectedCount, formatPassed } = parseEventSupportLines(compiled, output);
+    const numberingPassed = formatPassed && lines.length === expectedCount
+      && lines.every((line, index) => line.index === index + 1);
+    const maxBytes = outputMaxBytes(compiled);
+    const encoder = new TextEncoder();
+    const byteDetails = lines.map(({ index, text }) => `${index}: ${encoder.encode(text).length} / ${maxBytes} B`);
+    const unsafeASCII = lines.filter(({ text }) => asciiForEInk(text) !== text).map(({ index }) => index);
+    // One sentence, and NOT wrapped in quote marks: support text is the App speaking plainly, so
+    // `"Sentence."` means the model quoted itself. Inner apostrophes stay legal ("Bet you can't
+    // clear this...") — only the first and last characters are checked. Mirrors Swift
+    // EventSupportTextService.isExactlyOneCompleteSentence; Studio must not pass what the App rejects.
+    const invalidSentences = lines
+      .filter(({ text }) => !/^[^.!?]*[.!?]+$/.test(text) || /^["']|["']$/.test(text))
+      .map(({ index }) => index);
+    const unusableLines = lines.filter(({ text }) => {
+      const sanitized = asciiForEInk(text).trim();
+      return /^\[error\]/i.test(sanitized) || !/[A-Za-z0-9]/.test(sanitized);
+    }).map(({ index }) => index);
+    return [
+      { id: "numbering", labelZh: "编号完整", labelEn: "Complete numbering", passed: numberingPassed, detail: lines.map(({ index }) => index).join(", ") || "empty" },
+      { id: "count", labelZh: "输出数量", labelEn: "Output count", passed: lines.length === expectedCount, detail: `${lines.length} / ${expectedCount}` },
+      { id: "english", labelZh: "仅英文", labelEn: "English only", passed: lines.every(({ text }) => !/[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/u.test(text)), detail: "CJK scan per line" },
+      { id: "punctuation", labelZh: "逐条结尾标点", labelEn: "End punctuation per line", passed: lines.every(({ text }) => /[.!?…][\"']?$/.test(text)), detail: "per-line scan" },
+      { id: "sentence", labelZh: "逐条一句话", labelEn: "One sentence per line", passed: invalidSentences.length === 0, detail: invalidSentences.length ? `invalid: ${invalidSentences.join(", ")}` : "one sentence each" },
+      { id: "usable", labelZh: "逐条可用文案", labelEn: "Usable text per line", passed: unusableLines.length === 0, detail: unusableLines.length ? `invalid: ${unusableLines.join(", ")}` : "readable" },
+      { id: "bytes", labelZh: `逐条 ${maxBytes} 字节`, labelEn: `${maxBytes} bytes per line`, passed: lines.every(({ text }) => encoder.encode(text).length <= maxBytes), detail: byteDetails.join("; ") || "no parsed lines" },
+      { id: "ascii", labelZh: "逐条硬件 ASCII", labelEn: "Hardware ASCII per line", passed: unsafeASCII.length === 0, detail: unsafeASCII.length ? `transformed: ${unsafeASCII.join(", ")}` : "wire-safe" },
+    ];
+  }
 
   const character = compiled.characterId
     ? promptSpec.characters.find((item) => item.id === compiled.characterId)
@@ -542,7 +700,16 @@ export function validateOutput(compiled: CompiledPrompt, output: string): Valida
   const maxBytes = outputMaxBytes(compiled);
   const checks: ValidationItem[] = [];
   const addEnglish = () => checks.push({ id: "english", labelZh: "仅英文", labelEn: "English only", passed: !containsCJK, detail: "CJK scan" });
-  const addPunctuation = () => checks.push({ id: "punctuation", labelZh: "结尾标点", labelEn: "End punctuation", passed: /[.!?…][\"']?$/.test(trimmed), detail: trimmed.slice(-1) || "empty" });
+  const expectedApprovedQuote = compiled.writingMode === "signatureQuote" && compiled.approvedQuote
+    ? `"${compiled.approvedQuote.text}" - ${compiled.approvedQuote.source}`
+    : undefined;
+  const addPunctuation = () => checks.push({
+    id: "punctuation",
+    labelZh: "结尾标点",
+    labelEn: "End punctuation",
+    passed: expectedApprovedQuote ? trimmed === expectedApprovedQuote : /[.!?…][\"']?$/.test(trimmed),
+    detail: expectedApprovedQuote ? "approved quote attribution" : (trimmed.slice(-1) || "empty"),
+  });
   const addHardware = () => checks.push(
     { id: "bytes", labelZh: `${maxBytes} 字节`, labelEn: `${maxBytes} bytes`, passed: bytes <= maxBytes, detail: `${bytes} / ${maxBytes} B` },
     { id: "ascii", labelZh: "硬件 ASCII", labelEn: "Hardware ASCII", passed: asciiForEInk(output) === output, detail: asciiForEInk(output) === output ? "wire-safe" : "transformed" },
@@ -575,7 +742,9 @@ export function validateOutput(compiled: CompiledPrompt, output: string): Valida
     checks.push({ id: "words", labelZh: "词数限制", labelEn: "Word budget", passed: wordCount(output) <= wordLimit, detail: `${wordCount(output)} / ${wordLimit}` });
   }
   if (compiled.writingMode === "signatureQuote" && compiled.approvedQuote) {
-    const expected = `"${compiled.approvedQuote.text}" (${compiled.approvedQuote.source}).`;
+    // Wire-safe ASCII, matching Swift CompanionWritingSelection.deterministicOutput:
+    // "text" - source  (plain hyphen-minus, no trailing period).
+    const expected = expectedApprovedQuote!;
     checks.push({
       id: "approvedQuote",
       labelZh: "指定金句与出处",

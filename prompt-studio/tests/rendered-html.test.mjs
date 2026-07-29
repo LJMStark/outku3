@@ -133,9 +133,15 @@ test("meta exposes every active scenario without secrets", async () => {
   const meta = await response.json();
   assert.equal(meta.characters.length, 3);
   assert.deepEqual(meta.writingModes.map(({ id, weight }) => [id, weight]), [["normal", 80], ["signatureQuote", 20]]);
-  assert.ok(meta.characters.every((character) => character.approvedQuotes.length >= 3));
+  // Quote-mode characters carry a bank; joy's Mode B is generative (client 2026-07-28) so its
+  // bank is intentionally empty — assert per style rather than a blanket floor.
+  assert.ok(meta.characters.every((character) => (
+    character.secondaryModeStyle === "generative"
+      ? character.approvedQuotes.length === 0
+      : character.approvedQuotes.length >= 3
+  )));
   assert.equal(meta.personaScenes.length, 8);
-  assert.equal(meta.toolPrompts.length, 7);
+  assert.equal(meta.toolPrompts.length, 8);
   assert.ok(meta.personaScenes.every((scenario) => scenario.outputMaxBytes === 120));
   assert.equal(meta.toolPrompts.find(({ id }) => id === "screensaver").outputMaxBytes, 180);
   assert.equal(meta.toolPrompts.find(({ id }) => id === "taskOverview").outputMaxBytes, 100);
@@ -334,6 +340,106 @@ test("run applies each App wire budget and cuts at the last complete sentence", 
     assert.equal(payload.results[0].truncatedOutput, completeSentence, scenarioId);
     const byteCheck = payload.results[0].validation.find((item) => item.id === "bytes");
     assert.equal(byteCheck.detail, `${modelOutput.length} / ${expectedBytes} B`, scenarioId);
+  }
+});
+
+test("event support runs apply the 120-byte wire budget to each numbered line", async () => {
+  const app = await worker();
+  const modelOutput = `1|${"a".repeat(80)}.\n2|${"b".repeat(80)}.`;
+  assert.ok(Buffer.byteLength(modelOutput) > 120);
+
+  const response = await runScenario(
+    app,
+    "eventSupportText",
+    modelOutput,
+    { events: ["Product sync", "Client deadline"], eventCategories: ["2", "4"] },
+  );
+  assert.equal(response.status, 200);
+  const [result] = (await response.json()).results;
+  assert.equal(result.truncatedOutput, modelOutput);
+  assert.equal(result.asciiOutput, modelOutput);
+  for (const id of ["numbering", "count", "bytes", "ascii"]) {
+    assert.equal(result.validation.find((item) => item.id === id)?.passed, true, id);
+  }
+});
+
+test("event support previews and validates parsed lines independently", async () => {
+  const app = await worker();
+  const modelOutput = [
+    "1|Ready.",
+    `2|${"©".repeat(50)}`,
+    `4|${"x".repeat(121)}`,
+  ].join("\n");
+  const response = await runScenario(
+    app,
+    "eventSupportText",
+    modelOutput,
+    {
+      events: ["First", "Second", "Third", "Fourth"],
+      eventCategories: ["1", "2", "3", "4"],
+    },
+  );
+  assert.equal(response.status, 200);
+  const [result] = (await response.json()).results;
+  assert.equal(result.truncatedOutput, [
+    "1|Ready.",
+    `2|${"©".repeat(50)}`,
+    `4|${"x".repeat(120)}`,
+  ].join("\n"));
+  assert.equal(result.asciiOutput, [
+    "1|Ready.",
+    `2|${"(c)".repeat(40)}`,
+    `4|${"x".repeat(120)}`,
+  ].join("\n"));
+  for (const id of ["numbering", "count", "bytes", "ascii"]) {
+    assert.equal(result.validation.find((item) => item.id === id)?.passed, false, id);
+  }
+});
+
+test("event support preview sanitizes before the per-line byte clamp and rejects multiple sentences", async () => {
+  const app = await worker();
+  const modelOutput = [
+    `1|${"a".repeat(119)}…`,
+    "2|Start here. Then do that.",
+    "3|[Error] upstream.",
+    // Escape, not a literal: this input must be REJECTED so it has to stay, but AGENTS.md bans
+    // emoji glyphs in source. U+1F389 party popper.
+    "4|\u{1F389}",
+  ].join("\n");
+  const response = await runScenario(
+    app,
+    "eventSupportText",
+    modelOutput,
+    { events: ["First", "Second", "Third", "Fourth"], eventCategories: ["1", "1", "1", "1"] },
+  );
+  assert.equal(response.status, 200);
+  const [result] = (await response.json()).results;
+  assert.equal(result.asciiOutput.split("\n")[0], `1|${"a".repeat(119)}.`);
+  assert.equal(Buffer.byteLength(result.asciiOutput.split("\n")[0].slice(2)), 120);
+  assert.equal(result.validation.find((item) => item.id === "sentence")?.passed, false);
+  assert.equal(result.validation.find((item) => item.id === "usable")?.passed, false);
+  assert.equal(result.validation.find((item) => item.id === "ascii")?.passed, false);
+});
+
+test("event support numbering rejects duplicate, out-of-range, and unnumbered lines", async () => {
+  const app = await worker();
+  const cases = [
+    "1|Ready.\n1|Duplicate.\n2|Set.",
+    "1|Ready.\n3|Out of range.\n2|Set.",
+    "1|Ready.\nUnexpected preamble.\n2|Set.",
+  ];
+  for (const modelOutput of cases) {
+    const response = await runScenario(
+      app,
+      "eventSupportText",
+      modelOutput,
+      { events: ["First", "Second"], eventCategories: ["1", "2"] },
+    );
+    assert.equal(response.status, 200);
+    const [result] = (await response.json()).results;
+    assert.equal(result.truncatedOutput, "1|Ready.\n2|Set.");
+    assert.equal(result.validation.find((item) => item.id === "numbering")?.passed, false);
+    assert.equal(result.validation.find((item) => item.id === "count")?.passed, true);
   }
 });
 
@@ -566,9 +672,13 @@ test("compile exposes deterministic normal and signature-quote modes", async () 
   assert.match(normal.systemPrompt, /MODE: NORMAL/);
   assert.equal(signature.writingMode, "signatureQuote");
   assert.equal(signature.parameters.temperature, 0);
-  assert.equal(signature.approvedQuote.source, "2 Corinthians 12:9");
+  // Derived from the spec, not pinned: silas's approved bank was expanded (client 2026-07-28),
+  // and hardcoding a quote here means every future bank edit fails an unrelated mode assertion.
+  const spec = JSON.parse(await readFile(new URL("lib/prompt-spec.json", projectRoot), "utf8"));
+  const expectedQuote = spec.characters.find(({ id }) => id === "silas").approvedQuotes[1];
+  assert.equal(signature.approvedQuote.source, expectedQuote.source);
   assert.match(signature.systemPrompt, /MODE: SIGNATURE QUOTE/);
-  assert.match(signature.systemPrompt, /My grace is sufficient for thee\./);
+  assert.ok(signature.systemPrompt.includes(expectedQuote.text));
 });
 
 test("compile rejects unknown writing modes and invalid quote indexes", async () => {
@@ -613,10 +723,79 @@ test("signature-quote runs are deterministic and do not call OpenRouter", async 
     const [result] = (await response.json()).results;
     assert.equal(result.parameters.temperature, 0);
     assert.equal(result.actualModel, "deterministic/approved-quote");
-    assert.equal(result.rawOutput, '"My grace is sufficient for thee." (2 Corinthians 12:9).');
+    // Format is the client's `"text" - source` (v2.10.0); derived from the spec so a bank edit
+    // does not fail this test. The passing `approvedQuote` check below is what pins runtime
+    // output and validator expectation to the same format.
+    const runSpec = JSON.parse(await readFile(new URL("lib/prompt-spec.json", projectRoot), "utf8"));
+    const runQuote = runSpec.characters.find(({ id }) => id === "silas").approvedQuotes[1];
+    assert.equal(result.rawOutput, `"${runQuote.text}" - ${runQuote.source}`);
     assert.equal(result.validation.find((item) => item.id === "approvedQuote")?.passed, true);
+    assert.equal(result.validation.find((item) => item.id === "punctuation")?.passed, true);
     assert.equal(result.validation.some((item) => item.id === "deadline" || item.id === "focus"), false);
     assert.equal(openRouterCalled, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+    delete globalThis.__promptStudioTestEnv;
+  }
+});
+
+test("Joy generative signature runs pass model preflight and the shared daily budget", async () => {
+  const app = await worker();
+  const originalFetch = globalThis.fetch;
+  let upstreamCalls = 0;
+  globalThis.fetch = async (input, init) => {
+    if (String(input) === "https://openrouter.ai/api/v1/chat/completions") {
+      upstreamCalls += 1;
+      return Response.json({ choices: [{ message: { content: "A small finish can still hold a little sunlight." } }] });
+    }
+    return originalFetch(input, init);
+  };
+  const request = () => new Request("http://localhost/api/run", {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: "http://localhost" },
+    body: JSON.stringify({
+      scenarioId: "companionPhrase",
+      characters: ["joy"],
+      writingMode: "signatureQuote",
+      context: {},
+    }),
+  });
+
+  try {
+    const missingKeyRuntime = { DB: memoryD1(), RATE_LIMIT_SALT: "joy-signature-no-key" };
+    globalThis.__promptStudioTestEnv = missingKeyRuntime;
+    const missingKey = await app.fetch(request(), environment(missingKeyRuntime), context());
+    assert.equal(missingKey.status, 503);
+    assert.equal(upstreamCalls, 0);
+
+    const fullBudgetDB = memoryD1();
+    const now = Date.now();
+    const day = new Date(now).toISOString().slice(0, 10);
+    await fullBudgetDB.prepare("INSERT INTO usage_buckets VALUES (?1, ?2, ?3, ?4)")
+      .bind(`global:${day}`, 300, now + 3 * 24 * 60 * 60 * 1000, now)
+      .run();
+    const fullBudgetRuntime = {
+      DB: fullBudgetDB,
+      RATE_LIMIT_SALT: "joy-signature-full-budget",
+      OPENROUTER_API_KEY: "test-key",
+    };
+    globalThis.__promptStudioTestEnv = fullBudgetRuntime;
+    const fullBudget = await app.fetch(request(), environment(fullBudgetRuntime), context());
+    assert.equal(fullBudget.status, 429);
+    assert.equal(upstreamCalls, 0);
+
+    const configuredRuntime = {
+      DB: memoryD1(),
+      RATE_LIMIT_SALT: "joy-signature-configured",
+      OPENROUTER_API_KEY: "test-key",
+    };
+    globalThis.__promptStudioTestEnv = configuredRuntime;
+    const generated = await app.fetch(request(), environment(configuredRuntime), context());
+    assert.equal(generated.status, 200);
+    const [result] = (await generated.json()).results;
+    assert.equal(result.rawOutput, "A small finish can still hold a little sunlight.");
+    assert.equal(result.actualModel, "openai/gpt-oss-120b");
+    assert.equal(upstreamCalls, 1);
   } finally {
     globalThis.fetch = originalFetch;
     delete globalThis.__promptStudioTestEnv;
@@ -684,6 +863,8 @@ test("tool compilation matches the Swift production golden prompts", async () =>
       tasksTotal: 6,
     },
     eventClassification: { events: ["Product sync", "Client deadline"], categoryDefinitions },
+    // Categories mirror the Swift fixture: Product sync = 2 (Meetings), Client deadline = 4 (Deadlines).
+    eventSupportText: { events: ["Product sync", "Client deadline", "Stretch break"], eventCategories: ["2", "4", "5"], isDayPacked: true },
     translation: { text: "Protect the quiet hour." },
   };
 

@@ -99,6 +99,9 @@ public struct DayPack: Codable, Sendable {
             // Category joins the fingerprint so an async classification landing later (cache miss →
             // AI result on the next generate) re-pushes the DayPack instead of being deduped away.
             parts.append("event.category=\(event.category.rawValue)")
+            // supportText joins the fingerprint so a late-arriving support-text generation triggers
+            // a re-push rather than being silently deduped away (same rationale as category above).
+            parts.append("event.supportText=\(event.supportText)")
         }
 
         parts.append("topTasks.count=\(topTasks.count)")
@@ -210,7 +213,7 @@ public struct TaskSummary: Codable, Sendable, Identifiable {
 
 // MARK: - Event Summary
 
-/// 事件摘要（用于 DayPack 概览面板的事件卡：时间 + 标题 + 描述 + 类别图标信号）
+/// 事件摘要（用于 DayPack 概览面板的事件卡：时间 + 标题 + 描述 + 类别图标信号 + 支持文字）
 public struct EventSummary: Codable, Sendable {
     public let time: String          // "HH:mm"，全天事件为空串
     /// "HH:mm" 结束时间（v2.5.30）：固件用它算「前一日程结束→下一日程开始」间隔（页面二
@@ -221,13 +224,21 @@ public struct EventSummary: Codable, Sendable {
     public let description: String
     /// 六大类标签（AI 打标，v2.5.27 起随 DayPack 下发 1 字节；.unknown = 固件不画图标）。
     public let category: EventCategory
+    /// 针对该日程的支持性文字（≤120B ASCII，按六大类规则生成，随 DayPack 发给硬件，
+    /// 固件自行决定排版位置；空串代表未生成或生成失败，固件不渲染该行）。
+    public let supportText: String
 
-    public init(time: String, endTime: String = "", title: String, description: String, category: EventCategory = .unknown) {
+    public init(
+        time: String, endTime: String = "", title: String,
+        description: String, category: EventCategory = .unknown,
+        supportText: String = ""
+    ) {
         self.time = time
         self.endTime = endTime
         self.title = title
         self.description = description
         self.category = category
+        self.supportText = supportText
     }
 
     public init(from event: CalendarEvent, category: EventCategory = .unknown) {
@@ -248,11 +259,19 @@ public struct EventSummary: Codable, Sendable {
         self.title = event.title
         self.description = event.description ?? ""
         self.category = category
+        self.supportText = ""
     }
 
     /// 同内容换类别的拷贝（分类结果落地时用，保持结构体不可变语义）。
     public func withCategory(_ category: EventCategory) -> EventSummary {
-        EventSummary(time: time, endTime: endTime, title: title, description: description, category: category)
+        EventSummary(time: time, endTime: endTime, title: title, description: description,
+                     category: category, supportText: supportText)
+    }
+
+    /// 同内容换支持文字的拷贝（支持文字生成完成后用，保持结构体不可变语义）。
+    public func withSupportText(_ supportText: String) -> EventSummary {
+        EventSummary(time: time, endTime: endTime, title: title, description: description,
+                     category: category, supportText: supportText)
     }
 }
 

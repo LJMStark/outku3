@@ -42,15 +42,18 @@ EXPECTED_TOOLS = {
     "screensaver",
     "taskOverview",
     "daySummary",
+    "eventSupportText",
     "settlementReview",
     "eventClassification",
     "translation",
 }
+EXPECTED_SECONDARY_MODE_STYLES = {"quote", "generative"}
 REQUIRED_TOOL_TEMPLATES = {
     "haiku": {"default"},
     "screensaver": {"resting", "postcard"},
     "taskOverview": {"default"},
     "daySummary": {"empty", "events"},
+    "eventSupportText": {"default"},
     "settlementReview": {"default"},
     "eventClassification": {"default"},
     "translation": {"default"},
@@ -67,6 +70,7 @@ EXPECTED_OUTPUT_BYTES = {
     "screensaver": 180,
     "taskOverview": 100,
     "daySummary": 180,
+    "eventSupportText": 120,
     "settlementReview": 180,
 }
 
@@ -128,17 +132,54 @@ def validate(document: dict) -> None:
     for character in document.get("characters", []):
         if not character.get("personaPrompt") or not character.get("characterPrompt"):
             errors.append(f"character {character.get('id')} has an empty prompt")
+        style = character.get("secondaryModeStyle")
+        if style not in EXPECTED_SECONDARY_MODE_STYLES:
+            errors.append(
+                f"character {character.get('id')} secondaryModeStyle must be one of "
+                f"{sorted(EXPECTED_SECONDARY_MODE_STYLES)}"
+            )
         quotes = character.get("approvedQuotes", [])
-        if len(quotes) < 3:
+        # Only quote-style characters need a pool. A generative secondary mode (Joy) writes an
+        # original line through the LLM, so an empty pool is correct — requiring dead quotes
+        # there would ship data nothing reads.
+        if style == "quote" and len(quotes) < 3:
             errors.append(f"character {character.get('id')} requires at least three approved quotes")
+        if style == "generative" and quotes:
+            errors.append(
+                f"character {character.get('id')} is generative and must not carry approved quotes"
+            )
         for quote in quotes:
             if not quote.get("text") or not quote.get("source"):
                 errors.append(f"character {character.get('id')} has an incomplete approved quote")
-            rendered = f'"{quote.get("text", "")}" ({quote.get("source", "")}).'
+            if not quote.get("tones"):
+                errors.append(
+                    f"character {character.get('id')} quote {quote.get('text')!r} has no tones"
+                )
+            # Mirrors CompanionWritingSelection.deterministicOutput: '"text" - source'.
+            rendered = f'"{quote.get("text", "")}" - {quote.get("source", "")}'
             if len(rendered.encode("utf-8")) > EXPECTED_OUTPUT_BYTES["companionPhrase"]:
                 errors.append(f"character {character.get('id')} has a quote over the 120-byte hardware budget")
             if not rendered.isascii():
                 errors.append(f"character {character.get('id')} approved quotes must be ASCII")
+
+    # Every quote-style character must be able to answer every Mode B moment. An empty bucket
+    # would make the tone filter fall through to an unmatched line — exactly the mismatch
+    # (celebration drawing a consolation quote) the tone tags exist to prevent.
+    moment_tones = document.get("modeBMomentTones", {})
+    if not moment_tones:
+        errors.append("modeBMomentTones must not be empty")
+    for character in document.get("characters", []):
+        if character.get("secondaryModeStyle") != "quote":
+            continue
+        for moment, wanted in moment_tones.items():
+            has_match = any(
+                set(quote.get("tones", [])) & set(wanted)
+                for quote in character.get("approvedQuotes", [])
+            )
+            if not has_match:
+                errors.append(
+                    f"character {character.get('id')} has no approved quote for moment {moment}"
+                )
 
     signature_mode = next(
         (item for item in writing_modes if item.get("id") == "signatureQuote"),
@@ -213,6 +254,9 @@ public struct PromptSpecDocument: Codable, Sendable {{
     public let personaScenes: [PromptSceneSpec]
     public let toolPrompts: [PromptToolSpec]
     public let nonActivePaths: [PromptNonActivePathSpec]
+    /// Mode B moment id (mirrors the `AITextType` cases where `allowsSecondaryMode` is true) →
+    /// the emotional tones acceptable for that moment.
+    public let modeBMomentTones: [String: [String]]
 }}
 
 public struct PromptModelSpec: Codable, Sendable {{
@@ -256,11 +300,20 @@ public struct PromptWritingModeSpec: Codable, Sendable {{
     public let weight: Int
     public let temperatureOverride: Double?
     public let instructionTemplate: String
+    /// Used only when mode == signatureQuote and the character's secondaryModeStyle == "generative".
+    /// In that case deterministicOutput returns nil, the LLM is called, and this template
+    /// replaces the standard instructionTemplate so the model knows to write an original line
+    /// rather than reproduce a fixed quotation.
+    public let generativeInstructionTemplate: String?
 }}
 
 public struct PromptQuoteSpec: Codable, Sendable, Equatable {{
     public let text: String
     public let source: String
+    /// Emotional tones this line fits. Mode B filters the bank by the current moment's tones
+    /// (see `modeBMomentTones`) so a celebration never draws a consolation line and vice versa —
+    /// the client asks for tone matching, and quote-style characters never reach the LLM.
+    public let tones: [String]
 }}
 
 public struct PromptCharacterSpec: Codable, Sendable {{
@@ -272,6 +325,10 @@ public struct PromptCharacterSpec: Codable, Sendable {{
     public let personaPrompt: String
     public let approvedQuotes: [PromptQuoteSpec]
     public let wordLimits: PromptWordLimitsSpec
+    /// How Mode B (secondary / quotable moment) is fulfilled:
+    /// "quote" — deterministicOutput from approvedQuotes (temperature 0, no LLM call).
+    /// "generative" — LLM writes an original line using the character's own voice.
+    public let secondaryModeStyle: String
 }}
 
 public struct PromptIntimacySpec: Codable, Sendable {{

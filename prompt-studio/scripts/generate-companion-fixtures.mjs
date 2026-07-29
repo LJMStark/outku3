@@ -70,3 +70,66 @@ for (const characterId of characters) {
 }
 
 await writeFile(new URL("../tests/fixtures/companion-prompts.json", import.meta.url), `${JSON.stringify(fixtures, null, 2)}\n`);
+
+// Tool prompts (no character / writing mode). Contexts MUST stay identical to the two consumers of
+// the fixture file — tests/rendered-html.test.mjs `contexts` and the Swift
+// PromptSpecConsistencyTests.compilationForToolFixture switch — or the cross-runtime hash compare
+// is meaningless: it would compare two different prompts rather than two runtimes.
+const categoryDefinitions = [
+  "1 = Deep Work (focused solo output: coding, writing, design, data analysis)",
+  "2 = Meetings & Synced (meetings, calls, syncs, standups, interviews, 1:1s)",
+  "3 = Administrative & Routine (email, forms, paperwork, errands, chores)",
+  "4 = Critical Deadlines (launches, contract/payment due dates, submissions)",
+  "5 = Bio-Habits & Wellness (stretch, hydrate, vitamins, sleep wind-down, workout)",
+  "6 = Rest & Recharge (nap, lunch, reading, pets, games, personal downtime)",
+].join("\n");
+const toolContexts = {
+  haiku: {
+    timeContext: " in the afternoon",
+    taskContext: " who has completed 2 task(s) today with 3 task(s) remaining",
+    moodContext: ". Their pet companion is feeling focused",
+    sceneContext: ". Their E-ink companion display shows the 'Forest' scene. Use imagery from this scene in the haiku",
+  },
+  screensaver: { isPostcard: true, usageDays: 21, profileContext: "Calm companion", workContext: "Launch prep" },
+  taskOverview: { notes: "Ship the final demo" },
+  daySummary: { eventDigest: "09:00 Product sync; 10:00 Client demo" },
+  settlementReview: {
+    eventDigest: "15:00 Client demo",
+    deadlineTitles: ["Client demo"],
+    focusMinutes: 240,
+    tasksCompleted: 3,
+    tasksTotal: 6,
+  },
+  // eventCategories are strings: the compile API rejects number arrays in context.
+  eventSupportText: { events: ["Product sync", "Client deadline", "Stretch break"], eventCategories: ["2", "4", "5"], isDayPacked: true },
+  eventClassification: { events: ["Product sync", "Client deadline"], categoryDefinitions },
+  translation: { text: "Protect the quiet hour." },
+};
+
+const metaResponse = await app.fetch(
+  new Request("http://localhost/api/meta"),
+  environment,
+  executionContext,
+);
+if (!metaResponse.ok) throw new Error(`Failed to read prompt meta: ${metaResponse.status}`);
+const toolIds = (await metaResponse.json()).toolPrompts.map((tool) => tool.id);
+const toolFixtures = [];
+
+for (const scenarioId of toolIds) {
+  const context = toolContexts[scenarioId];
+  if (!context) throw new Error(`Missing fixture context for tool prompt: ${scenarioId}`);
+  const response = await app.fetch(new Request("http://localhost/api/compile", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ scenarioId, context }),
+  }), environment, executionContext);
+  if (!response.ok) throw new Error(`Failed to compile tool ${scenarioId}: ${response.status}`);
+  const [compiled] = (await response.json()).results;
+  toolFixtures.push({
+    scenarioId,
+    expectedSystemSHA256: createHash("sha256").update(compiled.systemPrompt).digest("hex"),
+    expectedUserSHA256: createHash("sha256").update(compiled.userPrompt).digest("hex"),
+  });
+}
+
+await writeFile(new URL("../tests/fixtures/tool-prompts.json", import.meta.url), `${JSON.stringify(toolFixtures, null, 2)}\n`);

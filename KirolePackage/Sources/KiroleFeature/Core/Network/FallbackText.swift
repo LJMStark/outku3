@@ -51,6 +51,22 @@ enum FallbackText {
 
     /// 相邻两场间隔 <60 分钟（前一场 endTime → 后一场 time）判紧凑；含全天事件或
     /// "HH:mm" 解析失败时按紧凑保守处理（宁给休息建议，不误报清闲）。
+    /// Whether today's calendar reads as busy, using the SAME rule as `daySummary` above:
+    /// four or more events, or any two events less than an hour apart.
+    ///
+    /// Do not substitute `hasTightGap` alone. That helper is a fallback-copy guard whose
+    /// "return true" means "err toward suggesting a break", so it reports true for a single
+    /// normally-timed event (it cannot measure a gap with nothing to compare against) and false
+    /// for four well-spread ones. `daySummary` has always paired it with the count check; the
+    /// support-text density hint needs the same pairing or the panel and the support line would
+    /// disagree about whether the day was busy.
+    static func isDayBusy(_ events: [EventSummary]) -> Bool {
+        if events.count >= 4 { return true }
+        guard events.count > 1,
+              events.allSatisfy({ minutesOfDay($0.time) != nil }) else { return false }
+        return hasTightGap(events)
+    }
+
     static func hasTightGap(_ events: [EventSummary]) -> Bool {
         let spans = events.compactMap { event -> (start: Int, end: Int)? in
             guard let start = minutesOfDay(event.time) else { return nil }
@@ -75,6 +91,112 @@ enum FallbackText {
 
     static func taskEncouragement() -> String {
         taskEncouragements.randomElement() ?? "You've got this!"
+    }
+
+    // MARK: - Event Support Text (v2.10.0)
+
+    /// Per-category support lines used when the LLM is unavailable or its reply is rejected.
+    /// Every candidate is one complete printable-ASCII sentence and fits both the 120-byte event
+    /// field and, for Deep Work, the tighter 80-byte TaskInPage field.
+    private static let eventSupportLines: [EventCategory: [String]] = [
+        .deepWork: [
+            "Open the work and choose one small piece to begin.",
+            "Start with the smallest part you can name.",
+            "Give one clear piece your attention first."
+        ],
+        .meetings: [
+            "Take a quiet moment to gather the point you want to bring.",
+            "Choose one thought you want to carry into this conversation.",
+            "A brief pause can help you enter this meeting with attention."
+        ],
+        // Client rule for this category is a contest against yourself — speed, accuracy, or
+        // beating your own pace — never drudgery. Framing it as "one calm round" loses the wager,
+        // which is the whole point of the category. Phrased without inventing a real past pace.
+        .admin: [
+            "See if you can beat your usual pace on this one.",
+            "Try to clear this in one clean pass.",
+            "Go for accuracy on the first attempt this time."
+        ],
+        .deadline: [
+            "Keep the scope small and give one clear step your attention.",
+            "Let the deadline stay on the calendar while you handle one piece.",
+            "Pressure can wait while you choose the next concrete action."
+        ],
+        // Open-day wording: no busyness to acknowledge, so go straight to the gentle nudge.
+        .wellness: [
+            "Meet this moment gently and notice what your body needs.",
+            "Give this caring habit your full, unhurried attention.",
+            "A little care belongs in the day without needing to earn its place."
+        ],
+        .rest: [
+            "You do not need to make this moment productive.",
+            "Let this time belong to you without measuring it.",
+            "Rest can be enough without becoming another task."
+        ]
+    ]
+
+    /// Wellness copy for a day that already reads as busy. The client's rule is to acknowledge the
+    /// packed stretch first and then nudge gently — the open-day pool above skips that clause, so
+    /// on a busy day it would silently drop half the rule. Only Wellness varies by density: the
+    /// client wrote a schedule-dependent rule for that category alone.
+    ///
+    /// Every line is held to exactly what `isDayBusy` can prove — "somewhere today there is a busy
+    /// stretch" — and nothing more. Three claims these lines must NOT make:
+    ///
+    /// - **Tense.** Density spans the whole day, so the crowding may still be ahead. "The day has
+    ///   been packed" asserts something that has not happened yet.
+    /// - **Scope.** A single sub-hour gap between two events is enough to flip the flag: a day
+    ///   holding 09:00-10:00 and 10:30-11:00 is "busy" by this rule while occupying 90 of 1440
+    ///   minutes. "Full day" would be plainly false there.
+    /// - **Position.** The tight pair can sit anywhere. Two morning meetings can flag the day while
+    ///   this Wellness event sits alone at 18:00, so "packed around this one" invents adjacency.
+    ///
+    /// All three are the same invented-fact failure the universal rules forbid.
+    private static let wellnessPackedDayLines = [
+        "Busy stretch today - a short pause here is worth it.",
+        "Busy day today; a good moment to catch your breath.",
+        "Busy stretch on the calendar today - let this one slow you down."
+    ]
+
+    /// Selects a stable candidate without Swift's process-randomized `Hasher`. The same category
+    /// and semantic seed (normally event cache key or task title) always produce the same line.
+    ///
+    /// `isDayPacked` only changes Wellness copy (see `wellnessPackedDayLines`); every other
+    /// category ignores it.
+    static func eventSupportText(
+        for category: EventCategory,
+        seed: String,
+        isDayPacked: Bool = false
+    ) -> String {
+        if category == .wellness, isDayPacked {
+            let stableSeed = "event-support|wellness-packed|\(seed)"
+            return wellnessPackedDayLines[
+                stableIndex(for: stableSeed, count: wellnessPackedDayLines.count)
+            ]
+        }
+        return eventSupportTextIgnoringDensity(for: category, seed: seed)
+    }
+
+    private static func eventSupportTextIgnoringDensity(
+        for category: EventCategory,
+        seed: String
+    ) -> String {
+        let resolvedCategory = eventSupportLines[category] == nil ? EventCategory.deepWork : category
+        guard let pool = eventSupportLines[resolvedCategory], !pool.isEmpty else {
+            return "Choose one small step and begin there."
+        }
+        let stableSeed = "event-support|\(resolvedCategory.rawValue)|\(seed)"
+        return pool[stableIndex(for: stableSeed, count: pool.count)]
+    }
+
+    /// FNV-1a is deliberately simple and fixed across launches, architectures, and Swift versions.
+    private static func stableIndex(for seed: String, count: Int) -> Int {
+        var hash: UInt64 = 14_695_981_039_346_656_037
+        for byte in seed.utf8 {
+            hash ^= UInt64(byte)
+            hash &*= 1_099_511_628_211
+        }
+        return Int(hash % UInt64(count))
     }
 
     static func settlementMessage(tasksCompleted: Int, tasksTotal: Int) -> String {

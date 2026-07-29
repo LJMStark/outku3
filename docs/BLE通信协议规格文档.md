@@ -1,8 +1,10 @@
 # Kirole BLE 通信协议规格文档
 
-**版本:** v2.9.0
-**更新日期:** 2026-07-27
-**状态:** v2.9.0 是任务完成/跳过同步的 **flag-day 版本**。设备发送严格版本化的 `CompleteTask(0x11)` / `SkipTask(0x12)` / `RequestRefresh(0x20)`，App 立即回 `TaskListSnapshotAck(0x1B)`，用匹配的 Action + OperationID、业务结果和 `StateEpoch + Revision` 原子替换设备 Overview 任务清单。App 是任务最终状态来源；GATT `.withResponse` 只代表传输确认，不能替代 `0x1B` 业务确认。旧 `0x11/0x12` 与空 payload `0x20` 自本版起拒绝，固件升级时须清空旧格式离线环形缓冲。
+**版本:** v2.10.0
+**更新日期:** 2026-07-28
+**状态:** v2.10.0 是日程支持性文字的 **flag-day 版本**。DayPack Events[] 每条在 `EndTime` 后追加 `SupportText`（≤120B ASCII）——该日程进行中时显示的一句话，按事件 `Category` 的六类规则各自生成，**排版位置由固件自行决定**；TaskInPage 的 `Encouragement` 恢复启用并扩到 80B（恒 Deep Work 规则）。固件解析器须与本版一次性切换：读完每条 Event 的 `EndTime` 后必须再读 `SupportText` 的长度前缀字符串，少读即整体错位。
+
+上一版 v2.9.0 仍生效：设备发送严格版本化的 `CompleteTask(0x11)` / `SkipTask(0x12)` / `RequestRefresh(0x20)`，App 立即回 `TaskListSnapshotAck(0x1B)`，用匹配的 Action + OperationID、业务结果和 `StateEpoch + Revision` 原子替换设备 Overview 任务清单。App 是任务最终状态来源；GATT `.withResponse` 只代表传输确认，不能替代 `0x1B` 业务确认。
 
 ---
 
@@ -92,6 +94,7 @@
 | v2.7.0 | 2026-07-23 | **自定义形象生命周期升级（破坏性 flag-day）**：`0x15` 固定为 SubVersion `0x04`，加入 `OperationID` / `AvatarID` / 文件长度 / CRC32，旧 `0x02` PNG 与 `0x03` 匿名 KRI 发送路径全部删除；新增双向 `0x22 AvatarControl`，提供 `commit / eraseExact / eraseAll / query / abort` 与 `staged / committed / erased / state / aborted`。固件先写临时文件并严格校验，收到 commit 后才原子替换并启用。DeviceWake 库存扩展为 AvatarID+长度+CRC，丢结果包后可 query 恢复。secure 大帧改为先按 11B 头分片、再逐片独立 SecureEnvelope，不再受整帧 65,535B/±120s 限制。§3.4/§4.12/§4.19/§5.8/§5.19 |
 | v2.8.0 | 2026-07-24 | **新增 WiFi(SoftAP) 头像快速传输通道 `0x1A WiFiAvatarSession` 和设备 HTTP 收图端点；全部契约并入本正式文档，BLE `0x15` 保留为自动回退，非 flag-day。** 新链路：BLE `open` 回报临时 SSID/密码/网关/端口/路径/token/TTL → App 用 `NEHotspotConfiguration` 加入并以 `NEHotspotNetwork.fetchCurrent` 确认当前 SSID 的 UTF-8 字节精确匹配 → HTTP `POST` 裸 KRI → 成败均 `close`。`0x1A` 应答回显 Command + OperationID，App 丢弃不匹配的迟到结果；拒绝 HTTP 重定向，只有原端点 HTTP 200 成功。设备校验并暂存后仍须发 `0x22 staged`，App 再 `commit`，收到 `committed` 才切换身份。补齐 HTTP headers/body/状态码/幂等/恢复、取消清理、开放热点和 iOS entitlement 约束。安全更正：`SecureEnvelope` 是 HMAC 完整性与防重放，不提供机密性；生产固件只有在相关 GATT 已启用认证 BLE 链路加密，或双方共同定义 AEAD 新版本后，才能下发密码/token，否则 `open` 必须回 `ERR_UNSUPPORTED` 并由 App 回退 BLE。§2.4/§4.1/§4.20/§5.2/§5.20/附录 A |
 | v2.9.0 | 2026-07-27 | **任务状态权威快照（破坏性 flag-day）**：`CompleteTask(0x11)` / `SkipTask(0x12)` 改为严格 v1 payload，新增非零 OperationID；`RequestRefresh(0x20)` 改为严格 v1 + 非零 RequestID，空 payload 拒绝，且只走实时 Notify、不写入/重放 `EventLogBatch(0x21)`。新增 App→Device `TaskListSnapshotAck(0x1B)`：回显 Action + OperationID，携带业务 Result、StateEpoch、Revision 和当前完整 Overview 任务清单。App 持久化操作账本保证重试幂等；同 ID 不同 payload 返回 invalidRequest。设备只在匹配请求且版本更新时原子替换清单。Complete 从清单移除，Skip 只结束专注、任务保留。DayPack 仍是丰富内容包但不再充当完成/跳过业务确认；`0x1B` 绕过 DayPack 指纹与 60 秒 full-sync 合并窗。升级固件须清空旧格式离线环形缓冲。§4.21/§5.4/§5.5/§5.7/§5.15/§8.4 |
+| v2.10.0 | 2026-07-28 | **日程支持性文字（破坏性 flag-day）**：① **DayPack(0x10)** Events[] 每条在 `EndTime` 后追加 `SupportText`（1+N bytes，≤120B ASCII）——该日程**进行中**时显示的一句支持性文字，**排版位置由固件自行决定**（App 只给文案）。生成规则按该事件的 `Category` 六类分派（客户 2026-07-28 规范）：Deep Work 只指向最小第一步 / Meetings 轻量准备提示 / Admin 框成自我小挑战 / Deadline 安抚不加压 / Wellness 温和非临床提醒 / Rest 给许可不派任务；通用规则=不编造数据里没有的具体事实、一句话两秒扫读、纯 ASCII。App 侧：批量 AI 生成 + 按「标题\|描述\|类别」缓存 + 按类别确定性模板兜底（**永不发空串**）+ AI 失败 10 分钟冷却。固件解析器须同步读取（§7.1 严格解析——读完 `EndTime` 必须再读这个长度前缀字符串，否则整体错位）。② **TaskInPage(0x11)** `Encouragement` **恢复启用**（推翻 v2.6.0 的停用决定），承载按按钮进入任务时的支持性文字，恒用 **Deep Work** 规则（`TaskItem` 无类别字段，客户拍板）；上限 50→**80 bytes**（客户例句最长 70B，50B 会静默截断），长度前缀不变故非 wire 形状变更，但固件行缓冲需容纳 80B。③ **伴侣 IP prompt 重写**（客户 2026-07-28，不上 wire）：三个角色改为显式双模——Mode A（~80% 日常口吻）+ Mode B（~20% 值得记住的时刻）；**Joy 的 Mode B 改为生成式**（自己写一句可引用的话、不署名、不加引号），Silas/Nova 的 Mode B 仍为**确定性白名单引用**（公版来源逐句核验：KJV / Marcus Aurelius / Sun Tzu / Seneca），并把引用格式由 `"text" (source).` 统一为 `"text" - source`。**⚠️ 与客户原文的已知偏差（有意，需客户知悉）**：客户规范写的分隔符是 em dash（`"[exact quoted line]" — [Source]`），实现用 ASCII 连字符 `-`。原因是 §3.5 的 wire 约束——出站文本一律净化为可打印 ASCII（`0x20`–`0x7E`），em dash 到固件必被转成 `-`（否则渲染成豆腐块）。若 App 内保留 `—` 而硬件显示 `-`，同一句话在两处不一致、且要维护两份格式；故三处（Swift `deterministicOutput` / Studio 校验 / Studio 运行时）统一用 `-`。客户若要求 App 内严格保留 em dash，改动范围=这三处 + 重生成 golden fixtures，硬件侧仍只能是 `-`。**Mode B 触发时机由 App 判定**（客户要求 «chosen externally by the system»）：只在"一天结算"这组时刻放行（日终结算语 + 每日总结页两支金句），日常场景（早安 / 陪伴 / 任务鼓励 / 日程提醒 / 空闲）恒 Mode A——此前一律 20% 随机会让早安语冒出署名引用。白名单引用**按当下情绪筛选**（每句带 tone 标签，庆祝时刻不抽安慰句、超载时刻不抽凯歌句）；App 侧另加词数校验（joy 25 / silas 15·20 / nova 20·25），超词即重试或回落兜底。§4.7/§4.8 |
 
 | 术语 | 定义 |
 |---------------|------------------------------------------------------|
@@ -484,13 +487,26 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 | ...    | Description | 1 + N bytes | 120 bytes  | 事件描述（设计稿事件卡正文）|
 | ...    | Category    | 1 byte      | -          | 事件类别（v2.5.27，AI 打标，见下表；`0x00`=未分类，不画图标）|
 | ...    | EndTime     | 1 + N bytes | 8 bytes    | 结束时间 "HH:mm"（v2.6.0；全天事件空串；**跨午夜按 "23:59" 封顶**）。用途：「进行中日程」页 <10min/>10min 间隔分支判定 + 页面一时间轴事件区段标注 |
+| ...    | SupportText | 1 + N bytes | 120 bytes  | 该日程的支持性文字（v2.10.0；按 `Category` 六大类各自规则生成的一句话；空串=未生成，固件不渲染该行）|
 
 > **v2.5.27 追加（Category，破坏性）**：每条 Event 在 `Description` 后追加 1 字节 `Category`——App 用 AI 依据日历内容把事件归入客户定义的六大类（《图标对应关系》文档，2026-07-17），固件据此在事件卡上绘制对应**内置**图标。像素图标资产在仓库 `docs/assets/event-category-icons/`（客户提供，1:1 交付固件）；App **不传图片字节**，与伴侣形象（§4.2 CharacterId）/ 天气图标（§4.5 Condition）同为「信号选内置图」架构。分类不可得（AI 不可用且关键词兜底未命中）时，App 发 `0x03`（Administrative & Routine，点赞图标）——**客户拍板（2026-07-17，v2.5.28）：归类不了的一律按点赞归类**，事件卡不留空图标；`0x00` 仍为合法 wire 值（固件收到即不画图标、其余照常渲染），App 当前不会主动发送（前向兼容保留）。AI 调用失败后进入 10 分钟冷却，冷却期直接走关键词启发式，期满自动重试并在服务恢复后升级分类。同 §7.1 严格解析：固件读完 `Description` 后**必须**再读这 1 字节，少读即整体错位（仿真解码器 `parseDayPack` 已同步）。
 
 > **v2.6.0 追加（EndTime，破坏性）**：每条 Event 在 `Category` 后追加 `EndTime`（1 字节长度前缀 + ≤8B "HH:mm"）。语义与 `Time` 对称：同一格式化口径（en_US_POSIX）、全天事件空串；结束时间落在开始时间之后的日历日（跨午夜）时按 **"23:59" 封顶**——App 是展示口径决策侧（§6.5）。固件用途：① 客户「进行中日程」页两种布局的判定输入——**前一日程 `EndTime` 到下一日程 `Time` 的间隔 <10 分钟 → 情况一（显示当日完成比例，`SettlementData.TasksCompleted/TasksTotal`）；≥10 分钟 → 情况二（下一日程 + 任务清单；恰好 10 分钟归此侧，客户确认默认口径 2026-07-20）**，"HH:mm"→分钟的比较算术在固件本地做；② 页面一日程概览时间轴上标注事件区段/末端时刻。同 §7.1 严格解析：固件读完 `Category` 后**必须**再读这个长度前缀字符串，少读即整体错位（仿真解码器 `parseDayPack` 已同步）。
 
-**Category 六大类映射（v2.5.27）：**
+> **v2.10.0 追加（SupportText，破坏性）**：每条 Event 在 `EndTime` 后追加 `SupportText`（1 字节长度前缀 + ≤120B ASCII）——该日程**进行中**时展示的一句支持性文字。**排版位置由固件自行决定**（App 只提供文案，不指定坐标/页面）。App 侧生成规则由该事件的 `Category` 分派（客户 2026-07-28《六大日程类型 — 支持性文字生成规则》）：
 
+| Category | 核心问题 | 生成原则 |
+|----------|----------|----------|
+| `0x01` Deep Work | 任务越大越容易因「预演困难」而拖延开始 | **绝不展示任务全貌**，只指向最小的第一步；标题能推出具体第一步就具体，否则用通用表达 |
+| `0x02` Meetings & Synced | 信息散落，容易毫无准备进会 | 轻量准备提示（确认进度、理清思路）；**绝不编造**任务数据里没有的人名/文件名/事实 |
+| `0x03` Administrative & Routine | 枯燥、易无限拖延直到堆积 | 框定成**自己和自己比**的小挑战（速度/准确度/破纪录）；绝不写成苦差事 |
+| `0x04` Critical Deadlines | 紧迫感易滑向焦虑，焦虑阻碍行动 | **减少焦虑、安抚情绪**；绝不制造额外压力 |
+| `0x05` Bio-Habits & Wellness | 跳过没有实际后果，因此常被忽略 | 能从日程密度推出「今天很紧凑」就先承认；给温和、**非临床**的小提醒 |
+| `0x06` Rest & Recharge | 未完成的事挥之不去，愧疚跟进休息 | **给予许可**，不是派任务；绝不用「完成了多少」衡量休息 |
+
+通用规则（全部六类）：不编造任务数据里没有的具体事实（人名、文件名、工具、日期、步骤）；一句话、符合「两秒扫读」节奏；纯 ASCII（§3.5 wire 约束）。App 侧实现：一次批量 AI 生成（按事件编号 + 类别号喂入）+ 按「标题|描述|类别」缓存（类别进 key——异步分类晚到升级后必须重新生成）+ 按类别的确定性模板兜底（**永不发空串**，空串等于功能消失）；AI 失败后 10 分钟冷却，期满自动重试升级。同 §7.1 严格解析：固件读完 `EndTime` 后**必须**再读这个长度前缀字符串，少读即整体错位（仿真解码器 `parseDayPack` 已同步）。
+
+**Category 六大类映射（v2.5.27）：**
 | Category | 类别 | 内置图标 | 典型内容 |
 |----------|------|----------|----------|
 | `0x00` | 未分类（保留值） | （不画图标） | 固件收到即不画图标；**App 自 v2.5.28 起不再发送**——归类不了的按 `0x03` 点赞下发（客户拍板 2026-07-17） |
@@ -551,8 +567,10 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 | 0      | TaskId               | 1 + N bytes | 36 bytes   | 与 Overview 条目一致的硬件任务 ID |
 | N+1    | TaskTitle            | 1 + N bytes | 40 bytes   | 任务标题 |
 | ...    | TaskDescription      | 1 + N bytes | 100 bytes  | 任务描述 |
-| ...    | Encouragement        | 1 + N bytes | 50 bytes   | 鼓励消息（Tips）。**v2.6.0 起客户拍板停用：App 恒发空串**（字段保留占位、wire 不变——0x11 已联调；固件收到空串不渲染该行） |
+| ...    | Encouragement        | 1 + N bytes | 80 bytes   | 支持性文字。**v2.10.0 起恢复启用**（客户 2026-07-28 推翻 v2.6.0 的停用决定），恒用 **Deep Work** 规则生成（`TaskItem` 无类别字段，客户拍板）；上限 50→**80 bytes**。空串仍合法（AI 不可用且模板兜底也为空的极端情况）——固件收到空串不渲染该行 |
 | ...    | FocusChallengeActive | 1 byte      | -          | 0x00=未激活, 0x01=已激活 |
+
+> **v2.10.0 追加（Encouragement 复活 + 扩容）**：`Encouragement` 承载「按硬件按钮进入任务」时的支持性文字，与 §4.7 `Events[].SupportText` 同一套客户规范，但因 `TaskItem` 不带 `Category`（六大类只标在日历事件上），**恒按 Deep Work 规则**——只指向最小的第一步，不展示任务全貌。上限由 50B 提到 **80B**：客户给的 Deep Work 例句最长 70B，50B 会被静默截断。**长度前缀不变**（固件按前缀读），故不构成 wire 形状变更，无需与固件 flag-day 同步——但固件的行缓冲需能容纳 80B。
 
 ---
 
@@ -1667,7 +1685,7 @@ App 首页宠物头顶只有**一个**对话槽 `currentPetDialogue`，由阶段
 > ⚠️ **下方 hex 向量是 pre-v2.5.0 旧布局，已废弃，切勿照其实现解析（v2.5.9）。** 它含 `MorningGreeting / DailySummary / FirstItem / CurrentScheduleSummary / CompanionPhrase` 及结算双消息——这些字段 v2.5.0 已删除，与现行 §4.7 完全不符。手工维护逐字节向量会随协议演进错位、反误导固件，故不再在此给出新向量，改为下面的**当前字段顺序** + 指向 App 侧锁步维护的**权威往返自检**。
 >
 > **当前 DayPack(0x10) payload 字段顺序**（详见 §4.7；变长字符串 = 1 字节长度 + UTF-8 内容，长度为 0 的空串也占 1 字节、必须照样消费再前进）：
-> `Year(1) Month(1) Day(1) DeviceMode(1) FocusChallengeEnabled(1) PetDialogue(1+N) EventCount(1) Events[]{Time(1+N) Title(1+N) Description(1+N) Category(1) EndTime(1+N)}×N TaskCount(1) TopTasks[]{TaskId(1+N) Title(1+N) IsCompleted(1) Priority(1)}×N SettlementData(10B 定长) DaySummary(1+N) FirstUp(1+N) SettlementReview(1+N) SettlementQuote(1+N，最后一个字段)`。读完 `SettlementQuote`，解析指针应恰好停在 payload 末尾。（`Category` 为 v2.5.27 的每事件 1 字节类别，见 §4.7 六大类映射表；`EndTime` 与两个结算尾字段为 v2.6.0，见 §4.7。）
+> `Year(1) Month(1) Day(1) DeviceMode(1) FocusChallengeEnabled(1) PetDialogue(1+N) EventCount(1) Events[]{Time(1+N) Title(1+N) Description(1+N) Category(1) EndTime(1+N) SupportText(1+N)}×N TaskCount(1) TopTasks[]{TaskId(1+N) Title(1+N) IsCompleted(1) Priority(1)}×N SettlementData(10B 定长) DaySummary(1+N) FirstUp(1+N) SettlementReview(1+N) SettlementQuote(1+N，最后一个字段)`。读完 `SettlementQuote`，解析指针应恰好停在 payload 末尾。（`Category` 为 v2.5.27 的每事件 1 字节类别，见 §4.7 六大类映射表；`EndTime` 与两个结算尾字段为 v2.6.0；`SupportText` 为 v2.10.0 的每事件支持性文字，均见 §4.7。）
 >
 > **权威自检（推荐固件对照）**：App 侧 `BLEProtocolSimulationSupport.swift::parseDayPack()` 按上序逐字段读回并 `requireEnd()`（任何尾部多余字节即报错），与 `BLEDataEncoder.encodeDayPack` 在 `BLEProtocolSimulationTests` 做往返断言；编解码**锁步维护**，是当前布局的权威字节级参考。固件实现解析器后，可请 App 侧据此导出一条与现行布局一致的具体 hex 向量。
 
@@ -1895,7 +1913,7 @@ App 采用 **首次连接即信任（Trust On First Use）** 策略：
 
 定位证据：`18287 = 0x476F = "Go"`、`28516 = 0x6F64 = "od"`，正是 MorningGreeting = `"Good morning…"` 的 UTF-8 字节被当成了两个 16 位整数。说明固件解析器停留在某个**旧版 DayPack 布局**，把字符串区当成了定长字段，从此处开始整体错位。
 
-→ 固件须严格按 §4.7 + §3.5 解析 Header(5B) 之后的字段：**先读 1 字节长度、再读对应字节数**的变长字符串。（⚠️ 本问题记录时还是 pre-v2.5.0 旧布局；**现行字段序以 §4.7 与 §7.1「当前字段顺序」为准**——v2.6.0 起为 PetDialogue → Events[]{含 Category/EndTime} → TopTasks[] → SettlementData → DaySummary → FirstUp → SettlementReview → SettlementQuote，勿再按本段当年提到的旧字段名实现。）
+→ 固件须严格按 §4.7 + §3.5 解析 Header(5B) 之后的字段：**先读 1 字节长度、再读对应字节数**的变长字符串。（⚠️ 本问题记录时还是 pre-v2.5.0 旧布局；**现行字段序以 §4.7 与 §7.1「当前字段顺序」为准**——v2.10.0 起为 PetDialogue → Events[]{含 Category/EndTime/SupportText} → TopTasks[] → SettlementData → DaySummary → FirstUp → SettlementReview → SettlementQuote，勿再按本段当年提到的旧字段名实现。）
 
 附 `Date` 异常（日志 `6661-29-00`，其中 day=29 正确）：按 §4.7，Header 为 `Year(=年-2000) / Month / Day` 各 1 字节单字节，请确认固件未把年份当成多字节、且做了 `+2000`。
 

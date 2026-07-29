@@ -14,6 +14,12 @@ public enum DayPackTextBudget {
     public static let settlementReview = requiredToolBudget("settlementReview")
     /// v2.5.30 页面四金句/明日鼓励（§4.7 SettlementQuote）。
     public static let settlementQuote = requiredSceneBudget("settlementQuoteCelebration")
+    /// v2.10.0 每条日程支持性文字（§4.7 Events[] SupportText，按六大类规则生成，
+    /// 追加在 endTime 之后；空串 = 固件不渲染该行）。
+    public static let eventSupportText = requiredToolBudget("eventSupportText")
+    /// v2.10.0 TaskInPage Encouragement（§4.8）——按按钮进入任务时的支持性文字，恒 Deep Work
+    /// 风格。独立于 eventSupportText 的 120B：0x11 帧只需容纳单句（客户例句最长 70B）。
+    public static let taskEncouragement = 80
 
     private static func requiredSceneBudget(_ id: String) -> Int {
         guard let budget = KirolePromptSpec.scene(id)?.outputMaxBytes else {
@@ -161,7 +167,7 @@ public enum BLEDataEncoder {
         // Pet dialogue bubble (v2.5.0: single line, = App currentPetDialogue)
         data.appendString(dayPack.petDialogue, maxLength: DayPackTextBudget.petDialogue)
 
-        // Events[] (time / title / description / category / endTime)
+        // Events[] (time / title / description / category / endTime / supportText)
         let maxEvents = 8
         data.appendClampedUInt8(min(dayPack.events.count, maxEvents))
         for event in dayPack.events.prefix(maxEvents) {
@@ -180,6 +186,10 @@ public enum BLEDataEncoder {
             // <10min/>10min 间隔分支 + 页面一时间轴末端标注。Breaking change：§7.1 严格
             // 读取方必须消费此长度前缀字符串。
             data.appendString(event.endTime, maxLength: 8)
+            // v2.10.0: SupportText——该日程进行中显示的一句支持性文字，按 Category 六大类
+            // 规则生成（Deep Work 指最小第一步 / Rest 给许可 / …）。固件自行决定排版位置；
+            // 空串 = 未生成，固件不渲染该行。Breaking change：§7.1 严格读取方必须消费它。
+            data.appendString(event.supportText, maxLength: DayPackTextBudget.eventSupportText)
         }
 
         // Top tasks (dynamic limit based on screen size)
@@ -266,7 +276,11 @@ public enum BLEDataEncoder {
             fallbackIfSanitizedEmpty: HardwareTitleFallback.task
         )
         data.appendString(taskInPage.taskDescription ?? "", maxLength: DayPackTextBudget.taskDescription)
-        data.appendString(taskInPage.encouragement, maxLength: 50)
+        // v2.10.0: Encouragement 复活（客户 2026-07-28 推翻 2026-07-20 的停用决定）。现在承载
+        // 按按钮进入任务时的支持性文字，恒用 Deep Work 风格（TaskItem 无 category，客户拍板）。
+        // 预算 50→80B：客户给的 Deep Work 例句最长 70B，50B 会被静默截断。长度前缀不变，
+        // 固件按前缀读，不构成 wire 形状变更。
+        data.appendString(taskInPage.encouragement, maxLength: DayPackTextBudget.taskEncouragement)
         data.append(taskInPage.focusChallengeActive ? 0x01 : 0x00)
         return data
     }

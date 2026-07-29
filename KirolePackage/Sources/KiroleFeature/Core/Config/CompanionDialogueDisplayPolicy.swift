@@ -30,7 +30,24 @@ enum CompanionDialogueDisplayPolicy {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    static func isValidForDisplay(_ text: String) -> Bool {
+    /// Counts whitespace-separated words. Mirrors `wordCount` in prompt-studio's
+    /// `prompt-engine.ts` so the App's gate and the Studio's validator agree on the number.
+    static func wordCount(_ text: String) -> Int {
+        text.split(whereSeparator: \.isWhitespace).count
+    }
+
+    /// - Parameters:
+    ///   - expectedApprovedQuote: the deterministic Mode B string, when one applies. Such lines
+    ///     end in a source (`- Isaiah 30:15`) rather than punctuation, so they are exempt from the
+    ///     terminal-punctuation rule; they are also pre-vetted, so they skip the word budget.
+    ///   - wordLimit: the active character's limit for the current writing mode (PromptSpec
+    ///     `characters[].wordLimits`). The limit is stated in the prompt, but a model can exceed
+    ///     it — without this check an over-long line passes on bytes alone and reaches hardware.
+    static func isValidForDisplay(
+        _ text: String,
+        expectedApprovedQuote: String? = nil,
+        wordLimit: Int? = nil
+    ) -> Bool {
         let normalizedText = normalized(text)
         guard !normalizedText.isEmpty else { return false }
         guard !normalizedText.hasPrefix("[Error]") else { return false }
@@ -40,7 +57,14 @@ enum CompanionDialogueDisplayPolicy {
         // Chinese must never reach the App UI or the DayPack pushed to hardware. See CLAUDE.md
         // Interaction Rule 4 (English-only UI).
         guard !containsCJKScript(normalizedText) else { return false }
-        guard hasTerminalPunctuation(normalizedText) else { return false }
+        let isExpectedApprovedQuote = expectedApprovedQuote
+            .map(normalized) == normalizedText
+        guard isExpectedApprovedQuote || hasTerminalPunctuation(normalizedText) else { return false }
+        // Approved quotes are fixed, pre-vetted text — the client chose them, so their length is
+        // not the model's to answer for. Everything else must respect the persona word budget.
+        if !isExpectedApprovedQuote, let wordLimit {
+            guard wordCount(normalizedText) <= wordLimit else { return false }
+        }
         return renderedLineCount(for: normalizedText) <= maxLines
     }
 

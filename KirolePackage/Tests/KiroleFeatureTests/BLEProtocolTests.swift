@@ -835,6 +835,7 @@ struct BLEProtocolTests {
         #expect(data[cursor] == EventCategory.unknown.rawValue)              // Event.category (v2.5.27)
         cursor += 1
         #expect(readString(from: data, cursor: &cursor) == "")               // Event.endTime (v2.5.30)
+        #expect(readString(from: data, cursor: &cursor) == "")               // Event.supportText (v2.10.0)
         #expect(data[cursor] == 1)                                           // TaskCount
         cursor += 1
         #expect(readString(from: data, cursor: &cursor) == "task-1")
@@ -876,6 +877,7 @@ struct BLEProtocolTests {
         #expect(data[cursor] == EventCategory.unknown.rawValue)
         cursor += 1
         #expect(readString(from: data, cursor: &cursor) == "")
+        #expect(readString(from: data, cursor: &cursor) == "")               // Event.supportText (v2.10.0)
         #expect(data[cursor] == 1)
         cursor += 1
         #expect(readString(from: data, cursor: &cursor) == "task-cjk")

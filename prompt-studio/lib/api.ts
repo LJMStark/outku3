@@ -29,7 +29,11 @@ export async function parseCompileRequest(request: Request): Promise<CompileRequ
     const selectedCharacters = payload.characters ?? ["joy"];
     if (selectedCharacters.some((id) => {
       const character = promptSpec.characters.find((item) => item.id === id);
-      return !character || (payload.quoteIndex ?? 0) >= character.approvedQuotes.length;
+      if (!character) return true;
+      // Generative secondary mode (joy) writes an original line instead of quoting, so it has an
+      // empty approved-quote bank by design — a quote index is meaningless rather than invalid.
+      if (character.secondaryModeStyle === "generative") return false;
+      return (payload.quoteIndex ?? 0) >= character.approvedQuotes.length;
     })) throw new Error("Invalid quote index");
   }
   if (payload.context == null || typeof payload.context !== "object" || Array.isArray(payload.context)) throw new Error("context must be an object");

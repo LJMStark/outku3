@@ -47,14 +47,14 @@ KiroleFeature/
 ├── Core/
 │   ├── AppEnvironmentValues.swift   # EnvironmentKey definitions for all 4 singletons
 │   ├── Auth/                        # Google/Apple sign-in + KeychainService
-│   ├── BLE/                         # BLEProtocol.swift ONLY — App→Device/Device→App byte definitions (source of truth)
+│   ├── BLE/                         # BLEProtocol.swift + TaskListSnapshotProtocol.swift — byte definitions and 0x1B task-snapshot ACK protocol
 │   ├── Config/                      # AppSecrets (xcconfig-injected secrets), AppBuildEnvironment (debug-tool gating)
 │   ├── Error/                       # ErrorReporter
-│   ├── Network/                     # OpenAIService, PromptSanitizer, SupabaseService
-│   ├── Services/                    # BLE runtime lives here (BLEService, BLESyncCoordinator, BLEEventHandler, BLEPacketizer, BLEConnectionPolicy, BLESecurityManager, BLEOTACoordinator…) + FocusSessionService, FocusInterruptionDetector, CompanionTextService, DayPackGenerator…
-│   └── Storage/                     # LocalStorage
-├── Models/                          # AppState+*.swift extensions, CompanionCharacter, Pet, Task…
-├── State/                           # TimelineDataSource, OnboardingState
+│   ├── Network/                     # OpenAIService, CompanionTextService, PromptSanitizer, SimulatorBridge, PromptSpec.generated.swift
+│   ├── Services/                    # BLE runtime (BLEService, BLESyncCoordinator, BLEEventHandler, BLEDataEncoder, BLEPacketizer, BLESecurityManager, BLEOTACoordinator…) + FocusSessionService, FocusInterruptionDetector, DayPackGenerator, WiFiAvatarTransfer/…
+│   └── Storage/                     # LocalStorage, SupabaseClient, SyncManager
+├── Models/                          # Value types only: CompanionCharacter, Pet, TaskItem, CalendarEvent, FocusSession, EventLog, DayPack, DisplayScene…
+├── State/                           # @Observable singletons: AppState + all AppState+*.swift extensions, ThemeManager, TaskManager, PetManager, TimelineDataSource, IntegrationCoordinator…
 ├── Views/                           # Home/, Pet/, Settings/, Onboarding/, Modifiers/
 └── Resources/                       # Media.xcassets (image assets)
 ```
@@ -84,6 +84,9 @@ Four `@Observable` singletons injected at `ContentView` via `.environment()`:
 - BLE / DisplayScene / hardware push → `AppState+HardwareDisplay.swift`
 - Profile and companion text → `AppState+Profile.swift` / `AppState+Companion.swift`
 - Custom companion avatar BLE push → `AppState+CustomCompanions.swift`
+- Custom avatar transaction state → `AppState+CustomAvatarTransactions.swift`
+- Third-party integration state → `AppState+Integrations.swift`
+- WiFi avatar transport routing → `AppState+WiFiAvatarTransport.swift`
 - Persistence helpers (`persistTasks`, `persistPet`) → `AppState.swift` main file
 
 ### UI Stack
@@ -168,7 +171,7 @@ xcodebuild -workspace Kirole.xcworkspace -scheme Kirole \
 ```
 
 ### Test Suite Notes
-- **~44 test files (79 suites, ~536 tests)** in `KirolePackage/Tests/KiroleFeatureTests/`. BLE is the most heavily covered surface (`BLEProtocolTests`, `BLESecurityTests`, `BLESyncPolicyTests`, `BLEWriteGateTests`, `BLEConnectionPolicyTests`, `BLEEventHandlerTests`, `BLEProtocolSimulationTests`, `BLEOTACoordinatorTests`), followed by focus/sync/companion logic.
+- **89 test files (115+ suites, ~957 tests)** in `KirolePackage/Tests/KiroleFeatureTests/`. BLE is the most heavily covered surface (`BLEProtocolTests`, `BLESecurityTests`, `BLESyncPolicyTests`, `BLEWriteGateTests`, `BLEConnectionPolicyTests`, `BLEEventHandlerTests`, `BLEProtocolSimulationTests`, `BLEOTACoordinatorTests`), followed by focus/sync/companion logic.
 - **`BLEDataEncoder` has a strict mirror decoder in the test layer.** `BLEProtocolSimulationSupport.swift`'s `parseDayPack` / `parseWeather` re-parse the exact wire bytes and call `requireEnd()` (any trailing byte throws `trailingBytes`). So **any field added to `encodeDayPack` / `encodeWeather` MUST be read back in the matching `parse*` before `requireEnd()`** — even an empty length-prefixed string appends a byte and trips it — and the fixture + `Simulated*` struct + round-trip assertion updated. `BLEProtocolTests` walks the cursor by hand and will *not* catch a desync; run the **full** `swift test` (which includes `BLEProtocolSimulationTests`) after any wire-format change, not just `BLEProtocolTests`.
 - **Parallel-test isolation (CRITICAL):** Swift Testing runs suites concurrently. Any test that mutates global `UserDefaults.standard` — i.e. anything going through `LocalStorage` resettable keys, focus energy bottles, or gamify storage — MUST wrap its body in `await SharedPersistenceTestLock.shared.withLock { ... }` (`Tests/.../SharedPersistenceTestLock.swift`) or it flakes intermittently. Suites that assert state on shared singletons (e.g. `BLEService.shared.isPendingOTAReboot` in `BLEOTACoordinatorTests`) must be `@Suite(..., .serialized)` — in-suite parallel tests interleave at `await` points and clobber the flag. **Adding a new key to `LocalStorage.resettableUserDefaultKeys` can make previously-green tests flaky.** If a suite flakes, run it alone first (`swift test --filter SuiteName`) to confirm an isolation problem before changing production code.
 - **Which runner:** `swift test` (package-only, fast) for logic/services; the simulator host (`xcodebuild ... test`, or XcodeBuildMCP `test_sim`) only when the test exercises app-shell / UI lifecycle. `Kirole.xctestplan` coordinates the full run.
@@ -195,6 +198,26 @@ Credentials: `fastlane/.env` (git-ignored) — copy from `fastlane/.env.template
 **Verify the build actually landed.** `upload_to_testflight` can be killed mid-upload (process timeout / transient `SSL_read` EOF), leaving the build number bumped locally + an archive on disk but **nothing on App Store Connect** — a "Done" line or local archive is not proof. Confirm via the ASC API (latest build number + `processing_state` + beta-review state). Run the release detached/in background so one timeout can't kill the upload; transient SSL errors are retryable.
 
 **Before App Store submission (TestFlight is fine as-is):** restore the hardware-debug gating — build 573 deliberately loosened `AppBuildEnvironment.showsHardwareDebugTools` to all-builds-visible + keep-alive default-on for firmware integration; the production gate must come back before a store release.
+
+### E-ink Simulator (hardware-free UI preview)
+```bash
+# Start the WebSocket relay (port 3456) — keep running in background
+cd eink-simulator && node server.js
+
+# Serve the browser canvas
+npm run dev        # Vite dev server → open http://localhost:5173
+
+# iOS sim connects via SimulatorBridge.shared.connect() (ws://localhost:3456)
+# Any BLE frame the app sends is fan-out-relayed to the browser canvas in real time
+```
+
+### PromptSpec code generation
+Edit `prompt-studio/lib/prompt-spec.json` (canonical source), then regenerate:
+```bash
+python3 Config/generate-prompt-spec.py          # writes PromptSpec.generated.swift
+python3 Config/generate-prompt-spec.py --check  # exits non-zero if Swift is stale
+```
+`PromptSpecConsistencyTests` verifies the generated file byte-for-byte — the test will fail if the JSON was edited without re-running the generator.
 
 ### Real Device Install
 ```bash

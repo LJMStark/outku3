@@ -111,9 +111,10 @@ public actor OpenAIService {
         context: AIContext,
         writingSelection requestedWritingSelection: CompanionWritingSelection? = nil
     ) async throws -> String {
-        let writingSelection = requestedWritingSelection ?? (context.customCompanion == nil
-            ? CompanionWritingModeSelector.randomSelection(for: context.companionCharacter)
-            : .normal)
+        // Mode B 门控与自定义人设豁免统一由 selectionForGeneration 决定（见其文档）。调用方传了
+        // 显式 selection 就用它——那表示调用方已经掷过并要用同一档做事后校验。
+        let writingSelection = requestedWritingSelection
+            ?? CompanionWritingModeSelector.selectionForGeneration(context: context, type: type)
         if let deterministicOutput = writingSelection.deterministicOutput {
             return deterministicOutput
         }
@@ -516,8 +517,17 @@ public actor OpenAIService {
         case .normal:
             return mode.instructionTemplate
         case .signatureQuote:
+            // Generative secondary mode (joy, `secondaryModeStyle: "generative"`): no approved
+            // quote exists by design — the persona writes its own quotable line, so instruct the
+            // model instead of pinning a source. Quote-style characters (silas / nova) never reach
+            // the LLM at all: `deterministicOutput` short-circuits them at temperature 0.
             guard let quote = selection.quote else {
-                preconditionFailure("Signature quote mode requires an approved quote")
+                guard let generative = mode.generativeInstructionTemplate else {
+                    preconditionFailure(
+                        "PromptSpec writing mode \(mode.id) is missing generativeInstructionTemplate"
+                    )
+                }
+                return generative
             }
             return KirolePromptSpec.render(
                 mode.instructionTemplate,

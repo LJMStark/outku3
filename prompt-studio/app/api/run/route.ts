@@ -1,5 +1,5 @@
 import { apiError, enforceSameOriginRequest, parseCompileRequest } from "@/lib/api";
-import { asciiForEInk, compilePrompts, outputMaxBytes, promptSpec, utf8Prefix, utf8Truncate, validateOutput, type CompiledPrompt } from "@/lib/prompt-engine";
+import { compilePrompts, deviceOutputs, promptSpec, validateOutput, type ApprovedQuote, type CompiledPrompt } from "@/lib/prompt-engine";
 import { enforceRunLimit, takeGlobalModelCalls } from "@/lib/rate-limit";
 import { getRuntimeEnv } from "@/lib/runtime-env";
 
@@ -7,6 +7,20 @@ type OpenRouterResponse = {
   choices?: Array<{ message?: { content?: string | null } }>;
   usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
 };
+
+/// A quote-style Mode B turn is deterministic: the approved line IS the output, so no model call.
+/// Everything else — including joy's generative Mode B, which has no approved quote — goes upstream.
+/// Typed as a predicate on the negative branch so the caller's `compiled.approvedQuote` access is
+/// narrowed by the compiler rather than by assumption.
+function isDeterministicQuoteTurn(
+  compiled: CompiledPrompt,
+): compiled is CompiledPrompt & { approvedQuote: ApprovedQuote } {
+  return compiled.writingMode === "signatureQuote" && compiled.approvedQuote != null;
+}
+
+function needsModelCall(compiled: CompiledPrompt): boolean {
+  return !isDeterministicQuoteTurn(compiled);
+}
 
 async function sendPrompt(compiled: CompiledPrompt, model: string, apiKey: string, referer: string, requestSignal: AbortSignal) {
   const controller = new AbortController();
@@ -56,16 +70,16 @@ async function runCompiled(
   requestSignal: AbortSignal,
 ) {
   const startedAt = Date.now();
-  if (compiled.writingMode === "signatureQuote" && compiled.approvedQuote) {
-    const content = `"${compiled.approvedQuote.text}" (${compiled.approvedQuote.source}).`;
-    const maxBytes = outputMaxBytes(compiled);
-    const truncatedOutput = utf8Truncate(content, maxBytes);
+  if (isDeterministicQuoteTurn(compiled)) {
+    // Format must stay identical to Swift `CompanionWritingSelection.deterministicOutput` and to
+    // the `approvedQuote` validation check below: `"text" - source` (client 2026-07-28 spec).
+    const content = `"${compiled.approvedQuote.text}" - ${compiled.approvedQuote.source}`;
+    const outputs = deviceOutputs(compiled, content);
     return {
       ...compiled,
       parameters: { ...compiled.parameters, model: primaryModel },
       rawOutput: content,
-      truncatedOutput,
-      asciiOutput: utf8Prefix(asciiForEInk(truncatedOutput), maxBytes),
+      ...outputs,
       validation: validateOutput(compiled, content),
       actualModel: "deterministic/approved-quote",
       fallbackUsed: false,
@@ -86,14 +100,12 @@ async function runCompiled(
     fallbackUsed = true;
     response = await sendPrompt(compiled, actualModel, fallbackAPIKey, referer, requestSignal);
   }
-  const maxBytes = outputMaxBytes(compiled);
-  const truncatedOutput = utf8Truncate(response.content, maxBytes);
+  const outputs = deviceOutputs(compiled, response.content);
   return {
     ...compiled,
     parameters: { ...compiled.parameters, model: primaryModel },
     rawOutput: response.content,
-    truncatedOutput,
-    asciiOutput: utf8Prefix(asciiForEInk(truncatedOutput), maxBytes),
+    ...outputs,
     validation: validateOutput(compiled, response.content),
     actualModel,
     fallbackUsed,
@@ -127,7 +139,7 @@ export async function POST(request: Request) {
     const payload = await parseCompileRequest(request);
     const compiled = compilePrompts(payload);
     await enforceRunLimit(request);
-    const modelCallCount = compiled.filter((item) => item.writingMode !== "signatureQuote").length;
+    const modelCallCount = compiled.filter(needsModelCall).length;
     const apiKey = runtime.OPENROUTER_API_KEY ?? runtime.OPENAI_API_KEY ?? "";
     if (modelCallCount > 0 && !apiKey) throw new Error("OpenRouter is not configured");
     const fallbackAPIKey = runtime.FALLBACK_API_KEY ?? apiKey;

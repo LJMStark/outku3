@@ -44,7 +44,19 @@ struct PromptSpecConsistencyTests {
         ]))
         #expect(document.characters.allSatisfy { !$0.personaPrompt.isEmpty })
         #expect(document.characters.allSatisfy { !$0.characterPrompt.isEmpty })
-        #expect(document.characters.allSatisfy { $0.approvedQuotes.count >= 3 })
+        // v2.10.0: Mode B is per-character. "quote" characters must carry an approved bank;
+        // "generative" ones (joy — writes its own quotable line) must carry none, so an
+        // attributed quotation can never leak into a voice the client wants unattributed.
+        for character in document.characters {
+            switch character.secondaryModeStyle {
+            case "quote":
+                #expect(character.approvedQuotes.count >= 3)
+            case "generative":
+                #expect(character.approvedQuotes.isEmpty)
+            default:
+                Issue.record("Unknown secondaryModeStyle \(character.secondaryModeStyle)")
+            }
+        }
     }
 
     @Test("Writing mode assignment is exactly 80 percent normal and 20 percent signature quote")
@@ -65,9 +77,13 @@ struct PromptSpecConsistencyTests {
             quoteIndex: 1
         ))
 
+        let quote = try #require(KirolePromptSpec.character("silas")?.approvedQuotes[1])
         #expect(selection.mode == .signatureQuote)
-        #expect(selection.quote == KirolePromptSpec.character("silas")?.approvedQuotes[1])
-        #expect(selection.deterministicOutput == "\"My grace is sufficient for thee.\" (2 Corinthians 12:9).")
+        #expect(selection.quote == quote)
+        // Derived from the spec, not pinned to one quote: the bank grows as the client adds
+        // approved sources, and only the *format* is the contract. Client format (2026-07-28):
+        // "[exact line]" - [Source] — ASCII hyphen, no trailing period, no parentheses.
+        #expect(selection.deterministicOutput == "\"\(quote.text)\" - \(quote.source)")
         #expect(CompanionWritingSelection.normal.deterministicOutput == nil)
         let generated = try await OpenAIService.shared.generateCompanionText(
             type: .companionPhrase,
@@ -101,6 +117,8 @@ struct PromptSpecConsistencyTests {
             "screensaver",
             "taskOverview",
             "daySummary",
+            // v2.10.0: per-event support line, one writing rule per customer category.
+            "eventSupportText",
             "settlementReview",
             "eventClassification",
             "translation"
@@ -367,7 +385,7 @@ struct PromptSpecConsistencyTests {
             from: Data(contentsOf: fixtureURL)
         )
 
-        #expect(fixtures.count == 7)
+        #expect(fixtures.count == 8)
         for fixture in fixtures {
             let compiled = try await compilationForToolFixture(fixture.scenarioId)
             #expect(Self.sha256(compiled.systemPrompt) == fixture.expectedSystemSHA256)
@@ -420,6 +438,19 @@ struct PromptSpecConsistencyTests {
         case "eventClassification":
             return await OpenAIService.shared.compileEventClassificationPromptForFixture(
                 events: ["Product sync", "Client deadline"]
+            )
+        case "eventSupportText":
+            // The third event is Wellness with isDayPacked: true so the golden fixture covers the
+            // day-density hint — categories 1-4 never carry it, so a two-event fixture would let
+            // the Swift and TypeScript hint builders drift apart unnoticed.
+            return await OpenAIService.shared.compileEventSupportTextPromptForFixture(
+                events: [
+                    OpenAIService.EventSupportTextInput(title: "Product sync", category: .meetings),
+                    OpenAIService.EventSupportTextInput(title: "Client deadline", category: .deadline),
+                    OpenAIService.EventSupportTextInput(
+                        title: "Stretch break", category: .wellness, isDayPacked: true
+                    )
+                ]
             )
         case "translation":
             return await OpenAIService.shared.compileTranslationPromptForFixture(

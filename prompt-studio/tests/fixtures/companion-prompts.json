@@ -3,56 +3,56 @@
     "characterId": "joy",
     "scenarioId": "morningGreeting",
     "writingMode": "normal",
-    "expectedSystemSHA256": "645186f0893fa76aed14dd3869da6cf1e9cffb6791718949234e188df4bc7f08",
+    "expectedSystemSHA256": "7fba80f60228dfb9e0c9330554ee1f3e60c6d3e0c8f17e7cda7927444c7835a3",
     "expectedUserSHA256": "400f2a545a0ae7086e1f8c08624bd0be69152cc3c4bcb3091b87699f1ead8fd4"
   },
   {
     "characterId": "joy",
     "scenarioId": "companionPhrase",
     "writingMode": "normal",
-    "expectedSystemSHA256": "645186f0893fa76aed14dd3869da6cf1e9cffb6791718949234e188df4bc7f08",
+    "expectedSystemSHA256": "7fba80f60228dfb9e0c9330554ee1f3e60c6d3e0c8f17e7cda7927444c7835a3",
     "expectedUserSHA256": "69110c84b00d57ac66220476f081d99b549f9ce5b4d2f65de2e1d91679f44bb3"
   },
   {
     "characterId": "joy",
     "scenarioId": "taskEncouragement",
     "writingMode": "normal",
-    "expectedSystemSHA256": "645186f0893fa76aed14dd3869da6cf1e9cffb6791718949234e188df4bc7f08",
+    "expectedSystemSHA256": "7fba80f60228dfb9e0c9330554ee1f3e60c6d3e0c8f17e7cda7927444c7835a3",
     "expectedUserSHA256": "4cc25a0bf4f6e6a51d3ae445c334af396389e4c406093533655c6f690dc874be"
   },
   {
     "characterId": "joy",
     "scenarioId": "scheduleReminder",
     "writingMode": "normal",
-    "expectedSystemSHA256": "645186f0893fa76aed14dd3869da6cf1e9cffb6791718949234e188df4bc7f08",
+    "expectedSystemSHA256": "7fba80f60228dfb9e0c9330554ee1f3e60c6d3e0c8f17e7cda7927444c7835a3",
     "expectedUserSHA256": "3de729fde34dd97a05a9c645ab1243a8c0bbe678d014c7c0a671ef53eac858cc"
   },
   {
     "characterId": "joy",
     "scenarioId": "settlementSummary",
     "writingMode": "normal",
-    "expectedSystemSHA256": "645186f0893fa76aed14dd3869da6cf1e9cffb6791718949234e188df4bc7f08",
+    "expectedSystemSHA256": "7fba80f60228dfb9e0c9330554ee1f3e60c6d3e0c8f17e7cda7927444c7835a3",
     "expectedUserSHA256": "4b7a87d51b31b289e4403dd3409bd29a8f01ae11799e030075d8a4efa58d7478"
   },
   {
     "characterId": "joy",
     "scenarioId": "smartReminder",
     "writingMode": "normal",
-    "expectedSystemSHA256": "645186f0893fa76aed14dd3869da6cf1e9cffb6791718949234e188df4bc7f08",
+    "expectedSystemSHA256": "7fba80f60228dfb9e0c9330554ee1f3e60c6d3e0c8f17e7cda7927444c7835a3",
     "expectedUserSHA256": "70e634d5014d099a9da5071b49262e12cc889456352b2ebbc6b2d18d2f728583"
   },
   {
     "characterId": "joy",
     "scenarioId": "settlementQuoteCelebration",
     "writingMode": "normal",
-    "expectedSystemSHA256": "645186f0893fa76aed14dd3869da6cf1e9cffb6791718949234e188df4bc7f08",
+    "expectedSystemSHA256": "7fba80f60228dfb9e0c9330554ee1f3e60c6d3e0c8f17e7cda7927444c7835a3",
     "expectedUserSHA256": "b584e3946a4d1d51ae96cb7888ad1093ad2ae36b7e171bd88836f2a9d286835e"
   },
   {
     "characterId": "joy",
     "scenarioId": "settlementQuoteOverloaded",
     "writingMode": "normal",
-    "expectedSystemSHA256": "645186f0893fa76aed14dd3869da6cf1e9cffb6791718949234e188df4bc7f08",
+    "expectedSystemSHA256": "7fba80f60228dfb9e0c9330554ee1f3e60c6d3e0c8f17e7cda7927444c7835a3",
     "expectedUserSHA256": "0641ca43efb3d03e0a280c77bce4c7d9b021adcfc61a8bfebb8c128f6c6b8272"
   },
   {
@@ -60,7 +60,7 @@
     "scenarioId": "morningGreeting",
     "writingMode": "signatureQuote",
     "quoteIndex": 0,
-    "expectedSystemSHA256": "443c2601e74987f0a99041a40e306cccf63d7bbe8412f8f01c30a15d00338735",
+    "expectedSystemSHA256": "dc7fc19a7ef09231149caf82d35cb4f69378a3ba27be10d7679f697ca599305c",
     "expectedUserSHA256": "400f2a545a0ae7086e1f8c08624bd0be69152cc3c4bcb3091b87699f1ead8fd4"
   },
   {
@@ -68,7 +68,7 @@
     "scenarioId": "companionPhrase",
     "writingMode": "signatureQuote",
     "quoteIndex": 0,
-    "expectedSystemSHA256": "443c2601e74987f0a99041a40e306cccf63d7bbe8412f8f01c30a15d00338735",
+    "expectedSystemSHA256": "dc7fc19a7ef09231149caf82d35cb4f69378a3ba27be10d7679f697ca599305c",
     "expectedUserSHA256": "69110c84b00d57ac66220476f081d99b549f9ce5b4d2f65de2e1d91679f44bb3"
   },
   {
@@ -76,7 +76,7 @@
     "scenarioId": "taskEncouragement",
     "writingMode": "signatureQuote",
     "quoteIndex": 0,
-    "expectedSystemSHA256": "443c2601e74987f0a99041a40e306cccf63d7bbe8412f8f01c30a15d00338735",
+    "expectedSystemSHA256": "dc7fc19a7ef09231149caf82d35cb4f69378a3ba27be10d7679f697ca599305c",
     "expectedUserSHA256": "4cc25a0bf4f6e6a51d3ae445c334af396389e4c406093533655c6f690dc874be"
   },
   {
@@ -84,7 +84,7 @@
     "scenarioId": "scheduleReminder",
     "writingMode": "signatureQuote",
     "quoteIndex": 0,
-    "expectedSystemSHA256": "443c2601e74987f0a99041a40e306cccf63d7bbe8412f8f01c30a15d00338735",
+    "expectedSystemSHA256": "dc7fc19a7ef09231149caf82d35cb4f69378a3ba27be10d7679f697ca599305c",
     "expectedUserSHA256": "3de729fde34dd97a05a9c645ab1243a8c0bbe678d014c7c0a671ef53eac858cc"
   },
   {
@@ -92,7 +92,7 @@
     "scenarioId": "settlementSummary",
     "writingMode": "signatureQuote",
     "quoteIndex": 0,
-    "expectedSystemSHA256": "443c2601e74987f0a99041a40e306cccf63d7bbe8412f8f01c30a15d00338735",
+    "expectedSystemSHA256": "dc7fc19a7ef09231149caf82d35cb4f69378a3ba27be10d7679f697ca599305c",
     "expectedUserSHA256": "4b7a87d51b31b289e4403dd3409bd29a8f01ae11799e030075d8a4efa58d7478"
   },
   {
@@ -100,7 +100,7 @@
     "scenarioId": "smartReminder",
     "writingMode": "signatureQuote",
     "quoteIndex": 0,
-    "expectedSystemSHA256": "443c2601e74987f0a99041a40e306cccf63d7bbe8412f8f01c30a15d00338735",
+    "expectedSystemSHA256": "dc7fc19a7ef09231149caf82d35cb4f69378a3ba27be10d7679f697ca599305c",
     "expectedUserSHA256": "70e634d5014d099a9da5071b49262e12cc889456352b2ebbc6b2d18d2f728583"
   },
   {
@@ -108,7 +108,7 @@
     "scenarioId": "settlementQuoteCelebration",
     "writingMode": "signatureQuote",
     "quoteIndex": 0,
-    "expectedSystemSHA256": "443c2601e74987f0a99041a40e306cccf63d7bbe8412f8f01c30a15d00338735",
+    "expectedSystemSHA256": "dc7fc19a7ef09231149caf82d35cb4f69378a3ba27be10d7679f697ca599305c",
     "expectedUserSHA256": "b584e3946a4d1d51ae96cb7888ad1093ad2ae36b7e171bd88836f2a9d286835e"
   },
   {
@@ -116,63 +116,63 @@
     "scenarioId": "settlementQuoteOverloaded",
     "writingMode": "signatureQuote",
     "quoteIndex": 0,
-    "expectedSystemSHA256": "443c2601e74987f0a99041a40e306cccf63d7bbe8412f8f01c30a15d00338735",
+    "expectedSystemSHA256": "dc7fc19a7ef09231149caf82d35cb4f69378a3ba27be10d7679f697ca599305c",
     "expectedUserSHA256": "0641ca43efb3d03e0a280c77bce4c7d9b021adcfc61a8bfebb8c128f6c6b8272"
   },
   {
     "characterId": "silas",
     "scenarioId": "morningGreeting",
     "writingMode": "normal",
-    "expectedSystemSHA256": "d837f45da8018979c2eb9b694ebcaf4c5fb4389f8b840394f8d3c270653d1671",
+    "expectedSystemSHA256": "fdf187611850a6532509729b1f4dfa7f9d5411624744f00e906c8b0fa0252603",
     "expectedUserSHA256": "400f2a545a0ae7086e1f8c08624bd0be69152cc3c4bcb3091b87699f1ead8fd4"
   },
   {
     "characterId": "silas",
     "scenarioId": "companionPhrase",
     "writingMode": "normal",
-    "expectedSystemSHA256": "d837f45da8018979c2eb9b694ebcaf4c5fb4389f8b840394f8d3c270653d1671",
+    "expectedSystemSHA256": "fdf187611850a6532509729b1f4dfa7f9d5411624744f00e906c8b0fa0252603",
     "expectedUserSHA256": "69110c84b00d57ac66220476f081d99b549f9ce5b4d2f65de2e1d91679f44bb3"
   },
   {
     "characterId": "silas",
     "scenarioId": "taskEncouragement",
     "writingMode": "normal",
-    "expectedSystemSHA256": "d837f45da8018979c2eb9b694ebcaf4c5fb4389f8b840394f8d3c270653d1671",
+    "expectedSystemSHA256": "fdf187611850a6532509729b1f4dfa7f9d5411624744f00e906c8b0fa0252603",
     "expectedUserSHA256": "4cc25a0bf4f6e6a51d3ae445c334af396389e4c406093533655c6f690dc874be"
   },
   {
     "characterId": "silas",
     "scenarioId": "scheduleReminder",
     "writingMode": "normal",
-    "expectedSystemSHA256": "d837f45da8018979c2eb9b694ebcaf4c5fb4389f8b840394f8d3c270653d1671",
+    "expectedSystemSHA256": "fdf187611850a6532509729b1f4dfa7f9d5411624744f00e906c8b0fa0252603",
     "expectedUserSHA256": "3de729fde34dd97a05a9c645ab1243a8c0bbe678d014c7c0a671ef53eac858cc"
   },
   {
     "characterId": "silas",
     "scenarioId": "settlementSummary",
     "writingMode": "normal",
-    "expectedSystemSHA256": "d837f45da8018979c2eb9b694ebcaf4c5fb4389f8b840394f8d3c270653d1671",
+    "expectedSystemSHA256": "fdf187611850a6532509729b1f4dfa7f9d5411624744f00e906c8b0fa0252603",
     "expectedUserSHA256": "4b7a87d51b31b289e4403dd3409bd29a8f01ae11799e030075d8a4efa58d7478"
   },
   {
     "characterId": "silas",
     "scenarioId": "smartReminder",
     "writingMode": "normal",
-    "expectedSystemSHA256": "d837f45da8018979c2eb9b694ebcaf4c5fb4389f8b840394f8d3c270653d1671",
+    "expectedSystemSHA256": "fdf187611850a6532509729b1f4dfa7f9d5411624744f00e906c8b0fa0252603",
     "expectedUserSHA256": "70e634d5014d099a9da5071b49262e12cc889456352b2ebbc6b2d18d2f728583"
   },
   {
     "characterId": "silas",
     "scenarioId": "settlementQuoteCelebration",
     "writingMode": "normal",
-    "expectedSystemSHA256": "d837f45da8018979c2eb9b694ebcaf4c5fb4389f8b840394f8d3c270653d1671",
+    "expectedSystemSHA256": "fdf187611850a6532509729b1f4dfa7f9d5411624744f00e906c8b0fa0252603",
     "expectedUserSHA256": "b584e3946a4d1d51ae96cb7888ad1093ad2ae36b7e171bd88836f2a9d286835e"
   },
   {
     "characterId": "silas",
     "scenarioId": "settlementQuoteOverloaded",
     "writingMode": "normal",
-    "expectedSystemSHA256": "d837f45da8018979c2eb9b694ebcaf4c5fb4389f8b840394f8d3c270653d1671",
+    "expectedSystemSHA256": "fdf187611850a6532509729b1f4dfa7f9d5411624744f00e906c8b0fa0252603",
     "expectedUserSHA256": "0641ca43efb3d03e0a280c77bce4c7d9b021adcfc61a8bfebb8c128f6c6b8272"
   },
   {
@@ -180,7 +180,7 @@
     "scenarioId": "morningGreeting",
     "writingMode": "signatureQuote",
     "quoteIndex": 0,
-    "expectedSystemSHA256": "625097f5d9080f1151e418dea15f6ce583fa5d6680946cac6d0792e6eb40f3ef",
+    "expectedSystemSHA256": "7315c4ff732c27ff3c029f09ba9707911d20edb727440689ff681c172d6a69b2",
     "expectedUserSHA256": "400f2a545a0ae7086e1f8c08624bd0be69152cc3c4bcb3091b87699f1ead8fd4"
   },
   {
@@ -188,7 +188,7 @@
     "scenarioId": "companionPhrase",
     "writingMode": "signatureQuote",
     "quoteIndex": 0,
-    "expectedSystemSHA256": "625097f5d9080f1151e418dea15f6ce583fa5d6680946cac6d0792e6eb40f3ef",
+    "expectedSystemSHA256": "7315c4ff732c27ff3c029f09ba9707911d20edb727440689ff681c172d6a69b2",
     "expectedUserSHA256": "69110c84b00d57ac66220476f081d99b549f9ce5b4d2f65de2e1d91679f44bb3"
   },
   {
@@ -196,7 +196,7 @@
     "scenarioId": "taskEncouragement",
     "writingMode": "signatureQuote",
     "quoteIndex": 0,
-    "expectedSystemSHA256": "625097f5d9080f1151e418dea15f6ce583fa5d6680946cac6d0792e6eb40f3ef",
+    "expectedSystemSHA256": "7315c4ff732c27ff3c029f09ba9707911d20edb727440689ff681c172d6a69b2",
     "expectedUserSHA256": "4cc25a0bf4f6e6a51d3ae445c334af396389e4c406093533655c6f690dc874be"
   },
   {
@@ -204,7 +204,7 @@
     "scenarioId": "scheduleReminder",
     "writingMode": "signatureQuote",
     "quoteIndex": 0,
-    "expectedSystemSHA256": "625097f5d9080f1151e418dea15f6ce583fa5d6680946cac6d0792e6eb40f3ef",
+    "expectedSystemSHA256": "7315c4ff732c27ff3c029f09ba9707911d20edb727440689ff681c172d6a69b2",
     "expectedUserSHA256": "3de729fde34dd97a05a9c645ab1243a8c0bbe678d014c7c0a671ef53eac858cc"
   },
   {
@@ -212,7 +212,7 @@
     "scenarioId": "settlementSummary",
     "writingMode": "signatureQuote",
     "quoteIndex": 0,
-    "expectedSystemSHA256": "625097f5d9080f1151e418dea15f6ce583fa5d6680946cac6d0792e6eb40f3ef",
+    "expectedSystemSHA256": "7315c4ff732c27ff3c029f09ba9707911d20edb727440689ff681c172d6a69b2",
     "expectedUserSHA256": "4b7a87d51b31b289e4403dd3409bd29a8f01ae11799e030075d8a4efa58d7478"
   },
   {
@@ -220,7 +220,7 @@
     "scenarioId": "smartReminder",
     "writingMode": "signatureQuote",
     "quoteIndex": 0,
-    "expectedSystemSHA256": "625097f5d9080f1151e418dea15f6ce583fa5d6680946cac6d0792e6eb40f3ef",
+    "expectedSystemSHA256": "7315c4ff732c27ff3c029f09ba9707911d20edb727440689ff681c172d6a69b2",
     "expectedUserSHA256": "70e634d5014d099a9da5071b49262e12cc889456352b2ebbc6b2d18d2f728583"
   },
   {
@@ -228,7 +228,7 @@
     "scenarioId": "settlementQuoteCelebration",
     "writingMode": "signatureQuote",
     "quoteIndex": 0,
-    "expectedSystemSHA256": "625097f5d9080f1151e418dea15f6ce583fa5d6680946cac6d0792e6eb40f3ef",
+    "expectedSystemSHA256": "7315c4ff732c27ff3c029f09ba9707911d20edb727440689ff681c172d6a69b2",
     "expectedUserSHA256": "b584e3946a4d1d51ae96cb7888ad1093ad2ae36b7e171bd88836f2a9d286835e"
   },
   {
@@ -236,63 +236,63 @@
     "scenarioId": "settlementQuoteOverloaded",
     "writingMode": "signatureQuote",
     "quoteIndex": 0,
-    "expectedSystemSHA256": "625097f5d9080f1151e418dea15f6ce583fa5d6680946cac6d0792e6eb40f3ef",
+    "expectedSystemSHA256": "7315c4ff732c27ff3c029f09ba9707911d20edb727440689ff681c172d6a69b2",
     "expectedUserSHA256": "0641ca43efb3d03e0a280c77bce4c7d9b021adcfc61a8bfebb8c128f6c6b8272"
   },
   {
     "characterId": "nova",
     "scenarioId": "morningGreeting",
     "writingMode": "normal",
-    "expectedSystemSHA256": "10065bf891ebb760fc3d36391dc9b05f434922d605538b8cb1670c209afe344e",
+    "expectedSystemSHA256": "173dc48e779b3e17241276cfe62982cc6bb1cc6ec83c34a907b06b4b76d88afa",
     "expectedUserSHA256": "400f2a545a0ae7086e1f8c08624bd0be69152cc3c4bcb3091b87699f1ead8fd4"
   },
   {
     "characterId": "nova",
     "scenarioId": "companionPhrase",
     "writingMode": "normal",
-    "expectedSystemSHA256": "10065bf891ebb760fc3d36391dc9b05f434922d605538b8cb1670c209afe344e",
+    "expectedSystemSHA256": "173dc48e779b3e17241276cfe62982cc6bb1cc6ec83c34a907b06b4b76d88afa",
     "expectedUserSHA256": "69110c84b00d57ac66220476f081d99b549f9ce5b4d2f65de2e1d91679f44bb3"
   },
   {
     "characterId": "nova",
     "scenarioId": "taskEncouragement",
     "writingMode": "normal",
-    "expectedSystemSHA256": "10065bf891ebb760fc3d36391dc9b05f434922d605538b8cb1670c209afe344e",
+    "expectedSystemSHA256": "173dc48e779b3e17241276cfe62982cc6bb1cc6ec83c34a907b06b4b76d88afa",
     "expectedUserSHA256": "4cc25a0bf4f6e6a51d3ae445c334af396389e4c406093533655c6f690dc874be"
   },
   {
     "characterId": "nova",
     "scenarioId": "scheduleReminder",
     "writingMode": "normal",
-    "expectedSystemSHA256": "10065bf891ebb760fc3d36391dc9b05f434922d605538b8cb1670c209afe344e",
+    "expectedSystemSHA256": "173dc48e779b3e17241276cfe62982cc6bb1cc6ec83c34a907b06b4b76d88afa",
     "expectedUserSHA256": "3de729fde34dd97a05a9c645ab1243a8c0bbe678d014c7c0a671ef53eac858cc"
   },
   {
     "characterId": "nova",
     "scenarioId": "settlementSummary",
     "writingMode": "normal",
-    "expectedSystemSHA256": "10065bf891ebb760fc3d36391dc9b05f434922d605538b8cb1670c209afe344e",
+    "expectedSystemSHA256": "173dc48e779b3e17241276cfe62982cc6bb1cc6ec83c34a907b06b4b76d88afa",
     "expectedUserSHA256": "4b7a87d51b31b289e4403dd3409bd29a8f01ae11799e030075d8a4efa58d7478"
   },
   {
     "characterId": "nova",
     "scenarioId": "smartReminder",
     "writingMode": "normal",
-    "expectedSystemSHA256": "10065bf891ebb760fc3d36391dc9b05f434922d605538b8cb1670c209afe344e",
+    "expectedSystemSHA256": "173dc48e779b3e17241276cfe62982cc6bb1cc6ec83c34a907b06b4b76d88afa",
     "expectedUserSHA256": "70e634d5014d099a9da5071b49262e12cc889456352b2ebbc6b2d18d2f728583"
   },
   {
     "characterId": "nova",
     "scenarioId": "settlementQuoteCelebration",
     "writingMode": "normal",
-    "expectedSystemSHA256": "10065bf891ebb760fc3d36391dc9b05f434922d605538b8cb1670c209afe344e",
+    "expectedSystemSHA256": "173dc48e779b3e17241276cfe62982cc6bb1cc6ec83c34a907b06b4b76d88afa",
     "expectedUserSHA256": "b584e3946a4d1d51ae96cb7888ad1093ad2ae36b7e171bd88836f2a9d286835e"
   },
   {
     "characterId": "nova",
     "scenarioId": "settlementQuoteOverloaded",
     "writingMode": "normal",
-    "expectedSystemSHA256": "10065bf891ebb760fc3d36391dc9b05f434922d605538b8cb1670c209afe344e",
+    "expectedSystemSHA256": "173dc48e779b3e17241276cfe62982cc6bb1cc6ec83c34a907b06b4b76d88afa",
     "expectedUserSHA256": "0641ca43efb3d03e0a280c77bce4c7d9b021adcfc61a8bfebb8c128f6c6b8272"
   },
   {
@@ -300,7 +300,7 @@
     "scenarioId": "morningGreeting",
     "writingMode": "signatureQuote",
     "quoteIndex": 0,
-    "expectedSystemSHA256": "36ba3a9be937f0f5106e6dca1219dd0b46ea1345294e82f15199990abb54a097",
+    "expectedSystemSHA256": "57a8951811f552a3872a732f40d2bb220bed54edc163b9dbeca5600c2673a4cc",
     "expectedUserSHA256": "400f2a545a0ae7086e1f8c08624bd0be69152cc3c4bcb3091b87699f1ead8fd4"
   },
   {
@@ -308,7 +308,7 @@
     "scenarioId": "companionPhrase",
     "writingMode": "signatureQuote",
     "quoteIndex": 0,
-    "expectedSystemSHA256": "36ba3a9be937f0f5106e6dca1219dd0b46ea1345294e82f15199990abb54a097",
+    "expectedSystemSHA256": "57a8951811f552a3872a732f40d2bb220bed54edc163b9dbeca5600c2673a4cc",
     "expectedUserSHA256": "69110c84b00d57ac66220476f081d99b549f9ce5b4d2f65de2e1d91679f44bb3"
   },
   {
@@ -316,7 +316,7 @@
     "scenarioId": "taskEncouragement",
     "writingMode": "signatureQuote",
     "quoteIndex": 0,
-    "expectedSystemSHA256": "36ba3a9be937f0f5106e6dca1219dd0b46ea1345294e82f15199990abb54a097",
+    "expectedSystemSHA256": "57a8951811f552a3872a732f40d2bb220bed54edc163b9dbeca5600c2673a4cc",
     "expectedUserSHA256": "4cc25a0bf4f6e6a51d3ae445c334af396389e4c406093533655c6f690dc874be"
   },
   {
@@ -324,7 +324,7 @@
     "scenarioId": "scheduleReminder",
     "writingMode": "signatureQuote",
     "quoteIndex": 0,
-    "expectedSystemSHA256": "36ba3a9be937f0f5106e6dca1219dd0b46ea1345294e82f15199990abb54a097",
+    "expectedSystemSHA256": "57a8951811f552a3872a732f40d2bb220bed54edc163b9dbeca5600c2673a4cc",
     "expectedUserSHA256": "3de729fde34dd97a05a9c645ab1243a8c0bbe678d014c7c0a671ef53eac858cc"
   },
   {
@@ -332,7 +332,7 @@
     "scenarioId": "settlementSummary",
     "writingMode": "signatureQuote",
     "quoteIndex": 0,
-    "expectedSystemSHA256": "36ba3a9be937f0f5106e6dca1219dd0b46ea1345294e82f15199990abb54a097",
+    "expectedSystemSHA256": "57a8951811f552a3872a732f40d2bb220bed54edc163b9dbeca5600c2673a4cc",
     "expectedUserSHA256": "4b7a87d51b31b289e4403dd3409bd29a8f01ae11799e030075d8a4efa58d7478"
   },
   {
@@ -340,7 +340,7 @@
     "scenarioId": "smartReminder",
     "writingMode": "signatureQuote",
     "quoteIndex": 0,
-    "expectedSystemSHA256": "36ba3a9be937f0f5106e6dca1219dd0b46ea1345294e82f15199990abb54a097",
+    "expectedSystemSHA256": "57a8951811f552a3872a732f40d2bb220bed54edc163b9dbeca5600c2673a4cc",
     "expectedUserSHA256": "70e634d5014d099a9da5071b49262e12cc889456352b2ebbc6b2d18d2f728583"
   },
   {
@@ -348,7 +348,7 @@
     "scenarioId": "settlementQuoteCelebration",
     "writingMode": "signatureQuote",
     "quoteIndex": 0,
-    "expectedSystemSHA256": "36ba3a9be937f0f5106e6dca1219dd0b46ea1345294e82f15199990abb54a097",
+    "expectedSystemSHA256": "57a8951811f552a3872a732f40d2bb220bed54edc163b9dbeca5600c2673a4cc",
     "expectedUserSHA256": "b584e3946a4d1d51ae96cb7888ad1093ad2ae36b7e171bd88836f2a9d286835e"
   },
   {
@@ -356,7 +356,7 @@
     "scenarioId": "settlementQuoteOverloaded",
     "writingMode": "signatureQuote",
     "quoteIndex": 0,
-    "expectedSystemSHA256": "36ba3a9be937f0f5106e6dca1219dd0b46ea1345294e82f15199990abb54a097",
+    "expectedSystemSHA256": "57a8951811f552a3872a732f40d2bb220bed54edc163b9dbeca5600c2673a4cc",
     "expectedUserSHA256": "0641ca43efb3d03e0a280c77bce4c7d9b021adcfc61a8bfebb8c128f6c6b8272"
   }
 ]

@@ -60,11 +60,27 @@ public final class DayPackGenerator {
         // waits for the slower request instead of adding both request durations together.
         async let categorizedEvents = EventCategoryService.shared.categorized(uncategorizedEvents)
         async let generatedDaySummary = cachedDaySummary(for: uncategorizedEvents)
-        let (eventSummaries, daySummary) = await (categorizedEvents, generatedDaySummary)
+        let (categorized, daySummary) = await (categorizedEvents, generatedDaySummary)
+
+        // 支持性文字（客户 2026-07-28 规格）：每条事件按其类别的生成规则各写一句，随
+        // DayPack Events[] 下发，固件在该日程进行中时自行排版展示。必须在分类**之后**——
+        // 六条规则是按 category 分派的，分类结果是它的输入。
+        let eventSummaries = await EventSupportTextService.shared.withSupportText(categorized)
 
         // 手动加入 Today 的任务先于自然到期任务；组内再按 priority、dueDate、id 定序。
         // Swift sort 不稳定，保留完整兜底顺序，确保截断到 maxTasks 后结果可复现。
         let topTasks = Self.topTaskSummaries(from: tasks, screenSize: screenSize)
+
+        // 预热按键支持文字：硬件 Overview 只列出这批 topTasks，用户能按到的只可能是其中之一，
+        // 提前生成好 `0x11` 响应就是纯缓存读取、零等待。
+        //
+        // **不 await**：这是纯缓存预热，DayPack 本身不含它的产物。await 会把 60 秒模型超时
+        // 加到本轮 sync 上——而 BLESyncCoordinator 是先生成 DayPack、再按指纹决定这轮要不要发，
+        // 等于连"决定不发"的轮次也被拖 60 秒。`0x11` 侧本就有同步兜底（见
+        // cachedOrFallbackTaskSupportText），预热迟到只是这次按键用模板，不是错。
+        Task { await EventSupportTextService.shared.prewarmTaskSupportText(
+            taskTitles: topTasks.map(\.title)
+        ) }
 
         // box③ "First up": next upcoming event, else the top (highest-priority) incomplete task.
         let firstUp = Self.firstUpLabel(events: todayEvents, fallbackTaskTitle: topTasks.first?.title)
@@ -185,13 +201,23 @@ public final class DayPackGenerator {
     }
 
     public func generateTaskInPage(task: TaskItem, pet: Pet, userProfile: UserProfile = .default) async -> TaskInPageData {
-        // 客户拍板（2026-07-20）：专注页 Tips（encouragement）不要了——App 停止生成、恒发
-        // 空串；wire 字段保留占位（0x11 已联调，撤字段代价大于收益），固件收到空串不渲染。
+        // Encouragement（支持性文字）历史：客户 2026-07-20 拍板停用、App 恒发空串；
+        // 2026-07-28 客户给出六类支持性文字规范后**恢复**——按按钮进入的是 TaskItem，
+        // 而 TaskItem 没有 category 字段（六类只标在日历事件上），客户拍板恒用
+        // Deep Work 规则（"只指向最小的第一步"）。字节预算随之 50 → 80B（§4.8）。
+        // 支持文字**绝不阻塞这一帧**。设备已经停在任务详情页等 0x11，而无备注时 taskOverview
+        // 立即返回——那样支持文字就是唯一的等待，最坏 60 秒（model.requestTimeoutSeconds）白屏。
+        // 用缓存命中值，未命中直接取确定性模板：真正的 AI 文案在 sync 时由
+        // `prewarmTaskSupportText` 预生成（硬件只能按到 DayPack 下发的 topTasks，见其注释），
+        // 所以正常路径按键即命中，冷路径也只降级文案、不降级响应速度。
+        let support = EventSupportTextService.shared.cachedOrFallbackTaskSupportText(
+            taskTitle: task.title
+        )
         let overview = await taskOverview(for: task.notes)
         return TaskInPageData(
             taskId: task.hardwareIdentifier, taskTitle: task.title,
             taskDescription: overview,
-            encouragement: ""
+            encouragement: support
         )
     }
 
