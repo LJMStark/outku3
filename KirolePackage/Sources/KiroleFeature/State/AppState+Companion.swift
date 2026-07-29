@@ -63,73 +63,95 @@ extension AppState {
     }
 
     func refreshSharedPetDialogueIfNeeded(force: Bool = false) async {
-        // 重入时等待在途刷新完成再返回（届时 currentPetDialogue 已是最终文本），而不是拿旧值
-        // 提前返回：BLE performSync 曾在 HomeView 刷新在途时进来、用旧对话把 DayPack 发上硬件，
-        // 3 秒后 LLM 完成、指纹变化又补推一轮——硬件 3 秒内双刷屏。
-        // force 保持既有语义：不等待、直接再跑一轮（仅 HomeView 下拉刷新使用）。
-        if !force, let inFlight = dialogueRefreshTask {
+        // All callers share one version-aware refresh. It keeps regenerating while task state
+        // changes, so awaiting it means currentPetDialogue belongs to the final task version.
+        if let inFlight = dialogueRefreshTask {
+            if force {
+                dialogueForceRefreshRequested = true
+            }
             await inFlight.value
             return
         }
-        let refresh = Task { @MainActor in
-            await self.refreshSharedPetDialogueNow(force: force)
+        dialogueForceRefreshRequested = false
+        let refresh = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.refreshSharedPetDialogueUntilCurrent(force: force)
+            self.dialogueRefreshTask = nil
         }
         dialogueRefreshTask = refresh
         await refresh.value
-        dialogueRefreshTask = nil
     }
 
-    private func refreshSharedPetDialogueNow(force: Bool) async {
-        let triggerState = await buildCompanionDialogueTriggerState()
-        let todayKey = Self.homeCompanionDateKey(from: triggerState.context.currentTime)
-
-        let cachedDialogue: SharedCompanionDialogueCache?
-        do {
-            cachedDialogue = try await localStorage.loadSharedCompanionDialogue()
-        } catch {
-            ErrorReporter.log(
-                .persistence(operation: "load", target: "shared_companion_dialogue", underlying: error.localizedDescription),
-                context: "AppState+Companion.refreshSharedPetDialogueIfNeeded"
-            )
-            cachedDialogue = nil
-        }
-        if !force,
-           let cached = cachedDialogue,
-           cached.date == todayKey,
-           cached.fingerprint == triggerState.fingerprint {
-            let normalized = CompanionDialogueDisplayPolicy.normalized(cached.text)
-            if CompanionDialogueDisplayPolicy.isValidForDisplay(normalized) {
-                currentPetDialogue = normalized
-                return
+    private func refreshSharedPetDialogueUntilCurrent(force: Bool) async {
+        var bypassCache = force
+        while !Task.isCancelled {
+            if dialogueForceRefreshRequested {
+                bypassCache = true
+                dialogueForceRefreshRequested = false
             }
-        }
+            let sourceTaskStateVersion = taskStateVersion
+            let triggerState = await buildCompanionDialogueTriggerState()
+            guard sourceTaskStateVersion == taskStateVersion else { continue }
+            let todayKey = Self.homeCompanionDateKey(from: triggerState.context.currentTime)
 
-        let phase = resolveCompanionPhase(triggerState: triggerState)
-        let aiType: AITextType
-        switch phase {
-        case .morningPrep: aiType = .morningGreeting
-        case .inTask: aiType = .taskEncouragement
-        case .scheduleEvent: aiType = .scheduleReminder
-        case .daySettled: aiType = .settlementSummary
-        case .idle: aiType = .smartReminder
-        }
-
-        let dialogue = await CompanionTextService.shared.generateSharedPetDialogue(
-            baseContext: triggerState.context,
-            type: aiType
-        )
-        currentPetDialogue = dialogue
-
-        do {
-            try await localStorage.saveSharedCompanionDialogue(
-                SharedCompanionDialogueCache(
-                    date: todayKey,
-                    fingerprint: triggerState.fingerprint,
-                    text: dialogue
+            let cachedDialogue: SharedCompanionDialogueCache?
+            do {
+                cachedDialogue = try await localStorage.loadSharedCompanionDialogue()
+            } catch {
+                ErrorReporter.log(
+                    .persistence(operation: "load", target: "shared_companion_dialogue", underlying: error.localizedDescription),
+                    context: "AppState+Companion.refreshSharedPetDialogueIfNeeded"
                 )
-            )
-        } catch {
-            reportPersistenceError(error, operation: "save", target: "shared_companion_dialogue.json")
+                cachedDialogue = nil
+            }
+            guard sourceTaskStateVersion == taskStateVersion else { continue }
+
+            if !bypassCache,
+               let cached = cachedDialogue,
+               cached.date == todayKey,
+               cached.fingerprint == triggerState.fingerprint {
+                let normalized = CompanionDialogueDisplayPolicy.normalized(cached.text)
+                if CompanionDialogueDisplayPolicy.isValidForDisplay(normalized) {
+                    guard !dialogueForceRefreshRequested else { continue }
+                    currentPetDialogue = normalized
+                    currentPetDialogueTaskStateVersion = sourceTaskStateVersion
+                    return
+                }
+            }
+
+            let phase = resolveCompanionPhase(triggerState: triggerState)
+            let aiType: AITextType
+            switch phase {
+            case .morningPrep: aiType = .morningGreeting
+            case .inTask: aiType = .taskEncouragement
+            case .scheduleEvent: aiType = .scheduleReminder
+            case .daySettled: aiType = .settlementSummary
+            case .idle: aiType = .smartReminder
+            }
+
+            let dialogue = await sharedPetDialogueGenerator(triggerState.context, aiType)
+            guard !Task.isCancelled,
+                  sourceTaskStateVersion == taskStateVersion else {
+                continue
+            }
+
+            do {
+                try await localStorage.saveSharedCompanionDialogue(
+                    SharedCompanionDialogueCache(
+                        date: todayKey,
+                        fingerprint: triggerState.fingerprint,
+                        text: dialogue
+                    )
+                )
+            } catch {
+                reportPersistenceError(error, operation: "save", target: "shared_companion_dialogue.json")
+            }
+            guard sourceTaskStateVersion == taskStateVersion else { continue }
+            guard !dialogueForceRefreshRequested else { continue }
+
+            currentPetDialogue = dialogue
+            currentPetDialogueTaskStateVersion = sourceTaskStateVersion
+            return
         }
     }
 

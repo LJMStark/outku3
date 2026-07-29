@@ -65,6 +65,11 @@ public final class BLESyncCoordinator {
         // v2.5.0: the hardware bubble shows the SAME line as the App home. Refresh it, then
         // feed currentPetDialogue into the DayPack so both surfaces stay in sync.
         await appState.refreshSharedPetDialogueIfNeeded()
+        let sourceTaskStateVersion = appState.taskStateVersion
+        guard appState.currentPetDialogueTaskStateVersion == sourceTaskStateVersion else {
+            pendingSync = true
+            return
+        }
         let dayPack = await dayPackGenerator.generateDayPack(
             pet: appState.pet,
             tasks: appState.tasks,
@@ -76,6 +81,12 @@ public final class BLESyncCoordinator {
             screenSize: bleService.hardwareScreenSize,
             petDialogue: appState.currentPetDialogue
         )
+        // DayPack generation also awaits event/support/settlement text. If tasks changed during
+        // that work, do not let the old task/dialogue transaction reach the hardware.
+        guard appState.taskStateVersion == sourceTaskStateVersion else {
+            pendingSync = true
+            return
+        }
 
         let fingerprint = dayPack.stableFingerprint()
         let lastHash = await localStorage.loadLastDayPackHash()
@@ -183,7 +194,10 @@ public final class BLESyncCoordinator {
                 var lastWriteError: Error?
                 for attempt in 0..<2 {
                     do {
-                        try await bleService.sendDayPack(dayPack)
+                        try await bleService.sendDayPack(
+                            dayPack,
+                            expectedTaskStateVersion: sourceTaskStateVersion
+                        )
                         sent = true
                         break
                     } catch {

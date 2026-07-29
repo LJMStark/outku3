@@ -18,6 +18,7 @@ typealias CustomAvatarFrameSender = @MainActor (
     @escaping @MainActor @Sendable (Int, Int) -> Void
 ) async throws -> Void
 typealias AvatarControlSender = @MainActor (AvatarControlCommand) async throws -> Void
+typealias SharedPetDialogueGenerator = @MainActor (AIContext, AITextType) async -> String
 
 struct AvatarControlResultWaiter {
     let operationID: UInt32
@@ -72,6 +73,10 @@ public final class AppState {
     /// excluded explicitly, so a BLE transaction can tell whether an App edit/undo/delete landed
     /// while one of its persistence awaits was suspended.
     @ObservationIgnored private var taskMutationGenerations: [String: UInt64] = [:]
+    /// Monotonic version of the complete task state. Unlike the per-task authority clocks above,
+    /// this also advances for hardware-owned mutations because companion text and DayPack content
+    /// must describe the same task snapshot regardless of which side initiated the change.
+    @ObservationIgnored private(set) var taskStateVersion: UInt64 = 0
     @ObservationIgnored private var suppressesTaskMutationTracking = false
 
     // Weather & Sun
@@ -202,6 +207,18 @@ public final class AppState {
     /// with the stale `currentPetDialogue` — BLE sync once shipped the stale line to hardware,
     /// then re-pushed 3s later when the LLM finished (double E-ink refresh, 2026-07-03联调).
     var dialogueRefreshTask: Task<Void, Never>?
+    /// Task version represented by `currentPetDialogue`. BLE may only pair the text with this
+    /// exact task version; a mismatch means generation must finish again before 0x10 is sent.
+    @ObservationIgnored var currentPetDialogueTaskStateVersion: UInt64?
+    /// A force request that arrives while generation is in flight is folded into that same task,
+    /// keeping every waiter behind one final dialogue instead of starting a parallel generation.
+    @ObservationIgnored var dialogueForceRefreshRequested = false
+    @ObservationIgnored var sharedPetDialogueGenerator: SharedPetDialogueGenerator = { context, type in
+        await CompanionTextService.shared.generateSharedPetDialogue(
+            baseContext: context,
+            type: type
+        )
+    }
     @ObservationIgnored var companionMotionClearTask: Task<Void, Never>?
     /// FocusStatus(0x14) 短窗去重：前台化会被两个观察者（ScreenActivityTracker 打断记录 +
     /// scenePhase.active 状态对齐）各触发一次，同内容背靠背两帧 → 硬件重复刷屏。
@@ -272,8 +289,6 @@ public final class AppState {
     }
 
     private func recordTaskMutations(from oldTasks: [TaskItem], to newTasks: [TaskItem]) {
-        guard !suppressesTaskMutationTracking else { return }
-
         var oldFingerprints: [String: TaskMutationFingerprint] = [:]
         var newFingerprints: [String: TaskMutationFingerprint] = [:]
         for task in oldTasks {
@@ -283,8 +298,14 @@ public final class AppState {
             newFingerprints[task.id] = TaskMutationFingerprint(task)
         }
 
-        for taskID in Set(oldFingerprints.keys).union(newFingerprints.keys)
-            where oldFingerprints[taskID] != newFingerprints[taskID] {
+        let changedTaskIDs = Set(oldFingerprints.keys).union(newFingerprints.keys)
+            .filter { oldFingerprints[$0] != newFingerprints[$0] }
+        guard !changedTaskIDs.isEmpty else { return }
+
+        taskStateVersion = taskStateVersion == .max ? .max : taskStateVersion + 1
+        guard !suppressesTaskMutationTracking else { return }
+
+        for taskID in changedTaskIDs {
             let current = taskMutationGenerations[taskID, default: 0]
             taskMutationGenerations[taskID] = current == .max ? .max : current + 1
         }

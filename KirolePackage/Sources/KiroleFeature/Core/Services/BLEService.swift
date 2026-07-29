@@ -557,8 +557,14 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
     // MARK: - Day Pack Transfer
 
     /// 发送 Day Pack 到 E-ink 设备
-    public func sendDayPack(_ dayPack: DayPack) async throws {
+    public func sendDayPack(
+        _ dayPack: DayPack,
+        expectedTaskStateVersion: UInt64
+    ) async throws {
         try await withTaskStateMessageGate {
+            guard AppState.shared.taskStateVersion == expectedTaskStateVersion else {
+                throw BLEError.staleTaskSnapshot
+            }
             let latestTasks = DayPackGenerator.topTaskSummaries(
                 from: AppState.shared.tasks,
                 screenSize: hardwareScreenSize
@@ -567,7 +573,15 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
                 throw BLEError.staleTaskSnapshot
             }
             let data = BLEDataEncoder.encodeDayPack(dayPack, screenSize: hardwareScreenSize)
-            try await writeData(type: .dayPack, data: data)
+            try await writeData(
+                type: .dayPack,
+                data: data,
+                validateBeforePacketWrite: {
+                    guard AppState.shared.taskStateVersion == expectedTaskStateVersion else {
+                        throw BLEError.staleTaskSnapshot
+                    }
+                }
+            )
         }
     }
 
@@ -676,13 +690,13 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
             kriData: kriData
         )
         progress(0, kriData.count)
-        try await writeData(type: .customAvatarFrame, data: payload) { sentPayloadBytes, _ in
+        try await writeData(type: .customAvatarFrame, data: payload, progress: { sentPayloadBytes, _ in
             let sentKRIBytes = min(
                 kriData.count,
                 max(0, sentPayloadBytes - CustomAvatarFrameV4Codec.headerLength)
             )
             progress(sentKRIBytes, kriData.count)
-        }
+        })
     }
 
     /// 写成功只表示命令到达特征值；设备落盘结果由 0x22 回包经
@@ -729,6 +743,7 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
     private func writeData(
         type: BLEDataType,
         data: Data,
+        validateBeforePacketWrite: (@MainActor @Sendable () throws -> Void)? = nil,
         progress: (@MainActor @Sendable (_ sentBytes: Int, _ totalBytes: Int) -> Void)? = nil
     ) async throws {
         guard connectionState.isConnected,
@@ -743,6 +758,7 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
                 data: data,
                 peripheral: peripheral,
                 characteristic: characteristic,
+                validateBeforePacketWrite: validateBeforePacketWrite,
                 progress: progress
             )
             return
@@ -773,7 +789,12 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
                     plainPacket: plainPacket,
                     maxWriteLength: maxLength
                 )
-                try await writePacket(packet, peripheral: peripheral, characteristic: characteristic)
+                try await writePacket(
+                    packet,
+                    peripheral: peripheral,
+                    characteristic: characteristic,
+                    validateBeforeWrite: validateBeforePacketWrite
+                )
                 sentBytes += chunkPayloadLength(plainPacket)
                 progress?(min(sentBytes, data.count), data.count)
             }
@@ -796,13 +817,23 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
                 // 外层任务被取消（如切换伴侣废弃旧头像流）时立即停发——写锁只串行单个
                 // packet，不检查取消的话两条 2000 片消息会逐片交错、旧流可能反杀新流。
                 try Task.checkCancellation()
-                try await writePacket(packet, peripheral: peripheral, characteristic: characteristic)
+                try await writePacket(
+                    packet,
+                    peripheral: peripheral,
+                    characteristic: characteristic,
+                    validateBeforeWrite: validateBeforePacketWrite
+                )
             }
             return
         }
 
         let packet = BLESimpleEncoder.encode(type: BLEDataType.secureData.rawValue, payload: securePayload)
-        try await writePacket(packet, peripheral: peripheral, characteristic: characteristic)
+        try await writePacket(
+            packet,
+            peripheral: peripheral,
+            characteristic: characteristic,
+            validateBeforeWrite: validateBeforePacketWrite
+        )
     }
 
     private func writeUnsignedData(
@@ -810,6 +841,7 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
         data: Data,
         peripheral: CBPeripheral,
         characteristic: CBCharacteristic,
+        validateBeforePacketWrite: (@MainActor @Sendable () throws -> Void)?,
         progress: (@MainActor @Sendable (_ sentBytes: Int, _ totalBytes: Int) -> Void)?
     ) async throws {
         let maxLength = peripheral.maximumWriteValueLength(for: .withResponse)
@@ -828,7 +860,12 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
             for packet in packets {
                 // 同 writeData：任务取消即停发，防多条大帧流逐片交错。
                 try Task.checkCancellation()
-                try await writePacket(packet, peripheral: peripheral, characteristic: characteristic)
+                try await writePacket(
+                    packet,
+                    peripheral: peripheral,
+                    characteristic: characteristic,
+                    validateBeforeWrite: validateBeforePacketWrite
+                )
                 sentBytes += chunkPayloadLength(packet)
                 progress?(min(sentBytes, data.count), data.count)
             }
@@ -836,7 +873,12 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
         }
 
         let packet = BLESimpleEncoder.encode(type: type.rawValue, payload: data)
-        try await writePacket(packet, peripheral: peripheral, characteristic: characteristic)
+        try await writePacket(
+            packet,
+            peripheral: peripheral,
+            characteristic: characteristic,
+            validateBeforeWrite: validateBeforePacketWrite
+        )
         progress?(data.count, data.count)
     }
 
@@ -867,7 +909,8 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
     private func writePacket(
         _ packet: Data,
         peripheral: CBPeripheral,
-        characteristic: CBCharacteristic
+        characteristic: CBCharacteristic,
+        validateBeforeWrite: (@MainActor @Sendable () throws -> Void)? = nil
     ) async throws {
         if AppBuildEnvironment.showsHardwareDebugTools {
             let typeText = packet.first.map { String(format: "%02X", $0) } ?? "??"
@@ -885,6 +928,12 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
                   BLEWritePolicy.canWrite(state: connectionState, packetType: packetType) else {
                 throw BLEError.disconnected
             }
+
+            // Validation belongs after the write gate and rate limiter: both suspend. For a
+            // packetized DayPack this is the last point before each chunk is committed to
+            // CoreBluetooth. If tasks changed, the remaining chunks are withheld and firmware
+            // never receives a complete old 0x10 message to render.
+            try validateBeforeWrite?()
 
             // HIGH-1: strong capture — no retain cycle (@MainActor task, singleton service)
             let writeID = UUID()

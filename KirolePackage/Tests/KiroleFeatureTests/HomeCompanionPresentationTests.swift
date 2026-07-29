@@ -2,8 +2,105 @@ import Foundation
 import Testing
 @testable import KiroleFeature
 
+private actor BlockingSharedDialogueGenerator {
+    private var firstCallStarted = false
+    private var firstCallStartedContinuation: CheckedContinuation<Void, Never>?
+    private var firstCallReleaseContinuation: CheckedContinuation<Void, Never>?
+    private var secondCallReleaseContinuation: CheckedContinuation<Void, Never>?
+    private var secondCallReleased = false
+    private var contexts: [AIContext] = []
+
+    func generate(context: AIContext) async -> String {
+        contexts.append(context)
+        if contexts.count == 1 {
+            firstCallStarted = true
+            firstCallStartedContinuation?.resume()
+            firstCallStartedContinuation = nil
+            await withCheckedContinuation { continuation in
+                firstCallReleaseContinuation = continuation
+            }
+        } else if contexts.count == 2, !secondCallReleased {
+            await withCheckedContinuation { continuation in
+                secondCallReleaseContinuation = continuation
+            }
+        }
+        return context.topTaskTitles.first == "Revised task"
+            ? "The revised task and this line belong together."
+            : "This line belongs to the old task."
+    }
+
+    func waitUntilFirstCallStarts() async {
+        guard !firstCallStarted else { return }
+        await withCheckedContinuation { continuation in
+            firstCallStartedContinuation = continuation
+        }
+    }
+
+    func releaseFirstCall() {
+        firstCallReleaseContinuation?.resume()
+        firstCallReleaseContinuation = nil
+    }
+
+    func releaseSecondCall() {
+        secondCallReleased = true
+        secondCallReleaseContinuation?.resume()
+        secondCallReleaseContinuation = nil
+    }
+
+    func callCount() -> Int {
+        contexts.count
+    }
+}
+
 @Suite("Home Companion Presentation", .serialized)
 struct HomeCompanionPresentationTests {
+    @Test("Task change during AI generation publishes only dialogue for final task version")
+    @MainActor
+    func taskChangeDuringGenerationUsesFinalTaskVersion() async throws {
+        try await SharedPersistenceTestLock.shared.withLock {
+            let state = AppState.makeForTesting()
+            let storage = LocalStorage.shared
+            let generator = BlockingSharedDialogueGenerator()
+            let now = Date()
+
+            try await storage.clearAll()
+            state.tasks = [TaskItem(id: "task-1", title: "Original task", dueDate: now)]
+            state.sharedPetDialogueGenerator = { context, _ in
+                await generator.generate(context: context)
+            }
+
+            let refresh = Task { @MainActor in
+                await state.refreshSharedPetDialogueIfNeeded()
+            }
+            await generator.waitUntilFirstCallStarts()
+
+            state.tasks = [TaskItem(id: "task-1", title: "Revised task", dueDate: now)]
+            let concurrentBLERefresh = Task { @MainActor in
+                await state.refreshSharedPetDialogueIfNeeded()
+            }
+            await generator.releaseFirstCall()
+
+            for _ in 0..<100 {
+                if await generator.callCount() == 2 { break }
+                try? await Task.sleep(for: .milliseconds(1))
+            }
+            let secondCallStarted = await generator.callCount() == 2
+            #expect(secondCallStarted)
+            if secondCallStarted {
+                #expect(state.currentPetDialogue.isEmpty)
+            }
+
+            // Release is sticky: if the expectation above fails, a late second call will not
+            // suspend forever and hide the real assertion failure behind a hung test process.
+            await generator.releaseSecondCall()
+            await refresh.value
+            await concurrentBLERefresh.value
+
+            #expect(state.currentPetDialogue == "The revised task and this line belong together.")
+            #expect(state.currentPetDialogueTaskStateVersion == state.taskStateVersion)
+        }
+    }
+
     @Test("New calendar day resets home companion to daily haiku")
     @MainActor
     func newCalendarDayResetsToDailyHaiku() async throws {
