@@ -213,9 +213,9 @@ extension AppState {
             }
         }
 
-        // External-provider updates and companion copy are not part of the BLE durability point.
-        // They start only after tasks/pet reached disk, so a slow network cannot hold the firmware
-        // acknowledgement transaction open or race an App undo during WAL persistence.
+        // External-provider updates are not part of the BLE durability point. Companion copy is
+        // generated later by BLEEventHandler before the display acknowledgement, after tasks/pet
+        // have reached disk, so it cannot race the WAL persistence transaction.
         if let durableTask = tasks.first(where: { $0.id == taskID }) {
             let expectedLastModified = durableTask.lastModified
             let externalSyncTask = taskExternalSyncQueue.enqueue(for: durableTask.id) { [weak self] in

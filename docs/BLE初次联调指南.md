@@ -1,8 +1,9 @@
 # Kirole BLE 初次联调指南
 
-**版本:** v0.2.0
-**更新日期:** 2026-07-27
-**状态:** BLE v2.9.0 第一次联调与任务状态正式验收
+**版本:** v0.2.1
+**更新日期:** 2026-07-30
+**状态:** BLE v2.10.1 第一次联调、任务状态与单次刷新正式验收
+**v0.2.1 变更:** 在线 Complete/Skip 改为最终 `DayPack(0x10)` 先缓存、同任务版本 `0x1B` 后一次提交；固件在两帧之间保持 TaskIn/pending 且不刷新。RequestRefresh 与离线批次回放不变。
 **v0.2.0 变更:** 对齐 BLE v2.9.0 flag-day：RequestRefresh 改为严格 v1 + 非零 RequestID，新增 `0x1B TaskListSnapshotAck` 业务确认；加入 Complete/Skip 非零 OperationID、幂等重试、版本化原子替换、Skip 保留任务和旧离线日志清理验收。空 payload `0x20` 与旧 Complete/Skip 格式不再接受。
 **v0.1.2 变更:** 分包头随 BLE 协议 v2.5.24 由 9 字节更新为 **11 字节**（`Seq`/`Total` 各 2B BE、上限 65535），§2/§4/§5.3 同步；简单包格式不变。
 
@@ -10,7 +11,7 @@
 
 ## 1. 本次目标
 
-本次分两道门：先验证 App 和设备能发现、连接、互发基础数据；再验收 v2.9.0 的任务完成/跳过/刷新状态同步。不验证安全握手、图片帧或完整页面美术。
+本次分两道门：先验证 App 和设备能发现、连接、互发基础数据；再验收 v2.10.1 的任务完成/跳过/刷新状态同步与单次刷新顺序。不验证安全握手、图片帧或完整页面美术。
 
 成功标准很简单：
 
@@ -20,7 +21,7 @@
 - 设备能收到 App 发来的 `Time(0x05)`。
 - 设备发送 v1 `RequestRefresh(0x20)` 后，立即收到匹配的 `TaskListSnapshotAck(0x1B)`。
 - 完成任务后 App 的权威快照移除该任务；跳过任务后快照仍保留该任务。
-- DayPack 可按内容变化另行到达，但不再作为任务动作的业务确认。
+- 在线 Complete/Skip 后先收到最终 DayPack、再收到匹配 `0x1B`；硬件只在后一帧到达后刷新一次。
 
 完整协议参考 `BLE通信协议规格文档.md`。第一次联调以本文为准。
 
@@ -35,11 +36,11 @@
 | 设备上线通知 / Wake Notify | BLE Notify 开启后，固件**主动**发送 `DeviceWake(0x30)`，payload 为 `BatteryLevel(1B)` | App 更新电量，并写入 `Time(0x05)` 完成时间同步 |
 | 时间同步 | 接收 App 写入的 `Time(0x05)` 简单包 | 固件串口打印收到的年月日时分秒 |
 | 请求刷新 | Notify 发送严格 v1 `RequestRefresh(0x20)`：`01 + RequestID(4B BE, nonzero)` | App 立即回匹配 `0x1B`；完整 DayPack sync 仍可能受 60s 合并窗和指纹去重 |
-| 任务动作 | Complete/Skip 发送严格 v1：`01 + OperationID(4B BE, nonzero) + TaskIdLength + TaskId + Timestamp(4B BE)` | App 幂等处理并立即回匹配 `0x1B` |
+| 任务动作 | Complete/Skip 发送严格 v1：`01 + OperationID(4B BE, nonzero) + TaskIdLength + TaskId + Timestamp(4B BE)` | App 幂等处理，先发最终 `0x10`，再回同任务版本 `0x1B` |
 | 任务快照 | 解析 App 写入的 `TaskListSnapshotAck(0x1B)`，校验 Action+OperationID 与 StateEpoch+Revision | 整包合法后原子替换整个 Overview 任务清单 |
 | DayPack 接收 | 接收 App 写入的 `DayPack(0x10)`，支持 11 字节分包（v2.5.24） | 固件串口打印 payload 总长度和前几个字段 |
 
-> **确认边界：** GATT withResponse 只表示特征写入获得传输响应。设备可以先显示 pending，但只有匹配且版本更新的 `0x1B` 才能提交任务清单。App 是最终任务状态来源；`0x02 TaskList` 是 legacy，不能用于本流程。
+> **确认边界：** GATT withResponse 只表示特征写入获得传输响应。在线 Complete/Skip 后设备留在 TaskIn/pending：最终 DayPack 到达时只换后台缓存、不刷屏；匹配且版本更新的 `0x1B` 到达后才一次提交任务清单和页面。App 是最终任务状态来源；`0x02 TaskList` 是 legacy，不能用于本流程。
 
 > **语义说明（设备上线通知）**：`DeviceWake(0x30)` **不是 App 唤醒 MCU 的命令**，App 无法也不会触发 MCU 从休眠中醒来。MCU 何时唤醒由固件自行决定（RTC 定时、按键、电源事件等）。完整流程如下：
 > 1. MCU 自主唤醒 → 开始广播
@@ -165,6 +166,7 @@ Result：`00 applied`、`01 alreadyApplied`、`02 taskNotFound`、`03 invalidReq
 - 全部长度校验通过后一次性替换整个任务清单。只含当天未完成任务：4 寸最多 3 项、7.3 寸最多 5 项。
 - Complete 后任务消失；Skip 后任务保留。`taskNotFound/invalidRequest/supersededByApp` 也要撤销设备自行删除并采用 App 快照；`supersededByApp` 表示 App 新状态优先，结束 pending 后不得再重试旧动作。
 - DayPack 与 `0x1B` 必须完整重组、校验后再应用；两类完整任务状态消息不会分片交错。
+- 在线 Complete/Skip 时，先到的最终 DayPack 只写后台缓存，不退出 TaskIn、不触发 EPD；匹配 `0x1B` 到达后一次应用缓存与任务清单，只刷新一次。RequestRefresh 与离线批次回放不走此显示闸。
 - App 对同一 revision 的短重试逐字节复用同一 `0x1B` payload；固件收到相同 revision 时保持现状即可。
 
 ---
@@ -204,7 +206,7 @@ Result：`00 applied`、`01 alreadyApplied`、`02 taskNotFound`、`03 invalidReq
 01 | 00 00 00 2A | TaskIdLength | TaskId | Timestamp(4B BE)
 ```
 
-收到 Action=`0x11`、OperationID=42 的更新版本 `0x1B` 后，确认该 TaskId 已从完整清单移除。
+先确认收到包含最新任务清单和 AI 对话的最终 `DayPack(0x10)`；此时设备仍在 TaskIn/pending，EPD 刷新计数不增加。随后收到 Action=`0x11`、OperationID=42 的更新版本 `0x1B`，确认该 TaskId 已从完整清单移除、设备返回 Overview，且整个动作只增加 **1 次** EPD 刷新。
 
 11. 模拟确认丢失：**原样重发**第 10 步完整帧。App 应回首次处理时缓存的 Result + 新快照，任务状态不得再次翻转。
 12. 对另一真实任务发送 Skip v1。收到 Action=`0x12` 的 `0x1B` 后，确认专注结束但该任务仍在清单（排序/当前选择允许变化）。
@@ -228,8 +230,8 @@ Result：`00 applied`、`01 alreadyApplied`、`02 taskNotFound`、`03 invalidReq
 | Time | 固件串口看到 `05 00 06 ...` |
 | RequestRefresh | 固件发送合法 v1 请求后，立即收到 Action/RequestID 匹配的 `0x1B`；不再用 DayPack 是否重发判断响应 |
 | TaskListSnapshotAck | Action+OperationID 匹配；epoch/revision 只向前；整包原子替换，4 寸≤3、7.3寸≤5 |
-| Complete | 匹配 `0x1B` 移除任务；原样重试返回首次缓存的 Result 且不重复执行 |
-| Skip | 匹配 `0x1B` 结束 pending，但任务仍保留 |
+| Complete | 顺序为最终 `0x10 → 0x1B`；前者不刷、后者一次刷新并移除任务；原样重试不重复执行 |
+| Skip | 顺序为最终 `0x10 → 0x1B`；前者不刷、后者一次刷新并结束 pending，任务仍保留 |
 | 冲突 ID | 同一 OperationID 改 payload 返回 invalidRequest，设备不提交本地删除 |
 | App 新状态优先 | 收到 supersededByApp 后采用快照、结束 pending，不覆盖 App 撤销/编辑，也不结束更新专注会话 |
 | DayPack | 若内容变化而收到，固件能完成分包重组并解析；未重发不算任务确认失败 |
@@ -254,9 +256,9 @@ Result：`00 applied`、`01 alreadyApplied`、`02 taskNotFound`、`03 invalidReq
 
 先检查 RequestRefresh 是否为严格 v1：`20 05 01 <RequestID 4B BE>`，RequestID 必须非零；旧 `20 00` 会被拒绝。再检查是否收到 Action=`0x20`、OperationID=本次 RequestID 的 `0x1B`。`0x1B` 是任务刷新业务确认并立即返回；DayPack 仍受 60 秒完整同步合并窗和内容指纹影响，内容未变时不重发是正常行为。
 
-### 完成后设备清单与 App 不一致
+### 完成后设备清单与 App 不一致或刷了两次
 
-不要在短按后永久提交设备本地删除。先显示 pending，等待匹配且 StateEpoch/Revision 更新的 `0x1B`，然后整表原子替换。超时只能原样重发同一 OperationID/TaskId/Timestamp；生成新 ID 会绕过幂等保护。
+不要在短按后立即返回 Overview 或刷新。保持 TaskIn/pending：先收最终 DayPack 并只更新后台缓存，再等匹配且 StateEpoch/Revision 更新的 `0x1B`，然后整表原子替换、一次返回 Overview 和刷新。超时只能原样重发同一 OperationID/TaskId/Timestamp；生成新 ID 会绕过幂等保护。
 
 ### 想确认 App 到底收发了哪些帧
 

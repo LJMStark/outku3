@@ -112,7 +112,7 @@ public final class DayPackGenerator {
     }
 
     /// The single source of truth for the task rows shown on hardware Overview. DayPack and the
-    /// immediate `0x1B` business acknowledgement must select and order the exact same rows.
+    /// versioned `0x1B` business acknowledgement must select and order the exact same rows.
     nonisolated static func topTaskSummaries(
         from tasks: [TaskItem],
         screenSize: ScreenSize,

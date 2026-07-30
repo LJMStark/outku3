@@ -397,4 +397,11 @@ extension AppState {
             await BLESyncCoordinator.shared.performSync()
         }
     }
+
+    /// A live Complete/Skip response sends its final DayPack before 0x1B. Cancel the ordinary
+    /// debounced request created by the same mutation so it cannot race and send the same DayPack.
+    func cancelPendingBLESyncForTaskActionPresentation() {
+        pendingBLESyncTask?.cancel()
+        pendingBLESyncTask = nil
+    }
 }

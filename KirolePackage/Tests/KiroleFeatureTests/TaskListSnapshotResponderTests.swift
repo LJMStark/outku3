@@ -16,7 +16,7 @@ struct TaskListSnapshotResponderTests {
             TaskItem(id: "open", title: "Open", isCompleted: false, dueDate: Date()),
         ]
 
-        await TaskListSnapshotResponder.respond(
+        _ = await TaskListSnapshotResponder.respond(
             to: [TaskOperationReceipt(action: .completeTask, operationID: 5, result: .applied)],
             sender: sender,
             versionProvider: versions,
@@ -53,7 +53,7 @@ struct TaskListSnapshotResponderTests {
         await versions.waitUntilBlocked()
         source.tasks = [TaskItem(id: "new", title: "New", dueDate: Date())]
         await versions.release()
-        await response.value
+        _ = await response.value
 
         let expected = encodedAck(
             operationID: 12,
@@ -61,6 +61,34 @@ struct TaskListSnapshotResponderTests {
             tasks: [TaskSummary(id: "new", title: "New", isCompleted: false, priority: 1)]
         )
         #expect(sender.sentPayloads == [expected])
+    }
+
+    @Test("A task-version change during acknowledgement preparation sends no stale snapshot")
+    @MainActor
+    func taskVersionChangeRejectsAcknowledgement() async {
+        let sender = TaskListSnapshotSenderSpy(screenSize: .fourInch)
+        let versions = BlockingTaskListSnapshotVersionProvider(
+            version: TaskListSnapshotVersion(epoch: 11, revision: 13)
+        )
+        let taskVersion = TaskStateVersionSource(21)
+
+        let response = Task { @MainActor in
+            await TaskListSnapshotResponder.respond(
+                to: [TaskOperationReceipt(action: .completeTask, operationID: 13, result: .applied)],
+                sender: sender,
+                versionProvider: versions,
+                tasksProvider: { [] },
+                expectedTaskStateVersion: 21,
+                taskStateVersionProvider: { taskVersion.value }
+            )
+        }
+        await versions.waitUntilBlocked()
+        taskVersion.value = 22
+        await versions.release()
+        let outcome = await response.value
+
+        #expect(outcome == .staleTaskState)
+        #expect(sender.sentPayloads.isEmpty)
     }
 
     @Test("A lost callback retries frozen bytes without letting DayPack enter the gate")
@@ -83,7 +111,7 @@ struct TaskListSnapshotResponderTests {
         }
         await sender.waitForFirstAttempt()
         let dayPack = Task { @MainActor in try await sender.simulateDayPackWrite() }
-        await response.value
+        _ = await response.value
         try await dayPack.value
 
         #expect(sender.wireOrder == ["ack", "ack", "dayPack"])
@@ -105,7 +133,7 @@ struct TaskListSnapshotResponderTests {
             TaskListSnapshotVersion(epoch: 20, revision: 2),
         ])
 
-        await TaskListSnapshotResponder.respond(
+        _ = await TaskListSnapshotResponder.respond(
             to: [
                 TaskOperationReceipt(action: .completeTask, operationID: 1, result: .applied),
                 TaskOperationReceipt(action: .skipTask, operationID: 2, result: .applied),
@@ -138,7 +166,7 @@ struct TaskListSnapshotResponderTests {
             failFirstWrite: false
         )
 
-        await TaskListSnapshotResponder.respond(
+        _ = await TaskListSnapshotResponder.respond(
             to: [TaskOperationReceipt(action: .requestRefresh, operationID: 33, result: .applied)],
             sender: sender,
             versionProvider: FailingTaskListSnapshotVersionProvider(),
@@ -197,6 +225,15 @@ private final class TaskListSource {
 }
 
 @MainActor
+private final class TaskStateVersionSource {
+    var value: UInt64
+
+    init(_ value: UInt64) {
+        self.value = value
+    }
+}
+
+@MainActor
 private final class TaskListSnapshotSenderSpy: TaskListSnapshotSending {
     let hardwareScreenSize: ScreenSize
     private(set) var sentPayloads: [Data] = []
@@ -213,7 +250,10 @@ private final class TaskListSnapshotSenderSpy: TaskListSnapshotSending {
         try await operation()
     }
 
-    func writeTaskListSnapshotAckPayload(_ payload: Data) async throws {
+    func writeTaskListSnapshotAckPayload(
+        _ payload: Data,
+        expectedTaskStateVersion: UInt64?
+    ) async throws {
         sentPayloads.append(payload)
         afterWrite?()
     }
@@ -246,7 +286,10 @@ private final class CoordinatedTaskListSnapshotSender: TaskListSnapshotSending {
         await gate.release()
     }
 
-    func writeTaskListSnapshotAckPayload(_ payload: Data) async throws {
+    func writeTaskListSnapshotAckPayload(
+        _ payload: Data,
+        expectedTaskStateVersion: UInt64?
+    ) async throws {
         attemptedPayloads.append(payload)
         wireOrder.append("ack")
         if attemptedPayloads.count == 1 {

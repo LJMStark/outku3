@@ -21,6 +21,11 @@ public final class BLESyncCoordinator {
     /// DayPack 被判定过期后可能没有后续轮次发送最新清单。
     private var pendingSync = false
     private var pendingForceSync = false
+    /// Complete/Skip keeps the device on TaskIn until one final DayPack has been sent. Routine
+    /// sync requests queue behind this window so no second DayPack can race the later 0x1B.
+    private var taskActionPresentationCount = 0
+    private let taskActionPresentationGate = BLEWriteGate()
+    private var syncCompletionWaiters: [CheckedContinuation<Void, Never>] = []
 
     /// Connection timeout in seconds. Configurable for larger screen sizes
     /// that require longer refresh times (e.g., 7.3寸 full refresh ~12s).
@@ -38,7 +43,7 @@ public final class BLESyncCoordinator {
         // 以前靠"已连接→.connectionInProgress"意外串行；连接跳过后需显式守卫，否则会重复发整轮 + 帧交错。
         // @MainActor 下在首个 await 前同步置位，保证原子。被丢弃的 force:true 记下、收尾后补跑一次——
         // 否则在途的 force:false 若随后被 shouldSync 拦下，硬件的强制刷新就丢了。
-        guard !isSyncing else {
+        guard !isSyncing, taskActionPresentationCount == 0 else {
             pendingSync = true
             if force { pendingForceSync = true }
             return
@@ -46,12 +51,10 @@ public final class BLESyncCoordinator {
         isSyncing = true
         defer {
             isSyncing = false
-            if pendingSync {
-                let shouldForce = pendingForceSync
-                pendingSync = false
-                pendingForceSync = false
-                Task { @MainActor in await self.performSync(force: shouldForce) }
-            }
+            let waiters = syncCompletionWaiters
+            syncCompletionWaiters.removeAll()
+            waiters.forEach { $0.resume() }
+            schedulePendingSyncIfPossible()
         }
 
         let now = Date()
@@ -130,7 +133,8 @@ public final class BLESyncCoordinator {
             guard !Task.isCancelled else { return }
             // 硬件调试需要长连接时不因超时主动断连。
             if self.bleService.connectionState.isConnected,
-               !self.bleService.shouldKeepConnectionOpenForDebug {
+               !self.bleService.shouldKeepConnectionOpenForDebug,
+               self.taskActionPresentationCount == 0 {
                 self.bleService.disconnect()
             }
         }
@@ -271,6 +275,7 @@ public final class BLESyncCoordinator {
         // CoreBluetooth didDisconnect 兜底（→endSession→重连）。故刻意不为写失败断连。
         if bleService.connectionState.isConnected,
            !bleService.shouldKeepConnectionOpenForDebug,
+           taskActionPresentationCount == 0,
            FocusSessionService.shared.activeSession == nil,
            // 头像大帧还在发就不断——由超时任务等它收尾（发完后连接闲置到下一轮 sync 收口，
            // 只是电池成本、无正确性问题）。
@@ -280,6 +285,135 @@ public final class BLESyncCoordinator {
            ) {
             bleService.disconnect()
         }
+    }
+
+    private func schedulePendingSyncIfPossible() {
+        guard pendingSync, !isSyncing, taskActionPresentationCount == 0 else { return }
+        let shouldForce = pendingForceSync
+        pendingSync = false
+        pendingForceSync = false
+        Task { @MainActor in await self.performSync(force: shouldForce) }
+    }
+
+    private func waitForActiveSyncToFinish() async {
+        guard isSyncing else { return }
+        await withCheckedContinuation { continuation in
+            syncCompletionWaiters.append(continuation)
+        }
+    }
+
+    private func sendFinalTaskActionDayPack() async -> UInt64? {
+        let appState = AppState.shared
+        await appState.ensureInitialLoadComplete()
+
+        for _ in 0..<3 {
+            await appState.refreshSharedPetDialogueIfNeeded()
+            let sourceTaskStateVersion = appState.taskStateVersion
+            guard appState.currentPetDialogueTaskStateVersion == sourceTaskStateVersion else {
+                continue
+            }
+
+            let dayPack = await dayPackGenerator.generateDayPack(
+                pet: appState.pet,
+                tasks: appState.tasks,
+                events: appState.events,
+                weather: appState.weather,
+                deviceMode: appState.deviceMode,
+                userProfile: appState.userProfile,
+                customCompanions: appState.customCompanions,
+                screenSize: bleService.hardwareScreenSize,
+                petDialogue: appState.currentPetDialogue
+            )
+            guard appState.taskStateVersion == sourceTaskStateVersion else { continue }
+
+            let fingerprint = dayPack.stableFingerprint()
+            if await localStorage.loadLastDayPackHash() == fingerprint {
+                // A routine sync that was already in flight successfully sent this exact final
+                // state. Reuse it instead of emitting a duplicate 0x10 before the same 0x1B.
+                return sourceTaskStateVersion
+            }
+
+            if !bleService.connectionState.isConnected {
+                do {
+                    try await bleService.connectToPreferredDevice(timeout: 10)
+                } catch {
+                    pendingSync = true
+                    ErrorReporter.log(
+                        .sync(
+                            component: "BLE Task Action DayPack",
+                            underlying: error.localizedDescription
+                        ),
+                        context: "BLESyncCoordinator.sendFinalTaskActionDayPack"
+                    )
+                    return nil
+                }
+            }
+
+            var taskStateChanged = false
+            var lastWriteError: Error?
+            for attempt in 0..<2 {
+                do {
+                    try await bleService.sendDayPack(
+                        dayPack,
+                        expectedTaskStateVersion: sourceTaskStateVersion
+                    )
+                    await localStorage.saveLastDayPackHash(fingerprint)
+                    return sourceTaskStateVersion
+                } catch let error as BLEError {
+                    if case .staleTaskSnapshot = error {
+                        taskStateChanged = true
+                        break
+                    }
+                    lastWriteError = error
+                } catch {
+                    lastWriteError = error
+                }
+
+                if attempt == 0 {
+                    try? await Task.sleep(for: .milliseconds(500))
+                }
+            }
+            if taskStateChanged { continue }
+
+            ErrorReporter.log(
+                .sync(
+                    component: "BLE Task Action DayPack",
+                    underlying: lastWriteError?.localizedDescription ?? "write failed after 2 attempts"
+                ),
+                context: "BLESyncCoordinator.sendFinalTaskActionDayPack"
+            )
+            pendingSync = true
+            return nil
+        }
+
+        pendingSync = true
+        ErrorReporter.log(
+            .sync(
+                component: "BLE Task Action DayPack",
+                underlying: "task state changed during 3 consecutive generation attempts"
+            ),
+            context: "BLESyncCoordinator.sendFinalTaskActionDayPack"
+        )
+        return nil
+    }
+
+    static func completeTaskActionPresentation(
+        maximumAttempts: Int = 3,
+        sendFinalDayPack: @MainActor () async -> UInt64?,
+        acknowledge: @MainActor (UInt64) async -> TaskListSnapshotResponder.Outcome
+    ) async -> Bool {
+        for _ in 0..<maximumAttempts {
+            guard let taskStateVersion = await sendFinalDayPack() else { return false }
+            switch await acknowledge(taskStateVersion) {
+            case .sent:
+                return true
+            case .staleTaskState:
+                continue
+            case .failed:
+                return false
+            }
+        }
+        return false
     }
 
     /// 路由一条到期的智能提醒：硬件可达就推设备，否则落本地通知，让离线用户也收得到。
@@ -315,6 +449,48 @@ public final class BLESyncCoordinator {
         if delivered {
             SmartReminderService.shared.markReminderSent()
         }
+    }
+}
+
+extension BLESyncCoordinator: TaskActionPresentationCoordinating {
+    func sendFinalDayPackBeforeAcknowledgement(
+        _ acknowledgement: @MainActor @Sendable (
+            _ expectedTaskStateVersion: UInt64
+        ) async -> TaskListSnapshotResponder.Outcome
+    ) async {
+        taskActionPresentationCount += 1
+        AppState.shared.cancelPendingBLESyncForTaskActionPresentation()
+
+        do {
+            try await taskActionPresentationGate.acquire()
+        } catch {
+            // Firmware keeps the operation pending and retries the same OperationID. Sending
+            // 0x1B here would exit TaskIn without the final DayPack and recreate the double refresh.
+            taskActionPresentationCount -= 1
+            schedulePendingSyncIfPossible()
+            return
+        }
+
+        await waitForActiveSyncToFinish()
+        AppState.shared.cancelPendingBLESyncForTaskActionPresentation()
+        let completed = await Self.completeTaskActionPresentation(
+            sendFinalDayPack: { await self.sendFinalTaskActionDayPack() },
+            acknowledge: acknowledgement
+        )
+        if !completed {
+            pendingSync = true
+            ErrorReporter.log(
+                .sync(
+                    component: "BLE Task Action Presentation",
+                    underlying: "final DayPack and acknowledgement did not complete as one task version"
+                ),
+                context: "BLESyncCoordinator.sendFinalDayPackBeforeAcknowledgement"
+            )
+        }
+
+        await taskActionPresentationGate.release()
+        taskActionPresentationCount -= 1
+        schedulePendingSyncIfPossible()
     }
 }
 

@@ -581,7 +581,10 @@ protocol TaskListSnapshotSending: AnyObject {
     /// Sends bytes that were frozen together with their StateEpoch/Revision. A retry must use the
     /// identical payload even if App tasks change while the first GATT callback is missing. The
     /// caller already owns the complete-message gate.
-    func writeTaskListSnapshotAckPayload(_ payload: Data) async throws
+    func writeTaskListSnapshotAckPayload(
+        _ payload: Data,
+        expectedTaskStateVersion: UInt64?
+    ) async throws
 }
 
 protocol TaskListSnapshotVersionProviding: Sendable {
@@ -590,24 +593,47 @@ protocol TaskListSnapshotVersionProviding: Sendable {
 
 @MainActor
 enum TaskListSnapshotResponder {
+    enum Outcome: Equatable {
+        case sent
+        case staleTaskState
+        case failed
+    }
+
     static func respond(
         to receipts: [TaskOperationReceipt],
         sender: any TaskListSnapshotSending,
         versionProvider: any TaskListSnapshotVersionProviding = LocalStorage.shared,
-        tasksProvider: @escaping @MainActor () -> [TaskItem] = { AppState.shared.tasks }
-    ) async {
-        guard !receipts.isEmpty else { return }
+        tasksProvider: @escaping @MainActor () -> [TaskItem] = { AppState.shared.tasks },
+        expectedTaskStateVersion: UInt64? = nil,
+        taskStateVersionProvider: @escaping @MainActor () -> UInt64 = {
+            AppState.shared.taskStateVersion
+        }
+    ) async -> Outcome {
+        guard !receipts.isEmpty else { return .sent }
 
+        var outcome: Outcome = .sent
         for receipt in receipts {
             do {
                 try await sender.withTaskStateMessageGate {
+                    try validateTaskState(
+                        expectedTaskStateVersion,
+                        taskStateVersionProvider: taskStateVersionProvider
+                    )
                     // Persist the revision first, then capture App state while the task-message gate
                     // is held. Any DayPack already in flight finishes first; any later one queues
                     // behind this frozen acknowledgement and both retries.
                     let version = try await versionProvider.nextTaskListSnapshotVersion()
+                    try validateTaskState(
+                        expectedTaskStateVersion,
+                        taskStateVersionProvider: taskStateVersionProvider
+                    )
                     let currentTasks = DayPackGenerator.topTaskSummaries(
                         from: tasksProvider(),
                         screenSize: sender.hardwareScreenSize
+                    )
+                    try validateTaskState(
+                        expectedTaskStateVersion,
+                        taskStateVersionProvider: taskStateVersionProvider
                     )
                     let acknowledgement = TaskListSnapshotAck(
                         action: receipt.action,
@@ -617,45 +643,63 @@ enum TaskListSnapshotResponder {
                         tasks: currentTasks
                     )
                     let frozenPayload = BLEDataEncoder.encodeTaskListSnapshotAck(acknowledgement)
-                    await sendWithRetry(frozenPayload, sender: sender)
+                    try await sendWithRetry(
+                        frozenPayload,
+                        sender: sender,
+                        expectedTaskStateVersion: expectedTaskStateVersion
+                    )
                 }
             } catch {
-                // Without a durable epoch/revision, sending a snapshot could make firmware accept
-                // an ordering value the App forgets after a crash. Send nothing; firmware retries
-                // the same request/operation ID.
-                reportFailure(error, component: "snapshot version")
+                if let bleError = error as? BLEError,
+                   case .staleTaskSnapshot = bleError {
+                    return .staleTaskState
+                }
+                // A durable version or complete write is required before firmware can close the
+                // pending operation. Send nothing; firmware retries the same request/operation ID.
+                reportFailure(error, component: "response")
+                outcome = .failed
             }
         }
+
+        return outcome
     }
 
     private static func sendWithRetry(
         _ frozenPayload: Data,
-        sender: any TaskListSnapshotSending
-    ) async {
+        sender: any TaskListSnapshotSending,
+        expectedTaskStateVersion: UInt64?
+    ) async throws {
         var lastError: Error?
         for attempt in 0..<2 {
             do {
-                try await sender.writeTaskListSnapshotAckPayload(frozenPayload)
+                try await sender.writeTaskListSnapshotAckPayload(
+                    frozenPayload,
+                    expectedTaskStateVersion: expectedTaskStateVersion
+                )
                 return
             } catch {
+                if let bleError = error as? BLEError,
+                   case .staleTaskSnapshot = bleError {
+                    throw error
+                }
                 lastError = error
                 if attempt == 0 {
-                    do {
-                        try await Task.sleep(for: .milliseconds(250))
-                    } catch {
-                        return
-                    }
+                    try await Task.sleep(for: .milliseconds(250))
                 }
             }
         }
 
-        ErrorReporter.log(
-            .sync(
-                component: "BLE TaskListSnapshotAck",
-                underlying: lastError?.localizedDescription ?? "write failed after 2 attempts"
-            ),
-            context: "TaskListSnapshotResponder.respond"
-        )
+        throw lastError ?? BLEError.writeFailed(nil)
+    }
+
+    private static func validateTaskState(
+        _ expectedTaskStateVersion: UInt64?,
+        taskStateVersionProvider: @MainActor () -> UInt64
+    ) throws {
+        guard let expectedTaskStateVersion else { return }
+        guard taskStateVersionProvider() == expectedTaskStateVersion else {
+            throw BLEError.staleTaskSnapshot
+        }
     }
 
     private static func reportFailure(_ error: Error, component: String) {

@@ -1,5 +1,16 @@
 import Foundation
 
+@MainActor
+protocol TaskActionPresentationCoordinating: AnyObject {
+    /// Sends the final task/dialogue DayPack while the device is still on TaskIn, then performs
+    /// the acknowledgement that lets firmware enter Overview and render that cached DayPack.
+    func sendFinalDayPackBeforeAcknowledgement(
+        _ acknowledgement: @MainActor @Sendable (
+            _ expectedTaskStateVersion: UInt64
+        ) async -> TaskListSnapshotResponder.Outcome
+    ) async
+}
+
 // MARK: - BLE Event Handler
 
 /// BLE 事件处理器，负责解析和处理从 E-ink 设备接收的事件
@@ -78,9 +89,10 @@ public enum BLEEventHandler {
         }
 
         let processing = await processEventLogs([eventLog], service: service)
-        await TaskListSnapshotResponder.respond(
-            to: processing.taskOperationReceipts,
-            sender: service
+        await respondToLiveTaskOperations(
+            processing.taskOperationReceipts,
+            sender: service,
+            presentationCoordinator: BLESyncCoordinator.shared
         )
 
         // Route to type-specific handlers
@@ -204,6 +216,44 @@ public enum BLEEventHandler {
         }
     }
 
+    static func respondToLiveTaskOperations(
+        _ receipts: [TaskOperationReceipt],
+        sender: any TaskListSnapshotSending,
+        presentationCoordinator: any TaskActionPresentationCoordinating,
+        versionProvider: any TaskListSnapshotVersionProviding = LocalStorage.shared,
+        tasksProvider: @escaping @MainActor () -> [TaskItem] = { AppState.shared.tasks },
+        taskStateVersionProvider: @escaping @MainActor () -> UInt64 = {
+            AppState.shared.taskStateVersion
+        }
+    ) async {
+        let acknowledge: @MainActor @Sendable (
+            UInt64
+        ) async -> TaskListSnapshotResponder.Outcome = { expectedTaskStateVersion in
+            await TaskListSnapshotResponder.respond(
+                to: receipts,
+                sender: sender,
+                versionProvider: versionProvider,
+                tasksProvider: tasksProvider,
+                expectedTaskStateVersion: expectedTaskStateVersion,
+                taskStateVersionProvider: taskStateVersionProvider
+            )
+        }
+        guard receipts.contains(where: {
+            $0.action == .completeTask || $0.action == .skipTask
+        }) else {
+            _ = await TaskListSnapshotResponder.respond(
+                to: receipts,
+                sender: sender,
+                versionProvider: versionProvider,
+                tasksProvider: tasksProvider,
+                taskStateVersionProvider: taskStateVersionProvider
+            )
+            return
+        }
+
+        await presentationCoordinator.sendFinalDayPackBeforeAcknowledgement(acknowledge)
+    }
+
     // MARK: - Event-Specific Handlers
 
     /// EnterTaskIn: 生成 TaskInPage 并发送到设备
@@ -295,7 +345,7 @@ public enum BLEEventHandler {
             await AppState.shared.ensureInitialLoadComplete()
         }
         let processing = await processEventLogs(logs, service: service, isReplay: true)
-        await TaskListSnapshotResponder.respond(
+        _ = await TaskListSnapshotResponder.respond(
             to: processing.taskOperationReceipts,
             sender: service
         )

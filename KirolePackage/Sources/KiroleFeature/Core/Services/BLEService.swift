@@ -586,8 +586,8 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
         }
     }
 
-    /// Immediate business acknowledgement for CompleteTask / SkipTask / versioned RequestRefresh.
-    /// This path is independent from DayPack fingerprinting and refresh throttling.
+    /// Serializes the versioned task acknowledgement with complete DayPack messages. RequestRefresh
+    /// uses it immediately; live Complete/Skip uses it only after the final DayPack arrives.
     func withTaskStateMessageGate(
         _ operation: @MainActor () async throws -> Void
     ) async throws {
@@ -601,8 +601,25 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
         await taskStateMessageGate.release()
     }
 
-    func writeTaskListSnapshotAckPayload(_ payload: Data) async throws {
-        try await writeData(type: .taskListSnapshotAck, data: payload)
+    func writeTaskListSnapshotAckPayload(
+        _ payload: Data,
+        expectedTaskStateVersion: UInt64?
+    ) async throws {
+        let validateTaskState: PacketWriteValidator?
+        if let expectedTaskStateVersion {
+            validateTaskState = {
+                guard AppState.shared.taskStateVersion == expectedTaskStateVersion else {
+                    throw BLEError.staleTaskSnapshot
+                }
+            }
+        } else {
+            validateTaskState = nil
+        }
+        try await writeData(
+            type: .taskListSnapshotAck,
+            data: payload,
+            validateBeforeWrite: validateTaskState
+        )
     }
 
     /// 发送 Task In 页面数据到 E-ink 设备。只应由 BLEEventHandler 在收到 0x10 EnterTaskIn 事件后调用。

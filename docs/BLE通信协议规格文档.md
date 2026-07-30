@@ -1,10 +1,10 @@
 # Kirole BLE 通信协议规格文档
 
-**版本:** v2.10.0
-**更新日期:** 2026-07-28
-**状态:** v2.10.0 是日程支持性文字的 **flag-day 版本**。DayPack Events[] 每条在 `EndTime` 后追加 `SupportText`（≤120B ASCII）——该日程进行中时显示的一句话，按事件 `Category` 的六类规则各自生成，**排版位置由固件自行决定**；TaskInPage 的 `Encouragement` 槽位改装为支持性文字并扩到 80B（恒 Deep Work 规则；原 Tips 功能仍停用，见 §4.8）。固件解析器须与本版一次性切换：读完每条 Event 的 `EndTime` 后必须再读 `SupportText` 的长度前缀字符串，少读即整体错位。
+**版本:** v2.10.1
+**更新日期:** 2026-07-30
+**状态:** v2.10.1 不改 wire 字节，修正在线 Complete/Skip 的显示提交顺序：App 完成状态落盘后等待最新任务版本的 AI 对话，先发送最终 `DayPack(0x10)`，成功后才发送同版本的 `TaskListSnapshotAck(0x1B)`。固件在 TaskIn/pending 期间收到该 DayPack 只更新后台缓存，不刷屏；收到匹配 `0x1B` 后一次性退出 TaskIn、应用缓存和任务清单，只刷新一次。`RequestRefresh(0x20)` 仍立即回 `0x1B`。
 
-上一版 v2.9.0 仍生效：设备发送严格版本化的 `CompleteTask(0x11)` / `SkipTask(0x12)` / `RequestRefresh(0x20)`，App 立即回 `TaskListSnapshotAck(0x1B)`，用匹配的 Action + OperationID、业务结果和 `StateEpoch + Revision` 原子替换设备 Overview 任务清单。App 是任务最终状态来源；GATT `.withResponse` 只代表传输确认，不能替代 `0x1B` 业务确认。
+v2.9.0 的严格请求、OperationID 幂等和 `0x1B` 权威快照仍生效；v2.10.1 只把在线 Complete/Skip 的 `0x1B` 延后到最终 DayPack 之后。App 是任务最终状态来源；GATT `.withResponse` 只代表传输确认，不能替代 `0x1B` 业务确认。
 
 ---
 
@@ -95,6 +95,8 @@
 | v2.8.0 | 2026-07-24 | **新增 WiFi(SoftAP) 头像快速传输通道 `0x1A WiFiAvatarSession` 和设备 HTTP 收图端点；全部契约并入本正式文档，BLE `0x15` 保留为自动回退，非 flag-day。** 新链路：BLE `open` 回报临时 SSID/密码/网关/端口/路径/token/TTL → App 用 `NEHotspotConfiguration` 加入并以 `NEHotspotNetwork.fetchCurrent` 确认当前 SSID 的 UTF-8 字节精确匹配 → HTTP `POST` 裸 KRI → 成败均 `close`。`0x1A` 应答回显 Command + OperationID，App 丢弃不匹配的迟到结果；拒绝 HTTP 重定向，只有原端点 HTTP 200 成功。设备校验并暂存后仍须发 `0x22 staged`，App 再 `commit`，收到 `committed` 才切换身份。补齐 HTTP headers/body/状态码/幂等/恢复、取消清理、开放热点和 iOS entitlement 约束。安全更正：`SecureEnvelope` 是 HMAC 完整性与防重放，不提供机密性；生产固件只有在相关 GATT 已启用认证 BLE 链路加密，或双方共同定义 AEAD 新版本后，才能下发密码/token，否则 `open` 必须回 `ERR_UNSUPPORTED` 并由 App 回退 BLE。§2.4/§4.1/§4.20/§5.2/§5.20/附录 A |
 | v2.9.0 | 2026-07-27 | **任务状态权威快照（破坏性 flag-day）**：`CompleteTask(0x11)` / `SkipTask(0x12)` 改为严格 v1 payload，新增非零 OperationID；`RequestRefresh(0x20)` 改为严格 v1 + 非零 RequestID，空 payload 拒绝，且只走实时 Notify、不写入/重放 `EventLogBatch(0x21)`。新增 App→Device `TaskListSnapshotAck(0x1B)`：回显 Action + OperationID，携带业务 Result、StateEpoch、Revision 和当前完整 Overview 任务清单。App 持久化操作账本保证重试幂等；同 ID 不同 payload 返回 invalidRequest。设备只在匹配请求且版本更新时原子替换清单。Complete 从清单移除，Skip 只结束专注、任务保留。DayPack 仍是丰富内容包但不再充当完成/跳过业务确认；`0x1B` 绕过 DayPack 指纹与 60 秒 full-sync 合并窗。升级固件须清空旧格式离线环形缓冲。§4.21/§5.4/§5.5/§5.7/§5.15/§8.4 |
 | v2.10.0 | 2026-07-28 | **日程支持性文字（破坏性 flag-day）**：① **DayPack(0x10)** Events[] 每条在 `EndTime` 后追加 `SupportText`（1+N bytes，≤120B ASCII）——该日程**进行中**时显示的一句支持性文字，**排版位置由固件自行决定**（App 只给文案）。生成规则按该事件的 `Category` 六类分派（客户 2026-07-28 规范）：Deep Work 只指向最小第一步 / Meetings 轻量准备提示 / Admin 框成自我小挑战 / Deadline 安抚不加压 / Wellness 温和非临床提醒 / Rest 给许可不派任务；通用规则=不编造数据里没有的具体事实、一句话两秒扫读、纯 ASCII。App 侧：批量 AI 生成 + 按「标题\|描述\|类别」缓存 + 按类别确定性模板兜底（**永不发空串**）+ AI 失败 10 分钟冷却。固件解析器须同步读取（§7.1 严格解析——读完 `EndTime` 必须再读这个长度前缀字符串，否则整体错位）。② **TaskInPage(0x11)** `Encouragement` **槽位改装**为「按按钮进入任务」的支持性文字，恒用 **Deep Work** 规则（`TaskItem` 无类别字段，客户拍板）；上限 50→**80 bytes**（客户例句最长 70B，50B 会静默截断），长度前缀不变故非 wire 形状变更，但固件行缓冲需容纳 80B。⚠️ **「鼓励语 / Tips」仍按 v2.6.0 停用、未被推翻**——这是 App 复用空槽承载新需求的实现决定，固件勿恢复当年 Tips 的渲染逻辑/位置。③ **伴侣 IP prompt 重写**（客户 2026-07-28，不上 wire）：三个角色改为显式双模——Mode A（~80% 日常口吻）+ Mode B（~20% 值得记住的时刻）；**Joy 的 Mode B 改为生成式**（自己写一句可引用的话、不署名、不加引号），Silas/Nova 的 Mode B 仍为**确定性白名单引用**（公版来源逐句核验：KJV / Marcus Aurelius / Sun Tzu / Seneca），并把引用格式由 `"text" (source).` 统一为 `"text" - source`。**⚠️ 与客户原文的已知偏差（有意，需客户知悉）**：客户规范写的分隔符是 em dash（`"[exact quoted line]" — [Source]`），实现用 ASCII 连字符 `-`。原因是 §3.5 的 wire 约束——出站文本一律净化为可打印 ASCII（`0x20`–`0x7E`），em dash 到固件必被转成 `-`（否则渲染成豆腐块）。若 App 内保留 `—` 而硬件显示 `-`，同一句话在两处不一致、且要维护两份格式；故三处（Swift `deterministicOutput` / Studio 校验 / Studio 运行时）统一用 `-`。客户若要求 App 内严格保留 em dash，改动范围=这三处 + 重生成 golden fixtures，硬件侧仍只能是 `-`。**Mode B 触发时机由 App 判定**（客户要求 «chosen externally by the system»）：只在"一天结算"这组时刻放行（日终结算语 + 每日总结页两支金句），日常场景（早安 / 陪伴 / 任务鼓励 / 日程提醒 / 空闲）恒 Mode A——此前一律 20% 随机会让早安语冒出署名引用。白名单引用**按当下情绪筛选**（每句带 tone 标签，庆祝时刻不抽安慰句、超载时刻不抽凯歌句）；App 侧另加词数校验（joy 25 / silas 15·20 / nova 20·25），超词即重试或回落兜底。§4.7/§4.8 |
+
+| v2.10.1 | 2026-07-30 | **在线任务动作单次刷屏时序（wire 不变）**：Complete/Skip 状态落盘后，App 等当前任务版本的 AI 对话，先发送最终 DayPack，再发送绑定同一任务版本的 `0x1B`。DayPack 失败时不发 `0x1B`；生成/发送期间任务版本变化时废弃旧组合并重新生成。固件在 TaskIn/pending 内收到 DayPack 只换后台缓存、不刷屏；匹配 `0x1B` 到达后一次性退出并刷新。RequestRefresh 与离线批次确认保持原规则。§5.4/§5.5/§5.16/§6.2 |
 
 | 术语 | 定义 |
 |---------------|------------------------------------------------------|
@@ -988,7 +990,7 @@ Body = 裸 KRI v1 文件字节
 
 ### 4.21 TaskListSnapshotAck (0x1B)
 
-App 对 `CompleteTask(0x11)`、`SkipTask(0x12)` 或 `RequestRefresh(0x20)` 的**业务确认**，并携带 App 当前认定的完整 Overview 任务清单。该帧必须立即生成；它不等待 DayPack，也不受 DayPack 内容指纹或 §8.5 的 60 秒 full-sync 合并窗限制。
+App 对 `CompleteTask(0x11)`、`SkipTask(0x12)` 或 `RequestRefresh(0x20)` 的**业务确认**，并携带 App 当前认定的完整 Overview 任务清单。`RequestRefresh` 的本帧立即生成，不等待 DayPack。在线 Complete/Skip 自 v2.10.1 起等待最终 DayPack 成功到达后再生成，并与该 DayPack 绑定同一任务状态版本；两种路径都不受 §8.5 的 60 秒 full-sync 合并窗限制。
 
 任务标题较长时完整 payload 可能超过当前单次写入上限，App 会按通用 §3.2 发送 11 字节分包；固件须先重组整条 `0x1B` 再执行下述匹配与原子替换，不能把单片 GATT 响应当作业务确认。
 
@@ -1041,6 +1043,7 @@ IsCompleted(1) | Priority(1)
 4. `applied` / `alreadyApplied` 表示对应动作可以结束 pending。`taskNotFound` / `invalidRequest` / `supersededByApp` 同样是终态：设备不得自行提交本地删除，应结束 pending 并采用本帧快照；其中 `supersededByApp` 表示 App 较新的操作获胜，不再重试该设备动作。只有 `internalError` 保留旧已确认清单并原样重试请求。
 5. Complete 成功后，该任务从当前 Overview 快照中消失；Skip 只结束这次专注，不完成或删除任务，任务仍在清单中（App 重新排序后当前选择允许变化）。
 6. App 在分配 `StateEpoch + Revision` 时同时冻结完整 `0x1B` payload；若 GATT 回调丢失，同一次发送重试必须逐字节重发该 payload，不得在相同 revision 下换成另一份任务清单。
+7. 在线 TaskIn/pending 的 Complete/Skip 必须先收到完整 DayPack、只更新后台缓存；随后收到匹配 `0x1B` 才把缓存与任务清单一次提交并触发一次 EPD 刷新。`RequestRefresh` 和重连后的离线批次回放不使用这个显示闸。
 7. `DayPack(0x10)` 与 `TaskListSnapshotAck(0x1B)` 以**完整消息**为单位串行发送：一条消息的简单帧或全部分片写完后，下一条任务状态消息才能开始。固件同样必须在完整重组并校验后再应用，不能按单个分片改任务清单。
 
 **App 生成规则：** `StateEpoch + Revision` 保存在同一个原子替换文件中，不能拆成两次 `UserDefaults` 写入。App 在任务状态消息闸内先持久化新版本，再读取当时最新的 Overview 清单并冻结完整 payload；`0x1B` 的全部写入及同一 payload 的 GATT 重试结束后才释放闸，保证 DayPack 不会插入其中。版本持久化失败时不发送半成品确认。
@@ -1132,13 +1135,14 @@ IsCompleted(1) | Priority(1)
 **App 响应：**
 - 先把「设备 + Action + OperationID + payload 指纹 + 首次 Result」以 `pending` 写入持久账本，再执行任务/专注状态变更；相关状态落盘成功后才把账本改为 `committed` 并允许回 `applied/alreadyApplied`
 - 若 App 在 `pending` 与 `committed` 之间退出，固件原样重试后 App 会恢复该 pending 操作并幂等补做；不会把未落盘的动作当成已完成。同 ID 同 payload 的 committed 重试不重复执行，同 ID 不同 payload 回 `invalidRequest`
-- 落盘顺序固定为：账本 pending → 专注历史 upsert → 清除 active 专注标记 → 带收据的能量奖励 → 任务与宠物状态 → 账本 committed → `0x1B`。任一步失败都回 `internalError`，相同请求重试只补齐缺失步骤；不得先清 active 再丢失专注历史，奖励收据保证退出重试时不会少发或重复发瓶子
+- 落盘顺序固定为：账本 pending → 专注历史 upsert → 清除 active 专注标记 → 带收据的能量奖励 → 任务与宠物状态 → 账本 committed。任一步失败都回 `internalError`，相同请求重试只补齐缺失步骤；不得先清 active 再丢失专注历史，奖励收据保证退出重试时不会少发或重复发瓶子
 - 若 App 在设备请求处理期间执行了更新的完成撤销/任务编辑，或同任务已开始更新的专注会话，返回 `supersededByApp(0x04)`；旧设备请求不得覆盖较新的 App 状态
 - 更新 AppState 中的任务状态，重新计算积分；已完成任务从当前 Overview 清单移除
 - 记录专注会话结束时间戳
 - 计算专注时长（结束 - 开始）
 - 与 Screen Time 数据交叉比对以确定实际专注时间
-- 立即回发匹配的 `TaskListSnapshotAck(0x1B)`；DayPack 不作为本动作的业务确认
+- 在线动作先等待当前任务版本的 AI 对话并发送最终 `DayPack(0x10)`；确认发送成功且任务版本未变化后，再回匹配同版本任务清单的 `TaskListSnapshotAck(0x1B)`。DayPack 仍不替代业务确认；它只是必须先到的最终显示内容
+- 若 DayPack 或 `0x1B` 发送失败，固件保持 pending 并原样重试同一 OperationID；App 不得先发 `0x1B` 放设备退出
 
 ---
 
@@ -1164,7 +1168,7 @@ IsCompleted(1) | Priority(1)
 - 记录专注会话结束时间戳
 - 计算专注时长（结束 - 开始）
 - 与 Screen Time 数据交叉比对以确定实际专注时间
-- 立即回发匹配的 `TaskListSnapshotAck(0x1B)`；任务仍在当前清单中，但 App 重新排序后当前选择允许变化
+- 在线动作先发送当前任务版本的最终 `DayPack(0x10)`，再回匹配同版本任务清单的 `TaskListSnapshotAck(0x1B)`；任务仍在当前清单中，但 App 重新排序后当前选择允许变化
 
 ---
 
@@ -1357,8 +1361,8 @@ BLE Notify 特征开启后，固件**主动**向 App 发送此帧，表示「设
 | 设备上线（BLE Notify 建立后，固件发 Wake Notify） | `DeviceWake(0x30)`，payload 带 `BatteryLevel(1B)` | 更新电量，发送 Time，并按需同步数据 |
 | 用户手动刷新 | `RequestRefresh(0x20)` v1，带非零 RequestID | 立即回 `0x1B` 当前任务快照；完整 DayPack 同步仍受 60 秒合并窗与内容指纹影响（见 §8.5） |
 | 在任务列表中进入任务详情 | `EnterTaskIn(0x10)`，payload 带 TaskId 和时间戳 | 回发 `TaskInPage(0x11)`，并启动专注会话 |
-| 在任务详情页完成任务 | `CompleteTask(0x11)` v1，带非零 OperationID、TaskId 和时间戳 | App 标记任务完成并立即回匹配 `0x1B`；设备以快照原子替换清单 |
-| 在任务详情页跳过任务 | `SkipTask(0x12)` v1，带非零 OperationID、TaskId 和时间戳 | 结束对应专注会话，不标记完成；立即回匹配 `0x1B`，任务仍在清单 |
+| 在任务详情页完成任务 | `CompleteTask(0x11)` v1，带非零 OperationID、TaskId 和时间戳 | App 标记任务完成，先发最终 `0x10`，再发同版本 `0x1B`；设备一次退出并刷新 |
+| 在任务详情页跳过任务 | `SkipTask(0x12)` v1，带非零 OperationID、TaskId 和时间戳 | 结束对应专注会话，不标记完成；先发最终 `0x10`，再发同版本 `0x1B` |
 | 普通旋钮确认但不进入任务详情 | `WheelSelect(0x14)` | 只记录/调试，不回发页面数据 |
 | 查看日程详情 | `ViewEventDetail(0x15)` | 当前不回发详情 |
 
@@ -1538,7 +1542,7 @@ Gateway(4) | Port(2 BE) | PathLen(1) | Path(N3) | TokenLen(1) | Token(N4) | TTL(
 
 **数据来源：** DayPack.`Events[]` / `TopTasks[]` / `SettlementData`（数值字段）。
 
-**任务清单实时覆盖（v2.9.0）：** 收到通过 Action+OperationID 与版本校验的 `TaskListSnapshotAck(0x1B)` 后，固件只原子替换 Overview 的完整任务清单；事件、宠物气泡、总结等其他内容继续沿用最近一次 DayPack。Complete 的新快照不再含已完成任务；Skip 的新快照仍含原任务。设备不得先永久删除再等待 App “追上”。
+**任务动作原子显示提交（v2.10.1）：** 在线 Complete/Skip 后，固件保持 TaskIn/pending；先收到的最终 DayPack 只替换后台缓存，不触发 EPD 刷新或退出专注页。随后收到通过 Action+OperationID 与版本校验的 `TaskListSnapshotAck(0x1B)` 时，固件原子替换 Overview 任务清单，并用刚缓存的 DayPack 一次性进入 Overview、刷新一次。Complete 的快照不含已完成任务；Skip 的快照仍含原任务。没有先收到完整最终 DayPack 时，不得因 `0x1B` 提交在线动作；超时按同一 OperationID 重试。离线批次回放不要求等待 AI/DayPack，可按 `0x1B` 恢复权威清单。
 
 > **v2.6.0 布局拍板（客户《电子墨水屏需求》2026-07-20）**：原「进度条 vs 任务清单」开放问题关闭——概览（进行中日程）页按**相邻日程间隔**二分：**前一日程 `EndTime` 到下一日程 `Time` 间隔 <10 分钟 → 情况一**（当日完成比例进度条 `TasksCompleted/TasksTotal` + 事件卡）；**≥10 分钟 → 情况二**（下一日程事件卡 + 任务清单 `TopTasks[]`；**恰好 10 分钟归情况二**，客户确认默认口径 2026-07-20）。判定在固件本地做（App 两组数据都发，`EndTime` 自 v2.6.0 起在 wire 上）。
 
@@ -1675,7 +1679,7 @@ App 首页宠物头顶只有**一个**对话槽 `currentPetDialogue`，由阶段
 
 - 面板**内部**的时间推进（当前/下一事件高亮、`Events[].Time` 与本地时钟比较）同样固件本地做（见 §4.4 / §4.6）。
 - 仍由 App 下发的是**设置类**状态，不属于面板态：`DeviceMode(0x12)`、`Screensaver(0x16)`、`SceneUnlock(0x17)`。
-- 数据变化（用户增删改任务/日程、专注结束结算）经既有同步通道到达后，固件按上表**重判**；任务动作/刷新产生的 `0x1B` 可立即替换任务清单，DayPack 的其他内容仍受 §8.5 节流与指纹变化约束。App 不发送任何面板态字节。
+- 数据变化（用户增删改任务/日程、专注结束结算）经既有同步通道到达后，固件按上表**重判**；RequestRefresh 的 `0x1B` 可立即替换任务清单，在线 Complete/Skip 则按 v2.10.1 的最终 `0x10 → 0x1B` 顺序一次提交。App 不发送任何面板态字节。
 - ⚠️ 待与固件定稿的边界值：晚间倾向结算展示的起始时段。「进行中事件」的持续窗口自 v2.6.0 起可直接用 `Events[].EndTime` 判定（当前时刻落在 `Time`~`EndTime` 内 = 进行中），不再需要"下一事件开始前"的近似。
 
 ---
@@ -1951,11 +1955,11 @@ App 采用 **首次连接即信任（Trust On First Use）** 策略：
 配套边界（照做可避免次生 bug）：
 - **专注中收到 DayPack 属正常**（任务变更/内容轮换都会触发整轮 sync）：仅作后台缓冲，不驱动任何态切换、不动心跳；
 - **断连即会话结束**：App 在 BLE 断开时立即结束专注会话（`reason=disconnected`），重连后**不存在可恢复的旧会话**——不得凭缓存 DayPack 或旧 `0x14` 复活态 C，应退回概览、等待用户重新进入（新 `0x10 EnterTaskIn` → 新 `0x11`）；
-- **退出专注后**：先等待匹配且版本更新的 `0x1B`，原子替换 Overview 任务清单；随后 DayPack 仅更新事件、文案、结算等丰富内容。专注期间旧任务缓存只能作 pending 占位。
+- **退出专注后（v2.10.1）**：先缓存 App 发来的最终 DayPack（不刷新），再等待匹配且版本更新的 `0x1B`；两者到齐后原子替换 Overview 任务清单并只刷新一次。专注期间旧任务缓存只能作 pending 占位。
 
 （与 `0x12 DeviceMode=Interactive` 解卡信号的区分：`0x12` 是 App 主动下发的**指令帧**，仅在异常解卡场景发送、要求设备退回概览——见问题 4；DayPack 内的同名字节只是随包携带的快照，两者语义不同，不可混用。）
 
-验收用例（固件自查）：① 专注中收到 DayPack → 心跳继续、专注页不退出；② 专注中断连→重连 → 设备退回概览，不凭旧数据复活专注页；③ CompleteTask 退出后 → 等待匹配 `0x1B` 原子替换清单，不等待 DayPack 充当确认。
+验收用例（固件自查）：① 专注中收到 DayPack → 心跳继续、专注页不退出且不刷新；② 专注中断连→重连 → 设备退回概览，不凭旧数据复活专注页；③ CompleteTask 后先收到最终 DayPack 时只缓存，收到匹配 `0x1B` 后才一次性退出并刷新。
 
 ---
 
@@ -2161,9 +2165,9 @@ OperationID 由固件生成并在「同一设备 + Action」范围内非零；�
 
 | 文档 | 版本 | 描述 |
 |------|------|------|
-| 硬件需求文档-Hardware-Requirements-Document.md | v0.8 | 硬件电气需求与 v2.9 任务快照交互边界 |
-| 固件功能规格文档.md | v1.8.0 | 固件功能规格与 v2.9 任务动作/快照状态机 |
-| BLE初次联调指南.md | v0.2.0 | v2.9 严格请求与 `0x1B` 业务确认验收 |
+| 硬件需求文档-Hardware-Requirements-Document.md | v0.8.1 | 硬件电气需求与任务动作单次刷新边界 |
+| 固件功能规格文档.md | v1.9.1 | 固件功能规格与 v2.10.1 任务动作显示提交顺序 |
+| BLE初次联调指南.md | v0.2.1 | 严格请求、`0x1B` 业务确认与 `0x10 → 0x1B` 时序验收 |
 
 ---
 
