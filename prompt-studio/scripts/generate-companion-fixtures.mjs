@@ -39,6 +39,23 @@ const environment = { ASSETS: { fetch: async () => new Response("Not found", { s
 const executionContext = { waitUntil() {}, passThroughOnException() {} };
 const fixtures = [];
 
+async function compileScenario(body, label) {
+  const response = await app.fetch(new Request("http://localhost/api/compile", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  }), environment, executionContext);
+  if (!response.ok) throw new Error(`Failed to compile ${label}: ${response.status}`);
+  return (await response.json()).results[0];
+}
+
+function promptHashes(compiled) {
+  return {
+    expectedSystemSHA256: createHash("sha256").update(compiled.systemPrompt).digest("hex"),
+    expectedUserSHA256: createHash("sha256").update(compiled.userPrompt).digest("hex"),
+  };
+}
+
 for (const characterId of characters) {
   for (const writingMode of writingModes) {
     for (const scenarioId of scenarios) {
@@ -50,20 +67,13 @@ for (const characterId of characters) {
         ...(writingMode === "signatureQuote" ? { quoteIndex: 0 } : {}),
         context: compileContext,
       };
-      const response = await app.fetch(new Request("http://localhost/api/compile", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      }), environment, executionContext);
-      if (!response.ok) throw new Error(`Failed to compile ${characterId}/${writingMode}/${scenarioId}: ${response.status}`);
-      const [compiled] = (await response.json()).results;
+      const compiled = await compileScenario(body, `${characterId}/${writingMode}/${scenarioId}`);
       fixtures.push({
         characterId,
         scenarioId,
         writingMode,
         ...(writingMode === "signatureQuote" ? { quoteIndex: 0 } : {}),
-        expectedSystemSHA256: createHash("sha256").update(compiled.systemPrompt).digest("hex"),
-        expectedUserSHA256: createHash("sha256").update(compiled.userPrompt).digest("hex"),
+        ...promptHashes(compiled),
       });
     }
   }
@@ -118,17 +128,13 @@ const toolFixtures = [];
 for (const scenarioId of toolIds) {
   const context = toolContexts[scenarioId];
   if (!context) throw new Error(`Missing fixture context for tool prompt: ${scenarioId}`);
-  const response = await app.fetch(new Request("http://localhost/api/compile", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ scenarioId, context }),
-  }), environment, executionContext);
-  if (!response.ok) throw new Error(`Failed to compile tool ${scenarioId}: ${response.status}`);
-  const [compiled] = (await response.json()).results;
+  const compiled = await compileScenario(
+    { scenarioId, context },
+    `tool ${scenarioId}`,
+  );
   toolFixtures.push({
     scenarioId,
-    expectedSystemSHA256: createHash("sha256").update(compiled.systemPrompt).digest("hex"),
-    expectedUserSHA256: createHash("sha256").update(compiled.userPrompt).digest("hex"),
+    ...promptHashes(compiled),
   });
 }
 

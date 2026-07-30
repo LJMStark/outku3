@@ -23,14 +23,6 @@ public struct FocusAppSelection: Codable, Sendable, Equatable {
         selectedApplicationCount == 0 || tokenData.isEmpty
     }
 
-    static func selectionCount(
-        applications: Int,
-        categories: Int,
-        webDomains: Int
-    ) -> Int {
-        applications + categories + webDomains
-    }
-
     static func normalized(
         tokenData: Data,
         applications: Int,
@@ -39,11 +31,7 @@ public struct FocusAppSelection: Codable, Sendable, Equatable {
     ) -> FocusAppSelection {
         FocusAppSelection(
             tokenData: tokenData,
-            selectedApplicationCount: selectionCount(
-                applications: applications,
-                categories: categories,
-                webDomains: webDomains
-            )
+            selectedApplicationCount: applications + categories + webDomains
         )
     }
 }

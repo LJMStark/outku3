@@ -11,6 +11,8 @@ private enum KiroleBLEUUIDs {
     static let notifyCharacteristicUUID = CBUUID(string: "0000FFE2-0000-1000-8000-00805F9B34FB")
 }
 
+private typealias PacketWriteValidator = @MainActor @Sendable () throws -> Void
+
 // MARK: - BLE Service
 
 /// BLE 服务，管理与 E-ink 硬件设备的通信
@@ -562,9 +564,12 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
         expectedTaskStateVersion: UInt64
     ) async throws {
         try await withTaskStateMessageGate {
-            guard AppState.shared.taskStateVersion == expectedTaskStateVersion else {
-                throw BLEError.staleTaskSnapshot
+            let validateTaskState: PacketWriteValidator = {
+                guard AppState.shared.taskStateVersion == expectedTaskStateVersion else {
+                    throw BLEError.staleTaskSnapshot
+                }
             }
+            try validateTaskState()
             let latestTasks = DayPackGenerator.topTaskSummaries(
                 from: AppState.shared.tasks,
                 screenSize: hardwareScreenSize
@@ -576,11 +581,7 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
             try await writeData(
                 type: .dayPack,
                 data: data,
-                validateBeforePacketWrite: {
-                    guard AppState.shared.taskStateVersion == expectedTaskStateVersion else {
-                        throw BLEError.staleTaskSnapshot
-                    }
-                }
+                validateBeforeWrite: validateTaskState
             )
         }
     }
@@ -743,7 +744,7 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
     private func writeData(
         type: BLEDataType,
         data: Data,
-        validateBeforePacketWrite: (@MainActor @Sendable () throws -> Void)? = nil,
+        validateBeforeWrite: PacketWriteValidator? = nil,
         progress: (@MainActor @Sendable (_ sentBytes: Int, _ totalBytes: Int) -> Void)? = nil
     ) async throws {
         guard connectionState.isConnected,
@@ -758,7 +759,7 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
                 data: data,
                 peripheral: peripheral,
                 characteristic: characteristic,
-                validateBeforePacketWrite: validateBeforePacketWrite,
+                validateBeforeWrite: validateBeforeWrite,
                 progress: progress
             )
             return
@@ -793,7 +794,7 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
                     packet,
                     peripheral: peripheral,
                     characteristic: characteristic,
-                    validateBeforeWrite: validateBeforePacketWrite
+                    validateBeforeWrite: validateBeforeWrite
                 )
                 sentBytes += chunkPayloadLength(plainPacket)
                 progress?(min(sentBytes, data.count), data.count)
@@ -821,7 +822,7 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
                     packet,
                     peripheral: peripheral,
                     characteristic: characteristic,
-                    validateBeforeWrite: validateBeforePacketWrite
+                    validateBeforeWrite: validateBeforeWrite
                 )
             }
             return
@@ -832,7 +833,7 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
             packet,
             peripheral: peripheral,
             characteristic: characteristic,
-            validateBeforeWrite: validateBeforePacketWrite
+            validateBeforeWrite: validateBeforeWrite
         )
     }
 
@@ -841,7 +842,7 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
         data: Data,
         peripheral: CBPeripheral,
         characteristic: CBCharacteristic,
-        validateBeforePacketWrite: (@MainActor @Sendable () throws -> Void)?,
+        validateBeforeWrite: PacketWriteValidator?,
         progress: (@MainActor @Sendable (_ sentBytes: Int, _ totalBytes: Int) -> Void)?
     ) async throws {
         let maxLength = peripheral.maximumWriteValueLength(for: .withResponse)
@@ -864,7 +865,7 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
                     packet,
                     peripheral: peripheral,
                     characteristic: characteristic,
-                    validateBeforeWrite: validateBeforePacketWrite
+                    validateBeforeWrite: validateBeforeWrite
                 )
                 sentBytes += chunkPayloadLength(packet)
                 progress?(min(sentBytes, data.count), data.count)
@@ -877,7 +878,7 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
             packet,
             peripheral: peripheral,
             characteristic: characteristic,
-            validateBeforeWrite: validateBeforePacketWrite
+            validateBeforeWrite: validateBeforeWrite
         )
         progress?(data.count, data.count)
     }
@@ -910,7 +911,7 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
         _ packet: Data,
         peripheral: CBPeripheral,
         characteristic: CBCharacteristic,
-        validateBeforeWrite: (@MainActor @Sendable () throws -> Void)? = nil
+        validateBeforeWrite: PacketWriteValidator? = nil
     ) async throws {
         if AppBuildEnvironment.showsHardwareDebugTools {
             let typeText = packet.first.map { String(format: "%02X", $0) } ?? "??"

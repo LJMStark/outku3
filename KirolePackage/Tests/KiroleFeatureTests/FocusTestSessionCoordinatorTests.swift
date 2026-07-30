@@ -272,13 +272,14 @@ struct FocusTestSessionCoordinatorTests {
 
     @Test("Selection count includes apps, categories, and websites")
     func selectionCountIncludesEveryPickerTarget() {
-        #expect(
-            FocusAppSelection.selectionCount(
-                applications: 2,
-                categories: 1,
-                webDomains: 3
-            ) == 6
+        let selection = FocusAppSelection.normalized(
+            tokenData: Data([0x01]),
+            applications: 2,
+            categories: 1,
+            webDomains: 3
         )
+
+        #expect(selection.selectedApplicationCount == 6)
     }
 
     @Test("Legacy category-only selection is normalized from decoded token counts")

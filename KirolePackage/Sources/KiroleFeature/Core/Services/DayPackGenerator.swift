@@ -91,7 +91,7 @@ public final class DayPackGenerator {
             customCompanions.first { $0.id == id }
         }
         let settlementTexts = await cachedSettlementTexts(
-            events: Array(eventSummaries), todayEvents: todayEvents,
+            events: eventSummaries, todayEvents: todayEvents,
             settlement: settlementData, pet: pet, userProfile: userProfile,
             activeCustomCompanion: activeCustomCompanion
         )
@@ -105,8 +105,8 @@ public final class DayPackGenerator {
             firstUp: firstUp,
             settlementReview: settlementTexts.review,
             settlementQuote: settlementTexts.quote,
-            events: Array(eventSummaries),
-            topTasks: Array(topTasks),
+            events: eventSummaries,
+            topTasks: topTasks,
             settlementData: settlementData
         )
     }

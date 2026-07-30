@@ -635,6 +635,19 @@ function wordCount(text: string): number {
   return text.trim() ? text.trim().split(/\s+/).length : 0;
 }
 
+function wordLimitFor(
+  character: CharacterDefinition | undefined,
+  writingMode: WritingMode | undefined,
+): number {
+  if (typeof character?.wordLimits === "number") return character.wordLimits;
+  if (writingMode === "signatureQuote") {
+    return character?.wordLimits?.secondaryMode ?? character?.wordLimits?.default ?? 20;
+  }
+  return character?.wordLimits?.primaryMode
+    ?? character?.wordLimits?.default
+    ?? (character?.id === "joy" ? 25 : 20);
+}
+
 export function validateOutput(compiled: CompiledPrompt, output: string): ValidationItem[] {
   const trimmed = output.trim();
   const containsCJK = /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/u.test(output);
@@ -691,11 +704,7 @@ export function validateOutput(compiled: CompiledPrompt, output: string): Valida
   const character = compiled.characterId
     ? promptSpec.characters.find((item) => item.id === compiled.characterId)
     : undefined;
-  const wordLimit = typeof character?.wordLimits === "number"
-    ? character.wordLimits
-    : compiled.writingMode === "signatureQuote"
-      ? character?.wordLimits?.secondaryMode ?? character?.wordLimits?.default ?? 20
-      : character?.wordLimits?.primaryMode ?? character?.wordLimits?.default ?? (character?.id === "joy" ? 25 : 20);
+  const wordLimit = wordLimitFor(character, compiled.writingMode);
   const bytes = new TextEncoder().encode(output).length;
   const maxBytes = outputMaxBytes(compiled);
   const checks: ValidationItem[] = [];
@@ -710,10 +719,13 @@ export function validateOutput(compiled: CompiledPrompt, output: string): Valida
     passed: expectedApprovedQuote ? trimmed === expectedApprovedQuote : /[.!?…][\"']?$/.test(trimmed),
     detail: expectedApprovedQuote ? "approved quote attribution" : (trimmed.slice(-1) || "empty"),
   });
-  const addHardware = () => checks.push(
-    { id: "bytes", labelZh: `${maxBytes} 字节`, labelEn: `${maxBytes} bytes`, passed: bytes <= maxBytes, detail: `${bytes} / ${maxBytes} B` },
-    { id: "ascii", labelZh: "硬件 ASCII", labelEn: "Hardware ASCII", passed: asciiForEInk(output) === output, detail: asciiForEInk(output) === output ? "wire-safe" : "transformed" },
-  );
+  const addHardware = () => {
+    const asciiOutput = asciiForEInk(output);
+    checks.push(
+      { id: "bytes", labelZh: `${maxBytes} 字节`, labelEn: `${maxBytes} bytes`, passed: bytes <= maxBytes, detail: `${bytes} / ${maxBytes} B` },
+      { id: "ascii", labelZh: "硬件 ASCII", labelEn: "Hardware ASCII", passed: asciiOutput === output, detail: asciiOutput === output ? "wire-safe" : "transformed" },
+    );
+  };
 
   if (compiled.scenarioId === "haiku") {
     addEnglish();

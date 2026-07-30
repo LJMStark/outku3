@@ -75,15 +75,10 @@ public final class EventSupportTextService {
                 )
             }
             do {
-                let lines = try await openAI.generateEventSupportTexts(events: pendingEvents)
-                let evaluation = Self.evaluateAIReply(
-                    lines,
-                    expectedCount: pendingIndices.count,
-                    maxBytes: DayPackTextBudget.eventSupportText,
-                    now: Date()
+                let evaluation = try await generateAndEvaluate(
+                    pendingEvents,
+                    maxBytes: DayPackTextBudget.eventSupportText
                 )
-                aiRetryAfter = evaluation.retryAfter
-                if cache.count > Self.cacheLimit { cache.removeAll() }
                 for (offset, index) in pendingIndices.enumerated() {
                     let line = evaluation.acceptedLines[offset]
                     resolved[index] = line
@@ -158,18 +153,12 @@ public final class EventSupportTextService {
         guard await openAI.isConfigured else { return }
 
         do {
-            let lines = try await openAI.generateEventSupportTexts(
-                events: missing.map {
+            let evaluation = try await generateAndEvaluate(
+                missing.map {
                     OpenAIService.EventSupportTextInput(title: $0, category: .deepWork)
-                }
+                },
+                maxBytes: DayPackTextBudget.taskSupportText
             )
-            let evaluation = Self.evaluateAIReply(
-                lines, expectedCount: missing.count,
-                maxBytes: DayPackTextBudget.taskSupportText,
-                now: Date()
-            )
-            aiRetryAfter = evaluation.retryAfter
-            if cache.count > Self.cacheLimit { cache.removeAll() }
             for (title, line) in zip(missing, evaluation.acceptedLines) {
                 if let line { cache[Self.taskCacheKey(for: title)] = line }
             }
@@ -177,6 +166,24 @@ public final class EventSupportTextService {
             aiRetryAfter = Date().addingTimeInterval(Self.aiFailureCooldown)
             Log.ai.warning("Task support text prewarm failed (\(error.localizedDescription, privacy: .private)) — button presses will use the Deep Work template; retrying in 10 minutes")
         }
+    }
+
+    private func generateAndEvaluate(
+        _ events: [OpenAIService.EventSupportTextInput],
+        maxBytes: Int
+    ) async throws -> AIReplyEvaluation {
+        let lines = try await openAI.generateEventSupportTexts(events: events)
+        let evaluation = Self.evaluateAIReply(
+            lines,
+            expectedCount: events.count,
+            maxBytes: maxBytes,
+            now: Date()
+        )
+        aiRetryAfter = evaluation.retryAfter
+        if cache.count > Self.cacheLimit {
+            cache.removeAll()
+        }
+        return evaluation
     }
 
     /// Task keys carry a distinct prefix so a task and a calendar event sharing a title do not

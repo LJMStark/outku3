@@ -18,10 +18,6 @@ function isDeterministicQuoteTurn(
   return compiled.writingMode === "signatureQuote" && compiled.approvedQuote != null;
 }
 
-function needsModelCall(compiled: CompiledPrompt): boolean {
-  return !isDeterministicQuoteTurn(compiled);
-}
-
 async function sendPrompt(compiled: CompiledPrompt, model: string, apiKey: string, referer: string, requestSignal: AbortSignal) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), compiled.parameters.requestTimeoutSeconds * 1000);
@@ -139,7 +135,7 @@ export async function POST(request: Request) {
     const payload = await parseCompileRequest(request);
     const compiled = compilePrompts(payload);
     await enforceRunLimit(request);
-    const modelCallCount = compiled.filter(needsModelCall).length;
+    const modelCallCount = compiled.filter((item) => !isDeterministicQuoteTurn(item)).length;
     const apiKey = runtime.OPENROUTER_API_KEY ?? runtime.OPENAI_API_KEY ?? "";
     if (modelCallCount > 0 && !apiKey) throw new Error("OpenRouter is not configured");
     const fallbackAPIKey = runtime.FALLBACK_API_KEY ?? apiKey;
