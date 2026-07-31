@@ -247,12 +247,50 @@ public struct HomeView: View {
         SoundService.shared.haptic(.medium)
         appState.selectedDate = Date()
 
-        await appState.syncConnectedExternalData()
-        await appState.refreshSharedPetDialogueIfNeeded(force: true)
-        appState.switchHomeToPetDialogue()
+        await HomeManualRefreshFlow.perform(
+            cancelPendingBLESync: {
+                appState.cancelPendingBLESync()
+            },
+            syncExternalData: { scheduleBLESync in
+                await appState.syncConnectedExternalData(scheduleBLESync: scheduleBLESync)
+            },
+            refreshDialogue: { force in
+                await appState.refreshSharedPetDialogueIfNeeded(force: force)
+            },
+            switchToPetDialogue: {
+                appState.switchHomeToPetDialogue()
+            },
+            syncBLE: { force, trigger in
+                await BLESyncCoordinator.shared.performSync(force: force, trigger: trigger)
+            }
+        )
 
         // Success haptic
         SoundService.shared.haptic(.success)
+    }
+}
+
+@MainActor
+enum HomeManualRefreshFlow {
+    typealias CancelPendingBLESync = @MainActor () -> Void
+    typealias SyncExternalData = @MainActor (Bool) async -> Void
+    typealias RefreshDialogue = @MainActor (Bool) async -> Void
+    typealias SwitchToPetDialogue = @MainActor () -> Void
+    typealias Sync = @MainActor (Bool, BLESyncTrigger) async -> Void
+
+    static func perform(
+        cancelPendingBLESync: CancelPendingBLESync,
+        syncExternalData: SyncExternalData,
+        refreshDialogue: RefreshDialogue,
+        switchToPetDialogue: SwitchToPetDialogue,
+        syncBLE: Sync
+    ) async {
+        cancelPendingBLESync()
+        await syncExternalData(false)
+        cancelPendingBLESync()
+        await refreshDialogue(true)
+        switchToPetDialogue()
+        await syncBLE(true, .manual)
     }
 }
 

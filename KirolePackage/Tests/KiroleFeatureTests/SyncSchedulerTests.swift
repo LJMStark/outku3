@@ -48,6 +48,26 @@ struct SyncSchedulerTests {
             #expect(state.connectedExternalSyncTargets() == [.google, .apple, .notion, .taskade])
         }
 
+        @Test("A duplicate source sync waits for the active operation instead of returning early")
+        @MainActor
+        func duplicateSourceWaitsForActiveOperation() async {
+            let state = AppState.makeForTesting()
+            #expect(await state.claimExternalSync(.google))
+
+            var duplicateFinished = false
+            let duplicate = Task { @MainActor in
+                let claimed = await state.claimExternalSync(.google)
+                duplicateFinished = true
+                return claimed
+            }
+            await Task.yield()
+
+            #expect(!duplicateFinished)
+            state.finishExternalSync(.google)
+            #expect(await duplicate.value == false)
+            #expect(duplicateFinished)
+        }
+
         @Test("Google and Apple targets are de-duplicated by provider")
         @MainActor
         func deduplicatesGroupedProviders() {

@@ -269,22 +269,21 @@ struct SettlementCountsTests {
         #expect(DayPackGenerator.settlementQuoteBranch(completed: 1, total: 3, unfinishedEvents: 0, combinedMinutes: 240) == .fullSchedule)
     }
 
-    // MARK: - taskOverview (AI generates + self-judges; offline → verbatim fallback)
+    // MARK: - taskOverview (immediate local fallback for the hardware short-press path)
 
-    @Test @MainActor func overviewNilWhenNoNotes() async {
-        #expect(await DayPackGenerator.shared.taskOverview(for: nil) == nil)
-        #expect(await DayPackGenerator.shared.taskOverview(for: "   ") == nil)
+    @Test @MainActor func overviewNilWhenNoNotes() {
+        #expect(DayPackGenerator.shared.taskOverview(for: nil) == nil)
+        #expect(DayPackGenerator.shared.taskOverview(for: "   ") == nil)
     }
 
-    @Test @MainActor func overviewShowsShortNoteVerbatim() async {
+    @Test @MainActor func overviewShowsShortNoteVerbatim() {
         let note = "Quick sync with design"
-        #expect(await DayPackGenerator.shared.taskOverview(for: note) == note)
+        #expect(DayPackGenerator.shared.taskOverview(for: note) == note)
     }
 
-    @Test @MainActor func overviewTruncatesLongNoteWhenAIUnavailable() async {
-        // AI unavailable (no API key in tests) → fall back to the user's verbatim note, truncated.
+    @Test @MainActor func overviewTruncatesLongNoteLocally() {
         let long = String(repeating: "buy milk; call bank; send invoice; ", count: 5)
-        let result = await DayPackGenerator.shared.taskOverview(for: long)
+        let result = DayPackGenerator.shared.taskOverview(for: long)
         #expect(result != nil)
         #expect((result?.utf8.count ?? 999) <= DayPackGenerator.taskDescriptionByteBudget)
         #expect(long.hasPrefix(result ?? "x"))   // a prefix of the user's own words, not a rewrite

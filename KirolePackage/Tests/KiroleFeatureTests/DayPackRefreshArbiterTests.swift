@@ -107,6 +107,36 @@ struct DayPackRefreshArbiterTests {
         )
     }
 
+    @Test("a deferred active-event update remains sendable after the event ends")
+    func deferredUpdateDoesNotAdvanceTheSentWireBaseline() {
+        let baseline = makeDayPack(petDialogue: "Lunch starts soon.")
+        let presentationUpdate = makeDayPack(petDialogue: "Enjoy lunch.")
+        var lastSentWireFingerprint = baseline.stableFingerprint()
+
+        let sendsDuringEvent = DayPackRefreshArbiter.shouldSend(
+            trigger: .automatic,
+            wireContentChanged: lastSentWireFingerprint != presentationUpdate.stableFingerprint(),
+            hasActiveTimedEvent: true,
+            hasPreviousSemanticFingerprint: true,
+            semanticContentChanged: false
+        )
+        if sendsDuringEvent {
+            lastSentWireFingerprint = presentationUpdate.stableFingerprint()
+        }
+
+        #expect(!sendsDuringEvent)
+        #expect(lastSentWireFingerprint == baseline.stableFingerprint())
+        #expect(
+            DayPackRefreshArbiter.shouldSend(
+                trigger: .automatic,
+                wireContentChanged: lastSentWireFingerprint != presentationUpdate.stableFingerprint(),
+                hasActiveTimedEvent: false,
+                hasPreviousSemanticFingerprint: true,
+                semanticContentChanged: false
+            )
+        )
+    }
+
     @Test("without a semantic baseline the first active-event sync sends once")
     func firstActiveEventSyncEstablishesSemanticBaseline() {
         #expect(

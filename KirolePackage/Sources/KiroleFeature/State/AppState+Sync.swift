@@ -57,7 +57,26 @@ extension AppState {
         return targets
     }
 
-    public func syncConnectedExternalData() async {
+    /// Claims one provider sync. A duplicate request waits for the active operation and then
+    /// reuses its result instead of returning early with stale data.
+    func claimExternalSync(_ target: ExternalSyncTarget) async -> Bool {
+        guard activeSyncs.contains(target) else {
+            activeSyncs.insert(target)
+            return true
+        }
+        await withCheckedContinuation { continuation in
+            externalSyncWaiters[target, default: []].append(continuation)
+        }
+        return false
+    }
+
+    func finishExternalSync(_ target: ExternalSyncTarget) {
+        activeSyncs.remove(target)
+        let waiters = externalSyncWaiters.removeValue(forKey: target) ?? []
+        waiters.forEach { $0.resume() }
+    }
+
+    public func syncConnectedExternalData(scheduleBLESync: Bool = true) async {
         // 等启动本地加载完成再同步：否则会抢在集成连接状态恢复之前按 defaultIntegrations(Apple=true)
         // 同步，把用户刚断开/清掉的 Apple 数据又导入回来（B4 启动竞态）。
         await ensureInitialLoadComplete()
@@ -66,21 +85,29 @@ extension AppState {
         for target in connectedExternalSyncTargets() {
             switch target {
             case .google:
-                await syncGoogleData()
+                await syncGoogleData(scheduleBLESync: false)
             case .apple:
-                await syncAppleData()
+                await syncAppleData(scheduleBLESync: false)
             case .notion:
-                await syncNotionData()
+                await syncNotionData(scheduleBLESync: false)
             case .taskade:
-                await syncTaskadeData()
+                await syncTaskadeData(scheduleBLESync: false)
             }
+        }
+
+        if scheduleBLESync {
+            requestBLESync(reason: "external-sync-batch", debounce: .seconds(3))
+        } else {
+            cancelPendingBLESync()
         }
     }
 
-    public func syncGoogleData() async {
-        guard !activeSyncs.contains(.google) else { return }
-        activeSyncs.insert(.google)
-        defer { activeSyncs.remove(.google) }
+    public func syncGoogleData(scheduleBLESync: Bool = true) async {
+        guard await claimExternalSync(.google) else {
+            if !scheduleBLESync { cancelPendingBLESync() }
+            return
+        }
+        defer { finishExternalSync(.google) }
 
         guard AuthManager.shared.isGoogleConnected else {
             lastGoogleSyncDebug = "Skipped: Google not connected"
@@ -159,7 +186,7 @@ extension AppState {
             lastGoogleSyncDebug = "Error: \(underlying)"
         }
 
-        await applyPostSyncHooks()
+        await applyPostSyncHooks(scheduleBLESync: scheduleBLESync)
     }
 
     public var isAnyAppleIntegrationConnected: Bool {
@@ -211,13 +238,15 @@ extension AppState {
         }
     }
 
-    public func syncAppleData() async {
+    public func syncAppleData(scheduleBLESync: Bool = true) async {
         // 纵深防御：syncAppleData 是 public，且 Apple change observer 回调会直接调它（绕过
         // syncConnectedExternalData）。自带等待，确保任何入口都不会在集成连接状态恢复前导入。
         await ensureInitialLoadComplete()
-        guard !activeSyncs.contains(.apple) else { return }
-        activeSyncs.insert(.apple)
-        defer { activeSyncs.remove(.apple) }
+        guard await claimExternalSync(.apple) else {
+            if !scheduleBLESync { cancelPendingBLESync() }
+            return
+        }
+        defer { finishExternalSync(.apple) }
 
         let shouldSyncCalendar = isIntegrationConnected(.appleCalendar)
         let shouldSyncReminders = isIntegrationConnected(.appleReminders)
@@ -230,7 +259,7 @@ extension AppState {
             await syncAppleReminders()
         }
 
-        await applyPostSyncHooks()
+        await applyPostSyncHooks(scheduleBLESync: scheduleBLESync)
     }
 
     public func requestAppleCalendarAccess() async -> Bool {
@@ -303,11 +332,13 @@ extension AppState {
 
     // MARK: - Notion Sync
 
-    public func syncNotionData() async {
+    public func syncNotionData(scheduleBLESync: Bool = true) async {
         guard isIntegrationConnected(.notion) else { return }
-        guard !activeSyncs.contains(.notion) else { return }
-        activeSyncs.insert(.notion)
-        defer { activeSyncs.remove(.notion) }
+        guard await claimExternalSync(.notion) else {
+            if !scheduleBLESync { cancelPendingBLESync() }
+            return
+        }
+        defer { finishExternalSync(.notion) }
 
         isLoading = true
         defer { isLoading = false }
@@ -332,16 +363,18 @@ extension AppState {
             ErrorReporter.log(appError, context: "AppState.syncNotionData")
         }
 
-        await applyPostSyncHooks()
+        await applyPostSyncHooks(scheduleBLESync: scheduleBLESync)
     }
 
     // MARK: - Taskade Sync
 
-    public func syncTaskadeData() async {
+    public func syncTaskadeData(scheduleBLESync: Bool = true) async {
         guard isIntegrationConnected(.taskade) else { return }
-        guard !activeSyncs.contains(.taskade) else { return }
-        activeSyncs.insert(.taskade)
-        defer { activeSyncs.remove(.taskade) }
+        guard await claimExternalSync(.taskade) else {
+            if !scheduleBLESync { cancelPendingBLESync() }
+            return
+        }
+        defer { finishExternalSync(.taskade) }
 
         isLoading = true
         defer { isLoading = false }
@@ -364,18 +397,20 @@ extension AppState {
             ErrorReporter.log(appError, context: "AppState.syncTaskadeData")
         }
 
-        await applyPostSyncHooks()
+        await applyPostSyncHooks(scheduleBLESync: scheduleBLESync)
     }
 
     // MARK: - Post-Sync Hooks
 
     /// Every public sync* MUST end with this so all external sources trigger
     /// consistent home companion refresh after data merge.
-    private func applyPostSyncHooks() async {
+    private func applyPostSyncHooks(scheduleBLESync: Bool) async {
         await updatePetState()
         await refreshSharedPetDialogueIfNeeded()
         await refreshHomeCompanionPresentation()
-        requestBLESync(reason: "external-sync", debounce: .seconds(3))
+        if scheduleBLESync {
+            requestBLESync(reason: "external-sync", debounce: .seconds(3))
+        }
     }
 
     // MARK: - BLE Sync Request
@@ -398,10 +433,17 @@ extension AppState {
         }
     }
 
+    /// A caller that is about to perform one explicit final sync can consume the debounced
+    /// automatic request created by its preceding state updates, avoiding two DayPacks for one
+    /// user action.
+    func cancelPendingBLESync() {
+        pendingBLESyncTask?.cancel()
+        pendingBLESyncTask = nil
+    }
+
     /// A live Complete/Skip response sends its final DayPack before 0x1B. Cancel the ordinary
     /// debounced request created by the same mutation so it cannot race and send the same DayPack.
     func cancelPendingBLESyncForTaskActionPresentation() {
-        pendingBLESyncTask?.cancel()
-        pendingBLESyncTask = nil
+        cancelPendingBLESync()
     }
 }

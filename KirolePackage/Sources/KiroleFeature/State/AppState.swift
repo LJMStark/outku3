@@ -249,6 +249,7 @@ public final class AppState {
 
     // Internal coordination state — debounce handle for BLE sync requests.
     var pendingBLESyncTask: Task<Void, Never>?
+    var externalSyncWaiters: [ExternalSyncTarget: [CheckedContinuation<Void, Never>]] = [:]
 
     /// 启动本地加载任务句柄；ensureInitialLoadComplete() 等它完成，避免首轮外部同步 / Apple observer
     /// 抢在集成连接状态恢复之前按 defaultIntegrations(Apple=true) 同步、把已断开/已清掉的数据写回。

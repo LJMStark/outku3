@@ -290,7 +290,7 @@ public enum BLEEventHandler {
 
         case .sendTaskIn(let task):
             Task { @MainActor in
-                let taskInPage = await DayPackGenerator.shared.generateTaskInPage(
+                let taskInPage = DayPackGenerator.shared.generateTaskInPage(
                     task: task,
                     pet: AppState.shared.pet,
                     userProfile: AppState.shared.userProfile

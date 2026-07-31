@@ -43,6 +43,10 @@ public final class BLESyncCoordinator {
         force: Bool = false,
         trigger: BLESyncTrigger = .automatic
     ) async {
+        // Debounced AppState sync tasks are cancellable. A manual refresh cancels the old task
+        // before collecting all external sources, so a timer that has just fired must not continue
+        // through DayPack generation and start an obsolete write.
+        guard !Task.isCancelled else { return }
         // 并发守卫：keep-alive 默认开后连接常驻，多触发源（后台刷新 / 硬件 0x20·0x30 / 指纹变化）可能并发进入。
         // 以前靠"已连接→.connectionInProgress"意外串行；连接跳过后需显式守卫，否则会重复发整轮 + 帧交错。
         // @MainActor 下在首个 await 前同步置位，保证原子。被丢弃的 force:true 记下、收尾后补跑一次——
@@ -68,9 +72,11 @@ public final class BLESyncCoordinator {
         // 空 DayPack 推上硬件（闪一屏空首页）。其余入口（syncConnectedExternalData 等）都已等待，
         // 这里补齐（幂等，加载完成后零开销）。2026-07-04 审计 F3。
         await appState.ensureInitialLoadComplete()
+        guard !Task.isCancelled else { return }
         // v2.5.0: the hardware bubble shows the SAME line as the App home. Refresh it, then
         // feed currentPetDialogue into the DayPack so both surfaces stay in sync.
         await appState.refreshSharedPetDialogueIfNeeded()
+        guard !Task.isCancelled else { return }
         let sourceTaskStateVersion = appState.taskStateVersion
         guard appState.currentPetDialogueTaskStateVersion == sourceTaskStateVersion else {
             queuePendingSync(force: force, trigger: trigger)
@@ -93,6 +99,7 @@ public final class BLESyncCoordinator {
             queuePendingSync(force: force, trigger: trigger)
             return
         }
+        guard !Task.isCancelled else { return }
 
         let fingerprint = dayPack.stableFingerprint()
         let semanticFingerprint = dayPack.refreshSemanticFingerprint(
@@ -141,6 +148,7 @@ public final class BLESyncCoordinator {
         ) else {
             return
         }
+        guard !Task.isCancelled else { return }
 
         let timeoutTask = Task { @MainActor in
             try? await Task.sleep(for: .seconds(self.connectionTimeoutSeconds))
@@ -176,18 +184,40 @@ public final class BLESyncCoordinator {
                         try await bleService.connectToPreferredDevice(timeout: 10)
                         connected = true
                         break
+                    } catch is CancellationError {
+                        throw CancellationError()
                     } catch {
                         lastConnectError = error
                         #if DEBUG
                         print("[BLESyncCoordinator] Connect attempt \(attempt + 1)/3 failed: \(error.localizedDescription)")
                         #endif
                         if attempt < 2 {
-                            try? await Task.sleep(for: .seconds(Double(1 << attempt)))
+                            do {
+                                try await Task.sleep(for: .seconds(Double(1 << attempt)))
+                            } catch is CancellationError {
+                                throw CancellationError()
+                            } catch {
+                                // The backoff clock itself has no other recoverable failure.
+                            }
                         }
                     }
                 }
                 // 保留底层原因：connectionFailed(error) 的描述会带上 underlying，外层 catch 即可在 Release 看到。
                 guard connected else { throw BLEError.connectionFailed(lastConnectError) }
+            }
+
+            if Task.isCancelled {
+                if bleService.connectionState.isConnected,
+                   !bleService.shouldKeepConnectionOpenForDebug,
+                   taskActionPresentationCount == 0,
+                   FocusSessionService.shared.activeSession == nil,
+                   !policy.shouldHoldConnectionForCustomAvatar(
+                    chunkedTransferInFlight: bleService.isChunkedTransferInFlight,
+                    operationState: appState.customAvatarOperationState
+                   ) {
+                    bleService.disconnect()
+                }
+                return
             }
 
             await appState.flushPriorityCustomAvatarOperationIfNeeded()
@@ -228,6 +258,8 @@ public final class BLESyncCoordinator {
                         )
                         sent = true
                         break
+                    } catch is CancellationError {
+                        throw CancellationError()
                     } catch {
                         if let bleError = error as? BLEError,
                            case .staleTaskSnapshot = bleError {
@@ -277,6 +309,20 @@ public final class BLESyncCoordinator {
                 bleService.lastSyncFailed = false
                 lastSyncSucceeded = true
             }
+        } catch is CancellationError {
+            // A newer explicit refresh superseded this debounced automatic round. Cancellation is
+            // not a transport failure and must not turn Settings red or trigger another retry.
+            if bleService.connectionState.isConnected,
+               !bleService.shouldKeepConnectionOpenForDebug,
+               taskActionPresentationCount == 0,
+               FocusSessionService.shared.activeSession == nil,
+               !policy.shouldHoldConnectionForCustomAvatar(
+                chunkedTransferInFlight: bleService.isChunkedTransferInFlight,
+                operationState: appState.customAvatarOperationState
+               ) {
+                bleService.disconnect()
+            }
+            return
         } catch {
             lastSyncSucceeded = false
             bleService.lastSyncFailed = true

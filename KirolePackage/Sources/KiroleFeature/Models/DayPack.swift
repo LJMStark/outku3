@@ -129,9 +129,10 @@ public struct DayPack: Codable, Sendable {
     /// Hashes the device-visible business state while intentionally excluding text and counters
     /// that change merely because time moved into the currently displayed schedule event.
     ///
-    /// `allTasks` includes task-detail inputs that are not necessarily in `topTasks`, so a task
-    /// title, note, completion, priority, due-time, or Today membership change still reaches the
-    /// device even when the visible top-task rows happen to stay the same.
+    /// This fingerprint only classifies an already wire-different DayPack during active-event
+    /// arbitration. `allTasks` prevents a real task-detail change from being mistaken for a
+    /// presentation-only change when some wire field also changed; off-wire task fields do not
+    /// independently trigger a send.
     public func refreshSemanticFingerprint(
         allTasks: [TaskItem],
         at now: Date = Date(),

@@ -200,7 +200,7 @@ public final class DayPackGenerator {
         return result
     }
 
-    public func generateTaskInPage(task: TaskItem, pet: Pet, userProfile: UserProfile = .default) async -> TaskInPageData {
+    public func generateTaskInPage(task: TaskItem, pet: Pet, userProfile: UserProfile = .default) -> TaskInPageData {
         // 客户 2026-07-28 要求「按按钮进入 task 期间」也显示支持性文字。按按钮进入的是 TaskItem，
         // 而 TaskItem 没有 category 字段（六类只标在日历事件上），客户拍板恒用 Deep Work 规则
         // （"只指向最小的第一步"）。
@@ -208,15 +208,12 @@ public final class DayPackGenerator {
         // 承载它的是协议 §4.8 里原名 `Encouragement` 的槽位——那是 App 侧的实现选择（复用空槽、
         // 省一次 wire 变更），**不代表「鼓励语 / Tips」功能恢复**：该功能仍按客户 2026-07-20 的
         // 决定停用。字节预算随之 50 → 80B。
-        // 支持文字**绝不阻塞这一帧**。设备已经停在任务详情页等 0x11，而无备注时 taskOverview
-        // 立即返回——那样支持文字就是唯一的等待，最坏 60 秒（model.requestTimeoutSeconds）白屏。
-        // 用缓存命中值，未命中直接取确定性模板：真正的 AI 文案在 sync 时由
-        // `prewarmTaskSupportText` 预生成（硬件只能按到 DayPack 下发的 topTasks，见其注释），
-        // 所以正常路径按键即命中，冷路径也只降级文案、不降级响应速度。
+        // 这一帧是短按握手的直接响应，整条生成路径必须保持同步：支持文字用缓存或确定性
+        // fallback，备注只做本地字节截断，不能等待 AI、网络或后台预热。
         let support = EventSupportTextService.shared.cachedOrFallbackTaskSupportText(
             taskTitle: task.title
         )
-        let overview = await taskOverview(for: task.notes)
+        let overview = taskOverview(for: task.notes)
         return TaskInPageData(
             taskId: task.hardwareIdentifier, taskTitle: task.title,
             taskDescription: overview,
@@ -224,17 +221,15 @@ public final class DayPackGenerator {
         )
     }
 
-    /// In-task "Overview" (the task-content line). The AI generates it and self-judges whether it
-    /// understands the note — summarizing when it does, returning the note verbatim when it does
-    /// not (client decision). Returns nil when there is nothing to show; falls back to the verbatim
-    /// (truncated) note only when AI is unavailable.
-    func taskOverview(for rawNotes: String?) async -> String? {
+    /// In-task "Overview" is part of the short-press response and therefore stays local. The App
+    /// sends the user's note verbatim within the existing wire budget instead of waiting for AI.
+    func taskOverview(for rawNotes: String?) -> String? {
         let notes = rawNotes?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !notes.isEmpty else { return nil }
-        if let aiResult = await textService.generateTaskOverview(notes: notes) {
-            return aiResult                                               // AI summary, or verbatim if it was unsure
-        }
-        return CompanionTextService.enforceByteBudget(notes, maxBytes: Self.taskDescriptionByteBudget)  // AI off → verbatim
+        return CompanionTextService.enforceByteBudget(
+            notes,
+            maxBytes: Self.taskDescriptionByteBudget
+        )
     }
 
     // MARK: - Private Helpers
