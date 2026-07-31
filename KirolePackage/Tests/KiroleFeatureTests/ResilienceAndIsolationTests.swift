@@ -61,6 +61,7 @@ struct FocusSessionPersistenceTests {
 
             await service.startSession(taskId: "focus-test-\(UUID().uuidString)", taskTitle: "Focus Test Task")
             service.endSession(reason: .completed)
+            await service.waitForPendingPersistenceForTesting()
 
             #expect(service.activeSession == nil)
             #expect(service.todaySessions.count >= baseline + 1)

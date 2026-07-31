@@ -1497,11 +1497,10 @@ struct BLEProtocolTests {
     @MainActor
     func batchReplayCompleteTaskMarksTaskCompleted() async {
         await SharedPersistenceTestLock.shared.withLock {
-            await AppState.shared.ensureInitialLoadComplete()
+            let appState = AppState.makeForTesting()
             let taskId = "ble-replay-complete-\(UUID().uuidString)"
             let task = TaskItem(id: taskId, title: "Replay Complete Test", isCompleted: false, dueDate: nil)
-            AppState.shared.tasks.append(task)
-            defer { AppState.shared.tasks.removeAll { $0.id == taskId } }
+            appState.tasks.append(task)
 
             let event = EventLog(
                 eventType: .completeTask,
@@ -1520,10 +1519,11 @@ struct BLEProtocolTests {
                 lastTimestampOverride: 0,
                 persistLogs: false,
                 operationLedger: TaskOperationLedger(persistenceEnabled: false),
-                deviceIDOverride: "test-device"
+                deviceIDOverride: "test-device",
+                appState: appState
             )
 
-            let found = AppState.shared.tasks.first { $0.id == taskId }
+            let found = appState.tasks.first { $0.id == taskId }
             #expect(found?.isCompleted == true)
         }
     }
@@ -1627,6 +1627,8 @@ struct BLEProtocolTests {
         let taskId = "ble-ancient-\(UUID().uuidString)"
         let ancient = Date(timeIntervalSince1970: 49)
         let tasks = [TaskItem(id: taskId, title: "Ancient Task")]
+        let appState = AppState.makeForTesting()
+        appState.tasks = tasks
         let focusService = FocusSessionService.makeForTesting(
             focusGuardService: BLEProtocolMockFocusGuardService(),
             persistenceEnabled: false
@@ -1635,7 +1637,8 @@ struct BLEProtocolTests {
             [EventLog(eventType: .enterTaskIn, taskId: taskId, timestamp: ancient)],
             service: BLEService.shared, focusService: focusService, isReplay: false,
             tasksOverride: tasks,
-            persistLogs: false
+            persistLogs: false,
+            appState: appState
         )
         let start = focusService.activeSession?.startTime
         #expect(start != nil)
@@ -1647,7 +1650,8 @@ struct BLEProtocolTests {
             [EventLog(eventType: .completeTask, taskId: taskId, timestamp: ancient)],
             service: BLEService.shared, focusService: focusService, isReplay: false,
             tasksOverride: tasks,
-            persistLogs: false
+            persistLogs: false,
+            appState: appState
         )
         await focusService.waitForPendingPersistenceForTesting()
         let ended = focusService.todaySessions.last { $0.taskId == taskId }

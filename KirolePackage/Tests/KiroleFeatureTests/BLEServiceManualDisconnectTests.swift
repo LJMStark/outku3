@@ -23,6 +23,7 @@ struct BLEServiceManualDisconnectTests {
             #expect(focusService.activeSession != nil)
 
             BLEService.shared.disconnect()
+            await focusService.waitForPendingPersistenceForTesting()
 
             #expect(focusService.activeSession == nil)
             let settled = focusService.todaySessions.last { $0.taskId == taskId }
@@ -37,6 +38,7 @@ struct BLEServiceManualDisconnectTests {
             let focusService = FocusSessionService.shared
             if focusService.activeSession != nil {
                 focusService.endSession(reason: .completed)
+                await focusService.waitForPendingPersistenceForTesting()
             }
             let baseline = focusService.todaySessions.count
 

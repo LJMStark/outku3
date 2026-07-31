@@ -26,13 +26,41 @@ public final class BLESyncCoordinator {
     /// sync requests queue behind this window so no second DayPack can race the later 0x1B.
     private var taskActionPresentationCount = 0
     private let taskActionPresentationGate = BLEWriteGate()
-    private var syncCompletionWaiters: [CheckedContinuation<Void, Never>] = []
+    private let taskActionAppState: AppState
+    private let taskActionDayPackSender: (@MainActor () async -> UInt64?)?
 
     /// Connection timeout in seconds. Configurable for larger screen sizes
     /// that require longer refresh times (e.g., 7.3寸 full refresh ~12s).
     public var connectionTimeoutSeconds: TimeInterval = 30
 
-    private init() {}
+    private init() {
+        taskActionAppState = .shared
+        taskActionDayPackSender = nil
+    }
+
+#if DEBUG
+    static func makeForTestingTaskActionPresentation(
+        appState: AppState,
+        sendFinalDayPack: @escaping @MainActor () async -> UInt64?
+    ) -> BLESyncCoordinator {
+        BLESyncCoordinator(
+            taskActionAppState: appState,
+            taskActionDayPackSender: sendFinalDayPack
+        )
+    }
+
+    private init(
+        taskActionAppState: AppState,
+        taskActionDayPackSender: @escaping @MainActor () async -> UInt64?
+    ) {
+        self.taskActionAppState = taskActionAppState
+        self.taskActionDayPackSender = taskActionDayPackSender
+    }
+
+    func setSyncingForTesting(_ isSyncing: Bool) {
+        self.isSyncing = isSyncing
+    }
+#endif
 
     public func nextSyncDate() async -> Date {
         let lastSync = await localStorage.loadLastBleSyncTime()
@@ -58,9 +86,6 @@ public final class BLESyncCoordinator {
         isSyncing = true
         defer {
             isSyncing = false
-            let waiters = syncCompletionWaiters
-            syncCompletionWaiters.removeAll()
-            waiters.forEach { $0.resume() }
             schedulePendingSyncIfPossible()
         }
 
@@ -78,6 +103,7 @@ public final class BLESyncCoordinator {
         await appState.refreshSharedPetDialogueIfNeeded()
         guard !Task.isCancelled else { return }
         let sourceTaskStateVersion = appState.taskStateVersion
+        let sourceIdentityFingerprint = Self.companionIdentityFingerprint(appState)
         guard appState.currentPetDialogueTaskStateVersion == sourceTaskStateVersion else {
             queuePendingSync(force: force, trigger: trigger)
             return
@@ -95,7 +121,8 @@ public final class BLESyncCoordinator {
         )
         // DayPack generation also awaits event/support/settlement text. If tasks changed during
         // that work, do not let the old task/dialogue transaction reach the hardware.
-        guard appState.taskStateVersion == sourceTaskStateVersion else {
+        guard appState.taskStateVersion == sourceTaskStateVersion,
+              Self.companionIdentityFingerprint(appState) == sourceIdentityFingerprint else {
             queuePendingSync(force: force, trigger: trigger)
             return
         }
@@ -143,7 +170,10 @@ public final class BLESyncCoordinator {
             now: now,
             lastSync: lastSync,
             contentChanged: shouldSendDayPack || weatherChanged,
-            force: force,
+            // Identity lives in the small 0x01 frame, not necessarily in DayPack's fingerprint.
+            // It therefore owns one immediate sync round even when AI text falls back to the same
+            // bytes and the routine interval has not elapsed.
+            force: force || trigger.bypassesRoutineSyncInterval,
             hasPriorityCustomAvatarOperation: hasPriorityCustomAvatarOperation
         ) else {
             return
@@ -163,10 +193,18 @@ public final class BLESyncCoordinator {
                 try? await Task.sleep(for: .seconds(5))
             }
             guard !Task.isCancelled else { return }
-            // 硬件调试需要长连接时不因超时主动断连。
-            if self.bleService.connectionState.isConnected,
-               !self.bleService.shouldKeepConnectionOpenForDebug,
-               self.taskActionPresentationCount == 0 {
+            // 超时只回收空闲连接。专注靠常驻 BLE + 0x20 心跳维持；这里主动断开会把
+            // 正常会话错误结算为 `.disconnected`。
+            if self.policy.shouldDisconnectAfterTimeout(
+                isConnected: self.bleService.connectionState.isConnected,
+                keepsDebugConnectionOpen: self.bleService.shouldKeepConnectionOpenForDebug,
+                hasTaskActionPresentation: self.taskActionPresentationCount > 0,
+                hasActiveFocusSession: FocusSessionService.shared.activeSession != nil,
+                holdsCustomAvatarConnection: self.policy.shouldHoldConnectionForCustomAvatar(
+                    chunkedTransferInFlight: self.bleService.isChunkedTransferInFlight,
+                    operationState: appState.customAvatarOperationState
+                )
+            ) {
                 self.bleService.disconnect()
             }
         }
@@ -221,75 +259,105 @@ public final class BLESyncCoordinator {
             }
 
             await appState.flushPriorityCustomAvatarOperationIfNeeded()
-            try await bleService.syncTime()
-            try await bleService.sendPetStatus(
-                appState.pet,
-                companionCharacter: appState.userProfile.companionCharacter,
-                // v2.5.32: 例行 sync 恒重申自定义激活态——0x01 不再把用户图刷回内置。
-                customActive: appState.userProfile.customCompanionId != nil
-            )
-            // 顶栏天气走独立 Weather(0x04) 帧（协议 §4.5），每轮发送。此前 sendWeather 只挂在
-            // 零调用的 syncAllData 上——硬件顶栏天气从未被更新过（2026-07-04 审计 F1）。
-            // 辅助帧单独容错：写失败只记日志、不算轮失败——顶栏装饰不能阻断后面的 DayPack
-            // 重试与离线事件补传（与 DayPack/eventLog 的既有"失败不阻断"哲学一致）。
-            if let weatherFingerprint {
-                do {
-                    try await bleService.sendWeather(w)
-                    lastSentWeatherFingerprint = weatherFingerprint
-                } catch {
-                    ErrorReporter.log(
-                        .sync(component: "BLE Weather", underlying: error.localizedDescription),
-                        context: "BLESyncCoordinator.performSync"
-                    )
-                }
-            }
-
             var dayPackSendFailed = false
-            if shouldSendDayPack {
-                // Send DayPack with retry: 2 attempts, 500ms/1s backoff
-                var sent = false
-                var superseded = false
-                var lastWriteError: Error?
-                for attempt in 0..<2 {
+            var presentationSnapshotIsCurrent = false
+            _ = try await HardwarePagePresentationGate.shared.performPresentationWrite(
+                droppingIfPageTransactionIntervened: false
+            ) {
+                guard appState.taskStateVersion == sourceTaskStateVersion,
+                      Self.companionIdentityFingerprint(appState) == sourceIdentityFingerprint,
+                      appState.currentPetDialogueTaskStateVersion == sourceTaskStateVersion else {
+                    return
+                }
+                let lastHashAtWire = await self.localStorage.loadLastDayPackHash()
+                guard appState.taskStateVersion == sourceTaskStateVersion,
+                      Self.companionIdentityFingerprint(appState) == sourceIdentityFingerprint else {
+                    return
+                }
+                presentationSnapshotIsCurrent = true
+                try await bleService.syncTime()
+                try await bleService.sendPetStatus(
+                    appState.pet,
+                    companionCharacter: appState.userProfile.companionCharacter,
+                    // v2.5.32: 例行 sync 恒重申自定义激活态——0x01 不再把用户图刷回内置。
+                    customActive: appState.userProfile.customCompanionId != nil
+                )
+                // 顶栏天气走独立 Weather(0x04) 帧（协议 §4.5），每轮发送。此前 sendWeather 只挂在
+                // 零调用的 syncAllData 上——硬件顶栏天气从未被更新过（2026-07-04 审计 F1）。
+                // 辅助帧单独容错：写失败只记日志、不算轮失败——顶栏装饰不能阻断后面的 DayPack
+                // 重试与离线事件补传（与 DayPack/eventLog 的既有"失败不阻断"哲学一致）。
+                if let weatherFingerprint {
                     do {
-                        try await bleService.sendDayPack(
-                            dayPack,
-                            expectedTaskStateVersion: sourceTaskStateVersion
-                        )
-                        sent = true
-                        break
-                    } catch is CancellationError {
-                        throw CancellationError()
+                        try await bleService.sendWeather(w)
+                        lastSentWeatherFingerprint = weatherFingerprint
                     } catch {
-                        if let bleError = error as? BLEError,
-                           case .staleTaskSnapshot = bleError {
-                            superseded = true
-                            queuePendingSync(force: force, trigger: trigger)
-                            break
-                        }
-                        lastWriteError = error
-                        #if DEBUG
-                        print("[BLESyncCoordinator] Write attempt \(attempt + 1)/2 failed: \(error.localizedDescription)")
-                        #endif
-                        if attempt < 1 {
-                            try? await Task.sleep(for: .milliseconds(500 * (attempt + 1)))
-                        }
+                        ErrorReporter.log(
+                            .sync(component: "BLE Weather", underlying: error.localizedDescription),
+                            context: "BLESyncCoordinator.performSync"
+                        )
                     }
                 }
-                if sent {
-                    await localStorage.saveLastDayPackHash(fingerprint)
-                    await localStorage.saveLastDayPackSemanticHash(semanticFingerprint)
-                } else if !superseded {
-                    // DayPack 是 App→硬件最核心的帧；两次写失败必须留痕，否则硬件一直显示旧数据、
-                    // App 端在 Release 下毫无信号（下轮会重试，但失败本身不可见）。
-                    // 不在此处 throw：后面的事件补传（requestEventLogsIfNeeded）是核心功能，
-                    // 不能因显示帧写失败而放弃；整轮成败在末尾按本标志判定。
-                    dayPackSendFailed = true
-                    ErrorReporter.log(
-                        .sync(component: "BLE DayPack", underlying: lastWriteError?.localizedDescription ?? "write failed after 2 attempts"),
-                        context: "BLESyncCoordinator.performSync"
-                    )
+
+                guard appState.taskStateVersion == sourceTaskStateVersion,
+                      Self.companionIdentityFingerprint(appState) == sourceIdentityFingerprint else {
+                    presentationSnapshotIsCurrent = false
+                    return
                 }
+                if Self.shouldSendPreparedDayPack(
+                    requested: shouldSendDayPack,
+                    lastSentFingerprint: lastHashAtWire,
+                    preparedFingerprint: fingerprint,
+                    hasActiveFocusSession: FocusSessionService.shared.activeSession != nil
+                ) {
+                    // Send DayPack with retry: 2 attempts, 500ms/1s backoff
+                    var sent = false
+                    var superseded = false
+                    var lastWriteError: Error?
+                    for attempt in 0..<2 {
+                        do {
+                            try await bleService.sendDayPack(
+                                dayPack,
+                                expectedTaskStateVersion: sourceTaskStateVersion
+                            )
+                            sent = true
+                            break
+                        } catch is CancellationError {
+                            throw CancellationError()
+                        } catch {
+                            if let bleError = error as? BLEError,
+                               case .staleTaskSnapshot = bleError {
+                                superseded = true
+                                queuePendingSync(force: force, trigger: trigger)
+                                break
+                            }
+                            lastWriteError = error
+                            #if DEBUG
+                            print("[BLESyncCoordinator] Write attempt \(attempt + 1)/2 failed: \(error.localizedDescription)")
+                            #endif
+                            if attempt < 1 {
+                                try? await Task.sleep(for: .milliseconds(500 * (attempt + 1)))
+                            }
+                        }
+                    }
+                    if sent {
+                        await localStorage.saveLastDayPackHash(fingerprint)
+                        await localStorage.saveLastDayPackSemanticHash(semanticFingerprint)
+                    } else if !superseded {
+                        // DayPack 是 App→硬件最核心的帧；两次写失败必须留痕，否则硬件一直显示旧数据、
+                        // App 端在 Release 下毫无信号（下轮会重试，但失败本身不可见）。
+                        // 不在此处 throw：后面的事件补传（requestEventLogsIfNeeded）是核心功能，
+                        // 不能因显示帧写失败而放弃；整轮成败在末尾按本标志判定。
+                        dayPackSendFailed = true
+                        ErrorReporter.log(
+                            .sync(component: "BLE DayPack", underlying: lastWriteError?.localizedDescription ?? "write failed after 2 attempts"),
+                            context: "BLESyncCoordinator.performSync"
+                        )
+                    }
+                }
+            }
+            guard presentationSnapshotIsCurrent else {
+                queuePendingSync(force: force, trigger: trigger)
+                return
             }
 
             await appState.flushPendingCustomCompanionPushIfNeeded()
@@ -358,6 +426,26 @@ public final class BLESyncCoordinator {
         }
     }
 
+    private static func companionIdentityFingerprint(_ appState: AppState) -> String {
+        let profile = appState.userProfile
+        guard let customID = profile.customCompanionId else {
+            return "built-in|\(profile.companionCharacter.rawValue)"
+        }
+        let revision = appState.customCompanions
+            .first(where: { $0.id == customID })?
+            .avatarRevisionKey ?? "missing"
+        return "custom|\(customID.uuidString)|\(revision)"
+    }
+
+    static func shouldSendPreparedDayPack(
+        requested: Bool,
+        lastSentFingerprint: String?,
+        preparedFingerprint: String,
+        hasActiveFocusSession: Bool
+    ) -> Bool {
+        requested && !hasActiveFocusSession && lastSentFingerprint != preparedFingerprint
+    }
+
     private func schedulePendingSyncIfPossible() {
         guard pendingSync, !isSyncing, taskActionPresentationCount == 0 else { return }
         let shouldForce = pendingForceSync
@@ -375,13 +463,6 @@ public final class BLESyncCoordinator {
             self.pendingSyncTrigger = pendingSyncTrigger.merged(with: trigger)
         } else {
             pendingSyncTrigger = trigger
-        }
-    }
-
-    private func waitForActiveSyncToFinish() async {
-        guard isSyncing else { return }
-        await withCheckedContinuation { continuation in
-            syncCompletionWaiters.append(continuation)
         }
     }
 
@@ -508,9 +589,11 @@ public final class BLESyncCoordinator {
     /// 路由一条到期的智能提醒：硬件可达就推设备，否则落本地通知，让离线用户也收得到。
     /// 每轮同步只评估一次（限流逻辑在 SmartReminderService 内）。
     private func deliverSmartReminder(appState: AppState) async {
-        guard let reminder = await SmartReminderService.shared.evaluateAndPushReminder(
+        guard let reminder = await Self.evaluateSmartReminder(
             tasks: appState.tasks,
-            pet: appState.pet
+            pet: appState.pet,
+            userProfile: appState.userProfile,
+            evaluator: SmartReminderService.shared
         ) else { return }
 
         if bleService.connectionState.isConnected {
@@ -539,6 +622,19 @@ public final class BLESyncCoordinator {
             SmartReminderService.shared.markReminderSent()
         }
     }
+
+    static func evaluateSmartReminder(
+        tasks: [TaskItem],
+        pet: Pet,
+        userProfile: UserProfile,
+        evaluator: any SmartReminderEvaluating
+    ) async -> SmartReminderResult? {
+        await evaluator.evaluateAndPushReminder(
+            tasks: tasks,
+            pet: pet,
+            userProfile: userProfile
+        )
+    }
 }
 
 extension BLESyncCoordinator: TaskActionPresentationCoordinating {
@@ -548,7 +644,7 @@ extension BLESyncCoordinator: TaskActionPresentationCoordinating {
         ) async -> TaskListSnapshotResponder.Outcome
     ) async {
         taskActionPresentationCount += 1
-        AppState.shared.cancelPendingBLESyncForTaskActionPresentation()
+        taskActionAppState.cancelPendingBLESyncForTaskActionPresentation()
 
         do {
             try await taskActionPresentationGate.acquire()
@@ -556,14 +652,19 @@ extension BLESyncCoordinator: TaskActionPresentationCoordinating {
             // Firmware keeps the operation pending and retries the same OperationID. Sending
             // 0x1B here would exit TaskIn without the final DayPack and recreate the double refresh.
             taskActionPresentationCount -= 1
+            taskActionAppState.resumeDeferredBLESyncAfterTaskActionPresentation()
             schedulePendingSyncIfPossible()
             return
         }
 
-        await waitForActiveSyncToFinish()
-        AppState.shared.cancelPendingBLESyncForTaskActionPresentation()
+        taskActionAppState.cancelPendingBLESyncForTaskActionPresentation()
         let completed = await Self.completeTaskActionPresentation(
-            sendFinalDayPack: { await self.sendFinalTaskActionDayPack() },
+            sendFinalDayPack: {
+                if let taskActionDayPackSender = self.taskActionDayPackSender {
+                    return await taskActionDayPackSender()
+                }
+                return await self.sendFinalTaskActionDayPack()
+            },
             acknowledge: acknowledgement
         )
         if !completed {
@@ -579,6 +680,9 @@ extension BLESyncCoordinator: TaskActionPresentationCoordinating {
 
         await taskActionPresentationGate.release()
         taskActionPresentationCount -= 1
+        // PetStatus(0x01) is not part of the final DayPack→0x1B transaction. Re-fire any
+        // identity/manual round that was parked so hardware does not keep a stale companion.
+        taskActionAppState.resumeDeferredBLESyncAfterTaskActionPresentation()
         schedulePendingSyncIfPossible()
     }
 }

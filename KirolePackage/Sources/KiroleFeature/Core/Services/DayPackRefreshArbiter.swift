@@ -1,20 +1,58 @@
 import Foundation
 
-/// Identifies why a BLE sync was requested so the DayPack sender can distinguish a physical or
-/// background refresh from an explicit user-requested refresh.
+/// Identifies why a BLE sync was requested so the DayPack sender can distinguish routine refreshes
+/// from changes that must replace the current hardware presentation.
 public enum BLESyncTrigger: Sendable, Equatable {
     case automatic
     case requestRefresh
     case deviceWake
     case background
+    case identityChange
     case manual
 
     fileprivate var defersPresentationOnlyDayPack: Bool {
-        self != .manual
+        switch self {
+        case .automatic, .requestRefresh, .deviceWake, .background:
+            true
+        case .identityChange, .manual:
+            false
+        }
+    }
+
+    var bypassesRoutineSyncInterval: Bool {
+        switch self {
+        case .identityChange, .manual:
+            true
+        case .automatic, .requestRefresh, .deviceWake, .background:
+            false
+        }
     }
 
     func merged(with newer: BLESyncTrigger) -> BLESyncTrigger {
-        newer == .manual ? .manual : self
+        newer.mergePriority > mergePriority ? newer : self
+    }
+
+    /// Complete/Skip cancels the ordinary debounced DayPack so it cannot race the final
+    /// TaskIn→Overview transaction. Identity and manual triggers still need a later full round
+    /// (including PetStatus 0x01) because that transaction only sends DayPack + 0x1B.
+    var survivesTaskActionPresentation: Bool {
+        switch self {
+        case .identityChange, .manual:
+            true
+        case .automatic, .requestRefresh, .deviceWake, .background:
+            false
+        }
+    }
+
+    private var mergePriority: Int {
+        switch self {
+        case .automatic, .requestRefresh, .deviceWake, .background:
+            0
+        case .identityChange:
+            1
+        case .manual:
+            2
+        }
     }
 }
 

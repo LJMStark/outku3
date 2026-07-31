@@ -446,6 +446,41 @@ struct SimulatedAppPacket {
         )
     }
 
+    func parseFocusStatus() throws -> SimulatedFocusStatus {
+        try requireType(BLEDataType.focusStatus)
+        var reader = PayloadReader(data: payload)
+        let phase: FocusPhase = switch try reader.readByte() {
+        case 0x00: .idle
+        case 0x01: .warmup
+        case 0x02: .building
+        case 0x03: .deep
+        default: throw SimulationError.invalidEnumValue
+        }
+        let bottles = Int(try reader.readByte())
+        let elapsedMinutes = Int(try reader.readUInt16BE())
+        let taskTitle = try reader.readString()
+        let segmentMinutes = Int(try reader.readUInt16BE())
+        try reader.requireEnd()
+        return SimulatedFocusStatus(
+            phase: phase,
+            energyBottles: bottles,
+            elapsedMinutes: elapsedMinutes,
+            taskTitle: taskTitle,
+            segmentMinutes: segmentMinutes
+        )
+    }
+
+    func parseDisplayScene() throws -> DisplayScene {
+        try requireType(BLEDataType.sceneUnlock)
+        var reader = PayloadReader(data: payload)
+        let sceneByte = try reader.readByte()
+        try reader.requireEnd()
+        guard let scene = DisplayScene.allCases.first(where: { $0.commandByte == sceneByte }) else {
+            throw SimulationError.invalidEnumValue
+        }
+        return scene
+    }
+
     func parseDeviceMode() throws -> DeviceMode {
         try requireType(BLEDataType.deviceMode)
         var reader = PayloadReader(data: payload)
@@ -688,6 +723,14 @@ struct SimulatedTaskInPage {
     /// (the Tips feature it was built for stays disabled). Named for the payload, not the slot.
     let supportText: String
     let focusChallengeActive: Bool
+}
+
+struct SimulatedFocusStatus {
+    let phase: FocusPhase
+    let energyBottles: Int
+    let elapsedMinutes: Int
+    let taskTitle: String
+    let segmentMinutes: Int
 }
 
 struct SimulatedSmartReminder {

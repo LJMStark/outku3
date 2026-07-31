@@ -526,7 +526,8 @@ struct GameMechanism2Tests {
             focusService: focusService,
             lastTimestampOverride: 0,
             tasksOverride: [TaskItem(id: taskId, title: "Replay Task")],
-            persistLogs: false
+            persistLogs: false,
+            appState: appState
         )
         #expect(focusService.activeSession?.startTime == startTime)
 
@@ -536,7 +537,8 @@ struct GameMechanism2Tests {
             service: BLEService.shared,
             focusService: focusService,
             lastTimestampOverride: 0,
-            persistLogs: false
+            persistLogs: false,
+            appState: appState
         )
         await focusService.waitForPendingPersistenceForTesting()
 

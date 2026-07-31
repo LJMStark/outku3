@@ -29,6 +29,23 @@ struct BLESyncPolicy {
         chunkedTransferInFlight || operationState.isInProgress
     }
 
+    /// A sync timeout is only an idle-connection cleanup signal. It must never tear down the
+    /// persistent BLE link that owns a live focus session, an atomic task presentation, or a
+    /// custom-avatar transaction.
+    func shouldDisconnectAfterTimeout(
+        isConnected: Bool,
+        keepsDebugConnectionOpen: Bool,
+        hasTaskActionPresentation: Bool,
+        hasActiveFocusSession: Bool,
+        holdsCustomAvatarConnection: Bool
+    ) -> Bool {
+        isConnected
+            && !keepsDebugConnectionOpen
+            && !hasTaskActionPresentation
+            && !hasActiveFocusSession
+            && !holdsCustomAvatarConnection
+    }
+
     private func syncInterval(for date: Date) -> TimeInterval {
         let hour = Calendar.current.component(.hour, from: date)
         if hour >= 23 || hour < 8 {

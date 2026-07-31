@@ -5,6 +5,22 @@ import Testing
 @MainActor
 @Suite("Smart Reminder Service")
 struct SmartReminderServiceTests {
+    @Test("BLE reminder evaluation forwards the active companion profile")
+    func bleReminderUsesActiveUserProfile() async {
+        var profile = UserProfile.default
+        profile.companionCharacter = .nova
+        let evaluator = SmartReminderEvaluatorSpy()
+
+        _ = await BLESyncCoordinator.evaluateSmartReminder(
+            tasks: [],
+            pet: Pet(),
+            userProfile: profile,
+            evaluator: evaluator
+        )
+
+        #expect(evaluator.receivedProfile?.companionCharacter == .nova)
+    }
+
     @Test("An overdue task is not reported as an approaching deadline")
     func overdueTaskIsNotApproachingDeadline() {
         let now = Date(timeIntervalSince1970: 1_699_956_800)
@@ -45,5 +61,19 @@ struct SmartReminderServiceTests {
             dueDate: dueDate,
             priority: .high
         )
+    }
+}
+
+@MainActor
+private final class SmartReminderEvaluatorSpy: SmartReminderEvaluating {
+    private(set) var receivedProfile: UserProfile?
+
+    func evaluateAndPushReminder(
+        tasks: [TaskItem],
+        pet: Pet,
+        userProfile: UserProfile
+    ) async -> SmartReminderResult? {
+        receivedProfile = userProfile
+        return nil
     }
 }

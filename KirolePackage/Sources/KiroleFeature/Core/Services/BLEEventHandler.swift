@@ -1,21 +1,5 @@
 import Foundation
 
-@MainActor
-protocol TaskActionPresentationCoordinating: AnyObject {
-    /// Sends the final task/dialogue DayPack while the device is still on TaskIn, then performs
-    /// the acknowledgement that lets firmware enter Overview and render that cached DayPack.
-    func sendFinalDayPackBeforeAcknowledgement(
-        _ acknowledgement: @MainActor @Sendable (
-            _ expectedTaskStateVersion: UInt64
-        ) async -> TaskListSnapshotResponder.Outcome
-    ) async
-}
-
-enum EnterTaskInRoute {
-    case sendTaskIn(TaskItem)
-    case recoverInteractive
-}
-
 // MARK: - BLE Event Handler
 
 /// BLE 事件处理器，负责解析和处理从 E-ink 设备接收的事件
@@ -26,6 +10,7 @@ public enum BLEEventHandler {
     struct EventProcessingResult {
         let logs: [EventLog]
         let taskOperationReceipts: [TaskOperationReceipt]
+        let didStartFocusSession: Bool
     }
 
     // MARK: - Payload Handling
@@ -91,6 +76,15 @@ public enum BLEEventHandler {
             await AppState.shared.ensureInitialLoadComplete()
         }
 
+        if eventLog.eventType == .enterTaskIn
+            || eventLog.eventType == .completeTask
+            || eventLog.eventType == .skipTask {
+            await HardwarePagePresentationGate.shared.performPageTransaction {
+                await handleFocusPageTransitionEvent(eventLog, service: service)
+            }
+            return
+        }
+
         let processing = await processEventLogs([eventLog], service: service)
         await respondToLiveTaskOperations(
             processing.taskOperationReceipts,
@@ -100,11 +94,8 @@ public enum BLEEventHandler {
 
         // Route to type-specific handlers
         switch eventLog.eventType {
-        case .enterTaskIn:
-            handleEnterTaskIn(eventLog, service: service)
-
-        case .completeTask, .skipTask:
-            // State mutation already applied via handleEventLogs (works for both live and replay)
+        case .enterTaskIn, .completeTask, .skipTask:
+            // Focus-page transitions return through the serialized branch above.
             break
 
         case .selectedTaskChanged:
@@ -222,48 +213,27 @@ public enum BLEEventHandler {
         }
     }
 
-    static func respondToLiveTaskOperations(
-        _ receipts: [TaskOperationReceipt],
-        sender: any TaskListSnapshotSending,
-        presentationCoordinator: any TaskActionPresentationCoordinating,
-        versionProvider: any TaskListSnapshotVersionProviding = LocalStorage.shared,
-        tasksProvider: @escaping @MainActor () -> [TaskItem] = { AppState.shared.tasks },
-        taskStateVersionProvider: @escaping @MainActor () -> UInt64 = {
-            AppState.shared.taskStateVersion
-        }
+    private static func handleFocusPageTransitionEvent(
+        _ eventLog: EventLog,
+        service: BLEService
     ) async {
-        let acknowledge: @MainActor @Sendable (
-            UInt64
-        ) async -> TaskListSnapshotResponder.Outcome = { expectedTaskStateVersion in
-            await TaskListSnapshotResponder.respond(
-                to: receipts,
-                sender: sender,
-                versionProvider: versionProvider,
-                tasksProvider: tasksProvider,
-                expectedTaskStateVersion: expectedTaskStateVersion,
-                taskStateVersionProvider: taskStateVersionProvider
-            )
-        }
-        guard receipts.contains(where: {
-            $0.action == .completeTask || $0.action == .skipTask
-        }) else {
-            _ = await TaskListSnapshotResponder.respond(
-                to: receipts,
-                sender: sender,
-                versionProvider: versionProvider,
-                tasksProvider: tasksProvider,
-                taskStateVersionProvider: taskStateVersionProvider
-            )
+        if eventLog.eventType == .enterTaskIn {
+            await handleEnterTaskIn(eventLog, service: service)
             return
         }
 
-        await presentationCoordinator.sendFinalDayPackBeforeAcknowledgement(acknowledge)
+        let processing = await processEventLogs([eventLog], service: service)
+        await respondToLiveTaskOperations(
+            processing.taskOperationReceipts,
+            sender: service,
+            presentationCoordinator: BLESyncCoordinator.shared
+        )
     }
 
     // MARK: - Event-Specific Handlers
 
     /// EnterTaskIn: 生成 TaskInPage 并发送到设备
-    private static func handleEnterTaskIn(_ eventLog: EventLog, service: BLEService) {
+    private static func handleEnterTaskIn(_ eventLog: EventLog, service: BLEService) async {
         switch enterTaskInRoute(for: eventLog, tasks: AppState.shared.tasks) {
         case .recoverInteractive:
             // 设备已进入任务详情页、正等 TaskInPage。App 找不到该 task（clean install / 任务被删 /
@@ -276,30 +246,67 @@ public enum BLEEventHandler {
                 ),
                 context: "BLEEventHandler.handleEnterTaskIn"
             )
-            Task { @MainActor in
+            do {
+                try await service.sendDeviceMode(.interactive)
+            } catch {
+                ErrorReporter.log(
+                    .sync(component: "BLE EnterTaskIn recovery", underlying: error.localizedDescription),
+                    context: "BLEEventHandler.handleEnterTaskIn"
+                )
+            }
+            // Persist the received event, but explicitly forbid a focus start because no matching
+            // task/page exists.
+            _ = await processEventLogs(
+                [eventLog],
+                service: service,
+                allowEnterTaskInFocusStart: false
+            )
+            return
+
+        case .sendTaskIn(let task):
+            let sourceTaskStateVersion = AppState.shared.taskStateVersion
+            let presentationResult = await performEnterTaskInPresentation(
+                task: task,
+                pet: AppState.shared.pet,
+                userProfile: AppState.shared.userProfile,
+                sendTaskInPage: { taskInPage in
+                    try await service.sendTaskInPage(
+                        taskInPage,
+                        expectedTaskStateVersion: sourceTaskStateVersion
+                    )
+                },
+                startFocus: {
+                    let processing = await processEventLogs(
+                        [eventLog],
+                        service: service,
+                        suppressInitialEnterTaskInFocusStatus: true
+                    )
+                    return processing.didStartFocusSession
+                }
+            )
+            switch presentationResult {
+            case .presented:
+                break
+            case .pageWriteFailed:
+                // A failed 0x11 must never start the App session: firmware is still waiting on the
+                // TaskIn page and will retry. Record the event without applying its focus mutation.
+                _ = await processEventLogs(
+                    [eventLog],
+                    service: service,
+                    allowEnterTaskInFocusStart: false
+                )
+            case .focusStartFailed:
+                // The complete page is already visible, but App focus persistence could not become
+                // authoritative. Explicitly return firmware to Interactive instead of leaving a
+                // TaskIn page that will never receive valid focus updates.
                 do {
                     try await service.sendDeviceMode(.interactive)
                 } catch {
                     ErrorReporter.log(
-                        .sync(component: "BLE EnterTaskIn recovery", underlying: error.localizedDescription),
-                        context: "BLEEventHandler.handleEnterTaskIn"
-                    )
-                }
-            }
-            return
-
-        case .sendTaskIn(let task):
-            Task { @MainActor in
-                let taskInPage = DayPackGenerator.shared.generateTaskInPage(
-                    task: task,
-                    pet: AppState.shared.pet,
-                    userProfile: AppState.shared.userProfile
-                )
-                do {
-                    try await service.sendTaskInPage(taskInPage)
-                } catch {
-                    ErrorReporter.log(
-                        .sync(component: "BLE TaskInPage", underlying: error.localizedDescription),
+                        .sync(
+                            component: "BLE EnterTaskIn focus recovery",
+                            underlying: error.localizedDescription
+                        ),
                         context: "BLEEventHandler.handleEnterTaskIn"
                     )
                 }
@@ -308,15 +315,6 @@ public enum BLEEventHandler {
     }
 
     // MARK: - Event Log Parsing
-
-    /// 解析 Event Log 记录 (使用新的 BLE payload 格式)
-    /// data 的第一个字节为 event type，其余为 payload
-    public static func parseEventLogRecord(from data: Data) -> EventLog? {
-        guard !data.isEmpty else { return nil }
-        let typeByte = data[0]
-        let payload = data.count > 1 ? data.subdata(in: 1..<data.count) : Data()
-        return EventLog.fromBLEPayload(type: typeByte, payload: payload)
-    }
 
     // MARK: - Event Log Batch Processing
 
@@ -351,72 +349,31 @@ public enum BLEEventHandler {
         if logs.contains(where: { $0.eventType == .completeTask || $0.eventType == .skipTask }) {
             await AppState.shared.ensureInitialLoadComplete()
         }
-        let processing = await processEventLogs(logs, service: service, isReplay: true)
-        _ = await TaskListSnapshotResponder.respond(
-            to: processing.taskOperationReceipts,
-            sender: service
-        )
-    }
-
-    /// 解析 Event Log 批次 payload:
-    /// count(1B) + N 条记录，每条记录格式为 eventType(1B) + eventPayload(NB)
-    static func parseEventLogBatchPayload(_ payload: Data) -> [EventLog] {
-        guard !payload.isEmpty else { return [] }
-        let count = Int(payload[0])
-        var offset = 1
-        var logs: [EventLog] = []
-
-        for _ in 0..<count {
-            guard offset < payload.count else { return [] }
-            guard let recordLength = recordLength(in: payload, offset: offset) else { return [] }
-            guard payload.count >= offset + recordLength else { return [] }
-
-            let record = payload.subdata(in: offset..<(offset + recordLength))
-            if let eventLog = parseEventLogRecord(from: record) {
-                logs.append(eventLog)
-            } else {
-                return []
+        let hasFocusPageTransition = logs.contains {
+            $0.eventType == .completeTask || $0.eventType == .skipTask
+        }
+        if hasFocusPageTransition {
+            await HardwarePagePresentationGate.shared.performPageTransaction {
+                await processAndRespondToReplayedEvents(logs, service: service)
             }
-            offset += recordLength
+        } else {
+            await processAndRespondToReplayedEvents(logs, service: service)
         }
-
-        guard logs.count == count, offset == payload.count else { return [] }
-        return logs
     }
 
-    private static func recordLength(in payload: Data, offset: Int) -> Int? {
-        guard offset < payload.count else { return nil }
-        let type = payload[offset]
-
-        switch type {
-        case 0x01...0x06, 0x31:
-            return 1
-        case 0x30:
-            // type(1B) + BatteryLevel(1B), v2.3.0+。协议 v2.5.19 的固件版本 3 字节
-            // 只存在于实时 0x30 通知，批量记录恒为 2B（§5.15）——这里不读版本。
-            return 2
-        case 0x18, 0x40:
-            return 2
-        case 0x16, 0x17:
-            return 5
-        case 0x10:
-            guard offset + 1 < payload.count else { return nil }
-            let idLength = Int(payload[offset + 1])
-            return 2 + idLength + 4
-        case 0x11, 0x12:
-            // type | SubVersion(1) | OperationID(4) | TaskIdLength(1) | TaskId | Timestamp(4)
-            guard offset + 6 < payload.count, payload[offset + 1] == 0x01 else { return nil }
-            let idLength = Int(payload[offset + 6])
-            guard payload.bigEndianUInt32(at: offset + 2) != 0,
-                  (1...36).contains(idLength) else { return nil }
-            return 11 + idLength
-        case 0x13...0x15:
-            guard offset + 1 < payload.count else { return nil }
-            let idLength = Int(payload[offset + 1])
-            return 2 + idLength
-        default:
-            return nil
-        }
+    private static func processAndRespondToReplayedEvents(
+        _ logs: [EventLog],
+        service: BLEService
+    ) async {
+        let processing = await processEventLogs(logs, service: service, isReplay: true)
+        // Replay deliberately skips stale live-only presentation work. There is no live TaskIn
+        // page to commit after reconnect, so preserve record order and acknowledge each operation
+        // directly as required by the offline recovery protocol.
+        _ = await respondToReplayedTaskOperations(
+            processing.taskOperationReceipts,
+            sender: service,
+            versionProvider: LocalStorage.shared
+        )
     }
 
     // MARK: - Event Log Handling
@@ -470,7 +427,9 @@ public enum BLEEventHandler {
         persistLogs: Bool = true,
         operationLedger: TaskOperationLedger = .shared,
         deviceIDOverride: String? = nil,
-        appState: AppState = .shared
+        appState: AppState = .shared,
+        allowEnterTaskInFocusStart: Bool = true,
+        suppressInitialEnterTaskInFocusStatus: Bool = false
     ) async -> EventProcessingResult {
         let processable: [EventLog]
         if isReplay {
@@ -510,6 +469,7 @@ public enum BLEEventHandler {
             ?? service.lastKnownDeviceID?.uuidString
             ?? "unidentified-device"
         var receipts: [TaskOperationReceipt] = []
+        var didStartFocusSession = false
         for log in processable {
             // Hardware echoes the bounded ASCII ID advertised by DayPack/TaskInPage/0x1B. Resolve
             // it once at the domain boundary so focus history and App persistence always retain the
@@ -531,19 +491,28 @@ public enum BLEEventHandler {
                 continue
             }
 
-            _ = await handleFocusSessionEvent(
+            let focusTransitionApplied = await handleFocusSessionEvent(
                 resolvedLog,
                 focusService: focusService,
                 isReplay: isReplay,
-                tasksOverride: tasksOverride
+                tasksOverride: tasksOverride,
+                allowEnterTaskInStart: allowEnterTaskInFocusStart,
+                suppressInitialEnterTaskInFocusStatus: suppressInitialEnterTaskInFocusStatus
             )
+            if resolvedLog.eventType == .enterTaskIn, focusTransitionApplied {
+                didStartFocusSession = true
+            }
             if let receipt = refreshReceipt(resolvedLog) {
                 receipts.append(receipt)
             }
             applyReminderInteractionCooldown(resolvedLog)
         }
 
-        return EventProcessingResult(logs: processable, taskOperationReceipts: receipts)
+        return EventProcessingResult(
+            logs: processable,
+            taskOperationReceipts: receipts,
+            didStartFocusSession: didStartFocusSession
+        )
     }
 
     /// Filters to events newer than `lastTimestamp`, sorts ascending by timestamp,
@@ -701,7 +670,9 @@ public enum BLEEventHandler {
         _ eventLog: EventLog,
         focusService: FocusSessionService,
         isReplay: Bool = false,
-        tasksOverride: [TaskItem]? = nil
+        tasksOverride: [TaskItem]? = nil,
+        allowEnterTaskInStart: Bool = true,
+        suppressInitialEnterTaskInFocusStatus: Bool = false
     ) async -> Bool {
         // 设备时间戳不可信：夹到不晚于 now，防未来偏移凭空铸造专注时长 / 能量瓶（见 focusEventTimestamp）。
         let sessionTimestamp = focusEventTimestamp(eventLog.timestamp, now: Date())
@@ -714,7 +685,7 @@ public enum BLEEventHandler {
             // NOT fabricate it. Skipping also avoids a stale activeSession. The Inku
             // competitive review's "back-fill offline focus" suggestion was rejected
             // for this reason. (See memory: project_focus_app_authoritative.)
-            guard !isReplay else { return false }
+            guard !isReplay, allowEnterTaskInStart else { return false }
             // 与 handleEnterTaskIn 的 guard 对称：任务解析失败不得开会话。联调实测（2026-07-04）：
             // 固件 EnterTaskIn payload 未按 §5.3 带 UUID 时，首字节 0x00 解析成空 taskId + 错位读出
             // 1970 时间戳——旧逻辑仍以 "Unknown Task" 开会话，0x14 推出 elapsed=65535/bottles=255
@@ -725,15 +696,22 @@ public enum BLEEventHandler {
                 // 远古值（1970 级），合法 UUID + 远古时间戳同样会铸造溢出时长。只夹这里、不动
                 // 全局 focusEventTimestamp——补传的历史事件时间戳合法地在过去。
                 let startTime = max(sessionTimestamp, Date().addingTimeInterval(-7200))
-                await focusService.startSession(
+                let result = await focusService.startSession(
                     taskId: taskId,
                     taskTitle: task.title,
                     // 用注入实例的模式，别读 shared——测试/非 shared 调用会拿错
                     // （Codex review P2, 2026-07-04）。
                     mode: focusService.focusEnforcementMode,
-                    startTime: startTime
+                    startTime: startTime,
+                    fallbackPolicy: .allowStandard,
+                    sendInitialHardwareStatus: !suppressInitialEnterTaskInFocusStatus
                 )
-                return false
+                switch result {
+                case .started, .alreadyActive:
+                    return true
+                case .blockedByActiveSession, .rejected, .persistenceUnavailable:
+                    return false
+                }
             } else {
                 ErrorReporter.log(
                     .sync(
@@ -784,17 +762,6 @@ public enum BLEEventHandler {
         default:
             return false
         }
-    }
-
-    static func enterTaskInRoute(
-        for eventLog: EventLog,
-        tasks: [TaskItem]
-    ) -> EnterTaskInRoute {
-        guard let taskID = eventLog.taskId,
-              let task = resolveTask(taskId: taskID, in: tasks) else {
-            return .recoverInteractive
-        }
-        return .sendTaskIn(task)
     }
 
     private nonisolated static func resolvingTaskIdentifier(

@@ -263,9 +263,9 @@ extension AppState {
         try await clearPendingCustomAvatarOperation()
         customAvatarOperationState = .success
         await completePendingOnboardingAfterCustomAvatarCommitIfNeeded()
-        await refreshSharedPetDialogueIfNeeded()
+        await refreshSharedPetDialogueIfNeeded(force: true)
         await refreshHomeCompanionPresentation()
-        requestBLESync(reason: "customAvatarCommitted")
+        requestBLESync(reason: "customAvatarCommitted", trigger: .identityChange)
     }
 
     /// Query before replay: a lost `committed` notify must not force a second 4-minute transfer.
@@ -640,7 +640,9 @@ extension AppState {
             profile.intimacyStage = restoredBuiltInStage
             try await localStorage.saveUserProfile(profile)
             userProfile = profile
-            requestBLESync(reason: "deleteCustomCompanion")
+            await refreshSharedPetDialogueIfNeeded(force: true)
+            await refreshHomeCompanionPresentation()
+            requestBLESync(reason: "deleteCustomCompanion", trigger: .identityChange)
         }
     }
 
@@ -742,23 +744,4 @@ extension AppState {
         }
     }
 
-    // MARK: - Immediate identity status
-
-    func sendPetStatusNow(customActive: Bool, context: String) {
-        let petSnapshot = pet
-        let characterSnapshot = userProfile.companionCharacter
-        let previousTask = companionIdentityStatusSendTask
-        let sender = companionIdentityStatusSender
-        companionIdentityStatusSendTask = Task { @MainActor in
-            await previousTask?.value
-            do {
-                try await sender(petSnapshot, characterSnapshot, customActive)
-            } catch {
-                ErrorReporter.log(
-                    .sync(component: "BLE PetStatus", underlying: error.localizedDescription),
-                    context: context
-                )
-            }
-        }
-    }
 }

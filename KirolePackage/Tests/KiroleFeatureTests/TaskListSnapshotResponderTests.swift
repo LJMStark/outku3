@@ -158,6 +158,45 @@ struct TaskListSnapshotResponderTests {
         )))
     }
 
+    @Test("Offline replay acknowledges every record directly in wire order")
+    @MainActor
+    func replayUsesOrderedAcknowledgementsWithoutDayPackPresentation() async {
+        let sender = TaskListSnapshotSenderSpy(screenSize: .fourInch)
+        let versions = TaskListSnapshotVersionSequence([
+            TaskListSnapshotVersion(epoch: 30, revision: 1),
+            TaskListSnapshotVersion(epoch: 30, revision: 2),
+        ])
+
+        let outcome = await BLEEventHandler.respondToReplayedTaskOperations(
+            [
+                TaskOperationReceipt(action: .completeTask, operationID: 501, result: .applied),
+                TaskOperationReceipt(action: .skipTask, operationID: 502, result: .alreadyApplied),
+            ],
+            sender: sender,
+            versionProvider: versions,
+            tasksProvider: { [] },
+            taskStateVersionProvider: { 0 }
+        )
+
+        #expect(outcome == .sent)
+        #expect(sender.sentPayloads == [
+            BLEDataEncoder.encodeTaskListSnapshotAck(TaskListSnapshotAck(
+                action: .completeTask,
+                operationID: 501,
+                result: .applied,
+                version: TaskListSnapshotVersion(epoch: 30, revision: 1),
+                tasks: []
+            )),
+            BLEDataEncoder.encodeTaskListSnapshotAck(TaskListSnapshotAck(
+                action: .skipTask,
+                operationID: 502,
+                result: .alreadyApplied,
+                version: TaskListSnapshotVersion(epoch: 30, revision: 2),
+                tasks: []
+            )),
+        ])
+    }
+
     @Test("A version persistence failure sends nothing and releases the message gate")
     @MainActor
     func versionFailureReleasesGate() async throws {

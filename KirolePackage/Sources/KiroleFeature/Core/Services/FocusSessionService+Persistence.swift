@@ -90,11 +90,13 @@ extension FocusSessionService {
         await persistActiveSessionIfNeeded(snapshot)
     }
 
-    func persistActiveSessionIfNeeded(_ session: FocusSession) async {
-        guard persistenceEnabled else { return }
+    @discardableResult
+    func persistActiveSessionIfNeeded(_ session: FocusSession) async -> Bool {
+        guard persistenceEnabled else { return true }
 
         do {
             try await focusPersistence.saveActiveSession(session)
+            return true
         } catch {
             ErrorReporter.log(
                 .persistence(
@@ -104,6 +106,7 @@ extension FocusSessionService {
                 ),
                 context: "FocusSessionService.persistActiveSessionIfNeeded"
             )
+            return false
         }
     }
 
@@ -124,6 +127,40 @@ extension FocusSessionService {
             )
             return false
         }
+    }
+
+    /// Clears the active marker only when it still belongs to the session being settled.
+    /// Otherwise a late settlement for an earlier focus would wipe a replacement session's
+    /// recovery file after that replacement had already called `saveActiveSession`.
+    private func clearPersistedActiveSessionIfOwned(
+        by settledSessionID: UUID
+    ) async -> Bool {
+        guard persistenceEnabled else { return true }
+
+        let diskActiveID: UUID?
+        do {
+            diskActiveID = try await focusPersistence.loadActiveSession()?.id
+        } catch {
+            ErrorReporter.log(
+                .persistence(
+                    operation: "load",
+                    target: "focus_session_active.json",
+                    underlying: error.localizedDescription
+                ),
+                context: "FocusSessionService.clearPersistedActiveSessionIfOwned"
+            )
+            // Fail closed: do not delete an unreadable marker that may belong to a newer session.
+            return false
+        }
+
+        guard Self.shouldClearActiveSessionMarker(
+            settledSessionID: settledSessionID,
+            liveActiveSessionID: activeSession?.id,
+            diskActiveSessionID: diskActiveID
+        ) else {
+            return true
+        }
+        return await clearPersistedActiveSessionIfNeeded()
     }
 
     func recoverSessionOnLaunchIfNeeded() async {
@@ -179,7 +216,8 @@ extension FocusSessionService {
                 endTime: originalEndTime,
                 clearPersistedActiveSession: true,
                 operationKey: operationKey,
-                historyAlreadyPersisted: true
+                historyAlreadyPersisted: true,
+                suppressHardwarePresentation: operationKey != nil
             )
             schedulePendingFocusSettlement()
             let settlementPersisted = await waitForPendingSessionPersistence()
@@ -350,7 +388,7 @@ extension FocusSessionService {
         guard let pending = pendingFocusSettlement else { return true }
         if !pending.historyAlreadyPersisted, !(await saveSessions()) { return false }
         if pending.clearPersistedActiveSession,
-           !(await clearPersistedActiveSessionIfNeeded()) {
+           !(await clearPersistedActiveSessionIfOwned(by: pending.session.id)) {
             return false
         }
 
@@ -360,10 +398,14 @@ extension FocusSessionService {
         }
         pendingFocusSettlement = nil
 
-        await AppState.shared.handleFocusSessionDidEnd(
-            totalEnergyBottles: reward.total,
-            newlyUnlocked: reward.newlyUnlocked,
-            now: pending.endTime
+        // A replacement focus that started while this settlement was queued owns the page.
+        // Suppress idle even if the settled session itself did not request deferral.
+        let hasReplacementSession = activeSession != nil
+        await sessionEndPresentationExecutor(
+            reward.total,
+            reward.newlyUnlocked,
+            pending.endTime,
+            pending.suppressHardwarePresentation || hasReplacementSession
         )
         return true
     }

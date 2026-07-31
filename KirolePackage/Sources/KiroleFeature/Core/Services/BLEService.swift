@@ -5,13 +5,13 @@ import os
 // MARK: - BLE Service UUIDs
 
 /// Kirole E-ink 设备的 BLE 服务和特征 UUID
-private enum KiroleBLEUUIDs {
+enum KiroleBLEUUIDs {
     static let serviceUUID = CBUUID(string: "0000FFE0-0000-1000-8000-00805F9B34FB")
     static let writeCharacteristicUUID = CBUUID(string: "0000FFE1-0000-1000-8000-00805F9B34FB")
     static let notifyCharacteristicUUID = CBUUID(string: "0000FFE2-0000-1000-8000-00805F9B34FB")
 }
 
-private typealias PacketWriteValidator = @MainActor @Sendable () throws -> Void
+typealias PacketWriteValidator = @MainActor @Sendable () throws -> Void
 
 // MARK: - BLE Service
 
@@ -20,11 +20,11 @@ private typealias PacketWriteValidator = @MainActor @Sendable () throws -> Void
 @MainActor
 public final class BLEService: NSObject, TaskListSnapshotSending {
     public static let shared = BLEService()
-    private static let bleLogger = Logger(subsystem: "com.kirole.app", category: "BLE")
+    static let bleLogger = Logger(subsystem: "com.kirole.app", category: "BLE")
 
     // MARK: - Published State
 
-    public private(set) var connectionState: BLEConnectionState = .disconnected
+    public internal(set) var connectionState: BLEConnectionState = .disconnected
 
     /// 当前连接外设的系统标识（未连接为 nil）。v2.5.33 用于"换硬件后自动重推 0x15 头像"：
     /// 固件持久化只救同一台重启，连上**另一台**设备时 App 侧要能察觉并重推。
@@ -38,9 +38,9 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
             lastConnectedDeviceID: lastConnectedDeviceID
         )
     }
-    public private(set) var discoveredDevices: [BLEDevice] = []
+    public internal(set) var discoveredDevices: [BLEDevice] = []
     public private(set) var connectedDevice: BLEDevice?
-    public private(set) var lastSyncTime: Date?
+    public internal(set) var lastSyncTime: Date?
 
     /// 上一轮整轮同步是否失败。lastSyncTime 只在成功时更新，连续失败时它会无声变旧——
     /// 这个标志让 Settings 硬件面板能把"同步失败了"和"还没到同步窗口"区分开。
@@ -54,56 +54,56 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
     @ObservationIgnored
     public var onAvatarControlResult: (@MainActor @Sendable (AvatarControlResult) -> Void)?
 
-    // MARK: - Private Properties
+    // MARK: - Internal Transport State
 
-    private var centralManager: CBCentralManager?
-    private var connectedPeripheral: CBPeripheral?
-    private var peripheralCache: [UUID: CBPeripheral] = [:]
-    private var writeCharacteristic: CBCharacteristic?
-    private var notifyCharacteristic: CBCharacteristic?
+    var centralManager: CBCentralManager?
+    var connectedPeripheral: CBPeripheral?
+    var peripheralCache: [UUID: CBPeripheral] = [:]
+    var writeCharacteristic: CBCharacteristic?
+    var notifyCharacteristic: CBCharacteristic?
     private var packetAssembler = BLEPacketAssembler()
 
-    private let localStorage = LocalStorage.shared
-    private let securityManager = BLESecurityManager()
-    private let deviceIdentityStore = BLEDeviceIdentityStore.shared
-    private let rateLimiter = BLERateLimiter.shared
-    private let writeGate = BLEWriteGate()
+    let localStorage = LocalStorage.shared
+    let securityManager = BLESecurityManager()
+    let deviceIdentityStore = BLEDeviceIdentityStore.shared
+    let rateLimiter = BLERateLimiter.shared
+    let writeGate = BLEWriteGate()
     /// Serializes complete task-state messages. The packet gate below is intentionally finer
     /// grained; without this second gate, a simple 0x1B could land between DayPack chunks.
-    private let taskStateMessageGate = BLEWriteGate()
+    let taskStateMessageGate = BLEWriteGate()
 
     private var scanCompletion: (([BLEDevice]) -> Void)?
-    private var connectCompletion: ((Result<Void, BLEError>) -> Void)?
-    private var writeCompletion: ((Result<Void, BLEError>) -> Void)?
-    private var activeWriteID: UUID?
-    private var staleWriteAckFilter = BLEStaleWriteAckFilter()
-    private var nextMessageId: UInt16 = 1
+    var connectCompletion: ((Result<Void, BLEError>) -> Void)?
+    var writeCompletion: ((Result<Void, BLEError>) -> Void)?
+    var activeWriteID: UUID?
+    var staleWriteAckFilter = BLEStaleWriteAckFilter()
+    var nextMessageId: UInt16 = 1
 
     /// 进行中的分包消息数（@MainActor 串行，无并发写）。最坏 800×700 KRI
     /// 约 2.24MB / 4472 片，限流下需 4–5 分钟。传输期间 BLESyncCoordinator 不得因
     /// 30s 同步超时主动断连；真实断线后由用户从第 0 片重发。
-    private var inFlightChunkedTransfers = 0
+    var inFlightChunkedTransfers = 0
     var isChunkedTransferInFlight: Bool { inFlightChunkedTransfers > 0 }
     /// flag-day 取证去重：本连接内已记过"固件还在发 9B 旧分包头"即不再重复（cleanup 复位）。
     private var hasLoggedLegacyChunkHeader = false
-    private var pendingConnectedPeripheralID: UUID?
-    private var pendingConnectedPeripheralName: String?
+    var pendingConnectedPeripheralID: UUID?
+    var pendingConnectedPeripheralName: String?
     private var handshakeTimeoutTask: Task<Void, Never>?
 
     /// 标记最近一次断开是否由 App 主动发起（sync 收尾 / 用户点击断开 / 后台到期）。
     /// 主动断开不应触发自动重连。生命周期：`disconnect()` 置 true，发起新连接时归零；
     /// `cleanup()` 不重置它（避免在 didDisconnect 回调到达前被清掉）。
-    private var isIntentionalDisconnect = false
+    var isIntentionalDisconnect = false
     /// Set by BLEOTACoordinator for the whole OTA window (sending → awaitingReboot).
     /// didDisconnectPeripheral 靠它把预期中的升级重启断连路由给协调器——§4.17 允许
     /// 固件收到 0x18 后不回应答直接重启，所以 sending 阶段就必须布防，不能等应答。
     var isPendingOTAReboot = false
     /// 意外断开后的延迟重连任务，便于在主动断开 / 重新连接时取消。
-    private var reconnectTask: Task<Void, Never>?
+    var reconnectTask: Task<Void, Never>?
     /// 扫描代次。每次发起扫描自增；扫描超时任务只在仍是本轮扫描时才结束扫描，
     /// 避免上一轮已提前结束的超时任务误停下一轮扫描。
     private var scanGeneration: UInt64 = 0
-    private var connectGeneration: UInt64 = 0
+    var connectGeneration: UInt64 = 0
 
     // MARK: - UserDefaults Keys
 
@@ -116,7 +116,7 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
 
     // MARK: - Timing
 
-    private enum Timing {
+    enum Timing {
         /// Apple 警告：在 `didDisconnect` / `didFailToConnect` 回调里立刻 `connect`，
         /// 会让蓝牙框架卡在 bad state（state=connecting 但 pending connection 未真正建立）。
         /// 官方建议至少等 ~20ms，这里用 50ms 留余量。
@@ -177,7 +177,7 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
 
     /// 实际生效的自动重连开关：用户设置为准，但硬件调试需要长连接时强制开启，
     /// 以便固件重启 / 信号抖动导致的意外掉线能立刻恢复调试连接。
-    private var autoReconnectEffective: Bool {
+    var autoReconnectEffective: Bool {
         autoReconnect || shouldKeepConnectionOpenForDebug
     }
 
@@ -193,7 +193,7 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
     }
 
     /// 开发期未注入共享密钥时，允许使用未签名传输做本地联调。
-    private var requiresSecureChannel: Bool {
+    var requiresSecureChannel: Bool {
         guard let secret = AppSecrets.bleSharedSecret else { return false }
         return !secret.isEmpty
     }
@@ -528,467 +528,9 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
         }
     }
 
-    // MARK: - Data Transfer
+    // MARK: - Security and inbound decoding
 
-    /// 发送宠物状态到 E-ink 设备
-    public func sendPetStatus(_ pet: Pet, companionCharacter: CompanionCharacter, customActive: Bool) async throws {
-        let data = BLEDataEncoder.encodePetStatus(pet, companionCharacter: companionCharacter, customActive: customActive)
-        try await writeData(type: .petStatus, data: data)
-    }
-
-    /// 发送天气信息到 E-ink 设备
-    public func sendWeather(_ weather: Weather) async throws {
-        let data = BLEDataEncoder.encodeWeather(weather)
-        try await writeData(type: .weather, data: data)
-    }
-
-    /// 同步当前时间到 E-ink 设备
-    public func syncTime() async throws {
-        let data = BLEDataEncoder.encodeCurrentTime()
-        try await writeData(type: .time, data: data)
-    }
-
-    // syncAllData / sendTaskList / sendSchedule（DayPack 之前时代的逐帧同步路径）已删：
-    // 零调用者的死路径，且把 sendWeather 一起"藏死"过（2026-07-04 审计 D2/F1）。
-    // 0x02/0x03 帧仍是协议的一部分，encodeTaskList/encodeSchedule 及其格式测试保留。
-
-    public func updateLastSyncTime(_ date: Date) {
-        lastSyncTime = date
-    }
-
-    // MARK: - Day Pack Transfer
-
-    /// 发送 Day Pack 到 E-ink 设备
-    public func sendDayPack(
-        _ dayPack: DayPack,
-        expectedTaskStateVersion: UInt64
-    ) async throws {
-        try await withTaskStateMessageGate {
-            let validateTaskState: PacketWriteValidator = {
-                guard AppState.shared.taskStateVersion == expectedTaskStateVersion else {
-                    throw BLEError.staleTaskSnapshot
-                }
-            }
-            try validateTaskState()
-            let latestTasks = DayPackGenerator.topTaskSummaries(
-                from: AppState.shared.tasks,
-                screenSize: hardwareScreenSize
-            )
-            guard TaskListSnapshotContent.isEquivalent(dayPack.topTasks, latestTasks) else {
-                throw BLEError.staleTaskSnapshot
-            }
-            let data = BLEDataEncoder.encodeDayPack(dayPack, screenSize: hardwareScreenSize)
-            try await writeData(
-                type: .dayPack,
-                data: data,
-                validateBeforeWrite: validateTaskState
-            )
-        }
-    }
-
-    /// Serializes the versioned task acknowledgement with complete DayPack messages. RequestRefresh
-    /// uses it immediately; live Complete/Skip uses it only after the final DayPack arrives.
-    func withTaskStateMessageGate(
-        _ operation: @MainActor () async throws -> Void
-    ) async throws {
-        try await taskStateMessageGate.acquire()
-        do {
-            try await operation()
-        } catch {
-            await taskStateMessageGate.release()
-            throw error
-        }
-        await taskStateMessageGate.release()
-    }
-
-    func writeTaskListSnapshotAckPayload(
-        _ payload: Data,
-        expectedTaskStateVersion: UInt64?
-    ) async throws {
-        let validateTaskState: PacketWriteValidator?
-        if let expectedTaskStateVersion {
-            validateTaskState = {
-                guard AppState.shared.taskStateVersion == expectedTaskStateVersion else {
-                    throw BLEError.staleTaskSnapshot
-                }
-            }
-        } else {
-            validateTaskState = nil
-        }
-        try await writeData(
-            type: .taskListSnapshotAck,
-            data: payload,
-            validateBeforeWrite: validateTaskState
-        )
-    }
-
-    /// 发送 Task In 页面数据到 E-ink 设备。只应由 BLEEventHandler 在收到 0x10 EnterTaskIn 事件后调用。
-    func sendTaskInPage(_ taskInPage: TaskInPageData) async throws {
-        let data = BLEDataEncoder.encodeTaskInPage(taskInPage)
-        try await writeData(type: .taskInPage, data: data)
-    }
-
-    /// 发送设备模式到 E-ink 设备
-    public func sendDeviceMode(_ mode: DeviceMode) async throws {
-        let data = BLEDataEncoder.encodeDeviceMode(mode)
-        try await writeData(type: .deviceMode, data: data)
-    }
-
-    /// 发送智能提醒到 E-ink 设备
-    public func sendSmartReminder(
-        text: String,
-        urgency: ReminderUrgency,
-        petMood: PetMood
-    ) async throws {
-        let data = BLEDataEncoder.encodeSmartReminder(text: text, urgency: urgency, petMood: petMood)
-        try await writeData(type: .smartReminder, data: data)
-    }
-
-    /// 推送专注状态和能量瓶子数到 E-ink 设备（所有构建均执行）
-    public func sendFocusStatus(
-        phase: FocusPhase,
-        energyBottles: Int,
-        elapsedMinutes: Int,
-        taskTitle: String?,
-        segmentMinutes: Int
-    ) async throws {
-        let payload = BLEDataEncoder.encodeFocusStatus(
-            phase: phase,
-            energyBottles: energyBottles,
-            elapsedMinutes: elapsedMinutes,
-            taskTitle: taskTitle,
-            segmentMinutes: segmentMinutes
-        )
-        try await writeData(type: .focusStatus, data: payload)
-    }
-
-    /// 请求设备回传 Event Log（增量）
-    public func requestEventLogs(since timestamp: UInt32) async throws {
-        let data = BLEDataEncoder.encodeEventLogRequest(since: timestamp)
-        try await writeData(type: .eventLogRequest, data: data)
-    }
-
-    /// 发起事件补传请求(0x20)。返回值仅表示请求帧是否成功写出（不代表设备已回传——回传走后续
-    /// 0x21 eventLogBatch 路径）。补传是核心功能，调用方据此判定整轮同步成败。
-    @discardableResult
-    public func requestEventLogsIfNeeded() async -> Bool {
-        let since = await localStorage.loadLastEventLogTimestamp() ?? 0
-        do {
-            try await requestEventLogs(since: since)
-            return true
-        } catch {
-            ErrorReporter.log(
-                .sync(component: "BLE Event Logs", underlying: error.localizedDescription),
-                context: "BLEService.requestEventLogsIfNeeded"
-            )
-            return false
-        }
-    }
-
-    /// 推送场景解锁到 E-ink 设备。
-    /// v2.5.11：从旧 `0xAA 01 01` 开发命令升级为 `0x17` 业务帧，经 `writeData` 发送——
-    /// dev 模式走简单包、secure 模式自动 SecureEnvelope 封装，**两种模式均可发**
-    /// （旧开发命令在配置 `BLE_SHARED_SECRET` 后会被禁用，场景切换会静默失败）。
-    public func sendDisplayScene(_ scene: DisplayScene) async throws {
-        let payload = BLEDataEncoder.encodeSceneUnlock(scene)
-        try await writeData(type: .sceneUnlock, data: payload)
-    }
-
-    /// v2.7 暂存 KRI 头像。进度只统计 KRI 文件字节（不含 29B v4 元数据、BLE 分片头与
-    /// SecureEnvelope）；每个 `.withResponse` ACK 后更新，不会把排队字节算成已发送。
-    public func sendCustomAvatarKRIFrame(
-        operationID: UInt32,
-        avatarID: UUID,
-        kriData: Data,
-        progress: @escaping @MainActor @Sendable (_ sentBytes: Int, _ totalBytes: Int) -> Void
-    ) async throws {
-        let payload = try BLEDataEncoder.encodeCustomAvatarFrame(
-            operationID: operationID,
-            avatarID: avatarID,
-            kriData: kriData
-        )
-        progress(0, kriData.count)
-        try await writeData(type: .customAvatarFrame, data: payload, progress: { sentPayloadBytes, _ in
-            let sentKRIBytes = min(
-                kriData.count,
-                max(0, sentPayloadBytes - CustomAvatarFrameV4Codec.headerLength)
-            )
-            progress(sentKRIBytes, kriData.count)
-        })
-    }
-
-    /// 写成功只表示命令到达特征值；设备落盘结果由 0x22 回包经
-    /// `onAvatarControlResult` 交给 AppState。
-    public func sendAvatarControl(_ command: AvatarControlCommand) async throws {
-        try await writeData(
-            type: .avatarControl,
-            data: BLEDataEncoder.encodeAvatarControlCommand(command)
-        )
-    }
-
-    /// 推送屏保金句/明信片到 E-ink 设备。
-    /// v2.5.10：从旧 `0xAA 01 02` 开发命令升级为 `0x16` 业务帧，经 `writeData` 发送——
-    /// dev 模式走简单包、secure 模式自动 SecureEnvelope 封装，**两种模式均可发**
-    /// （旧开发命令在配置 `BLE_SHARED_SECRET` 后会被禁用，屏保会静默发不出去）。
-    public func sendScreensaverConfig(_ config: ScreensaverConfig) async throws {
-        let payload = BLEDataEncoder.encodeScreensaver(config)
-        try await writeData(type: .screensaver, data: payload)
-    }
-
-    /// Sends OTAReboot (0x18) with zero payload. In secure mode, writeData
-    /// automatically wraps this in SecureEnvelope (0x7E) — no special handling needed.
-    public func sendOTAReboot() async throws {
-        try await writeData(type: .otaReboot, data: Data())
-    }
-
-    /// 发送 Wi-Fi PC Debug (0x19) 命令。统一走 writeData，secure 模式自动封装为 0x7E。
-    public func sendWiFiDebugCommand(_ command: BLEWiFiDebugCommand) async throws {
-        try await writeData(type: .wifiDebugMode, data: command.payload)
-    }
-
-    /// 发送 WiFiAvatarSession (0x1A) 会话命令（close/open/query + OperationID）。
-    /// 统一走 writeData，secure 模式自动封装为 0x7E。设备经 Notify 回 0x1A 应答，
-    /// 由 `WiFiAvatarSessionCoordinator.handleResponse` 处理。
-    public func sendWiFiAvatarSessionCommand(_ request: WiFiAvatarSessionRequest) async throws {
-        try await writeData(
-            type: .wifiAvatarSession,
-            data: WiFiAvatarSessionCodec.encodeRequest(request)
-        )
-    }
-
-    // MARK: - Private Methods
-
-    private func writeData(
-        type: BLEDataType,
-        data: Data,
-        validateBeforeWrite: PacketWriteValidator? = nil,
-        progress: (@MainActor @Sendable (_ sentBytes: Int, _ totalBytes: Int) -> Void)? = nil
-    ) async throws {
-        guard connectionState.isConnected,
-              let characteristic = writeCharacteristic,
-              let peripheral = connectedPeripheral else {
-            throw BLEError.notConnected
-        }
-
-        guard requiresSecureChannel else {
-            try await writeUnsignedData(
-                type: type,
-                data: data,
-                peripheral: peripheral,
-                characteristic: characteristic,
-                validateBeforeWrite: validateBeforeWrite,
-                progress: progress
-            )
-            return
-        }
-
-        guard securityManager.isSessionEstablished else {
-            throw BLEError.securityHandshakeFailed("Secure BLE session not established")
-        }
-
-        let maxLength = peripheral.maximumWriteValueLength(for: .withResponse)
-
-        if type == .customAvatarFrame {
-            let plainPackets = try securityManager.packetizeForSecureTransport(
-                type: type.rawValue,
-                messageId: allocateMessageID(),
-                payload: data,
-                maxWriteLength: maxLength
-            )
-            inFlightChunkedTransfers += 1
-            defer { inFlightChunkedTransfers -= 1 }
-            var sentBytes = 0
-            for plainPacket in plainPackets {
-                try Task.checkCancellation()
-                // 必须临写前即时签名。整批预签会让 4–5 分钟传输后半段的 issuedAt
-                // 超过 SecureEnvelope 的 120 秒接收窗口。
-                let packet = try securityManager.secureChunkPacket(
-                    type: type.rawValue,
-                    plainPacket: plainPacket,
-                    maxWriteLength: maxLength
-                )
-                try await writePacket(
-                    packet,
-                    peripheral: peripheral,
-                    characteristic: characteristic,
-                    validateBeforeWrite: validateBeforeWrite
-                )
-                sentBytes += chunkPayloadLength(plainPacket)
-                progress?(min(sentBytes, data.count), data.count)
-            }
-            return
-        }
-
-        let securePayload = try securityManager.securePayload(type: type.rawValue, payload: data)
-
-        if shouldUseChunkedPacket(type: type, payloadSize: securePayload.count, maxWriteLength: maxLength) {
-            let maxChunkPayloadSize = maxLength - BLEPacketizer.headerSize
-            let packets = try BLEPacketizer.packetize(
-                type: BLEDataType.secureData.rawValue,
-                messageId: allocateMessageID(),
-                payload: securePayload,
-                maxChunkSize: maxChunkPayloadSize
-            )
-            inFlightChunkedTransfers += 1
-            defer { inFlightChunkedTransfers -= 1 }
-            for packet in packets {
-                // 外层任务被取消（如切换伴侣废弃旧头像流）时立即停发——写锁只串行单个
-                // packet，不检查取消的话两条 2000 片消息会逐片交错、旧流可能反杀新流。
-                try Task.checkCancellation()
-                try await writePacket(
-                    packet,
-                    peripheral: peripheral,
-                    characteristic: characteristic,
-                    validateBeforeWrite: validateBeforeWrite
-                )
-            }
-            return
-        }
-
-        let packet = BLESimpleEncoder.encode(type: BLEDataType.secureData.rawValue, payload: securePayload)
-        try await writePacket(
-            packet,
-            peripheral: peripheral,
-            characteristic: characteristic,
-            validateBeforeWrite: validateBeforeWrite
-        )
-    }
-
-    private func writeUnsignedData(
-        type: BLEDataType,
-        data: Data,
-        peripheral: CBPeripheral,
-        characteristic: CBCharacteristic,
-        validateBeforeWrite: PacketWriteValidator?,
-        progress: (@MainActor @Sendable (_ sentBytes: Int, _ totalBytes: Int) -> Void)?
-    ) async throws {
-        let maxLength = peripheral.maximumWriteValueLength(for: .withResponse)
-
-        if shouldUseChunkedPacket(type: type, payloadSize: data.count, maxWriteLength: maxLength) {
-            let maxChunkPayloadSize = maxLength - BLEPacketizer.headerSize
-            let packets = try BLEPacketizer.packetize(
-                type: type.rawValue,
-                messageId: allocateMessageID(),
-                payload: data,
-                maxChunkSize: maxChunkPayloadSize
-            )
-            inFlightChunkedTransfers += 1
-            defer { inFlightChunkedTransfers -= 1 }
-            var sentBytes = 0
-            for packet in packets {
-                // 同 writeData：任务取消即停发，防多条大帧流逐片交错。
-                try Task.checkCancellation()
-                try await writePacket(
-                    packet,
-                    peripheral: peripheral,
-                    characteristic: characteristic,
-                    validateBeforeWrite: validateBeforeWrite
-                )
-                sentBytes += chunkPayloadLength(packet)
-                progress?(min(sentBytes, data.count), data.count)
-            }
-            return
-        }
-
-        let packet = BLESimpleEncoder.encode(type: type.rawValue, payload: data)
-        try await writePacket(
-            packet,
-            peripheral: peripheral,
-            characteristic: characteristic,
-            validateBeforeWrite: validateBeforeWrite
-        )
-        progress?(data.count, data.count)
-    }
-
-    private func chunkPayloadLength(_ packet: Data) -> Int {
-        guard packet.count >= BLEPacketizer.headerSize else { return 0 }
-        return Int(packet.bigEndianUInt16(at: 7))
-    }
-
-    // 旧 `writeDevelopmentDisplayPacket`（0xAA 开发命令出口，secure 下被禁用）已于 v2.5.11 移除：
-    // 屏保（0x16）与场景解锁（0x17）均已改走 `writeData` 业务帧，不再有 0xAA 出站命令。
-
-    private func shouldUseChunkedPacket(type: BLEDataType, payloadSize: Int, maxWriteLength: Int) -> Bool {
-        if payloadSize + 3 > maxWriteLength { return true }
-        switch type {
-        case .dayPack, .taskInPage, .customAvatarFrame:
-            return true
-        default:
-            return false
-        }
-    }
-
-    private func allocateMessageID() -> UInt16 {
-        let current = nextMessageId
-        nextMessageId = (nextMessageId == UInt16.max) ? 1 : (nextMessageId + 1)
-        return current
-    }
-
-    private func writePacket(
-        _ packet: Data,
-        peripheral: CBPeripheral,
-        characteristic: CBCharacteristic,
-        validateBeforeWrite: PacketWriteValidator? = nil
-    ) async throws {
-        if AppBuildEnvironment.showsHardwareDebugTools {
-            let typeText = packet.first.map { String(format: "%02X", $0) } ?? "??"
-            Self.bleLogger.notice("BLE TX type=0x\(typeText, privacy: .public) len=\(packet.count, privacy: .public)")
-        }
-        try await writeGate.acquire()
-
-        do {
-            // HIGH-2: acquireWritePermit now throws CancellationError, allowing clean exit
-            try await rateLimiter.acquireWritePermit()
-
-            // HIGH-3: if disconnect fired while we were waiting for the rate-limiter permit,
-            // writeCompletion was cleared and no ACK will ever arrive — bail early.
-            guard let packetType = packet.first,
-                  BLEWritePolicy.canWrite(state: connectionState, packetType: packetType) else {
-                throw BLEError.disconnected
-            }
-
-            // Validation belongs after the write gate and rate limiter: both suspend. For a
-            // packetized DayPack this is the last point before each chunk is committed to
-            // CoreBluetooth. If tasks changed, the remaining chunks are withheld and firmware
-            // never receives a complete old 0x10 message to render.
-            try validateBeforeWrite?()
-
-            // HIGH-1: strong capture — no retain cycle (@MainActor task, singleton service)
-            let writeID = UUID()
-            activeWriteID = writeID
-            let timeoutTask = Task { @MainActor in
-                try await Task.sleep(for: .seconds(5))
-                guard self.activeWriteID == writeID else { return }
-                // 被弃写的 ACK 之后可能迟到；记账让 didWriteValueFor 丢掉它，
-                // 否则它会误完成下一次写入的 continuation。
-                self.staleWriteAckFilter.markAbandonedWrite()
-                self.writeCompletion?(.failure(.writeTimeout))
-                self.writeCompletion = nil
-                self.activeWriteID = nil
-            }
-
-            defer { timeoutTask.cancel() }
-
-            try await withCheckedThrowingContinuation { continuation in
-                writeCompletion = { result in
-                    switch result {
-                    case .success:
-                        continuation.resume()
-                    case .failure(let error):
-                        continuation.resume(throwing: error)
-                    }
-                }
-                peripheral.writeValue(packet, for: characteristic, type: .withResponse)
-            }
-        } catch {
-            await writeGate.release()
-            throw error
-        }
-
-        await writeGate.release()
-    }
-
-    private func startSecurityHandshake(peripheral: CBPeripheral) async {
+    func startSecurityHandshake(peripheral: CBPeripheral) async {
         // writePacket 的 await（writeGate/限速/写超时）期间本次尝试可能已被换代；
         // 换代后不得再动 connectCompletion（此刻它属于新尝试），也不得动新尝试的握手表。
         let generation = connectGeneration
@@ -1027,7 +569,7 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
         }
     }
 
-    private func completeSecureConnection() async {
+    func completeSecureConnection() async {
         let generation = connectGeneration
         handshakeTimeoutTask?.cancel()
         handshakeTimeoutTask = nil
@@ -1070,7 +612,7 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
         onAvatarControlResult?(result)
     }
 
-    private func decodeReceivedMessage(_ receivedData: Data) throws -> BLEReceivedMessage? {
+    func decodeReceivedMessage(_ receivedData: Data) throws -> BLEReceivedMessage? {
         let decodedMessage: BLEReceivedMessage?
         if let message = packetAssembler.append(packetData: receivedData) {
             decodedMessage = message
@@ -1124,7 +666,7 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
         )
     }
 
-    private func cleanup() {
+    func cleanup() {
         BLEWiFiDebugCoordinator.shared.handleDisconnected()
         WiFiAvatarSessionCoordinator.shared.handleDisconnected()
         AppState.shared.handleCustomAvatarDeviceDisconnected()
@@ -1152,292 +694,12 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
     }
 
     /// delegate 回调准入：代次门 + 外设身份，判定逻辑见 `BLEConnectionPolicy.shouldProcessCallback`。
-    private func shouldProcessCallback(generationAtDelivery: UInt64, peripheralID: UUID) -> Bool {
+    func shouldProcessCallback(generationAtDelivery: UInt64, peripheralID: UUID) -> Bool {
         BLEConnectionPolicy.shouldProcessCallback(
             generationAtDelivery: generationAtDelivery,
             currentGeneration: connectGeneration,
             callbackPeripheralID: peripheralID,
             trackedPeripheralID: connectedPeripheral?.identifier
         )
-    }
-}
-
-// MARK: - CBCentralManagerDelegate
-
-extension BLEService: CBCentralManagerDelegate {
-    nonisolated public func centralManagerDidUpdateState(_ central: CBCentralManager) {
-        Task { @MainActor in
-            switch central.state {
-            case .poweredOn:
-                if autoReconnectEffective, connectionState == .disconnected {
-                    _ = await attemptAutoReconnect()
-                }
-            case .poweredOff:
-                connectionState = .error("Bluetooth is turned off")
-            case .unauthorized:
-                connectionState = .error("Bluetooth permission denied")
-            case .unsupported:
-                connectionState = .error("Bluetooth not supported")
-            default:
-                break
-            }
-        }
-    }
-
-    nonisolated public func centralManager(
-        _ central: CBCentralManager,
-        didDiscover peripheral: CBPeripheral,
-        advertisementData: [String: Any],
-        rssi RSSI: NSNumber
-    ) {
-        let deviceID = peripheral.identifier
-        let deviceName = peripheral.name ?? "Unknown Device"
-        let rssiValue = RSSI.intValue
-
-        Task { @MainActor in
-            if requiresSecureChannel {
-                if await deviceIdentityStore.isBlocked(deviceID) {
-                    return
-                }
-
-                if await deviceIdentityStore.hasTrustedDevices(),
-                   !(await deviceIdentityStore.isTrusted(deviceID)) {
-                    return
-                }
-            }
-
-            peripheralCache[deviceID] = peripheral
-
-            let device = BLEDevice(
-                id: deviceID,
-                name: deviceName,
-                rssi: rssiValue
-            )
-
-            if !discoveredDevices.contains(where: { $0.id == device.id }) {
-                discoveredDevices.append(device)
-            }
-        }
-    }
-
-    nonisolated public func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
-        // manager 建于 queue: .main（initialize），delegate 回调必在主线程，assumeIsolated 安全。
-        // 准入 = 代次门（杀"投递→Task 执行"间换代的旧回调）+ 外设身份（杀换代后才投递的
-        // 跨外设残留回调）；同一外设的晚投递回调原理上不可分辨，见 BLEConnectionPolicy。
-        let generation = MainActor.assumeIsolated { self.connectGeneration }
-        Task { @MainActor in
-            guard shouldProcessCallback(generationAtDelivery: generation, peripheralID: peripheral.identifier) else { return }
-            connectedPeripheral = peripheral
-            peripheral.delegate = self
-            peripheral.discoverServices([KiroleBLEUUIDs.serviceUUID])
-        }
-    }
-
-    nonisolated public func centralManager(
-        _ central: CBCentralManager,
-        didFailToConnect peripheral: CBPeripheral,
-        error: Error?
-    ) {
-        let generation = MainActor.assumeIsolated { self.connectGeneration }
-        Task { @MainActor in
-            // 迟到的失败回调被丢时状态留在 .disconnected（同为 idle，不锁新连接），仅损失错误文案。
-            guard shouldProcessCallback(generationAtDelivery: generation, peripheralID: peripheral.identifier) else { return }
-            connectionState = .error(error?.localizedDescription ?? "Connection failed")
-            connectCompletion?(.failure(.connectionFailed(error)))
-            connectCompletion = nil
-        }
-    }
-
-    nonisolated public func centralManager(
-        _ central: CBCentralManager,
-        didDisconnectPeripheral peripheral: CBPeripheral,
-        error: Error?
-    ) {
-        let generation = MainActor.assumeIsolated { self.connectGeneration }
-        Task { @MainActor in
-            // 旧连接的迟到断连事件不得清理新尝试：代次已换 ⇒ 新尝试从 idle 起步，旧世界的
-            // 收尾已由"把状态送回 idle"的那条路径做完，此处 cleanup 只会误清新尝试的状态、
-            // 错误完成它的 connectCompletion，自动重连也会与在飞的新尝试打架——整体跳过。
-            // 身份不符（含 cleanup 已跑完、connectedPeripheral 已空）同理。
-            guard shouldProcessCallback(generationAtDelivery: generation, peripheralID: peripheral.identifier) else { return }
-            // 设备断开时结束活跃的专注会话
-            FocusSessionService.shared.handleDeviceDisconnected()
-
-            // cleanup 会把 Wi-Fi 调试协调器重置为 unknown，故重连判定也必须先快照。
-            let wasIntentional = isIntentionalDisconnect
-            let shouldAutoReconnect = autoReconnectEffective
-
-            // Notify OTA coordinator so it can transition to awaitingReboot
-            // without waiting for a 0x18 response that will never arrive.
-            if isPendingOTAReboot {
-                BLEOTACoordinator.shared.handleExpectedDisconnect()
-            }
-
-            cleanup()
-
-            guard BLEConnectionPolicy.shouldAutoReconnect(
-                isIntentional: wasIntentional,
-                autoReconnectEnabled: shouldAutoReconnect
-            ) else { return }
-
-            // Apple 警告：不要在 didDisconnect 回调里立刻 connect（会卡 bad state），延迟后再发起。
-            reconnectTask?.cancel()
-            reconnectTask = Task { @MainActor in
-                try? await Task.sleep(for: Timing.reconnectDelay)
-                guard !Task.isCancelled else { return }
-                await attemptAutoReconnect()
-            }
-        }
-    }
-}
-
-// MARK: - CBPeripheralDelegate
-
-extension BLEService: CBPeripheralDelegate {
-    nonisolated public func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
-        let services = peripheral.services
-        let generation = MainActor.assumeIsolated { self.connectGeneration }
-
-        Task { @MainActor in
-            guard shouldProcessCallback(generationAtDelivery: generation, peripheralID: peripheral.identifier) else { return }
-            guard error == nil,
-                  let service = services?.first(where: { $0.uuid == KiroleBLEUUIDs.serviceUUID }) else {
-                connectCompletion?(.failure(.serviceNotFound))
-                connectCompletion = nil
-                return
-            }
-
-            peripheral.discoverCharacteristics(
-                [KiroleBLEUUIDs.writeCharacteristicUUID, KiroleBLEUUIDs.notifyCharacteristicUUID],
-                for: service
-            )
-        }
-    }
-
-    nonisolated public func peripheral(
-        _ peripheral: CBPeripheral,
-        didDiscoverCharacteristicsFor service: CBService,
-        error: Error?
-    ) {
-        let characteristics = service.characteristics
-        let peripheralID = peripheral.identifier
-        let peripheralName = peripheral.name
-        let generation = MainActor.assumeIsolated { self.connectGeneration }
-
-        Task { @MainActor in
-            guard shouldProcessCallback(generationAtDelivery: generation, peripheralID: peripheralID) else { return }
-            guard error == nil, let chars = characteristics else {
-                connectCompletion?(.failure(.characteristicNotFound))
-                connectCompletion = nil
-                return
-            }
-
-            for characteristic in chars {
-                if characteristic.uuid == KiroleBLEUUIDs.writeCharacteristicUUID {
-                    writeCharacteristic = characteristic
-                } else if characteristic.uuid == KiroleBLEUUIDs.notifyCharacteristicUUID {
-                    notifyCharacteristic = characteristic
-                    peripheral.setNotifyValue(true, for: characteristic)
-                }
-            }
-
-            if writeCharacteristic != nil, notifyCharacteristic != nil {
-                pendingConnectedPeripheralID = peripheralID
-                pendingConnectedPeripheralName = peripheralName ?? "Kirole Device"
-                Task { @MainActor in
-                    // 内层 Task 有独立调度跳变，准入需再验一次。
-                    guard self.shouldProcessCallback(generationAtDelivery: generation, peripheralID: peripheralID) else { return }
-                    if self.requiresSecureChannel {
-                        await self.startSecurityHandshake(peripheral: peripheral)
-                    } else {
-                        await self.completeSecureConnection()
-                    }
-                }
-            } else {
-                connectCompletion?(.failure(.characteristicNotFound))
-                connectCompletion = nil
-            }
-        }
-    }
-
-    nonisolated public func peripheral(
-        _ peripheral: CBPeripheral,
-        didWriteValueFor characteristic: CBCharacteristic,
-        error: Error?
-    ) {
-        Task { @MainActor in
-            // 必须先消掉迟到 ACK 记账，再看当前槽——顺序反了会用旧 ACK 完成新写入，
-            // 或在空槽期漏消计数、吞掉下一次写入的真 ACK。
-            if staleWriteAckFilter.shouldDropIncomingAck() {
-                return
-            }
-
-            guard writeCompletion != nil else {
-                return
-            }
-
-            if let error = error {
-                writeCompletion?(.failure(.writeFailed(error)))
-            } else {
-                writeCompletion?(.success(()))
-            }
-            writeCompletion = nil
-            activeWriteID = nil
-        }
-    }
-
-    nonisolated public func peripheral(
-        _ peripheral: CBPeripheral,
-        didUpdateValueFor characteristic: CBCharacteristic,
-        error: Error?
-    ) {
-        let data = characteristic.value
-        let generation = MainActor.assumeIsolated { self.connectGeneration }
-
-        Task { @MainActor in
-            // 代次在连接内恒定，稳态通知不受影响；只丢"新尝试已开始后才轮到执行"的旧连接残包
-            // 与非当前跟踪外设的残留通知。
-            guard shouldProcessCallback(generationAtDelivery: generation, peripheralID: peripheral.identifier) else { return }
-            // notify 层错误（ATT error / 加密失败 / 断连时 pending value 清空）原先被静默丢弃，
-            // 硬件团队看来像 App 完全没收到。拆分 guard 单独上报，区分链路层错误与解析失败。
-            if let error {
-                ErrorReporter.log(
-                    .sync(component: "BLE Notify", underlying: error.localizedDescription),
-                    context: "BLEService.didUpdateValueFor"
-                )
-                return
-            }
-            guard let receivedData = data else { return }
-            if AppBuildEnvironment.showsHardwareDebugTools {
-                let firstByteText = receivedData.first.map { String(format: "%02X", $0) } ?? "??"
-                Self.bleLogger.notice("BLE RX len=\(receivedData.count, privacy: .public) firstByte=0x\(firstByteText, privacy: .public)")
-            }
-            do {
-                guard let message = try decodeReceivedMessage(receivedData) else { return }
-
-                if requiresSecureChannel, message.type == BLEDataType.securityHandshake.rawValue {
-                    try securityManager.validateHandshakeResponsePayload(message.payload)
-                    await completeSecureConnection()
-                    return
-                }
-
-                if !requiresSecureChannel, message.type == BLEDataType.securityHandshake.rawValue {
-                    return
-                }
-
-                await BLEEventHandler.handleReceivedPayload(message, service: self)
-            } catch {
-                ErrorReporter.log(error, context: "BLEService.didUpdateValueFor")
-                connectionState = .error(error.localizedDescription)
-                if requiresSecureChannel,
-                   !securityManager.isSessionEstablished,
-                   let peripheralID = pendingConnectedPeripheralID {
-                    await deviceIdentityStore.block(peripheralID)
-                }
-                connectCompletion?(.failure(.securityHandshakeFailed(error.localizedDescription)))
-                connectCompletion = nil
-                centralManager?.cancelPeripheralConnection(peripheral)
-            }
-        }
     }
 }

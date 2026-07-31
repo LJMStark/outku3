@@ -6,10 +6,6 @@ enum ProgressConstants {
     static let pointsPerTask: Int = 10
 }
 
-typealias CompanionIdentityStatusSender = @MainActor (
-    Pet, CompanionCharacter, Bool
-) async throws -> Void
-
 typealias CustomAvatarConnectionProvider = @MainActor () -> (isConnected: Bool, deviceID: UUID?)
 typealias CustomAvatarFrameSender = @MainActor (
     UInt32,
@@ -185,16 +181,6 @@ public final class AppState {
     @ObservationIgnored var avatarControlSender: AvatarControlSender = { command in
         try await BLEService.shared.sendAvatarControl(command)
     }
-    /// Serializes immediate identity-status frames so rapid companion switches cannot finish
-    /// out of order and leave hardware showing an older identity.
-    @ObservationIgnored var companionIdentityStatusSendTask: Task<Void, Never>?
-    @ObservationIgnored var companionIdentityStatusSender: CompanionIdentityStatusSender = {
-        pet, character, customActive in
-        guard BLEService.shared.connectionState.isConnected else { return }
-        try await BLEService.shared.sendPetStatus(
-            pet, companionCharacter: character, customActive: customActive
-        )
-    }
     @ObservationIgnored var taskExternalSyncQueue = KeyedSerialTaskQueue<String>()
     /// Set when the device timezone changes at runtime. UI shows a banner asking the user
     /// whether to re-sync events. Cleared on user action (adjust or keep).
@@ -249,6 +235,14 @@ public final class AppState {
 
     // Internal coordination state — debounce handle for BLE sync requests.
     var pendingBLESyncTask: Task<Void, Never>?
+    var pendingBLESyncTrigger: BLESyncTrigger?
+    var pendingBLESyncRequestGeneration: UInt64 = 0
+    /// Held across a Complete/Skip presentation so identity/manual PetStatus rounds are not lost
+    /// when the ordinary debounced request is cancelled for that atomic DayPack→0x1B window.
+    var deferredBLESyncTriggerAfterTaskAction: BLESyncTrigger?
+    /// Production runs `BLESyncCoordinator.shared.performSync`. Tests install a no-op so
+    /// `AppState.makeForTesting()` cannot open real CoreBluetooth sessions from debounce timers.
+    var bleSyncExecutor: (@MainActor (BLESyncTrigger) async -> Void)?
     var externalSyncWaiters: [ExternalSyncTarget: [CheckedContinuation<Void, Never>]] = [:]
 
     /// 启动本地加载任务句柄；ensureInitialLoadComplete() 等它完成，避免首轮外部同步 / Apple observer
@@ -273,7 +267,10 @@ public final class AppState {
     }
 
     static func makeForTesting() -> AppState {
-        AppState(loadLocalDataOnInit: false)
+        let state = AppState(loadLocalDataOnInit: false)
+        // Debounced requestBLESync must not reach BLESyncCoordinator.shared in unit tests.
+        state.bleSyncExecutor = { _ in }
+        return state
     }
 
     func taskMutationGeneration(for taskID: String) -> UInt64 {

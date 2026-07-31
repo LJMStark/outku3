@@ -1,5 +1,28 @@
 import Foundation
 
+struct FocusSessionEndHardwarePlan: Equatable, Sendable {
+    let sendsIdleFocusStatus: Bool
+    let sendsSelectedScene: Bool
+
+    /// Builds the post-settlement hardware plan for a focus end.
+    /// - Parameter defersHardwarePresentationUntilAcknowledgement: True for hardware
+    ///   Complete/Skip (final DayPack→0x1B owns the exit), task-switch ends (new 0x11 already
+    ///   owns TaskIn), or when a replacement session is already active. Suppresses idle 0x14 /
+    ///   scene 0x17 so they cannot race those frames.
+    static func make(
+        defersHardwarePresentationUntilAcknowledgement: Bool,
+        hasNewlyUnlockedScene: Bool
+    ) -> Self {
+        if defersHardwarePresentationUntilAcknowledgement {
+            return Self(sendsIdleFocusStatus: false, sendsSelectedScene: false)
+        }
+        return Self(
+            sendsIdleFocusStatus: true,
+            sendsSelectedScene: hasNewlyUnlockedScene
+        )
+    }
+}
+
 extension AppState {
     func registerUsageActivity(now: Date = Date()) async {
         let savedConsecutiveDays = await localStorage.loadConsecutiveDays()
@@ -133,7 +156,7 @@ extension AppState {
             .sorted { $0.startTime < $1.startTime }
             .prefix(2)
             .map(\.title)
-        let config = await ScreensaverService.shared.getScreensaverConfig(
+        let config = ScreensaverService.shared.getScreensaverConfig(
             usageDays: usageDays,
             currentSceneId: sceneId,
             userProfile: userProfile,
@@ -243,10 +266,19 @@ extension AppState {
     func handleFocusSessionDidEnd(
         totalEnergyBottles: Int,
         newlyUnlocked: [String] = [],
-        now: Date = Date()
+        now: Date = Date(),
+        defersHardwarePresentationUntilAcknowledgement: Bool = false
     ) async {
-        // 0x14(idle) 是"退出专注态"的状态信号，必须立即发（固件靠它离开态 C）。
-        await syncFocusHardwareDisplay(session: nil, now: now)
+        let hardwarePlan = FocusSessionEndHardwarePlan.make(
+            defersHardwarePresentationUntilAcknowledgement: defersHardwarePresentationUntilAcknowledgement,
+            hasNewlyUnlockedScene: !newlyUnlocked.isEmpty
+        )
+        // App-side/manual endings retain the immediate idle signal. A versioned hardware
+        // Complete/Skip instead stays on TaskIn while the final DayPack is cached; its matching
+        // 0x1B is the sole commit that exits the page and triggers one EPD refresh.
+        if hardwarePlan.sendsIdleFocusStatus {
+            await syncFocusHardwareDisplay(session: nil, now: now)
+        }
 
         #if DEBUG
         if !SimulatorBridge.shared.isConnected {
@@ -256,11 +288,10 @@ extension AppState {
         SimulatorBridge.shared.sendSceneUnlocks(unlocks: unlocks)
         #endif
 
-        // 场景帧(0x17)只在有新解锁时立即推（配合庆祝时刻）。无解锁时场景没变，重发只是多一次
-        // 刷屏——此前无条件推，叠加任务完成路径 1.5s 后的 DayPack 全刷，硬件上"完成聚焦任务"
-        // 连刷三次（0x14+0x17+DayPack）。内容更新由下方 requestBLESync 的 DayPack 轮承载
-        // （2026-07-04 审计 B1）。
-        if !newlyUnlocked.isEmpty {
+        // 场景帧(0x17)只在 App-side/manual 结束且有新解锁时推送。硬件
+        // Complete/Skip 必须继续停在 TaskIn，不能让 0x14/0x17 越过最终 DayPack→0x1B
+        // 提交点；否则一次按键会先退页、再刷场景、最后再刷 Overview。
+        if hardwarePlan.sendsSelectedScene {
             await syncIdleHardwareDisplay()
         }
 

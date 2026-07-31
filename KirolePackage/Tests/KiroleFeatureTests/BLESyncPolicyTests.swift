@@ -125,4 +125,47 @@ struct BLESyncPolicyTests {
             hasPriorityCustomAvatarOperation: false
         ))
     }
+
+    @Test("sync timeout never disconnects an active focus session")
+    func timeoutKeepsActiveFocusConnectionOpen() {
+        #expect(!policy.shouldDisconnectAfterTimeout(
+            isConnected: true,
+            keepsDebugConnectionOpen: false,
+            hasTaskActionPresentation: false,
+            hasActiveFocusSession: true,
+            holdsCustomAvatarConnection: false
+        ))
+    }
+
+    @Test("sync timeout may close an otherwise idle connection")
+    func timeoutClosesIdleConnection() {
+        #expect(policy.shouldDisconnectAfterTimeout(
+            isConnected: true,
+            keepsDebugConnectionOpen: false,
+            hasTaskActionPresentation: false,
+            hasActiveFocusSession: false,
+            holdsCustomAvatarConnection: false
+        ))
+        #expect(!policy.shouldDisconnectAfterTimeout(
+            isConnected: true,
+            keepsDebugConnectionOpen: false,
+            hasTaskActionPresentation: false,
+            hasActiveFocusSession: false,
+            holdsCustomAvatarConnection: true
+        ))
+    }
+
+    @Test("an identity change bypasses the routine interval even when DayPack is unchanged")
+    func identityChangeForcesPetStatusRound() {
+        let now = Date()
+
+        #expect(policy.shouldSync(
+            now: now,
+            lastSync: now,
+            contentChanged: false,
+            force: BLESyncTrigger.identityChange.bypassesRoutineSyncInterval,
+            hasPriorityCustomAvatarOperation: false
+        ))
+        #expect(!BLESyncTrigger.automatic.bypassesRoutineSyncInterval)
+    }
 }

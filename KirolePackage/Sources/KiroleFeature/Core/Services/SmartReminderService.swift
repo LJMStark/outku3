@@ -1,5 +1,14 @@
 import Foundation
 
+@MainActor
+protocol SmartReminderEvaluating: AnyObject {
+    func evaluateAndPushReminder(
+        tasks: [TaskItem],
+        pet: Pet,
+        userProfile: UserProfile
+    ) async -> SmartReminderResult?
+}
+
 // MARK: - Reminder Reason
 
 public enum ReminderReason: String, Codable, Sendable {
@@ -216,3 +225,5 @@ public final class SmartReminderService {
         return SmartReminderResult(reason: .gentleNudge, urgency: .gentle, text: text)
     }
 }
+
+extension SmartReminderService: SmartReminderEvaluating {}

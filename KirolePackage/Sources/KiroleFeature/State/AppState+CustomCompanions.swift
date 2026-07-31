@@ -70,8 +70,9 @@ extension AppState {
         try await localStorage.saveCustomCompanions(newList)
         customCompanions = newList
         if userProfile.customCompanionId == merged.id {
-            await refreshSharedPetDialogueIfNeeded()
+            await refreshSharedPetDialogueIfNeeded(force: true)
             await refreshHomeCompanionPresentation()
+            requestBLESync(reason: "updateCustomCompanionMetadata", trigger: .identityChange)
         }
         return merged
     }
@@ -252,8 +253,9 @@ extension AppState {
         }
         try await localStorage.saveUserProfile(profile)
         userProfile = profile
-        sendPetStatusNow(customActive: false, context: "AppState.selectBuiltInCompanion")
-        requestBLESync(reason: "selectBuiltInCompanion")
+        await refreshSharedPetDialogueIfNeeded(force: true)
+        await refreshHomeCompanionPresentation()
+        requestBLESync(reason: "selectBuiltInCompanion", trigger: .identityChange)
     }
 
     // MARK: - Operation controls

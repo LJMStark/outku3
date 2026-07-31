@@ -1,16 +1,51 @@
 import Foundation
 
+protocol ScreensaverQuoteGenerating: Sendable {
+    func isConfiguredForScreensaverQuote() async -> Bool
+    func generateScreensaverQuote(
+        isPostcard: Bool,
+        usageDays: Int,
+        workContext: String,
+        profileContext: String
+    ) async throws -> String
+}
+
+extension OpenAIService: ScreensaverQuoteGenerating {
+    func isConfiguredForScreensaverQuote() -> Bool {
+        isConfigured
+    }
+}
+
 @MainActor
 public final class ScreensaverService {
     public static let shared = ScreensaverService()
-    
-    private let openAIService: OpenAIService
-    
-    private init(openAIService: OpenAIService = .shared) {
-        self.openAIService = openAIService
+
+    static let fallbackQuote = "Rest is a part of the journey."
+
+    private struct QuoteCacheKey: Hashable {
+        let isPostcard: Bool
+        let usageDays: Int
+        let workDigest: String
+        let profileDigest: String
     }
-    
-    /// Generates or fetches the screensaver config for the current day.
+
+    private let quoteGenerator: any ScreensaverQuoteGenerating
+    private var quoteCache: [QuoteCacheKey: String] = [:]
+    private var pendingGenerations: [QuoteCacheKey: Task<Void, Never>] = [:]
+
+    private convenience init() {
+        self.init(quoteGenerator: OpenAIService.shared)
+    }
+
+    init(quoteGenerator: any ScreensaverQuoteGenerating) {
+        self.quoteGenerator = quoteGenerator
+    }
+
+    /// Returns a screensaver config without waiting for the network.
+    ///
+    /// A cache miss uses a deterministic local quote for the current sleep event and warms
+    /// the matching AI quote in the background. The generated text is used only by a later
+    /// sleep event, so a delayed response cannot redraw a device that has already woken up.
     /// `customCompanion`, when set, replaces the built-in character as the quote's author
     /// and rewrites the persona digest fed to the AI quote generator.
     public func getScreensaverConfig(
@@ -20,15 +55,30 @@ public final class ScreensaverService {
         topTaskTitles: [String],
         upcomingEventTitles: [String],
         customCompanion: CustomCompanion? = nil
-    ) async -> ScreensaverConfig {
+    ) -> ScreensaverConfig {
         let isPostcardDay = Self.isPostcardDay(usageDays: usageDays)
-        let quote = await fetchScreensaverQuote(
+        let workDigest = buildWorkDigest(
+            topTaskTitles: topTaskTitles,
+            upcomingEventTitles: upcomingEventTitles
+        )
+        let profileDigest = buildProfileDigest(
+            userProfile: userProfile,
+            customCompanion: customCompanion
+        )
+        let cacheKey = QuoteCacheKey(
             isPostcard: isPostcardDay,
             usageDays: usageDays,
-            userProfile: userProfile,
-            topTaskTitles: topTaskTitles,
-            upcomingEventTitles: upcomingEventTitles,
-            customCompanion: customCompanion
+            workDigest: workDigest,
+            profileDigest: profileDigest
+        )
+        let quote = quoteCache[cacheKey] ?? Self.fallbackQuote
+
+        scheduleQuoteGenerationIfNeeded(
+            for: cacheKey,
+            isPostcard: isPostcardDay,
+            usageDays: usageDays,
+            workDigest: workDigest,
+            profileDigest: profileDigest
         )
 
         return ScreensaverConfig(
@@ -43,42 +93,47 @@ public final class ScreensaverService {
     public static func isPostcardDay(usageDays: Int) -> Bool {
         [3, 7, 21].contains(usageDays)
     }
-    
-    private func fetchScreensaverQuote(
+
+    func waitForPendingGeneration() async {
+        let tasks = Array(pendingGenerations.values)
+        for task in tasks {
+            await task.value
+        }
+    }
+
+    private func scheduleQuoteGenerationIfNeeded(
+        for cacheKey: QuoteCacheKey,
         isPostcard: Bool,
         usageDays: Int,
-        userProfile: UserProfile,
-        topTaskTitles: [String],
-        upcomingEventTitles: [String],
-        customCompanion: CustomCompanion?
-    ) async -> String {
-        // Fallback static quotes
-        let defaultQuotes = [
-            "Rest is a part of the journey.",
-            "Take a deep breath and relax.",
-            "You did great today."
-        ]
-
-        let isConfig = await openAIService.isConfigured
-        if !isConfig {
-            return defaultQuotes.randomElement() ?? "Rest is a part of the journey."
+        workDigest: String,
+        profileDigest: String
+    ) {
+        guard quoteCache[cacheKey] == nil,
+              pendingGenerations[cacheKey] == nil else {
+            return
         }
 
-        let workDigest = buildWorkDigest(
-            topTaskTitles: topTaskTitles,
-            upcomingEventTitles: upcomingEventTitles
-        )
-        let profileDigest = buildProfileDigest(userProfile: userProfile, customCompanion: customCompanion)
+        let generator = quoteGenerator
+        pendingGenerations[cacheKey] = Task { [weak self] in
+            guard await generator.isConfiguredForScreensaverQuote() else {
+                self?.pendingGenerations[cacheKey] = nil
+                return
+            }
 
-        do {
-            return try await openAIService.generateScreensaverQuote(
-                isPostcard: isPostcard,
-                usageDays: usageDays,
-                workContext: workDigest,
-                profileContext: profileDigest
-            )
-        } catch {
-            return defaultQuotes.randomElement()!
+            do {
+                let quote = try await generator.generateScreensaverQuote(
+                    isPostcard: isPostcard,
+                    usageDays: usageDays,
+                    workContext: workDigest,
+                    profileContext: profileDigest
+                ).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !quote.isEmpty {
+                    self?.quoteCache[cacheKey] = quote
+                }
+            } catch {
+                // The immediate fallback has already been returned. Retry on a later sleep.
+            }
+            self?.pendingGenerations[cacheKey] = nil
         }
     }
 

@@ -51,6 +51,47 @@ struct DayPackRefreshArbiterTests {
         )
     }
 
+    @Test("an identity change during an active event sends the new companion presentation")
+    func identityChangeDuringActiveEventSendsPresentationUpdate() {
+        #expect(
+            DayPackRefreshArbiter.shouldSend(
+                trigger: .identityChange,
+                wireContentChanged: true,
+                hasActiveTimedEvent: true,
+                hasPreviousSemanticFingerprint: true,
+                semanticContentChanged: false
+            )
+        )
+    }
+
+    @Test("queued sync merging preserves an identity change trigger")
+    func mergedTriggerPreservesIdentityChange() {
+        #expect(BLESyncTrigger.automatic.merged(with: .identityChange) == .identityChange)
+        #expect(BLESyncTrigger.identityChange.merged(with: .automatic) == .identityChange)
+        #expect(BLESyncTrigger.identityChange.merged(with: .manual) == .manual)
+        #expect(BLESyncTrigger.manual.merged(with: .identityChange) == .manual)
+    }
+
+    @Test("an ordinary debounced request cannot downgrade a pending identity change")
+    @MainActor
+    func debouncedRequestPreservesIdentityChange() {
+        let state = AppState.makeForTesting()
+
+        state.requestBLESync(
+            reason: "identity",
+            trigger: .identityChange,
+            debounce: .seconds(60)
+        )
+        state.requestBLESync(
+            reason: "ordinary",
+            trigger: .automatic,
+            debounce: .seconds(60)
+        )
+
+        #expect(state.pendingBLESyncTrigger == .identityChange)
+        state.cancelPendingBLESync()
+    }
+
     @Test("a task change during an active event sends the updated DayPack")
     func taskChangeDuringActiveEventSends() {
         let openTask = todayTask(isCompleted: false)

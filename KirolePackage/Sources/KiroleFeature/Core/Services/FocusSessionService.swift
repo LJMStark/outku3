@@ -12,6 +12,14 @@ enum HardwareFocusSettlementResult: Sendable, Equatable {
     case persistenceFailed
 }
 
+typealias FocusHardwareDisplaySyncExecutor = @MainActor (FocusSession?) async -> Void
+typealias FocusSessionEndPresentationExecutor = @MainActor (
+    _ totalEnergyBottles: Int,
+    _ newlyUnlocked: [String],
+    _ now: Date,
+    _ defersHardwarePresentationUntilAcknowledgement: Bool
+) async -> Void
+
 // MARK: - Focus Session Service
 
 /// 专注会话服务，管理任务专注时间追踪
@@ -29,7 +37,7 @@ public final class FocusSessionService {
     public internal(set) var todaySessions: [FocusSession] = []
 
     /// 专注统计数据
-    public private(set) var statistics: FocusStatistics = FocusStatistics()
+    public internal(set) var statistics: FocusStatistics = FocusStatistics()
 
     /// 当前会话是否按 60 倍虚拟时间运行。仅保存在内存中，新会话与 App 重启都会恢复正常速度。
     public private(set) var isFocusTimeAccelerated = false
@@ -48,6 +56,8 @@ public final class FocusSessionService {
     let focusGuardService: any FocusGuardService
     let interruptionDetector: any FocusInterruptionDetecting
     let persistenceEnabled: Bool
+    let hardwareDisplaySyncExecutor: FocusHardwareDisplaySyncExecutor
+    let sessionEndPresentationExecutor: FocusSessionEndPresentationExecutor
     /// 当前会话内已检测到的打断（由 interruptionDetector 产出）。
     /// v2.5.20 打断判定重做：打断 = 专注期间使用自选分心 App；
     /// 旧的「Kirole 回前台即打断」ScreenActivityTracker 路径已整体移除（spec D-2 禁止回退）。
@@ -63,6 +73,10 @@ public final class FocusSessionService {
         let clearPersistedActiveSession: Bool
         let operationKey: String?
         let historyAlreadyPersisted: Bool
+        /// True when another focus page already owns the hardware (task switch) or a later
+        /// DayPack→0x1B transaction will present the final frame (Complete/Skip). Suppresses the
+        /// settled session's idle 0x14 so it cannot overwrite that presentation.
+        let suppressHardwarePresentation: Bool
     }
 
     var pendingFocusSettlement: PendingFocusSettlement?
@@ -73,10 +87,17 @@ public final class FocusSessionService {
     /// In-memory monotonic clock used only to detect a same-task session that starts while a
     /// versioned Complete/Skip transaction is suspended in persistence.
     @ObservationIgnored private var sessionStartGenerations: [String: UInt64] = [:]
+    /// Monotonic ownership token for the process-global Screen Time shield. Async protection
+    /// resolution can overlap, so only the latest claimant may clear the shield.
+    var shieldGenerationCounter: UInt64 = 0
+    var currentShieldGeneration: UInt64?
+    var activeShieldGeneration: UInt64?
+    /// 上次统计计算所属自然日（startOfDay）。统计只在加载/结算时重算。
+    var statisticsReferenceDay: Date?
 
     // MARK: - Constants
 
-    private enum Constants {
+    enum Constants {
         /// 专注时间阈值：30分钟未点亮手机才算专注
         static let focusThresholdMinutes: Int = 30
         static let focusThresholdSeconds: TimeInterval = TimeInterval(focusThresholdMinutes * 60)
@@ -90,6 +111,8 @@ public final class FocusSessionService {
         taskOperationLedger: TaskOperationLedger = .shared,
         focusGuardService: any FocusGuardService = ScreenTimeFocusGuardService.shared,
         interruptionDetector: (any FocusInterruptionDetecting)? = nil,
+        hardwareDisplaySyncExecutor: FocusHardwareDisplaySyncExecutor? = nil,
+        sessionEndPresentationExecutor: FocusSessionEndPresentationExecutor? = nil,
         persistenceEnabled: Bool = true,
         loadOnInit: Bool = true,
         launchRecoveryCompleted: Bool? = nil
@@ -99,6 +122,20 @@ public final class FocusSessionService {
         self.taskOperationLedger = taskOperationLedger
         self.focusGuardService = focusGuardService
         self.interruptionDetector = interruptionDetector ?? ScreenTimeInterruptionDetector.shared
+        self.hardwareDisplaySyncExecutor = hardwareDisplaySyncExecutor ?? { session in
+            guard !AppBuildEnvironment.isRunningTests else { return }
+            await AppState.shared.syncFocusHardwareDisplay(session: session)
+        }
+        self.sessionEndPresentationExecutor = sessionEndPresentationExecutor ?? {
+            totalEnergyBottles, newlyUnlocked, now, defersPresentation in
+            guard !AppBuildEnvironment.isRunningTests else { return }
+            await AppState.shared.handleFocusSessionDidEnd(
+                totalEnergyBottles: totalEnergyBottles,
+                newlyUnlocked: newlyUnlocked,
+                now: now,
+                defersHardwarePresentationUntilAcknowledgement: defersPresentation
+            )
+        }
         self.persistenceEnabled = persistenceEnabled
         self.hasCompletedLaunchRecovery = launchRecoveryCompleted ?? !loadOnInit
 
@@ -123,7 +160,11 @@ public final class FocusSessionService {
         persistenceEnabled: Bool = false,
         launchRecoveryCompleted: Bool = true,
         focusPersistence: (any FocusSessionPersisting)? = nil,
-        taskOperationLedger: TaskOperationLedger = .shared
+        taskOperationLedger: TaskOperationLedger = .shared,
+        hardwareDisplaySyncExecutor: @escaping FocusHardwareDisplaySyncExecutor = { _ in },
+        sessionEndPresentationExecutor: @escaping FocusSessionEndPresentationExecutor = {
+            _, _, _, _ in
+        }
     ) -> FocusSessionService {
         FocusSessionService(
             localStorage: .shared,
@@ -131,6 +172,8 @@ public final class FocusSessionService {
             taskOperationLedger: taskOperationLedger,
             focusGuardService: focusGuardService,
             interruptionDetector: interruptionDetector,
+            hardwareDisplaySyncExecutor: hardwareDisplaySyncExecutor,
+            sessionEndPresentationExecutor: sessionEndPresentationExecutor,
             persistenceEnabled: persistenceEnabled,
             loadOnInit: false,
             launchRecoveryCompleted: launchRecoveryCompleted
@@ -171,7 +214,7 @@ public final class FocusSessionService {
         // 与本类其余持久化函数同一守卫策略（防止并行测试污染全局状态）。
         guard persistenceEnabled else { return }
         Task { @MainActor in
-            await AppState.shared.syncFocusHardwareDisplay(session: self.activeSession)
+            await self.hardwareDisplaySyncExecutor(self.activeSession)
             await self.persistActiveSessionWithInterruptions()
         }
     }
@@ -182,7 +225,7 @@ public final class FocusSessionService {
         interruptionDetector.drainPendingInterruptions()
     }
 
-    private func startFocusDisplaySyncLoop() {
+    private func startFocusDisplaySyncLoop(sendImmediately: Bool = true) {
         focusDisplaySyncTask?.cancel()
         guard persistenceEnabled else {
             focusDisplaySyncTask = nil
@@ -190,7 +233,9 @@ public final class FocusSessionService {
         }
         focusDisplaySyncTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            await AppState.shared.syncFocusHardwareDisplay(session: self.activeSession)
+            if sendImmediately {
+                await self.hardwareDisplaySyncExecutor(self.activeSession)
+            }
             while !Task.isCancelled {
                 do {
                     try await Task.sleep(for: .seconds(self.nextFocusDisplaySyncDelay()))
@@ -198,7 +243,7 @@ public final class FocusSessionService {
                     return
                 }
                 guard !Task.isCancelled else { return }
-                await AppState.shared.syncFocusHardwareDisplay(session: self.activeSession)
+                await self.hardwareDisplaySyncExecutor(self.activeSession)
             }
         }
     }
@@ -250,7 +295,7 @@ public final class FocusSessionService {
         guard persistenceEnabled else { return }
         Task { @MainActor [weak self] in
             guard let self else { return }
-            await AppState.shared.syncFocusHardwareDisplay(session: self.activeSession)
+            await self.hardwareDisplaySyncExecutor(self.activeSession)
         }
     }
 
@@ -269,6 +314,28 @@ public final class FocusSessionService {
         mode requestedMode: FocusEnforcementMode = .standard,
         startTime: Date = Date(),
         fallbackPolicy: FocusSessionFallbackPolicy = .allowStandard
+    ) async -> FocusSessionStartResult {
+        await startSession(
+            taskId: taskId,
+            taskTitle: taskTitle,
+            mode: requestedMode,
+            startTime: startTime,
+            fallbackPolicy: fallbackPolicy,
+            sendInitialHardwareStatus: true
+        )
+    }
+
+    /// Hardware EnterTaskIn has already committed a complete 0x11 page. Its first 0x14 is an
+    /// incremental update and must not race that initial EPD render, so this internal overload can
+    /// defer the loop's first push without changing the public/session-testing contract.
+    @discardableResult
+    func startSession(
+        taskId: String,
+        taskTitle: String,
+        mode requestedMode: FocusEnforcementMode,
+        startTime: Date,
+        fallbackPolicy: FocusSessionFallbackPolicy,
+        sendInitialHardwareStatus: Bool
     ) async -> FocusSessionStartResult {
         // Cold-start recovery owns the active-session file until it has loaded, settled, cleared,
         // and saved the previous session. Starting sooner can make recovery settle or delete the
@@ -297,7 +364,14 @@ public final class FocusSessionService {
             if fallbackPolicy == .reject {
                 return .blockedByActiveSession(active)
             }
-            endSession(reason: .timeout, endTime: startTime)
+            // Hardware is already (or about to be) on the new TaskIn page. Do not push idle 0x14
+            // for the old session — it can land after the new 0x11 and wipe that first frame.
+            _ = endActiveSession(
+                reason: .timeout,
+                endTime: startTime,
+                operationKey: nil,
+                suppressHardwarePresentation: true
+            )
         }
 
         // Never overwrite the active-session recovery file until the previous ended session has
@@ -316,16 +390,25 @@ public final class FocusSessionService {
         // this task is suspended on MainActor; an explicit test launch must never replace it.
         if let active = activeSession {
             if fallbackPolicy == .reject {
-                await clearUnusedResolvedProtection(
-                    protectionContext,
-                    activeSession: active
-                )
+                await clearUnusedResolvedProtection(protectionContext)
                 return .blockedByActiveSession(active)
             }
             if active.taskId == taskId {
+                await clearUnusedResolvedProtection(protectionContext)
                 return .alreadyActive(active)
             }
-            endSession(reason: .timeout, endTime: startTime)
+            // Same barrier as the pre-await path: never write a replacement active marker while a
+            // prior session's settlement (which may clear focus_session_active.json) is still open.
+            _ = endActiveSession(
+                reason: .timeout,
+                endTime: startTime,
+                operationKey: nil,
+                suppressHardwarePresentation: true
+            )
+            guard await retryPendingFocusSettlementIfNeeded() else {
+                await clearUnusedResolvedProtection(protectionContext)
+                return .persistenceUnavailable
+            }
         }
         let session = FocusSession(
             taskId: taskId,
@@ -338,24 +421,97 @@ public final class FocusSessionService {
 
         advanceSessionStartGeneration(for: taskId)
         activeSession = session
+        activeShieldGeneration = session.protectionState == .protected
+            ? protectionContext.shieldGeneration
+            : nil
         sessionInterruptions.removeAll()
         resetDebugTimeline(sessionStart: startTime)
         interruptionDetector.startMonitoring()
-        startFocusDisplaySyncLoop()
-        await persistActiveSessionIfNeeded(session)
+        startFocusDisplaySyncLoop(sendImmediately: sendInitialHardwareStatus)
+        // Recovery depends on focus_session_active.json. A failed save must not report .started
+        // after hardware has already opened TaskIn — EnterTaskIn treats this as focusStartFailed
+        // and recovers the device to Interactive.
+        guard await persistActiveSessionIfNeeded(session) else {
+            await abortUnpersistedSessionStart(
+                session,
+                shieldGeneration: protectionContext.shieldGeneration
+            )
+            return .persistenceUnavailable
+        }
         return .started(session)
     }
 
-    private func clearUnusedResolvedProtection(
-        _ protectionContext: ProtectionContext,
-        activeSession: FocusSession
+    /// Whether ending `settledSessionID` may delete the durable active-session file.
+    /// A replacement focus (in memory or already on disk) owns that marker and must keep it.
+    nonisolated static func shouldClearActiveSessionMarker(
+        settledSessionID: UUID,
+        liveActiveSessionID: UUID?,
+        diskActiveSessionID: UUID?
+    ) -> Bool {
+        if let liveActiveSessionID, liveActiveSessionID != settledSessionID {
+            return false
+        }
+        if let diskActiveSessionID, diskActiveSessionID != settledSessionID {
+            return false
+        }
+        return true
+    }
+
+    /// Rolls back an in-memory start when the durable active-session marker could not be written.
+    private func abortUnpersistedSessionStart(
+        _ session: FocusSession,
+        shieldGeneration: UInt64?
     ) async {
-        guard protectionContext.protectionState == .protected,
-              activeSession.protectionState != .protected else { return }
-        focusGuardService.clearShield()
-        if persistenceEnabled {
+        let stillOwnsActiveSession = activeSession?.id == session.id
+        if stillOwnsActiveSession {
+            stopFocusDisplaySyncLoop()
+            interruptionDetector.stopMonitoring()
+        }
+        if session.protectionState == .protected {
+            // A stale resolved start may have applied a newer shield generation and transferred
+            // it to this still-active session while its save was suspended. The live owner must
+            // clear that latest token on rollback; a superseded start may clear only its own.
+            let generationToClear = stillOwnsActiveSession
+                ? activeShieldGeneration
+                : shieldGeneration
+            let cleared = clearShieldIfOwned(by: generationToClear)
+            if activeShieldGeneration == generationToClear {
+                activeShieldGeneration = nil
+            }
+            if cleared, persistenceEnabled {
+                await localStorage.saveDeepFocusShieldActive(false)
+            }
+        }
+        if stillOwnsActiveSession {
+            activeSession = nil
+            resetDebugTimeline()
+        }
+    }
+
+    private func clearUnusedResolvedProtection(_ protectionContext: ProtectionContext) async {
+        guard let generation = protectionContext.shieldGeneration,
+              currentShieldGeneration == generation else { return }
+        if activeSession?.protectionState == .protected {
+            // A protected session that appeared during the await now owns the latest applied
+            // shield. Transfer the token instead of clearing protection underneath that session.
+            activeShieldGeneration = generation
+            return
+        }
+        let cleared = clearShieldIfOwned(by: generation)
+        if cleared, persistenceEnabled {
             await localStorage.saveDeepFocusShieldActive(false)
         }
+    }
+
+    @discardableResult
+    private func clearShieldIfOwned(by generation: UInt64?) -> Bool {
+        guard let generation, currentShieldGeneration == generation else { return false }
+        focusGuardService.clearShield()
+        currentShieldGeneration = nil
+        if activeShieldGeneration == generation {
+            activeShieldGeneration = nil
+        }
+        return true
     }
 
     func sessionStartGeneration(for taskID: String) -> UInt64 {
@@ -369,14 +525,20 @@ public final class FocusSessionService {
 
     /// 结束当前专注会话（当收到 CompleteTask 或 SkipTask 事件时调用）
     public func endSession(reason: FocusEndReason, endTime: Date = Date()) {
-        _ = endActiveSession(reason: reason, endTime: endTime, operationKey: nil)
+        _ = endActiveSession(
+            reason: reason,
+            endTime: endTime,
+            operationKey: nil,
+            suppressHardwarePresentation: false
+        )
     }
 
     @discardableResult
     private func endActiveSession(
         reason: FocusEndReason,
         endTime: Date,
-        operationKey: String?
+        operationKey: String?,
+        suppressHardwarePresentation: Bool = false
     ) -> Bool {
         guard var session = activeSession else { return false }
         // 结束时间不得早于会话开始：固件 RTC 错乱时 completeTask/skipTask 可能携带远古时间戳
@@ -388,8 +550,9 @@ public final class FocusSessionService {
         interruptionDetector.stopMonitoring()
 
         if session.protectionState == .protected {
-            focusGuardService.clearShield()
-            if persistenceEnabled {
+            let cleared = clearShieldIfOwned(by: activeShieldGeneration)
+            activeShieldGeneration = nil
+            if cleared, persistenceEnabled {
                 Task {
                     await localStorage.saveDeepFocusShieldActive(false)
                 }
@@ -415,7 +578,8 @@ public final class FocusSessionService {
             session,
             endTime: endTime,
             clearPersistedActiveSession: true,
-            operationKey: operationKey
+            operationKey: operationKey,
+            suppressHardwarePresentation: suppressHardwarePresentation
         )
         return true
     }
@@ -499,7 +663,9 @@ public final class FocusSessionService {
         guard endActiveSession(
             reason: reason,
             endTime: endTime,
-            operationKey: entry.operationKey
+            operationKey: entry.operationKey,
+            // Matching 0x1B after the final DayPack is the sole page-exit commit.
+            suppressHardwarePresentation: true
         ) else {
             return .durable
         }
@@ -551,8 +717,9 @@ public final class FocusSessionService {
         await focusGuardService.refreshAuthorizationStatus()
         guard focusGuardService.authorizationStatus != .approved else { return }
 
-        focusGuardService.clearShield()
-        if persistenceEnabled {
+        let cleared = clearShieldIfOwned(by: activeShieldGeneration)
+        activeShieldGeneration = nil
+        if cleared, persistenceEnabled {
             await localStorage.saveDeepFocusShieldActive(false)
         }
         Task {
@@ -565,244 +732,12 @@ public final class FocusSessionService {
         await persistActiveSessionIfNeeded(current)
     }
 
-    // MARK: - Statistics
-
-    /// 上次统计计算所属自然日（startOfDay）。统计只在加载/结算时重算，App 跨午夜后
-    /// 缓存的 todayFocusTime 仍是昨日值——回前台时据此判断换日重算（联审 2026-07-16
-    /// F10 相邻缺陷：口径不变，只修缓存不换日）。
-    private var statisticsReferenceDay: Date?
-
-    /// 换日后重算统计缓存；同日或从未计算过为 no-op。只应在非渲染时机调用（回前台等），
-    /// 渲染路径读 Today 用 `todayFocusTimeIncludingActive(now:)`（纯读不改缓存）。
-    public func refreshStatisticsIfDayChanged(now: Date = Date()) {
-        guard let referenceDay = statisticsReferenceDay,
-              !Calendar.current.isDate(now, inSameDayAs: referenceDay) else { return }
-        updateStatistics(now: now)
-    }
-
-    /// 专注页 Today 行口径：按 now 判日的今日已结算时长 + 当前活跃会话整段可计时长。
-    /// 整段按 endTime 归属（与 updateStatistics 口径一致）：若现在结束即整体归今天，
-    /// 因此不做午夜切分，避免结算瞬间总数跳变。纯函数，渲染路径安全。
-    public func todayFocusTimeIncludingActive(now: Date = Date()) -> TimeInterval {
-        let calendar = Calendar.current
-        let settledToday = todaySessions
-            .filter { session in
-                guard let endTime = session.endTime else { return false }
-                return calendar.isDate(endTime, inSameDayAs: now)
-            }
-            .compactMap(\.calculatedFocusTime)
-            .reduce(0, +)
-        return settledToday + progressSnapshot(now: now).countableFocusTime
-    }
-
-    func updateStatistics(now: Date = Date()) {
-        let calendar = Calendar.current
-        let today = calendar.startOfDay(for: now)
-        statisticsReferenceDay = today
-
-        let todayCompletedSessions = todaySessions.filter { session in
-            guard let endTime = session.endTime else { return false }
-            return calendar.isDate(endTime, inSameDayAs: today)
-        }
-
-        let focusTimes = todayCompletedSessions.compactMap { $0.calculatedFocusTime }
-        let todayFocusTime = focusTimes.reduce(0, +)
-        let protectedSessionCount = todayCompletedSessions.filter { $0.protectionState == .protected }.count
-
-        let averageMinutes = focusTimes.isEmpty ? 0 : Int(focusTimes.reduce(0, +) / Double(focusTimes.count) / 60)
-        let longestMinutes = Int((focusTimes.max() ?? 0) / 60)
-        let interruptions = todayCompletedSessions.reduce(0) { $0 + $1.screenUnlockEvents.count }
-        let peakHour = computePeakFocusHour(sessions: todayCompletedSessions, calendar: calendar)
-
-        statistics = FocusStatistics(
-            todayFocusTime: todayFocusTime,
-            todaySessions: todayCompletedSessions.count,
-            protectedSessionCount: protectedSessionCount,
-            averageSessionMinutes: averageMinutes,
-            longestSessionMinutes: longestMinutes,
-            interruptionCount: interruptions,
-            peakFocusHour: peakHour,
-            focusTrendDirection: .stable
-        )
-
-        Task {
-            async let trend = computeTrendDirection()
-            async let historicalTimes = computeHistoricalFocusTimes()
-            let (resolvedTrend, (week, month)) = await (trend, historicalTimes)
-            statistics.focusTrendDirection = resolvedTrend
-            statistics.pastWeekFocusTime = week
-            statistics.last30DaysFocusTime = month
-        }
-    }
-
-    private func computeHistoricalFocusTimes() async -> (week: TimeInterval, month: TimeInterval) {
-        guard persistenceEnabled else { return (0, 0) }
-        do {
-            let monthSessions = try await localStorage.loadFocusSessionsForPastDays(30)
-            let cutoff7 = Calendar.current.date(byAdding: .day, value: -7, to: Calendar.current.startOfDay(for: Date())) ?? .distantPast
-            let week = monthSessions
-                .filter { $0.startTime >= cutoff7 }
-                .compactMap(\.calculatedFocusTime)
-                .reduce(0, +)
-            let month = monthSessions
-                .compactMap(\.calculatedFocusTime)
-                .reduce(0, +)
-            return (week, month)
-        } catch {
-            return (0, 0)
-        }
-    }
-
-    private func computePeakFocusHour(sessions: [FocusSession], calendar: Calendar) -> Int? {
-        guard !sessions.isEmpty else { return nil }
-
-        var hourBuckets: [Int: TimeInterval] = [:]
-        for session in sessions {
-            guard let focusTime = session.calculatedFocusTime, focusTime > 0 else { continue }
-            let hour = calendar.component(.hour, from: session.startTime)
-            hourBuckets[hour, default: 0] += focusTime
-        }
-
-        return hourBuckets.max(by: { $0.value < $1.value })?.key
-    }
-
-    private func computeTrendDirection() async -> TrendDirection {
-        guard persistenceEnabled else { return .stable }
-
-        let calendar = Calendar.current
-        guard let yesterday = calendar.date(byAdding: .day, value: -1, to: calendar.startOfDay(for: Date())) else {
-            return .stable
-        }
-
-        do {
-            let yesterdaySessions = try await localStorage.loadFocusSessionsForDate(yesterday) ?? []
-            let yesterdayFocusTime = yesterdaySessions.compactMap { $0.calculatedFocusTime }.reduce(0, +)
-
-            guard yesterdayFocusTime > 0 else {
-                return statistics.todayFocusTime > 0 ? .up : .stable
-            }
-
-            let ratio = statistics.todayFocusTime / yesterdayFocusTime
-            if ratio > 1.1 { return .up }
-            if ratio < 0.9 { return .down }
-            return .stable
-        } catch {
-            return .stable
-        }
-    }
-
-    // MARK: - Attention Summary
-
-    /// 生成注意力镜像摘要
-    public func generateAttentionSummary() -> AttentionSummary {
-        AttentionSummary(
-            totalFocusMinutes: Int(statistics.todayFocusTime / 60),
-            sessionCount: statistics.todaySessions,
-            longestSessionMinutes: statistics.longestSessionMinutes,
-            interruptionCount: statistics.interruptionCount,
-            peakHour: statistics.peakFocusHour,
-            trend: statistics.focusTrendDirection
-        )
-    }
-
-    // MARK: - Protection Resolution
-
-    private struct ProtectionContext {
-        var mode: FocusEnforcementMode
-        var protectionState: FocusProtectionState
-        var interruptionSource: FocusInterruptionSource?
-    }
-
-    private func resolveProtectionContext(requestedMode: FocusEnforcementMode) async -> ProtectionContext {
-        guard requestedMode == .deepFocus else {
-            return ProtectionContext(mode: .standard, protectionState: .unprotected, interruptionSource: nil)
-        }
-
-        guard focusGuardService.isDeepFocusFeatureEnabled else {
-            Task {
-                await FocusMetricsService.shared.record(.sessionFallback)
-            }
-            return ProtectionContext(mode: .standard, protectionState: .fallback, interruptionSource: .featureDisabled)
-        }
-        guard focusGuardService.isDeepFocusCapable else {
-            Task {
-                await FocusMetricsService.shared.record(.sessionFallback)
-            }
-            return ProtectionContext(mode: .standard, protectionState: .fallback, interruptionSource: .capabilityUnavailable)
-        }
-
-        await focusGuardService.refreshAuthorizationStatus()
-        var status = focusGuardService.authorizationStatus
-        if status == .notDetermined {
-            Task {
-                await FocusMetricsService.shared.record(.authorizationRequested)
-            }
-            status = await focusGuardService.requestAuthorization()
-        }
-
-        guard status == .approved else {
-            Task {
-                await FocusMetricsService.shared.record(.authorizationDenied)
-                await FocusMetricsService.shared.record(.sessionFallback)
-            }
-            return ProtectionContext(mode: .standard, protectionState: .fallback, interruptionSource: .permissionDenied)
-        }
-
-        Task {
-            await FocusMetricsService.shared.record(.authorizationApproved)
-        }
-
-        guard let selection = focusGuardService.currentSelection(), !selection.isEmpty else {
-            Task {
-                await FocusMetricsService.shared.record(.sessionFallback)
-            }
-            return ProtectionContext(mode: .standard, protectionState: .fallback, interruptionSource: .selectionMissing)
-        }
-
-        do {
-            try focusGuardService.applyShield(selection: selection)
-            if persistenceEnabled {
-                await localStorage.saveDeepFocusShieldActive(true)
-            }
-            Task {
-                await FocusMetricsService.shared.record(.protectionApplied)
-            }
-            return ProtectionContext(mode: .deepFocus, protectionState: .protected, interruptionSource: nil)
-        } catch {
-            // metrics 只累计次数；不记错误内容的话，线上无法区分权限问题和 ScreenTime API 故障。
-            ErrorReporter.log(
-                .sync(component: "FocusGuard.applyShield", underlying: error.localizedDescription),
-                context: "FocusSessionService.resolveProtectionContext"
-            )
-            Task {
-                await FocusMetricsService.shared.record(.protectionApplyFailed)
-                await FocusMetricsService.shared.record(.sessionFallback)
-            }
-            return ProtectionContext(mode: .standard, protectionState: .fallback, interruptionSource: .shieldApplyFailed)
-        }
-    }
-
-    // MARK: - Focus Time Calculation
-
-    /// 计算专注时间：只有超过阈值的无屏幕活动时段才计入
-    func calculateFocusTime(
-        sessionStart: Date,
-        sessionEnd: Date,
-        screenUnlockEvents: [ScreenUnlockEvent]
-    ) -> TimeInterval {
-        FocusTimeCalculator.countableFocusTime(
-            sessionStart: sessionStart,
-            sessionEnd: sessionEnd,
-            screenUnlockEvents: screenUnlockEvents,
-            thresholdSeconds: Constants.focusThresholdSeconds
-        )
-    }
-
     func completeSession(
         _ session: FocusSession,
         endTime: Date,
         clearPersistedActiveSession: Bool,
-        operationKey: String?
+        operationKey: String?,
+        suppressHardwarePresentation: Bool = false
     ) {
         var durableSession = session
         if persistenceEnabled, durableSession.energyAwardReceiptID == nil {
@@ -822,7 +757,10 @@ public final class FocusSessionService {
             endTime: endTime,
             clearPersistedActiveSession: clearPersistedActiveSession,
             operationKey: operationKey,
-            historyAlreadyPersisted: false
+            historyAlreadyPersisted: false,
+            // Hardware Complete/Skip already owns the page via operationKey; task-switch ends pass
+            // the flag explicitly so idle 0x14 cannot race a newer 0x11.
+            suppressHardwarePresentation: suppressHardwarePresentation || operationKey != nil
         )
         schedulePendingFocusSettlement()
     }
@@ -832,26 +770,3 @@ public final class FocusSessionService {
 // ScreenActivityTracker（「Kirole 回前台即打断」的旧信号）已于 v2.5.20 整体删除：
 // 该判定与产品设计相反（打开 Kirole 查看进度反被记打断、使用其它 App 检测不到）。
 // 新判定源见 FocusInterruptionDetector.swift；spec D-2 禁止保留任何回退路径。
-
-// MARK: - Focus Enforcement Mode Persistence
-
-extension FocusSessionService {
-    /// Loads the saved focus enforcement mode from UserDefaults and applies ScreenTime guard.
-    func loadFocusEnforcementMode() async {
-        let saved = await localStorage.loadFocusEnforcementMode() ?? .standard
-        if saved == .deepFocus && !ScreenTimeFocusGuardService.shared.canShowDeepFocusEntry {
-            focusEnforcementMode = .standard
-            await localStorage.saveFocusEnforcementMode(.standard)
-        } else {
-            focusEnforcementMode = saved
-        }
-    }
-
-    /// Sets the focus enforcement mode and persists it.
-    public func setFocusEnforcementMode(_ mode: FocusEnforcementMode) {
-        focusEnforcementMode = mode
-        Task {
-            await localStorage.saveFocusEnforcementMode(mode)
-        }
-    }
-}

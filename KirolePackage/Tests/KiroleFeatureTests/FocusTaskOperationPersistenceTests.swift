@@ -265,6 +265,451 @@ struct FocusTaskOperationPersistenceTests {
         #expect(service.activeSession == nil)
     }
 
+    @Test("Active session save failure does not return started or leave an unrecovered session")
+    @MainActor
+    func activeSaveFailureDoesNotReportStarted() async {
+        let persistence = FocusPersistenceFailureStub(failActiveSaves: 1)
+        let service = makeService(persistence: persistence)
+
+        let result = await service.startSession(
+            taskId: "focus-active-save",
+            taskTitle: "Must persist",
+            startTime: Date().addingTimeInterval(-30)
+        )
+
+        guard case .persistenceUnavailable = result else {
+            Issue.record("Expected .persistenceUnavailable, got \(result)")
+            return
+        }
+        #expect(service.activeSession == nil)
+        #expect(await persistence.activeSession() == nil)
+    }
+
+    @Test("A stale same-task Deep Focus start clears the unused shield it applied")
+    @MainActor
+    func staleSameTaskDeepFocusStartClearsUnusedShield() async {
+        await SharedPersistenceTestLock.shared.withLock {
+            await LocalStorage.shared.saveDeepFocusShieldActive(false)
+            let persistence = FocusPersistenceFailureStub()
+            let guardService = BlockingFocusPersistenceGuardStub()
+            let service = makeService(
+                persistence: persistence,
+                focusGuardService: guardService
+            )
+
+            let deepStart = Task { @MainActor in
+                await service.startSession(
+                    taskId: "focus-same-task",
+                    taskTitle: "Same task",
+                    mode: .deepFocus
+                )
+            }
+            for _ in 0..<100 where !guardService.refreshStarted {
+                await Task.yield()
+            }
+            #expect(guardService.refreshStarted)
+
+            let replacement = await service.startSession(
+                taskId: "focus-same-task",
+                taskTitle: "Same task",
+                mode: .standard
+            )
+            guard case .started(let replacementSession) = replacement else {
+                Issue.record("Expected the standard replacement session to start")
+                guardService.releaseRefresh()
+                return
+            }
+
+            guardService.releaseRefresh()
+            let staleResult = await deepStart.value
+
+            guard case .alreadyActive(let active) = staleResult else {
+                Issue.record("Expected the stale Deep Focus start to reuse the active session")
+                return
+            }
+            #expect(active.id == replacementSession.id)
+            #expect(service.activeSession?.id == replacementSession.id)
+            #expect(guardService.applyShieldCalls == 1)
+            #expect(guardService.clearShieldCalls == 1)
+
+            service.endSession(reason: .timeout)
+            await service.waitForPendingPersistenceForTesting()
+            await LocalStorage.shared.saveDeepFocusShieldActive(false)
+        }
+    }
+
+    @Test("A late failed start cannot clear a replacement Deep Focus shield")
+    @MainActor
+    func lateFailedStartKeepsReplacementShield() async {
+        await SharedPersistenceTestLock.shared.withLock {
+            await LocalStorage.shared.saveDeepFocusShieldActive(false)
+            let activeSaveBarrier = FocusLaunchBarrier()
+            let persistence = FocusPersistenceFailureStub(
+                failActiveSaves: 1,
+                activeSaveBarrier: activeSaveBarrier
+            )
+            let guardService = FocusProtectionTrackingGuardStub()
+            let service = makeService(
+                persistence: persistence,
+                focusGuardService: guardService
+            )
+
+            let staleStart = Task { @MainActor in
+                await service.startSession(
+                    taskId: "focus-stale-save",
+                    taskTitle: "Stale save",
+                    mode: .deepFocus
+                )
+            }
+            for _ in 0..<100 where !(await persistence.hasStartedActiveSave()) {
+                await Task.yield()
+            }
+            #expect(await persistence.hasStartedActiveSave())
+
+            let replacement = await service.startSession(
+                taskId: "focus-replacement-save",
+                taskTitle: "Replacement save",
+                mode: .deepFocus
+            )
+            await activeSaveBarrier.release()
+            let staleResult = await staleStart.value
+
+            guard case .started(let replacementSession) = replacement else {
+                Issue.record("Expected the replacement Deep Focus session to start")
+                return
+            }
+            guard case .persistenceUnavailable = staleResult else {
+                Issue.record("Expected the stale active save to fail")
+                return
+            }
+            #expect(service.activeSession?.id == replacementSession.id)
+            #expect(await persistence.activeSession()?.id == replacementSession.id)
+            #expect(guardService.applyShieldCalls == 2)
+            #expect(guardService.clearShieldCalls == 1)
+            #expect(guardService.isShieldApplied)
+
+            service.endSession(reason: .timeout)
+            await service.waitForPendingPersistenceForTesting()
+            await LocalStorage.shared.saveDeepFocusShieldActive(false)
+        }
+    }
+
+    @Test("Active marker clear skips when a replacement session owns the file")
+    func replacementSessionBlocksStaleActiveClear() {
+        let settled = UUID()
+        let replacement = UUID()
+
+        #expect(
+            FocusSessionService.shouldClearActiveSessionMarker(
+                settledSessionID: settled,
+                liveActiveSessionID: nil,
+                diskActiveSessionID: settled
+            )
+        )
+        #expect(
+            !FocusSessionService.shouldClearActiveSessionMarker(
+                settledSessionID: settled,
+                liveActiveSessionID: replacement,
+                diskActiveSessionID: settled
+            )
+        )
+        #expect(
+            !FocusSessionService.shouldClearActiveSessionMarker(
+                settledSessionID: settled,
+                liveActiveSessionID: nil,
+                diskActiveSessionID: replacement
+            )
+        )
+        #expect(
+            FocusSessionService.shouldClearActiveSessionMarker(
+                settledSessionID: settled,
+                liveActiveSessionID: nil,
+                diskActiveSessionID: nil
+            )
+        )
+    }
+
+    @Test("Late settlement for a prior focus does not delete a replacement active marker")
+    @MainActor
+    func latePriorSettlementKeepsReplacementMarker() async throws {
+        // First settlement attempt fails history once so the clear step can run later, after a
+        // replacement focus has already claimed focus_session_active.json.
+        let persistence = FocusPersistenceFailureStub(failHistorySaves: 1)
+        let service = makeService(persistence: persistence)
+        let firstStart = Date().addingTimeInterval(-180)
+        let secondStart = Date().addingTimeInterval(-30)
+
+        let first = await service.startSession(
+            taskId: "focus-marker-a",
+            taskTitle: "A",
+            startTime: firstStart
+        )
+        guard case .started(let sessionA) = first else {
+            Issue.record("Expected first session to start")
+            return
+        }
+        #expect(await persistence.activeSession()?.id == sessionA.id)
+
+        service.endSession(reason: .timeout, endTime: secondStart)
+        await service.waitForPendingPersistenceForTesting()
+        #expect(service.pendingFocusSettlement?.session.id == sessionA.id)
+
+        let sessionB = FocusSession(
+            taskId: "focus-marker-b",
+            taskTitle: "B",
+            startTime: secondStart
+        )
+        try await persistence.saveActiveSession(sessionB)
+        service.activeSession = sessionB
+
+        #expect(await service.retryPendingFocusSettlementIfNeeded())
+        #expect(service.pendingFocusSettlement == nil)
+        #expect(await persistence.activeSession()?.id == sessionB.id)
+        #expect(service.activeSession?.id == sessionB.id)
+    }
+
+    @Test("Task switch ends the previous session with hardware presentation suppressed")
+    @MainActor
+    func taskSwitchSuppressesIdleHardwarePresentation() async throws {
+        // Keep the prior session's settlement pending so we can inspect the suppress flag
+        // before handleFocusSessionDidEnd runs. retryPendingFocusSettlementIfNeeded will attempt
+        // again after the first failure, so the failure budget must survive that second attempt.
+        let persistence = FocusPersistenceFailureStub(failHistorySaves: 5)
+        let service = makeService(persistence: persistence)
+        let firstStart = Date().addingTimeInterval(-120)
+        let secondStart = Date().addingTimeInterval(-30)
+
+        let first = await service.startSession(
+            taskId: "focus-switch-a",
+            taskTitle: "A",
+            startTime: firstStart
+        )
+        guard case .started = first else {
+            Issue.record("Expected first session to start")
+            return
+        }
+
+        // Ending A for a switch parks settlement with suppressHardwarePresentation. The
+        // failed history write blocks B from starting — that is expected and still proves the
+        // flag that prevents idle 0x14 from racing a later 0x11.
+        let second = await service.startSession(
+            taskId: "focus-switch-b",
+            taskTitle: "B",
+            startTime: secondStart
+        )
+        guard case .persistenceUnavailable = second else {
+            Issue.record("Expected settlement barrier to block the replacement start, got \(second)")
+            return
+        }
+
+        let pending = try #require(service.pendingFocusSettlement)
+        #expect(pending.session.taskId == "focus-switch-a")
+        #expect(pending.session.endReason == .timeout)
+        #expect(pending.suppressHardwarePresentation)
+        #expect(service.activeSession == nil)
+    }
+
+    @Test("A failed post-protection settlement barrier clears the unused Deep Focus shield")
+    @MainActor
+    func failedSecondSettlementBarrierClearsResolvedProtection() async {
+        await SharedPersistenceTestLock.shared.withLock {
+            await LocalStorage.shared.saveDeepFocusShieldActive(false)
+            let persistence = FocusPersistenceFailureStub(failHistorySaves: 3)
+            let guardService = BlockingFocusPersistenceGuardStub()
+            let service = makeService(
+                persistence: persistence,
+                focusGuardService: guardService
+            )
+
+            let deepStart = Task { @MainActor in
+                await service.startSession(
+                    taskId: "focus-deep-waiting",
+                    taskTitle: "Deep waiting",
+                    mode: .deepFocus
+                )
+            }
+            for _ in 0..<100 where !guardService.refreshStarted {
+                await Task.yield()
+            }
+            #expect(guardService.refreshStarted)
+
+            let replacement = await service.startSession(
+                taskId: "focus-standard-replacement",
+                taskTitle: "Standard replacement",
+                mode: .standard
+            )
+            guard case .started = replacement else {
+                Issue.record("Expected the replacement session to start")
+                guardService.releaseRefresh()
+                return
+            }
+
+            guardService.releaseRefresh()
+            let result = await deepStart.value
+            await LocalStorage.shared.saveDeepFocusShieldActive(false)
+
+            guard case .persistenceUnavailable = result else {
+                Issue.record("Expected the failed settlement barrier to reject the new session")
+                return
+            }
+            #expect(service.activeSession == nil)
+            #expect(guardService.applyShieldCalls == 1)
+            #expect(guardService.clearShieldCalls == 1)
+        }
+    }
+
+    @Test("A protected session that appears during the failed barrier keeps its shield")
+    @MainActor
+    func failedBarrierDoesNotClearNewProtectedSessionShield() async {
+        await SharedPersistenceTestLock.shared.withLock {
+            await LocalStorage.shared.saveDeepFocusShieldActive(false)
+            let historyBarrier = FocusLaunchBarrier()
+            let persistence = FocusPersistenceFailureStub(
+                failHistorySaves: 3,
+                historySaveBarrier: historyBarrier
+            )
+            let guardService = BlockingFocusPersistenceGuardStub()
+            let service = makeService(
+                persistence: persistence,
+                focusGuardService: guardService
+            )
+
+            let deepStart = Task { @MainActor in
+                await service.startSession(
+                    taskId: "focus-deep-stale-cleanup",
+                    taskTitle: "Deep stale cleanup",
+                    mode: .deepFocus
+                )
+            }
+            for _ in 0..<100 where !guardService.refreshStarted {
+                await Task.yield()
+            }
+            _ = await service.startSession(
+                taskId: "focus-standard-before-barrier",
+                taskTitle: "Standard before barrier",
+                mode: .standard
+            )
+
+            guardService.releaseRefresh()
+            for _ in 0..<100 where !(await persistence.hasStartedHistorySave()) {
+                await Task.yield()
+            }
+            let protectedReplacement = FocusSession(
+                taskId: "focus-protected-during-barrier",
+                taskTitle: "Protected during barrier",
+                startTime: Date(),
+                mode: .deepFocus,
+                protectionState: .protected
+            )
+            service.activeSession = protectedReplacement
+            await historyBarrier.release()
+
+            let result = await deepStart.value
+            guard case .persistenceUnavailable = result else {
+                Issue.record("Expected the failed barrier to reject the stale Deep Focus start")
+                return
+            }
+            #expect(service.activeSession?.id == protectedReplacement.id)
+            #expect(guardService.clearShieldCalls == 0)
+
+            guardService.clearShield()
+            service.activeSession = nil
+            await LocalStorage.shared.saveDeepFocusShieldActive(false)
+        }
+    }
+
+    @Test("Overlapping Deep Focus starts preserve the replacement session's shield")
+    @MainActor
+    func overlappingDeepFocusStartsPreserveReplacementShield() async {
+        await SharedPersistenceTestLock.shared.withLock {
+            await LocalStorage.shared.saveDeepFocusShieldActive(false)
+            let persistence = FocusPersistenceFailureStub()
+            let guardService = InterleavingFocusGuardStub()
+            let service = makeService(
+                persistence: persistence,
+                focusGuardService: guardService
+            )
+
+            let firstStart = Task { @MainActor in
+                await service.startSession(
+                    taskId: "focus-overlap-a",
+                    taskTitle: "Overlap A",
+                    mode: .deepFocus
+                )
+            }
+            for _ in 0..<100 where guardService.refreshCallCount < 1 {
+                await Task.yield()
+            }
+
+            let replacementStart = Task { @MainActor in
+                await service.startSession(
+                    taskId: "focus-overlap-b",
+                    taskTitle: "Overlap B",
+                    mode: .deepFocus
+                )
+            }
+            for _ in 0..<100 where guardService.refreshCallCount < 2 {
+                await Task.yield()
+            }
+            #expect(guardService.refreshCallCount == 2)
+
+            // A applies generation 1, then the guard releases B so generation 2 is claimed while
+            // A is suspended on shield-state persistence. A must not adopt B's newer generation.
+            guardService.releaseFirstRefresh()
+            _ = await firstStart.value
+            let replacementResult = await replacementStart.value
+
+            guard case .started = replacementResult else {
+                Issue.record("Expected the replacement Deep Focus session to start")
+                return
+            }
+            #expect(service.activeSession?.taskId == "focus-overlap-b")
+            #expect(service.activeSession?.protectionState == .protected)
+            #expect(guardService.isShieldApplied)
+            #expect(guardService.clearShieldCalls == 0)
+
+            service.endSession(reason: .manual)
+            await service.waitForPendingPersistenceForTesting()
+            #expect(guardService.clearShieldCalls == 1)
+            await LocalStorage.shared.saveDeepFocusShieldActive(false)
+        }
+    }
+
+    @Test("Testing services route live sync and settlement presentation through injected exits")
+    @MainActor
+    func testingServiceUsesInjectedHardwareExits() async {
+        let persistence = FocusPersistenceFailureStub()
+        let recorder = FocusHardwareExitRecorder()
+        let service = makeService(
+            persistence: persistence,
+            hardwareDisplaySyncExecutor: { session in
+                recorder.recordDisplaySync(session)
+            },
+            sessionEndPresentationExecutor: {
+                total, newlyUnlocked, now, defersPresentation in
+                recorder.recordSettlement(
+                    total: total,
+                    newlyUnlocked: newlyUnlocked,
+                    now: now,
+                    defersPresentation: defersPresentation
+                )
+            }
+        )
+
+        _ = await service.startSession(
+            taskId: "focus-injected-output",
+            taskTitle: "Injected output"
+        )
+        for _ in 0..<100 where recorder.displaySyncCount == 0 {
+            await Task.yield()
+        }
+        service.endSession(reason: .manual)
+        await service.waitForPendingPersistenceForTesting()
+
+        #expect(recorder.displaySyncCount == 1)
+        #expect(recorder.settlementCount == 1)
+    }
+
     @MainActor
     private func verifyLaunchRecovery(
         action: TaskListSnapshotAction,
@@ -298,18 +743,25 @@ struct FocusTaskOperationPersistenceTests {
     @MainActor
     private func makeService(
         persistence: FocusPersistenceFailureStub,
+        focusGuardService: any FocusGuardService = FocusPersistenceGuardStub(),
         ledger: TaskOperationLedger = TaskOperationLedger(
             persistenceEnabled: false,
             initialEntries: []
         ),
-        launchRecoveryCompleted: Bool = true
+        launchRecoveryCompleted: Bool = true,
+        hardwareDisplaySyncExecutor: @escaping FocusHardwareDisplaySyncExecutor = { _ in },
+        sessionEndPresentationExecutor: @escaping FocusSessionEndPresentationExecutor = {
+            _, _, _, _ in
+        }
     ) -> FocusSessionService {
         FocusSessionService.makeForTesting(
-            focusGuardService: FocusPersistenceGuardStub(),
+            focusGuardService: focusGuardService,
             persistenceEnabled: true,
             launchRecoveryCompleted: launchRecoveryCompleted,
             focusPersistence: persistence,
-            taskOperationLedger: ledger
+            taskOperationLedger: ledger,
+            hardwareDisplaySyncExecutor: hardwareDisplaySyncExecutor,
+            sessionEndPresentationExecutor: sessionEndPresentationExecutor
         )
     }
 
@@ -331,124 +783,4 @@ struct FocusTaskOperationPersistenceTests {
             recordedAt: now
         )
     }
-}
-
-private actor FocusPersistenceFailureStub: FocusSessionPersisting {
-    private var storedSessions: [FocusSession]
-    private var storedActive: FocusSession?
-    private var remainingHistoryFailures: Int
-    private var remainingClearFailures: Int
-    private var remainingEnergyAwardFailures: Int
-    private var energyAwards: [UUID: Int] = [:]
-    private var storedEnergyTotal = 0
-
-    init(
-        initialSessions: [FocusSession] = [],
-        initialActive: FocusSession? = nil,
-        failHistorySaves: Int = 0,
-        failClears: Int = 0,
-        failEnergyAwards: Int = 0
-    ) {
-        storedSessions = initialSessions
-        storedActive = initialActive
-        remainingHistoryFailures = failHistorySaves
-        remainingClearFailures = failClears
-        remainingEnergyAwardFailures = failEnergyAwards
-    }
-
-    func loadSessions() async throws -> [FocusSession]? {
-        storedSessions
-    }
-
-    func saveSessions(_ sessions: [FocusSession], date: Date) async throws {
-        if remainingHistoryFailures > 0 {
-            remainingHistoryFailures -= 1
-            throw FocusPersistenceTestError.injectedHistoryFailure
-        }
-        storedSessions = sessions
-    }
-
-    func loadActiveSession() async throws -> FocusSession? {
-        storedActive
-    }
-
-    func saveActiveSession(_ session: FocusSession) async throws {
-        storedActive = session
-    }
-
-    func clearActiveSession() async throws {
-        if remainingClearFailures > 0 {
-            remainingClearFailures -= 1
-            throw FocusPersistenceTestError.injectedClearFailure
-        }
-        storedActive = nil
-    }
-
-    func applyEnergyReward(receiptID: UUID, bottles: Int) async throws -> Int {
-        if remainingEnergyAwardFailures > 0 {
-            remainingEnergyAwardFailures -= 1
-            throw FocusPersistenceTestError.injectedEnergyAwardFailure
-        }
-        if let target = energyAwards[receiptID] {
-            storedEnergyTotal = max(storedEnergyTotal, target)
-            return storedEnergyTotal
-        }
-        let target = storedEnergyTotal + max(0, bottles)
-        energyAwards[receiptID] = target
-        storedEnergyTotal = target
-        return target
-    }
-
-    func sessions() -> [FocusSession] {
-        storedSessions
-    }
-
-    func activeSession() -> FocusSession? {
-        storedActive
-    }
-
-    func energyTotal() -> Int {
-        storedEnergyTotal
-    }
-}
-
-private enum FocusPersistenceTestError: Error {
-    case injectedHistoryFailure
-    case injectedClearFailure
-    case injectedEnergyAwardFailure
-}
-
-private actor FocusLaunchBarrier {
-    private var continuation: CheckedContinuation<Void, Never>?
-    private var isReleased = false
-
-    func wait() async {
-        guard !isReleased else { return }
-        await withCheckedContinuation { continuation in
-            self.continuation = continuation
-        }
-    }
-
-    func release() {
-        isReleased = true
-        continuation?.resume()
-        continuation = nil
-    }
-}
-
-@MainActor
-private final class FocusPersistenceGuardStub: FocusGuardService {
-    var authorizationStatus: FocusAuthorizationStatus = .notDetermined
-    var isDeepFocusFeatureEnabled = false
-    var isDeepFocusCapable = false
-    var canShowDeepFocusEntry: Bool { false }
-    var selectedApplicationCount = 0
-    var isPickerPresented = false
-
-    func refreshAuthorizationStatus() async {}
-    func requestAuthorization() async -> FocusAuthorizationStatus { .notDetermined }
-    func presentAppPicker() {}
-    func applyShield(selection: FocusAppSelection) throws {}
-    func clearShield() {}
-    func currentSelection() -> FocusAppSelection? { nil }
 }

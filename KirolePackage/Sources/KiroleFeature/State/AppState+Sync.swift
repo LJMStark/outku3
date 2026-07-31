@@ -417,19 +417,38 @@ extension AppState {
 
     /// Single entry-point used by every write site (and external sync hook)
     /// to request a BLE push. Multiple calls within `debounce` are coalesced
-    /// to one `BLESyncCoordinator.performSync()` invocation.
+    /// to one `BLESyncCoordinator.performSync()` invocation while preserving
+    /// the highest-priority trigger.
     ///
     /// `BLESyncPolicy.shouldSync` already returns `true` whenever the
     /// DayPack fingerprint changed, so we never need `force: true` here.
-    func requestBLESync(reason: String, debounce: Duration = .seconds(1.5)) {
+    func requestBLESync(
+        reason: String,
+        trigger: BLESyncTrigger = .automatic,
+        debounce: Duration = .seconds(1.5)
+    ) {
+        let mergedTrigger = pendingBLESyncTrigger?.merged(with: trigger) ?? trigger
         pendingBLESyncTask?.cancel()
+        pendingBLESyncTrigger = mergedTrigger
+        pendingBLESyncRequestGeneration &+= 1
+        let requestGeneration = pendingBLESyncRequestGeneration
         pendingBLESyncTask = Task { @MainActor in
             try? await Task.sleep(for: debounce)
             guard !Task.isCancelled else { return }
             #if DEBUG
-            print("[AppState.requestBLESync] firing performSync (reason=\(reason))")
+            print(
+                "[AppState.requestBLESync] firing performSync "
+                    + "(reason=\(reason), trigger=\(mergedTrigger))"
+            )
             #endif
-            await BLESyncCoordinator.shared.performSync()
+            if let bleSyncExecutor {
+                await bleSyncExecutor(mergedTrigger)
+            } else {
+                await BLESyncCoordinator.shared.performSync(trigger: mergedTrigger)
+            }
+            guard pendingBLESyncRequestGeneration == requestGeneration else { return }
+            pendingBLESyncTask = nil
+            pendingBLESyncTrigger = nil
         }
     }
 
@@ -439,11 +458,26 @@ extension AppState {
     func cancelPendingBLESync() {
         pendingBLESyncTask?.cancel()
         pendingBLESyncTask = nil
+        pendingBLESyncTrigger = nil
+        pendingBLESyncRequestGeneration &+= 1
     }
 
     /// A live Complete/Skip response sends its final DayPack before 0x1B. Cancel the ordinary
     /// debounced request created by the same mutation so it cannot race and send the same DayPack.
+    /// Identity/manual triggers are preserved and resumed after that transaction — the final
+    /// DayPack path does not send PetStatus(0x01).
     func cancelPendingBLESyncForTaskActionPresentation() {
+        if let trigger = pendingBLESyncTrigger, trigger.survivesTaskActionPresentation {
+            deferredBLESyncTriggerAfterTaskAction =
+                deferredBLESyncTriggerAfterTaskAction?.merged(with: trigger) ?? trigger
+        }
         cancelPendingBLESync()
+    }
+
+    /// Re-queues identity/manual presentation updates that were parked during Complete/Skip.
+    func resumeDeferredBLESyncAfterTaskActionPresentation() {
+        guard let trigger = deferredBLESyncTriggerAfterTaskAction else { return }
+        deferredBLESyncTriggerAfterTaskAction = nil
+        requestBLESync(reason: "deferredAfterTaskAction", trigger: trigger)
     }
 }
