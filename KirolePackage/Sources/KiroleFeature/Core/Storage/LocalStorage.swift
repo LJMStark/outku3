@@ -15,6 +15,7 @@ public actor LocalStorage {
         static let developmentStorageSchemaVersion = "developmentStorageSchemaVersion"
         static let lastEventLogTimestamp = "lastEventLogTimestamp"
         static let lastDayPackHash = "lastDayPackHash"
+        static let lastDayPackSemanticHash = "lastDayPackSemanticHash"
         static let taskListSnapshotEpoch = "taskListSnapshotEpoch"
         static let taskListSnapshotRevision = "taskListSnapshotRevision"
         static let lastBleSyncTime = "lastBleSyncTime"
@@ -101,6 +102,7 @@ public actor LocalStorage {
         Keys.developmentStorageSchemaVersion,
         Keys.lastEventLogTimestamp,
         Keys.lastDayPackHash,
+        Keys.lastDayPackSemanticHash,
         Keys.taskListSnapshotEpoch,
         Keys.taskListSnapshotRevision,
         Keys.lastBleSyncTime,
@@ -606,6 +608,14 @@ public actor LocalStorage {
 
     public func loadLastDayPackHash() -> String? {
         userDefaults.string(forKey: Keys.lastDayPackHash)
+    }
+
+    public func saveLastDayPackSemanticHash(_ hash: String) {
+        userDefaults.set(hash, forKey: Keys.lastDayPackSemanticHash)
+    }
+
+    public func loadLastDayPackSemanticHash() -> String? {
+        userDefaults.string(forKey: Keys.lastDayPackSemanticHash)
     }
 
     /// Atomically advances the durable version used by `0x1B TaskListSnapshotAck`.

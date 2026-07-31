@@ -21,6 +21,7 @@ public final class BLESyncCoordinator {
     /// DayPack 被判定过期后可能没有后续轮次发送最新清单。
     private var pendingSync = false
     private var pendingForceSync = false
+    private var pendingSyncTrigger: BLESyncTrigger?
     /// Complete/Skip keeps the device on TaskIn until one final DayPack has been sent. Routine
     /// sync requests queue behind this window so no second DayPack can race the later 0x1B.
     private var taskActionPresentationCount = 0
@@ -38,14 +39,16 @@ public final class BLESyncCoordinator {
         return policy.nextSyncTime(now: Date(), lastSync: lastSync)
     }
 
-    public func performSync(force: Bool = false) async {
+    public func performSync(
+        force: Bool = false,
+        trigger: BLESyncTrigger = .automatic
+    ) async {
         // 并发守卫：keep-alive 默认开后连接常驻，多触发源（后台刷新 / 硬件 0x20·0x30 / 指纹变化）可能并发进入。
         // 以前靠"已连接→.connectionInProgress"意外串行；连接跳过后需显式守卫，否则会重复发整轮 + 帧交错。
         // @MainActor 下在首个 await 前同步置位，保证原子。被丢弃的 force:true 记下、收尾后补跑一次——
         // 否则在途的 force:false 若随后被 shouldSync 拦下，硬件的强制刷新就丢了。
         guard !isSyncing, taskActionPresentationCount == 0 else {
-            pendingSync = true
-            if force { pendingForceSync = true }
+            queuePendingSync(force: force, trigger: trigger)
             return
         }
         isSyncing = true
@@ -70,7 +73,7 @@ public final class BLESyncCoordinator {
         await appState.refreshSharedPetDialogueIfNeeded()
         let sourceTaskStateVersion = appState.taskStateVersion
         guard appState.currentPetDialogueTaskStateVersion == sourceTaskStateVersion else {
-            pendingSync = true
+            queuePendingSync(force: force, trigger: trigger)
             return
         }
         let dayPack = await dayPackGenerator.generateDayPack(
@@ -87,13 +90,34 @@ public final class BLESyncCoordinator {
         // DayPack generation also awaits event/support/settlement text. If tasks changed during
         // that work, do not let the old task/dialogue transaction reach the hardware.
         guard appState.taskStateVersion == sourceTaskStateVersion else {
-            pendingSync = true
+            queuePendingSync(force: force, trigger: trigger)
             return
         }
 
         let fingerprint = dayPack.stableFingerprint()
+        let semanticFingerprint = dayPack.refreshSemanticFingerprint(
+            allTasks: appState.tasks,
+            at: Date()
+        )
         let lastHash = await localStorage.loadLastDayPackHash()
+        let lastSemanticHash = await localStorage.loadLastDayPackSemanticHash()
         let contentChanged = lastHash != fingerprint
+        // Builds before this arbitration only stored the full wire hash. If the full hash is still
+        // equal, the semantic baseline is exact and can be backfilled without sending a new packet.
+        if !contentChanged, lastSemanticHash == nil {
+            await localStorage.saveLastDayPackSemanticHash(semanticFingerprint)
+        }
+        let semanticContentChanged = lastSemanticHash.map { $0 != semanticFingerprint } ?? false
+        let shouldSendDayPack = DayPackRefreshArbiter.shouldSend(
+            trigger: trigger,
+            wireContentChanged: contentChanged,
+            hasActiveTimedEvent: DayPackRefreshArbiter.hasActiveTimedEvent(
+                in: appState.events,
+                at: Date()
+            ),
+            hasPreviousSemanticFingerprint: lastSemanticHash != nil,
+            semanticContentChanged: semanticContentChanged
+        )
         // 天气单独参与轮次放行（不影响 DayPack 发送判定）：天气已移出 DayPack 指纹，若不在
         // 这里放行，"只有天气变化"时 0x04 要等到点轮（白天 1h/夜间 4h）才能上硬件顶栏。
         // 天气变化放行的轮只发 Time/PetStatus/Weather 小帧——DayPack 指纹未变不会全刷。
@@ -111,7 +135,7 @@ public final class BLESyncCoordinator {
         guard policy.shouldSync(
             now: now,
             lastSync: lastSync,
-            contentChanged: contentChanged || weatherChanged,
+            contentChanged: shouldSendDayPack || weatherChanged,
             force: force,
             hasPriorityCustomAvatarOperation: hasPriorityCustomAvatarOperation
         ) else {
@@ -191,7 +215,7 @@ public final class BLESyncCoordinator {
             }
 
             var dayPackSendFailed = false
-            if contentChanged {
+            if shouldSendDayPack {
                 // Send DayPack with retry: 2 attempts, 500ms/1s backoff
                 var sent = false
                 var superseded = false
@@ -208,7 +232,7 @@ public final class BLESyncCoordinator {
                         if let bleError = error as? BLEError,
                            case .staleTaskSnapshot = bleError {
                             superseded = true
-                            pendingSync = true
+                            queuePendingSync(force: force, trigger: trigger)
                             break
                         }
                         lastWriteError = error
@@ -222,6 +246,7 @@ public final class BLESyncCoordinator {
                 }
                 if sent {
                     await localStorage.saveLastDayPackHash(fingerprint)
+                    await localStorage.saveLastDayPackSemanticHash(semanticFingerprint)
                 } else if !superseded {
                     // DayPack 是 App→硬件最核心的帧；两次写失败必须留痕，否则硬件一直显示旧数据、
                     // App 端在 Release 下毫无信号（下轮会重试，但失败本身不可见）。
@@ -290,9 +315,21 @@ public final class BLESyncCoordinator {
     private func schedulePendingSyncIfPossible() {
         guard pendingSync, !isSyncing, taskActionPresentationCount == 0 else { return }
         let shouldForce = pendingForceSync
+        let trigger = pendingSyncTrigger ?? .automatic
         pendingSync = false
         pendingForceSync = false
-        Task { @MainActor in await self.performSync(force: shouldForce) }
+        pendingSyncTrigger = nil
+        Task { @MainActor in await self.performSync(force: shouldForce, trigger: trigger) }
+    }
+
+    private func queuePendingSync(force: Bool, trigger: BLESyncTrigger) {
+        pendingSync = true
+        if force { pendingForceSync = true }
+        if let pendingSyncTrigger {
+            self.pendingSyncTrigger = pendingSyncTrigger.merged(with: trigger)
+        } else {
+            pendingSyncTrigger = trigger
+        }
     }
 
     private func waitForActiveSyncToFinish() async {
@@ -327,9 +364,14 @@ public final class BLESyncCoordinator {
             guard appState.taskStateVersion == sourceTaskStateVersion else { continue }
 
             let fingerprint = dayPack.stableFingerprint()
+            let semanticFingerprint = dayPack.refreshSemanticFingerprint(
+                allTasks: appState.tasks,
+                at: Date()
+            )
             if await localStorage.loadLastDayPackHash() == fingerprint {
                 // A routine sync that was already in flight successfully sent this exact final
                 // state. Reuse it instead of emitting a duplicate 0x10 before the same 0x1B.
+                await localStorage.saveLastDayPackSemanticHash(semanticFingerprint)
                 return sourceTaskStateVersion
             }
 
@@ -358,6 +400,7 @@ public final class BLESyncCoordinator {
                         expectedTaskStateVersion: sourceTaskStateVersion
                     )
                     await localStorage.saveLastDayPackHash(fingerprint)
+                    await localStorage.saveLastDayPackSemanticHash(semanticFingerprint)
                     return sourceTaskStateVersion
                 } catch let error as BLEError {
                     if case .staleTaskSnapshot = error {
@@ -536,7 +579,7 @@ public extension BLESyncCoordinator {
 
         await AuthManager.shared.initialize()
         await AppState.shared.syncConnectedExternalData()
-        await performSync()
+        await performSync(trigger: .background)
         BLEBackgroundSyncScheduler.shared.schedule()
         complete(success: lastSyncSucceeded)
     }

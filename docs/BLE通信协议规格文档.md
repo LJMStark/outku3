@@ -1,10 +1,10 @@
 # Kirole BLE 通信协议规格文档
 
-**版本:** v2.10.1
-**更新日期:** 2026-07-30
-**状态:** v2.10.1 不改 wire 字节，修正在线 Complete/Skip 的显示提交顺序：App 完成状态落盘后等待最新任务版本的 AI 对话，先发送最终 `DayPack(0x10)`，成功后才发送同版本的 `TaskListSnapshotAck(0x1B)`。固件在 TaskIn/pending 期间收到该 DayPack 只更新后台缓存，不刷屏；收到匹配 `0x1B` 后一次性退出 TaskIn、应用缓存和任务清单，只刷新一次。`RequestRefresh(0x20)` 仍立即回 `0x1B`。
+**版本:** v2.10.2
+**更新日期:** 2026-07-31
+**状态:** v2.10.2 不改 wire 字节。App build 630 对正在进行的日程增加 DayPack 仲裁：自动触发时，只有 `PetDialogue`、`FirstUp`、日程进度统计等展示字段变化，不再下发新的 DayPack，也不会在冷却后补发；任务、日程、`SupportText`、手动同步和 Complete/Skip 最终确认仍正常下发。固件短按不允许无限等 App：BLE 未连接直接按本地状态机执行；已连接最多等待 5 秒，超时本地兜底并保留事件重试。EPD 忙时只保留最新 DayPack。
 
-v2.9.0 的严格请求、OperationID 幂等和 `0x1B` 权威快照仍生效；v2.10.1 只把在线 Complete/Skip 的 `0x1B` 延后到最终 DayPack 之后。App 是任务最终状态来源；GATT `.withResponse` 只代表传输确认，不能替代 `0x1B` 业务确认。
+v2.9.0 的严格请求、OperationID 幂等和 `0x1B` 权威快照仍生效；v2.10.1 把在线 Complete/Skip 的 `0x1B` 延后到最终 DayPack 之后。App 是任务最终状态来源；GATT `.withResponse` 只代表传输确认，不能替代 `0x1B` 业务确认。
 
 ---
 
@@ -96,6 +96,7 @@ v2.9.0 的严格请求、OperationID 幂等和 `0x1B` 权威快照仍生效；v2
 | v2.9.0 | 2026-07-27 | **任务状态权威快照（破坏性 flag-day）**：`CompleteTask(0x11)` / `SkipTask(0x12)` 改为严格 v1 payload，新增非零 OperationID；`RequestRefresh(0x20)` 改为严格 v1 + 非零 RequestID，空 payload 拒绝，且只走实时 Notify、不写入/重放 `EventLogBatch(0x21)`。新增 App→Device `TaskListSnapshotAck(0x1B)`：回显 Action + OperationID，携带业务 Result、StateEpoch、Revision 和当前完整 Overview 任务清单。App 持久化操作账本保证重试幂等；同 ID 不同 payload 返回 invalidRequest。设备只在匹配请求且版本更新时原子替换清单。Complete 从清单移除，Skip 只结束专注、任务保留。DayPack 仍是丰富内容包但不再充当完成/跳过业务确认；`0x1B` 绕过 DayPack 指纹与 60 秒 full-sync 合并窗。升级固件须清空旧格式离线环形缓冲。§4.21/§5.4/§5.5/§5.7/§5.15/§8.4 |
 | v2.10.0 | 2026-07-28 | **日程支持性文字（破坏性 flag-day）**：① **DayPack(0x10)** Events[] 每条在 `EndTime` 后追加 `SupportText`（1+N bytes，≤120B ASCII）——该日程**进行中**时显示的一句支持性文字，**排版位置由固件自行决定**（App 只给文案）。生成规则按该事件的 `Category` 六类分派（客户 2026-07-28 规范）：Deep Work 只指向最小第一步 / Meetings 轻量准备提示 / Admin 框成自我小挑战 / Deadline 安抚不加压 / Wellness 温和非临床提醒 / Rest 给许可不派任务；通用规则=不编造数据里没有的具体事实、一句话两秒扫读、纯 ASCII。App 侧：批量 AI 生成 + 按「标题\|描述\|类别」缓存 + 按类别确定性模板兜底（**永不发空串**）+ AI 失败 10 分钟冷却。固件解析器须同步读取（§7.1 严格解析——读完 `EndTime` 必须再读这个长度前缀字符串，否则整体错位）。② **TaskInPage(0x11)** `Encouragement` **槽位改装**为「按按钮进入任务」的支持性文字，恒用 **Deep Work** 规则（`TaskItem` 无类别字段，客户拍板）；上限 50→**80 bytes**（客户例句最长 70B，50B 会静默截断），长度前缀不变故非 wire 形状变更，但固件行缓冲需容纳 80B。⚠️ **「鼓励语 / Tips」仍按 v2.6.0 停用、未被推翻**——这是 App 复用空槽承载新需求的实现决定，固件勿恢复当年 Tips 的渲染逻辑/位置。③ **伴侣 IP prompt 重写**（客户 2026-07-28，不上 wire）：三个角色改为显式双模——Mode A（~80% 日常口吻）+ Mode B（~20% 值得记住的时刻）；**Joy 的 Mode B 改为生成式**（自己写一句可引用的话、不署名、不加引号），Silas/Nova 的 Mode B 仍为**确定性白名单引用**（公版来源逐句核验：KJV / Marcus Aurelius / Sun Tzu / Seneca），并把引用格式由 `"text" (source).` 统一为 `"text" - source`。**⚠️ 与客户原文的已知偏差（有意，需客户知悉）**：客户规范写的分隔符是 em dash（`"[exact quoted line]" — [Source]`），实现用 ASCII 连字符 `-`。原因是 §3.5 的 wire 约束——出站文本一律净化为可打印 ASCII（`0x20`–`0x7E`），em dash 到固件必被转成 `-`（否则渲染成豆腐块）。若 App 内保留 `—` 而硬件显示 `-`，同一句话在两处不一致、且要维护两份格式；故三处（Swift `deterministicOutput` / Studio 校验 / Studio 运行时）统一用 `-`。客户若要求 App 内严格保留 em dash，改动范围=这三处 + 重生成 golden fixtures，硬件侧仍只能是 `-`。**Mode B 触发时机由 App 判定**（客户要求 «chosen externally by the system»）：只在"一天结算"这组时刻放行（日终结算语 + 每日总结页两支金句），日常场景（早安 / 陪伴 / 任务鼓励 / 日程提醒 / 空闲）恒 Mode A——此前一律 20% 随机会让早安语冒出署名引用。白名单引用**按当下情绪筛选**（每句带 tone 标签，庆祝时刻不抽安慰句、超载时刻不抽凯歌句）；App 侧另加词数校验（joy 25 / silas 15·20 / nova 20·25），超词即重试或回落兜底。§4.7/§4.8 |
 
+| v2.10.2 | 2026-07-31 | **日程边界刷屏仲裁与短按等待边界（wire 不变）**：App build 630 在当前定时日程进行中时，对 `RequestRefresh`、`DeviceWake` 和后台自动同步区分“语义内容”和“展示字段”。仅 `PetDialogue`、`FirstUp`、结算文案或统计变化不发 DayPack、也不安排冷却后补发；任务、日程、`SupportText`、App 手动同步和 Complete/Skip 最终 DayPack 仍照常发送。App 先完成本地数据加载再处理 `EnterTaskIn`，任务页支持性文字只用缓存/本地兜底，不等 AI。固件无 BLE 立即本地执行；有 BLE 最多等 5 秒，超时本地兜底并保留事件；EPD 忙时只留最新 DayPack。§5.3/§8.3/§8.4/§8.5 |
 | v2.10.1 | 2026-07-30 | **在线任务动作单次刷屏时序（wire 不变）**：Complete/Skip 状态落盘后，App 等当前任务版本的 AI 对话，先发送最终 DayPack，再发送绑定同一任务版本的 `0x1B`。DayPack 失败时不发 `0x1B`；生成/发送期间任务版本变化时废弃旧组合并重新生成。固件在 TaskIn/pending 内收到 DayPack 只换后台缓存、不刷屏；匹配 `0x1B` 到达后一次性退出并刷新。RequestRefresh 与离线批次确认保持原规则。§5.4/§5.5/§5.16/§6.2 |
 
 | 术语 | 定义 |
@@ -1111,6 +1112,11 @@ IsCompleted(1) | Priority(1)
 - 回发 TaskInPage (0x11) 包含任务详情
 - 记录该任务的专注会话开始时间戳
 
+**短按/等待边界（v2.10.2，wire 不变）：**
+- App 收到 `EnterTaskIn` 后先等本地任务和日程首次加载完成，再按 TaskId 查找；任务不存在时立即回 `DeviceMode(0x12)=Interactive`，不得卡住设备。`TaskInPage` 的支持性文字只取缓存或确定性本地兜底，不等待 AI 生成。
+- 设备没有活跃 BLE 连接时，不等待 App，直接按本地状态机进入可用页面/交互，并保留这次事件供重连后同步。设备有活跃 BLE 连接时，最多等待 5 秒收到 `TaskInPage(0x11)`；超时也必须走本地兜底或回到 Interactive/Overview，保留事件和重试状态，不能永久卡在等待页。
+- 本地兜底只保证按键和页面可用，不把设备自行推断当作 App 的最终任务状态。Complete/Skip 仍按最终 `DayPack → 0x1B` 顺序确认。
+
 **专注时间追踪：**
 此事件标记专注会话的开始。App 记录提供的时间戳，在收到 CompleteTask 或 SkipTask 时计算专注时长。
 
@@ -1858,6 +1864,10 @@ Event: 0x16 (ReminderAcknowledged)
 | 安全模式下收到非 `0x7E` / `0x7F` 业务包 | 忽略或断开连接；正式策略以后续安全联调为准 |
 | 收到 `0x1B` 但 Action/OperationID 不匹配或版本不更新 | 丢弃，不改变当前 Overview 或 pending 操作 |
 | 收到 DayPack / `0x1B` 分片 | 先完整重组、校验，再一次性应用；不得在分片到齐前修改任务清单 |
+| 任务短按触发 `EnterTaskIn` 时 BLE 未连接 | 不等待 App，按本地状态机继续可用交互，并保留事件供后续同步 |
+| 任务短按触发 `EnterTaskIn` 时 BLE 已连接但 5 秒未收到 `TaskInPage` | 退出无限等待，走本地兜底或回 Interactive/Overview；保留事件和重试状态 |
+| EPD 刷新中收到多个 DayPack | 覆盖待渲染缓存，只保留最后一份完整 DayPack；当前刷新结束后至多再刷一次，不得 FIFO 逐包全刷 |
+| 当前定时日程跨越开始/结束边界 | 由设备 RTC 和已缓存日程本地切换页面；不等待 App 的新 DayPack |
 
 ### 8.4 重试策略
 
@@ -1871,6 +1881,7 @@ Event: 0x16 (ReminderAcknowledged)
 | AvatarControl(0x22) | 幂等重发/查询 | 结果超时或 App 重启后先 query；同 OperationID 不重复执行破坏操作 |
 | CompleteTask / SkipTask | 直到收到匹配 `0x1B` | 超时后**原样重发**相同 Action / OperationID / TaskId / Timestamp；不得生成新 ID、不得改变 payload |
 | RequestRefresh | 直到收到匹配 `0x1B` | 超时后原样重发相同 v1 RequestID；不得写入离线 EventLogBatch |
+| EnterTaskIn / TaskInPage | 设备无 BLE 为 0 秒；有 BLE 最多等待 5 秒 | 超时立即本地兜底或回 Interactive/Overview，保留事件；重连后按本地策略有限重试，不能永久等待 |
 
 > GATT `.withResponse` 只证明分片被特征值写入，不代表业务完成。头像事务以 `0x22` 为准；任务完成/跳过/刷新以匹配且版本更新的 `0x1B` 为准。设备等待 `0x1B` 时可显示 pending，但不能永久提交本地删除。同一 revision 的 App 侧短重试使用完全相同的 `0x1B` 字节；固件侧请求重试则继续复用原 Action/OperationID/payload。
 
@@ -1885,8 +1896,9 @@ App 内置写入速率限制，固件联调时需注意：
 | 最大写入速率 | 20 次/秒，超出时 App 自动排队等待 |
 | DeviceWake sync 触发最小间隔 | 10 秒，**仅** DeviceWake(`0x30`) 触发的整轮 sync 适用。10 秒内重复 DeviceWake 时，App 仍会处理电量、发送 Time、记录硬件唤醒，但整轮 sync 会被节流并记录日志，以避免「连上 → wake → sync → 断开 → 重连 → wake」的连接风暴 |
 | RequestRefresh sync 触发最小间隔（合并窗） | **60 秒（联调期）**，只限制 RequestRefresh(`0x20`) 触发的**完整 DayPack sync**。v2.9 的 `0x1B` 任务快照业务确认在合并窗之前立即返回，不受本限制；DayPack 内容未变时还可能被指纹去重而完全不重发。该闸不消耗 DeviceWake 的 10 秒配额。专注会话中的 `0x14` 单帧回推同样在合并窗之前执行（仅受 2s 同内容去重）；心跳启停只绑设备本地会话与连接，不受 DayPack.DeviceMode 门控。|
+| 当前进行中日程的自动 DayPack 仲裁（build 630） | `RequestRefresh`、`DeviceWake`、后台自动同步在当前定时日程进行中时，若只变化 `PetDialogue`、`FirstUp`、结算文案或进度统计等展示字段，则不发送 DayPack，且不安排冷却后补发。任务、日程、`SupportText`、App 手动同步和 Complete/Skip 最终确认仍发送。|
 
-**调试建议**：v2.9 固件发送合法 `0x20` 后应先查是否收到匹配 `0x1B`；不要再用“有没有 DayPack”判断 App 是否响应。整轮 sync 仍可能被 60 秒合并窗或 DayPack 指纹去重，`0x30` 的整轮 sync 仍有独立 10 秒节流，写入超过 20 次/秒会排队。
+**调试建议**：v2.9 固件发送合法 `0x20` 后应先查是否收到匹配 `0x1B`；不要再用“有没有 DayPack”判断 App 是否响应。整轮 sync 仍可能被 60 秒合并窗、DayPack 指纹去重，或 build 630 当前日程的展示字段仲裁而不重发 DayPack；`0x30` 的整轮 sync 仍有独立 10 秒节流，写入超过 20 次/秒会排队。
 
 **帧可见性（联调）**：DEBUG 包与 TestFlight 包可用 Console.app 过滤 `subsystem:com.kirole.app category:BLE` 查看 App 收发帧摘要——TX 记录 `type/len`、RX 记录 `len/firstByte`；正式 App Store 包关闭，且不记录完整 payload。
 
@@ -1898,6 +1910,12 @@ App 内置写入速率限制，固件联调时需注意：
 - **固件侧建议**：
   1. 收到 `Time(0x05)` **不要**触发 `RequestRefresh(0x20)`。0x20 保留三种意图：开机/唤醒后久无数据、用户物理按键刷新、**专注会话进行中的周期性刷新（~5 分钟/次，驱动 `0x14` 息屏后台更新，见 §5.7）**。除专注周期刷新外，App 每轮 sync 都会主动推送全量数据，无需设备回请。
   2. E-ink 渲染进行中（7.3 寸全刷 ~12s）收到新 DayPack 时，**合并到下一次刷新**（只保留最新一包），不要排队逐包刷屏。
+
+**日程边界二次全刷的仲裁（build 630）**
+
+根因是两个独立但同时发生的正确动作叠在一起：设备按 RTC 在 13:05 把页面本地切到 lunch；App 同时把“下一场”更新为“正在进行”，重新生成 `PetDialogue`，完整 DayPack 指纹随之改变。设备刚完成一次全刷又收到新 DayPack，冷却结束后再刷一次。
+
+App 现在同时保存完整 DayPack 指纹和语义内容指纹。在当前定时日程进行中，自动触发只改展示字段时拦截 DayPack，不进入延迟发送队列；任务、日程和 `SupportText` 等真实内容变化仍正常下发。固件把这类“没有新的 DayPack”视为正常，并继续用本地 RTC 切换页面；EPD 忙时只保留最新完整内容。字节格式、命令号和 `0x1B` 确认顺序均不变。
 
 ### 8.6 设备信任模型（TOFU）
 
@@ -2165,8 +2183,8 @@ OperationID 由固件生成并在「同一设备 + Action」范围内非零；�
 
 | 文档 | 版本 | 描述 |
 |------|------|------|
-| 硬件需求文档-Hardware-Requirements-Document.md | v0.8.1 | 硬件电气需求与任务动作单次刷新边界 |
-| 固件功能规格文档.md | v1.9.1 | 固件功能规格与 v2.10.1 任务动作显示提交顺序 |
+| 硬件需求文档-Hardware-Requirements-Document.md | v0.8.2 | 硬件电气需求、短按超时与刷新合并边界 |
+| 固件功能规格文档.md | v1.9.2 | 固件功能规格与 v2.10.2 短按等待、DayPack 合并规则 |
 | BLE初次联调指南.md | v0.2.1 | 严格请求、`0x1B` 业务确认与 `0x10 → 0x1B` 时序验收 |
 
 ---

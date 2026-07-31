@@ -2,10 +2,11 @@
 
 **Hardware Requirements Document**
 
-**版本:** v0.8.1
-**更新日期:** 2026-07-30
+**版本:** v0.8.2
+**更新日期:** 2026-07-31
 **状态:** Draft
-**前序版本:** v0.8 (2026-07-27)
+**前序版本:** v0.8.1 (2026-07-30)
+**v0.8.2 变更:** 对齐 BLE v2.10.2（wire 不变）：当前日程中只有 `PetDialogue`、`FirstUp`、结算文案或统计变化时，App 自动同步不再触发第二个 DayPack，也不在冷却后补发；任务、日程、`SupportText` 和最终任务确认仍正常下发。设备短按无 BLE 立即本地执行；有 BLE 最多等 5 秒，超时本地兜底并保留事件；EPD 忙时只保留最新 DayPack。
 **v0.8.1 变更:** 对齐 BLE v2.10.1 在线任务动作单次刷新：Complete/Skip 后保持 TaskIn/pending；最终 DayPack 先写后台缓存不刷新，同版本 `0x1B` 到达后一次提交并刷新。RequestRefresh 与离线回放不变。
 **v0.8 变更:** 对齐 BLE v2.9.0 任务权威快照 flag-day：任务完成/跳过/刷新使用非零 OperationID/RequestID；新增 `0x1B TaskListSnapshotAck` 业务确认与 `StateEpoch + Revision` 原子替换；设备 pending 不得自行提交最终删除；`0x20` 禁止进入离线 Event Log，升级时清空旧格式环形缓冲。
 **v0.7 变更:** 对齐 BLE v2.7 自定义头像事务：`0x15/0x04` 只传 KRI，`0x22` 负责暂存、提交、精确擦除、全部擦除、查询与取消；增加独立头像 LittleFS 分区（默认至少 6 MiB）。
@@ -212,6 +213,12 @@ Kirole 是一款面向深度知识工具用户的专注力伴侣设备。iOS App
 
 任务动作边界：App 是任务最终状态来源。在线 Complete/Skip 后设备保持 TaskIn/pending，不能立即返回 Overview 或刷新。最终 DayPack 到达时只替换后台缓存；只有随后收到 Action+OperationID 匹配且 `StateEpoch + Revision` 更新的 `TaskListSnapshotAck(0x1B)`，才能原子替换整个 Overview 清单、应用缓存并刷新一次。
 
+短按响应边界：
+
+- 没有活跃 BLE 连接时，短按立即按本地状态机执行页面和交互；事件保留，等重连后再同步。
+- 有活跃 BLE 连接时，设备发出当前请求后最多等待 5 秒 `TaskInPage` 或对应业务响应。超时必须本地兜底或回 Overview/Interactive，并保留事件和有限重试状态；不得无限等待 App。
+- “无连接直接执行”只保证本地页面和操作可用，不代表设备自行提交 App 权威的完成/跳过任务状态。Complete/Skip 仍以最终 `DayPack → 0x1B` 为准。
+
 ### 5.2 电源/功能复合按键
 
 | 参数 | 规格 |
@@ -260,8 +267,10 @@ Kirole 是一款面向深度知识工具用户的专注力伴侣设备。iOS App
 - 大数据分包与 CRC16 校验（CRC16-CCITT-FALSE，poly `0x1021`，init `0xFFFF`）
 - 包头格式：type (1B) + messageId (2B BE) + seq (2B BE) + total (2B BE) + payloadLen (2B BE) + crc16 (2B BE) = 11 字节（v2.5.24 起；分包总数上限 65535）
 - GATT withResponse 只作为传输确认；任务完成、跳过、刷新必须以匹配且版本更新的 `0x1B` 作为业务确认
+- 任务短按必须有独立 5 秒等待计时：无活跃 BLE 为 0 秒等待；有活跃 BLE 超时后本地兜底，不能受 App 握手、写回调或前后台状态无限拖住
+- EPD 刷新中收到多个 DayPack 时只保留最后一份完整内容；当前日程边界由 RTC 和缓存数据本地切换，不为展示字段变化排队重复全刷
 
-详细协议参考 `BLE通信协议规格文档.md` (v2.9.0)。第一次硬件联调先参考 `BLE初次联调指南.md` (v0.2.0)。
+详细协议参考 `BLE通信协议规格文档.md` (v2.10.2)。第一次硬件联调先参考 `BLE初次联调指南.md` (v0.2.1)。
 
 ---
 
@@ -286,7 +295,7 @@ Kirole 是一款面向深度知识工具用户的专注力伴侣设备。iOS App
 #### 设计目标
 
 - 目标续航：>= 30 天
-- 屏幕刷新仅在"显示内容发生变化"或"用户显式操作"时触发
+- 屏幕刷新仅在真实显示内容发生变化或用户显式操作时触发；当前日程内只变对话、`FirstUp` 或统计的自动同步不应触发第二次全刷，EPD 忙时只保留最后一份内容
 - 典型自动内容刷新：约 4 次/天
 
 #### BLE 同步策略
@@ -381,9 +390,12 @@ Task 为 `TaskId LP≤36 + Title LP≤30 + IsCompleted(1) + Priority(1)`（LP=`L
 - EventLogBatch 保持记录线序，不按设备 RTC Timestamp 重排；每条离线任务动作分别用 Action+OperationID 匹配确认
 - DayPack 与 `0x1B` 按完整消息串行；在线 Complete/Skip 先缓存最终 DayPack 且不刷新，再由同版本 `0x1B` 一次提交。固件完整重组、校验后才原子应用；同一 revision 的 App 短重试必须是逐字节相同的 `0x1B`
 - 固件把已应用的 StateEpoch、Revision 与完整 Overview 清单一起原子落盘，防止断电后版本和列表分裂
+- `EnterTaskIn` 短按无 BLE 时立即本地执行；有 BLE 时最多等待 5 秒 App 响应，超时退出等待态、本地兜底并保留事件供重连后有限重试
+- 当前定时日程进行中，App 自动同步可能只回 `0x1B` 而没有 DayPack，因为 `PetDialogue`、`FirstUp` 或统计变化已被仲裁；固件把这视为正常，不得主动补发或排队刷屏
+- EPD 刷新中 DayPack 采用 latest-wins 缓存策略，当前刷新后最多再刷最后一份，禁止按收包顺序多次全刷
 - 详细 payload 格式参见 `BLE通信协议规格文档.md` Section 5
 
-v2.9.0 硬件验收：
+v2.10.2 硬件验收：
 
 - 空 payload `0x20`、旧格式 `0x11/0x12`、零 ID 和尾部多余字节均不改变 App 任务状态。
 - 合法 Refresh v1 立即收到 Action+RequestID 匹配的 `0x1B`；无 DayPack 重发也不算失败。
@@ -394,6 +406,9 @@ v2.9.0 硬件验收：
 - 升级后旧环形缓冲已清空，新 EventLogBatch 不含 RequestRefresh。
 - 构造 RTC 倒序但 Records 线序为 Complete→Skip 的批次，确认仍按线序结算和回执；不得按 Timestamp 反转。
 - 模拟 App 在 pending 后退出、以及 GATT 回调丢失：前者原样重试可恢复动作，后者相同 revision 的 `0x1B` 字节完全一致。
+- 无 BLE 时进入任务的短按立即可用；有 BLE 但 5 秒没有 `TaskInPage` 时退出等待态，走本地兜底且后续可重试。
+- 复现 13:05 日程边界：设备按 RTC 切到 lunch 后，App 只更新 `PetDialogue`、`FirstUp` 或统计时不出现第二个 DayPack 和第二次全刷；任务、日程或 `SupportText` 真变更时仍更新。
+- EPD 刷新中连续注入多份 DayPack，确认当前刷新结束后最多再刷最新一份，不能排队连续刷屏。
 
 ---
 
@@ -410,6 +425,7 @@ v2.9.0 硬件验收：
 
 | 版本 | 日期 | 变更内容 |
 |------|------|----------|
+| v0.8.2 | 2026-07-31 | 对齐 BLE v2.10.2：短按无连接本地执行、已连接最多等待 5 秒后兜底；当前日程展示字段自动仲裁；EPD 忙时只保留最新 DayPack |
 | v0.8.1 | 2026-07-30 | 对齐 BLE v2.10.1 在线 Complete/Skip：最终 DayPack 后台缓存 + 同版本 0x1B 一次提交和刷新 |
 | v0.1 | 2026-01-31 | 初始版本 |
 | v0.2 | 2026-02-12 | 转为 Markdown 格式；补充 Spectra 6 4bpp 颜色索引和帧缓冲大小；补充 BLE 包头格式和 CRC16 规格；补充 Event Log 记录格式和事件类型；补充 RTC 用途说明；新增产品定位和核心功能模块描述；与固件功能规格文档 v1.2.0 和 BLE通信协议规格文档 v1.3.0 对齐 |
@@ -423,9 +439,9 @@ v2.9.0 硬件验收：
 
 | 文档 | 版本 | 描述 |
 |------|------|------|
-| 固件功能规格文档.md | v1.9.1 | 产品功能规格与在线任务动作单次刷新状态机 |
+| 固件功能规格文档.md | v1.9.2 | 产品功能规格、短按超时和 DayPack latest-wins 状态机 |
 | BLE初次联调指南.md | v0.2.1 | 第一次硬件联调与最终 `0x10 → 0x1B` 验收 |
-| BLE通信协议规格文档.md | v2.10.1 | BLE 通信协议（严格任务动作、幂等 OperationID、权威快照和单次刷新顺序） |
+| BLE通信协议规格文档.md | v2.10.2 | BLE 通信协议（短按 5 秒边界、展示字段仲裁、权威快照和单次刷新顺序） |
 
 ---
 

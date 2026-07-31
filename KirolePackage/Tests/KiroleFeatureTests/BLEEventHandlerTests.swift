@@ -347,6 +347,36 @@ struct BLEEventHandlerTests {
 
     // MARK: - Codable backward compatibility (A1)
 
+    @Test("EnterTaskIn waits for the initial local load before task lookup")
+    @MainActor
+    func enterTaskInRequiresInitialLoad() {
+        let event = EventLog(eventType: .enterTaskIn, taskId: "draft")
+
+        #expect(BLEEventHandler.requiresInitialLoadBeforeHandling(event))
+    }
+
+    @Test("EnterTaskIn resolves a loaded task and falls back to interactive when it is absent")
+    @MainActor
+    func enterTaskInRoutesLoadedAndMissingTasks() {
+        let task = TaskItem(id: "draft", title: "Draft release notes")
+        let resolvedEvent = EventLog(eventType: .enterTaskIn, taskId: task.hardwareIdentifier)
+        let missingEvent = EventLog(eventType: .enterTaskIn, taskId: "missing")
+
+        switch BLEEventHandler.enterTaskInRoute(for: resolvedEvent, tasks: [task]) {
+        case .sendTaskIn(let resolved):
+            #expect(resolved.id == task.id)
+        case .recoverInteractive:
+            Issue.record("A loaded task must produce TaskInPage data.")
+        }
+
+        switch BLEEventHandler.enterTaskInRoute(for: missingEvent, tasks: [task]) {
+        case .sendTaskIn:
+            Issue.record("An unresolved task must release the device to interactive mode.")
+        case .recoverInteractive:
+            break
+        }
+    }
+
     /// Mirrors the pre-A1 on-disk shape (no hasDeviceTimestamp field), encoded with the same
     /// JSONEncoder so the Date format matches whatever the default strategy produces.
     private struct LegacyEventLog: Encodable {

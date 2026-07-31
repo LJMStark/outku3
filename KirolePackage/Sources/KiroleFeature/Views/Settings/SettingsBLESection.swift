@@ -250,7 +250,7 @@ public struct SettingsBLESection: View {
             guard newValue != bleService.hardwareScreenSize else { return }
             bleService.hardwareScreenSize = newValue
             // 上限变化改变 DayPack 内容（TopTasks 条数），立即推一轮让硬件对齐。
-            Task { await BLESyncCoordinator.shared.performSync(force: true) }
+            Task { await BLESyncCoordinator.shared.performSync(force: true, trigger: .manual) }
         }
     }
 
@@ -582,7 +582,7 @@ public struct SettingsBLESection: View {
         .contentShape(RoundedRectangle(cornerRadius: 24))
         .onTapGesture {
             guard failed else { return }
-            Task { await BLESyncCoordinator.shared.performSync(force: true) }
+            Task { await BLESyncCoordinator.shared.performSync(force: true, trigger: .manual) }
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(failed ? "Last sync failed. Tap to retry." : "Last sync \(lastSyncText)")

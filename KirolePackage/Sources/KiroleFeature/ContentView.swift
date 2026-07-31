@@ -188,7 +188,7 @@ public struct ContentView: View {
                             // showing the old zone's schedule instead of waiting for the
                             // next throttled sync window.
                             await appState.syncConnectedExternalData()
-                            await BLESyncCoordinator.shared.performSync(force: true)
+                            await BLESyncCoordinator.shared.performSync(force: true, trigger: .manual)
                         }
                     },
                     onKeep: {

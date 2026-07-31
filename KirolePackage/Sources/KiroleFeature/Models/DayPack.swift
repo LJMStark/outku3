@@ -123,6 +123,70 @@ public struct DayPack: Codable, Sendable {
         parts.append("settlement.interruptionCount=\(settlementData.interruptionCount)")
         parts.append("settlement.totalEnergyBottles=\(settlementData.totalEnergyBottles)")
 
+        return Self.fingerprint(parts)
+    }
+
+    /// Hashes the device-visible business state while intentionally excluding text and counters
+    /// that change merely because time moved into the currently displayed schedule event.
+    ///
+    /// `allTasks` includes task-detail inputs that are not necessarily in `topTasks`, so a task
+    /// title, note, completion, priority, due-time, or Today membership change still reaches the
+    /// device even when the visible top-task rows happen to stay the same.
+    public func refreshSemanticFingerprint(
+        allTasks: [TaskItem],
+        at now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> String {
+        let dateFormatter = DateFormatter()
+        dateFormatter.locale = Locale(identifier: "en_US_POSIX")
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+
+        var parts: [String] = []
+        parts.append("date=\(dateFormatter.string(from: date))")
+        parts.append("deviceMode=\(deviceMode.rawValue)")
+        parts.append("focusChallenge=\(focusChallengeEnabled)")
+
+        parts.append("events.count=\(events.count)")
+        for event in events {
+            parts.append("event.time=\(event.time)")
+            parts.append("event.endTime=\(event.endTime)")
+            parts.append("event.title=\(event.title)")
+            parts.append("event.desc=\(event.description)")
+            parts.append("event.category=\(event.category.rawValue)")
+            parts.append("event.supportText=\(event.supportText)")
+        }
+
+        parts.append("topTasks.count=\(topTasks.count)")
+        for task in topTasks {
+            parts.append("task.id=\(task.id)")
+            parts.append("task.title=\(task.title)")
+            parts.append("task.completed=\(task.isCompleted ? 1 : 0)")
+            parts.append("task.priority=\(task.priority)")
+            parts.append("task.due=\(task.dueTime ?? "")")
+        }
+
+        let displayedTasks = allTasks
+            .filter { $0.isInTodayDisplay(on: now, calendar: calendar) }
+            .sorted { $0.id < $1.id }
+        parts.append("displayedTasks.count=\(displayedTasks.count)")
+        for task in displayedTasks {
+            let dueTime = task.dueDate.map { String(Int64($0.timeIntervalSince1970)) } ?? ""
+            let todayDisplayTime = task.todayDisplayDate.map { String(Int64($0.timeIntervalSince1970)) } ?? ""
+            parts.append("displayedTask.id=\(task.id)")
+            parts.append("displayedTask.hardwareId=\(task.hardwareIdentifier)")
+            parts.append("displayedTask.title=\(task.title)")
+            parts.append("displayedTask.completed=\(task.isCompleted ? 1 : 0)")
+            parts.append("displayedTask.priority=\(task.priority.rawValue)")
+            parts.append("displayedTask.due=\(dueTime)")
+            parts.append("displayedTask.todayDisplay=\(todayDisplayTime)")
+            parts.append("displayedTask.pendingDeletion=\(task.pendingDeletion ? 1 : 0)")
+            parts.append("displayedTask.notes=\(task.notes ?? "")")
+        }
+
+        return Self.fingerprint(parts)
+    }
+
+    private static func fingerprint(_ parts: [String]) -> String {
         var framedParts = Data()
         for part in parts {
             let bytes = Data(part.utf8)

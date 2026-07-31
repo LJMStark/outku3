@@ -11,6 +11,11 @@ protocol TaskActionPresentationCoordinating: AnyObject {
     ) async
 }
 
+enum EnterTaskInRoute {
+    case sendTaskIn(TaskItem)
+    case recoverInteractive
+}
+
 // MARK: - BLE Event Handler
 
 /// BLE 事件处理器，负责解析和处理从 E-ink 设备接收的事件
@@ -82,9 +87,7 @@ public enum BLEEventHandler {
     private static func handleSingleEvent(_ eventLog: EventLog, service: BLEService) async {
         // BLE can deliver immediately after a cold launch. Do not answer taskNotFound from the
         // temporary empty state before local tasks have loaded.
-        if eventLog.eventType == .completeTask
-            || eventLog.eventType == .skipTask
-            || (eventLog.eventType == .requestRefresh && eventLog.operationID != nil) {
+        if requiresInitialLoadBeforeHandling(eventLog) {
             await AppState.shared.ensureInitialLoadComplete()
         }
 
@@ -142,7 +145,7 @@ public enum BLEEventHandler {
                     )
                     return
                 }
-                await BLESyncCoordinator.shared.performSync(force: true)
+                await BLESyncCoordinator.shared.performSync(force: true, trigger: .requestRefresh)
             }
 
         case .deviceWake:
@@ -184,7 +187,10 @@ public enum BLEEventHandler {
                         return
                     }
                 }
-                await BLESyncCoordinator.shared.performSync(force: avatarNeedsRecovery)
+                await BLESyncCoordinator.shared.performSync(
+                    force: avatarNeedsRecovery,
+                    trigger: .deviceWake
+                )
             }
 
         case .deviceSleep:
@@ -258,8 +264,8 @@ public enum BLEEventHandler {
 
     /// EnterTaskIn: 生成 TaskInPage 并发送到设备
     private static func handleEnterTaskIn(_ eventLog: EventLog, service: BLEService) {
-        guard let taskId = eventLog.taskId,
-              let task = resolveTask(taskId: taskId) else {
+        switch enterTaskInRoute(for: eventLog, tasks: AppState.shared.tasks) {
+        case .recoverInteractive:
             // 设备已进入任务详情页、正等 TaskInPage。App 找不到该 task（clean install / 任务被删 /
             // 本地数据被 reset，而硬件仍持旧 DayPack 缓存）时不能静默——设备会永久卡在详情页“像死机”。
             // 记日志 + 发 DeviceMode(.interactive) 把设备退回交互概览解卡。
@@ -281,21 +287,22 @@ public enum BLEEventHandler {
                 }
             }
             return
-        }
 
-        Task { @MainActor in
-            let taskInPage = await DayPackGenerator.shared.generateTaskInPage(
-                task: task,
-                pet: AppState.shared.pet,
-                userProfile: AppState.shared.userProfile
-            )
-            do {
-                try await service.sendTaskInPage(taskInPage)
-            } catch {
-                ErrorReporter.log(
-                    .sync(component: "BLE TaskInPage", underlying: error.localizedDescription),
-                    context: "BLEEventHandler.handleEnterTaskIn"
+        case .sendTaskIn(let task):
+            Task { @MainActor in
+                let taskInPage = await DayPackGenerator.shared.generateTaskInPage(
+                    task: task,
+                    pet: AppState.shared.pet,
+                    userProfile: AppState.shared.userProfile
                 )
+                do {
+                    try await service.sendTaskInPage(taskInPage)
+                } catch {
+                    ErrorReporter.log(
+                        .sync(component: "BLE TaskInPage", underlying: error.localizedDescription),
+                        context: "BLEEventHandler.handleEnterTaskIn"
+                    )
+                }
             }
         }
     }
@@ -768,6 +775,28 @@ public enum BLEEventHandler {
             }
     }
 
+    static func requiresInitialLoadBeforeHandling(_ eventLog: EventLog) -> Bool {
+        switch eventLog.eventType {
+        case .enterTaskIn, .completeTask, .skipTask:
+            return true
+        case .requestRefresh:
+            return eventLog.operationID != nil
+        default:
+            return false
+        }
+    }
+
+    static func enterTaskInRoute(
+        for eventLog: EventLog,
+        tasks: [TaskItem]
+    ) -> EnterTaskInRoute {
+        guard let taskID = eventLog.taskId,
+              let task = resolveTask(taskId: taskID, in: tasks) else {
+            return .recoverInteractive
+        }
+        return .sendTaskIn(task)
+    }
+
     private nonisolated static func resolvingTaskIdentifier(
         in event: EventLog,
         tasks: [TaskItem]
@@ -791,10 +820,6 @@ public enum BLEEventHandler {
             firmwareVersion: event.firmwareVersion,
             avatarInventory: event.avatarInventory
         )
-    }
-
-    private static func resolveTask(taskId: String) -> TaskItem? {
-        resolveTask(taskId: taskId, in: AppState.shared.tasks)
     }
 
 }
