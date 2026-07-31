@@ -52,10 +52,12 @@ KiroleFeature/
 │   ├── Error/                       # ErrorReporter
 │   ├── Network/                     # OpenAIService, CompanionTextService, PromptSanitizer, SimulatorBridge, PromptSpec.generated.swift
 │   ├── Services/                    # BLE runtime (BLEService, BLESyncCoordinator, BLEEventHandler, BLEDataEncoder, BLEPacketizer, BLESecurityManager, BLEOTACoordinator…) + FocusSessionService, FocusInterruptionDetector, DayPackGenerator, WiFiAvatarTransfer/…
-│   └── Storage/                     # LocalStorage, SupabaseClient, SyncManager
+│   ├── Storage/                     # LocalStorage, SupabaseClient, SyncManager
+│   └── Util/                        # Log.swift — the `Log.*` category logger (Log.weather, Log.ble…); use it, not print()
+├── Design/                          # Theme.swift + FontScale.swift — design tokens; ThemeManager (State/) consumes these
 ├── Models/                          # Value types only: CompanionCharacter, Pet, TaskItem, CalendarEvent, FocusSession, EventLog, DayPack, DisplayScene…
 ├── State/                           # @Observable singletons: AppState + all AppState+*.swift extensions, ThemeManager, TaskManager, PetManager, TimelineDataSource, IntegrationCoordinator…
-├── Views/                           # Home/, Pet/, Settings/, Onboarding/, Modifiers/
+├── Views/                           # Home/, Pet/, Settings/, Onboarding/, Auth/, Focus/, Components/ (AppHeaderView, CompanionDialogueView, PetAnimationEngine…), Modifiers/
 └── Resources/                       # Media.xcassets (image assets)
 ```
 
@@ -171,10 +173,10 @@ xcodebuild -workspace Kirole.xcworkspace -scheme Kirole \
 ```
 
 ### Test Suite Notes
-- **89 test files (115+ suites, ~957 tests)** in `KirolePackage/Tests/KiroleFeatureTests/`. BLE is the most heavily covered surface (`BLEProtocolTests`, `BLESecurityTests`, `BLESyncPolicyTests`, `BLEWriteGateTests`, `BLEConnectionPolicyTests`, `BLEEventHandlerTests`, `BLEProtocolSimulationTests`, `BLEOTACoordinatorTests`), followed by focus/sync/companion logic.
+- **~103 test files (127 suites, ~1080 tests)** in `KirolePackage/Tests/KiroleFeatureTests/`. BLE is the most heavily covered surface (`BLEProtocolTests`, `BLESecurityTests`, `BLESyncPolicyTests`, `BLEWriteGateTests`, `BLEConnectionPolicyTests`, `BLEEventHandlerTests`, `BLEProtocolSimulationTests`, `BLEOTACoordinatorTests`), followed by focus/sync/companion logic.
 - **`BLEDataEncoder` has a strict mirror decoder in the test layer.** `BLEProtocolSimulationSupport.swift`'s `parseDayPack` / `parseWeather` re-parse the exact wire bytes and call `requireEnd()` (any trailing byte throws `trailingBytes`). So **any field added to `encodeDayPack` / `encodeWeather` MUST be read back in the matching `parse*` before `requireEnd()`** — even an empty length-prefixed string appends a byte and trips it — and the fixture + `Simulated*` struct + round-trip assertion updated. `BLEProtocolTests` walks the cursor by hand and will *not* catch a desync; run the **full** `swift test` (which includes `BLEProtocolSimulationTests`) after any wire-format change, not just `BLEProtocolTests`.
 - **Parallel-test isolation (CRITICAL):** Swift Testing runs suites concurrently. Any test that mutates global `UserDefaults.standard` — i.e. anything going through `LocalStorage` resettable keys, focus energy bottles, or gamify storage — MUST wrap its body in `await SharedPersistenceTestLock.shared.withLock { ... }` (`Tests/.../SharedPersistenceTestLock.swift`) or it flakes intermittently. Suites that assert state on shared singletons (e.g. `BLEService.shared.isPendingOTAReboot` in `BLEOTACoordinatorTests`) must be `@Suite(..., .serialized)` — in-suite parallel tests interleave at `await` points and clobber the flag. **Adding a new key to `LocalStorage.resettableUserDefaultKeys` can make previously-green tests flaky.** If a suite flakes, run it alone first (`swift test --filter SuiteName`) to confirm an isolation problem before changing production code.
-- **Which runner:** `swift test` (package-only, fast) for logic/services; the simulator host (`xcodebuild ... test`, or XcodeBuildMCP `test_sim`) only when the test exercises app-shell / UI lifecycle. `Kirole.xctestplan` coordinates the full run.
+- **Which runner:** `swift test` (package-only, fast) for logic/services; the simulator host (`xcodebuild ... test`, or XcodeBuildMCP `test_sim`) only when the test exercises app-shell / UI lifecycle. `Kirole/Kirole.xctestplan` coordinates the full run.
 - **No SwiftLint / SwiftFormat is configured** in this repo — there is no lint or format step; don't invent one.
 
 ### TestFlight Release (Full Pipeline)
@@ -189,15 +191,24 @@ fastlane ios release text:"English notes" zh_text:"中文说明"
 
 # Notes-only update (no build, no distribution)
 fastlane ios notes text:"说明内容"
+
+# Verify the latest build actually landed (processing + beta-review state) — run after EVERY release
+fastlane ios status
+
+# Recover a release that uploaded+processed OK but died at external distribution (e.g. SSL EOF).
+# Idempotent, operates on the latest build: no archive, no upload, no build bump.
+fastlane ios finish_external
 ```
 
 Pipeline steps (automated): `increment_build_number` → `gym` (archive ~3 min) → `upload_to_testflight` (processing ~5 min) → set en-US + zh-Hans notes → distribute to external group **kirole**.
 
 Credentials: `fastlane/.env` (git-ignored) — copy from `fastlane/.env.template` and fill `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_PATH`.
 
-**Verify the build actually landed.** `upload_to_testflight` can be killed mid-upload (process timeout / transient `SSL_read` EOF), leaving the build number bumped locally + an archive on disk but **nothing on App Store Connect** — a "Done" line or local archive is not proof. Confirm via the ASC API (latest build number + `processing_state` + beta-review state). Run the release detached/in background so one timeout can't kill the upload; transient SSL errors are retryable.
+**Version numbers live in the pbxproj, not the xcconfig.** `Config/Shared.xcconfig` declares `MARKETING_VERSION = 1.0` / `CURRENT_PROJECT_VERSION = 1`, but the Xcode project's own build settings override both (currently `2.0` / `631`). Editing the xcconfig values does nothing; `fastlane` bumps the build via `increment_build_number(xcodeproj:)`. Never hand-edit build numbers — let the lane do it.
 
-**Before App Store submission (TestFlight is fine as-is):** restore the hardware-debug gating — build 573 deliberately loosened `AppBuildEnvironment.showsHardwareDebugTools` to all-builds-visible + keep-alive default-on for firmware integration; the production gate must come back before a store release.
+**Verify the build actually landed.** `upload_to_testflight` can be killed mid-upload (process timeout / transient `SSL_read` EOF), leaving the build number bumped locally + an archive on disk but **nothing on App Store Connect** — a "Done" line or local archive is not proof. Confirm with `fastlane ios status` (or the ASC API directly: latest build number + `processing_state` + beta-review state). Run the release detached/in background so one timeout can't kill the upload; transient SSL errors are retryable.
+
+**Before App Store submission (TestFlight is fine as-is):** `AppBuildEnvironment.showsHardwareDebugTools` currently `return true` unconditionally — deliberately loosened in build 573 (all-builds-visible + keep-alive default-on) for firmware integration, and still loose as of build 631. The `DEBUG || isTestFlight` gate must be restored before a store release. Other pre-release gates (on-device interruption-detection acceptance, firmware OTA safety sign-off) are tracked in the `release-acceptance` skill — check there rather than assuming this is the only one.
 
 ### E-ink Simulator (hardware-free UI preview)
 ```bash
@@ -246,6 +257,27 @@ For TestFlight automation, copy `fastlane/.env.template` → `fastlane/.env` and
 
 ## Where to Look Next
 - `AGENTS.md` — full rules, BLE protocol *rules/summary*, companion IP prompt architecture, onboarding detail, Focus Mode state machine, Event→Output dispatch map.
-- `docs/` — **hardware-facing source of truth** (AGENTS.md defers here). `BLE通信协议规格文档.md` is the **authoritative BLE wire-protocol spec** — the firmware contract; edit this file directly (versioned — see its header for the current version), never a root-level copy. `BLE初次联调指南.md` / `BLE联调前全协议模拟报告.md` are the integration + dry-run guides; `硬件需求文档-Hardware-Requirements-Document.md` and `固件功能规格文档.md` are the hardware/firmware requirement specs; `Kirole显示屏页面（游戏机制2）.pdf` and `positioning-narrative.md` are the product mechanism / positioning source of truth (e.g. why the streak system was deleted); `2026-07-09-spec.md` is the executed spec for the focus-interruption redesign (D-1/D-2/D-3 decisions + "don't fix as bug" list). When you change a BLE/firmware doc here, the protocol byte tables and §-numbers are what the hardware team builds against — keep them exact.
+- `docs/` — **hardware-facing source of truth** (AGENTS.md defers here). `BLE通信协议规格文档.md` is the **authoritative BLE wire-protocol spec** — the firmware contract; edit this file directly (versioned — see its header for the current version), never a root-level copy. `BLE初次联调指南.md` / `BLE联调前全协议模拟报告.md` are the integration + dry-run guides; `硬件需求文档-Hardware-Requirements-Document.md` and `固件功能规格文档.md` are the hardware/firmware requirement specs; `Kirole显示屏页面（游戏机制2）.pdf` and `positioning-narrative.md` are the product mechanism / positioning source of truth (e.g. why the streak system was deleted); `2026-07-09-spec.md` is the executed spec for the focus-interruption redesign (D-1/D-2/D-3 decisions + "don't fix as bug" list). `电子墨水屏需求/客户答复-2026-07-20.md` + `待客户确认问题清单.md` are the **settled customer rulings** behind the current e-ink display behavior — check these before re-litigating a display question or reporting one as a bug. When you change a BLE/firmware doc here, the protocol byte tables and §-numbers are what the hardware team builds against — keep them exact.
 - `.cursor/rules/*.mdc` — Swift / SwiftUI / Testing / Concurrency / Foundation Models / XcodeBuildMCP guidance.
 - `TESTFLIGHT_GUIDE.md`, `TESTFLIGHT_PROGRESS.md` — release workflow state.
+
+### Repo-specific skills (`.claude/skills/`) — check before non-trivial work
+CLAUDE.md / AGENTS.md describe **what this repo is**; these skills describe **how not to get hurt in it** (distilled from commit history, incidents, and past rollbacks). **`kirole-atlas` is the routing index — open it first when unsure which applies.**
+
+| About to… | Skill |
+|-----------|-------|
+| Change BLE wire bytes / encoder fields | `ble-wire-change-control` |
+| Debug "hardware isn't showing new data" / sync / offline replay | `ble-sync-runbook` |
+| Delete or replace an image / audio / font asset | `client-asset-change-control` |
+| Edit a `docs/` hardware contract (protocol, firmware spec) | `docs-contract-change-control` |
+| Judge whether a feature/audit suggestion should be built at all | `product-scope-contract` |
+| Triage a test that flakes red/green | `flaky-test-triage` |
+| Check if a "bug" is actually intentional | `intentional-behaviors-contract` |
+| Touch LLM prompts / sanitization / output budget | `llm-prompt-safety-contract` |
+| Release to TestFlight, or debug testers not seeing a build | `release-acceptance`, `testflight-distribution-runbook` |
+| Take over after a subagent run, or act on a review/audit report | `subagent-output-audit` |
+| Call UI work "done" | `ui-change-acceptance` |
+| Understand why a guardrail exists | `failure-archaeology` |
+| Find a diagnostic tool (simulator, frame trace, prompt debugger) | `diagnostic-toolbox` |
+
+The `ios-*` (DebugBridge), `reactcomponents`, and `swift-*` skills are generic, not Kirole-specific.
