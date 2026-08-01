@@ -1,1383 +1,1731 @@
-<!DOCTYPE html>
-<html lang="zh">
+<!doctype html>
+<html lang="zh-CN">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<meta name="color-scheme" content="light">
-<meta name="theme-color" content="#f5f0e6">
-<meta name="format-detection" content="telephone=no">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
-<title>Kirole 手机与设备怎么配合 / How the App & Device Work Together</title>
-<style>
-:root {
-  --paper: oklch(96% 0.014 85);
-  --paper-raised: oklch(99% 0.006 85);
-  --ink: oklch(21% 0.006 85);
-  --ink-soft: oklch(46% 0.012 85);
-  --line: oklch(85% 0.014 85);
-  --line-strong: oklch(72% 0.016 85);
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f2eee3">
+  <title>Kirole 手机、AI 与硬件互动全景图</title>
+  <style>
+    :root {
+      --paper: #f2eee3;
+      --paper-2: #faf7ef;
+      --paper-3: #e8e1d2;
+      --ink: #181815;
+      --muted: #5b5a52;
+      --line: #c9c0ad;
+      --red: #a83f2e;
+      --red-bg: #f5ddd5;
+      --green: #245d50;
+      --green-bg: #dcebe4;
+      --blue: #315a7d;
+      --blue-bg: #dde8f1;
+      --yellow: #6d5210;
+      --yellow-bg: #f3e6b7;
+      --black: #181815;
+      --shadow: 0 14px 40px rgba(45, 38, 25, .08);
+      --radius-sm: 8px;
+      --radius-md: 14px;
+      --radius-lg: 24px;
+      --serif: "Songti SC", "STSong", "Iowan Old Style", "Noto Serif SC", Georgia, serif;
+      --sans: "Avenir Next", Avenir, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      --mono: "SFMono-Regular", Menlo, Consolas, monospace;
+      --header-height: 66px;
+      --scroll-pad: 88px;
+    }
 
-  --c-black: oklch(21% 0 0);
-  --c-white: oklch(99% 0 0);
-  --c-yellow: oklch(86% 0.15 96);
-  --c-yellow-ink: oklch(40% 0.09 80);
-  --c-red: oklch(56% 0.19 25);
-  --c-red-soft: oklch(94% 0.045 25);
-  --c-blue: oklch(52% 0.13 255);
-  --c-blue-soft: oklch(94% 0.03 255);
-  --c-green: oklch(52% 0.12 148);
-  --c-green-soft: oklch(94% 0.04 148);
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; scroll-padding-top: var(--scroll-pad); }
+    body {
+      margin: 0;
+      padding-left: env(safe-area-inset-left, 0px);
+      padding-right: env(safe-area-inset-right, 0px);
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+      color: var(--ink);
+      background:
+        repeating-linear-gradient(0deg, transparent 0 31px, rgba(70, 60, 40, .025) 31px 32px),
+        var(--paper);
+      font-family: var(--sans);
+      line-height: 1.65;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: inherit; }
+    button, input { font: inherit; }
+    button { color: inherit; }
+    [hidden] { display: none !important; }
+    :focus-visible { outline: 3px solid #1b6b9a; outline-offset: 3px; }
 
-  --radius-s: 8px;
-  --radius-m: 12px;
-  --radius-l: 18px;
+    .skip-link {
+      position: fixed;
+      z-index: 100;
+      top: 8px;
+      left: 8px;
+      transform: translateY(-160%);
+      padding: 10px 14px;
+      color: white;
+      background: var(--black);
+      border-radius: 8px;
+    }
+    .skip-link:focus { transform: translateY(0); }
+    .visually-hidden {
+      position: absolute !important;
+      width: 1px !important;
+      height: 1px !important;
+      padding: 0 !important;
+      margin: -1px !important;
+      overflow: hidden !important;
+      clip: rect(0, 0, 0, 0) !important;
+      white-space: nowrap !important;
+      border: 0 !important;
+    }
 
-  --font-sans: "Iowan Old Style", "Georgia", "Noto Serif SC", ui-serif, serif;
-  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      min-height: var(--header-height);
+      padding:
+        max(10px, env(safe-area-inset-top, 0px))
+        max(clamp(18px, 4vw, 64px), env(safe-area-inset-right, 0px))
+        10px
+        max(clamp(18px, 4vw, 64px), env(safe-area-inset-left, 0px));
+      background: rgba(242, 238, 227, .94);
+      border-bottom: 1px solid var(--line);
+      backdrop-filter: blur(14px);
+    }
+    .brand { display: flex; align-items: center; gap: 11px; min-width: max-content; }
+    .brand-mark {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      color: var(--paper-2);
+      background: var(--red);
+      border-radius: 50% 50% 42% 58%;
+      font-family: var(--serif);
+      font-weight: 800;
+    }
+    .brand strong { font-family: var(--serif); font-size: 18px; }
+    .brand small { display: block; color: var(--muted); font-size: 11px; letter-spacing: .05em; }
+    .quick-nav {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .quick-nav::-webkit-scrollbar { display: none; }
+    .quick-nav a {
+      min-height: 44px;
+      display: inline-flex;
+      align-items: center;
+      padding: 8px 11px;
+      color: var(--muted);
+      text-decoration: none;
+      white-space: nowrap;
+      border-radius: 99px;
+      font-size: 13px;
+    }
+    .quick-nav a:hover { color: var(--ink); background: var(--paper-3); }
+    .print-button {
+      min-width: max-content;
+      min-height: 42px;
+      padding: 8px 14px;
+      background: var(--black);
+      color: white;
+      border: 0;
+      border-radius: 99px;
+      cursor: pointer;
+    }
 
-  --nav-w: 250px;
-  --dur: 200ms;
-}
+    main { width: min(1240px, calc(100% - 36px)); margin: 0 auto; }
+    section { padding: clamp(58px, 8vw, 108px) 0; border-bottom: 1px solid var(--line); }
+    .section-head { max-width: 780px; margin-bottom: 34px; }
+    .kicker {
+      margin: 0 0 10px;
+      color: var(--red);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+    }
+    h1, h2, h3, h4 { font-family: var(--serif); line-height: 1.2; }
+    h1 { margin: 0; font-size: clamp(46px, 8vw, 104px); letter-spacing: -.055em; }
+    h2 { margin: 0 0 14px; font-size: clamp(32px, 5vw, 58px); letter-spacing: -.035em; }
+    h3 { margin: 0; font-size: clamp(21px, 2vw, 28px); }
+    p { margin: 0 0 1em; }
+    .lead { color: var(--muted); font-size: clamp(17px, 2vw, 22px); line-height: 1.8; }
+    .fine { color: var(--muted); font-size: 13px; }
+    .mono { font-family: var(--mono); }
 
-* { box-sizing: border-box; }
+    .hero { padding-top: clamp(56px, 8vw, 110px); }
+    .hero-grid { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(280px, .55fr); gap: 46px; align-items: end; }
+    .hero .lead { max-width: 820px; margin-top: 26px; }
+    .version-card {
+      padding: 24px;
+      background: var(--black);
+      color: white;
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow);
+    }
+    .version-card p { color: #d7d3c9; font-size: 14px; }
+    .version-card strong { display: block; margin-bottom: 6px; color: white; font-size: 18px; }
+    .version-line { display: flex; justify-content: space-between; gap: 16px; padding: 10px 0; border-top: 1px solid #3e3e37; }
+    .version-line span:first-child { color: #b9b7ae; }
+    .truth-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-top: 48px; }
+    .truth-card {
+      min-height: 230px;
+      padding: 22px;
+      background: var(--paper-2);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      box-shadow: 0 8px 18px rgba(45, 38, 25, .04);
+    }
+    .truth-card .num { display: block; margin-bottom: 36px; color: var(--red); font-family: var(--mono); font-size: 13px; }
+    .truth-card h3 { margin-bottom: 12px; font-size: 22px; }
+    .truth-card p { margin: 0; color: var(--muted); font-size: 14px; }
 
-html, body {
-  margin: 0;
-  padding: 0;
-  background: var(--paper);
-  color: var(--ink);
-  font-family: var(--font-ui);
-  -webkit-font-smoothing: antialiased;
-}
+    .boundary-note {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 16px;
+      align-items: start;
+      margin-top: 24px;
+      padding: 18px 20px;
+      background: var(--yellow-bg);
+      border: 1px solid #d4bd69;
+      border-radius: var(--radius-md);
+    }
+    .boundary-note strong { color: var(--yellow); }
 
-body {
-  background-image: radial-gradient(oklch(0% 0 0 / 0.025) 1px, transparent 1px);
-  background-size: 4px 4px;
-}
+    .actor-flow {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      counter-reset: actors;
+    }
+    .actor-flow li {
+      position: relative;
+      min-height: 230px;
+      padding: 20px;
+      background: var(--paper-2);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      counter-increment: actors;
+    }
+    .actor-flow li::before {
+      content: "0" counter(actors);
+      display: block;
+      margin-bottom: 34px;
+      color: var(--red);
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+    .actor-flow li:not(:last-child)::after {
+      content: "→";
+      position: absolute;
+      z-index: 2;
+      top: 50%;
+      right: -18px;
+      display: grid;
+      place-items: center;
+      width: 26px;
+      height: 26px;
+      color: white;
+      background: var(--red);
+      border: 3px solid var(--paper);
+      border-radius: 50%;
+      font-family: var(--sans);
+    }
+    .actor-flow h3 { margin-bottom: 10px; font-size: 21px; }
+    .actor-flow p { color: var(--muted); font-size: 14px; }
+    .actor-tag {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      margin-top: 12px;
+      padding: 3px 9px;
+      background: var(--paper-3);
+      border-radius: 99px;
+      color: var(--muted);
+      font-size: 12px;
+    }
 
-h1, h2, h3, h4 {
-  font-family: var(--font-sans);
-  font-weight: 600;
-  line-height: 1.3;
-  margin: 0 0 0.5em;
-}
+    .two-way { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 24px; }
+    .direction-card { padding: 24px; border-radius: var(--radius-md); border: 1px solid var(--line); background: var(--paper-2); }
+    .direction-card.reverse { background: var(--blue-bg); border-color: #9eb5ca; }
+    .direction-card h3 { margin-bottom: 12px; }
+    .direction-card ol { margin: 0; padding-left: 22px; }
+    .direction-card li { margin: 8px 0; }
 
-p { line-height: 1.7; margin: 0 0 1em; color: var(--ink-soft); }
+    .state-track {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+      margin: 30px 0;
+    }
+    .state {
+      padding: 18px;
+      background: var(--paper-2);
+      border: 1px solid var(--line);
+      border-top: 5px solid var(--muted);
+      border-radius: var(--radius-sm);
+    }
+    .state:nth-child(2) { border-top-color: var(--yellow); }
+    .state:nth-child(3) { border-top-color: var(--blue); }
+    .state:nth-child(4) { border-top-color: var(--green); }
+    .state:nth-child(5) { border-top-color: var(--red); }
+    .state strong { display: block; margin-bottom: 6px; font-family: var(--serif); font-size: 19px; }
+    .state span { color: var(--muted); font-size: 13px; }
+    .path-list { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    .path { padding: 20px; border-left: 4px solid var(--line); background: rgba(250, 247, 239, .7); }
+    .path strong { display: block; margin-bottom: 8px; }
+    .path p { margin: 0; color: var(--muted); font-size: 14px; }
 
-/* ---------- language toggle ---------- */
-.lang-toggle {
-  position: fixed;
-  top: 16px;
-  right: 16px;
-  z-index: 60;
-  font-family: var(--font-mono);
-  font-size: 0.8rem;
-  padding: 8px 14px;
-  background: var(--c-black);
-  color: var(--c-white);
-  border: none;
-  border-radius: 999px;
-  cursor: pointer;
-  box-shadow: 0 2px 10px oklch(0% 0 0 / 0.18);
-  transition: transform var(--dur) ease;
-}
-.lang-toggle:hover { transform: translateY(-1px); }
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      background: var(--paper-2);
+      box-shadow: var(--shadow);
+    }
+    table { width: 100%; min-width: 850px; border-collapse: collapse; font-size: 14px; }
+    caption { padding: 16px 18px; text-align: left; color: var(--muted); font-size: 13px; }
+    th, td { padding: 16px 18px; text-align: left; vertical-align: top; border-top: 1px solid var(--line); }
+    thead th { color: white; background: var(--black); border-top: 0; font-size: 12px; letter-spacing: .04em; }
+    tbody th { min-width: 150px; font-family: var(--serif); font-size: 16px; }
+    td { color: #3f3f39; }
+    .yes { color: var(--green); font-weight: 700; }
+    .no { color: var(--red); font-weight: 700; }
+    .some { color: var(--yellow); font-weight: 700; }
+    .scroll-help { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
 
-/* ---------- shell / nav ---------- */
-.shell { display: flex; align-items: flex-start; min-height: 100vh; }
+    .preload-answer {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+      margin: 30px 0;
+    }
+    .preload-card { padding: 28px; border-radius: var(--radius-lg); }
+    .preload-card:first-child { background: var(--green-bg); border: 1px solid #9ec2b4; }
+    .preload-card:last-child { background: var(--red-bg); border: 1px solid #d6a195; }
+    .preload-card h3 { margin-bottom: 12px; }
+    .preload-card ul { margin: 0; padding-left: 20px; }
+    .preload-card li { margin: 8px 0; }
 
-.sidenav {
-  position: sticky;
-  top: 0;
-  height: 100vh;
-  width: var(--nav-w);
-  flex: 0 0 var(--nav-w);
-  overflow-y: auto;
-  padding: 28px 18px 40px;
-  border-right: 1px solid var(--line);
-  background: var(--paper-raised);
-}
-.sidenav-brand {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-family: var(--font-sans);
-  font-weight: 700;
-  font-size: 1.02rem;
-  margin-bottom: 22px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid var(--line);
-}
-.brand-mark { color: var(--c-red); }
+    .screen-map { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+    .screen-card { padding: 22px; background: var(--paper-2); border: 1px solid var(--line); border-radius: var(--radius-md); }
+    .screen-card header { min-height: 96px; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
+    .screen-card h3 { margin-bottom: 6px; }
+    .screen-card header p { color: var(--muted); font-size: 13px; }
+    .button-action { padding: 16px 0; border-bottom: 1px dashed var(--line); }
+    .button-action:last-child { border-bottom: 0; padding-bottom: 0; }
+    .button-action strong { display: block; color: var(--red); font-size: 13px; }
+    .button-action p { margin: 4px 0 0; font-size: 14px; }
 
-.sidenav-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
-.sidenav-list a {
-  display: block;
-  padding: 7px 10px;
-  border-radius: var(--radius-s);
-  color: var(--ink-soft);
-  text-decoration: none;
-  font-size: 0.87rem;
-  transition: background var(--dur) ease, color var(--dur) ease;
-}
-.sidenav-list a:hover { background: var(--line); color: var(--ink); }
-.sidenav-list .sub a { padding-left: 22px; font-size: 0.82rem; }
-.sidenav-list .group-label {
-  font-size: 0.72rem;
-  letter-spacing: 0.05em;
-  color: var(--ink-soft);
-  padding: 14px 10px 4px;
-  opacity: 0.7;
-}
+    .explorer {
+      position: sticky;
+      top: var(--header-height);
+      z-index: 25;
+      margin: 0 0 24px;
+      padding: 18px;
+      background: rgba(250, 247, 239, .97);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(12px);
+    }
+    .explorer-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .search-box { flex: 1 1 280px; min-height: 46px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; background: white; }
+    .filter-button, .utility-button {
+      min-height: 44px;
+      padding: 8px 13px;
+      border: 1px solid var(--line);
+      border-radius: 99px;
+      background: transparent;
+      cursor: pointer;
+    }
+    .filter-button[aria-pressed="true"] { color: white; background: var(--black); border-color: var(--black); }
+    .utility-button:hover, .filter-button:hover { border-color: var(--ink); }
+    .result-line { display: flex; justify-content: space-between; gap: 14px; margin-top: 12px; color: var(--muted); font-size: 13px; }
+    .empty-state {
+      margin: 18px 0;
+      padding: 28px;
+      text-align: center;
+      background: var(--yellow-bg);
+      border: 1px solid #d4bd69;
+      border-radius: var(--radius-md);
+    }
+    .empty-state p { margin-bottom: 12px; }
+    .scenario-list { display: grid; gap: 12px; }
+    .scenario {
+      background: var(--paper-2);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      overflow: clip;
+    }
+    .scenario[open] { box-shadow: var(--shadow); border-color: #998e79; }
+    .scenario summary {
+      display: grid;
+      grid-template-columns: 52px minmax(0, 1fr) auto;
+      gap: 14px;
+      align-items: center;
+      min-height: 92px;
+      padding: 15px 20px;
+      cursor: pointer;
+      list-style: none;
+    }
+    .scenario summary::-webkit-details-marker { display: none; }
+    .scenario summary::after { content: "+"; grid-column: 3; grid-row: 1; margin-left: 8px; font-size: 26px; font-weight: 300; }
+    .scenario[open] summary::after { content: "−"; }
+    .scenario-id { grid-column: 1; grid-row: 1 / span 2; color: var(--red); font-family: var(--mono); font-size: 13px; }
+    .scenario-title { grid-column: 2; grid-row: 1; font-family: var(--serif); font-size: 21px; font-weight: 700; line-height: 1.25; }
+    .scenario-sub { grid-column: 2; grid-row: 2; color: var(--muted); font-size: 13px; }
+    .scenario-status { grid-column: 3; grid-row: 2; justify-self: end; min-width: max-content; padding: 4px 9px; border-radius: 99px; font-size: 13px; font-weight: 700; }
+    .status-ready { color: #17483d; background: var(--green-bg); }
+    .status-fallback { color: #5f4708; background: var(--yellow-bg); }
+    .status-device { color: #244d70; background: var(--blue-bg); }
+    .scenario-body { padding: 0 20px 24px 86px; border-top: 1px solid var(--line); }
+    .one-line-result { margin: 0 -20px 24px -86px; padding: 16px 20px 16px 86px; color: var(--ink); background: #ece5d8; }
+    .one-line-result strong { color: var(--red); }
+    .flow-steps { margin: 0; padding: 0; list-style: none; counter-reset: steps; }
+    .flow-steps > li {
+      position: relative;
+      min-height: 62px;
+      padding: 0 0 22px 48px;
+      counter-increment: steps;
+    }
+    .flow-steps > li::before {
+      content: counter(steps);
+      position: absolute;
+      left: 0;
+      top: 0;
+      display: grid;
+      place-items: center;
+      width: 30px;
+      height: 30px;
+      color: white;
+      background: var(--black);
+      border-radius: 50%;
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+    .flow-steps > li:not(:last-child)::after {
+      content: "";
+      position: absolute;
+      left: 14px;
+      top: 32px;
+      bottom: 2px;
+      width: 1px;
+      background: var(--line);
+    }
+    .who { display: inline-block; margin-right: 7px; color: var(--blue); font-weight: 800; font-size: 13px; }
+    .connection-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 14px; }
+    .connection-lane { padding: 16px; border-radius: 10px; border: 1px solid var(--line); }
+    .connection-lane:nth-child(1) { background: var(--green-bg); }
+    .connection-lane:nth-child(2) { background: var(--yellow-bg); }
+    .connection-lane:nth-child(3) { background: var(--blue-bg); }
+    .connection-lane strong { display: block; margin-bottom: 5px; }
+    .connection-lane p { margin: 0; font-size: 13px; }
+    .guardrail { margin-top: 14px; padding: 14px 16px; border-left: 4px solid var(--red); background: var(--red-bg); font-size: 14px; }
 
-.nav-toggle {
-  display: none;
-  position: fixed;
-  top: 14px;
-  left: 14px;
-  z-index: 61;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  border: 1px solid var(--line-strong);
-  background: var(--paper-raised);
-  cursor: pointer;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-}
-.nav-toggle-bar { width: 18px; height: 2px; background: var(--ink); border-radius: 2px; }
+    .timeline { position: relative; max-width: 920px; margin: 0 auto; padding-left: 104px; }
+    .timeline::before { content: ""; position: absolute; left: 75px; top: 8px; bottom: 8px; width: 2px; background: var(--line); }
+    .moment { position: relative; margin-bottom: 20px; padding: 20px 22px; background: var(--paper-2); border: 1px solid var(--line); border-radius: var(--radius-md); }
+    .moment::before { content: ""; position: absolute; left: -37px; top: 25px; width: 12px; height: 12px; background: var(--red); border: 5px solid var(--paper); border-radius: 50%; }
+    .moment time { position: absolute; right: calc(100% + 42px); top: 20px; font-family: var(--mono); font-weight: 800; }
+    .moment h3 { margin-bottom: 7px; font-size: 20px; }
+    .moment p { margin: 0; color: var(--muted); }
 
-.main { flex: 1 1 auto; min-width: 0; padding: 56px 48px 100px; max-width: 900px; }
+    .principles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    .principle { min-height: 200px; padding: 24px; background: var(--black); color: white; border-radius: var(--radius-md); }
+    .principle:nth-child(2) { background: var(--green); }
+    .principle:nth-child(3) { background: var(--blue); }
+    .principle h3 { margin-bottom: 12px; }
+    .principle p { color: rgba(255, 255, 255, .78); }
 
-/* ---------- hero ---------- */
-.hero { margin-bottom: 52px; }
-.hero-eyebrow {
-  font-family: var(--font-mono);
-  font-size: 0.76rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--c-red);
-  margin-bottom: 10px;
-}
-.hero-title { font-size: clamp(1.7rem, 1.3rem + 1.6vw, 2.5rem); max-width: 30ch; text-wrap: balance; }
-.hero-sub { max-width: 60ch; font-size: 1.02rem; }
-.hero-legend { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+    .faq { display: grid; gap: 10px; }
+    .faq details { background: var(--paper-2); border: 1px solid var(--line); border-radius: var(--radius-sm); }
+    .faq summary { padding: 18px 20px; cursor: pointer; font-family: var(--serif); font-size: 18px; font-weight: 700; }
+    .faq p { padding: 0 20px 20px; color: var(--muted); }
 
-/* ---------- sections ---------- */
-.section { margin-bottom: 72px; }
-.section-kicker {
-  font-family: var(--font-mono);
-  font-size: 0.74rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink-soft);
-  margin-bottom: 6px;
-}
-.section-title { font-size: 1.5rem; margin-bottom: 10px; }
-.section-desc { max-width: 64ch; }
+    .acceptance-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    .acceptance-card { padding: 24px; background: var(--paper-2); border: 1px solid var(--line); border-radius: var(--radius-md); }
+    .acceptance-card strong { display: block; margin-bottom: 12px; font-family: var(--serif); font-size: 21px; }
+    .acceptance-card ul { margin: 0; padding-left: 20px; }
+    .acceptance-card li { margin: 8px 0; }
+    .acceptance-card.ready { border-top: 6px solid var(--green); }
+    .acceptance-card.contract { border-top: 6px solid var(--yellow); }
+    .acceptance-card.verify { border-top: 6px solid var(--blue); }
 
-/* ---------- legend / tags ---------- */
-.tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 0.74rem;
-  padding: 3px 10px;
-  border-radius: 999px;
-  border: 1px solid transparent;
-  white-space: nowrap;
-}
-.tag-live { background: var(--c-green-soft); color: var(--c-green); border-color: oklch(52% 0.12 148 / 0.35); }
-.tag-pending { background: var(--c-yellow); color: var(--c-yellow-ink); border-color: oklch(40% 0.09 80 / 0.3); }
-.tag-issue { background: var(--c-red-soft); color: var(--c-red); border-color: oklch(56% 0.19 25 / 0.35); }
-.tag-dead { background: oklch(90% 0.006 85); color: var(--ink-soft); border-color: var(--line-strong); }
-.tag-new { background: var(--c-blue-soft); color: var(--c-blue); border-color: oklch(52% 0.13 255 / 0.35); }
+    .doc-footer { padding: 38px 0 70px; display: flex; justify-content: space-between; gap: 20px; color: var(--muted); font-size: 13px; }
+    .back-top { font-weight: 700; }
 
-.actor-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.76rem;
-  padding: 4px 11px;
-  border-radius: 999px;
-  color: var(--c-white);
-}
-.actor-pill.a-user { background: var(--c-yellow-ink); }
-.actor-pill.a-app { background: var(--c-blue); }
-.actor-pill.a-device { background: var(--c-black); }
-.actor-pill.a-external { background: var(--c-green); }
+    .status-summary {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-top: 18px;
+    }
+    .status-summary div { padding: 14px 16px; border-radius: var(--radius-sm); }
+    .status-summary div:nth-child(1) { background: var(--green-bg); }
+    .status-summary div:nth-child(2) { background: var(--blue-bg); }
+    .status-summary div:nth-child(3) { background: var(--yellow-bg); }
+    .status-summary strong { display: block; font-family: var(--serif); font-size: 24px; }
+    .status-summary span { font-size: 13px; }
 
-/* ---------- big picture map ---------- */
-.bigmap {
-  display: grid;
-  grid-template-columns: 1fr auto 1.15fr auto 1fr;
-  align-items: stretch;
-  gap: 6px;
-  margin: 26px 0 10px;
-}
-.bigmap-card {
-  background: var(--paper-raised);
-  border: 1.5px solid var(--line-strong);
-  border-radius: var(--radius-m);
-  padding: 16px 14px;
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  justify-content: center;
-}
-.bigmap-card .bm-emoji { font-size: 1.7rem; }
-.bigmap-card h3 { font-size: 0.95rem; margin: 0; }
-.bigmap-card p { font-size: 0.8rem; margin: 0; }
-.bigmap-card.bm-app { border-color: var(--c-blue); box-shadow: 0 3px 14px oklch(52% 0.13 255 / 0.12); }
-.bigmap-card.bm-device { border-color: var(--c-black); }
-.bigmap-card.bm-external { border-style: dashed; }
-
-.bigmap-link {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  padding: 0 4px;
-  min-width: 74px;
-}
-.bigmap-link .bm-arrow { font-size: 1.5rem; color: var(--line-strong); line-height: 1; }
-.bigmap-link .bm-label {
-  font-size: 0.7rem;
-  color: var(--ink-soft);
-  text-align: center;
-  line-height: 1.4;
-  max-width: 110px;
-}
-
-.bigmap-captions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 26px; }
-.bigmap-captions span {
-  font-size: 0.8rem;
-  color: var(--ink-soft);
-  background: var(--paper-raised);
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 5px 12px;
-}
-
-/* ---------- overview cards ---------- */
-.overview-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-  gap: 14px;
-  margin-top: 20px;
-}
-.overview-card {
-  background: var(--paper-raised);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-m);
-  padding: 18px;
-}
-.overview-card h3 { font-size: 0.98rem; margin-bottom: 6px; }
-.overview-card p { font-size: 0.88rem; margin: 0; }
-.overview-card .oc-icon { font-size: 1.35rem; margin-bottom: 8px; display: block; }
-
-/* ---------- flow block ---------- */
-.flow-block {
-  background: var(--paper-raised);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-l);
-  padding: 28px 26px 24px;
-  margin-bottom: 30px;
-}
-.flow-block h3 { font-size: 1.18rem; margin-bottom: 6px; }
-.flow-block > p { max-width: 62ch; }
-
-.flow-note {
-  font-size: 0.88rem;
-  line-height: 1.65;
-  color: var(--ink);
-  background: oklch(97% 0.012 85);
-  border-left: 3px solid var(--c-yellow-ink);
-  padding: 10px 14px;
-  border-radius: 0 var(--radius-s) var(--radius-s) 0;
-  margin-top: 16px;
-}
-.flow-note.warn { border-left-color: var(--c-red); background: var(--c-red-soft); }
-
-/* ---------- vertical flowchart ---------- */
-.fc { display: flex; flex-direction: column; align-items: center; margin-top: 20px; }
-
-.fc-node {
-  width: 100%;
-  max-width: 620px;
-  background: var(--paper);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-m);
-  padding: 13px 16px;
-  display: flex;
-  gap: 13px;
-  align-items: flex-start;
-  box-shadow: 0 1px 4px oklch(0% 0 0 / 0.05);
-}
-.fc-badge {
-  flex: 0 0 auto;
-  width: 42px;
-  height: 42px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.25rem;
-  border: 1.5px solid transparent;
-}
-.fc-badge.a-user { background: var(--c-yellow); border-color: oklch(40% 0.09 80 / 0.3); }
-.fc-badge.a-app { background: var(--c-blue-soft); border-color: oklch(52% 0.13 255 / 0.35); }
-.fc-badge.a-device { background: oklch(92% 0.004 85); border-color: var(--line-strong); }
-.fc-badge.a-external { background: var(--c-green-soft); border-color: oklch(52% 0.12 148 / 0.35); }
-
-.fc-body { flex: 1 1 auto; min-width: 0; }
-.fc-who {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.73rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  margin-bottom: 4px;
-}
-.fc-who .who-name.a-user { color: var(--c-yellow-ink); }
-.fc-who .who-name.a-app { color: var(--c-blue); }
-.fc-who .who-name.a-device { color: var(--c-black); }
-.fc-who .who-name.a-external { color: var(--c-green); }
-.fc-body p { font-size: 0.92rem; line-height: 1.6; margin: 0; color: var(--ink); }
-
-/* arrow between nodes */
-.fc-arrow { display: flex; flex-direction: column; align-items: center; padding: 3px 0; }
-.fc-arrow .fa-line { width: 3px; height: 16px; background: var(--line-strong); border-radius: 2px; }
-.fc-arrow .fa-head {
-  width: 0; height: 0;
-  border-left: 8px solid transparent;
-  border-right: 8px solid transparent;
-  border-top: 10px solid var(--line-strong);
-}
-.fc-arrow .fa-label {
-  font-size: 0.76rem;
-  padding: 3px 12px;
-  margin: 4px 0;
-  border-radius: 999px;
-  background: var(--paper-raised);
-  border: 1px solid var(--line-strong);
-  color: var(--ink-soft);
-  text-align: center;
-  max-width: 340px;
-  line-height: 1.5;
-}
-.fc-arrow.tone-ble .fa-label { background: var(--c-blue-soft); border-color: oklch(52% 0.13 255 / 0.4); color: var(--c-blue); }
-.fc-arrow.tone-instant .fa-label { background: var(--c-green-soft); border-color: oklch(52% 0.12 148 / 0.4); color: var(--c-green); }
-.fc-arrow.tone-wait .fa-label { background: var(--c-yellow); border-color: oklch(40% 0.09 80 / 0.35); color: var(--c-yellow-ink); }
-
-/* branch */
-.fc-branch {
-  width: 100%;
-  max-width: 720px;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-  margin: 4px 0;
-}
-.fc-branch-col {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  border: 1.5px dashed var(--line-strong);
-  border-radius: var(--radius-m);
-  padding: 14px 12px;
-  background: oklch(97.5% 0.01 85);
-}
-.fc-branch-col.tone-ok { border-color: oklch(52% 0.12 148 / 0.5); }
-.fc-branch-col.tone-bad { border-color: oklch(56% 0.19 25 / 0.5); }
-.fc-branch-label {
-  font-size: 0.8rem;
-  font-weight: 600;
-  padding: 4px 14px;
-  border-radius: 999px;
-  margin-bottom: 12px;
-}
-.fc-branch-col.tone-ok .fc-branch-label { background: var(--c-green-soft); color: var(--c-green); }
-.fc-branch-col.tone-bad .fc-branch-label { background: var(--c-red-soft); color: var(--c-red); }
-.fc-branch-col .fc-node { max-width: 100%; }
-
-/* ---------- issues ---------- */
-.issue-list { display: flex; flex-direction: column; gap: 14px; margin-top: 20px; }
-.issue-card {
-  background: var(--paper-raised);
-  border: 1px solid var(--line);
-  border-left: 4px solid var(--c-red);
-  border-radius: var(--radius-m);
-  padding: 16px 18px;
-}
-.issue-card.pending { border-left-color: var(--c-yellow-ink); }
-.issue-card h4 { font-size: 0.98rem; margin: 0 0 6px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.issue-card p { font-size: 0.88rem; margin: 0; }
-
-/* ---------- appendix tables ---------- */
-details.appendix {
-  background: var(--paper-raised);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-l);
-  padding: 6px 22px;
-}
-details.appendix summary {
-  cursor: pointer;
-  font-family: var(--font-sans);
-  font-weight: 600;
-  font-size: 1.05rem;
-  padding: 14px 0;
-  list-style: none;
-}
-details.appendix summary::-webkit-details-marker { display: none; }
-details.appendix summary::before { content: "▸ "; color: var(--c-red); }
-details.appendix[open] summary::before { content: "▾ "; }
-
-.table-wrap {
-  overflow-x: auto;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-m);
-  margin: 14px 0 28px;
-  background: var(--paper-raised);
-}
-table { border-collapse: collapse; width: 100%; font-size: 0.85rem; min-width: 620px; }
-thead th {
-  background: var(--c-black);
-  color: var(--c-white);
-  text-align: left;
-  font-family: var(--font-mono);
-  font-weight: 600;
-  font-size: 0.72rem;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  padding: 10px 14px;
-}
-tbody td { padding: 10px 14px; border-top: 1px solid var(--line); vertical-align: top; }
-tbody tr:hover { background: oklch(98% 0.01 85); }
-.table-title { font-size: 1.02rem; margin: 26px 0 4px; }
-.table-caption { font-size: 0.85rem; margin-bottom: 4px; }
-
-.rules-title { font-size: 1rem; margin: 24px 0 4px; }
-.rules-table { margin-top: 10px; }
-.rules-table table { min-width: 560px; }
-.rules-table td:first-child { width: 24%; }
-.rules-table td .diff { color: var(--c-red); font-weight: 600; }
-.rules-table td .same { color: var(--c-green); font-weight: 600; }
-
-.byte-badge {
-  font-family: var(--font-mono);
-  font-size: 0.76rem;
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: var(--radius-s);
-  background: var(--c-black);
-  color: var(--c-white);
-}
-.byte-badge.dir-in { background: var(--c-blue); }
-
-/* ---------- footer ---------- */
-.page-footer { border-top: 1px solid var(--line); padding-top: 20px; margin-top: 40px; }
-.page-footer p { font-size: 0.8rem; margin: 0; }
-
-/* ---------- responsive ---------- */
-@media (max-width: 1024px) {
-  .sidenav {
-    position: fixed;
-    left: 0;
-    top: 0;
-    z-index: 55;
-    transform: translateX(-100%);
-    transition: transform var(--dur) ease;
-    box-shadow: 0 0 40px oklch(0% 0 0 / 0.25);
-  }
-  .sidenav.open { transform: translateX(0); }
-  .nav-toggle { display: flex; }
-  .main { padding: 84px 24px 80px; }
-  body.nav-open::after {
-    content: "";
-    position: fixed;
-    inset: 0;
-    background: oklch(0% 0 0 / 0.35);
-    z-index: 50;
-  }
-}
-
-@media (max-width: 760px) {
-  .bigmap { grid-template-columns: 1fr; }
-  .bigmap-link { flex-direction: row; min-width: 0; padding: 2px 0; }
-  .bigmap-link .bm-arrow { transform: rotate(90deg); font-size: 1.3rem; }
-  .fc-branch { grid-template-columns: 1fr; }
-}
-
-@media (max-width: 480px) {
-  .main { padding: 84px 14px 64px; }
-  .flow-block { padding: 20px 14px 18px; }
-}
-
-
-/* ---------- mobile polish (single-file client delivery) ---------- */
-html {
-  -webkit-text-size-adjust: 100%;
-  text-size-adjust: 100%;
-  scroll-behavior: smooth;
-}
-
-body {
-  padding-left: env(safe-area-inset-left);
-  padding-right: env(safe-area-inset-right);
-  padding-bottom: env(safe-area-inset-bottom);
-}
-
-.lang-toggle {
-  top: max(12px, env(safe-area-inset-top));
-  right: max(12px, env(safe-area-inset-right));
-  min-height: 44px;
-  min-width: 44px;
-  padding: 10px 16px;
-  font-size: 0.85rem;
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
-}
-
-.nav-toggle {
-  top: max(12px, env(safe-area-inset-top));
-  left: max(12px, env(safe-area-inset-left));
-  width: 44px;
-  height: 44px;
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
-}
-
-.sidenav-list a {
-  min-height: 44px;
-  display: flex;
-  align-items: center;
-  -webkit-tap-highlight-color: transparent;
-}
-
-details.appendix summary {
-  min-height: 48px;
-  display: flex;
-  align-items: center;
-  -webkit-tap-highlight-color: transparent;
-}
-
-@media (max-width: 1024px) {
-  .main {
-    padding-top: max(88px, calc(env(safe-area-inset-top) + 72px));
-  }
-  .sidenav {
-    padding-top: max(28px, calc(env(safe-area-inset-top) + 16px));
-    width: min(86vw, 300px);
-  }
-}
-
-@media (max-width: 760px) {
-  .hero-title {
-    font-size: clamp(1.45rem, 6.2vw, 1.9rem);
-    max-width: none;
-  }
-  .hero-sub { font-size: 0.98rem; }
-  .section { margin-bottom: 48px; }
-  .section-title { font-size: 1.28rem; }
-  .flow-block h3 { font-size: 1.08rem; }
-  .fc-node {
-    padding: 12px 12px;
-    gap: 10px;
-  }
-  .fc-badge {
-    width: 38px;
-    height: 38px;
-    font-size: 1.1rem;
-  }
-  .fc-body p { font-size: 0.9rem; }
-  .fc-arrow .fa-label {
-    max-width: min(92vw, 320px);
-    font-size: 0.74rem;
-  }
-  .tag, .actor-pill { white-space: normal; }
-  .hero-legend { gap: 6px; }
-  .bigmap-card { padding: 14px 12px; }
-  table { min-width: 540px; font-size: 0.8rem; }
-  .rules-table table { min-width: 480px; }
-  thead th, tbody td { padding: 9px 10px; }
-}
-
-@media (max-width: 480px) {
-  .lang-toggle {
-    font-size: 0.78rem;
-    padding: 9px 12px;
-  }
-  .overview-grid { grid-template-columns: 1fr; gap: 10px; }
-  .issue-card { padding: 14px; }
-  .page-footer { padding-bottom: 8px; }
-}
-
-/* Prefer readable type on small screens without zoom thrash */
-@media (hover: none) and (pointer: coarse) {
-  .sidenav-list a:hover { background: transparent; color: var(--ink-soft); }
-  .sidenav-list a:active { background: var(--line); color: var(--ink); }
-  tbody tr:hover { background: transparent; }
-  .lang-toggle:hover { transform: none; }
-  .lang-toggle:active { transform: scale(0.98); }
-}
-
-</style>
+    @media (max-width: 1050px) {
+      /* Topbar wraps into two rows; unstick explorer so filters never slide under chrome. */
+      :root {
+        --header-height: 118px;
+        --scroll-pad: 128px;
+      }
+      .topbar { flex-wrap: wrap; gap: 4px 12px; }
+      .quick-nav { order: 3; display: flex; width: 100%; }
+      .explorer { position: relative; top: auto; }
+      .truth-grid, .screen-map { grid-template-columns: repeat(2, 1fr); }
+      .actor-flow { grid-template-columns: repeat(2, 1fr); }
+      .actor-flow li:last-child { grid-column: 1 / -1; min-height: 160px; }
+      .actor-flow li::after { display: none !important; }
+      .state-track { grid-template-columns: repeat(3, 1fr); }
+    }
+    @media (max-width: 760px) {
+      :root {
+        --header-height: 58px;
+        --scroll-pad: 112px;
+      }
+      .topbar {
+        min-height: var(--header-height);
+        padding:
+          max(8px, env(safe-area-inset-top, 0px))
+          max(14px, env(safe-area-inset-right, 0px))
+          8px
+          max(14px, env(safe-area-inset-left, 0px));
+      }
+      .brand small { display: none; }
+      .print-button { display: none; }
+      main { width: min(100% - 24px, 1240px); }
+      section { padding: 58px 0; }
+      .hero-grid, .two-way, .preload-answer, .path-list, .principles, .acceptance-grid, .status-summary { grid-template-columns: 1fr; }
+      .version-card { margin-top: 4px; }
+      .truth-grid, .actor-flow, .state-track, .screen-map { grid-template-columns: 1fr; }
+      .truth-card { min-height: auto; }
+      .truth-card .num, .actor-flow li::before { margin-bottom: 18px; }
+      .actor-flow li:last-child { grid-column: auto; }
+      .connection-grid { grid-template-columns: 1fr; }
+      .explorer { margin-left: -4px; margin-right: -4px; padding: 12px; }
+      .explorer-row { max-height: none; overflow-y: visible; }
+      .filter-button { flex: 0 0 auto; }
+      .scenario summary { grid-template-columns: 36px minmax(0, 1fr) 24px; padding: 14px; }
+      .scenario-id { grid-row: 1 / span 3; }
+      .scenario-title { font-size: 18px; }
+      .scenario-sub { grid-row: 2; }
+      .scenario-status { grid-column: 2; grid-row: 3; justify-self: start; margin-top: 3px; }
+      .scenario summary::after { grid-row: 1 / span 3; }
+      .scenario-body { padding: 0 14px 20px; }
+      .one-line-result { margin: 0 -14px 20px; padding: 14px; }
+      .timeline { padding-left: 70px; }
+      .timeline::before { left: 51px; }
+      .moment::before { left: -27px; }
+      .moment time { right: calc(100% + 28px); font-size: 11px; writing-mode: vertical-rl; }
+      table { min-width: 760px; }
+      .doc-footer { flex-direction: column; }
+    }
+    @media (max-width: 420px) {
+      h1 { font-size: 44px; }
+      .brand strong { font-size: 16px; }
+      .search-box { flex-basis: 100%; }
+      .result-line { flex-direction: column; gap: 4px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; }
+    }
+    @page { size: A4; margin: 14mm; }
+    @media print {
+      :root { --paper: #fff; --paper-2: #fff; --paper-3: #eee; }
+      body { background: white; font-size: 10.5pt; }
+      .topbar, .explorer, .back-top, .skip-link { display: none !important; }
+      main { width: 100%; }
+      section { padding: 24px 0; break-before: auto; }
+      h1 { font-size: 38pt; }
+      h2 { font-size: 24pt; }
+      .hero { break-after: page; }
+      .hero-grid { grid-template-columns: 1.35fr .65fr; gap: 12px; }
+      .hero .lead { margin-top: 10px; font-size: 11pt; line-height: 1.5; }
+      .truth-grid { grid-template-columns: repeat(4, 1fr); break-inside: avoid; }
+      .hero-grid, .truth-grid, .actor-flow, .state-track, .screen-map, .acceptance-grid { gap: 6px; }
+      .truth-card { min-height: 0; padding: 10px; }
+      .truth-card .num { margin-bottom: 8px; }
+      .truth-card h3 { font-size: 14pt; }
+      .truth-card p { font-size: 8.5pt; }
+      .status-summary { grid-template-columns: repeat(3, 1fr); break-inside: avoid; }
+      .status-summary div { padding: 8px 10px; }
+      .status-summary strong { font-size: 16pt; }
+      .actor-flow li, .screen-card, .moment, table { break-inside: avoid; box-shadow: none; }
+      .scenario { break-inside: auto; box-shadow: none; }
+      .scenario summary, .one-line-result { break-after: avoid; }
+      .scenario .scenario-body { display: block !important; }
+      .scenario summary::after { display: none; }
+      .table-wrap { overflow: visible; box-shadow: none; }
+      table { min-width: 0; font-size: 8pt; }
+      th, td { padding: 7px; }
+      .doc-footer { padding-bottom: 0; }
+    }
+  </style>
 </head>
 <body>
+  <a class="skip-link" href="#main-content">跳到主要内容</a>
 
-<button id="langToggle" class="lang-toggle" type="button" aria-label="Switch language">中文 / EN</button>
-
-<div class="shell">
-  <nav class="sidenav" id="sidenav" aria-label="Section navigation">
-    <div class="sidenav-brand">
-      <span class="brand-mark" aria-hidden="true">◆</span>
-      <span data-i18n="brand.title"></span>
+  <header class="topbar">
+    <div class="brand" aria-label="Kirole 互动全景图">
+      <span class="brand-mark" aria-hidden="true">K</span>
+      <span><strong>Kirole 互动全景图</strong><small>产品经理阅读版</small></span>
     </div>
-    <ol class="sidenav-list" id="sidenavList"></ol>
-  </nav>
+    <nav class="quick-nav" aria-label="页面目录">
+      <a href="#answer">先看结论</a>
+      <a href="#roles">角色分工</a>
+      <a href="#connection">连接状态</a>
+      <a href="#copy">文案时机</a>
+      <a href="#buttons">按键地图</a>
+      <a href="#scenarios">场景大全</a>
+      <a href="#day">一天故事</a>
+      <a href="#matrix">排列组合</a>
+      <a href="#rules">产品原则</a>
+      <a href="#other">其它硬件</a>
+      <a href="#acceptance">交付边界</a>
+    </nav>
+    <button class="print-button" id="printButton" type="button">打印 / 导出 PDF</button>
+  </header>
 
-  <button id="navToggle" class="nav-toggle" type="button" aria-expanded="false" aria-controls="sidenav" aria-label="Open menu">
-    <span class="nav-toggle-bar"></span>
-    <span class="nav-toggle-bar"></span>
-    <span class="nav-toggle-bar"></span>
-  </button>
+  <main id="main-content">
+    <section class="hero" id="answer" aria-labelledby="page-title">
+      <div class="hero-grid">
+        <div>
+          <p class="kicker">从一个动作，到最终出现在墨水屏</p>
+          <h1 id="page-title">谁先动，<br>谁后动。</h1>
+          <p class="lead">这不是程序说明书，而是一张产品行为地图。你可以从任意一个用户动作出发，看清手机、AI、蓝牙和硬件会依次做什么；断开时保留什么；重新连接后又会补上什么。</p>
+        </div>
+        <aside class="version-card" aria-label="文档适用范围">
+          <strong>当前梳理范围</strong>
+          <p>依据当前 App 行为、双方通信约定与固件需求整理。本页为<strong>中文交付</strong>（产品经理阅读版），不含英文对照。</p>
+          <div class="version-line"><span>更新日期</span><span>2026-08-01</span></div>
+          <div class="version-line"><span>手机端基线</span><span>App build 631</span></div>
+          <div class="version-line"><span>通信约定</span><span>v2.10.2</span></div>
+          <div class="version-line"><span>设备需求</span><span>v1.9.2</span></div>
+          <div class="version-line"><span>本轮真机验收</span><span>尚无通过记录</span></div>
+          <div class="version-line"><span>语言</span><span>中文交付</span></div>
+        </aside>
+      </div>
 
-  <main class="main" id="main">
-    <header class="hero">
-      <p class="hero-eyebrow" data-i18n="hero.eyebrow"></p>
-      <h1 class="hero-title" data-i18n="hero.title"></h1>
-      <p class="hero-sub" data-i18n="hero.sub"></p>
-      <div class="hero-legend" id="heroLegend"></div>
-    </header>
+      <h2 class="visually-hidden">四个最重要的结论</h2>
+      <div class="truth-grid" aria-label="四个最重要的结论">
+        <article class="truth-card">
+          <span class="num">01 / 连接</span>
+          <h3>不只是三种状态</h3>
+          <p>用户看到的是“连接中、已连接、已断开”；系统内部还要经过“搜索设备”和“连接出错”。“重新连上”是一段过程，不是单独的一种状态。</p>
+        </article>
+        <article class="truth-card">
+          <span class="num">02 / 数据</span>
+          <h3>先保存，再写文案</h3>
+          <p>任务或日程先成为可靠数据，随后才刷新 AI 文案并准备发给硬件。AI 失败不会让任务本身丢失，也不会阻塞完成、编辑或同步。</p>
+        </article>
+        <article class="truth-card">
+          <span class="num">03 / 按键</span>
+          <h3>页面决定按键含义</h3>
+          <p>同一个短按，在概览页是“进入任务”，在任务页是“完成任务”；同一个长按，在概览页是“完成当日”，在任务页是“跳过任务”。</p>
+        </article>
+        <article class="truth-card">
+          <span class="num">04 / 离线</span>
+          <h3>有的预先发，有的现场取</h3>
+          <p>当天日程的支持文案和晚间总结会预先发到设备；任务详情文案要在用户进入任务时现场发送。两者断开后的表现不同。</p>
+        </article>
+      </div>
 
-    <section id="section-overview" class="section"></section>
-    <section id="section-flows" class="section"></section>
-    <section id="section-issues" class="section"></section>
-    <section id="section-appendix" class="section"></section>
+      <div class="boundary-note">
+        <strong>阅读约定</strong>
+        <p>页面里的“手机端已具备”只说明 App 已经会做；“设备端按约定处理”说明固件还要配合；“真机确认”才代表蓝牙、固件和墨水屏已经在真实设备上共同跑通。三者不能混为一谈。</p>
+      </div>
+      <div class="status-summary" aria-label="二十四个重点场景的当前状态">
+        <div><strong>13</strong><span>手机端已具备</span></div>
+        <div><strong>9</strong><span>待真机确认</span></div>
+        <div><strong>2</strong><span>降级可用</span></div>
+      </div>
+    </section>
 
-    <footer class="page-footer">
-      <p data-i18n="footer.note"></p>
+    <section id="roles" aria-labelledby="roles-title">
+      <div class="section-head">
+        <p class="kicker">01 / 角色分工</p>
+        <h2 id="roles-title">五个角色，一条主线</h2>
+        <p class="lead">外部日历和任务提供事实，App 做决定，AI 只负责写话，蓝牙负责搬运，设备负责按时间和按键决定此刻显示哪一页。</p>
+      </div>
+
+      <ol class="actor-flow">
+        <li>
+          <h3>日历与任务来源</h3>
+          <p>Google、Apple、Notion、Taskade 等提供日程和任务。它们可能有网络延迟、写入权限或冲突。</p>
+          <span class="actor-tag">提供原始事实</span>
+        </li>
+        <li>
+          <h3>手机 App</h3>
+          <p>合并数据、保存用户动作、决定今天要给硬件哪些内容，并记录哪些硬件动作已经处理过。</p>
+          <span class="actor-tag">业务决定者</span>
+        </li>
+        <li>
+          <h3>AI 文案</h3>
+          <p>根据角色、时段、日程与任务写一句合适的话。可使用缓存，失败时有本地替代文案。</p>
+          <span class="actor-tag">内容作者，不是数据源</span>
+        </li>
+        <li>
+          <h3>蓝牙连接</h3>
+          <p>在手机和设备之间传送当天内容、任务页面、专注状态与硬件操作记录。</p>
+          <span class="actor-tag">只负责送达</span>
+        </li>
+        <li>
+          <h3>固件与墨水屏</h3>
+          <p>保存收到的内容，按本地时钟切换日程，理解短按和长按，最后决定何时真正刷新屏幕。</p>
+          <span class="actor-tag">显示与离线行为</span>
+        </li>
+      </ol>
+
+      <div class="two-way">
+        <article class="direction-card">
+          <h3>手机改了东西：发“最新结果”</h3>
+          <ol>
+            <li>用户或外部服务修改任务 / 日程。</li>
+            <li>App 合并成当前最新状态。</li>
+            <li>文案按需更新，连接允许时发送。</li>
+            <li>中间连续改了五次，设备通常只需拿到最后一版。</li>
+          </ol>
+        </article>
+        <article class="direction-card reverse">
+          <h3>硬件离线做了动作：按顺序补记录</h3>
+          <ol>
+            <li>设备在断开时记录完成、跳过、提醒确认等动作。</li>
+            <li>重新连接后逐条交给 App。</li>
+            <li>App 按真实发生顺序处理，重复记录不会重复奖励。</li>
+            <li>最后把 App 当前任务清单发回设备。</li>
+          </ol>
+        </article>
+      </div>
+      <div class="boundary-note">
+        <strong>“补发”有两种</strong>
+        <p>App 到硬件补的是“当前最终结果”，可以合并中间变化；硬件到 App 补的是“动作记录”，必须按顺序逐条处理。把这两类补发混在一起，会产生重复完成、旧内容覆盖新内容等问题。</p>
+      </div>
+    </section>
+
+    <section id="connection" aria-labelledby="connection-title">
+      <div class="section-head">
+        <p class="kicker">02 / 连接状态</p>
+        <h2 id="connection-title">用户说三种，系统实际有五步</h2>
+        <p class="lead">“重新连接”不是一盏单独的灯，而是从断开重新走到连接中的一段路。</p>
+      </div>
+      <div class="state-track" aria-label="五种连接状态">
+        <div class="state"><strong>已断开</strong><span>没有可用通道；App 和设备各自继续保存自己的状态。</span></div>
+        <div class="state"><strong>正在搜索</strong><span>手机在附近找已知设备或新的可连接设备。</span></div>
+        <div class="state"><strong>正在连接</strong><span>已找到目标，正在建立可用通道。</span></div>
+        <div class="state"><strong>已连接</strong><span>双方可以收发；仍不代表屏幕已经刷新完成。</span></div>
+        <div class="state"><strong>连接出错</strong><span>蓝牙关闭、无权限、不支持或连接失败，需要恢复条件。</span></div>
+      </div>
+      <div class="path-list">
+        <article class="path">
+          <strong>正常同步后的断开</strong>
+          <p>如果 App 主动结束本轮同步，这是预期断开，不会马上自动连回。下次数据变化、手动刷新或同步窗口再连接。</p>
+        </article>
+        <article class="path">
+          <strong>信号突然丢失</strong>
+          <p>这是意外断开。App 会尝试恢复与上次设备的连接；设备重新回到范围后，先恢复通道，再检查离线动作。</p>
+        </article>
+        <article class="path">
+          <strong>专注中断开</strong>
+          <p>当前专注在 App 端结束。重新连接后不会擅自恢复旧专注页，用户要重新进入任务，避免旧页面与新状态冲突。</p>
+        </article>
+      </div>
+      <p class="fine">说明：测试版本可以配置为保持连接；正式产品也可以采用“需要时连接、完成后断开”的省电方式。无论采用哪一种，数据与动作恢复规则不变。</p>
+    </section>
+
+    <section id="copy" aria-labelledby="copy-title">
+      <div class="section-head">
+        <p class="kicker">03 / AI 文案时机</p>
+        <h2 id="copy-title">哪些先发，哪些到现场再发</h2>
+        <p class="lead">用户最关心的答案是：同一天的日程支持文案会随当天内容预先下发，设备断开后仍可按本地时钟切换；但所有任务详情不会提前逐条塞进设备。</p>
+      </div>
+
+      <div class="preload-answer">
+        <article class="preload-card">
+          <h3>会预先放进设备</h3>
+          <ul>
+            <li>当天最多八条日程，以及每条日程各自的支持文案。</li>
+            <li>一句当前宠物对话、当天概览和下一项提示。</li>
+            <li>晚间总结页的点评与金句。</li>
+            <li>当天要在概览中显示的任务标题。</li>
+          </ul>
+        </article>
+        <article class="preload-card">
+          <h3>需要现场请求或只在 App</h3>
+          <ul>
+            <li>进入某个任务时的任务详情和支持文案。</li>
+            <li>专注页面上的动态时长、能量瓶和阶段状态。</li>
+            <li>App 首页的每日俳句、完成动画、声音与震动。</li>
+            <li>刚进入屏保时想换一条全新金句。</li>
+          </ul>
+        </article>
+      </div>
+
+      <p id="copy-table-help" class="scroll-help">窄屏可左右滑动查看完整表格。</p>
+      <div class="table-wrap" role="region" tabindex="0" aria-labelledby="copy-title" aria-describedby="copy-table-help">
+        <table>
+          <caption>各类文案的生成、下发和断开表现</caption>
+          <thead>
+            <tr>
+              <th scope="col">内容</th>
+              <th scope="col">什么时候准备</th>
+              <th scope="col">断开时能否显示</th>
+              <th scope="col">AI 失败会怎样</th>
+              <th scope="col">关键限制</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row">当前宠物对话</th>
+              <td>同步当天内容时，按早晨、日程中、任务中、收尾或空闲选择一句。</td>
+              <td><span class="yes">能</span>，显示上次收到的那一句。</td>
+              <td>使用缓存或角色本地模板。</td>
+              <td>设备里只有“当前一句”，不是一整天逐时对话。</td>
+            </tr>
+            <tr>
+              <th scope="row">每条日程支持文案</th>
+              <td>生成当天内容时，为最多八条日程分别准备。</td>
+              <td><span class="yes">能</span>，设备按本地时间选择当前日程。</td>
+              <td>按日程类别使用固定而不空白的替代句。</td>
+              <td>只保证最近一次成功同步的当天；跨零点长期断开不保证有第二天内容。</td>
+            </tr>
+            <tr>
+              <th scope="row">当天概览 / 下一项</th>
+              <td>同步当天内容时准备。</td>
+              <td><span class="yes">能</span>，使用最近一版。</td>
+              <td>使用中性本地模板。</td>
+              <td>数据变化前可能暂时显示旧版，重连后更新。</td>
+            </tr>
+            <tr>
+              <th scope="row">晚间总结 / 金句</th>
+              <td>提前随当天内容准备，而不是长按后才临时生成。</td>
+              <td><span class="yes">能</span>，这是离线可进入总结页的前提。</td>
+              <td>使用满足产品规则的固定模板。</td>
+              <td>断开后显示的是上次同步时的进度总结。</td>
+            </tr>
+            <tr>
+              <th scope="row">任务详情支持文案</th>
+              <td>App 可提前在内存中预热，但真正进入任务时才随任务页发送。</td>
+              <td><span class="some">部分能</span>，依赖设备本地兜底或旧缓存。</td>
+              <td>进入任务时立即用本地模板，不等待网络。</td>
+              <td>它不在当天总包里，不能承诺所有任务都预先存入硬件。</td>
+            </tr>
+            <tr>
+              <th scope="row">专注动态状态</th>
+              <td>专注过程中不断按当前时长重新计算。</td>
+              <td><span class="no">不能继续更新</span>；断连即结束 App 侧专注。</td>
+              <td>不依赖 AI。</td>
+              <td>App 上的伙伴短句不传到硬件，硬件只接收专注数据。</td>
+            </tr>
+            <tr>
+              <th scope="row">智能提醒</th>
+              <td>符合截止时间、空闲时长等条件时生成。</td>
+              <td><span class="some">换通道</span>；硬件不可达时改发手机通知。</td>
+              <td>使用本地提醒文案。</td>
+              <td>只有真正送达后才开始冷却，避免“没送到却不再提醒”。</td>
+            </tr>
+            <tr>
+              <th scope="row">屏保金句</th>
+              <td>设备准备休眠时发送当前可用句，同时后台准备下一次。</td>
+              <td><span class="some">能显示旧缓存</span>。</td>
+              <td>当前次始终有本地句。</td>
+              <td>设备若过快断开，可能收不到本次新句，因此必须保留上一句。</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="buttons" aria-labelledby="buttons-title">
+      <div class="section-head">
+        <p class="kicker">04 / 按键地图</p>
+        <h2 id="buttons-title">先看在哪一页，再解释短按和长按</h2>
+        <p class="lead">硬件会把“物理按了一下”翻译成有业务含义的动作再告诉 App。App 不应该仅凭原始短按或长按就猜用户想做什么。</p>
+      </div>
+      <div class="screen-map">
+        <article class="screen-card">
+          <header><h3>当天概览页</h3><p>显示当前宠物对话、日程、任务和进度。</p></header>
+          <div class="button-action"><strong>滚轮 / 选择</strong><p>当前概览没有任务高亮或选中状态；原始滚动可记录，但不会改变 App 里的任务。</p></div>
+          <div class="button-action"><strong>短按</strong><p>进入清单第一项可用任务。连接时向 App 取任务页；断开时走设备本地兜底。</p></div>
+          <div class="button-action"><strong>长按</strong><p>进入“完成当日”的总结页，属于设备本地页面切换。</p></div>
+        </article>
+        <article class="screen-card">
+          <header><h3>任务专注页</h3><p>显示任务详情、支持文案、时长和能量状态。</p></header>
+          <div class="button-action"><strong>短按</strong><p>完成任务。任务从当天未完成清单移除，专注结束。</p></div>
+          <div class="button-action"><strong>长按</strong><p>跳过当前任务。专注结束，但任务仍留在清单中。</p></div>
+          <div class="button-action"><strong>断开</strong><p>结束 App 侧当前专注；重连后回概览，不恢复旧专注。</p></div>
+        </article>
+        <article class="screen-card">
+          <header><h3>每日总结页</h3><p>使用已经预先收到的点评、金句和数字。</p></header>
+          <div class="button-action"><strong>进入时</strong><p>设备可请求更新，但不应卡住等待；旧内容也能先显示。</p></div>
+          <div class="button-action"><strong>再次长按</strong><p>返回概览页，作为防误触退出。</p></div>
+          <div class="button-action"><strong>断开</strong><p>仍能用最近一次成功同步的总结。</p></div>
+        </article>
+        <article class="screen-card">
+          <header><h3>屏保 / 电源</h3><p>任何页面都可以进入静态屏保。</p></header>
+          <div class="button-action"><strong>短按电源</strong><p>记住来源页面，进入屏保；App 连接着时尝试补一条新金句。</p></div>
+          <div class="button-action"><strong>再次短按</strong><p>返回进入屏保前的页面，而不是强制回到当天首页。</p></div>
+          <div class="button-action"><strong>长按电源</strong><p>由设备本地处理关机，不依赖 App。</p></div>
+        </article>
+      </div>
+    </section>
+
+    <section id="scenarios" aria-labelledby="scenarios-title">
+      <div class="section-head">
+        <p class="kicker">05 / 场景大全</p>
+        <h2 id="scenarios-title">从一个具体动作开始查</h2>
+        <p class="lead">选择分类或输入“断开、长按、修改、提醒”等词。涉及连接差异的场景会分别写出正常、断开和重连结果；纯本地动作则直接说明它为什么不受连接影响。</p>
+      </div>
+
+      <div class="explorer" aria-label="场景筛选">
+        <div class="explorer-row">
+          <input class="search-box" id="scenarioSearch" type="search" placeholder="搜索：例如 断开、完成任务、日程到点" aria-label="搜索场景">
+          <button class="filter-button" type="button" data-filter="all" aria-pressed="true">全部</button>
+          <button class="filter-button" type="button" data-filter="app" aria-pressed="false">App 修改</button>
+          <button class="filter-button" type="button" data-filter="source" aria-pressed="false">外部同步</button>
+          <button class="filter-button" type="button" data-filter="ai" aria-pressed="false">AI 文案</button>
+          <button class="filter-button" type="button" data-filter="button" aria-pressed="false">硬件按键</button>
+          <button class="filter-button" type="button" data-filter="offline" aria-pressed="false">断开与补发</button>
+          <button class="filter-button" type="button" data-filter="focus" aria-pressed="false">专注</button>
+          <button class="filter-button" type="button" data-filter="system" aria-pressed="false">系统事件</button>
+          <button class="filter-button" type="button" data-filter="ready" aria-pressed="false">手机端已具备</button>
+          <button class="filter-button" type="button" data-filter="device" aria-pressed="false">待真机确认</button>
+          <button class="filter-button" type="button" data-filter="fallback" aria-pressed="false">降级可用</button>
+        </div>
+        <div class="result-line">
+          <span id="scenarioCount" role="status" aria-live="polite">显示 24 个场景</span>
+          <span>
+            <button class="utility-button" id="expandVisible" type="button">展开当前结果</button>
+            <button class="utility-button" id="collapseVisible" type="button">收起全部</button>
+          </span>
+        </div>
+      </div>
+
+      <div class="empty-state" id="emptyState" hidden>
+        <p><strong>没有找到匹配场景。</strong><br>可以换一个关键词，或恢复查看全部场景。</p>
+        <button class="utility-button" id="clearFilters" type="button">清除筛选，查看全部</button>
+      </div>
+
+      <div class="scenario-list" id="scenarioList">
+        <details class="scenario" data-category="app ai offline" open>
+          <summary>
+            <span class="scenario-id">S01</span>
+            <span class="scenario-title">在 App 里完成或撤销完成一个任务</span>
+            <span class="scenario-sub">本地先变化，外部回写和硬件更新随后进行</span>
+            <span class="scenario-status status-ready">手机端已具备</span>
+          </summary>
+          <div class="scenario-body">
+            <p class="one-line-result"><strong>用户结果：</strong>App 立即变化；设备连接时更新当天清单，断开时等下次同步拿最新结果。</p>
+            <ol class="flow-steps">
+              <li><span class="who">APP</span>先切换任务完成状态，同时更新宠物进度和当天统计。</li>
+              <li><span class="who">APP</span>把本地结果保存下来，并排队准备更新硬件。</li>
+              <li><span class="who">外部来源</span>如果任务来自 Google、Apple、Notion 或 Taskade，再尝试写回原服务。</li>
+              <li><span class="who">AI</span>根据新状态刷新当前对话；命中缓存就复用，网络失败则用本地句。</li>
+              <li><span class="who">设备</span>拿到最新当天清单后，完成项消失；撤销完成后重新出现。</li>
+            </ol>
+            <div class="connection-grid">
+              <div class="connection-lane"><strong>已连接</strong><p>合并短时间内的变化后发送最新一版。</p></div>
+              <div class="connection-lane"><strong>已断开</strong><p>App 结果不回滚；设备暂时保留旧清单。</p></div>
+              <div class="connection-lane"><strong>重新连接</strong><p>设备拿当前最终清单，不逐条重演 App 里的每次点击。</p></div>
+            </div>
+            <div class="guardrail"><strong>保护规则：</strong>外部服务写回失败不应让本地已完成任务凭空消失；App 会显示同步错误，之后再补同步到一致。</div>
+          </div>
+        </details>
+
+        <details class="scenario" data-category="app source ai offline">
+          <summary>
+            <span class="scenario-id">S02</span>
+            <span class="scenario-title">在 App 里修改任务标题、日期或备注</span>
+            <span class="scenario-sub">外部任务要先写回来源，成功后才替换本地内容</span>
+            <span class="scenario-status status-ready">手机端已具备</span>
+          </summary>
+          <div class="scenario-body">
+            <p class="one-line-result"><strong>用户结果：</strong>能写回的来源先确认成功，再更新 App 和硬件；只读来源会明确要求回原服务修改。</p>
+            <ol class="flow-steps">
+              <li><span class="who">用户</span>在编辑页修改标题、日期、时间或备注。</li>
+              <li><span class="who">APP</span>判断这个来源是否允许修改。Google Tasks 和 Apple Reminders 可以；Notion、Taskade 等内容目前只读。</li>
+              <li><span class="who">外部来源</span>写入成功后返回规范化结果，App 再保存并刷新画面。</li>
+              <li><span class="who">AI / 设备</span>按新任务状态刷新对话和当天任务清单。</li>
+            </ol>
+            <div class="connection-grid">
+              <div class="connection-lane"><strong>已连接</strong><p>成功修改后发送新标题与排序。</p></div>
+              <div class="connection-lane"><strong>已断开</strong><p>App 保存成功，硬件继续显示旧标题。</p></div>
+              <div class="connection-lane"><strong>重新连接</strong><p>以 App 当前最新版覆盖硬件旧标题。</p></div>
+            </div>
+            <div class="guardrail"><strong>失败表现：</strong>远端修改失败时，本地不应假装已经成功；用户留在可理解的错误状态，而不是出现两边标题不一致。</div>
+          </div>
+        </details>
+
+        <details class="scenario" data-category="app source offline">
+          <summary>
+            <span class="scenario-id">S03</span>
+            <span class="scenario-title">删除任务，或把任务加入 / 移出“今天”</span>
+            <span class="scenario-sub">删除会考虑来源；“显示在今天”只属于 Kirole</span>
+            <span class="scenario-status status-ready">手机端已具备</span>
+          </summary>
+          <div class="scenario-body">
+            <p class="one-line-result"><strong>用户结果：</strong>当天概览只保留应该显示的未完成任务；外部删除失败时，不应静默把来源数据当成已经删除。</p>
+            <ol class="flow-steps">
+              <li><span class="who">APP</span>“显示在今天”只改 Kirole 自己的展示日期，不修改外部服务。</li>
+              <li><span class="who">APP</span>删除外部任务时，根据来源决定先等待远端删除，还是只做本地删除。</li>
+              <li><span class="who">设备</span>下一次收到最新清单后，重新排出当天最多可显示的任务。</li>
+            </ol>
+            <div class="connection-grid">
+              <div class="connection-lane"><strong>已连接</strong><p>短暂合并后更新任务区域。</p></div>
+              <div class="connection-lane"><strong>已断开</strong><p>设备旧任务暂留，但 App 不会丢失决定。</p></div>
+              <div class="connection-lane"><strong>重新连接</strong><p>直接拿最终清单，中间加入又移出的动作无需重演。</p></div>
+            </div>
+          </div>
+        </details>
+
+        <details class="scenario" data-category="app source ai offline">
+          <summary>
+            <span class="scenario-id">S04</span>
+            <span class="scenario-title">在 App 里修改日历日程</span>
+            <span class="scenario-sub">Google / Apple 日历写回成功后，重新准备日程文字</span>
+            <span class="scenario-status status-ready">手机端已具备</span>
+          </summary>
+          <div class="scenario-body">
+            <p class="one-line-result"><strong>用户结果：</strong>标题或时间改变后，当前日程、下一项和对应支持文案都会按新版重算。</p>
+            <ol class="flow-steps">
+              <li><span class="who">用户</span>修改标题、开始与结束时间、地点或备注。</li>
+              <li><span class="who">外部日历</span>Google 有写权限或 Apple 日历写入成功后，App 才接受新版本。</li>
+              <li><span class="who">AI</span>重新判断日程类别和支持文案；如果文字来不及或生成失败，用本地模板。</li>
+              <li><span class="who">设备</span>收到新版当天内容后，用本地时钟重新判断此刻是哪一场日程。</li>
+            </ol>
+            <div class="connection-grid">
+              <div class="connection-lane"><strong>已连接</strong><p>日程数据或支持文案发生实质变化时发送新版。</p></div>
+              <div class="connection-lane"><strong>已断开</strong><p>设备继续按旧日程运行，App 中显示新版。</p></div>
+              <div class="connection-lane"><strong>重新连接</strong><p>新日程覆盖旧版，本地时钟立即按新时间重新判断。</p></div>
+            </div>
+          </div>
+        </details>
+
+        <details class="scenario" data-category="source ai offline">
+          <summary>
+            <span class="scenario-id">S05</span>
+            <span class="scenario-title">App 自动拉取外部日历和任务</span>
+            <span class="scenario-sub">回到前台、定时检查或用户主动刷新</span>
+            <span class="scenario-status status-ready">手机端已具备</span>
+          </summary>
+          <div class="scenario-body">
+            <p class="one-line-result"><strong>用户结果：</strong>多个来源先各自同步，最后合成一轮硬件更新，避免每回来一个来源就让墨水屏刷一次。</p>
+            <ol class="flow-steps">
+              <li><span class="who">APP</span>回到前台或到达检查窗口后，读取已连接的外部来源。</li>
+              <li><span class="who">外部来源</span>各自返回任务和日程；某一个失败，不应清空上次成功数据。</li>
+              <li><span class="who">APP</span>合并冲突并保留 Kirole 自己的“显示在今天”等字段。</li>
+              <li><span class="who">AI</span>刷新共享对话、日程分类和支持文案。</li>
+              <li><span class="who">设备</span>所有来源完成后只接收一轮合并结果。</li>
+            </ol>
+            <div class="guardrail"><strong>保护规则：</strong>同一来源重复触发同步时，后来的请求等待正在进行的那一轮，不再并发拉一份；部分失败保留旧数据。</div>
+          </div>
+        </details>
+
+        <details class="scenario" data-category="source app ai offline">
+          <summary>
+            <span class="scenario-id">S06</span>
+            <span class="scenario-title">用户在首页下拉手动刷新</span>
+            <span class="scenario-sub">先等所有来源，再强制整理一次手机与硬件内容</span>
+            <span class="scenario-status status-ready">手机端已具备</span>
+          </summary>
+          <div class="scenario-body">
+            <p class="one-line-result"><strong>用户结果：</strong>手动刷新代表“我现在就要最新版”，优先级高于普通后台更新。</p>
+            <ol class="flow-steps">
+              <li><span class="who">APP</span>取消尚未开始的零散硬件更新，防止旧请求插队。</li>
+              <li><span class="who">外部来源</span>逐一完成同步，期间不单独刷新硬件。</li>
+              <li><span class="who">AI</span>强制刷新当前共享对话，App 首页切到这句新对话。</li>
+              <li><span class="who">设备</span>收到最终合并后的当天内容。</li>
+            </ol>
+            <div class="connection-grid">
+              <div class="connection-lane"><strong>已连接</strong><p>按最终结果更新。</p></div>
+              <div class="connection-lane"><strong>已断开</strong><p>手机刷新完成；硬件更新留待下一次可连接时机。</p></div>
+              <div class="connection-lane"><strong>重新连接</strong><p>发送刷新后的当前版本，而不是刷新前的待发送版本。</p></div>
+            </div>
+          </div>
+        </details>
+
+        <details class="scenario" data-category="ai app offline">
+          <summary>
+            <span class="scenario-id">S07</span>
+            <span class="scenario-title">数据改变后，AI 是否每次都重新写一句</span>
+            <span class="scenario-sub">不一定；先判断情境是否真的变化，过期结果会被丢弃</span>
+            <span class="scenario-status status-ready">手机端已具备</span>
+          </summary>
+          <div class="scenario-body">
+            <p class="one-line-result"><strong>用户结果：</strong>数据变化会进入文案刷新流程，但不等于每次都请求 AI；同一状态可以复用，真正改变才重写。</p>
+            <ol class="flow-steps">
+              <li><span class="who">APP</span>把时段、当前日程、任务进度和伙伴身份组成“当前情境”。</li>
+              <li><span class="who">APP</span>情境没变就复用缓存，避免刷新同一句话却浪费等待。</li>
+              <li><span class="who">AI</span>情境变化才生成；如果生成期间任务又改了，旧结果不再使用。</li>
+              <li><span class="who">APP / 设备</span>同一句共享对话用于手机首页和当天硬件内容，避免两个端各说各话。</li>
+            </ol>
+            <div class="guardrail"><strong>重要：</strong>AI 是可替换的文案步骤，不是保存任务的必经步骤。网络断开、限流或返回空白，都有可立即显示的本地句。</div>
+          </div>
+        </details>
+
+        <details class="scenario" data-category="ai offline system">
+          <summary>
+            <span class="scenario-id">S08</span>
+            <span class="scenario-title">日程到时间了，但手机已经不在附近</span>
+            <span class="scenario-sub">设备按本地时钟切换，不应等 App 临时来一句</span>
+            <span class="scenario-status status-device">待真机确认</span>
+          </summary>
+          <div class="scenario-body">
+            <p class="one-line-result"><strong>用户结果：</strong>只要当天内容之前成功同步过，日程到点时就能显示这条日程对应的支持文案。</p>
+            <ol class="flow-steps">
+              <li><span class="who">同步时</span>App 把当天每条日程和各自支持文案一次发给设备。</li>
+              <li><span class="who">断开后</span>设备继续走自己的时钟，不向手机发实时请求。</li>
+              <li><span class="who">到点时</span>固件找到当前日程，切换日程卡与对应支持文字。</li>
+              <li><span class="who">结束时</span>固件再次按本地时间切换到下一种页面状态。</li>
+            </ol>
+            <div class="guardrail"><strong>边界：</strong>这只保证“最近同步过的当天”。设备没有提前拿到一周内容；若跨过零点仍长期断开，第二天的新日程不能凭空出现。</div>
+          </div>
+        </details>
+
+        <details class="scenario" data-category="button focus offline ai">
+          <summary>
+            <span class="scenario-id">S09</span>
+            <span class="scenario-title">概览页短按：进入一个任务</span>
+            <span class="scenario-sub">连接时取完整任务页，断开时不能卡死</span>
+            <span class="scenario-status status-device">待真机确认</span>
+          </summary>
+          <div class="scenario-body">
+            <p class="one-line-result"><strong>用户结果：</strong>连接正常时很快进入任务页；没有连接或等待超时时，设备仍要给出可用页面或退回概览。</p>
+            <ol class="flow-steps">
+              <li><span class="who">设备</span>把“进入这个任务”以及任务身份交给 App，而不是只说“刚才短按了”。</li>
+              <li><span class="who">APP</span>先确保本地任务加载完成，再查找对应任务。</li>
+              <li><span class="who">APP</span>立即组装任务标题、备注和支持文案；缓存没有命中就用本地句，不等待 AI。</li>
+              <li><span class="who">设备</span>完整收到任务页后，App 才正式开始本次专注。</li>
+              <li><span class="who">APP</span>会话开始后自动打开全屏专注界面；如果会话在后台开始，用户下次打开 App 时会直接进入该界面。</li>
+            </ol>
+            <div class="connection-grid">
+              <div class="connection-lane"><strong>已连接</strong><p>最多等待约五秒；收到任务页后进入。</p></div>
+              <div class="connection-lane"><strong>已断开</strong><p>直接使用设备本地兜底，不能一直转圈。</p></div>
+              <div class="connection-lane"><strong>重新连接</strong><p>只同步当前状态，不补建过去那段“专注”。</p></div>
+            </div>
+            <div class="guardrail"><strong>空任务清单：</strong>概览没有可用任务时，短按不应发起一个不存在的任务，也不应进入空白任务页。</div>
+          </div>
+        </details>
+
+        <details class="scenario" data-category="button focus ai offline">
+          <summary>
+            <span class="scenario-id">S10</span>
+            <span class="scenario-title">任务页短按：在线完成任务</span>
+            <span class="scenario-sub">先准备最终画面，再确认任务完成，屏幕只刷新一次</span>
+            <span class="scenario-status status-device">待真机确认</span>
+          </summary>
+          <div class="scenario-body">
+            <p class="one-line-result"><strong>用户结果：</strong>完成后回到概览，已完成任务消失，新对话和新清单同时出现，不应先闪旧页面再刷第二次。</p>
+            <ol class="flow-steps">
+              <li><span class="who">设备</span>发送带唯一身份的“完成任务”动作，并保持在等待确认状态。</li>
+              <li><span class="who">APP</span>先记录这次动作，再保存专注历史、任务完成、宠物进度等结果。</li>
+              <li><span class="who">AI / APP</span>准备完成后的最新宠物对话和当天概览。</li>
+              <li><span class="who">设备</span>先收好最终内容但暂不刷屏，再收到匹配的任务确认。</li>
+              <li><span class="who">墨水屏</span>一次性回概览并刷新，完成任务从清单中移除。</li>
+            </ol>
+            <div class="guardrail"><strong>为什么要分两步：</strong>“蓝牙写出成功”只说明数据送到了通道，不代表任务业务已经确认，更不代表墨水屏已经刷新。</div>
+          </div>
+        </details>
+
+        <details class="scenario" data-category="button focus ai offline">
+          <summary>
+            <span class="scenario-id">S11</span>
+            <span class="scenario-title">任务页长按：在线跳过任务</span>
+            <span class="scenario-sub">结束专注，但任务继续留在当天清单</span>
+            <span class="scenario-status status-device">待真机确认</span>
+          </summary>
+          <div class="scenario-body">
+            <p class="one-line-result"><strong>用户结果：</strong>返回概览后仍能看到这个任务；它可以因排序变化移动位置，但不能被当作完成删除。</p>
+            <ol class="flow-steps">
+              <li><span class="who">设备</span>发送“跳过当前任务”动作并等待确认。</li>
+              <li><span class="who">APP</span>结束对应专注，不修改任务的完成状态。</li>
+              <li><span class="who">APP</span>准备结束后的最终概览与最新任务排序。</li>
+              <li><span class="who">设备</span>收到完整结果后一次回到概览，任务仍在。</li>
+            </ol>
+            <div class="guardrail"><strong>不要混淆：</strong>“长按”只有在任务页才是跳过；在概览页长按是进入每日总结，两者不能共用同一个业务解释。</div>
+          </div>
+        </details>
+
+        <details class="scenario" data-category="button offline focus">
+          <summary>
+            <span class="scenario-id">S12</span>
+            <span class="scenario-title">断开时在任务页完成或跳过</span>
+            <span class="scenario-sub">设备先记账，重连后逐条交给 App</span>
+            <span class="scenario-status status-device">待真机确认</span>
+          </summary>
+          <div class="scenario-body">
+            <p class="one-line-result"><strong>用户结果：</strong>设备不能因为手机不在就吞掉动作；也不能假装 App 已经最终确认。</p>
+            <ol class="flow-steps">
+              <li><span class="who">设备</span>为完成或跳过保留固定编号，并写入断电后仍能保存的离线队列。</li>
+              <li><span class="who">设备</span>先给用户一个本地可理解的反馈，但保留“等待 App 最终确认”。</li>
+              <li><span class="who">重连</span>App 主动询问上次之后发生过哪些动作。</li>
+              <li><span class="who">APP</span>按设备记录的真实顺序逐条处理，并为每条动作直接返回结果；这一过程不等待整批动作之后再补一份最终画面。</li>
+              <li><span class="who">设备</span>收到每条结果时立即采用其中附带的 App 当前任务清单，再清掉对应记录；普通同步随后只补齐当天其它内容。</li>
+            </ol>
+            <div class="guardrail"><strong>重复保护：</strong>如果确认在空中丢了，设备必须用同一个编号重试；App 会返回第一次结果，不会第二次完成、第二次加宠物进度。离线恢复按动作逐条确认，刷新次数不能套用在线“只刷新一次”的规则。</div>
+          </div>
+        </details>
+
+        <details class="scenario" data-category="offline button app">
+          <summary>
+            <span class="scenario-id">S13</span>
+            <span class="scenario-title">离线动作与 App 的新修改发生冲突</span>
+            <span class="scenario-sub">较新的 App 决定不能被晚到的旧硬件动作覆盖</span>
+            <span class="scenario-status status-ready">手机端已具备</span>
+          </summary>
+          <div class="scenario-body">
+            <p class="one-line-result"><strong>用户结果：</strong>重连后以更新、更完整的 App 状态为准，旧动作收到“已被新版决定取代”的结果。</p>
+            <ol class="flow-steps">
+              <li><span class="who">设备</span>断开时记录了一个完成或跳过动作。</li>
+              <li><span class="who">用户</span>随后在 App 修改、撤销、删除同一任务，或开始了更新的专注。</li>
+              <li><span class="who">重连</span>旧设备动作到达时，App 比较动作时间与用户后来在 App 中的修改时间。</li>
+              <li><span class="who">APP</span>若旧动作会覆盖新决定，就拒绝覆盖，并把当前清单发回设备。</li>
+            </ol>
+            <div class="guardrail"><strong>另外两种结果：</strong>任务已经不存在时返回“找不到任务”；同一个编号却换了任务或时间时返回“无效请求”，防止编号被错误复用。</div>
+          </div>
+        </details>
+
+        <details class="scenario" data-category="offline system">
+          <summary>
+            <span class="scenario-id">S14</span>
+            <span class="scenario-title">意外断开后自动重新连接</span>
+            <span class="scenario-sub">先恢复通道、再问离线动作，不等于自动全量刷屏</span>
+            <span class="scenario-status status-ready">手机端已具备</span>
+          </summary>
+          <div class="scenario-body">
+            <p class="one-line-result"><strong>用户结果：</strong>设备回到附近后连接可以恢复；有离线动作时先补动作，完整当天内容则在有同步请求时更新。</p>
+            <ol class="flow-steps">
+              <li><span class="who">APP</span>识别这是信号丢失等意外断开，而不是用户主动断开。</li>
+              <li><span class="who">APP</span>记住上次设备，等待系统在设备重新可见时恢复连接，避免反复扫描耗电。</li>
+              <li><span class="who">连接后</span>立即询问离线期间发生的动作。</li>
+              <li><span class="who">同步</span>若已有待发送变更、设备主动唤醒 / 刷新，或到下一个同步时机，再发送完整最新内容。</li>
+            </ol>
+            <div class="guardrail"><strong>准确表述：</strong>“自动重连”只保证恢复通信意图，不应对客户写成“重连后必然立刻全量刷新完成”。</div>
+          </div>
+        </details>
+
+        <details class="scenario" data-category="offline system">
+          <summary>
+            <span class="scenario-id">S15</span>
+            <span class="scenario-title">App 主动断开或一轮同步自然结束</span>
+            <span class="scenario-sub">这是预期行为，不立即自动连回</span>
+            <span class="scenario-status status-ready">手机端已具备</span>
+          </summary>
+          <div class="scenario-body">
+            <p class="one-line-result"><strong>用户结果：</strong>连接显示“已断开”不一定是故障；在省电连接方式下，数据传完就断开是正常的。</p>
+            <ol class="flow-steps">
+              <li><span class="who">APP</span>标记这是主动断开，并清理当前传输。</li>
+              <li><span class="who">APP</span>不会马上自动重连造成循环。</li>
+              <li><span class="who">下一次</span>任务 / 日程变化、手动刷新、设备唤醒或同步窗口会重新发起连接。</li>
+            </ol>
+          </div>
+        </details>
+
+        <details class="scenario" data-category="system offline">
+          <summary>
+            <span class="scenario-id">S16</span>
+            <span class="scenario-title">蓝牙关闭、没有权限或设备不可用</span>
+            <span class="scenario-sub">进入错误状态，App 业务仍可继续</span>
+            <span class="scenario-status status-fallback">降级可用</span>
+          </summary>
+          <div class="scenario-body">
+            <p class="one-line-result"><strong>用户结果：</strong>可以继续看和改 App 里的任务 / 日程，但硬件不更新；恢复蓝牙条件后再同步。</p>
+            <ol class="flow-steps">
+              <li><span class="who">APP</span>把连接状态显示为可理解的错误，不把它伪装成普通断开。</li>
+              <li><span class="who">APP</span>继续保存本地数据、外部同步和 AI 缓存。</li>
+              <li><span class="who">用户</span>打开蓝牙、允许权限或让设备重新广播后，再连接。</li>
+            </ol>
+            <div class="guardrail"><strong>提醒：</strong>连接错误不能通过反复重试绕过系统权限；需要用户恢复明确的外部条件。</div>
+          </div>
+        </details>
+
+        <details class="scenario" data-category="focus system offline">
+          <summary>
+            <span class="scenario-id">S17</span>
+            <span class="scenario-title">专注进行中，手机息屏或蓝牙断开</span>
+            <span class="scenario-sub">息屏靠设备定期唤醒更新；断开则结束会话</span>
+            <span class="scenario-status status-device">待真机确认</span>
+          </summary>
+          <div class="scenario-body">
+            <p class="one-line-result"><strong>用户结果：</strong>连接仍在时，设备约每五分钟提醒 App 更新专注数字；真正断开后，本次专注不在重连时复活。</p>
+            <ol class="flow-steps">
+              <li><span class="who">APP</span>专注开始后持续计算总时长、连续未打断时长和能量瓶。</li>
+              <li><span class="who">设备</span>手机息屏可能让 App 暂停计时推送，因此设备定期发一次“请更新”。</li>
+              <li><span class="who">APP</span>被唤醒后立即回最新专注状态。</li>
+              <li><span class="who">断开</span>App 结束会话并清理保护；重连后回概览，等待用户重新进入。</li>
+            </ol>
+            <div class="guardrail"><strong>真机重点：</strong>要验证 iOS 息屏后能否稳定被设备唤醒、能量瓶是否准时增长，以及断开后旧专注页不会残留。</div>
+          </div>
+        </details>
+
+        <details class="scenario" data-category="focus app">
+          <summary>
+            <span class="scenario-id">S18</span>
+            <span class="scenario-title">专注时长和能量瓶如何计算</span>
+            <span class="scenario-sub">连续不打断满三十分钟才计入</span>
+            <span class="scenario-status status-ready">手机端已具备</span>
+          </summary>
+          <div class="scenario-body">
+            <p class="one-line-result"><strong>用户结果：</strong>不是“开着专注多久就算多久”，而是每段没有触发分心 App 打断且达到三十分钟的部分才算有效专注。</p>
+            <ol class="flow-steps">
+              <li><span class="who">APP</span>获得“屏幕使用时间”授权且用户选好分心 App 后，才会监测这些 App；累计使用满一分钟会记为一次打断并切开连续时段。</li>
+              <li><span class="who">APP</span>单纯解锁手机或停留在 Kirole 不算打断；未授权或没有选择分心 App 时，打断检测不会生效。</li>
+              <li><span class="who">APP</span>每段不足三十分钟不计；达到三十分钟后按完整规则累计。</li>
+              <li><span class="who">APP</span>每累计三十分钟得到一瓶能量，并把当前数字发给设备。</li>
+            </ol>
+            <div class="guardrail"><strong>例子：</strong>五十分钟专注在第二十五分钟触发一次分心 App 打断，会变成两段二十五分钟，两段都未达到门槛，因此有效专注为零。</div>
+            <div class="guardrail"><strong>展示与累计分开：</strong>硬件专注页上的能量瓶显示本会话最多 5 瓶（`0x14` 展示封顶）；场景解锁用的累计能量瓶不封顶，与屏上 5 瓶显示字段相互独立。</div>
+          </div>
+        </details>
+
+        <details class="scenario" data-category="button system ai offline">
+          <summary>
+            <span class="scenario-id">S19</span>
+            <span class="scenario-title">概览页长按：进入每日总结</span>
+            <span class="scenario-sub">页面本地切换，文案提前准备</span>
+            <span class="scenario-status status-device">待真机确认</span>
+          </summary>
+          <div class="scenario-body">
+            <p class="one-line-result"><strong>用户结果：</strong>即使手机已断开，也能先看到最近一次同步的总结；再次长按返回概览。</p>
+            <ol class="flow-steps">
+              <li><span class="who">同步时</span>App 已经把点评、金句和统计一起放进设备。</li>
+              <li><span class="who">长按时</span>固件本地进入总结页，不等待 AI 现场生成。</li>
+              <li><span class="who">可选刷新</span>连接存在时设备可以顺便请求新数据，但不能因此卡住页面。</li>
+              <li><span class="who">再次长按</span>固件本地返回概览，作为防误触。</li>
+            </ol>
+          </div>
+        </details>
+
+        <details class="scenario" data-category="button system ai offline">
+          <summary>
+            <span class="scenario-id">S20</span>
+            <span class="scenario-title">短按电源进入屏保，再短按返回</span>
+            <span class="scenario-sub">优先显示可用缓存，不让新 AI 文案阻塞休眠</span>
+            <span class="scenario-status status-device">待真机确认</span>
+          </summary>
+          <div class="scenario-body">
+            <p class="one-line-result"><strong>用户结果：</strong>屏保立即可见；再次短按回到原来的页面，而不是固定回首页。</p>
+            <ol class="flow-steps">
+              <li><span class="who">设备</span>记住当前所在页面，通知 App 即将进入屏保。</li>
+              <li><span class="who">APP</span>立即发送一条本地已有金句，同时后台准备下一次可用的新句。</li>
+              <li><span class="who">设备</span>若新句来不及送到，就使用上次缓存，随后可以断开省电。</li>
+              <li><span class="who">再次短按</span>回到进入屏保前的页面。</li>
+            </ol>
+          </div>
+        </details>
+
+        <details class="scenario" data-category="system offline ai">
+          <summary>
+            <span class="scenario-id">S21</span>
+            <span class="scenario-title">智能提醒：硬件在线与离线</span>
+            <span class="scenario-sub">在线发硬件，失败改发手机通知</span>
+            <span class="scenario-status status-ready">手机端已具备</span>
+          </summary>
+          <div class="scenario-body">
+            <p class="one-line-result"><strong>用户结果：</strong>提醒不会因为硬件不在附近就完全消失；通道失败时改由手机通知承接。</p>
+            <ol class="flow-steps">
+              <li><span class="who">APP</span>根据高优先级截止、长时间空闲、专注后休息等条件判断是否提醒。</li>
+              <li><span class="who">AI</span>生成角色文案；失败时使用本地提醒句。</li>
+              <li><span class="who">已连接</span>发送到硬件；用户确认或忽略会回传给 App。</li>
+              <li><span class="who">未连接 / 发送失败</span>改发 iOS 本地通知。</li>
+            </ol>
+            <div class="guardrail"><strong>冷却规则：</strong>只有提醒确实通过某个通道送达，才进入至少三十分钟冷却。硬件确认或忽略可重置相应状态，离线记录重连后也能补上。</div>
+          </div>
+        </details>
+
+        <details class="scenario" data-category="system offline">
+          <summary>
+            <span class="scenario-id">S22</span>
+            <span class="scenario-title">设备唤醒、休眠与低电量</span>
+            <span class="scenario-sub">系统事件更新电量、同步内容或触发手机提醒</span>
+            <span class="scenario-status status-ready">手机端已具备</span>
+          </summary>
+          <div class="scenario-body">
+            <p class="one-line-result"><strong>用户结果：</strong>唤醒后尽量校时和更新；休眠前准备屏保；低电量时手机得到提示，不改变任务业务状态。</p>
+            <ol class="flow-steps">
+              <li><span class="who">设备唤醒</span>回传当前电量，App 校准时间并按节流规则安排同步。</li>
+              <li><span class="who">设备休眠</span>App 尝试补发屏保文字，设备保留可用缓存。</li>
+              <li><span class="who">低电量</span>App 更新电量并发手机本地通知，不完成或跳过任何任务。</li>
+            </ol>
+          </div>
+        </details>
+
+        <details class="scenario" data-category="button system offline">
+          <summary>
+            <span class="scenario-id">S23</span>
+            <span class="scenario-title">设备主动要求刷新</span>
+            <span class="scenario-sub">先回当前任务清单，完整当天内容另行判断</span>
+            <span class="scenario-status status-device">待真机确认</span>
+          </summary>
+          <div class="scenario-body">
+            <p class="one-line-result"><strong>用户结果：</strong>设备可以很快知道当前任务清单；如果完整当天内容没有变化，就不必为了“看起来响应了”再刷一次墨水屏。</p>
+            <ol class="flow-steps">
+              <li><span class="who">设备</span>为本次刷新生成新的编号。</li>
+              <li><span class="who">APP</span>立即返回 App 当前任务清单，作为本次刷新已处理的明确结果。</li>
+              <li><span class="who">APP</span>再检查完整当天内容是否真的改变、是否处于不适合全刷的当前日程或专注状态。</li>
+              <li><span class="who">设备</span>只有收到实质新内容时才更新整页；没有新整包不等于刷新请求失败。</li>
+            </ol>
+          </div>
+        </details>
+
+        <details class="scenario" data-category="offline system ai">
+          <summary>
+            <span class="scenario-id">S24</span>
+            <span class="scenario-title">整天断开、跨过零点后才重连</span>
+            <span class="scenario-sub">同一天离线可用，不承诺多天内容预装</span>
+            <span class="scenario-status status-fallback">降级可用</span>
+          </summary>
+          <div class="scenario-body">
+            <p class="one-line-result"><strong>用户结果：</strong>当天已同步内容可离线运行；进入第二天后，设备只能继续保留旧内容或使用本地空态，直到拿到新一天数据。</p>
+            <ol class="flow-steps">
+              <li><span class="who">当天</span>设备按本地时钟使用已收到的日程、支持文案和总结。</li>
+              <li><span class="who">跨零点</span>设备知道日期变了，但没有第二天的新任务与日程来源。</li>
+              <li><span class="who">重连</span>App 生成并发送当天最新版，覆盖旧日内容。</li>
+              <li><span class="who">离线动作</span>如有完成 / 跳过记录，仍按顺序补给 App；它们不会被新一天内容吞掉。</li>
+            </ol>
+            <div class="guardrail"><strong>产品边界：</strong>当前设计是“同步当天”，不是“预装未来一周”。如果需要多日完全离线，要另立产品需求、容量规则和跨日状态机。</div>
+          </div>
+        </details>
+      </div>
+    </section>
+
+    <section id="day" aria-labelledby="day-title">
+      <div class="section-head">
+        <p class="kicker">06 / 一天的真实故事</p>
+        <h2 id="day-title">把所有机制串进同一天</h2>
+        <p class="lead">下面这个例子说明：为什么日程文字要预先发、任务动作要逐条补，而 App 修改只需要发最后一版。</p>
+      </div>
+      <div class="timeline">
+        <article class="moment">
+          <time datetime="07:30">07:30</time>
+          <h3>早晨同步当天内容</h3>
+          <p>App 合并日历和任务，准备当前宠物对话、当天日程与每条支持文字、任务清单、概览和晚间总结，一次发给设备。</p>
+        </article>
+        <article class="moment">
+          <time datetime="09:00">09:00</time>
+          <h3>手机离开房间，会议照常出现</h3>
+          <p>设备没有等 App。它按本地时钟找到 09:00 的日程，显示早晨已经收到的会议支持文字。</p>
+        </article>
+        <article class="moment">
+          <time datetime="10:25">10:25</time>
+          <h3>手机回来，恢复连接</h3>
+          <p>App 先问设备离线期间有没有动作。没有动作时无需制造补传；有新数据请求时再发当前最新版。</p>
+        </article>
+        <article class="moment">
+          <time datetime="10:30">10:30</time>
+          <h3>用户短按进入任务</h3>
+          <p>设备告诉 App 要进入哪个任务；App 立即回任务页，完整送达后才开始专注。AI 网络慢也不会让页面一直等待。</p>
+        </article>
+        <article class="moment">
+          <time datetime="11:05">11:05</time>
+          <h3>在线短按完成</h3>
+          <p>App 先保存完成结果和最终画面；设备收好后一次回到概览，任务消失，不出现连续两次墨水屏刷新。</p>
+        </article>
+        <article class="moment">
+          <time datetime="14:00">14:00</time>
+          <h3>断开时又完成一个任务</h3>
+          <p>设备保存这个动作和唯一身份。它可以给本地反馈，但保留等待 App 确认的状态。</p>
+        </article>
+        <article class="moment">
+          <time datetime="14:20">14:20</time>
+          <h3>重连后补动作</h3>
+          <p>设备逐条交回离线动作；App 让同一动作只处理一次，保存后返回当前任务清单。不会重复加进度，也不会补播二十分钟前的完成动画。</p>
+        </article>
+        <article class="moment">
+          <time datetime="22:00">22:00</time>
+          <h3>长按查看每日总结</h3>
+          <p>即使手机再次离开，设备也能显示早已收到的点评与金句；再次长按回概览。</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="matrix" aria-labelledby="matrix-title">
+      <div class="section-head">
+        <p class="kicker">07 / 排列组合速查</p>
+        <h2 id="matrix-title">同一个动作，三种连接结果</h2>
+        <p class="lead">这张表适合客户评审时逐行确认。它不讲实现名词，只回答“现在做什么、断开怎么办、重连补什么”。</p>
+      </div>
+      <p id="matrix-help" class="scroll-help">窄屏可左右滑动查看完整表格。</p>
+      <div class="table-wrap" role="region" tabindex="0" aria-labelledby="matrix-title" aria-describedby="matrix-help">
+        <table>
+          <caption>核心动作在已连接、已断开和重连后的产品表现</caption>
+          <thead>
+            <tr>
+              <th scope="col">用户 / 系统动作</th>
+              <th scope="col">已连接时</th>
+              <th scope="col">已断开时</th>
+              <th scope="col">重新连接后</th>
+              <th scope="col">AI 是否阻塞</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">App 完成 / 撤销完成</th><td>本地立即更新并发送当前清单</td><td>App 成功，设备暂留旧版</td><td>发当前最终清单</td><td>不阻塞</td></tr>
+            <tr><th scope="row">App 修改任务</th><td>来源成功后更新硬件</td><td>App 保存，设备暂留旧标题</td><td>发当前最终清单</td><td>不阻塞</td></tr>
+            <tr><th scope="row">删除任务 / 加入今天</th><td>更新当天任务区域</td><td>App 保存，设备暂留旧版</td><td>发当前最终清单</td><td>不阻塞</td></tr>
+            <tr><th scope="row">App 修改日程</th><td>重算日程文案并更新</td><td>设备按旧日程继续</td><td>新日程覆盖旧版</td><td>有本地替代</td></tr>
+            <tr><th scope="row">外部来源变化</th><td>合并所有来源后更新一次</td><td>手机合并，设备等待</td><td>发当前合并结果</td><td>有缓存 / 替代</td></tr>
+            <tr><th scope="row">首页下拉刷新</th><td>等所有来源后强制整理一轮</td><td>手机刷新成功，设备等待</td><td>发送刷新后的当前版本</td><td>有缓存 / 替代</td></tr>
+            <tr><th scope="row">首次连接设备</th><td>校时、检查离线动作并按需同步</td><td>等待用户或系统建立连接</td><td>不适用</td><td>不依赖 AI 才能连接</td></tr>
+            <tr><th scope="row">蓝牙关闭 / 无权限</th><td>不适用</td><td>App 可继续，硬件不更新</td><td>条件恢复后再同步</td><td>不阻塞 App 数据</td></tr>
+            <tr><th scope="row">日程到点</th><td>设备本地按时间切换</td><td>同样本地切换</td><td>若内容变过则更新</td><td>不现场请求</td></tr>
+            <tr><th scope="row">概览短按</th><td>向 App 取任务页</td><td>设备本地兜底</td><td>不补建旧专注</td><td>不等待 AI</td></tr>
+            <tr><th scope="row">任务短按完成</th><td>最终画面与确认一次提交</td><td>设备保存动作</td><td>逐条补动作并确认</td><td>文案失败有替代</td></tr>
+            <tr><th scope="row">任务长按跳过</th><td>回概览，任务仍保留</td><td>设备保存动作</td><td>逐条补动作并确认</td><td>文案失败有替代</td></tr>
+            <tr><th scope="row">概览长按</th><td>本地进总结，可顺便请求更新</td><td>用预存总结</td><td>下次同步更新总结</td><td>不现场请求</td></tr>
+            <tr><th scope="row">短按电源</th><td>尝试补新屏保句</td><td>用旧缓存句</td><td>下次休眠再取新句</td><td>不阻塞</td></tr>
+            <tr><th scope="row">智能提醒</th><td>发到硬件</td><td>改发手机通知</td><td>补处理确认 / 忽略记录</td><td>有本地替代</td></tr>
+            <tr><th scope="row">设备唤醒</th><td>更新电量、校时并按需同步</td><td>事件暂时无法送到 App</td><td>恢复后再检查当前内容</td><td>不依赖 AI</td></tr>
+            <tr><th scope="row">设备休眠</th><td>尝试发送新屏保句</td><td>设备使用缓存句</td><td>下次休眠再取新句</td><td>不阻塞休眠</td></tr>
+            <tr><th scope="row">设备低电量</th><td>更新电量并提醒手机</td><td>手机暂时收不到本次事件</td><td>恢复后更新电量状态</td><td>不依赖 AI</td></tr>
+            <tr><th scope="row">专注中断开</th><td>持续更新状态</td><td>App 结束专注</td><td>回概览，不恢复旧页</td><td>不依赖 AI</td></tr>
+            <tr><th scope="row">跨零点长期断开</th><td>同步新一天</td><td>只有旧一天内容</td><td>发新当天内容</td><td>有本地替代</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="rules" aria-labelledby="rules-title">
+      <div class="section-head">
+        <p class="kicker">08 / 三条不能混淆的产品原则</p>
+        <h2 id="rules-title">“发出去了”不等于“用户看到了”</h2>
+      </div>
+      <div class="principles">
+        <article class="principle">
+          <h3>通道收到</h3>
+          <p>手机知道这一段数据已经写入蓝牙通道。这只证明传输走到下一步，不证明设备已经理解。</p>
+        </article>
+        <article class="principle">
+          <h3>业务确认</h3>
+          <p>设备拿到与本次动作匹配的完整结果，知道完成、跳过或刷新应该采用哪份任务清单。</p>
+        </article>
+        <article class="principle">
+          <h3>屏幕刷新</h3>
+          <p>固件完整应用内容，墨水屏实际刷新，用户看到了最终画面。只有这一步能作为真机显示证据。</p>
+        </article>
+      </div>
+      <div class="boundary-note">
+        <strong>墨水屏特别规则</strong>
+        <p>屏幕正在刷新时又来了多份当天内容，设备应只保留最新完整一份。当前刷新结束后最多再刷一次，不能排队把每个中间版本都刷出来。</p>
+      </div>
+    </section>
+
+    <section id="other" aria-labelledby="other-title">
+      <div class="section-head">
+        <p class="kicker">09 / 其它硬件互动</p>
+        <h2 id="other-title">共用连接，但不混进任务主线</h2>
+        <p class="lead">这些动作也会经过手机与设备之间的连接，但各自有独立的成功标准。它们不应该因为一次任务完成或一次普通同步被误触发。</p>
+      </div>
+      <div class="screen-map">
+        <article class="screen-card">
+          <header><h3>时间、天气与宠物状态</h3><p>属于设备基础信息，不依赖 AI 对话。</p></header>
+          <div class="button-action"><strong>什么时候更新</strong><p>连接、设备唤醒或一轮同步时校时，并发送当前宠物状态；天气有真实数据才更新。</p></div>
+          <div class="button-action"><strong>断开时</strong><p>设备继续使用本地时钟和最近一次天气，不用虚构默认天气填空。</p></div>
+        </article>
+        <article class="screen-card">
+          <header><h3>自定义伙伴形象</h3><p>大文件传输有自己的一次性提交过程。</p></header>
+          <div class="button-action"><strong>正常流程</strong><p>App 处理图片，优先走设备临时网络，失败时改走蓝牙；设备先收好，再明确确认应用。</p></div>
+          <div class="button-action"><strong>断开与恢复</strong><p>没有确认完成前继续显示旧形象；重连后查询上次进度，不让半张图片成为当前形象。</p></div>
+        </article>
+        <article class="screen-card">
+          <header><h3>选择并应用显示场景</h3><p>能量瓶只负责解锁，用户仍要亲自选择。</p></header>
+          <div class="button-action"><strong>正常流程</strong><p>用户在设置里点击已解锁场景，App 保存选择并发送给设备。</p></div>
+          <div class="button-action"><strong>断开与恢复</strong><p>选择保留在 App，下一次可连接时再应用；解锁后不会自动换掉当前场景。</p></div>
+        </article>
+        <article class="screen-card">
+          <header><h3>固件更新与调试模式</h3><p>属于维护流程，不与日常任务同步混用。</p></header>
+          <div class="button-action"><strong>正常流程</strong><p>用户明确发起、设备确认接收并进入更新；完成后要重新核对设备版本。</p></div>
+          <div class="button-action"><strong>断开与恢复</strong><p>更新过程中设备重启可能造成断开，但“断开了”本身不是最终成功证明；仍要看重连后的版本与真机行为。</p></div>
+        </article>
+      </div>
+    </section>
+
+    <section id="acceptance" aria-labelledby="acceptance-title">
+      <div class="section-head">
+        <p class="kicker">10 / 交付边界</p>
+        <h2 id="acceptance-title">哪些已由手机保证，哪些还要设备证明</h2>
+        <p class="lead">这部分用于排期和验收，不使用“基本完成”这类模糊状态。</p>
+      </div>
+      <div class="acceptance-grid">
+        <article class="acceptance-card ready">
+          <strong>手机端已具备</strong>
+          <ul>
+            <li>任务 / 日程修改、外部同步与本地保存。</li>
+            <li>AI 缓存、失败替代、过期结果丢弃。</li>
+            <li>当天内容、任务页、专注状态的发送准备。</li>
+            <li>同一硬件动作只处理一次，并能判断冲突、按序恢复。</li>
+            <li>连接、断开、意外重连的控制策略。</li>
+          </ul>
+        </article>
+        <article class="acceptance-card contract">
+          <strong>设备端必须按约定实现</strong>
+          <ul>
+            <li>不同页面正确解释短按和长按。</li>
+            <li>没有连接时立即使用本地兜底，不死等。</li>
+            <li>离线动作跨重启保存，并用同一身份重试。</li>
+            <li>仅在线完成 / 跳过：先收好最终画面，收到对应确认后只刷新一次。</li>
+            <li>离线批量恢复：按真实顺序逐条确认，不能套用在线单次刷新规则。</li>
+            <li>按本地时钟切换日程和预存支持文案。</li>
+            <li>刷新繁忙时只留下最新完整内容。</li>
+          </ul>
+        </article>
+        <article class="acceptance-card verify">
+          <strong>必须用真机确认</strong>
+          <ul>
+            <li>短按等待超时后页面仍可用。</li>
+            <li>在线完成 / 跳过只刷新一次墨水屏。</li>
+            <li>走远、重启、关机后的重连和补动作。</li>
+            <li>iPhone 息屏时专注状态仍能按时更新。</li>
+            <li>跨零点、低电、蓝牙关闭等长时间场景。</li>
+            <li>真实传输顺序、视觉延迟与屏幕最终效果。</li>
+          </ul>
+        </article>
+      </div>
+
+      <div class="faq" style="margin-top: 32px">
+        <details>
+          <summary>为什么 App 已做好，还不能写“客户已经能用”？</summary>
+          <p>因为日常体验横跨手机、蓝牙、固件和墨水屏。App 测试只能证明手机会准备和发送正确结果；设备是否保存离线动作、是否只刷一次、用户是否看到最终画面，必须由固件与真机证据确认。</p>
+        </details>
+        <details>
+          <summary>为什么不让 AI 生成完一整天所有任务对话再全部发过去？</summary>
+          <p>日历日程有明确时间，适合预先准备每条支持文案并由设备到点选择；普通任务何时进入、是否跳过、备注是否刚改都不确定。把所有任务详情提前塞入设备会增加体积、变旧风险和无效生成，因此任务页采用进入时发送、断开时本地兜底。</p>
+        </details>
+        <details>
+          <summary>重连后会不会把所有变化逐条播放一遍？</summary>
+          <p>不会。App 侧的编辑只发送当前最后一版，避免中间状态连续刷屏；只有硬件在离线时发生的业务动作需要按顺序逐条补，因为每个完成、跳过和提醒确认都可能改变结果。</p>
+        </details>
+        <details>
+          <summary>原始短按和长按会不会直接改变 App 状态？</summary>
+          <p>不会。原始按键可用于记录和调试；固件要根据当前页面翻译成“进入任务、完成任务、跳过任务、进入总结”等明确动作，App 只处理这些有上下文的动作。</p>
+        </details>
+        <details>
+          <summary>如果 AI 当时完全不可用，硬件是不是没有文字？</summary>
+          <p>不是。共享对话、日程支持文字、任务支持文字、总结、提醒和屏保都设计了缓存或本地替代。AI 不可用会降低新鲜感，但不应该出现空白页，也不应该阻塞任务动作。</p>
+        </details>
+        <details>
+          <summary>不同外部任务来源都能在 Kirole 里修改吗？</summary>
+          <p>不能一概而论。Google Tasks 可以修改标题、日期和备注，Apple Reminders 还可修改优先级与具体时间；两者都支持完成和删除。Notion 与 Taskade 可以同步并回写完成状态，但任务内容要回原服务修改，其中 Taskade 支持删除、Notion 不支持从 Kirole 删除远端记录；旧的 Todoist 路径按只读处理。Google 与 Apple 日历在有写权限时可以修改日程内容。</p>
+        </details>
+        <details>
+          <summary>滚轮选择或“查看日程详情”会让 App 回一张新页面吗？</summary>
+          <p>当前不会。原始滚轮选择和查看日程详情主要用于记录与调试；真正进入任务详情必须由设备发送“进入这个任务”的明确动作，App 才会返回任务页。产品若要新增日程详情页，需要另行定义页面、离线内容和返回动作。</p>
+        </details>
+      </div>
+    </section>
+
+    <footer class="doc-footer">
+      <span>Kirole 日常互动全景图 · 产品经理阅读版 · 2026-08-01</span>
+      <a class="back-top" href="#answer">返回顶部</a>
     </footer>
   </main>
-</div>
 
-<script>
-// Kirole App <-> Device interaction guide, written for a non-technical reader.
-// All strings are bilingual {zh, en}; app.js renders the active language.
-// Technical byte tables live only in the collapsed appendix at the bottom.
+  <script>
+    (() => {
+      const scenarios = Array.from(document.querySelectorAll('.scenario'));
+      const search = document.getElementById('scenarioSearch');
+      const buttons = Array.from(document.querySelectorAll('[data-filter]'));
+      const count = document.getElementById('scenarioCount');
+      const emptyState = document.getElementById('emptyState');
+      const clearFilters = document.getElementById('clearFilters');
+      let activeFilter = 'all';
 
-const UI = {
-  "brand.title": { zh: "Kirole 配合说明书", en: "Kirole: How It Works" },
-  "hero.eyebrow": { zh: "手机 App × 桌面设备 · 交互逻辑说明", en: "PHONE APP × DESK DEVICE — INTERACTION GUIDE" },
-  "hero.title": { zh: "手机和设备是怎么配合工作的", en: "How the phone and the device work together" },
-  "hero.sub": {
-    zh: "不需要技术背景。每个功能画成一张从上往下的流程图：你做了什么 → 手机做了什么 → 设备做了什么 → 你会看到什么。哪些已经能用、哪些还在等开发，都有明确标注。",
-    en: "No technical background needed. Every feature is drawn as a top-to-bottom flowchart: what you do → what the phone does → what the device does → what you'll see. What already works and what's still awaiting development is clearly marked."
-  },
-  "nav.overview": { zh: "整体关系", en: "The Big Picture" },
-  "nav.flows": { zh: "功能流程图", en: "Feature Flowcharts" },
-  "nav.issues": { zh: "已知未通的地方", en: "Known Gaps" },
-  "nav.appendix": { zh: "工程师附录", en: "Engineer Appendix" },
-  "overview.title": { zh: "整体关系：三个角色，一条蓝牙连接", en: "The big picture: three players, one Bluetooth link" },
-  "overview.desc": {
-    zh: "整套系统只有三个角色：手机负责准备内容、计算专注、记录数据；桌面设备负责显示内容和接收按键；外部日历只是手机的数据来源。",
-    en: "The whole system has only three players: the phone prepares content, runs the focus math, and keeps records; the desk device displays content and takes button presses; external calendars are just data sources for the phone."
-  },
-  "flows.title": { zh: "功能流程图", en: "Feature Flowcharts" },
-  "flows.desc": {
-    zh: "每张图从上往下读。圆圈图标表示这一步由谁执行；箭头上的标签说明这一步是立即发生，还是要等下一次定时同步。",
-    en: "Read each chart top to bottom. The round icon shows who performs each step; the label on each arrow says whether it happens immediately or waits for the next scheduled sync."
-  },
-  "issues.title": { zh: "已知还没打通的地方", en: "Known gaps (not working yet)" },
-  "issues.desc": {
-    zh: "前四条已记录在双方共同维护的技术文档中，责任在设备侧；第五条为手机 App 侧问题（2026-07-09 梳理确认，2026-07-10 已大部分修正，剩余部分见条目说明）。列在这里是为了完整：看到这些现象时，可以确认是「已知、在排期」，不是新故障。",
-    en: "The first four are recorded in the jointly-maintained technical docs and sit on the device side; the fifth is a phone-App-side issue (confirmed 2026-07-09, largely fixed 2026-07-10 — see the entry for what remains). Listed for completeness: when you see these symptoms, they're \"known and scheduled,\" not fresh breakage."
-  },
-  "appendix.title": { zh: "附录：给工程师的对照表（普通读者可跳过）", en: "Appendix: engineer reference tables (safe to skip)" },
-  "appendix.intro": {
-    zh: "以下是蓝牙通信的逐条对照表，供两边工程师核对，与上方流程图内容一致。",
-    en: "Byte-by-byte Bluetooth reference tables for engineers on both teams. Same content as the flowcharts above, in precise form."
-  },
-  "table1.title": { zh: "手机 → 设备（发出的命令）", en: "Phone → Device (outbound commands)" },
-  "table2.title": { zh: "设备 → 手机（上报的事件）", en: "Device → Phone (inbound events)" },
-  "table3.title": { zh: "「当日内容包」里装了什么", en: "What's inside the daily content pack" },
-  "reused.title": { zh: "同一编号、两个方向、两个意思（设计如此）", en: "Same byte, two directions, two meanings (by design)" },
-  "footer.note": {
-    zh: "内容依据双方共同维护的蓝牙协议文档与当前 App 代码交叉核对生成；如与协议文档冲突，以协议文档最新版为准。",
-    en: "Cross-checked against the jointly-maintained Bluetooth protocol spec and the current App source code. Where this page and the spec disagree, the spec's latest revision wins."
-  }
-};
+      const applyFilters = () => {
+        const query = search.value.trim().toLocaleLowerCase('zh-CN');
+        let visibleCount = 0;
 
-const LEGEND = [
-  { cls: "actor-pill a-user", label: { zh: "👆 你", en: "👆 You" } },
-  { cls: "actor-pill a-app", label: { zh: "📱 手机 App", en: "📱 Phone App" } },
-  { cls: "actor-pill a-device", label: { zh: "📟 桌面设备", en: "📟 Desk Device" } },
-  { cls: "actor-pill a-external", label: { zh: "☁️ 外部日历/任务", en: "☁️ External calendar/tasks" } },
-  { cls: "tag tag-live", label: { zh: "✓ 已经能用", en: "✓ Works today" } },
-  { cls: "tag tag-pending", label: { zh: "⏳ 等设备端开发", en: "⏳ Awaiting device-side dev" } },
-  { cls: "tag tag-issue", label: { zh: "⚠ 已知问题", en: "⚠ Known issue" } }
-];
+        scenarios.forEach((scenario) => {
+          const categories = scenario.dataset.category.split(' ');
+          const status = scenario.querySelector('.status-ready') ? 'ready'
+            : scenario.querySelector('.status-device') ? 'device'
+              : 'fallback';
+          const categoryMatch = activeFilter === 'all'
+            || categories.includes(activeFilter)
+            || status === activeFilter;
+          const textMatch = !query || scenario.textContent.toLocaleLowerCase('zh-CN').includes(query);
+          const visible = categoryMatch && textMatch;
+          scenario.hidden = !visible;
+          if (visible) visibleCount += 1;
+        });
 
-const ACTORS = {
-  user: { emoji: "👆", name: { zh: "你", en: "You" } },
-  app: { emoji: "📱", name: { zh: "手机 App", en: "Phone App" } },
-  device: { emoji: "📟", name: { zh: "桌面设备", en: "Desk Device" } },
-  external: { emoji: "☁️", name: { zh: "外部日历/任务", en: "External service" } }
-};
+        count.textContent = `显示 ${visibleCount} 个场景`;
+        emptyState.hidden = visibleCount !== 0;
+      };
 
-const BIGMAP = {
-  external: {
-    emoji: "☁️",
-    title: { zh: "外部日历 / 任务", en: "External calendars & tasks" },
-    body: { zh: "Google · Apple · Notion · Taskade", en: "Google · Apple · Notion · Taskade" }
-  },
-  app: {
-    emoji: "📱",
-    title: { zh: "手机 App", en: "Phone App" },
-    body: { zh: "准备内容、计算专注、记录数据、决定何时发送", en: "Prepares content, runs the focus math, keeps records, decides when to send" }
-  },
-  device: {
-    emoji: "📟",
-    title: { zh: "桌面设备", en: "Desk device" },
-    body: { zh: "显示内容、接收按键，自身不联网", en: "Displays content, takes button presses, never online itself" }
-  },
-  linkLeft: { arrow: "→", label: { zh: "手机定时获取新日程、新任务", en: "Phone fetches new events & tasks periodically" } },
-  linkRight: { arrow: "⇄", label: { zh: "蓝牙连接：手机发送显示内容，设备上报按键操作和状态", en: "Bluetooth link: phone sends display content, device reports button presses and status" } }
-};
+      buttons.forEach((button) => {
+        button.addEventListener('click', () => {
+          activeFilter = button.dataset.filter;
+          buttons.forEach((candidate) => {
+            candidate.setAttribute('aria-pressed', String(candidate === button));
+          });
+          applyFilters();
+        });
+      });
 
-const OVERVIEW_CARDS = [
-  { icon: "🕐", title: { zh: "完整内容：定时同步 + 变化即发", en: "Full content: scheduled sync + send-on-change" },
-    body: { zh: "日程、任务、台词、统计这类完整内容，白天每 1 小时同步一次，夜间每 4 小时一次；内容一有变化就立刻同步，不必等周期。所以手机上改了东西，设备最多等一个周期就会跟上。", en: "Full content (events, tasks, dialogue, stats) syncs once an hour by day, once every 4 hours at night; any content change triggers an immediate sync without waiting. So a change on the phone reaches the device within one cycle at most." } },
-  { icon: "⚡", title: { zh: "这几样永远立即发送", en: "These always send immediately" },
-    body: { zh: "专注进度、时间校准、睡前屏保、自定义头像图、伙伴切换（2026-07-10 起）——不受同步周期限制，需要时马上发。所以专注画面是实时更新的。", en: "Focus progress, clock sync, the bedtime screensaver, custom avatar images, and companion switches (as of 2026-07-10) are exempt from the sync schedule and send the moment they're needed. That's why the focus screen updates in real time." } },
-  { icon: "🔌", title: { zh: "设备自身不联网", en: "The device is never online by itself" },
-    body: { zh: "设备没有联网功能（仅固件升级时开自身热点接收文件）。屏幕上的一切都来自手机：手机没发，设备就保持旧画面。", en: "The device has no internet connection (except its own hotspot during firmware updates). Everything on screen comes from the phone: if the phone didn't send it, the device keeps showing the old thing." } },
-  { icon: "📒", title: { zh: "断开期间的操作不会丢", en: "Nothing is lost while disconnected" },
-    body: { zh: "蓝牙断开时你在设备上的操作（比如完成任务）先记录在设备本地，重新连上后一次性补传，手机逐条补记。", en: "Anything you do on the device while Bluetooth is down (like completing a task) is recorded locally on the device, then handed over in one batch on reconnect for the phone to catch up record by record." } }
-];
+      search.addEventListener('input', applyFilters);
 
-const FLOWS = [
-  {
-    id: "bus",
-    title: { zh: "定时同步：每次都发送什么", en: "Scheduled sync: what each run sends" },
-    desc: { zh: "手机和设备保持一致的基础机制。后面各图中「等下一次定时同步」，等的就是这个流程。", en: "The base mechanism keeping phone and device in sync. Whenever a chart below says \"waits for the next scheduled sync,\" this is the flow it waits for." },
-    chart: [
-      { t: "n", actor: "app", text: { zh: "同步前先检查两件事：①内容与上次发送的相比有没有变化？②距上次同步是否已超过周期（白天 1 小时，夜间 4 小时）？两者都否，则本次不发送", en: "Before syncing, the phone checks two things: ① has the content changed since the last send? ② has the interval elapsed (1 hour by day, 4 hours at night)? If neither, nothing is sent" } },
-      { t: "a", tone: "ble", label: { zh: "📶 满足任一条件 → 蓝牙发送", en: "📶 Either condition met → send over Bluetooth" } },
-      { t: "n", actor: "app", text: { zh: "按固定顺序发送：时间校准 → 宠物状态 → 天气 → 当日内容包（日期、伙伴台词、今日日程、置顶任务、当日统计、一句概览、「接下来」）→ 最后请设备上报离线记录", en: "Sends in fixed order: clock sync → pet status → weather → the daily content pack (date, companion dialogue, today's events, pinned tasks, daily stats, one-line summary, \"first up\") → finally asks the device to report its offline records" } },
-      { t: "a", tone: "instant", label: { zh: "设备开始补传", en: "The device starts reporting back" } },
-      { t: "n", actor: "device", text: { zh: "设备刷新屏幕，并把断开期间记录的操作（完成的任务、亮屏记录等）一次性回传", en: "The device refreshes its screen and sends back everything recorded while disconnected (completed tasks, wake events, etc.) in one batch" } },
-      { t: "a" },
-      { t: "n", actor: "app", text: { zh: "手机逐条处理回传记录：任务打勾、统计更新，保持两边数据一致", en: "The phone processes each record — checking off tasks, updating stats — so both sides' data match" } }
-    ],
-    notes: [
-      { zh: "设备也可以主动按键请求刷新，手机会立即同步一次（60 秒内最多响应一次，防止连续触发）。", en: "The device can also actively request a refresh with a button press — the phone syncs immediately (honored at most once per 60 seconds to prevent rapid-fire triggers).", warn: false }
-    ]
-  },
-  {
-    id: "builtin",
-    title: { zh: "换内置伙伴（Joy / Silas / Nova）", en: "Switching built-in companions (Joy / Silas / Nova)" },
-    desc: { zh: "三个自带形象之间互换。2026-07-10 更新：切换后立即发送给设备，不再等定时同步。", en: "Swapping between the three built-in characters. Updated 2026-07-10: the switch now sends to the device immediately instead of waiting for the scheduled sync." },
-    chart: [
-      { t: "n", actor: "user", text: { zh: "在手机上打开形象切换，选另一个内置伙伴", en: "Open the character switcher on the phone and pick a different built-in companion" } },
-      { t: "a", tone: "instant", label: { zh: "⚡ 手机界面立即生效", en: "⚡ The phone's own screen updates instantly" } },
-      { t: "n", actor: "app", text: { zh: "手机保存你的选择，App 界面立刻换好", en: "The phone saves your choice; the App screen switches right away" } },
-      { t: "a", tone: "instant", label: { zh: "⚡ 立即单发一帧（2026-07-10 起，不等定时同步）", en: "⚡ Sends one frame immediately (as of 2026-07-10, no waiting for the scheduled sync)" } },
-      { t: "n", actor: "app", text: { zh: "立即把新伙伴的名字单独发给设备；之后每次定时同步也照常携带，作为兜底", en: "The new companion's name goes to the device right away in its own frame; every regular sync still carries it as a fallback" }, tag: "live" },
-      { t: "a", tone: "ble", label: { zh: "📶 蓝牙", en: "📶 Bluetooth" } },
-      { t: "n", actor: "device", text: { zh: "设备按名字切换成对应形象（三个内置形象的图片已预存在设备里）", en: "The device switches to the matching character (all three built-in artworks are pre-stored on the device)" } }
-    ],
-    notes: [
-      { zh: "设备收到后是否立即重绘形象，取决于设备端对该帧的处理——已在协议文档中提请设备侧确认。若切换后设备仍未变化，可在设备上按一次刷新。", en: "Whether the device redraws immediately on receipt depends on its handling of this frame — the device team has been asked to confirm in the protocol doc. If the device still doesn't change after a switch, press refresh on the device once.", warn: false }
-    ]
-  },
-  {
-    id: "avatar",
-    title: { zh: "上传照片做专属形象", en: "Uploading a photo as a custom avatar" },
-    desc: { zh: "把自己的照片变成设备上的伙伴形象。手机侧已完成并立即发送；设备侧的接收显示还在开发。", en: "Turning your own photo into the companion shown on the device. The phone side is complete and sends immediately; the device side's receive-and-display is still in development." },
-    chart: [
-      { t: "n", actor: "user", text: { zh: "在手机上点「创建专属形象」，从相册选一张照片", en: "Tap \"Create Your Own\" on the phone and pick a photo from your album" } },
-      { t: "a", tone: "instant", label: { zh: "⚡ 立即处理", en: "⚡ Processed immediately" } },
-      { t: "n", actor: "app", text: { zh: "手机把照片裁成正方形 → 缩小到 96×96 → 颜色简化成墨水屏可显示的 6 种（黑、白、黄、红、蓝、绿）", en: "The phone crops the photo square → shrinks it to 96×96 → reduces colors to the 6 the ink screen can show (black, white, yellow, red, blue, green)" }, tag: "live" },
-      { t: "a", tone: "instant", label: { zh: "⚡ 立即发送，不等定时同步（图片较大，分包传输）", en: "⚡ Sends immediately, skipping the sync schedule (large image, sent in chunks)" } },
-      { t: "n", actor: "app", text: { zh: "手机把处理好的图片通过蓝牙发给设备；失败会自动反复重发", en: "The phone sends the processed image over Bluetooth, retrying automatically on failure" }, tag: "live" },
-      { t: "a", tone: "ble", label: { zh: "📶 蓝牙", en: "📶 Bluetooth" } },
-      { t: "n", actor: "device", text: { zh: "设备本应接收并显示这张图——但该功能设备端尚未开发完成，目前收到也不会显示", en: "The device is supposed to receive and display the image — but this isn't built on the device side yet, so nothing shows even though it arrives" }, tag: "pending" }
-    ],
-    notes: [
-      { zh: "「换了头像设备没反应」的原因就在最后一步：手机已把图发到位并持续重发，设备端显示功能完成后即可打通，手机侧无需改动。", en: "The final step is exactly why \"I changed my avatar and nothing happened\": the phone already delivers the image and keeps retrying. Once the device-side display work ships, the chain completes with no phone changes needed.", warn: true }
-    ]
-  },
-  {
-    id: "focus",
-    title: { zh: "在设备上点任务，进入专注", en: "Tapping a task on the device to start Focus" },
-    desc: { zh: "由设备发起的核心流程：你在设备上选中任务，手机开始计时，并持续把进度发回设备显示。", en: "The core device-initiated flow: you pick a task on the device, the phone starts timing, and keeps sending progress back for display." },
-    chart: [
-      { t: "n", actor: "user", text: { zh: "在设备上转轮选中一个任务，按下进入", en: "Turn the wheel on the device to pick a task, press to enter" } },
-      { t: "a", tone: "ble", label: { zh: "📶 蓝牙 · 立即", en: "📶 Bluetooth · instant" } },
-      { t: "n", actor: "device", text: { zh: "设备通知手机：「用户要开始做这个任务了」", en: "The device notifies the phone: \"the user is starting this task\"" } },
-      { t: "a", tone: "instant", label: { zh: "手机先核对这个任务", en: "The phone verifies the task first" } },
-      { t: "b", cols: [
-        { label: { zh: "✓ 找到了", en: "✓ Task found" }, tone: "ok", items: [
-          { t: "n", actor: "app", text: { zh: "手机开始计时（专注开始），立即把任务详情和专注画面发回设备；手机自己也切换到专注界面（2026-07-10 起）", en: "The phone starts the timer and immediately sends the task detail + focus screen back to the device; the phone itself also switches to its focus screen (as of 2026-07-10)" } },
-          { t: "a", tone: "instant", label: { zh: "专注期间持续更新", en: "Keeps updating throughout" } },
-          { t: "n", actor: "app", text: { zh: "此后手机在三个时机向设备发送最新进度：每满 30 分钟收获能量瓶时、发生打断时、设备亮屏时", en: "From then on the phone sends fresh progress at three moments: each 30-minute energy bottle, any interruption, and whenever the device wakes" } }
-        ] },
-        { label: { zh: "✗ 没找到（任务已删等）", en: "✗ Not found (task deleted, etc.)" }, tone: "bad", items: [
-          { t: "n", actor: "app", text: { zh: "手机让设备退回普通界面，避免设备停在等待状态", en: "The phone tells the device to return to the normal screen instead of hanging in a waiting state" } }
-        ] }
-      ] },
-      { t: "a", label: { zh: "你做完了这个任务", en: "You finish the task" } },
-      { t: "n", actor: "user", text: { zh: "在设备上按「完成」或「跳过」", en: "Press \"complete\" or \"skip\" on the device" } },
-      { t: "a", tone: "ble", label: { zh: "📶 蓝牙", en: "📶 Bluetooth" } },
-      { t: "n", actor: "app", text: { zh: "手机停止计时、结算能量瓶，恢复设备的普通画面；本次专注计入当天统计", en: "The phone stops the timer, banks the energy bottles, restores the device's normal screen, and counts the session into today's stats" } }
-    ],
-    notes: [
-      { zh: "手机锁屏、App 在后台时也能收到设备的信号（App 已申请蓝牙后台权限），会话照常开始、照常计时——不需要解锁手机。", en: "The phone receives the device's signal even when locked with the App in the background (the App holds Bluetooth background permission) — the session starts and times normally, no unlocking needed.", warn: false },
-      { zh: "专注时长和打断的具体判定规则，见下一张图。", en: "For exactly how focus time and interruptions are judged, see the next chart.", warn: false },
-      { zh: "已知问题：目前设备发送的「进任务」消息格式与双方约定不一致，手机认不出是哪个任务，此流程暂时不通。设备端按约定调整格式后即恢复，手机侧无需改动。详见「已知未通的地方」。", en: "Known issue: the \"entering task\" message the device currently sends doesn't match the agreed format, so the phone can't identify the task and this flow is temporarily broken. It recovers once the device side adopts the agreed format — no phone-side change needed. See \"Known gaps.\"", warn: true }
-    ]
-  },
-  {
-    id: "focus-rules",
-    title: { zh: "专注怎么计算，怎么判定被打断", en: "How focus is counted, and what counts as an interruption" },
-    desc: { zh: "2026-07-10 更新：判定源切换、专注界面、监测扩展已全部上线，与设计逻辑一致（见下方对照表）。打断检测需要用户授权屏幕使用时间并选择分心 App 后生效。", en: "Updated 2026-07-10: the detection-source switch, the focus screen, and the monitoring extension have all shipped and now match the design (see the comparison table below). Interruption detection takes effect once the user allows Screen Time access and picks their distracting apps." },
-    chart: [
-      { t: "n", actor: "app", text: { zh: "收到设备的专注信号后，App 显示固定的专注界面（App 在前台时立即切换；在后台时，用户下次打开 App 直接进入专注界面）", en: "On the device's focus signal, the App shows a dedicated focus screen (switching immediately if foregrounded; if backgrounded, landing there the next time the user opens the App)" }, tag: "live" },
-      { t: "a", tone: "instant", label: { zh: "专注计时开始", en: "Focus timing starts" } },
-      { t: "n", actor: "user", text: { zh: "手机锁屏放一边，或停留在 Kirole 的专注界面——都算专注中", en: "Phone locked and set aside, or staying on Kirole's focus screen — both count as focusing" } },
-      { t: "a", tone: "instant", label: { zh: "每满 30 分钟", en: "Every full 30 minutes" } },
-      { t: "n", actor: "app", text: { zh: "记 1 个能量瓶，并立即通知设备播放收集效果", en: "1 energy bottle is earned, and the device immediately plays the collect effect" } },
-      { t: "a", label: { zh: "如果你专注期间去用了其它 App…", en: "If you go use another app during focus…" } },
-      { t: "n", actor: "user", text: { zh: "打开自选清单里的分心 App——这就是「打断」（需先授权屏幕使用时间并选好分心 App 清单）", en: "Opening a distracting app from your chosen list — this is what counts as an interruption (requires Screen Time access and a chosen app list)" }, tag: "live" },
-      { t: "a", tone: "instant", label: { zh: "打断生效", en: "The interruption takes effect" } },
-      { t: "n", actor: "app", text: { zh: "当前不足 30 分钟的进度作废、归零；已攒满的能量瓶保留。回到专注（锁屏或回到专注界面）后，从零重新累计下一个 30 分钟", en: "The in-progress sub-30-minute count is voided and reset; already-earned bottles are kept. Once back in focus (locking the phone or returning to the focus screen), the next 30-minute count starts from zero" } },
-      { t: "a", label: { zh: "会话结束时（完成 / 跳过 / 蓝牙断开）", en: "When the session ends (complete / skip / Bluetooth lost)" } },
-      { t: "n", actor: "app", text: { zh: "结算：用「开始时间 + 结束时间 + 打断记录」倒算整场专注。App 中途被系统挂起、手机全程锁屏都不影响结果的准确性", en: "Settlement: the whole session is computed from start time + end time + the interruption list. The App being suspended mid-session or the phone staying locked throughout does not affect accuracy" } }
-    ],
-    rules: {
-      title: { zh: "设计逻辑 vs 当前 App 实际行为（2026-07-10 更新）", en: "Intended design vs current App behavior (updated 2026-07-10)" },
-      head: { zh: ["情况", "设计逻辑（应该）", "当前 App（实际）"], en: ["Situation", "Intended design", "Current App behavior"] },
-      rows: [
-        { cells: [
-          { zh: "进入专注时的手机界面", en: "Phone screen when focus starts" },
-          { zh: "自动显示专注界面（前台立即切换；后台则下次打开直接进入）", en: "Shows the focus screen automatically (immediately if foregrounded; on next open if backgrounded)" },
-          { zh: "<span class=\"same\">已实现 ✓</span>（2026-07-10：专注界面随会话自动全屏呈现）", en: "<span class=\"same\">Implemented ✓</span> (2026-07-10: the focus screen auto-presents with the session)" }
-        ] },
-        { cells: [
-          { zh: "打开 Kirole 查看进度", en: "Opening Kirole to check progress" },
-          { zh: "不算打断", en: "Not an interruption" },
-          { zh: "<span class=\"same\">已修正 ✓</span>（2026-07-10：旧的「回前台即打断」信号已彻底移除）", en: "<span class=\"same\">Fixed ✓</span> (2026-07-10: the old foreground-equals-interruption signal is fully removed)" }
-        ] },
-        { cells: [
-          { zh: "专注期间使用其它 App", en: "Using another app during focus" },
-          { zh: "算打断，进度归零", en: "An interruption; progress resets" },
-          { zh: "<span class=\"same\">已上线 ✓</span>（2026-07-10 随监测扩展发布）——需用户完成两步设置：授权屏幕使用时间 + 在设置中选择分心 App；未设置时检测保持关闭，专注界面明示", en: "<span class=\"same\">Live ✓</span> (shipped 2026-07-10 with the monitoring extension) — needs two user setup steps: allow Screen Time access + pick distracting apps in Settings; until then detection stays off and the focus screen says so" }
-        ] },
-        { cells: [
-          { zh: "手机锁屏放一边", en: "Phone locked, set aside" },
-          { zh: "计入专注", en: "Counts as focus" },
-          { zh: "<span class=\"same\">一致 ✓</span>", en: "<span class=\"same\">Matches ✓</span>" }
-        ] },
-        { cells: [
-          { zh: "能量瓶规则", en: "Energy-bottle rules" },
-          { zh: "每满 30 分钟 1 瓶；不足 30 分钟的零头作废、不跨段合并；已得的瓶不回收", en: "1 bottle per full 30 minutes; sub-30 leftovers voided, never merged across stretches; earned bottles never revoked" },
-          { zh: "<span class=\"same\">一致 ✓</span>", en: "<span class=\"same\">Matches ✓</span>" }
-        ] },
-        { cells: [
-          { zh: "结算方式", en: "Settlement" },
-          { zh: "按时间戳倒算；App 在后台、手机锁屏都不影响准确性", en: "Computed from timestamps; App backgrounding or a locked phone never affects accuracy" },
-          { zh: "<span class=\"same\">一致 ✓</span>", en: "<span class=\"same\">Matches ✓</span>" }
-        ] },
-        { cells: [
-          { zh: "深度专注模式（可选）", en: "Deep Focus mode (optional)" },
-          { zh: "屏蔽你选定的分心 App；被拦截页挡下的打开尝试不算打断", en: "Shields your chosen distracting apps; attempts blocked by the shield don't count as interruptions" },
-          { zh: "<span class=\"same\">一致 ✓</span>（屏蔽已有；拦截不算打断为约定规则）", en: "<span class=\"same\">Matches ✓</span> (shielding exists; blocked attempts not counting is the agreed rule)" }
-        ] }
-      ]
-    },
-    notes: [
-      { zh: "打断检测的生效条件：用户授权屏幕使用时间 + 在设置中选好分心 App 清单。两者未完成时检测保持关闭，专注界面明示「检测未开启」——不会静默装作在检测。", en: "Interruption detection takes effect once the user allows Screen Time access and picks their distracting-app list in Settings. Until both are done, detection stays off and the focus screen says so explicitly — it never silently pretends.", warn: false },
-      { zh: "平台说明：iOS 不允许 App 从后台自行跳到前台。所以「自动显示专注界面」在手机锁屏时的含义是：计时照常进行，用户下次打开 App 时直接进入专注界面。", en: "Platform note: iOS never lets an app bring itself to the foreground. So with the phone locked, \"shows the focus screen automatically\" means timing continues as normal, and the user lands on the focus screen the next time they open the App.", warn: false },
-      { zh: "「能量瓶」和「专注时长」都以 30 分钟为界，但口径不同：能量瓶按每段「每满 30 分钟 +1」计；专注时长只把 ≥30 分钟的整段计入（一段 25 分钟计 0）。这两条设计与当前实现一致。", en: "Bottles and focus-time both use the 30-minute threshold but count differently: bottles are \"+1 per full 30 minutes\" within each stretch; focus-time only counts whole stretches of ≥30 minutes (a 25-minute stretch counts as 0). Both rules match between design and current implementation.", warn: false }
-    ]
-  },
-  {
-    id: "wake",
-    title: { zh: "设备亮屏 / 休眠", en: "Device waking up / going to sleep" },
-    desc: { zh: "设备每次亮屏，手机都会立即响应；设备休眠时，手机发送屏保。", en: "Every time the device wakes, the phone responds immediately; at sleep, the phone sends a screensaver." },
-    chart: [
-      { t: "n", actor: "device", text: { zh: "屏幕一亮，设备立即通知手机「我醒了」，并附上电量和当前固件版本", en: "The moment the screen lights up, the device notifies the phone \"I'm awake,\" with battery level and current firmware version" } },
-      { t: "a", tone: "instant", label: { zh: "⚡ 手机立即响应", en: "⚡ The phone responds instantly" } },
-      { t: "n", actor: "app", text: { zh: "手机立即做三件事：校准设备时间、发送当前画面（平时是场景画面，专注中是专注进度）、记录电量", en: "The phone immediately does three things: syncs the device clock, sends the current screen (the scene normally, focus progress if focusing), and records the battery level" } },
-      { t: "a", label: { zh: "然后检查是否需要完整同步", en: "Then it checks whether a full sync is due" } },
-      { t: "n", actor: "app", text: { zh: "内容有变化、或到了定时同步时间 → 立即补发完整内容；两者都否 → 不重发，画面保持原样", en: "If content changed or the sync interval elapsed → a full sync runs now; if neither → nothing re-sends and the screen stays as-is" } },
-      { t: "a", label: { zh: "到设备休眠时", en: "When the device goes to sleep" } },
-      { t: "n", actor: "device", text: { zh: "设备通知手机「进入休眠」", en: "The device notifies the phone it's going to sleep" } },
-      { t: "a", tone: "ble", label: { zh: "📶 蓝牙", en: "📶 Bluetooth" } },
-      { t: "n", actor: "app", text: { zh: "手机发送屏保内容（当天的一句话 / 明信片），设备休眠期间持续显示", en: "The phone sends the screensaver (the day's quote / postcard) for the device to display while asleep" } }
-    ],
-    notes: [
-      { zh: "短时间内反复亮屏、内容又没变时，画面不重刷是刻意设计：墨水屏每次刷新都耗电且会闪烁，内容没变就不刷新。", en: "When the screen wakes repeatedly with no content change, not re-drawing is deliberate: every ink-screen refresh costs battery and visibly flashes, so unchanged content is left alone.", warn: false }
-    ]
-  },
-  {
-    id: "external",
-    title: { zh: "外部日历 / 任务怎么到达设备", en: "How external calendars & tasks reach the device" },
-    desc: { zh: "你在 Google 日历、Apple 日历、Notion、Taskade 里的改动，经过两步到达设备屏幕。", en: "Changes you make in Google Calendar, Apple Calendar, Notion, or Taskade reach the device screen in two steps." },
-    chart: [
-      { t: "n", actor: "external", text: { zh: "你在 Google / Apple / Notion / Taskade 里新增或修改了日程、任务", en: "You add or edit an event or task in Google / Apple / Notion / Taskade" } },
-      { t: "a", label: { zh: "手机在这些时机获取：打开 App 时 · 下拉刷新时 · 每 5 分钟自动一次 · Apple 日历一有变化立即", en: "The phone fetches: on App open · on pull-to-refresh · automatically every 5 minutes · instantly when Apple Calendar changes" } },
-      { t: "n", actor: "app", text: { zh: "手机合并新数据：同一条以最近修改的为准；你在手机上补充的备注、优先级尽量保留", en: "The phone merges the new data: for the same item the most recent edit wins; notes and priority you added on the phone are preserved where possible" } },
-      { t: "a", tone: "instant", label: { zh: "内容变化 → 立即触发一次同步", en: "Content changed → an immediate sync is triggered" } },
-      { t: "n", actor: "app", text: { zh: "同时检查伙伴是否需要换一句新台词（比如提到你新加的安排），然后带着新内容同步", en: "It also checks whether the companion should say a fresh line (e.g. mentioning your new plan), then syncs with the updated content" } },
-      { t: "a", tone: "ble", label: { zh: "📶 蓝牙", en: "📶 Bluetooth" } },
-      { t: "n", actor: "device", text: { zh: "设备显示新的日程和任务", en: "The device shows the new events and tasks" } }
-    ],
-    notes: [
-      { zh: "范围说明：Notion 和 Taskade 目前只同步任务、不同步日历事件——这是当前版本的设计范围，不是遗漏。", en: "Scope note: Notion and Taskade currently sync tasks only, not calendar events — the current version's intended scope, not an omission.", warn: false },
-      { zh: "同步失败不丢数据：手机继续使用上一次获取的数据，仅在设置页显示一个不打扰的状态提示。", en: "A failed sync loses nothing: the phone keeps using the last fetched data and shows only a quiet status indicator in Settings.", warn: false }
-    ]
-  },
-  {
-    id: "ota",
-    title: { zh: "给设备升级固件", en: "Updating the device's firmware" },
-    desc: { zh: "升级文件提前通过设备自身热点传入设备。手机负责发出开始指令，并在设备重启回来后核对是否升级成功。", en: "The update file is loaded onto the device beforehand via its own hotspot. The phone issues the start command, then verifies success after the device reboots and returns." },
-    chart: [
-      { t: "n", actor: "user", text: { zh: "在手机设置里点「固件更新」（专注进行中时按钮不可用，防止打断专注）", en: "Tap \"Firmware Update\" in the phone's Settings (disabled during a focus session to avoid interrupting it)" } },
-      { t: "a", tone: "ble", label: { zh: "📶 蓝牙：发送「开始升级」指令", en: "📶 Bluetooth: sends the \"start upgrading\" command" } },
-      { t: "n", actor: "device", text: { zh: "设备检查预先传入的升级文件是否完好", en: "The device checks whether the pre-loaded update file is intact" } },
-      { t: "a", label: { zh: "检查结果分两种", en: "Two possible outcomes" } },
-      { t: "b", cols: [
-        { label: { zh: "✓ 文件没问题", en: "✓ File is good" }, tone: "ok", items: [
-          { t: "n", actor: "device", text: { zh: "回复「开始升级」，随后主动断开蓝牙（正常现象），自行重启升级，约 20 秒；期间设备屏幕显示进度条", en: "Replies \"starting upgrade,\" then deliberately drops Bluetooth (normal), reboots itself to upgrade — about 20 seconds, with a progress bar on the device screen" } },
-          { t: "a", label: { zh: "升级完成后自动开机", en: "Boots back up when done" } },
-          { t: "n", actor: "device", text: { zh: "设备重新连上手机，报告新的固件版本号", en: "The device reconnects and reports its new firmware version" } },
-          { t: "a", tone: "instant" },
-          { t: "n", actor: "app", text: { zh: "手机对比升级前后的版本号，明确告知这次升级是否成功", en: "The phone compares before/after version numbers and states definitively whether the upgrade succeeded" } }
-        ] },
-        { label: { zh: "✗ 文件有问题", en: "✗ File has a problem" }, tone: "bad", items: [
-          { t: "n", actor: "device", text: { zh: "回复具体原因（无文件 / 文件损坏 / 存储卡未就位…），不重启，蓝牙保持连接", en: "Replies with the specific reason (no file / corrupted / storage card not seated…), doesn't reboot, Bluetooth stays connected" } },
-          { t: "a", tone: "instant" },
-          { t: "n", actor: "app", text: { zh: "手机显示失败原因，便于对症处理", en: "The phone shows the failure reason so it can be addressed" } }
-        ] }
-      ] }
-    ],
-    notes: [
-      { zh: "如果设备超过约 90 秒仍未回来，手机会停止等待并提示超时，不会无限等待。", en: "If the device hasn't returned within ~90 seconds, the phone stops waiting and reports a timeout instead of waiting forever.", warn: false }
-    ]
-  }
-];
+      clearFilters.addEventListener('click', () => {
+        activeFilter = 'all';
+        search.value = '';
+        buttons.forEach((button) => {
+          button.setAttribute('aria-pressed', String(button.dataset.filter === 'all'));
+        });
+        applyFilters();
+        search.focus();
+      });
 
-const ISSUES = [
-  { kind: "pending",
-    title: { zh: "自定义头像：设备端「接收并显示」尚未开发", en: "Custom avatar: device-side receive-and-display not built yet" },
-    body: { zh: "手机已会处理照片并把图发到设备（且自动重发），但设备端还没有实现「收到图、画出来」。表现为：换完头像设备形象不变。设备端开发完成后即打通，手机侧无需改动。", en: "The phone already processes the photo and delivers it (with automatic retries), but the device hasn't implemented \"receive & draw.\" Symptom: the device doesn't change after an avatar switch. Completes once the device-side work ships; no phone changes needed." } },
-  { kind: "issue",
-    title: { zh: "设备「进任务」消息格式与约定不符 → 专注流程暂时不通", en: "Device's \"entering task\" message doesn't match the agreed format → focus flow temporarily broken" },
-    body: { zh: "设备目前发送「第几个任务 + 时间」，约定格式是「任务完整编号 + 时间」。手机按约定解读，无法识别是哪个任务，因此无法回传任务详情、无法开始计时。设备端按约定调整后即恢复。", en: "The device currently sends \"task position + time,\" while the agreed format is \"full task ID + time.\" Reading per the agreement, the phone can't identify the task, so it can't reply with the detail page or start timing. Recovers once the device side adopts the agreed format." } },
-  { kind: "issue",
-    title: { zh: "「当日内容包」在设备端解析错位", en: "The daily content pack is mis-parsed on the device" },
-    body: { zh: "内容包中的文字是「先标长度、再跟内容」的变长字段，设备端目前按固定长度读取，导致字段错位——日程、任务可能显示为乱码。属设备端解析问题，待修。", en: "Text fields in the pack are variable-length (length prefix, then content), but the device currently reads fixed widths, so fields drift — events and tasks can render garbled. A device-side parsing issue, pending fix." } },
-  { kind: "issue",
-    title: { zh: "设备曾把手机的两类消息报为「不认识的命令」", en: "The device once reported two phone messages as \"unknown commands\"" },
-    body: { zh: "同一编号在两个传输方向代表不同含义（双方约定的设计）。设备端曾查错方向的对照表，把手机的正常消息当作未知命令。已记录在协议文档，待设备端修正。", en: "The same number means different things per direction (an agreed design). The device once used the wrong direction's lookup table and flagged normal phone messages as unknown. Recorded in the protocol doc, pending a device-side fix." } },
-  { kind: "pending",
-    title: { zh: "专注打断判定（2026-07-10 已全部修正上线）", en: "Focus-interruption logic (fully fixed and shipped 2026-07-10)" },
-    body: { zh: "2026-07-09 确认原实现与设计相反；2026-07-10 已全部修正并随版本发布：专注界面随会话自动呈现并支持下次打开落位、打开/停留 Kirole 不再记为打断（旧信号彻底移除）、「专注期间使用自选分心 App = 打断」的系统监测扩展已上线、30 分钟能量瓶与时间戳结算保持不变。用户侧生效条件：授权屏幕使用时间 + 选好分心 App 清单；未完成时专注界面明示「检测未开启」。本条保留仅作历史记录。", en: "Confirmed inverted vs the design on 2026-07-09; fully fixed and shipped on 2026-07-10: the focus screen auto-presents with the session (and re-lands on next open), opening/staying in Kirole is no longer an interruption (old signal fully removed), the system monitoring extension for \"using a chosen distracting app = interruption\" has shipped, and the 30-minute bottle + timestamp settlement rules are unchanged. User setup needed to take effect: allow Screen Time access + pick the distracting-app list; until then the focus screen says detection is off. Kept here as a historical record." } }
-];
+      document.getElementById('expandVisible').addEventListener('click', () => {
+        scenarios.filter((scenario) => !scenario.hidden).forEach((scenario) => { scenario.open = true; });
+      });
 
-/* ---------- appendix (engineers) ---------- */
+      document.getElementById('collapseVisible').addEventListener('click', () => {
+        scenarios.forEach((scenario) => { scenario.open = false; });
+      });
 
-const TABLE1 = {
-  head: { zh: ["编号", "命令", "作用", "状态"], en: ["Byte", "Command", "What it does", "Status"] },
-  rows: [
-    { byte: "0x01", name: "PetStatus", status: "live", zh: "宠物名字、心情、内置形象名——每次同步发送；伙伴切换时立即单发（2026-07-10 起）", en: "Pet name, mood, built-in character name — sent every sync run, plus immediately on companion switch (as of 2026-07-10)" },
-    { byte: "0x02", name: "TaskList", status: "dead", zh: "旧版任务列表帧，已被 DayPack 取代，代码零调用", en: "Legacy task-list frame, superseded by DayPack, zero call sites" },
-    { byte: "0x03", name: "Schedule", status: "dead", zh: "旧版日程帧，同上", en: "Legacy schedule frame, same status" },
-    { byte: "0x04", name: "Weather", status: "live", zh: "顶部天气，每次同步发送", en: "Top-bar weather, sent every sync run" },
-    { byte: "0x05", name: "Time", status: "live", zh: "时间校准，每次同步的第一帧；设备亮屏时也单独发送", en: "Clock sync — first frame of every run, also sent on device wake" },
-    { byte: "0x10", name: "DayPack", status: "live", zh: "当日内容包（字段见下表），按同步周期发送", en: "The daily content pack (fields below), on the sync cadence" },
-    { byte: "0x11", name: "TaskInPage", status: "live", zh: "任务详情页，回应设备的「进任务」事件", en: "Task detail page, in reply to the device's enter-task event" },
-    { byte: "0x12", name: "DeviceMode", status: "live", zh: "强制切换设备界面模式；主要用作任务无法识别时的恢复信号", en: "Force-switches device UI mode; mainly a recovery signal when a task can't be resolved" },
-    { byte: "0x13", name: "SmartReminder", status: "live", zh: "智能提醒横幅文案 + 紧急度，每次同步结尾评估一次", en: "Smart-reminder banner text + urgency, evaluated at the end of each run" },
-    { byte: "0x14", name: "FocusStatus", status: "live", zh: "实时专注状态（阶段/能量瓶/分钟数/任务名），立即发送、不受同步周期限制", en: "Real-time focus status (phase/bottles/minutes/task), sent immediately, exempt from the sync schedule" },
-    { byte: "0x15", name: "CustomAvatarFrame", status: "pending", zh: "自定义头像 96×96 像素图——手机已实现并持续重试，等设备端渲染", en: "Custom avatar 96×96 pixel image — phone side done with persistent retry, awaiting device-side rendering" },
-    { byte: "0x16", name: "Screensaver", status: "live", zh: "屏保金句/明信片，设备休眠时发送", en: "Screensaver quote/postcard, sent at device sleep" },
-    { byte: "0x17", name: "SceneUnlock", status: "live", zh: "设置/解锁背景场景", en: "Sets/unlocks the background scene" },
-    { byte: "0x18", name: "OTAReboot", status: "new", zh: "触发固件升级重启（空内容）", en: "Triggers the firmware-upgrade reboot (empty payload)" },
-    { byte: "0x20", name: "EventLogRequest", status: "live", zh: "请设备补传离线期间记录的操作", en: "Asks the device to replay operations recorded while offline" },
-    { byte: "0x21", name: "EventLogBatch", status: "dead", zh: "仅入站方向使用；手机从不出站发送此编号", en: "Inbound-only; the phone never sends this byte outbound" },
-    { byte: "0x7E", name: "SecureData", status: "live", zh: "加密封装外壳；需配置共享密钥才启用（当前默认关闭）", en: "Secure envelope; engages only with a configured shared secret (currently off)" },
-    { byte: "0x7F", name: "SecurityHandshake", status: "live", zh: "加密握手第一步，同上仅安全模式使用", en: "Security handshake step one, secure mode only" }
-  ]
-};
+      const printButton = document.getElementById('printButton');
+      const printableDetails = Array.from(document.querySelectorAll('details'));
+      let printOpenState = [];
+      let printHiddenState = [];
+      let printPrepared = false;
 
-const TABLE2 = {
-  head: { zh: ["编号", "事件", "作用", "状态"], en: ["Byte", "Event", "What it does", "Status"] },
-  rows: [
-    { byte: "0x01–0x06", name: "旋钮 / 电源键", nameEn: "Knob / power button", status: "live", zh: "旋转、短按、长按等物理操作——目前仅记录", en: "Rotate/short-press/long-press etc. — currently just recorded" },
-    { byte: "0x10", name: "EnterTaskIn", status: "issue", zh: "进任务/开始专注——见流程图；当前设备发送格式与约定不符（已知问题②）", en: "Enter task / start focus — see flowchart; device currently sends a non-conforming format (known gap #2)" },
-    { byte: "0x11", name: "CompleteTask", status: "live", zh: "任务完成，结束专注", en: "Task completed, ends the focus session" },
-    { byte: "0x12", name: "SkipTask", status: "live", zh: "跳过任务，结束专注但不打勾", en: "Skips the task, ends focus without checking it off" },
-    { byte: "0x13", name: "SelectedTaskChanged", status: "live", zh: "切换选中任务——仅记录", en: "Selected task changed — recorded only" },
-    { byte: "0x14", name: "WheelSelect", status: "live", zh: "旋钮确认——按约定不回复详情页", en: "Wheel confirm — per agreement, no detail-page reply" },
-    { byte: "0x15", name: "ViewEventDetail", status: "live", zh: "查看日历事件详情——仅记录", en: "Views a calendar event's detail — recorded only" },
-    { byte: "0x16", name: "ReminderAcknowledged", status: "live", zh: "用户确认了智能提醒", en: "User acknowledged a smart reminder" },
-    { byte: "0x17", name: "ReminderDismissed", status: "live", zh: "智能提醒超时自动关闭", en: "Smart reminder auto-dismissed on timeout" },
-    { byte: "0x18", name: "OTAResult", status: "new", zh: "对「开始升级」指令的答复状态码", en: "Status-code reply to the upgrade command" },
-    { byte: "0x20", name: "RequestRefresh", status: "live", zh: "设备主动请求刷新（60 秒内最多响应一次）", en: "Device actively requests a refresh (honored at most once per 60s)" },
-    { byte: "0x21", name: "EventLogBatch", status: "live", zh: "离线操作批量补传", en: "Batch replay of offline operations" },
-    { byte: "0x30", name: "DeviceWake", status: "live", zh: "设备亮屏（带电量；新版起带固件版本号）", en: "Device woke (battery %; firmware version since the latest revision)" },
-    { byte: "0x31", name: "DeviceSleep", status: "live", zh: "设备进入休眠", en: "Device going to sleep" },
-    { byte: "0x40", name: "LowBattery", status: "live", zh: "低电量——手机弹出本地通知", en: "Low battery — the phone raises a local notification" }
-  ]
-};
+      const preparePrint = () => {
+        if (printPrepared) return;
+        printOpenState = printableDetails.map((detail) => detail.open);
+        printHiddenState = scenarios.map((scenario) => scenario.hidden);
+        scenarios.forEach((scenario) => { scenario.hidden = false; });
+        printableDetails.forEach((detail) => { detail.open = true; });
+        printPrepared = true;
+      };
 
-const TABLE3 = {
-  head: { zh: ["字段", "作用"], en: ["Field", "Purpose"] },
-  rows: [
-    { name: "Year / Month / Day", zh: "顶部日期", en: "Top-bar date" },
-    { name: "DeviceMode", zh: "设备界面模式（普通 / 专注）", en: "Device UI mode (normal / focus)" },
-    { name: "FocusChallengeEnabled", zh: "专注挑战玩法开关", en: "Focus-challenge feature switch" },
-    { name: "PetDialogue", zh: "伙伴的一句台词（早安 / 鼓励 / 晚间结算按时段切换）", en: "The companion's one line (morning / encouragement / evening, by time of day)" },
-    { name: "Events[]（≤8）", zh: "日程：时间 + 标题 + 描述", en: "Events: time + title + description" },
-    { name: "TopTasks[]（3–5 条，依屏幕尺寸）", zh: "置顶任务：编号 + 标题 + 是否完成 + 优先级", en: "Pinned tasks: ID + title + done flag + priority" },
-    { name: "SettlementData", zh: "今日统计：完成数、积分、专注分钟、次数、最长一次、打断次数", en: "Today's stats: completions, points, focus minutes, sessions, longest, interruptions" },
-    { name: "DaySummary", zh: "「今日概览」一段中性文字", en: "The neutral \"day at a glance\" paragraph" },
-    { name: "FirstUp", zh: "「接下来」标签：下一个日程，或最高优先级未完成任务", en: "\"First up\": the next event, or the top-priority open task" }
-  ]
-};
+      printButton.addEventListener('click', () => {
+        preparePrint();
+        window.print();
+      });
 
-const REUSED_BYTES = {
-  head: { zh: ["编号", "手机 → 设备", "设备 → 手机"], en: ["Byte", "Phone → Device", "Device → Phone"] },
-  rows: [
-    { byte: "0x10", out: "DayPack", in: "EnterTaskIn" },
-    { byte: "0x11", out: "TaskInPage", in: "CompleteTask" },
-    { byte: "0x12", out: "DeviceMode", in: "SkipTask" },
-    { byte: "0x13", out: "SmartReminder", in: "SelectedTaskChanged" },
-    { byte: "0x14", out: "FocusStatus", in: "WheelSelect" },
-    { byte: "0x15", out: "CustomAvatarFrame", in: "ViewEventDetail" },
-    { byte: "0x16", out: "Screensaver", in: "ReminderAcknowledged" },
-    { byte: "0x17", out: "SceneUnlock", in: "ReminderDismissed" },
-    { byte: "0x18", out: "OTAReboot", in: "OTAResult" },
-    { byte: "0x20", out: "EventLogRequest", in: "RequestRefresh" },
-    { byte: "0x21", out: "—", in: "EventLogBatch" }
-  ]
-};
+      window.addEventListener('beforeprint', preparePrint);
 
-
-const STATUS_LABELS = {
-  live: { zh: "✓ 已经能用", en: "✓ Works today" },
-  pending: { zh: "⏳ 等设备端开发", en: "⏳ Awaiting device dev" },
-  issue: { zh: "⚠ 已知问题", en: "⚠ Known issue" },
-  dead: { zh: "协议保留", en: "Reserved" },
-  new: { zh: "新增", en: "New" }
-};
-
-const state = {
-  lang: localStorage.getItem("kirole-lang") === "en" ? "en" : "zh"
-};
-
-function pick(obj) {
-  return obj[state.lang];
-}
-
-function statusTag(status) {
-  if (!status) return "";
-  return `<span class="tag tag-${status}">${pick(STATUS_LABELS[status])}</span>`;
-}
-
-/* ---------- hero ---------- */
-
-function renderLegend() {
-  document.getElementById("heroLegend").innerHTML = LEGEND.map(item =>
-    `<span class="${item.cls}">${pick(item.label)}</span>`
-  ).join("");
-}
-
-/* ---------- overview ---------- */
-
-function bigmapCard(node, extraClass) {
-  return `
-    <div class="bigmap-card ${extraClass}">
-      <span class="bm-emoji" aria-hidden="true">${node.emoji}</span>
-      <h3>${pick(node.title)}</h3>
-      <p>${pick(node.body)}</p>
-    </div>`;
-}
-
-function bigmapLink(link) {
-  return `
-    <div class="bigmap-link">
-      <span class="bm-arrow" aria-hidden="true">${link.arrow}</span>
-      <span class="bm-label">${pick(link.label)}</span>
-    </div>`;
-}
-
-function renderOverview() {
-  const cards = OVERVIEW_CARDS.map(card => `
-    <div class="overview-card">
-      <span class="oc-icon" aria-hidden="true">${card.icon}</span>
-      <h3>${pick(card.title)}</h3>
-      <p>${pick(card.body)}</p>
-    </div>`).join("");
-
-  document.getElementById("section-overview").innerHTML = `
-    <p class="section-kicker">01 / ${pick(UI["nav.overview"])}</p>
-    <h2 class="section-title">${pick(UI["overview.title"])}</h2>
-    <p class="section-desc">${pick(UI["overview.desc"])}</p>
-    <div class="bigmap">
-      ${bigmapCard(BIGMAP.external, "bm-external")}
-      ${bigmapLink(BIGMAP.linkLeft)}
-      ${bigmapCard(BIGMAP.app, "bm-app")}
-      ${bigmapLink(BIGMAP.linkRight)}
-      ${bigmapCard(BIGMAP.device, "bm-device")}
-    </div>
-    <div class="overview-grid">${cards}</div>`;
-}
-
-/* ---------- flowcharts ---------- */
-
-function fcNode(item) {
-  const actor = ACTORS[item.actor];
-  return `
-    <div class="fc-node">
-      <span class="fc-badge a-${item.actor}" aria-hidden="true">${actor.emoji}</span>
-      <div class="fc-body">
-        <span class="fc-who">
-          <span class="who-name a-${item.actor}">${pick(actor.name)}</span>
-          ${statusTag(item.tag)}
-        </span>
-        <p>${pick(item.text)}</p>
-      </div>
-    </div>`;
-}
-
-function fcArrow(item) {
-  const tone = item.tone ? ` tone-${item.tone}` : "";
-  const label = item.label ? `<span class="fa-label">${pick(item.label)}</span>` : "";
-  return `
-    <div class="fc-arrow${tone}" aria-hidden="true">
-      <span class="fa-line"></span>
-      ${label}
-      <span class="fa-line"></span>
-      <span class="fa-head"></span>
-    </div>`;
-}
-
-function fcItems(items) {
-  return items.map(item => {
-    if (item.t === "n") return fcNode(item);
-    if (item.t === "a") return fcArrow(item);
-    if (item.t === "b") return fcBranch(item);
-    return "";
-  }).join("");
-}
-
-function fcBranch(item) {
-  const cols = item.cols.map(col => `
-    <div class="fc-branch-col tone-${col.tone}">
-      <span class="fc-branch-label">${pick(col.label)}</span>
-      ${fcItems(col.items)}
-    </div>`).join("");
-  return `<div class="fc-branch">${cols}</div>`;
-}
-
-function flowRulesTable(rules) {
-  if (!rules) return "";
-  const ths = pick(rules.head).map(h => `<th>${h}</th>`).join("");
-  const rows = rules.rows.map(r => `
-    <tr>${r.cells.map((cell, i) =>
-      `<td>${i === 0 ? `<strong>${pick(cell)}</strong>` : pick(cell)}</td>`
-    ).join("")}</tr>`).join("");
-  return `
-    <h4 class="rules-title">${pick(rules.title)}</h4>
-    <div class="table-wrap rules-table">
-      <table><thead><tr>${ths}</tr></thead><tbody>${rows}</tbody></table>
-    </div>`;
-}
-
-function renderFlows() {
-  const blocks = FLOWS.map(flow => `
-    <div class="flow-block" id="flow-${flow.id}">
-      <h3>${pick(flow.title)}</h3>
-      <p>${pick(flow.desc)}</p>
-      <div class="fc">${fcItems(flow.chart)}</div>
-      ${flowRulesTable(flow.rules)}
-      ${(flow.notes || []).map(note =>
-        `<div class="flow-note${note.warn ? " warn" : ""}">${pick(note)}</div>`
-      ).join("")}
-    </div>`).join("");
-
-  document.getElementById("section-flows").innerHTML = `
-    <p class="section-kicker">02 / ${pick(UI["nav.flows"])}</p>
-    <h2 class="section-title">${pick(UI["flows.title"])}</h2>
-    <p class="section-desc">${pick(UI["flows.desc"])}</p>
-    ${blocks}`;
-}
-
-/* ---------- known gaps ---------- */
-
-function renderIssues() {
-  const cards = ISSUES.map((issue, i) => `
-    <div class="issue-card ${issue.kind}">
-      <h4>${statusTag(issue.kind === "pending" ? "pending" : "issue")} ${i + 1}. ${pick(issue.title)}</h4>
-      <p>${pick(issue.body)}</p>
-    </div>`).join("");
-
-  document.getElementById("section-issues").innerHTML = `
-    <p class="section-kicker">03 / ${pick(UI["nav.issues"])}</p>
-    <h2 class="section-title">${pick(UI["issues.title"])}</h2>
-    <p class="section-desc">${pick(UI["issues.desc"])}</p>
-    <div class="issue-list">${cards}</div>`;
-}
-
-/* ---------- appendix tables ---------- */
-
-function tableHtml(head, rowsHtml) {
-  const ths = head.map(h => `<th>${h}</th>`).join("");
-  return `<div class="table-wrap"><table><thead><tr>${ths}</tr></thead><tbody>${rowsHtml}</tbody></table></div>`;
-}
-
-function renderTable1() {
-  const rows = TABLE1.rows.map(r => `
-    <tr>
-      <td><span class="byte-badge">${r.byte}</span></td>
-      <td><strong>${r.name}</strong></td>
-      <td>${pick({ zh: r.zh, en: r.en })}</td>
-      <td>${statusTag(r.status)}</td>
-    </tr>`).join("");
-  return tableHtml(pick(TABLE1.head), rows);
-}
-
-function renderTable2() {
-  const rows = TABLE2.rows.map(r => `
-    <tr>
-      <td><span class="byte-badge dir-in">${r.byte}</span></td>
-      <td><strong>${r.name}</strong>${r.nameEn ? ` <span style="color:var(--ink-soft);font-size:.8em;">/ ${r.nameEn}</span>` : ""}</td>
-      <td>${pick({ zh: r.zh, en: r.en })}</td>
-      <td>${statusTag(r.status)}</td>
-    </tr>`).join("");
-  return tableHtml(pick(TABLE2.head), rows);
-}
-
-function renderTable3() {
-  const rows = TABLE3.rows.map(r => `
-    <tr>
-      <td><strong>${r.name}</strong></td>
-      <td>${pick({ zh: r.zh, en: r.en })}</td>
-    </tr>`).join("");
-  return tableHtml(pick(TABLE3.head), rows);
-}
-
-function renderReused() {
-  const rows = REUSED_BYTES.rows.map(r => `
-    <tr>
-      <td><span class="byte-badge">${r.byte}</span></td>
-      <td>${r.out}</td>
-      <td>${r.in}</td>
-    </tr>`).join("");
-  return tableHtml(pick(REUSED_BYTES.head), rows);
-}
-
-function renderAppendix() {
-  document.getElementById("section-appendix").innerHTML = `
-    <p class="section-kicker">04 / ${pick(UI["nav.appendix"])}</p>
-    <details class="appendix">
-      <summary>${pick(UI["appendix.title"])}</summary>
-      <p class="table-caption">${pick(UI["appendix.intro"])}</p>
-      <h3 class="table-title">${pick(UI["table1.title"])}</h3>
-      ${renderTable1()}
-      <h3 class="table-title">${pick(UI["table2.title"])}</h3>
-      ${renderTable2()}
-      <h3 class="table-title">${pick(UI["table3.title"])}</h3>
-      ${renderTable3()}
-      <h3 class="table-title">${pick(UI["reused.title"])}</h3>
-      ${renderReused()}
-    </details>`;
-}
-
-/* ---------- nav / shell ---------- */
-
-function renderNav() {
-  const items = [];
-  items.push(`<li><a href="#section-overview">${pick(UI["nav.overview"])}</a></li>`);
-  items.push(`<li class="group-label">${pick(UI["nav.flows"])}</li>`);
-  FLOWS.forEach(flow => {
-    items.push(`<li class="sub"><a href="#flow-${flow.id}">${pick(flow.title)}</a></li>`);
-  });
-  items.push(`<li><a href="#section-issues">${pick(UI["nav.issues"])}</a></li>`);
-  items.push(`<li><a href="#section-appendix">${pick(UI["nav.appendix"])}</a></li>`);
-  document.getElementById("sidenavList").innerHTML = items.join("");
-}
-
-function applyStaticStrings() {
-  document.querySelectorAll("[data-i18n]").forEach(el => {
-    const key = el.getAttribute("data-i18n");
-    if (UI[key]) el.textContent = pick(UI[key]);
-  });
-}
-
-function renderAll() {
-  document.documentElement.lang = state.lang;
-  document.getElementById("langToggle").textContent = state.lang === "zh" ? "中文 / EN" : "EN / 中文";
-  applyStaticStrings();
-  renderLegend();
-  renderOverview();
-  renderFlows();
-  renderIssues();
-  renderAppendix();
-  renderNav();
-}
-
-function closeNav() {
-  const sidenav = document.getElementById("sidenav");
-  const navToggle = document.getElementById("navToggle");
-  sidenav.classList.remove("open");
-  document.body.classList.remove("nav-open");
-  navToggle.setAttribute("aria-expanded", "false");
-}
-
-function setupInteractions() {
-  document.getElementById("langToggle").addEventListener("click", () => {
-    state.lang = state.lang === "zh" ? "en" : "zh";
-    localStorage.setItem("kirole-lang", state.lang);
-    renderAll();
-  });
-
-  const sidenav = document.getElementById("sidenav");
-  const navToggle = document.getElementById("navToggle");
-  navToggle.addEventListener("click", () => {
-    const isOpen = sidenav.classList.toggle("open");
-    document.body.classList.toggle("nav-open", isOpen);
-    navToggle.setAttribute("aria-expanded", String(isOpen));
-  });
-  sidenav.addEventListener("click", e => {
-    if (e.target.tagName === "A") closeNav();
-  });
-  // Tap dark overlay to dismiss menu on phone
-  document.body.addEventListener("click", e => {
-    if (!document.body.classList.contains("nav-open")) return;
-    if (sidenav.contains(e.target) || navToggle.contains(e.target)) return;
-    closeNav();
-  });
-  window.addEventListener("keydown", e => {
-    if (e.key === "Escape") closeNav();
-  });
-}
-
-renderAll();
-setupInteractions();
-
-</script>
+      window.addEventListener('afterprint', () => {
+        printableDetails.forEach((detail, index) => { detail.open = printOpenState[index] ?? detail.open; });
+        scenarios.forEach((scenario, index) => { scenario.hidden = printHiddenState[index] ?? scenario.hidden; });
+        printPrepared = false;
+      });
+    })();
+  </script>
 </body>
 </html>
