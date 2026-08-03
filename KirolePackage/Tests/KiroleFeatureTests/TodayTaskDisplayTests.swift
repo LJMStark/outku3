@@ -180,4 +180,34 @@ struct TodayTaskDisplayTests {
         #expect(decoded.todayDisplayDate == selectedDate)
         #expect(decoded.dueDate == nil)
     }
+
+    @Test("Hardware library eligibility is exactly today's incomplete, non-deleting tasks")
+    func hardwareLibraryEligibilityTruthTable() {
+        // 2026-08-04 客户拍板：0x23 只收当天。谓词无默认参数——时间源必须显式注入。
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai") ?? .current
+        let day: TimeInterval = 24 * 60 * 60
+
+        let dueToday = TaskItem(id: "due", title: "Due", dueDate: now)
+        let manualToday = TaskItem(id: "manual", title: "Manual", todayDisplayDate: now)
+        let future = TaskItem(id: "future", title: "Future", dueDate: now.addingTimeInterval(day))
+        let overdue = TaskItem(id: "overdue", title: "Overdue", dueDate: now.addingTimeInterval(-day))
+        let undated = TaskItem(id: "undated", title: "Undated")
+        let completedToday = TaskItem(id: "done", title: "Done", isCompleted: true, dueDate: now)
+        let deletingToday = TaskItem(id: "deleting", title: "Deleting", dueDate: now, pendingDeletion: true)
+
+        #expect(dueToday.isEligibleForHardwareTaskLibrary(on: now, calendar: calendar))
+        #expect(manualToday.isEligibleForHardwareTaskLibrary(on: now, calendar: calendar))
+        #expect(!future.isEligibleForHardwareTaskLibrary(on: now, calendar: calendar))
+        #expect(!overdue.isEligibleForHardwareTaskLibrary(on: now, calendar: calendar))
+        #expect(!undated.isEligibleForHardwareTaskLibrary(on: now, calendar: calendar))
+        // 即使属于今天，完成/待删仍出局。
+        #expect(!completedToday.isEligibleForHardwareTaskLibrary(on: now, calendar: calendar))
+        #expect(!deletingToday.isEligibleForHardwareTaskLibrary(on: now, calendar: calendar))
+        // 跨到明天后，昨天的 due/manual 都不再合格（跨日重算的谓词基础）。
+        let tomorrow = now.addingTimeInterval(day)
+        #expect(!dueToday.isEligibleForHardwareTaskLibrary(on: tomorrow, calendar: calendar))
+        #expect(!manualToday.isEligibleForHardwareTaskLibrary(on: tomorrow, calendar: calendar))
+    }
 }

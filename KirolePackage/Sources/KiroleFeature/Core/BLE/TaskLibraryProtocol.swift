@@ -177,14 +177,20 @@ public struct TaskLibraryTransaction: Sendable, Equatable, Codable {
         self.deletedTaskIDs = deletedTaskIDs
     }
 
-    /// Builds the complete device library without a date or display-count filter. App array order
-    /// is the device queue order; completed and pending-deletion tasks are omitted.
+    /// Builds the complete device library for the given local day. App array order is the device
+    /// queue order. Only today's tasks are included (dueDate strictly today, or manually selected
+    /// for today) — future, overdue and unselected undated tasks stay off the wire (2026-08-04
+    /// product decision). There is still no display-count cap.
     public static func fullLibrary(
         from tasks: [TaskItem],
         version: TaskLibraryVersion,
+        now: Date,
+        calendar: Calendar,
         phaseTexts: (TaskItem) -> TaskLibraryPhaseTexts = { _ in .localFallback }
     ) throws -> TaskLibraryTransaction {
-        let incompleteTasks = tasks.filter { !$0.isCompleted && !$0.pendingDeletion }
+        let incompleteTasks = tasks.filter {
+            $0.isEligibleForHardwareTaskLibrary(on: now, calendar: calendar)
+        }
         var records: [TaskLibraryRecord] = []
         records.reserveCapacity(incompleteTasks.count)
         for (index, task) in incompleteTasks.enumerated() {

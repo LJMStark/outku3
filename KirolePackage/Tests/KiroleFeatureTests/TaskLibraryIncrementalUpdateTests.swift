@@ -181,7 +181,9 @@ struct TaskLibraryIncrementalUpdateTests {
         let oldTransaction = try TaskLibraryTransaction.fullLibrary(
             from: [frozen],
             version: TaskLibraryVersion(epoch: 7, revision: 1),
-            phaseTexts: { _ in phaseTexts }
+            now: start,
+                calendar: TaskLibraryFullSyncTests.makeShanghaiCalendar(),
+                phaseTexts: { _ in phaseTexts }
         )
         let baseline = TaskLibraryCommittedSnapshot(
             state: try TaskLibraryCodec.committedState(for: oldTransaction),
@@ -251,7 +253,9 @@ struct TaskLibraryIncrementalUpdateTests {
         let baseTransaction = try TaskLibraryTransaction.fullLibrary(
             from: [oldA, oldB],
             version: TaskLibraryVersion(epoch: 2, revision: 1),
-            phaseTexts: { $0.id == "a" ? oldTextsA : oldTextsB }
+            now: start,
+                calendar: TaskLibraryFullSyncTests.makeShanghaiCalendar(),
+                phaseTexts: { $0.id == "a" ? oldTextsA : oldTextsB }
         )
         let baseline = TaskLibraryCommittedSnapshot(
             state: try TaskLibraryCodec.committedState(for: baseTransaction),
@@ -318,7 +322,9 @@ struct TaskLibraryIncrementalUpdateTests {
                 TaskItem(id: "a", title: "A"),
                 TaskItem(id: "b", title: "B")
             ],
-            version: TaskLibraryVersion(epoch: 3, revision: 1)
+            version: TaskLibraryVersion(epoch: 3, revision: 1),
+            now: start,
+            calendar: TaskLibraryFullSyncTests.makeShanghaiCalendar()
         )
         let firstAck = try scenario.sendTaskLibrary(first, messageID: 0x7000, maxChunkSize: 32)
         var changedA = first.records[0]
@@ -366,7 +372,9 @@ struct TaskLibraryIncrementalUpdateTests {
         scenario.connect()
         let first = try TaskLibraryTransaction.fullLibrary(
             from: [TaskItem(id: "a", title: "A")],
-            version: TaskLibraryVersion(epoch: 4, revision: 1)
+            version: TaskLibraryVersion(epoch: 4, revision: 1),
+            now: start,
+            calendar: TaskLibraryFullSyncTests.makeShanghaiCalendar()
         )
         _ = try scenario.sendTaskLibrary(first, messageID: 0x7100, maxChunkSize: 32)
         let wrongBase = TaskLibraryCommittedState(

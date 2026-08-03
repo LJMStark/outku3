@@ -8,33 +8,49 @@ struct TaskLibraryFullSyncTests {
         case companionChanged
     }
 
-    @Test("Every incomplete task is included regardless of date while completed and deleting tasks are excluded")
-    func completeLibraryHasNoDateOrDisplayLimit() throws {
+    @Test("The device library contains only today's tasks, including manual today selections")
+    func deviceLibraryContainsOnlyTodaysTasks() throws {
+        // 2026-08-04 客户拍板：只发当天（dueDate 严格今天 ∪ 手动设为今天的无日期任务）。
+        // 未来、过期、未手动选入的无日期任务不进设备任务库；条数仍不设上限。
         let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let calendar = Self.makeShanghaiCalendar()
         let day: TimeInterval = 24 * 60 * 60
         let tasks = [
             TaskItem(id: "today", title: "Today", dueDate: now),
+            TaskItem(id: "manual-today", title: "Manual today", todayDisplayDate: now),
             TaskItem(id: "future", title: "Future", dueDate: now.addingTimeInterval(day * 90)),
             TaskItem(id: "overdue", title: "Overdue", dueDate: now.addingTimeInterval(-day * 90)),
             TaskItem(id: "undated", title: "Undated"),
-            TaskItem(id: "done", title: "Done", isCompleted: true),
-            TaskItem(id: "deleting", title: "Deleting", pendingDeletion: true)
+            TaskItem(id: "done", title: "Done", isCompleted: true, dueDate: now),
+            TaskItem(id: "deleting", title: "Deleting", dueDate: now, pendingDeletion: true)
         ]
 
         let transaction = try TaskLibraryTransaction.fullLibrary(
             from: tasks,
-            version: TaskLibraryVersion(epoch: 5, revision: 1)
+            version: TaskLibraryVersion(epoch: 5, revision: 1),
+            now: now,
+            calendar: calendar
         )
 
-        #expect(transaction.records.map(\.taskID) == ["today", "future", "overdue", "undated"])
-        #expect(transaction.records.map(\.order) == [0, 1, 2, 3])
+        #expect(transaction.records.map(\.taskID) == ["today", "manual-today"])
+        #expect(transaction.records.map(\.order) == [0, 1])
+    }
+
+    static let libraryNow = Date(timeIntervalSince1970: 1_800_000_000)
+
+    static func makeShanghaiCalendar() -> Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai") ?? .current
+        return calendar
     }
 
     @Test("An empty App library is still a complete zero-record replacement transaction")
     func zeroTaskLibraryIsDeterministic() throws {
         let transaction = try TaskLibraryTransaction.fullLibrary(
             from: [TaskItem(id: "done", title: "Done", isCompleted: true)],
-            version: TaskLibraryVersion(epoch: 5, revision: 2)
+            version: TaskLibraryVersion(epoch: 5, revision: 2),
+            now: Self.libraryNow,
+            calendar: Self.makeShanghaiCalendar()
         )
 
         let payload = try TaskLibraryCodec.encodeTransaction(transaction)
@@ -52,12 +68,15 @@ struct TaskLibraryFullSyncTests {
             TaskItem(
                 id: "task-\(index)",
                 title: "Task \(index)",
+                dueDate: Date(timeIntervalSince1970: 1_800_000_000),
                 notes: String(repeating: "detail-\(index) ", count: 8)
             )
         }
         let transaction = try TaskLibraryTransaction.fullLibrary(
             from: tasks,
-            version: TaskLibraryVersion(epoch: 6, revision: 1)
+            version: TaskLibraryVersion(epoch: 6, revision: 1),
+            now: Self.libraryNow,
+            calendar: Self.makeShanghaiCalendar()
         )
 
         _ = try scenario.sendTaskLibrary(transaction, messageID: 0x6400, maxChunkSize: 32)
@@ -74,8 +93,10 @@ struct TaskLibraryFullSyncTests {
     @Test("A changed companion snapshot rejects the task library before transport")
     func changedCompanionSnapshotRejectsSend() async throws {
         let transaction = try TaskLibraryTransaction.fullLibrary(
-            from: [TaskItem(id: "stale-persona", title: "Stale persona")],
-            version: TaskLibraryVersion(epoch: 6, revision: 2)
+            from: [TaskItem(id: "stale-persona", title: "Stale persona", dueDate: Self.libraryNow)],
+            version: TaskLibraryVersion(epoch: 6, revision: 2),
+            now: Self.libraryNow,
+            calendar: Self.makeShanghaiCalendar()
         )
 
         await #expect(throws: SnapshotValidationError.self) {
@@ -93,8 +114,10 @@ struct TaskLibraryFullSyncTests {
     @Test("A task library cannot cross from its captured destination to another device")
     func changedDestinationRejectsSend() async throws {
         let transaction = try TaskLibraryTransaction.fullLibrary(
-            from: [TaskItem(id: "device-bound", title: "Device bound")],
-            version: TaskLibraryVersion(epoch: 6, revision: 3)
+            from: [TaskItem(id: "device-bound", title: "Device bound", dueDate: Self.libraryNow)],
+            version: TaskLibraryVersion(epoch: 6, revision: 3),
+            now: Self.libraryNow,
+            calendar: Self.makeShanghaiCalendar()
         )
 
         await #expect(throws: BLEPresentationDestinationError.self) {
@@ -167,8 +190,10 @@ struct TaskLibraryFullSyncTests {
     @Test("Committed task-library state is derived from the exact wire CRC")
     func committedStateMatchesWirePayload() throws {
         let transaction = try TaskLibraryTransaction.fullLibrary(
-            from: [TaskItem(id: "wire-state", title: "Wire state")],
-            version: TaskLibraryVersion(epoch: 9, revision: 2)
+            from: [TaskItem(id: "wire-state", title: "Wire state", dueDate: Self.libraryNow)],
+            version: TaskLibraryVersion(epoch: 9, revision: 2),
+            now: Self.libraryNow,
+            calendar: Self.makeShanghaiCalendar()
         )
         let payload = try TaskLibraryCodec.encodeTransaction(transaction)
 
@@ -223,8 +248,10 @@ struct TaskLibraryFullSyncTests {
                 deep: "Deep"
             )
             let oldTransaction = try TaskLibraryTransaction.fullLibrary(
-                from: [TaskItem(id: "task", title: "Before")],
+                from: [TaskItem(id: "task", title: "Before", dueDate: Self.libraryNow)],
                 version: TaskLibraryVersion(epoch: 10, revision: 3),
+                now: Self.libraryNow,
+                calendar: Self.makeShanghaiCalendar(),
                 phaseTexts: { _ in phaseTexts }
             )
             let oldState = try TaskLibraryCodec.committedState(for: oldTransaction)
@@ -360,9 +387,11 @@ struct TaskLibraryFullSyncTests {
         try await SharedPersistenceTestLock.shared.withLock {
             let destination = "test-task-library-durable-\(UUID().uuidString)"
             let transaction = try TaskLibraryTransaction.fullLibrary(
-                from: [TaskItem(id: "durable", title: "Durable pending")],
-                version: TaskLibraryVersion(epoch: 12, revision: 8)
-            )
+                from: [TaskItem(id: "durable", title: "Durable pending", dueDate: Self.libraryNow)],
+                version: TaskLibraryVersion(epoch: 12, revision: 8),
+            now: Self.libraryNow,
+            calendar: Self.makeShanghaiCalendar()
+        )
             let state = try TaskLibraryCodec.committedState(for: transaction)
             let appState = AppState.shared
             let delivery = TaskLibraryPendingDelivery(
@@ -439,9 +468,11 @@ struct TaskLibraryFullSyncTests {
         try await SharedPersistenceTestLock.shared.withLock {
             let destination = "test-task-library-late-\(UUID().uuidString)"
             let transaction = try TaskLibraryTransaction.fullLibrary(
-                from: [TaskItem(id: "late", title: "Old source")],
-                version: TaskLibraryVersion(epoch: 12, revision: 10)
-            )
+                from: [TaskItem(id: "late", title: "Old source", dueDate: Self.libraryNow)],
+                version: TaskLibraryVersion(epoch: 12, revision: 10),
+            now: Self.libraryNow,
+            calendar: Self.makeShanghaiCalendar()
+        )
             let state = try TaskLibraryCodec.committedState(for: transaction)
             let delivery = TaskLibraryPendingDelivery(
                 transaction: transaction,
@@ -491,13 +522,17 @@ struct TaskLibraryFullSyncTests {
         try await SharedPersistenceTestLock.shared.withLock {
             let destination = "test-task-library-late-version-\(UUID().uuidString)"
             let oldTransaction = try TaskLibraryTransaction.fullLibrary(
-                from: [TaskItem(id: "old", title: "Old frozen source")],
-                version: TaskLibraryVersion(epoch: 12, revision: 11)
-            )
+                from: [TaskItem(id: "old", title: "Old frozen source", dueDate: Self.libraryNow)],
+                version: TaskLibraryVersion(epoch: 12, revision: 11),
+            now: Self.libraryNow,
+            calendar: Self.makeShanghaiCalendar()
+        )
             let newTransaction = try TaskLibraryTransaction.fullLibrary(
-                from: [TaskItem(id: "new", title: "New frozen source")],
-                version: TaskLibraryVersion(epoch: 12, revision: 12)
-            )
+                from: [TaskItem(id: "new", title: "New frozen source", dueDate: Self.libraryNow)],
+                version: TaskLibraryVersion(epoch: 12, revision: 12),
+            now: Self.libraryNow,
+            calendar: Self.makeShanghaiCalendar()
+        )
             let oldState = try TaskLibraryCodec.committedState(for: oldTransaction)
             let appState = AppState.shared
             let newDelivery = TaskLibraryPendingDelivery(
@@ -554,9 +589,11 @@ struct TaskLibraryFullSyncTests {
         try await SharedPersistenceTestLock.shared.withLock {
             let destination = "test-task-library-duplicate-\(UUID().uuidString)"
             let transaction = try TaskLibraryTransaction.fullLibrary(
-                from: [TaskItem(id: "duplicate", title: "Old frozen source")],
-                version: TaskLibraryVersion(epoch: 12, revision: 9)
-            )
+                from: [TaskItem(id: "duplicate", title: "Old frozen source", dueDate: Self.libraryNow)],
+                version: TaskLibraryVersion(epoch: 12, revision: 9),
+            now: Self.libraryNow,
+            calendar: Self.makeShanghaiCalendar()
+        )
             let state = try TaskLibraryCodec.committedState(for: transaction)
             let delivery = TaskLibraryPendingDelivery(
                 transaction: transaction,

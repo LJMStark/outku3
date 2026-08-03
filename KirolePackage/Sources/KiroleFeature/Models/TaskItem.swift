@@ -156,6 +156,16 @@ extension TaskItem {
             || isManuallySelectedForToday(on: date, calendar: calendar)
     }
 
+    /// 硬件任务库（`0x23`）准入：未完成、非待删，且属于今天显示集
+    /// （dueDate 严格今天 ∪ todayDisplayDate 今天）。2026-08-04 客户拍板：
+    /// 设备只收当天任务——未来、过期、未手动设为今天的无日期任务不上 wire。
+    ///
+    /// 刻意**不给默认参数**：所有调用方必须显式传入 `taskLibraryNowProvider` /
+    /// `dailyContentCalendarProvider` 解出的值，测试才能控制「今天」。
+    func isEligibleForHardwareTaskLibrary(on date: Date, calendar: Calendar) -> Bool {
+        !isCompleted && !pendingDeletion && isInTodayDisplay(on: date, calendar: calendar)
+    }
+
     func canShowTodayDisplayAction(
         on date: Date = Date(),
         calendar: Calendar = .current
