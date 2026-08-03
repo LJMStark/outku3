@@ -312,7 +312,9 @@ public final class BLESyncCoordinator {
                 let initial = await taskLibraryPhaseTextService.prepare(
                     tasks: tasks,
                     userProfile: userProfile,
-                    customCompanions: customCompanions
+                    customCompanions: customCompanions,
+                    now: now,
+                    calendar: calendar
                 )
                 phaseTexts.merge(initial) { _, newest in newest }
             }

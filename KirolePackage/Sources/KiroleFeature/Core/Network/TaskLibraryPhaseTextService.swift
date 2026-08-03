@@ -52,9 +52,14 @@ struct TaskLibraryPhaseTextService: Sendable {
         tasks: [TaskItem],
         userProfile: UserProfile,
         customCompanions: [CustomCompanion],
+        now: Date,
+        calendar: Calendar,
         timeout: Duration = defaultTimeout
     ) async -> [String: TaskLibraryPhaseTexts] {
-        let eligible = tasks.filter { !$0.isCompleted && !$0.pendingDeletion }
+        // 只为今天的任务烧模型配额：非今天任务不进 0x23，也就不需要三阶段文案。
+        let eligible = tasks.filter {
+            $0.isEligibleForHardwareTaskLibrary(on: now, calendar: calendar)
+        }
         guard !eligible.isEmpty else { return [:] }
 
         let customCompanion = userProfile.customCompanionId.flatMap { id in

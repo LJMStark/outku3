@@ -393,10 +393,13 @@ public final class SimulatorBridge {
 
     static func taskLibraryRecords(
         tasks: [TaskItem],
-        phaseTexts: [String: TaskLibraryPhaseTexts]
+        phaseTexts: [String: TaskLibraryPhaseTexts],
+        now: Date,
+        calendar: Calendar
     ) -> [TaskLibraryRecord] {
         tasks
-            .filter { !$0.isCompleted && !$0.pendingDeletion }
+            // 与真机 0x23 同一过滤：只投影今天的任务，模拟器与硬件显示不得分叉。
+            .filter { $0.isEligibleForHardwareTaskLibrary(on: now, calendar: calendar) }
             .enumerated()
             .compactMap { index, task in
                 guard let order = UInt32(exactly: index) else { return nil }

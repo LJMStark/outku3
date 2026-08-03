@@ -12,11 +12,13 @@ struct SimulatorBridgeIntegrationTests {
         let preparedTask = TaskItem(
             id: longID,
             title: "Prepared task",
+            dueDate: Date(),
             notes: "Prepared detail"
         )
         let fallbackTask = TaskItem(
             id: "fallback-task",
             title: "Fallback task",
+            dueDate: Date(),
             notes: "Fallback detail"
         )
         let completedTask = TaskItem(

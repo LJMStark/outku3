@@ -13,6 +13,7 @@ struct AppStateTaskEditReconciliationTests {
             let task = TaskItem(
                 id: "optimistic-edit",
                 title: "Before",
+                dueDate: Date(),
                 source: .todoist,
                 notes: "Old notes"
             )

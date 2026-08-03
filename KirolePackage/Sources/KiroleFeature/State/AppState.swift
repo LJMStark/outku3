@@ -622,6 +622,8 @@ public final class AppState {
         from oldTasks: [TaskItem],
         to newTasks: [TaskItem]
     ) {
+        let now = taskLibraryNowProvider()
+        let calendar = dailyContentCalendarProvider()
         var oldByID: [String: TaskItem] = [:]
         var newByID: [String: TaskItem] = [:]
         for task in oldTasks where oldByID[task.hardwareIdentifier] == nil {
@@ -632,16 +634,21 @@ public final class AppState {
         }
         let allIDs = Set(oldByID.keys).union(newByID.keys)
         for taskID in allIDs {
-            guard let task = newByID[taskID], !task.isCompleted, !task.pendingDeletion else {
+            guard let task = newByID[taskID],
+                  task.isEligibleForHardwareTaskLibrary(on: now, calendar: calendar) else {
                 taskLibraryPhasePreparationTasks[taskID]?.cancel()
                 taskLibraryPhasePreparationTasks.removeValue(forKey: taskID)
                 preparedTaskLibraryPhaseTexts.removeValue(forKey: taskID)
                 continue
             }
             let oldTask = oldByID[taskID]
+            // 进入今天集（手动设为今天 / 改期到今天）与新增任务同构：立即点火文案准备，
+            // 与 180 秒稳定窗并行，窗到期时大概率已就绪。
+            let enteredToday = oldTask.map {
+                !$0.isEligibleForHardwareTaskLibrary(on: now, calendar: calendar)
+            } ?? false
             guard oldTask == nil
-                    || oldTask?.isCompleted == true
-                    || oldTask?.pendingDeletion == true
+                    || enteredToday
                     || oldTask?.title != task.title
                     || oldTask?.notes != task.notes else {
                 continue
@@ -657,7 +664,9 @@ public final class AppState {
                 let prepared = await TaskLibraryPhaseTextService.shared.prepare(
                     tasks: [task],
                     userProfile: userProfile,
-                    customCompanions: customCompanions
+                    customCompanions: customCompanions,
+                    now: now,
+                    calendar: calendar
                 )
                 guard !Task.isCancelled,
                       let current = tasks.first(where: { $0.hardwareIdentifier == taskID }),

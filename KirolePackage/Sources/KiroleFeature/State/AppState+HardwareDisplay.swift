@@ -240,7 +240,9 @@ extension AppState {
         let hardwareTasks = tasksForHardwarePresentation()
         return SimulatorBridge.taskLibraryRecords(
             tasks: hardwareTasks,
-            phaseTexts: currentPreparedTaskLibraryPhaseTexts(for: hardwareTasks)
+            phaseTexts: currentPreparedTaskLibraryPhaseTexts(for: hardwareTasks),
+            now: taskLibraryNowProvider(),
+            calendar: dailyContentCalendarProvider()
         )
     }
 

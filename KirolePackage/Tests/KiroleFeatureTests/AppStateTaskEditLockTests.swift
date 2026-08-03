@@ -8,7 +8,7 @@ struct AppStateTaskEditLockTests {
     @MainActor
     func connectedFocusRejectsActiveTaskEdit() async {
         let state = AppState.makeForTesting()
-        let task = TaskItem(id: "active-task", title: "Before", source: .apple)
+        let task = TaskItem(id: "active-task", title: "Before", dueDate: Date(), source: .apple)
         state.tasks = [task]
         state.taskLibraryStabilityTask?.cancel()
         state.taskLibraryStabilityTask = nil
@@ -41,7 +41,7 @@ struct AppStateTaskEditLockTests {
         try await SharedPersistenceTestLock.shared.withLock {
             let previousTasks = try await LocalStorage.shared.loadTasks()
             let state = AppState.makeForTesting()
-            let task = TaskItem(id: "active-task", title: "Before", source: .apple)
+            let task = TaskItem(id: "active-task", title: "Before", dueDate: Date(), source: .apple)
             state.tasks = [task]
             state.taskLibraryStabilityTask?.cancel()
             state.taskLibraryStabilityTask = nil

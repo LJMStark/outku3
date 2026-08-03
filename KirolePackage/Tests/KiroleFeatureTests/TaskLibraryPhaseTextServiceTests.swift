@@ -4,9 +4,10 @@ import Testing
 
 @Suite("Task-library phase text preparation")
 struct TaskLibraryPhaseTextServiceTests {
+    private let now = Date(timeIntervalSince1970: 1_800_000_000)
     @Test("Each task gets one accepted three-phase result without a redundant retry")
     func firstAttemptSuccess() async {
-        let task = TaskItem(id: "one", title: "Write tests")
+        let task = TaskItem(id: "one", title: "Write tests", dueDate: now)
         let expected = TaskLibraryPhaseTexts(
             starting: "Open the first test case.",
             building: "Keep the useful checks moving.",
@@ -23,7 +24,9 @@ struct TaskLibraryPhaseTextServiceTests {
         let result = await service.prepare(
             tasks: [task],
             userProfile: .default,
-            customCompanions: []
+            customCompanions: [],
+            now: now,
+            calendar: TaskLibraryFullSyncTests.makeShanghaiCalendar()
         )
 
         #expect(result[task.hardwareIdentifier] == expected)
@@ -32,7 +35,7 @@ struct TaskLibraryPhaseTextServiceTests {
 
     @Test("One failed attempt is retried once and can still succeed")
     func retriesOnce() async {
-        let task = TaskItem(id: "retry", title: "Retry once")
+        let task = TaskItem(id: "retry", title: "Retry once", dueDate: now)
         let expected = TaskLibraryPhaseTexts(
             starting: "Take the first clear step.",
             building: "The middle is taking shape.",
@@ -49,7 +52,9 @@ struct TaskLibraryPhaseTextServiceTests {
         let result = await service.prepare(
             tasks: [task],
             userProfile: UserProfile(companionCharacter: .nova),
-            customCompanions: []
+            customCompanions: [],
+            now: now,
+            calendar: TaskLibraryFullSyncTests.makeShanghaiCalendar()
         )
 
         #expect(result[task.hardwareIdentifier] == expected)
@@ -58,8 +63,8 @@ struct TaskLibraryPhaseTextServiceTests {
 
     @Test("A twice-failed task falls back without blocking successful siblings")
     func isolatedFallback() async {
-        let failed = TaskItem(id: "failed", title: "Unavailable AI")
-        let successful = TaskItem(id: "successful", title: "Available AI")
+        let failed = TaskItem(id: "failed", title: "Unavailable AI", dueDate: now)
+        let successful = TaskItem(id: "successful", title: "Available AI", dueDate: now)
         let expected = TaskLibraryPhaseTexts(
             starting: "Begin with the visible edge.",
             building: "Keep the shape coming together.",
@@ -78,7 +83,9 @@ struct TaskLibraryPhaseTextServiceTests {
         let result = await service.prepare(
             tasks: [failed, successful],
             userProfile: profile,
-            customCompanions: []
+            customCompanions: [],
+            now: now,
+            calendar: TaskLibraryFullSyncTests.makeShanghaiCalendar()
         )
 
         #expect(result[failed.hardwareIdentifier] == .localFallback(for: .silas))
@@ -89,7 +96,7 @@ struct TaskLibraryPhaseTextServiceTests {
 
     @Test("The deadline freezes fallback and cancels a late AI result")
     func deadlineDiscardsLateResult() async {
-        let task = TaskItem(id: "late", title: "Slow generation")
+        let task = TaskItem(id: "late", title: "Slow generation", dueDate: now)
         let generator = ScriptedTaskPhaseGenerator(scripts: [task.id: [.suspended]])
         let deadline = ManualPhaseDeadline()
         let service = TaskLibraryPhaseTextService(
@@ -101,7 +108,9 @@ struct TaskLibraryPhaseTextServiceTests {
                 tasks: [task],
                 userProfile: UserProfile(companionCharacter: .joy),
                 customCompanions: [],
-                timeout: .seconds(180)
+                now: now,
+            calendar: TaskLibraryFullSyncTests.makeShanghaiCalendar(),
+            timeout: .seconds(180)
             )
         }
         await generator.waitUntilSuspended(taskID: task.id)
@@ -117,7 +126,7 @@ struct TaskLibraryPhaseTextServiceTests {
 
     @Test("Invalid or over-budget model output is treated as a failed attempt")
     func rejectsUnsafeOutput() async {
-        let task = TaskItem(id: "unsafe", title: "Guard output")
+        let task = TaskItem(id: "unsafe", title: "Guard output", dueDate: now)
         let overBudget = String(repeating: "long ", count: 30) + "."
         let invalid = TaskLibraryPhaseTexts(
             starting: "\u{1F680} Go!",
@@ -135,7 +144,9 @@ struct TaskLibraryPhaseTextServiceTests {
         let result = await service.prepare(
             tasks: [task],
             userProfile: UserProfile(companionCharacter: .nova),
-            customCompanions: []
+            customCompanions: [],
+            now: now,
+            calendar: TaskLibraryFullSyncTests.makeShanghaiCalendar()
         )
 
         #expect(result[task.hardwareIdentifier] == .localFallback(for: .nova))

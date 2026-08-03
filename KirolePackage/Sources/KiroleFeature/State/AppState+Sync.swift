@@ -548,8 +548,11 @@ extension AppState {
     func currentPreparedTaskLibraryPhaseTexts(
         for sourceTasks: [TaskItem]? = nil
     ) -> [String: TaskLibraryPhaseTexts] {
+        let now = taskLibraryNowProvider()
+        let calendar = dailyContentCalendarProvider()
         var result: [String: TaskLibraryPhaseTexts] = [:]
-        for task in sourceTasks ?? tasks where !task.isCompleted && !task.pendingDeletion {
+        for task in sourceTasks ?? tasks
+        where task.isEligibleForHardwareTaskLibrary(on: now, calendar: calendar) {
             let taskID = task.hardwareIdentifier
             let fingerprint = TaskLibraryPhaseSourceFingerprint.make(
                 task: task,
