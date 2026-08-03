@@ -146,6 +146,26 @@ extension BLEService {
         }
     }
 
+    /// Sends one complete task-library transaction. Firmware stages the reassembled payload and
+    /// makes it visible only after the transaction CRC and every record validate.
+    public func sendTaskLibraryTransaction(
+        _ transaction: TaskLibraryTransaction,
+        expectedTaskStateVersion: UInt64
+    ) async throws {
+        let validateTaskState: PacketWriteValidator = {
+            guard AppState.shared.taskStateVersion == expectedTaskStateVersion else {
+                throw BLEError.staleTaskSnapshot
+            }
+        }
+        try validateTaskState()
+        let payload = try TaskLibraryCodec.encodeTransaction(transaction)
+        try await writeData(
+            type: .taskLibraryTransaction,
+            data: payload,
+            validateBeforeWrite: validateTaskState
+        )
+    }
+
     /// 发送设备模式到 E-ink 设备
     public func sendDeviceMode(_ mode: DeviceMode) async throws {
         let data = BLEDataEncoder.encodeDeviceMode(mode)
@@ -453,7 +473,7 @@ extension BLEService {
     private func shouldUseChunkedPacket(type: BLEDataType, payloadSize: Int, maxWriteLength: Int) -> Bool {
         if payloadSize + 3 > maxWriteLength { return true }
         switch type {
-        case .dayPack, .taskInPage, .customAvatarFrame:
+        case .dayPack, .taskInPage, .customAvatarFrame, .taskLibraryTransaction:
             return true
         default:
             return false

@@ -47,6 +47,19 @@ public enum BLEEventHandler {
             return
         }
 
+        // 0x23 commit acknowledgement is a current-connection transaction result, not an offline
+        // event. Bind it to the exact version and CRC before higher layers advance their state.
+        if message.type == BLEDataType.taskLibraryTransaction.rawValue {
+            do {
+                service.handleTaskLibraryCommitAcknowledgement(
+                    try TaskLibraryCodec.decodeAcknowledgement(message.payload)
+                )
+            } catch {
+                ErrorReporter.log(error, context: "BLEEventHandler.taskLibraryTransaction")
+            }
+            return
+        }
+
         // Handle event log batch (0x21) separately -- keep existing batch logic
         if message.type == BLEDataType.eventLogBatch.rawValue {
             await handleEventLogBatch(message.payload, service: service)

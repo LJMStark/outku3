@@ -141,6 +141,9 @@ enum SimulationError: Error, Equatable {
     case snapshotPendingMismatch
     case snapshotTaskCountExceeded
     case snapshotVersionRejected
+    case taskLibraryPendingMismatch
+    case taskLibraryVersionRejected
+    case taskLibraryTaskNotFound
     case developmentDisplayCommandNotStandard
     case invalidSecureHandshake
     case unexpectedType(expected: UInt8, actual: UInt8)

@@ -518,6 +518,41 @@ public final class BLESyncCoordinator {
                 return
             }
 
+            // v2.11 expand phase: exercise the production App→device path with one incomplete
+            // task while the existing DayPack/TaskIn/0x1B paths remain authoritative. Issue #16
+            // replaces this single-record builder with the complete task library and its durable
+            // version policy.
+            let taskLibraryVersion = TaskLibraryVersion(
+                epoch: 1,
+                revision: UInt32(clamping: max(sourceTaskStateVersion, 1))
+            )
+            if let taskLibraryTransaction = TaskLibraryTransaction.firstIncomplete(
+                from: appState.tasks,
+                version: taskLibraryVersion
+            ) {
+                do {
+                    try await bleService.sendTaskLibraryTransaction(
+                        taskLibraryTransaction,
+                        expectedTaskStateVersion: sourceTaskStateVersion
+                    )
+                } catch {
+                    if let bleError = error as? BLEError,
+                       case .staleTaskSnapshot = bleError {
+                        queuePendingSync(force: force, trigger: trigger)
+                        return
+                    }
+                    // Expand-contract safety: an older device may not support 0x23 yet. The new
+                    // slice must not prevent the retained DayPack/TaskIn/0x1B path from completing.
+                    ErrorReporter.log(
+                        .sync(
+                            component: "BLE Task Library",
+                            underlying: error.localizedDescription
+                        ),
+                        context: "BLESyncCoordinator.performSync"
+                    )
+                }
+            }
+
             await appState.flushPendingCustomCompanionPushIfNeeded()
 
             let eventLogRequestSucceeded = await bleService.requestEventLogsIfNeeded()

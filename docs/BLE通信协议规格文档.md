@@ -1,8 +1,8 @@
 # Kirole BLE 通信协议规格文档
 
-**版本:** v2.10.2
-**更新日期:** 2026-07-31
-**状态:** v2.10.2 不改 wire 字节。App build 630 对正在进行的日程增加 DayPack 仲裁：自动触发时，只有 `PetDialogue`、`FirstUp`、日程进度统计等展示字段变化，不再下发新的 DayPack，也不会在冷却后补发；任务、日程、`SupportText`、手动同步和 Complete/Skip 最终确认仍正常下发。固件短按不允许无限等 App：BLE 未连接直接按本地状态机执行；已连接最多等待 5 秒，超时本地兜底并保留事件重试。EPD 忙时只保留最新 DayPack。
+**版本:** v2.11.0
+**更新日期:** 2026-08-03
+**状态:** v2.11.0 新增双向 `TaskLibraryTransaction(0x23)`，用独立版本、内容 CRC 和提交结果完成任务库原子替换。当前是 expand 阶段：App 编解码、发送及应答路由和 Swift 虚拟设备已实现，只贯通一条任务；完整任务库数据源、三阶段 AI 生成、持久待发和真实固件属后续实现。旧 `DayPack(0x10)`、`TaskInPage(0x11)` 和 `TaskListSnapshotAck(0x1B)` 迁移期继续保留。
 
 v2.9.0 的严格请求、OperationID 幂等和 `0x1B` 权威快照仍生效；v2.10.1 把在线 Complete/Skip 的 `0x1B` 延后到最终 DayPack 之后。App 是任务最终状态来源；GATT `.withResponse` 只代表传输确认，不能替代 `0x1B` 业务确认。
 
@@ -98,6 +98,7 @@ v2.9.0 的严格请求、OperationID 幂等和 `0x1B` 权威快照仍生效；v2
 
 | v2.10.2 | 2026-07-31 | **日程边界刷屏仲裁与短按等待边界（wire 不变）**：App build 630 在当前定时日程进行中时，对 `RequestRefresh`、`DeviceWake` 和后台自动同步区分“语义内容”和“展示字段”。仅 `PetDialogue`、`FirstUp`、结算文案或统计变化不发 DayPack、也不安排冷却后补发；任务、日程、`SupportText`、App 手动同步和 Complete/Skip 最终 DayPack 仍照常发送。App 先完成本地数据加载再处理 `EnterTaskIn`，任务页支持性文字只用缓存/本地兜底，不等 AI。固件无 BLE 立即本地执行；有 BLE 最多等 5 秒，超时本地兜底并保留事件；EPD 忙时只留最新 DayPack。§5.3/§8.3/§8.4/§8.5 |
 | v2.10.1 | 2026-07-30 | **在线任务动作单次刷屏时序（wire 不变）**：Complete/Skip 状态落盘后，App 等当前任务版本的 AI 对话，先发送最终 DayPack，再发送绑定同一任务版本的 `0x1B`。DayPack 失败时不发 `0x1B`；生成/发送期间任务版本变化时废弃旧组合并重新生成。固件在 TaskIn/pending 内收到 DayPack 只换后台缓存、不刷屏；匹配 `0x1B` 到达后一次性退出并刷新。RequestRefresh 与离线批次确认保持原规则。§5.4/§5.5/§5.16/§6.2 |
+| v2.11.0 | 2026-08-03 | **新增双向 `TaskLibraryTransaction(0x23)`（expand 阶段）**：App→Device 携带非零 Epoch/Revision、完整任务记录和 CRC-32/IEEE；设备完整重组、严格解析和校验后才原子替换已提交库，再通过 Device→App 同 type 回报版本、结果和内容 CRC。接收中断或失败不得改变旧已提交库。当前 App 只贯通一条任务和虚拟固件，旧 `0x10/0x11/0x1B` 仍保留。§4.22/§5.21/§8.4 |
 
 | 术语 | 定义 |
 |---------------|------------------------------------------------------|
@@ -164,6 +165,7 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 | `0x20` | EventLogRequest | RequestRefresh |
 | `0x21` | 暂无 App 出站业务使用 | EventLogBatch |
 | `0x22` | AvatarControl | AvatarControlResult |
+| `0x23` | TaskLibraryTransaction | TaskLibraryCommitResult |
 
 ---
 
@@ -314,6 +316,7 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 | `0x1B` | TaskListSnapshotAck | 完成、跳过或刷新请求的业务确认 + 当前 Overview 完整任务快照，详见 §4.21 |
 | `0x20` | EventLogRequest | 请求指定时间戳之后的事件日志 |
 | `0x22` | AvatarControl | 提交、精确擦除、全部擦除、查询或取消头像事务，详见 §4.19 |
+| `0x23` | TaskLibraryTransaction | 设备任务库完整版本事务；当前 expand 阶段 App 只发送一条任务，详见 §4.22 |
 | `0x7E` | SecureData | 安全业务封装（v2） |
 | `0x7F` | SecurityHandshake | 安全握手（v2） |
 
@@ -1053,6 +1056,51 @@ IsCompleted(1) | Priority(1)
 
 ---
 
+### 4.22 TaskLibraryTransaction (0x23)
+
+App→Device 发送一个可原子替换的设备任务库完整版本。`0x23` 保存任务详情和三阶段文案；`0x1B` 仍是 Complete/Skip/Refresh 的 Overview 状态确认，两者不能混用。
+
+**Payload：**
+
+```text
+SubVersion(1) | LibraryEpoch(4 BE) | LibraryRevision(4 BE) |
+RecordCount(4 BE) | Records[] | TransactionCRC32(4 BE)
+```
+
+| 字段 | 大小 | 说明 |
+|------|------|------|
+| SubVersion | 1 byte | 固定 `0x01`；未知版本整帧拒绝 |
+| LibraryEpoch | 4 bytes BE | 任务库世代，必须非零 |
+| LibraryRevision | 4 bytes BE | 同一世代内的版本，必须非零 |
+| RecordCount | 4 bytes BE | 记录数；Issue #15 的 App 贯通路径固定为 1，完整任务库由后续版本启用 |
+| Records[] | Variable | 按任务顺序连续编码的完整记录 |
+| TransactionCRC32 | 4 bytes BE | CRC-32/IEEE，覆盖从 SubVersion 到最后一条记录的所有字节 |
+
+**单条任务记录：**
+
+```text
+TaskIDLength(1) | TaskID(N1, N1<=36) | Order(4 BE) |
+TitleLength(1) | Title(N2, N2<=40) |
+DetailLength(1) | Detail(N3, N3<=100) |
+StartingLength(1) | Starting(N4, N4<=80) |
+BuildingLength(1) | Building(N5, N5<=80) |
+DeepLength(1) | Deep(N6, N6<=80)
+```
+
+TaskID 必须非空；所有文本都按 §3.5 转为可打印 ASCII 后再计算长度和截断。`Order` 是设备本地任务队列顺序。三条阶段文案分别供本地专注计时 `0–5 分钟`、`6–15 分钟`、`16 分钟及以后` 取用；本票只存入三条内容，阶段切换由后续票完成。
+
+**设备提交规则：**
+
+1. App 始终用 §3.2 的通用分包帧发送 `0x23`；固件必须先完整重组。
+2. 收到首个合法分片后可建立 pending 区，但已提交任务库继续对页面和本地按键可见。
+3. 只有完整帧、版本、所有长度前缀、RecordCount、文本上限、解析终点和 CRC 全部合法时，才能一次性原子替换 committed 区。
+4. 中断、校验失败或内部错误都不得部分改写已提交库。完成后按 §5.21 实时回复 `TaskLibraryCommitResult(0x23)`。
+5. 本版本仍保留 `0x10/0x11/0x1B` 生产路径，不得在真实固件和完整任务库尚未完成时提前删除。
+
+> **确认边界：** GATT `.withResponse` 只说明某个分片写入成功。只有版本和 TransactionCRC32 都与本次发送一致，且 Result=`committed` 的 `0x23` 应答，才说明新任务库已对设备本地页面可见。
+
+---
+
 ## 5. Device → App 事件
 
 事件通过 Notify characteristic 从设备发送至 App。
@@ -1090,6 +1138,7 @@ IsCompleted(1) | Priority(1)
 | `0x20` | RequestRefresh      | 设备请求数据刷新 |
 | `0x21` | EventLogBatch       | 批量回传事件日志 |
 | `0x22` | AvatarControlResult | 头像暂存、提交、擦除、查询或取消的实时结果，详见 §5.19 |
+| `0x23` | TaskLibraryCommitResult | 任务库事务提交结果，详见 §5.21 |
 | `0x30` | DeviceWake          | 设备上线通知：BLE Notify 建立后固件主动上报（非 App 触发 MCU 唤醒） |
 | `0x31` | DeviceSleep         | 设备进入睡眠模式 |
 | `0x40` | LowBattery          | 设备电量低通知 |
@@ -1523,6 +1572,30 @@ Gateway(4) | Port(2 BE) | PathLen(1) | Path(N3) | TokenLen(1) | Token(N4) | TTL(
 
 ---
 
+### 5.21 TaskLibraryCommitResult (0x23)
+
+Device→App 实时回复 `TaskLibraryTransaction(0x23)` 的提交结果。Payload 固定 14 字节：
+
+```text
+SubVersion(1) | LibraryEpoch(4 BE) | LibraryRevision(4 BE) |
+Result(1) | ContentCRC32(4 BE)
+```
+
+| Result | 名称 | 说明 |
+|--------|------|------|
+| `0x00` | committed | 完整版本已原子替换并对本地页面可见 |
+| `0x01` | invalidPayload | 帧形状、字段长度、计数或解析终点非法 |
+| `0x02` | checksumMismatch | TransactionCRC32 不匹配 |
+| `0x03` | capacityExceeded | 设备无法完整容纳本版本，旧库不变 |
+| `0x04` | unsupportedVersion | SubVersion 或任务库版本不受支持 |
+| `0xFF` | internalError | 设备内部错误，旧库不变 |
+
+`ContentCRC32` 回显该事务声明的 TransactionCRC32。App 只把 SubVersion、Epoch、Revision、ContentCRC32 全部匹配且 Result=`committed` 的应答当作成功；过期或不属于当前事务的应答不能改变待发状态。
+
+**实时事件约束：** 本结果只走当前 Notify，不写入 `EventLogBatch(0x21)`。secure 模式按普通短 payload 放入 `SecureEnvelope(0x7E)`。
+
+---
+
 ## 6. 页面数据结构
 
 > **v2.5.0 重写**：设备 UI 是「常驻框架 + 可换数据面板」，不再是「4 页各说一句」。旧 §6.1–6.4（每页一句宠物文案）已废弃，论证见 §6.5。（编号 §6.4 自 v2.6.0 起由「每日总结面板」复用，与旧废弃内容无关。）
@@ -1879,11 +1952,12 @@ Event: 0x16 (ReminderAcknowledged)
 | TaskListSnapshotAck(0x1B) App 侧短重试 | 总计 2 次 attempt | 首次失败后等待 250ms，再逐字节重发同一 payload |
 | CustomAvatarFrame(0x15) | 用户触发整张重发 | 断线或校验失败后从 Seq=0 重发；不做断点续传，不随普通 sync 无限后台重试 |
 | AvatarControl(0x22) | 幂等重发/查询 | 结果超时或 App 重启后先 query；同 OperationID 不重复执行破坏操作 |
+| TaskLibraryTransaction(0x23) | 当前票不自动重试 | 失败或断连不改变设备已提交版本；后续票增加从 Seq=0 整体重试一次和持久待发 |
 | CompleteTask / SkipTask | 直到收到匹配 `0x1B` | 超时后**原样重发**相同 Action / OperationID / TaskId / Timestamp；不得生成新 ID、不得改变 payload |
 | RequestRefresh | 直到收到匹配 `0x1B` | 超时后原样重发相同 v1 RequestID；不得写入离线 EventLogBatch |
 | EnterTaskIn / TaskInPage | 设备无 BLE 为 0 秒；有 BLE 最多等待 5 秒 | 超时立即本地兜底或回 Interactive/Overview，保留事件；重连后按本地策略有限重试，不能永久等待 |
 
-> GATT `.withResponse` 只证明分片被特征值写入，不代表业务完成。头像事务以 `0x22` 为准；任务完成/跳过/刷新以匹配且版本更新的 `0x1B` 为准。设备等待 `0x1B` 时可显示 pending，但不能永久提交本地删除。同一 revision 的 App 侧短重试使用完全相同的 `0x1B` 字节；固件侧请求重试则继续复用原 Action/OperationID/payload。
+> GATT `.withResponse` 只证明分片被特征值写入，不代表业务完成。头像事务以 `0x22` 为准；任务完成/跳过/刷新以匹配且版本更新的 `0x1B` 为准；任务库替换以版本、CRC 和结果全部匹配的 `0x23` 应答为准。设备等待 `0x1B` 时可显示 pending，但不能永久提交本地删除。同一 revision 的 App 侧短重试使用完全相同的 `0x1B` 字节；固件侧请求重试则继续复用原 Action/OperationID/payload。
 
 > 当前协议没有“设备已持久应用 0x1B”的反向确认。App 因此不得按数量或时间静默淘汰已 committed 的 OperationID 账本项；只有未来增加明确的设备 apply ACK 后，才能按该 ACK 安全回收。否则长时间离线后重放旧 ID 可能被误当成新动作。
 
@@ -2120,6 +2194,7 @@ public enum BLEDataType: UInt8, Sendable {
     case eventLogRequest = 0x20
     case avatarControl = 0x22      // 双向：提交/擦除/查询/取消及结果
     case eventLogBatch = 0x21
+    case taskLibraryTransaction = 0x23 // 双向：任务库完整版本事务 + 提交结果，见 §4.22/§5.21
     case secureData = 0x7E
     case securityHandshake = 0x7F
 }

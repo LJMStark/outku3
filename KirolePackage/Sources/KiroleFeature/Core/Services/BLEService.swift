@@ -53,6 +53,12 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
     /// 0x22 设备结果回调。AppState 按 operationID 过滤迟到结果并推进持久化操作状态。
     @ObservationIgnored
     public var onAvatarControlResult: (@MainActor @Sendable (AvatarControlResult) -> Void)?
+    /// 0x23 task-library commit result. The acknowledgement identifies the exact version and CRC
+    /// the device made visible; later tickets persist and schedule those versions.
+    @ObservationIgnored
+    public var onTaskLibraryCommitAcknowledgement: (
+        @MainActor @Sendable (TaskLibraryCommitAcknowledgement) -> Void
+    )?
 
     // MARK: - Internal Transport State
 
@@ -610,6 +616,12 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
 
     func handleAvatarControlResult(_ result: AvatarControlResult) {
         onAvatarControlResult?(result)
+    }
+
+    func handleTaskLibraryCommitAcknowledgement(
+        _ acknowledgement: TaskLibraryCommitAcknowledgement
+    ) {
+        onTaskLibraryCommitAcknowledgement?(acknowledgement)
     }
 
     func decodeReceivedMessage(_ receivedData: Data) throws -> BLEReceivedMessage? {

@@ -25,6 +25,7 @@ import Foundation
 //   0x20 eventLogRequest 请求增量 Event Log
 //   0x21 eventLogBatch   批量回传 Event Log（Device→App，此 type 仅出现在入站方向）
 //   0x22 avatarControl   自定义头像提交、擦除、查询、取消与设备结果
+//   0x23 taskLibraryTransaction 设备任务库事务与提交确认（双向）
 //   0x7E secureData      安全封装（v2 SecureEnvelope）
 //   0x7F securityHandshake 安全握手（v2）
 //
@@ -91,6 +92,8 @@ public enum BLEDataType: UInt8, Sendable {
     case eventLogBatch = 0x21
     /// 双向实时帧：App 发 commit/erase/query/abort，设备回 staged/committed/erased/state/aborted。
     case avatarControl = 0x22
+    /// 双向事务帧：App 发送完整设备任务库版本；设备只在完整校验后原子提交并回确认。
+    case taskLibraryTransaction = 0x23
     case secureData = 0x7E
     case securityHandshake = 0x7F
 }

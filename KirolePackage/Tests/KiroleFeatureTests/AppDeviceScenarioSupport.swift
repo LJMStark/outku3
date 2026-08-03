@@ -29,6 +29,9 @@ struct AppDeviceScenarioSnapshot {
     let committedVersion: TaskListSnapshotVersion?
     let pendingVersion: TaskListSnapshotVersion?
     let taskQueue: [String]
+    let taskLibraryCommittedVersion: TaskLibraryVersion?
+    let taskLibraryPendingVersion: TaskLibraryVersion?
+    let taskLibraryRecords: [TaskLibraryRecord]
     let focus: FocusProgressSnapshot?
     let currentPage: ScenarioDevicePage
     let deviceFocus: ScenarioDeviceFocus?
@@ -64,6 +67,7 @@ final class AppDeviceScenario {
     private var hardware = SimulatedHardware()
     private var appInboundAssembler = BLEPacketAssembler()
     private var taskSnapshotFirmware = SimulatedTaskListSnapshotFirmware()
+    private var taskLibraryFirmware = SimulatedTaskLibraryFirmware()
     private var outboundTransactions: [ScenarioOutboundTransaction] = []
     private var failedChunkIndexes: [Int] = []
     private var taskSnapshotMaxWriteLength = 185
@@ -168,6 +172,7 @@ final class AppDeviceScenario {
         hardware = SimulatedHardware()
         appInboundAssembler = BLEPacketAssembler()
         taskSnapshotFirmware.simulatePowerCycle()
+        taskLibraryFirmware.simulatePowerCycle()
         failedChunkIndexes.removeAll()
     }
 
@@ -409,6 +414,47 @@ final class AppDeviceScenario {
         )
     }
 
+    @discardableResult
+    func sendTaskLibrary(
+        _ transaction: TaskLibraryTransaction,
+        messageID: UInt16,
+        maxChunkSize: Int
+    ) throws -> TaskLibraryCommitAcknowledgement {
+        guard connectionState == .connected else {
+            throw AppDeviceScenarioError.disconnected
+        }
+        let payload = try TaskLibraryCodec.encodeTransaction(transaction)
+        let packets = try BLEPacketizer.packetize(
+            type: BLEDataType.taskLibraryTransaction.rawValue,
+            messageId: messageID,
+            payload: payload,
+            maxChunkSize: maxChunkSize
+        )
+        let received = try transmit(
+            type: BLEDataType.taskLibraryTransaction.rawValue,
+            messageID: messageID,
+            packets: packets,
+            onPacketWritten: { [weak self] index in
+                guard index == 0 else { return }
+                try self?.taskLibraryFirmware.begin(version: transaction.version)
+            }
+        )
+        guard let received,
+              received.type == BLEDataType.taskLibraryTransaction.rawValue else {
+            throw SimulationError.incompleteChunkedMessage
+        }
+        let acknowledgement = try taskLibraryFirmware.apply(payload: received.payload)
+        return try TaskLibraryCodec.decodeAcknowledgement(
+            TaskLibraryCodec.encodeAcknowledgement(acknowledgement)
+        )
+    }
+
+    func enterTaskFromCommittedLibrary(taskID: String) throws -> TaskLibraryRecord {
+        let record = try taskLibraryFirmware.record(taskID: taskID)
+        currentPage = .focus(taskID: taskID)
+        return record
+    }
+
     func snapshot() async -> AppDeviceScenarioSnapshot {
         let operationEntries = await operationPersistence.entries()
         let focusHistory = await focusPersistence.sessions()
@@ -421,6 +467,9 @@ final class AppDeviceScenario {
             committedVersion: taskSnapshotFirmware.version,
             pendingVersion: taskSnapshotFirmware.pendingVersion,
             taskQueue: taskSnapshotFirmware.tasks.map(\.id),
+            taskLibraryCommittedVersion: taskLibraryFirmware.committedVersion,
+            taskLibraryPendingVersion: taskLibraryFirmware.pendingVersion,
+            taskLibraryRecords: taskLibraryFirmware.committedRecords,
             focus: focusService.activeSession == nil
                 ? nil
                 : focusService.progressSnapshot(now: currentDate),
