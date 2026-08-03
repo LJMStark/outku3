@@ -9,7 +9,8 @@ enum BLETaskOperationProcessor {
 
     private struct AuthoritySnapshot {
         let taskID: String?
-        let taskMutationGeneration: UInt64?
+        /// Status-only generation so title/notes/date edits do not supersede Complete/Skip.
+        let taskStatusMutationGeneration: UInt64?
         let focusStartGeneration: UInt64?
 
         @MainActor
@@ -18,8 +19,8 @@ enum BLETaskOperationProcessor {
             focusService: FocusSessionService
         ) -> Bool {
             guard let taskID else { return false }
-            if let taskMutationGeneration,
-               appState.taskMutationGeneration(for: taskID) != taskMutationGeneration {
+            if let taskStatusMutationGeneration,
+               appState.taskStatusMutationGeneration(for: taskID) != taskStatusMutationGeneration {
                 return true
             }
             if let focusStartGeneration,
@@ -88,7 +89,10 @@ enum BLETaskOperationProcessor {
             tasks: appState.tasks
         ) ?? plannedReceipt
         let wireTaskID = log.taskId ?? ""
+        // Prefer the live task row; when App deleted the focused task, fall back to the active
+        // focus session so Complete/Skip can still settle without resurrecting the row.
         let domainTaskID = BLEEventHandler.resolveTask(taskId: wireTaskID, in: appState.tasks)?.id
+            ?? domainTaskIDMatchingActiveFocus(wireTaskID: wireTaskID, focusService: focusService)
             ?? wireTaskID
         let reservation = await operationLedger.reserve(
             event: log,
@@ -161,19 +165,39 @@ enum BLETaskOperationProcessor {
         appState: AppState,
         focusService: FocusSessionService
     ) -> AuthoritySnapshot {
-        guard let wireTaskID = log.taskId,
-              let task = BLEEventHandler.resolveTask(taskId: wireTaskID, in: appState.tasks) else {
+        guard let wireTaskID = log.taskId else {
             return AuthoritySnapshot(
                 taskID: nil,
-                taskMutationGeneration: nil,
+                taskStatusMutationGeneration: nil,
+                focusStartGeneration: nil
+            )
+        }
+        let domainTaskID = BLEEventHandler.resolveTask(taskId: wireTaskID, in: appState.tasks)?.id
+            ?? domainTaskIDMatchingActiveFocus(wireTaskID: wireTaskID, focusService: focusService)
+        guard let domainTaskID else {
+            return AuthoritySnapshot(
+                taskID: nil,
+                taskStatusMutationGeneration: nil,
                 focusStartGeneration: nil
             )
         }
         return AuthoritySnapshot(
-            taskID: task.id,
-            taskMutationGeneration: appState.taskMutationGeneration(for: task.id),
-            focusStartGeneration: focusService.sessionStartGeneration(for: task.id)
+            taskID: domainTaskID,
+            taskStatusMutationGeneration: appState.taskStatusMutationGeneration(for: domainTaskID),
+            focusStartGeneration: focusService.sessionStartGeneration(for: domainTaskID)
         )
+    }
+
+    /// When the task row is gone (App deletion), map the wire ID back through the active focus
+    /// session so settlement still targets the in-flight focus identity.
+    private static func domainTaskIDMatchingActiveFocus(
+        wireTaskID: String,
+        focusService: FocusSessionService
+    ) -> String? {
+        guard let active = focusService.activeSession else { return nil }
+        if active.taskId == wireTaskID { return active.taskId }
+        let hardwareID = TaskItem(id: active.taskId, title: active.taskTitle).hardwareIdentifier
+        return hardwareID == wireTaskID ? active.taskId : nil
     }
 
     private static func applyDurably(
@@ -189,6 +213,8 @@ enum BLETaskOperationProcessor {
             return .invalidRequest
         }
 
+        // Settle focus even when the task row was deleted (taskNotFound). Energy/time must still
+        // commit; only the task-library mutation is skipped.
         if entry.result != .invalidRequest {
             switch await focusService.settleHardwareTaskOperation(
                 entry,
@@ -203,6 +229,10 @@ enum BLETaskOperationProcessor {
             }
         }
 
+        if entry.result == .taskNotFound {
+            return .taskNotFound
+        }
+
         guard entry.result == .applied || entry.result == .alreadyApplied,
               let hardwareTaskID = log.taskId else {
             return entry.result
@@ -210,7 +240,7 @@ enum BLETaskOperationProcessor {
         guard let task = BLEEventHandler.resolveTask(
             taskId: hardwareTaskID,
             in: appState.tasks
-        ) else {
+        ), !task.pendingDeletion else {
             return .taskNotFound
         }
 
@@ -281,6 +311,8 @@ enum BLETaskOperationProcessor {
 
 private extension TaskListSnapshotResultCode {
     var canBeSupersededByApp: Bool {
-        self == .applied || self == .alreadyApplied || self == .taskNotFound
+        // taskNotFound is a terminal merge outcome (deletion wins / row gone). It must still run
+        // focus settlement and must not be rewritten to supersededByApp by content/status races.
+        self == .applied || self == .alreadyApplied
     }
 }

@@ -96,7 +96,8 @@ struct TaskOperationRecoveryTests {
             title: "Keep the undo",
             isCompleted: false,
             dueDate: Date(),
-            lastModified: reservedAt.addingTimeInterval(10)
+            lastModified: reservedAt.addingTimeInterval(10),
+            statusAuthorityAt: reservedAt.addingTimeInterval(10)
         )
         appState.tasks = [task]
 
@@ -136,14 +137,14 @@ struct TaskOperationRecoveryTests {
         #expect(appState.tasks.first(where: { $0.id == task.id })?.isCompleted == false)
     }
 
-    @Test("A first-seen delayed completion never overwrites a later App undo")
+    @Test("A first-seen delayed completion wins over concurrent content edits (issue #25)")
     @MainActor
-    func delayedFirstSeenCompletionRespectsAppUndo() async {
+    func delayedFirstSeenCompletionWinsOverContentEdit() async {
         let appState = AppState.makeForTesting()
         let deviceTime = Date().addingTimeInterval(-60)
         let task = TaskItem(
             id: "delayed-complete-\(UUID().uuidString)",
-            title: "Keep App undo",
+            title: "Edited while offline",
             isCompleted: false,
             dueDate: Date(),
             lastModified: deviceTime.addingTimeInterval(30)
@@ -168,8 +169,9 @@ struct TaskOperationRecoveryTests {
             appState: appState
         )
 
-        #expect(processing.taskOperationReceipts.map(\.result) == [.supersededByApp])
-        #expect(appState.tasks.first?.isCompleted == false)
+        #expect(processing.taskOperationReceipts.map(\.result) == [.applied])
+        #expect(appState.tasks.first?.isCompleted == true)
+        #expect(appState.tasks.first?.title == "Edited while offline")
     }
 
     @Test("A first-seen delayed Skip never ends a newer session for the same task")
@@ -613,9 +615,9 @@ struct TaskOperationRecoveryTests {
         #expect(await persistence.latestTasks().first?.isCompleted == false)
     }
 
-    @Test("An App content edit during the task write supersedes the hardware completion")
+    @Test("An App content edit during the task write keeps Complete and the latest title (issue #25)")
     @MainActor
-    func appEditDuringTaskWriteWins() async {
+    func appEditDuringTaskWriteKeepsCompleteAndContent() async {
         let appState = AppState.makeForTesting()
         let persistence = RecoveryBlockingTaskStatePersistence()
         let eventTime = Date()
@@ -647,9 +649,10 @@ struct TaskOperationRecoveryTests {
         appState.tasks = [edited]
         await persistence.releaseFirstTaskWrite()
 
-        #expect(await operation.value == .supersededByApp)
+        #expect(await operation.value == .applied)
+        #expect(appState.tasks.first?.isCompleted == true)
         #expect(appState.tasks.first?.title == "App-edited title")
-        #expect(await persistence.latestTasks().first?.title == "App-edited title")
+        #expect(appState.tasks.first?.hardwareCompletionOperationKey == "test-device|17|708")
     }
 
     @Test("An App undo during WAL persistence supersedes an initially already-completed result")
@@ -703,17 +706,18 @@ struct TaskOperationRecoveryTests {
         #expect(appState.tasks.first(where: { $0.id == task.id })?.isCompleted == false)
     }
 
-    @Test("An App task edit during the committed WAL write is cached as superseded")
+    @Test("An App content edit during the committed WAL write keeps Skip applied (issue #25)")
     @MainActor
-    func appEditDuringCommitWinsAndIsCached() async {
+    func appContentEditDuringCommitKeepsSkipApplied() async {
         let appState = AppState.makeForTesting()
-        let task = TaskItem(
+        let first = TaskItem(
             id: "edit-during-commit-\(UUID().uuidString)",
             title: "Original",
             dueDate: Date(),
             lastModified: Date().addingTimeInterval(-60)
         )
-        appState.tasks = [task]
+        let second = TaskItem(id: "edit-during-commit-b", title: "Second", dueDate: Date())
+        appState.tasks = [first, second]
         let persistence = RecoverySecondSaveBlockingLedgerPersistence()
         let ledger = TaskOperationLedger(
             persistenceEnabled: true,
@@ -722,7 +726,7 @@ struct TaskOperationRecoveryTests {
         )
         let operation = EventLog(
             eventType: .skipTask,
-            taskId: task.id,
+            taskId: first.id,
             operationID: 709,
             timestamp: Date(),
             hasDeviceTimestamp: true
@@ -740,12 +744,16 @@ struct TaskOperationRecoveryTests {
             )
         }
         await persistence.waitForSecondSaveToStart()
-        appState.tasks[0].title = "App wins"
-        appState.tasks[0].lastModified = Date()
+        if let index = appState.tasks.firstIndex(where: { $0.id == first.id }) {
+            appState.tasks[index].title = "App content"
+            appState.tasks[index].lastModified = Date()
+        }
         await persistence.releaseSecondSave()
 
-        #expect(await processing.value.taskOperationReceipts.map(\.result) == [.supersededByApp])
-        #expect(await ledger.decision(for: operation, deviceID: "test-device") == .duplicate(.supersededByApp))
+        #expect(await processing.value.taskOperationReceipts.map(\.result) == [.applied])
+        #expect(await ledger.decision(for: operation, deviceID: "test-device") == .duplicate(.applied))
+        #expect(appState.tasks.map(\.id) == [second.id, first.id])
+        #expect(appState.tasks.last?.title == "App content")
     }
 
     @Test("A newer same-task focus start during the committed WAL write is cached as superseded")

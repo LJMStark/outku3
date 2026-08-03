@@ -78,6 +78,7 @@ extension AppState {
         // delayed retry of the old hardware operation from claiming this state as its own.
         updatedTask.hardwareCompletionOperationKey = nil
         updatedTask.lastModified = Date()
+        updatedTask.statusAuthorityAt = updatedTask.lastModified
         let syncSupport = taskSyncSupport(for: updatedTask, action: .updateCompletion)
         updatedTask.syncStatus = syncSupport == .remote ? .pending : .error
         updatedTask.pendingDeletion = false
@@ -142,7 +143,8 @@ extension AppState {
         source: TaskToggleSource,
         persistence: any HardwareTaskStatePersisting = LocalHardwareTaskStatePersistence()
     ) async -> HardwareTaskCompletionPersistenceResult {
-        guard let initialTask = tasks.first(where: { $0.id == taskID }) else {
+        guard let initialTask = tasks.first(where: { $0.id == taskID }),
+              !initialTask.pendingDeletion else {
             return .taskNotFound
         }
 
@@ -170,16 +172,16 @@ extension AppState {
         }
 
         var didApplyDomainState = false
-        var expectedLastModified = initialTask.lastModified
         if !initialTask.isCompleted {
             var completedTask = initialTask
             completedTask.isCompleted = true
             completedTask.hardwareCompletionOperationKey = operationKey
             completedTask.lastModified = mutationDate
-            expectedLastModified = completedTask.lastModified
+            completedTask.statusAuthorityAt = mutationDate
             let syncSupport = taskSyncSupport(for: completedTask, action: .updateCompletion)
             completedTask.syncStatus = syncSupport == .remote ? .pending : .error
-            completedTask.pendingDeletion = false
+            // Never clear pendingDeletion here; deleted tasks are rejected above so Complete
+            // cannot resurrect an App/external deletion (issue #25 / ADR 0025).
             immediateTaskLibraryRemovalMutations.insert(completedTask.hardwareIdentifier)
             performHardwareTaskMutation {
                 tasks = taskManager.withTask(tasks, updatedTask: completedTask)
@@ -202,16 +204,14 @@ extension AppState {
             try await persistence.saveTasks(tasks)
             guard hardwareCompletionStillOwnsTask(
                 taskID: taskID,
-                operationKey: operationKey,
-                expectedLastModified: expectedLastModified
+                operationKey: operationKey
             ) else {
                 return await repairSupersededHardwareCompletion(using: persistence)
             }
             try await persistence.savePet(pet)
             guard hardwareCompletionStillOwnsTask(
                 taskID: taskID,
-                operationKey: operationKey,
-                expectedLastModified: expectedLastModified
+                operationKey: operationKey
             ) else {
                 return await repairSupersededHardwareCompletion(using: persistence)
             }
@@ -264,7 +264,11 @@ extension AppState {
         }
 
         let initialTask = tasks[initialIndex]
-        let expectedLastModified = initialTask.lastModified
+        // Deletion and completion both remove the task from the active queue; Skip must not
+        // re-insert them at the tail.
+        guard !initialTask.pendingDeletion, !initialTask.isCompleted else {
+            return .taskNotFound
+        }
         if initialTask.hardwareSkipOperationKey != operationKey {
             var skippedTask = initialTask
             skippedTask.hardwareSkipOperationKey = operationKey
@@ -283,9 +287,19 @@ extension AppState {
             try await persistence.saveTasks(tasks)
             guard let current = tasks.first(where: { $0.id == taskID }),
                   current.hardwareSkipOperationKey == operationKey,
-                  current.lastModified == expectedLastModified else {
+                  !current.pendingDeletion,
+                  !current.isCompleted else {
                 try await persistence.saveTasks(tasks)
-                return .supersededByApp
+                // Content edits may change lastModified while this write is in flight; only a
+                // status change (delete/complete) or loss of the skip marker supersedes.
+                if let current = tasks.first(where: { $0.id == taskID }),
+                   current.pendingDeletion || current.isCompleted
+                    || current.hardwareSkipOperationKey != operationKey {
+                    return current.pendingDeletion || current.isCompleted
+                        ? .taskNotFound
+                        : .supersededByApp
+                }
+                return .taskNotFound
             }
         } catch {
             reportPersistenceError(error, operation: "save", target: "tasks.json")
@@ -305,26 +319,37 @@ extension AppState {
     ) -> Bool {
         guard task.hardwareCompletionOperationKey != operationKey else { return false }
         let eventTime = Date(timeIntervalSince1970: TimeInterval(deviceTimestamp))
-        let orderingTolerance: TimeInterval = 2
         let futureTolerance: TimeInterval = 5 * 60
-        if task.lastModified > reservedAt { return true }
-        guard isReplay else { return false }
-        guard eventTime <= reservedAt.addingTimeInterval(futureTolerance) else { return true }
-        // Live CompleteTask is authoritative when the App receives it. Firmware RTC may still
-        // lag before Time(0x05) takes effect, so only offline replay may use the device timestamp
-        // to decide that a later App edit or undo won.
-        return task.lastModified > eventTime.addingTimeInterval(orderingTolerance)
+        // Implausible future device clock on offline replay is never authoritative.
+        if isReplay, eventTime > reservedAt.addingTimeInterval(futureTolerance) {
+            return true
+        }
+        // Pending/resume: App status authority after reservation wins (e.g. undo after crash
+        // pending). Pure content lastModified does not set statusAuthorityAt, so it still
+        // cannot block Complete (ADR 0021 / #25).
+        if let statusAuthorityAt = task.statusAuthorityAt, statusAuthorityAt > reservedAt {
+            return true
+        }
+        // First-seen offline replay: App status authority after the device event (+2s skew)
+        // supersedes Complete when it landed before reservation.
+        if isReplay,
+           let statusAuthorityAt = task.statusAuthorityAt,
+           statusAuthorityAt > eventTime.addingTimeInterval(2) {
+            return true
+        }
+        return false
     }
 
     private func hardwareCompletionStillOwnsTask(
         taskID: String,
-        operationKey: String,
-        expectedLastModified: Date
+        operationKey: String
     ) -> Bool {
         guard let current = tasks.first(where: { $0.id == taskID }) else { return false }
+        // Content edits may rewrite lastModified while the completion write is in flight; as long
+        // as this operation still owns completion, keep applied and preserve latest content.
         return current.isCompleted
+            && !current.pendingDeletion
             && current.hardwareCompletionOperationKey == operationKey
-            && current.lastModified == expectedLastModified
     }
 
     private func repairSupersededHardwareCompletion(
@@ -562,9 +587,14 @@ extension AppState {
         }
 
         var deletingTask = existingTask
+        let isFirstPendingDeletion = !existingTask.pendingDeletion
         deletingTask.pendingDeletion = true
         deletingTask.syncStatus = .pending
         deletingTask.lastModified = Date()
+        // First remote soft-delete owns status; retries already pending keep authority time.
+        if isFirstPendingDeletion {
+            deletingTask.statusAuthorityAt = deletingTask.lastModified
+        }
         let deletionVersion = deletingTask.lastModified
 
         tasks = taskManager.withTask(tasks, updatedTask: deletingTask)

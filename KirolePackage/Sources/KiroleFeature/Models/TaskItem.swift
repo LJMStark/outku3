@@ -37,6 +37,9 @@ public struct TaskItem: Identifiable, Sendable, Codable {
     /// Identifies the last durable hardware skip that moved this task to the queue tail.
     /// A pending ledger retry uses it to persist the same order without moving the task again.
     public var hardwareSkipOperationKey: String?
+    /// Wall-clock time of the last App/hardware decision that owns `isCompleted` / `pendingDeletion`.
+    /// Optional so older Codable snapshots decode with `nil` and remain compatible.
+    public var statusAuthorityAt: Date?
 
     public init(
         id: String = UUID().uuidString,
@@ -63,7 +66,8 @@ public struct TaskItem: Identifiable, Sendable, Codable {
         notes: String? = nil,
         todayDisplayDate: Date? = nil,
         hardwareCompletionOperationKey: String? = nil,
-        hardwareSkipOperationKey: String? = nil
+        hardwareSkipOperationKey: String? = nil,
+        statusAuthorityAt: Date? = nil
     ) {
         self.id = id
         self.localId = localId
@@ -90,6 +94,7 @@ public struct TaskItem: Identifiable, Sendable, Codable {
         self.todayDisplayDate = todayDisplayDate
         self.hardwareCompletionOperationKey = hardwareCompletionOperationKey
         self.hardwareSkipOperationKey = hardwareSkipOperationKey
+        self.statusAuthorityAt = statusAuthorityAt
     }
 
     // 从 Google API 响应创建

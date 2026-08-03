@@ -669,7 +669,8 @@ public enum BLEEventHandler {
         guard let taskID = log.taskId, !taskID.isEmpty else {
             return TaskOperationReceipt(action: action, operationID: operationID, result: .invalidRequest)
         }
-        guard let task = resolveTask(taskId: taskID, in: tasks) else {
+        guard let task = resolveTask(taskId: taskID, in: tasks), !task.pendingDeletion else {
+            // Deletion wins over offline Complete/Skip: settle focus if needed, never resurrect.
             return TaskOperationReceipt(action: action, operationID: operationID, result: .taskNotFound)
         }
         let result: TaskListSnapshotResultCode = action == .completeTask && task.isCompleted

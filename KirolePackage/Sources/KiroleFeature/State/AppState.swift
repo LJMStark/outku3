@@ -78,6 +78,9 @@ public final class AppState {
     /// excluded explicitly, so a BLE transaction can tell whether an App edit/undo/delete landed
     /// while one of its persistence awaits was suspended.
     @ObservationIgnored private var taskMutationGenerations: [String: UInt64] = [:]
+    /// Status-only authority clock (`isCompleted` / `pendingDeletion`). Content edits bump
+    /// `taskMutationGenerations` but must not supersede offline Complete/Skip (issue #25).
+    @ObservationIgnored private var taskStatusMutationGenerations: [String: UInt64] = [:]
     /// Monotonic version of the complete task state. Unlike the per-task authority clocks above,
     /// this also advances for hardware-owned mutations because companion text and DayPack content
     /// must describe the same task snapshot regardless of which side initiated the change.
@@ -356,6 +359,10 @@ public final class AppState {
         taskMutationGenerations[taskID, default: 0]
     }
 
+    func taskStatusMutationGeneration(for taskID: String) -> UInt64 {
+        taskStatusMutationGenerations[taskID, default: 0]
+    }
+
     /// Runs one synchronous hardware-owned task mutation without advancing the App-authoritative
     /// generation. Awaiting work must stay outside this closure.
     func performHardwareTaskMutation(_ mutation: () -> Void) {
@@ -385,6 +392,14 @@ public final class AppState {
         for taskID in changedTaskIDs {
             let current = taskMutationGenerations[taskID, default: 0]
             taskMutationGenerations[taskID] = current == .max ? .max : current + 1
+
+            let oldFingerprint = oldFingerprints[taskID]
+            let newFingerprint = newFingerprints[taskID]
+            let statusUnchanged = oldFingerprint?.isCompleted == newFingerprint?.isCompleted
+                && oldFingerprint?.pendingDeletion == newFingerprint?.pendingDeletion
+            guard !statusUnchanged else { continue }
+            let statusCurrent = taskStatusMutationGenerations[taskID, default: 0]
+            taskStatusMutationGenerations[taskID] = statusCurrent == .max ? .max : statusCurrent + 1
         }
     }
 
@@ -677,6 +692,7 @@ private struct TaskMutationFingerprint: Equatable {
     let todayDisplayDate: Date?
     let hardwareCompletionOperationKey: String?
     let hardwareSkipOperationKey: String?
+    let statusAuthorityAt: Date?
 
     init(_ task: TaskItem) {
         title = task.title
@@ -689,6 +705,7 @@ private struct TaskMutationFingerprint: Equatable {
         todayDisplayDate = task.todayDisplayDate
         hardwareCompletionOperationKey = task.hardwareCompletionOperationKey
         hardwareSkipOperationKey = task.hardwareSkipOperationKey
+        statusAuthorityAt = task.statusAuthorityAt
     }
 }
 
