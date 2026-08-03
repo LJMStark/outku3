@@ -270,8 +270,8 @@ public enum TaskLibraryCodec {
     public static let subVersion: UInt8 = 0x02
     public static let maxTaskIDBytes = 36
     public static let maxTitleBytes = 40
-    public static let maxDetailBytes = DayPackTextBudget.taskDescription
-    public static let maxPhaseTextBytes = DayPackTextBudget.taskSupportText
+    public static let maxDetailBytes = DayPackTextBudget.taskDetail
+    public static let maxPhaseTextBytes = DayPackTextBudget.taskPhaseText
     private static let taskTitleFallback = "Task"
 
     /// App→Device:

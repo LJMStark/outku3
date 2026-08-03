@@ -173,7 +173,7 @@ struct EventSupportTextTests {
         // TaskInPage Encouragement is 80B, narrower than the 120B event field.
         for seed in (0..<100).map({ "task-\($0)" }) {
             let line = FallbackText.eventSupportText(for: .deepWork, seed: seed)
-            #expect(Data(line.utf8).count <= DayPackTextBudget.taskSupportText)
+            #expect(Data(line.utf8).count <= DayPackTextBudget.taskPhaseText)
         }
     }
 
@@ -443,16 +443,16 @@ struct EventSupportTextTests {
             [long], expectedCount: 1, maxBytes: DayPackTextBudget.eventSupportText, now: Date()
         )
         let asTask = EventSupportTextService.evaluateAIReply(
-            [long], expectedCount: 1, maxBytes: DayPackTextBudget.taskSupportText, now: Date()
+            [long], expectedCount: 1, maxBytes: DayPackTextBudget.taskPhaseText, now: Date()
         )
 
         // Same reply, two fields, two budgets: 120B for Events[] vs 80B for TaskInPage.
-        #expect(DayPackTextBudget.taskSupportText < DayPackTextBudget.eventSupportText)
+        #expect(DayPackTextBudget.taskPhaseText < DayPackTextBudget.eventSupportText)
         for line in (asEvent.acceptedLines + asTask.acceptedLines).compactMap({ $0 }) {
             #expect(Data(line.utf8).count <= DayPackTextBudget.eventSupportText)
         }
         for line in asTask.acceptedLines.compactMap({ $0 }) {
-            #expect(Data(line.utf8).count <= DayPackTextBudget.taskSupportText)
+            #expect(Data(line.utf8).count <= DayPackTextBudget.taskPhaseText)
         }
     }
 

@@ -154,23 +154,6 @@ public actor OpenAIService {
         return content.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// AI "Overview" for the device in-task page. The model SELF-JUDGES: it compresses the note
-    /// only when it clearly understands it, and returns the note verbatim when it is short/clear
-    /// or shorthand/ambiguous. Neutral by design — restates the user's own task, NOT the pet's
-    /// voice, so it skips the companion persona prompt. (Client decision; the App-side `byte budget`
-    /// truncates whatever comes back.)
-    public func summarizeTaskNote(_ notes: String) async throws -> String {
-        let compiled = compileTaskOverviewPrompt(notes: notes)
-        let tool = Self.promptTool("taskOverview")
-        let content = try await chatCompletion(
-            systemPrompt: compiled.systemPrompt,
-            userPrompt: compiled.userPrompt,
-            temperature: tool.parameters.temperature,
-            maxTokens: tool.parameters.maxTokens
-        )
-        return content.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
     /// Neutral "day at a glance" panel text (box②) — NOT the pet's voice, so it skips the companion
     /// persona prompt (the pet's voice lives only in the bubble / PetDialogue). Summarizes the day
     /// from the user's calendar events: how full or open it looks, plus one practical suggestion.

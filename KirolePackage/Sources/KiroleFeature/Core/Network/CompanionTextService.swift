@@ -125,30 +125,6 @@ public final class CompanionTextService {
         )
     }
 
-    // MARK: - Task Overview (in-task "Overview" — faithful compression of a long task note)
-
-    /// AI "Overview" of `notes`. The model self-judges: it returns either a compressed summary or
-    /// the note verbatim (when it judged it could not safely understand it). Returns nil only when
-    /// AI is unavailable or the output is empty/error → caller then shows the verbatim note.
-    /// Neutral restatement of the user's own note — NOT the pet's voice.
-    public func generateTaskOverview(notes: String) async -> String? {
-        guard await openAI.isConfigured else { return nil }
-        do {
-            let raw = try await openAI.summarizeTaskNote(notes)
-            let result = CompanionTextService.enforceByteBudget(raw, maxBytes: DayPackTextBudget.taskDescription)
-            // Accept either a summary or a verbatim passthrough (the "unsure → original" case);
-            // only reject empty / error output.
-            guard !result.isEmpty, !result.hasPrefix("[Error]") else { return nil }
-            return result
-        } catch {
-            ErrorReporter.log(
-                .sync(component: "TaskOverview", underlying: "summarize failed: \(error.localizedDescription)"),
-                context: "CompanionTextService.generateTaskOverview"
-            )
-            return nil
-        }
-    }
-
     // MARK: - Settlement Message
 
     public func generateSettlementMessage(

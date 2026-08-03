@@ -159,7 +159,7 @@ struct TaskLibraryPhaseTextService: Sendable {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let budgeted = CompanionTextService.enforceByteBudget(
             sanitized,
-            maxBytes: DayPackTextBudget.taskSupportText
+            maxBytes: DayPackTextBudget.taskPhaseText
         )
         guard !budgeted.isEmpty,
               budgeted.utf8.contains(where: {

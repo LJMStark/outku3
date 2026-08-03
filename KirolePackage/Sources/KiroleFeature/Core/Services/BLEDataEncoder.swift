@@ -2,39 +2,41 @@ import Foundation
 
 // MARK: - Text Byte Budgets
 
-/// DayPack/TaskInPage 文本字段的字节预算唯一真源。App 侧生成（CompanionTextService
-/// enforceByteBudget / DayPackGenerator）与线上编码（下方 appendString maxLength）必须
-/// 同值——两边手写数字曾各写一份，漂移即被 validUTF8Prefix 静默截断。改值需同步
-/// docs/BLE通信协议规格文档.md 对应字段（petDialogue §4.7 bubble / daySummary §4.7 / TaskInPage 描述）。
+/// 硬件 wire 文本字段的字节预算——**唯一真源**。App 侧生成（`CompanionTextService.enforceByteBudget`
+/// 等）与线上编码（下方 `appendString(maxLength:)`）必须同值：两边各写一份数字曾导致漂移，
+/// 超出的部分被 `validUTF8Prefix` **静默截断**。改值必须同步 docs/BLE通信协议规格文档.md 对应 §。
+///
+/// **v2.16.1：这些值不再从 PromptSpec 的提示词输出上限派生。** 依赖方向本来是反的——wire 预算是
+/// **固件契约**（硬约束，固件按协议字段表实现解析），提示词输出上限是**生成约束**（软约束）。
+/// 由后者定义前者会带来两个后果，都发生过：
+///
+/// 1. **删一句没人用的提示词会崩编码路径。** 旧实现用 `preconditionFailure` 从 PromptSpec 查预算，
+///    而 `taskOverview` 的提示词自 `a5db1cd`（2026-07-31）起已无调用方——它的 `outputMaxBytes`
+///    却仍是 `0x23`/`0x24` detail 字段的上限。清理提示词时会崩在毫不相关的任务库编码上。
+/// 2. **名字会指向已不存在的东西。** `taskDescription` 之名来自 v2.16.0 已删除的 `0x11 TaskInPage`
+///    字段，实际却在管任务库/当天内容包的 detail；`taskSupportText` 同理（现为三阶段文案预算）。
+///
+/// 「问模型要的长度必须塞得进 wire」这条保证改由 `PromptSpecConsistencyTests` 显式断言
+/// （每个产出进入硬件字段的 tool/scene，其 `outputMaxBytes` ≤ 对应 wire 预算）。
 public enum DayPackTextBudget {
-    public static let petDialogue = requiredSceneBudget("companionPhrase")
-    public static let daySummary = requiredToolBudget("daySummary")
-    public static let taskDescription = requiredToolBudget("taskOverview")
-    /// v2.5.30 页面四概况点评（§4.7 SettlementReview）。
-    public static let settlementReview = requiredToolBudget("settlementReview")
-    /// v2.5.30 页面四金句/明日鼓励（§4.7 SettlementQuote）。
-    public static let settlementQuote = requiredSceneBudget("settlementQuoteCelebration")
-    /// v2.10.0 每条日程支持性文字（§4.7 Events[] SupportText，按六大类规则生成，
-    /// 追加在 endTime 之后；空串 = 固件不渲染该行）。
-    public static let eventSupportText = requiredToolBudget("eventSupportText")
-    /// v2.10.0 按按钮进入任务时的支持性文字，恒 Deep Work 规则。走协议 §4.8 里原名
-    /// `Encouragement` 的槽位（复用空槽，非「鼓励语 / Tips」恢复——那个功能仍停用）。
-    /// 独立于 eventSupportText 的 120B：0x11 帧只需容纳单句（客户例句最长 70B）。
-    public static let taskSupportText = 80
-
-    private static func requiredSceneBudget(_ id: String) -> Int {
-        guard let budget = KirolePromptSpec.scene(id)?.outputMaxBytes else {
-            preconditionFailure("PromptSpec is missing the output byte budget for scene \(id)")
-        }
-        return budget
-    }
-
-    private static func requiredToolBudget(_ id: String) -> Int {
-        guard let budget = KirolePromptSpec.tool(id)?.outputMaxBytes else {
-            preconditionFailure("PromptSpec is missing the output byte budget for tool \(id)")
-        }
-        return budget
-    }
+    /// §4.7 DayPack `PetDialogue`（常驻宠物气泡）。
+    public static let petDialogue = 120
+    /// §4.7 DayPack `DaySummary`（框②中性面板文本）。
+    public static let daySummary = 180
+    /// §4.22 `0x23` 每条任务 `Detail`，以及 §4.23 `0x24` 每条日程 `Detail`。
+    /// （v2.16.0 前叫 `taskDescription`，跟随已删除的 `0x11 TaskInPage` 描述字段命名。）
+    public static let taskDetail = 100
+    /// v2.5.30 页面四概况点评（§4.7 `SettlementReview`）。
+    public static let settlementReview = 180
+    /// v2.5.30 页面四金句/明日鼓励（§4.7 `SettlementQuote`）。
+    public static let settlementQuote = 120
+    /// v2.10.0 每条日程支持性文字（§4.7 `Events[].SupportText`，按六大类规则生成，
+    /// 追加在 `EndTime` 之后；空串 = 固件不渲染该行）。
+    public static let eventSupportText = 120
+    /// §4.22 `0x23` 每条任务的三阶段文案（`0–5 / 6–15 / 16+` 各一条）。
+    /// 独立于 `eventSupportText` 的 120B：每段只需容纳单句（客户例句最长 70B）。
+    /// （v2.16.0 前叫 `taskSupportText`，源自已删除的 `0x11` `Encouragement` 槽位。）
+    public static let taskPhaseText = 80
 }
 
 // MARK: - BLE Data Encoder

@@ -162,18 +162,45 @@ struct PromptSpecConsistencyTests {
         #expect(KirolePromptSpec.parameters(for: "eventClassification")?.maxTokens == 60)
     }
 
-    @Test("Hardware byte budgets come from PromptSpec")
-    func hardwareByteBudgets() {
-        #expect(KirolePromptSpec.scene("companionPhrase")?.outputMaxBytes == 120)
-        #expect(KirolePromptSpec.tool("screensaver")?.outputMaxBytes == 180)
-        #expect(KirolePromptSpec.tool("taskOverview")?.outputMaxBytes == 100)
-        #expect(KirolePromptSpec.tool("daySummary")?.outputMaxBytes == 180)
-        #expect(KirolePromptSpec.tool("settlementReview")?.outputMaxBytes == 180)
+    @Test("Hardware wire budgets are declared locally, not derived from PromptSpec")
+    func hardwareWireBudgetsAreDeclaredLocally() {
+        // v2.16.1: these are firmware contract values (protocol §), declared in DayPackTextBudget.
+        // Pinning them here means a PromptSpec edit can never silently move a wire budget.
         #expect(DayPackTextBudget.petDialogue == 120)
-        #expect(DayPackTextBudget.taskDescription == 100)
         #expect(DayPackTextBudget.daySummary == 180)
+        #expect(DayPackTextBudget.taskDetail == 100)
         #expect(DayPackTextBudget.settlementReview == 180)
         #expect(DayPackTextBudget.settlementQuote == 120)
+        #expect(DayPackTextBudget.eventSupportText == 120)
+        #expect(DayPackTextBudget.taskPhaseText == 80)
+    }
+
+    @Test("Every prompt feeding a hardware field fits that field's wire budget")
+    func promptOutputBudgetsFitTheirWireFields() {
+        // Decoupling the two (v2.16.1) removed the old implicit guarantee that "what we ask the
+        // model for" equals "what the wire can hold". This test is what now holds it: a prompt
+        // allowed to exceed its field would have its tail cut by `validUTF8Prefix` — silently,
+        // mid-sentence, only visible on the device.
+        let scenePairs: [(id: String, wireBudget: Int)] = [
+            ("companionPhrase", DayPackTextBudget.petDialogue),
+            ("settlementQuoteCelebration", DayPackTextBudget.settlementQuote),
+            ("settlementQuoteOverloaded", DayPackTextBudget.settlementQuote),
+        ]
+        for pair in scenePairs {
+            let promptBudget = try? #require(KirolePromptSpec.scene(pair.id)?.outputMaxBytes)
+            #expect(promptBudget ?? .max <= pair.wireBudget, "scene \(pair.id) overruns its wire field")
+        }
+
+        let toolPairs: [(id: String, wireBudget: Int)] = [
+            ("daySummary", DayPackTextBudget.daySummary),
+            ("settlementReview", DayPackTextBudget.settlementReview),
+            ("eventSupportText", DayPackTextBudget.eventSupportText),
+            ("taskLibraryPhaseText", DayPackTextBudget.taskPhaseText),
+        ]
+        for pair in toolPairs {
+            let promptBudget = try? #require(KirolePromptSpec.tool(pair.id)?.outputMaxBytes)
+            #expect(promptBudget ?? .max <= pair.wireBudget, "tool \(pair.id) overruns its wire field")
+        }
     }
 
     @Test("App prompt accessors resolve from PromptSpec")
