@@ -271,7 +271,11 @@ public enum BLEEventHandler {
 
     // MARK: - Event-Specific Handlers
 
-    /// EnterTaskIn: 生成 TaskInPage 并发送到设备
+    /// EnterTaskIn: 建立 App 专注会话。
+    ///
+    /// v2.16.0（Issue #29）起 **不再回发 `0x11 TaskInPage`**——设备从已提交任务库（`0x23`）本地读取
+    /// 标题、详情和三阶段文案。入站 `0x10` 保留为 Device→App **唯一**的「专注已开始」信号，因此本
+    /// 处理器仍必须建立会话；否则能量瓶、打断检测和 `0x14` 推送全部失效。
     private static func handleEnterTaskIn(_ eventLog: EventLog, service: BLEService) async {
         switch enterTaskInRoute(for: eventLog, tasks: AppState.shared.tasks) {
         case .recoverInteractive:
@@ -302,42 +306,13 @@ public enum BLEEventHandler {
             )
             return
 
-        case .sendTaskIn(let task):
-            let sourceTaskStateVersion = AppState.shared.taskStateVersion
-            let presentationResult = await performEnterTaskInPresentation(
-                task: task,
-                pet: AppState.shared.pet,
-                userProfile: AppState.shared.userProfile,
-                sendTaskInPage: { taskInPage in
-                    try await service.sendTaskInPage(
-                        taskInPage,
-                        expectedTaskStateVersion: sourceTaskStateVersion
-                    )
-                },
-                startFocus: {
-                    let processing = await processEventLogs(
-                        [eventLog],
-                        service: service,
-                        suppressInitialEnterTaskInFocusStatus: true
-                    )
-                    return processing.didStartFocusSession
-                }
-            )
-            switch presentationResult {
-            case .presented:
-                break
-            case .pageWriteFailed:
-                // A failed 0x11 must never start the App session: firmware is still waiting on the
-                // TaskIn page and will retry. Record the event without applying its focus mutation.
-                _ = await processEventLogs(
-                    [eventLog],
-                    service: service,
-                    allowEnterTaskInFocusStart: false
-                )
-            case .focusStartFailed:
-                // The complete page is already visible, but App focus persistence could not become
-                // authoritative. Explicitly return firmware to Interactive instead of leaving a
-                // TaskIn page that will never receive valid focus updates.
+        case .startFocus:
+            // 没有 0x11 首屏渲染要抢，初始 `0x14 FocusStatus` 立即下发——否则设备的第一次
+            // 能量瓶/阶段更新要等到推送循环的下一拍。
+            let processing = await processEventLogs([eventLog], service: service)
+            guard processing.didStartFocusSession else {
+                // 设备已经在本地进入了专注页，但 App 侧会话没能成为权威（持久化不可用 / 已有
+                // 其他活跃会话）。明确把设备退回 Interactive，别留一个永远收不到有效 0x14 的专注页。
                 do {
                     try await service.sendDeviceMode(.interactive)
                 } catch {
@@ -349,6 +324,7 @@ public enum BLEEventHandler {
                         context: "BLEEventHandler.handleEnterTaskIn"
                     )
                 }
+                return
             }
         }
     }
@@ -476,8 +452,7 @@ public enum BLEEventHandler {
         appState: AppState = .shared,
         hardwareTaskPersistence: (any HardwareTaskStatePersisting)? = nil,
         nowProvider: @MainActor () -> Date = { Date() },
-        allowEnterTaskInFocusStart: Bool = true,
-        suppressInitialEnterTaskInFocusStatus: Bool = false
+        allowEnterTaskInFocusStart: Bool = true
     ) async -> EventProcessingResult {
         let processable: [EventLog]
         if isReplay {
@@ -555,8 +530,7 @@ public enum BLEEventHandler {
                 focusService: focusService,
                 isReplay: isReplay,
                 tasksOverride: tasksOverride,
-                allowEnterTaskInStart: allowEnterTaskInFocusStart,
-                suppressInitialEnterTaskInFocusStatus: suppressInitialEnterTaskInFocusStatus
+                allowEnterTaskInStart: allowEnterTaskInFocusStart
             )
             if resolvedLog.eventType == .enterTaskIn, focusTransitionApplied {
                 didStartFocusSession = true
@@ -743,7 +717,6 @@ public enum BLEEventHandler {
         isReplay: Bool = false,
         tasksOverride: [TaskItem]? = nil,
         allowEnterTaskInStart: Bool = true,
-        suppressInitialEnterTaskInFocusStatus: Bool = false
     ) async -> Bool {
         // 设备时间戳不可信：夹到不晚于 now，防未来偏移凭空铸造专注时长 / 能量瓶（见 focusEventTimestamp）。
         let sessionTimestamp = focusEventTimestamp(eventLog.timestamp, now: Date())
@@ -775,7 +748,7 @@ public enum BLEEventHandler {
                     mode: focusService.focusEnforcementMode,
                     startTime: startTime,
                     fallbackPolicy: .allowStandard,
-                    sendInitialHardwareStatus: !suppressInitialEnterTaskInFocusStatus
+                    sendInitialHardwareStatus: true
                 )
                 switch result {
                 case .started, .alreadyActive:

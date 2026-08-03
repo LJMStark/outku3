@@ -125,27 +125,6 @@ extension BLEService {
         )
     }
 
-    /// 发送 Task In 页面数据到 E-ink 设备。只应由 BLEEventHandler 在收到 0x10 EnterTaskIn 事件后调用。
-    func sendTaskInPage(
-        _ taskInPage: TaskInPageData,
-        expectedTaskStateVersion: UInt64
-    ) async throws {
-        try await withTaskStateMessageGate {
-            let validateTaskState: PacketWriteValidator = {
-                guard AppState.shared.taskStateVersion == expectedTaskStateVersion else {
-                    throw BLEError.staleTaskSnapshot
-                }
-            }
-            try validateTaskState()
-            let data = BLEDataEncoder.encodeTaskInPage(taskInPage)
-            try await writeData(
-                type: .taskInPage,
-                data: data,
-                validateBeforeWrite: validateTaskState
-            )
-        }
-    }
-
     /// Sends one complete task-library transaction. Firmware stages the reassembled payload and
     /// makes it visible only after the transaction CRC and every record validate.
     public func sendTaskLibraryTransaction(

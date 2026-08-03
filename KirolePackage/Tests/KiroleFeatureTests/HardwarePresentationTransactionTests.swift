@@ -4,128 +4,6 @@ import Testing
 
 @Suite("Hardware presentation transactions", .serialized)
 struct HardwarePresentationTransactionTests {
-    @Test("TaskIn completes while full sync is still preparing AI or avatar data")
-    @MainActor
-    func taskInPreemptsSlowFullSyncPreparation() async throws {
-        let fixtures = ProtocolFixtures()
-        let gate = HardwarePagePresentationGate()
-        let preparation = PresentationTransactionPause()
-        let box = PresentationFirmwareBox()
-        box.firmware.beginEnterTaskIn(taskID: fixtures.taskId)
-
-        let fullSync = Task { @MainActor in
-            // Production performs AI generation, connection and avatar work before asking for the
-            // presentation gate. Hold that preparation here while TaskIn commits independently.
-            await preparation.stopAfterFirstPagePacket()
-            _ = try await gate.performPresentationWrite(
-                droppingIfPageTransactionIntervened: false
-            ) {
-                try box.firmware.receive(BLESimpleEncoder.encode(
-                    type: BLEDataType.petStatus.rawValue,
-                    payload: BLEDataEncoder.encodePetStatus(
-                        fixtures.pet,
-                        companionCharacter: .nova,
-                        customActive: false
-                    )
-                ))
-                if BLESyncCoordinator.shouldSendPreparedDayPack(
-                    requested: true,
-                    lastSentFingerprint: nil,
-                    preparedFingerprint: "prepared-before-enter",
-                    hasActiveFocusSession: true
-                ) {
-                    try box.firmware.receive(stream: BLEPacketizer.packetize(
-                        type: BLEDataType.dayPack.rawValue,
-                        messageId: 0x5EFF,
-                        payload: BLEDataEncoder.encodeDayPack(
-                            dayPack(topTasks: []),
-                            screenSize: .fourInch
-                        ),
-                        maxChunkSize: 24
-                    ))
-                }
-            }
-        }
-        await preparation.waitUntilStopped()
-
-        await gate.performPageTransaction {
-            do {
-                try box.firmware.receive(stream: BLEPacketizer.packetize(
-                    type: BLEDataType.taskInPage.rawValue,
-                    messageId: 0x5F00,
-                    payload: BLEDataEncoder.encodeTaskInPage(fixtures.taskInPage),
-                    maxChunkSize: 18
-                ))
-            } catch {
-                box.error = error
-            }
-        }
-
-        try #require(box.error == nil)
-        #expect(box.firmware.logicalWireTypes == [.taskInPage])
-        #expect(box.firmware.refreshCount == 1)
-
-        await preparation.resumePageTransaction()
-        _ = try await fullSync.value
-        #expect(box.firmware.logicalWireTypes == [.taskInPage, .petStatus])
-        #expect(box.firmware.page == .taskIn)
-        #expect(box.firmware.refreshCount == 1)
-    }
-
-    @Test("A focus update cannot split the complete TaskIn page transaction")
-    @MainActor
-    func focusUpdateCannotInterleaveTaskInChunks() async throws {
-        let fixtures = ProtocolFixtures()
-        let gate = HardwarePagePresentationGate()
-        let pause = PresentationTransactionPause()
-        let box = PresentationFirmwareBox()
-        box.firmware.beginEnterTaskIn(taskID: fixtures.taskId)
-        let packets = try BLEPacketizer.packetize(
-            type: BLEDataType.taskInPage.rawValue,
-            messageId: 0x5F01,
-            payload: BLEDataEncoder.encodeTaskInPage(fixtures.taskInPage),
-            maxChunkSize: 18
-        )
-
-        let page = Task { @MainActor in
-            await gate.performPageTransaction {
-                do {
-                    try box.firmware.receive(packets[0])
-                    await pause.stopAfterFirstPagePacket()
-                    try box.firmware.receive(stream: Array(packets.dropFirst()))
-                } catch {
-                    box.error = error
-                }
-            }
-        }
-        await pause.waitUntilStopped()
-
-        let focus = Task { @MainActor in
-            try await gate.performPresentationWrite(
-                droppingIfPageTransactionIntervened: true
-            ) {
-                try box.firmware.receive(BLESimpleEncoder.encode(
-                    type: BLEDataType.focusStatus.rawValue,
-                    payload: BLEDataEncoder.encodeFocusStatus(
-                        phase: .warmup,
-                        energyBottles: 0,
-                        elapsedMinutes: 0,
-                        taskTitle: fixtures.taskInPage.taskTitle,
-                        segmentMinutes: 0
-                    )
-                ))
-            }
-        }
-        await pause.resumePageTransaction()
-        await page.value
-        _ = try await focus.value
-
-        try #require(box.error == nil)
-        #expect(box.firmware.logicalWireTypes == [.taskInPage])
-        #expect(box.firmware.page == .taskIn)
-        #expect(box.firmware.refreshCount == 1)
-    }
-
     @Test("Task action parks display frames and resumes identity only after 0x1B")
     @MainActor
     func taskActionParksDisplayAndResumesIdentityAfterAcknowledgement() async throws {
@@ -135,9 +13,9 @@ struct HardwarePresentationTransactionTests {
         let box = PresentationFirmwareBox()
         box.firmware.beginEnterTaskIn(taskID: fixtures.taskId)
         try box.firmware.receive(stream: BLEPacketizer.packetize(
-            type: BLEDataType.taskInPage.rawValue,
+            type: BLEDataType.dayPack.rawValue,
             messageId: 0x5F02,
-            payload: BLEDataEncoder.encodeTaskInPage(fixtures.taskInPage),
+            payload: BLEDataEncoder.encodeDayPack(fixtures.dayPack, screenSize: .fourInch),
             maxChunkSize: 18
         ))
         try box.firmware.beginTaskAction(action: .completeTask, operationID: 70)
@@ -229,145 +107,6 @@ struct HardwarePresentationTransactionTests {
         #expect(box.firmware.refreshCount - refreshBaseline == 1)
     }
 
-    @Test("Production EnterTaskIn sends the complete page before focus starts")
-    @MainActor
-    func productionEnterTaskInCommitsPageBeforeFocusStart() async throws {
-        let fixtures = ProtocolFixtures()
-        let task = try #require(fixtures.tasks.first)
-        let box = PresentationFirmwareBox()
-        box.firmware.beginEnterTaskIn(taskID: task.id)
-
-        let delivered = await BLEEventHandler.performEnterTaskInPresentation(
-            task: task,
-            pet: fixtures.pet,
-            userProfile: UserProfile(),
-            sendTaskInPage: { page in
-                try box.firmware.receive(stream: BLEPacketizer.packetize(
-                    type: BLEDataType.taskInPage.rawValue,
-                    messageId: 0x6001,
-                    payload: BLEDataEncoder.encodeTaskInPage(page),
-                    maxChunkSize: 18
-                ))
-            },
-            startFocus: {
-                box.focusStarted = true
-                box.wireTypesWhenFocusStarted = box.firmware.logicalWireTypes
-                box.refreshCountWhenFocusStarted = box.firmware.refreshCount
-                return true
-            }
-        )
-
-        #expect(delivered == .presented)
-        #expect(box.focusStarted)
-        #expect(box.wireTypesWhenFocusStarted == [.taskInPage])
-        #expect(box.refreshCountWhenFocusStarted == 1)
-        #expect(box.firmware.logicalWireTypes == [.taskInPage])
-        #expect(box.firmware.page == .taskIn)
-        #expect(box.firmware.renderedTaskInPage?.taskId == task.id)
-        #expect(box.firmware.renderedTaskInPage?.taskTitle == task.title)
-        #expect(box.firmware.renderedTaskInPage?.supportText.isEmpty == false)
-        #expect(box.firmware.refreshCount == 1)
-    }
-
-    @Test("A stale TaskInPage write never starts focus")
-    @MainActor
-    func staleTaskInWriteDoesNotStartFocus() async throws {
-        let fixtures = ProtocolFixtures()
-        let task = try #require(fixtures.tasks.first)
-        var focusStarted = false
-
-        let delivered = await BLEEventHandler.performEnterTaskInPresentation(
-            task: task,
-            pet: fixtures.pet,
-            userProfile: UserProfile(),
-            sendTaskInPage: { _ in throw BLEError.staleTaskSnapshot },
-            startFocus: {
-                focusStarted = true
-                return true
-            }
-        )
-
-        #expect(delivered == .pageWriteFailed)
-        #expect(!focusStarted)
-    }
-
-    @Test("A committed TaskIn page reports failure when App focus cannot start")
-    @MainActor
-    func focusStartFailureIsVisibleToTheRecoveryPath() async throws {
-        let fixtures = ProtocolFixtures()
-        let task = try #require(fixtures.tasks.first)
-        var pageWasSent = false
-
-        let result = await BLEEventHandler.performEnterTaskInPresentation(
-            task: task,
-            pet: fixtures.pet,
-            userProfile: UserProfile(),
-            sendTaskInPage: { _ in pageWasSent = true },
-            startFocus: { false }
-        )
-
-        #expect(pageWasSent)
-        #expect(result == .focusStartFailed)
-    }
-
-    @Test("EnterTaskIn renders only after the complete 0x11 payload arrives")
-    func enterTaskInCommitsOneCompleteFirstFrame() throws {
-        let fixtures = ProtocolFixtures()
-        var firmware = SimulatedHardwarePresentation()
-        firmware.beginEnterTaskIn(taskID: fixtures.taskId)
-
-        let packets = try BLEPacketizer.packetize(
-            type: BLEDataType.taskInPage.rawValue,
-            messageId: 0x6101,
-            payload: BLEDataEncoder.encodeTaskInPage(fixtures.taskInPage),
-            maxChunkSize: 18
-        )
-        for packet in packets.dropLast() {
-            try firmware.receive(packet)
-        }
-
-        #expect(firmware.page == .taskInPending)
-        #expect(firmware.refreshCount == 0)
-        #expect(firmware.logicalWireTypes.isEmpty)
-
-        try firmware.receive(try #require(packets.last))
-
-        #expect(firmware.page == .taskIn)
-        #expect(firmware.renderedTaskInPage?.taskId == fixtures.taskId)
-        #expect(firmware.renderedTaskInPage?.taskDescription == "Check every packet before hardware.")
-        #expect(firmware.renderedTaskInPage?.supportText == "Stay with the next byte.")
-        #expect(firmware.logicalWireTypes == [.taskInPage])
-        #expect(firmware.refreshCount == 1)
-    }
-
-    @Test("Legacy focus-first entry is observable as a partial extra EPD refresh")
-    func focusStatusBeforeTaskInWouldRenderTwice() throws {
-        let fixtures = ProtocolFixtures()
-        var firmware = SimulatedHardwarePresentation()
-        firmware.beginEnterTaskIn(taskID: fixtures.taskId)
-
-        try firmware.receive(simplePacket(
-            type: .focusStatus,
-            payload: BLEDataEncoder.encodeFocusStatus(
-                phase: .warmup,
-                energyBottles: 0,
-                elapsedMinutes: 0,
-                taskTitle: fixtures.taskInPage.taskTitle,
-                segmentMinutes: 0
-            )
-        ))
-        try firmware.receive(stream: BLEPacketizer.packetize(
-            type: BLEDataType.taskInPage.rawValue,
-            messageId: 0x6102,
-            payload: BLEDataEncoder.encodeTaskInPage(fixtures.taskInPage),
-            maxChunkSize: 18
-        ))
-
-        #expect(firmware.logicalWireTypes == [.focusStatus, .taskInPage])
-        #expect(firmware.refreshCount == 2)
-        #expect(firmware.page == .taskIn)
-    }
-
     @Test(
         "Complete and Skip cache DayPack, then 0x1B exits TaskIn with one refresh",
         arguments: [TaskListSnapshotAction.completeTask, .skipTask]
@@ -380,9 +119,9 @@ struct HardwarePresentationTransactionTests {
         let box = PresentationFirmwareBox()
         box.firmware.beginEnterTaskIn(taskID: fixtures.taskId)
         try box.firmware.receive(stream: BLEPacketizer.packetize(
-            type: BLEDataType.taskInPage.rawValue,
+            type: BLEDataType.dayPack.rawValue,
             messageId: 0x6201,
-            payload: BLEDataEncoder.encodeTaskInPage(fixtures.taskInPage),
+            payload: BLEDataEncoder.encodeDayPack(fixtures.dayPack, screenSize: .fourInch),
             maxChunkSize: 18
         ))
         try box.firmware.beginTaskAction(action: action, operationID: 71)
@@ -460,9 +199,9 @@ struct HardwarePresentationTransactionTests {
         var firmware = SimulatedHardwarePresentation(refreshesOnSceneUpdate: true)
         firmware.beginEnterTaskIn(taskID: fixtures.taskId)
         try firmware.receive(stream: BLEPacketizer.packetize(
-            type: BLEDataType.taskInPage.rawValue,
+            type: BLEDataType.dayPack.rawValue,
             messageId: 0x6301,
-            payload: BLEDataEncoder.encodeTaskInPage(fixtures.taskInPage),
+            payload: BLEDataEncoder.encodeDayPack(fixtures.dayPack, screenSize: .fourInch),
             maxChunkSize: 18
         ))
         try firmware.beginTaskAction(action: .completeTask, operationID: 72)

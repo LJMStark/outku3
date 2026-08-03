@@ -387,33 +387,3 @@ public struct SettlementData: Codable, Sendable {
         return Double(tasksCompleted) / Double(tasksTotal)
     }
 }
-
-// MARK: - Task In Page Data
-
-/// Task In 页面数据（动态生成）
-public struct TaskInPageData: Codable, Sendable {
-    public let taskId: String
-    public let taskTitle: String
-    public let taskDescription: String?
-    /// 支持性文字（客户 2026-07-28 规范，恒 Deep Work 规则）。
-    ///
-    /// 占用协议 §4.8 里原名 `Encouragement` 的槽位。**那个「鼓励语 / Tips」功能仍然是停用的**
-    /// （客户 2026-07-20 拍板，从未被推翻）——这里只是复用它留下的空槽承载一个**不同的**功能，
-    /// 省掉一次 wire 变更。语义已换，故字段名不再沿用 `encouragement`。
-    public let supportText: String
-    public let focusChallengeActive: Bool
-
-    public init(
-        taskId: String,
-        taskTitle: String,
-        taskDescription: String? = nil,
-        supportText: String,
-        focusChallengeActive: Bool = false
-    ) {
-        self.taskId = taskId
-        self.taskTitle = taskTitle
-        self.taskDescription = taskDescription
-        self.supportText = supportText
-        self.focusChallengeActive = focusChallengeActive
-    }
-}

@@ -102,16 +102,6 @@ struct ProtocolFixtures {
         )
     }
 
-    var taskInPage: TaskInPageData {
-        TaskInPageData(
-            taskId: taskId,
-            taskTitle: "Plan BLE",
-            taskDescription: "Check every packet before hardware.",
-            supportText: "Stay with the next byte.",
-            focusChallengeActive: true
-        )
-    }
-
     private func sampleDate(hour: Int, minute: Int) -> Date {
         Calendar.current.date(bySettingHour: hour, minute: minute, second: 0, of: Date()) ?? Date()
     }

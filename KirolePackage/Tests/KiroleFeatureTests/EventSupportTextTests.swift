@@ -436,25 +436,6 @@ struct EventSupportTextTests {
         #expect(compiled.userPrompt.contains("1. [category 1] Draft the Q3 report"))
     }
 
-    @Test("the 0x11 read never awaits the network and never returns empty")
-    @MainActor
-    func taskSupportTextReadIsNonBlocking() {
-        // The device is already parked on the task detail page waiting for 0x11. With no notes,
-        // taskOverview returns immediately, so an awaiting support line would be the ONLY wait —
-        // up to model.requestTimeoutSeconds (60s) of blank screen. This accessor is therefore
-        // synchronous by contract: cache hit, else deterministic template.
-        let line = EventSupportTextService.shared.cachedOrFallbackTaskSupportText(
-            taskTitle: "Draft the Q3 report"
-        )
-
-        #expect(!line.isEmpty)
-        #expect(Data(line.utf8).count <= DayPackTextBudget.taskSupportText)
-        // Same title must give the same bytes, so an unchanged task does not churn the frame.
-        #expect(line == EventSupportTextService.shared.cachedOrFallbackTaskSupportText(
-            taskTitle: "Draft the Q3 report"
-        ))
-    }
-
     @Test("task lines are held to the tighter 80-byte TaskInPage budget")
     func taskLineUsesTaskInPageBudget() {
         let long = String(repeating: "word ", count: 40) + "end."

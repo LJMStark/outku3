@@ -464,8 +464,7 @@ public final class SimulatorBridge {
             deviceIDOverride: "eink-simulator",
             appState: appState,
             hardwareTaskPersistence: hardwareTaskPersistence,
-            nowProvider: { now },
-            suppressInitialEnterTaskInFocusStatus: true
+            nowProvider: { now }
         )
         return processing.taskOperationReceipts.first
     }

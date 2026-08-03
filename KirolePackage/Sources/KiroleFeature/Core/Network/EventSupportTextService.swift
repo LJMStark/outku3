@@ -110,67 +110,6 @@ public final class EventSupportTextService {
         }
     }
 
-    /// The support line for a task the user opened with the hardware button (`0x11` TaskInPage
-    /// `Encouragement`, §4.8). `TaskItem` carries no category — the six classes only exist on
-    /// calendar events — so the client fixed this to the **Deep Work** rule.
-    ///
-    /// **Synchronous by contract.** The device is already parked on the task detail page waiting
-    /// for this frame, and with no notes `taskOverview` returns instantly, so an awaiting support
-    /// line would be the only thing between the button press and the screen — up to
-    /// `model.requestTimeoutSeconds` (60 s) of blank page. The AI wording is produced ahead of time
-    /// by `prewarmTaskSupportText`; here we only read that cache, falling back to the deterministic
-    /// template on a miss. Never returns an empty string: an empty line renders nothing at all.
-    public func cachedOrFallbackTaskSupportText(taskTitle: String) -> String {
-        cache[Self.taskCacheKey(for: taskTitle)]
-            ?? FallbackText.eventSupportText(for: .deepWork, seed: taskTitle)
-    }
-
-    /// Warms the cache for the tasks the device can actually open.
-    ///
-    /// The hardware Overview only lists `DayPack.topTasks`, so a button press can only ever name
-    /// one of those — generating their lines during sync (already off the critical path) turns the
-    /// `0x11` path into a cache hit. Runs as ONE batched call for all of them.
-    ///
-    /// Silent on failure: this is a latency optimisation, and `cachedOrFallbackTaskSupportText`
-    /// already degrades to the template.
-    ///
-    /// Skips titles already being fetched by an earlier, still-running prewarm — overlapping syncs
-    /// otherwise pay twice for the same answer (see `inFlightTaskKeys`).
-    func prewarmTaskSupportText(taskTitles: [String]) async {
-        let missing = taskTitles.filter {
-            let key = Self.taskCacheKey(for: $0)
-            return cache[key] == nil && !inFlightTaskKeys.contains(key)
-        }
-        guard !missing.isEmpty,
-              Self.isAIRetryAllowed(retryAfter: aiRetryAfter, now: Date()) else { return }
-
-        // Claim BEFORE the first suspension point. `@MainActor` only guarantees exclusivity between
-        // awaits: two overlapping prewarms both run the filter above, and if the claim happened
-        // after `await openAI.isConfigured` each would resume believing it owned the same titles —
-        // the duplicate request this set exists to prevent. `defer` releases on every exit path,
-        // including a throw or a cancellation, so a title can never stay wedged.
-        let claimedKeys = Set(missing.map(Self.taskCacheKey(for:)))
-        inFlightTaskKeys.formUnion(claimedKeys)
-        defer { inFlightTaskKeys.subtract(claimedKeys) }
-
-        guard await openAI.isConfigured else { return }
-
-        do {
-            let evaluation = try await generateAndEvaluate(
-                missing.map {
-                    OpenAIService.EventSupportTextInput(title: $0, category: .deepWork)
-                },
-                maxBytes: DayPackTextBudget.taskSupportText
-            )
-            for (title, line) in zip(missing, evaluation.acceptedLines) {
-                if let line { cache[Self.taskCacheKey(for: title)] = line }
-            }
-        } catch {
-            aiRetryAfter = Date().addingTimeInterval(Self.aiFailureCooldown)
-            Log.ai.warning("Task support text prewarm failed (\(error.localizedDescription, privacy: .private)) — button presses will use the Deep Work template; retrying in 10 minutes")
-        }
-    }
-
     private func generateAndEvaluate(
         _ events: [OpenAIService.EventSupportTextInput],
         maxBytes: Int

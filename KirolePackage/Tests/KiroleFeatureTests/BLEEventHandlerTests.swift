@@ -355,6 +355,39 @@ struct BLEEventHandlerTests {
         #expect(BLEEventHandler.requiresInitialLoadBeforeHandling(event))
     }
 
+    @Test("EnterTaskIn alone starts the App focus session — no outbound page write gates it")
+    @MainActor
+    func enterTaskInAloneStartsFocusSession() async {
+        // v2.16.0 (Issue #29): inbound `0x10 EnterTaskIn` is the ONLY Device→App focus-start
+        // signal — the `0x11 TaskInPage` reply is gone, and with it the old rule that a
+        // successful page write had to precede the session. If this regresses, nothing throws:
+        // the device shows its local focus page while the App silently records no session —
+        // no energy bottles, no interruption detection, no `0x14` pushes.
+        let appState = AppState.makeForTesting()
+        let task = TaskItem(id: "focus-start", title: "Draft release notes")
+        appState.tasks = [task]
+        let ledger = TaskOperationLedger(persistenceEnabled: false)
+        let focus = FocusSessionService.makeForTesting(
+            focusGuardService: ControlledFocusGuardStub(),
+            taskOperationLedger: ledger
+        )
+
+        let processing = await BLEEventHandler.processEventLogs(
+            [EventLog(eventType: .enterTaskIn, taskId: task.hardwareIdentifier)],
+            service: nil,
+            focusService: focus,
+            // Task resolution reads `tasksOverride ?? AppState.shared.tasks` — the injected
+            // `appState` is not consulted for the lookup, so an override is required here.
+            tasksOverride: appState.tasks,
+            persistLogs: false,
+            operationLedger: ledger,
+            appState: appState
+        )
+
+        #expect(processing.didStartFocusSession)
+        #expect(focus.activeSession?.taskId == task.id)
+    }
+
     @Test("EnterTaskIn resolves a loaded task and falls back to interactive when it is absent")
     @MainActor
     func enterTaskInRoutesLoadedAndMissingTasks() {
@@ -363,14 +396,14 @@ struct BLEEventHandlerTests {
         let missingEvent = EventLog(eventType: .enterTaskIn, taskId: "missing")
 
         switch BLEEventHandler.enterTaskInRoute(for: resolvedEvent, tasks: [task]) {
-        case .sendTaskIn(let resolved):
+        case .startFocus(let resolved):
             #expect(resolved.id == task.id)
         case .recoverInteractive:
-            Issue.record("A loaded task must produce TaskInPage data.")
+            Issue.record("A loaded task must start the App focus session.")
         }
 
         switch BLEEventHandler.enterTaskInRoute(for: missingEvent, tasks: [task]) {
-        case .sendTaskIn:
+        case .startFocus:
             Issue.record("An unresolved task must release the device to interactive mode.")
         case .recoverInteractive:
             break

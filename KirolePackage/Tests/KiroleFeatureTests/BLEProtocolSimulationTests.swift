@@ -111,7 +111,7 @@ struct BLEProtocolSimulationTests {
         #expect(snapshotFirmware.tasks.map(\.id) == [fixtures.taskId])
     }
 
-    @Test("Virtual hardware reassembles and parses chunked DayPack and TaskInPage")
+    @Test("Virtual hardware reassembles and parses a chunked DayPack")
     func virtualHardwareReassemblesChunkedPagePayloads() throws {
         var hardware = SimulatedHardware()
         let fixtures = ProtocolFixtures()
@@ -151,21 +151,6 @@ struct BLEProtocolSimulationTests {
         #expect(parsedDayPack.settlement.longestFocusMinutes == 35)
         #expect(parsedDayPack.settlement.interruptionCount == 0)
 
-        let taskInPayload = BLEDataEncoder.encodeTaskInPage(fixtures.taskInPage)
-        let taskInPackets = try BLEPacketizer.packetize(
-            type: BLEDataType.taskInPage.rawValue,
-            messageId: 0x5102,
-            payload: taskInPayload,
-            maxChunkSize: 18
-        )
-        let assembledTaskIn = try #require(try hardware.receiveAppPacketStream(taskInPackets))
-        let parsedTaskIn = try assembledTaskIn.parseTaskInPage()
-        #expect(assembledTaskIn.type == BLEDataType.taskInPage.rawValue)
-        #expect(parsedTaskIn.taskId == "task-ble-plan")
-        #expect(parsedTaskIn.taskTitle == "Plan BLE")
-        #expect(parsedTaskIn.taskDescription == "Check every packet before hardware.")
-        #expect(parsedTaskIn.supportText == "Stay with the next byte.")
-        #expect(parsedTaskIn.focusChallengeActive == true)
     }
 
     @Test("Virtual hardware receives only printable ASCII even when App DayPack fields carry LLM/user junk")

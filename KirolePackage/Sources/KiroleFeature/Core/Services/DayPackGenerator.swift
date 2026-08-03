@@ -86,17 +86,6 @@ public final class DayPackGenerator {
             calendar: calendar
         )
 
-        // 预热按键支持文字：硬件 Overview 只列出这批 topTasks，用户能按到的只可能是其中之一，
-        // 提前生成好 `0x11` 响应就是纯缓存读取、零等待。
-        //
-        // **不 await**：这是纯缓存预热，DayPack 本身不含它的产物。await 会把 60 秒模型超时
-        // 加到本轮 sync 上——而 BLESyncCoordinator 是先生成 DayPack、再按指纹决定这轮要不要发，
-        // 等于连"决定不发"的轮次也被拖 60 秒。`0x11` 侧本就有同步兜底（见
-        // cachedOrFallbackTaskSupportText），预热迟到只是这次按键用模板，不是错。
-        Task { await EventSupportTextService.shared.prewarmTaskSupportText(
-            taskTitles: topTasks.map(\.title)
-        ) }
-
         // box③ "First up": next upcoming event, else the top (highest-priority) incomplete task.
         let firstUp = Self.firstUpLabel(
             events: todayEvents,
@@ -244,38 +233,6 @@ public final class DayPackGenerator {
         let result = (review: await review, quote: await quote)
         settlementTextCache = (key, result.review, result.quote)
         return result
-    }
-
-    public func generateTaskInPage(task: TaskItem, pet: Pet, userProfile: UserProfile = .default) -> TaskInPageData {
-        // 客户 2026-07-28 要求「按按钮进入 task 期间」也显示支持性文字。按按钮进入的是 TaskItem，
-        // 而 TaskItem 没有 category 字段（六类只标在日历事件上），客户拍板恒用 Deep Work 规则
-        // （"只指向最小的第一步"）。
-        //
-        // 承载它的是协议 §4.8 里原名 `Encouragement` 的槽位——那是 App 侧的实现选择（复用空槽、
-        // 省一次 wire 变更），**不代表「鼓励语 / Tips」功能恢复**：该功能仍按客户 2026-07-20 的
-        // 决定停用。字节预算随之 50 → 80B。
-        // 这一帧是短按握手的直接响应，整条生成路径必须保持同步：支持文字用缓存或确定性
-        // fallback，备注只做本地字节截断，不能等待 AI、网络或后台预热。
-        let support = EventSupportTextService.shared.cachedOrFallbackTaskSupportText(
-            taskTitle: task.title
-        )
-        let overview = taskOverview(for: task.notes)
-        return TaskInPageData(
-            taskId: task.hardwareIdentifier, taskTitle: task.title,
-            taskDescription: overview,
-            supportText: support
-        )
-    }
-
-    /// In-task "Overview" is part of the short-press response and therefore stays local. The App
-    /// sends the user's note verbatim within the existing wire budget instead of waiting for AI.
-    func taskOverview(for rawNotes: String?) -> String? {
-        let notes = rawNotes?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !notes.isEmpty else { return nil }
-        return CompanionTextService.enforceByteBudget(
-            notes,
-            maxBytes: Self.taskDescriptionByteBudget
-        )
     }
 
     // MARK: - Private Helpers

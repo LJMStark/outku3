@@ -16,9 +16,9 @@ struct HardwarePresentationConcurrencyTests {
         let box = PresentationFirmwareBox()
         box.firmware.beginEnterTaskIn(taskID: fixtures.taskId)
         try box.firmware.receive(stream: BLEPacketizer.packetize(
-            type: BLEDataType.taskInPage.rawValue,
+            type: BLEDataType.dayPack.rawValue,
             messageId: 0x6501,
-            payload: BLEDataEncoder.encodeTaskInPage(fixtures.taskInPage),
+            payload: BLEDataEncoder.encodeDayPack(fixtures.dayPack, screenSize: .fourInch),
             maxChunkSize: 18
         ))
         try box.firmware.beginTaskAction(action: action, operationID: 73)

@@ -63,6 +63,11 @@ public enum BLEDataType: UInt8, Sendable {
     case weather = 0x04
     case time = 0x05
     case dayPack = 0x10
+    /// **已废除（v2.16.0 / Issue #29），App 不再发送本帧。** 任务详情与三阶段文案改由已提交任务库
+    /// （`0x23`，协议 §4.22）本地读取；生成、编码和发送路径均已删除。
+    ///
+    /// 字节保留不复用：`0x11` 出站仍登记在协议 §4.8（历史章节），入站方向另有含义（CompleteTask，
+    /// 方向双义见 §2.4）。给出站 `0x11` 安排新用途会与固件的历史解析器冲突——要新帧请另取字节。
     case taskInPage = 0x11
     case deviceMode = 0x12
     case smartReminder = 0x13

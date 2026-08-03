@@ -910,21 +910,8 @@ struct BLEProtocolTests {
         #expect(readString(from: data, cursor: &cursor) == "09:30 Next item")
     }
 
-    @Test("CJK-only task titles use fallback in task detail and focus frames")
+    @Test("CJK-only task titles use fallback in focus frames")
     func cjkOnlyDynamicTaskTitlesUseFallbacks() {
-        let taskPage = BLEDataEncoder.encodeTaskInPage(
-            TaskInPageData(
-                taskId: "task-cjk",
-                taskTitle: "写报告",
-                taskDescription: nil,
-                supportText: "",
-                focusChallengeActive: false
-            )
-        )
-        var taskCursor = 0
-        #expect(readString(from: taskPage, cursor: &taskCursor) == "task-cjk")
-        #expect(readString(from: taskPage, cursor: &taskCursor) == "Task")
-
         let focus = BLEDataEncoder.encodeFocusStatus(
             phase: .warmup,
             energyBottles: 0,
@@ -1059,26 +1046,6 @@ struct BLEProtocolTests {
         cursor += 1                                    // TaskCount = 0
         cursor += 10                                   // SettlementData
         #expect(data[cursor] == 180)                   // DaySummary truncated to 180 bytes
-    }
-
-    @Test("BLEDataEncoder encodeTaskInPage format excludes legacy microAction fields")
-    func encodeTaskInPageFormatExcludesMicroActionFields() {
-        let taskInPage = TaskInPageData(
-            taskId: "task-1",
-            taskTitle: "Write BLE tests",
-            taskDescription: "Add comprehensive tests",
-            supportText: "Go for it!",
-            focusChallengeActive: true
-        )
-        let data = BLEDataEncoder.encodeTaskInPage(taskInPage)
-
-        var cursor = 0
-        #expect(readString(from: data, cursor: &cursor) == "task-1")
-        #expect(readString(from: data, cursor: &cursor) == "Write BLE tests")
-        #expect(readString(from: data, cursor: &cursor) == "Add comprehensive tests")
-        #expect(readString(from: data, cursor: &cursor) == "Go for it!")
-        #expect(data[data.count - 1] == 0x01)
-        #expect(cursor == data.count - 1)
     }
 
     @Test("String truncation at max length in BLE encoding")

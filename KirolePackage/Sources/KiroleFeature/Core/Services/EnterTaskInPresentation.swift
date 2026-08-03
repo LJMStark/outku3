@@ -192,57 +192,16 @@ private final class DestinationBoundTaskListSnapshotSender: TaskListSnapshotSend
 }
 
 enum EnterTaskInRoute {
-    case sendTaskIn(TaskItem)
+    /// 任务可解析——建立 App 专注会话。v2.16.0 起本分支**不再**回发 `0x11 TaskInPage`。
+    case startFocus(TaskItem)
+    /// taskId 无法解析（clean install / 任务已删 / 本地数据被 reset）。回发
+    /// `DeviceMode(0x12)=Interactive` 解卡，且不建立会话（§8.7 问题 4）。
     case recoverInteractive
 }
 
-enum EnterTaskInPresentationResult: Equatable {
-    case presented
-    case pageWriteFailed
-    case focusStartFailed
-}
-
-// MARK: - EnterTaskIn page transaction
+// MARK: - EnterTaskIn routing
 
 extension BLEEventHandler {
-    /// Production seam for the EnterTaskIn page transaction. The complete 0x11 page is the first
-    /// committed hardware state; only a successful write may start the App focus session. Keeping
-    /// both operations in one awaited function also makes the real wire-to-page order testable.
-    @discardableResult
-    static func performEnterTaskInPresentation(
-        task: TaskItem,
-        pet: Pet,
-        userProfile: UserProfile,
-        sendTaskInPage: @MainActor (TaskInPageData) async throws -> Void,
-        startFocus: @MainActor () async -> Bool
-    ) async -> EnterTaskInPresentationResult {
-        let taskInPage = DayPackGenerator.shared.generateTaskInPage(
-            task: task,
-            pet: pet,
-            userProfile: userProfile
-        )
-        do {
-            try await sendTaskInPage(taskInPage)
-        } catch {
-            ErrorReporter.log(
-                .sync(component: "BLE TaskInPage", underlying: error.localizedDescription),
-                context: "BLEEventHandler.performEnterTaskInPresentation"
-            )
-            return .pageWriteFailed
-        }
-        guard await startFocus() else {
-            ErrorReporter.log(
-                .sync(
-                    component: "BLE EnterTaskIn",
-                    underlying: "TaskInPage arrived but the App focus session did not start"
-                ),
-                context: "BLEEventHandler.performEnterTaskInPresentation"
-            )
-            return .focusStartFailed
-        }
-        return .presented
-    }
-
     static func enterTaskInRoute(
         for eventLog: EventLog,
         tasks: [TaskItem]
@@ -251,7 +210,7 @@ extension BLEEventHandler {
               let task = resolveTask(taskId: taskID, in: tasks) else {
             return .recoverInteractive
         }
-        return .sendTaskIn(task)
+        return .startFocus(task)
     }
 
     static func respondToLiveTaskOperations(

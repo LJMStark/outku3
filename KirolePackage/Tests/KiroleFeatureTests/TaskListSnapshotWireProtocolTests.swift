@@ -4,54 +4,19 @@ import Testing
 
 @Suite("Task-list Snapshot Wire Protocol Tests", .serialized)
 struct TaskListSnapshotWireProtocolTests {
-    @Test("TaskInPage sends the same hardware ID advertised by the Overview snapshot")
+    @Test("The Overview snapshot advertises the opaque hardware ID, not the provider ID")
     @MainActor
-    func taskInPageUsesOpaqueTaskHardwareID() {
+    func overviewSnapshotUsesOpaqueTaskHardwareID() {
+        // v2.16.0: the old `0x11 TaskInPage` leg of this invariant is gone (Issue #29). What still
+        // must hold is that every hardware-facing surface names a task by `hardwareIdentifier`,
+        // so a long/non-ASCII provider ID cannot leak onto the wire or split one task into two.
         let task = TaskItem(
             id: "provider-\(String(repeating: "任务-id-", count: 12))",
             title: "Opaque Task"
         )
 
-        let page = DayPackGenerator.shared.generateTaskInPage(
-            task: task,
-            pet: Pet()
-        )
-
-        #expect(page.taskId == task.hardwareIdentifier)
-        #expect(page.taskId == TaskSummary(from: task).id)
-    }
-
-    @Test("TaskInPage uses the immediate deterministic Deep Work fallback")
-    @MainActor
-    func taskInPageUsesImmediateDeterministicSupportText() {
-        let task = TaskItem(id: "task-immediate-support", title: "Write release notes")
-        let expected = FallbackText.eventSupportText(for: .deepWork, seed: task.title)
-
-        let first = DayPackGenerator.shared.generateTaskInPage(task: task, pet: Pet())
-        let second = DayPackGenerator.shared.generateTaskInPage(task: task, pet: Pet())
-
-        #expect(first.supportText == expected)
-        #expect(second.supportText == expected)
-        #expect(!expected.isEmpty)
-        #expect(expected.utf8.allSatisfy { (0x20...0x7E).contains($0) })
-        #expect(expected.utf8.count <= DayPackTextBudget.taskSupportText)
-    }
-
-    @Test("TaskInPage returns a byte-budgeted local note without an async AI wait")
-    @MainActor
-    func taskInPageUsesImmediateLocalNoteFallback() {
-        let notes = String(repeating: "Review the release checklist. ", count: 10)
-        let task = TaskItem(
-            id: "task-immediate-notes",
-            title: "Release",
-            notes: notes
-        )
-
-        let page = DayPackGenerator.shared.generateTaskInPage(task: task, pet: Pet())
-
-        #expect(page.taskDescription != nil)
-        #expect((page.taskDescription?.utf8.count ?? .max) <= DayPackGenerator.taskDescriptionByteBudget)
-        #expect(notes.hasPrefix(page.taskDescription ?? "not-a-prefix"))
+        #expect(TaskSummary(from: task).id == task.hardwareIdentifier)
+        #expect(task.hardwareIdentifier.utf8.allSatisfy { (0x20...0x7E).contains($0) })
     }
 
     @Test("Snapshot version increments monotonically and changes epoch on overflow")
