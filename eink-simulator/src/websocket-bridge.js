@@ -34,7 +34,7 @@ export class WebSocketBridge {
     }
 
     this.ws.onopen = () => {
-      this.state.setAppConnected(true);
+      this._onConnected();
       this._setStatus('connected', 'Connected');
       this._log('out', 'Connected to APP');
       document.getElementById('btn-ws-connect').textContent = 'Disconnect';
@@ -105,7 +105,11 @@ export class WebSocketBridge {
         break;
 
       case 'app_task_library':
-        this.state.setCommittedTaskLibrary(msg.payload?.records || msg.records || []);
+        this._applyTaskLibrarySnapshot(msg.payload?.records || msg.records || []);
+        break;
+
+      case 'app_task_action_ack':
+        this._handleTaskActionAck(msg.payload || msg);
         break;
 
       case 'focus_start':
@@ -173,10 +177,10 @@ export class WebSocketBridge {
     if (payload.date) updates.date = payload.date;
     if (payload.tasks) updates.tasks = payload.tasks;
     if (payload.taskLibrary) {
-      this.state.setCommittedTaskLibrary(payload.taskLibrary);
+      this._applyTaskLibrarySnapshot(payload.taskLibrary);
     } else if (payload.tasks) {
       // Compatibility for the current debug bridge until it sends the independent 0x23 library.
-      this.state.setCommittedTaskLibrary(payload.tasks);
+      this._applyTaskLibrarySnapshot(payload.tasks);
     }
     if (payload.events) updates.events = payload.events;
     if (payload.petDialogue) updates.petDialogue = payload.petDialogue;
@@ -201,6 +205,55 @@ export class WebSocketBridge {
     if (Object.keys(updates).length > 0) {
       this.state.update(updates);
     }
+  }
+
+  /**
+   * Reconnect path: mark the App connected, then resend the full outbox
+   * (pending + unacknowledged) in insertionSeq order, followed by a single
+   * hw_task_action_replay_end marker so the App can flush its merged library
+   * only after every offline action has been delivered on the wire.
+   * Locally the library stays blocked until matching non-internal-error
+   * app_task_action_ack clears every outbox item — replay_end does not unlock.
+   */
+  _onConnected() {
+    this.state.setAppConnected(true);
+    this._flushOutboxTaskActions();
+  }
+
+  _flushOutboxTaskActions() {
+    const outbox = this.state.flushPendingTaskActions();
+    for (const entry of outbox) {
+      const message = this.state.taskActionToHardwareMessage(entry);
+      if (message) this.send(message);
+    }
+    // Always emit the end marker after the ordered action stream (possibly empty).
+    this.send({ type: 'hw_task_action_replay_end' });
+    return outbox;
+  }
+
+  _handleTaskActionAck(payload = {}) {
+    const outcome = this.state.applyTaskActionAck({
+      action: payload.action,
+      operationId: payload.operationId ?? payload.operationID,
+      result: payload.result ?? payload.code,
+    });
+    if (outcome.status === 'internalError') {
+      this._log('in', `Task action ACK internalError op=${payload.operationId}`);
+    }
+    return outcome;
+  }
+
+  _applyTaskLibrarySnapshot(records = []) {
+    const accepted = this.state.setCommittedTaskLibrary(records);
+    if (!accepted) {
+      this._log(
+        'in',
+        this.state.replayFailed
+          ? 'Blocked task library (replay failed)'
+          : 'Blocked task library (outbox not fully acknowledged)'
+      );
+    }
+    return accepted;
   }
 
   _summarizeMessage(msg) {

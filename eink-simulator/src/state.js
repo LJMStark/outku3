@@ -2,6 +2,9 @@
 // Simulator State - Single source of truth
 // ============================================================
 
+import { TaskActionLedger } from './task-action-ledger.js';
+import { installTaskActionDeviceApi } from './task-action-device-api.js';
+
 // Display Modes
 export const DisplayMode = Object.freeze({
   IDLE: 'idle',
@@ -186,6 +189,25 @@ export class SimulatorState {
 
     // Animation triggers
     this.lastUnlockedScene = null;
+
+    // Offline task-action outbox / idempotency ledger (extracted module).
+    this._taskActionLedger = new TaskActionLedger();
+  }
+
+  get taskActionLedger() {
+    return this._taskActionLedger.entries;
+  }
+
+  get replayFailed() {
+    return this._taskActionLedger.replayFailed;
+  }
+
+  get replayFailureReason() {
+    return this._taskActionLedger.replayFailureReason;
+  }
+
+  get _nextInsertionSeq() {
+    return this._taskActionLedger.nextInsertionSeq;
   }
 
   // Register change listeners
@@ -268,11 +290,16 @@ export class SimulatorState {
   }
 
   setCommittedTaskLibrary(records = []) {
+    if (!this.canAcceptTaskLibrarySnapshot()) {
+      return false;
+    }
+
     const taskLibrary = records
       .map(record => this._normalizeTaskRecord(record))
       .filter(record => record.id && !record.completed);
 
     this.update({ taskLibrary });
+    return true;
   }
 
   enterQueueHead() {
@@ -341,11 +368,11 @@ export class SimulatorState {
     if (!isFocusMode(this.displayMode) || !this.activeFocusTaskId) return null;
 
     const taskId = this.activeFocusTaskId;
-    const taskLibrary = this.taskLibrary.filter(task => task.id !== taskId);
-    const tasks = this.tasks.map(task => (
-      this._taskId(task) === taskId ? { ...task, completed: true } : task
-    ));
-    this._returnFromFocus({ taskLibrary, tasks });
+    if (!this.appConnected) {
+      return this._performOfflineTaskAction('complete', taskId);
+    }
+
+    this._applyTaskActionMutation('complete', taskId);
     return { type: 'hw_complete_task', taskId };
   }
 
@@ -354,15 +381,11 @@ export class SimulatorState {
     if (!isFocusMode(this.displayMode) || !this.activeFocusTaskId) return null;
 
     const taskId = this.activeFocusTaskId;
-    const taskIndex = this.taskLibrary.findIndex(task => task.id === taskId);
-    const taskLibrary = taskIndex < 0
-      ? this.taskLibrary
-      : [
-          ...this.taskLibrary.slice(0, taskIndex),
-          ...this.taskLibrary.slice(taskIndex + 1),
-          this.taskLibrary[taskIndex],
-        ];
-    this._returnFromFocus({ taskLibrary });
+    if (!this.appConnected) {
+      return this._performOfflineTaskAction('skip', taskId);
+    }
+
+    this._applyTaskActionMutation('skip', taskId);
     return { type: 'hw_skip_task', taskId };
   }
 
@@ -710,3 +733,5 @@ export class SimulatorState {
     }
   }
 }
+
+installTaskActionDeviceApi(SimulatorState.prototype, { isFocusMode });

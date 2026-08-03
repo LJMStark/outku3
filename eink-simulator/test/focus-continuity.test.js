@@ -198,7 +198,8 @@ test('skip exits a deleted active task without restoring it to the queue', () =>
 
   const event = state.skipCurrentTask();
 
-  assert.deepEqual(event, { type: 'hw_skip_task', taskId: 'alpha' });
+  assert.equal(event.type, 'hw_skip_task');
+  assert.equal(event.taskId, 'alpha');
   assert.equal(state.displayMode, DisplayMode.DAILY_SUMMARY);
   assert.equal(state.activeFocusTaskId, null);
   assert.deepEqual(state.taskLibrary, []);
@@ -213,7 +214,8 @@ test('complete exits a deleted active task without restoring it to the queue', (
 
   const event = state.completeCurrentTask();
 
-  assert.deepEqual(event, { type: 'hw_complete_task', taskId: 'alpha' });
+  assert.equal(event.type, 'hw_complete_task');
+  assert.equal(event.taskId, 'alpha');
   assert.equal(state.displayMode, DisplayMode.DAILY_SUMMARY);
   assert.equal(state.activeFocusTaskId, null);
   assert.deepEqual(state.taskLibrary, []);

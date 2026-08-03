@@ -38,7 +38,8 @@ test('overview short press always enters the committed queue head with local pha
 
   const message = state.handleShortPress();
 
-  assert.deepEqual(message, { type: 'hw_start_task', taskId: 'alpha' });
+  assert.equal(message.type, 'hw_start_task');
+  assert.equal(message.taskId, 'alpha');
   assert.equal(state.activeFocusTaskId, 'alpha');
   assert.equal(state.focusTask.overview, 'First task details');
   assert.equal(state.displayMode, DisplayMode.FOCUS_WARMUP);
@@ -56,7 +57,8 @@ test('completing removes the active task, returns to its source, and exposes the
 
   const message = state.handleShortPress();
 
-  assert.deepEqual(message, { type: 'hw_complete_task', taskId: 'alpha' });
+  assert.equal(message.type, 'hw_complete_task');
+  assert.equal(message.taskId, 'alpha');
   assert.equal(state.displayMode, DisplayMode.IDLE);
   assert.deepEqual(state.taskLibrary.map(task => task.id), ['beta']);
 
@@ -71,7 +73,8 @@ test('skipping keeps the task unfinished, gives no reward, and moves it to the q
 
   const message = state.handleLongPress();
 
-  assert.deepEqual(message, { type: 'hw_skip_task', taskId: 'alpha' });
+  assert.equal(message.type, 'hw_skip_task');
+  assert.equal(message.taskId, 'alpha');
   assert.equal(state.displayMode, DisplayMode.IDLE);
   assert.equal(state.energyBottles, 4);
   assert.deepEqual(state.taskLibrary.map(task => task.id), ['beta', 'alpha']);

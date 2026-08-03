@@ -37,7 +37,17 @@ test('overview renders the committed local task queue through complete and skip 
   renderer.renderIdleScreen();
   assert.deepEqual(taskTitles(screen), ['Beta']);
 
-  state.setCommittedTaskLibrary(committedTasks);
+  // Offline actions leave an outbox; library waits for explicit App ACKs, not flush alone.
+  state.flushPendingTaskActions();
+  assert.equal(state.setCommittedTaskLibrary(committedTasks), false);
+  for (const entry of state.outboxTaskActions()) {
+    state.applyTaskActionAck({
+      action: entry.action,
+      operationId: entry.operationId,
+      result: 'applied',
+    });
+  }
+  assert.equal(state.setCommittedTaskLibrary(committedTasks), true);
   state.handleShortPress();
   state.handleLongPress();
   renderer.renderIdleScreen();
