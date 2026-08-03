@@ -125,8 +125,10 @@ const isFocusMode = mode => String(mode).startsWith('focus');
 const isScreensaverMode = mode => String(mode).startsWith('screensaver');
 
 export class SimulatorState {
-  constructor() {
+  constructor({ nowProvider = () => Date.now() } = {}) {
     this._listeners = [];
+    this._nowProvider = nowProvider;
+    this.appConnected = false;
 
     // Display
     this.displayMode = DisplayMode.IDLE;
@@ -152,6 +154,7 @@ export class SimulatorState {
     this.focusPhase = 'idle';
     this.focusElapsedMinutes = 0;
     this.focusTimerActive = false;
+    this.focusStartedAt = null;
     this.focusSourceMode = DisplayMode.IDLE;
 
     // Energy
@@ -225,22 +228,29 @@ export class SimulatorState {
     });
   }
 
+  setAppConnected(connected) {
+    this.update({ appConnected: Boolean(connected) });
+  }
+
   // Focus timer
   setFocusMinutes(minutes) {
     if (minutes > 0 && !isFocusMode(this.displayMode)) {
       this.enterQueueHead();
     }
 
-    let mode = DisplayMode.IDLE;
-    if (minutes > 0 && minutes <= 5) mode = DisplayMode.FOCUS_WARMUP;
-    else if (minutes > 5 && minutes <= 15) mode = DisplayMode.FOCUS_BUILDING;
-    else if (minutes > 15) mode = DisplayMode.FOCUS_DEEP;
+    const mode = minutes > 0
+      ? this.focusPhaseToDisplayMode(this._focusPhaseAt(minutes))
+      : DisplayMode.IDLE;
 
     const updates = {
       focusPhase: this._displayModeToFocusPhase(mode),
       focusElapsedMinutes: minutes,
       displayMode: mode,
       currentPhaseBottleProgress: minutes / 30,
+      focusStartedAt: mode === DisplayMode.IDLE
+        ? null
+        : this._nowProvider() - (minutes * 60_000),
+      focusTimerActive: mode !== DisplayMode.IDLE,
     };
     if (mode === DisplayMode.IDLE) {
       updates.activeFocusTaskId = null;
@@ -274,20 +284,56 @@ export class SimulatorState {
     return { type: 'hw_start_task', taskId: task.id };
   }
 
-  startFocusTask(record) {
+  startFocusTask(record, { startedAt = this._nowProvider(), elapsedMinutes = 0 } = {}) {
     const task = this._normalizeTaskRecord(record);
     if (!task.id) return;
+    if (this.activeFocusTaskId && this.focusStartedAt !== null) {
+      this.refreshFocusFromClock();
+      return;
+    }
     if (!isFocusMode(this.displayMode)) {
       this.focusSourceMode = this._restorableMode(this.displayMode);
     }
+    const safeElapsedMinutes = Math.max(0, Math.floor(elapsedMinutes));
+    const focusPhase = this._focusPhaseAt(safeElapsedMinutes);
     this.update({
       focusTask: task,
       activeFocusTaskId: task.id,
-      focusPhase: 'warmup',
-      displayMode: DisplayMode.FOCUS_WARMUP,
-      focusElapsedMinutes: 0,
-      currentPhaseBottleProgress: 0,
+      focusPhase,
+      displayMode: this.focusPhaseToDisplayMode(focusPhase),
+      focusElapsedMinutes: safeElapsedMinutes,
+      focusStartedAt: startedAt,
+      focusTimerActive: true,
+      currentPhaseBottleProgress: safeElapsedMinutes / 30,
     });
+  }
+
+  refreshFocusFromClock() {
+    if (!this.activeFocusTaskId || this.focusStartedAt === null) return false;
+
+    const elapsedMinutes = Math.max(
+      this.focusElapsedMinutes,
+      this._elapsedFocusMinutesAt(this._nowProvider())
+    );
+    const focusPhase = this._focusPhaseAt(elapsedMinutes);
+    const focusMode = this.focusPhaseToDisplayMode(focusPhase);
+    const screensaverVisible = isScreensaverMode(this.displayMode);
+    if (screensaverVisible) {
+      this.screensaverSourceMode = focusMode;
+    }
+    if (elapsedMinutes === this.focusElapsedMinutes
+        && focusPhase === this.focusPhase
+        && (screensaverVisible || this.displayMode === focusMode)) {
+      return false;
+    }
+
+    this.update({
+      focusPhase,
+      focusElapsedMinutes: elapsedMinutes,
+      displayMode: screensaverVisible ? this.displayMode : focusMode,
+      currentPhaseBottleProgress: elapsedMinutes / 30,
+    });
+    return true;
   }
 
   // Complete task
@@ -309,13 +355,13 @@ export class SimulatorState {
 
     const taskId = this.activeFocusTaskId;
     const taskIndex = this.taskLibrary.findIndex(task => task.id === taskId);
-    if (taskIndex < 0) return null;
-    const task = this.taskLibrary[taskIndex];
-    const taskLibrary = [
-      ...this.taskLibrary.slice(0, taskIndex),
-      ...this.taskLibrary.slice(taskIndex + 1),
-      task,
-    ];
+    const taskLibrary = taskIndex < 0
+      ? this.taskLibrary
+      : [
+          ...this.taskLibrary.slice(0, taskIndex),
+          ...this.taskLibrary.slice(taskIndex + 1),
+          this.taskLibrary[taskIndex],
+        ];
     this._returnFromFocus({ taskLibrary });
     return { type: 'hw_skip_task', taskId };
   }
@@ -438,19 +484,47 @@ export class SimulatorState {
   applyFocusState({ energyBottles, activeFocusTaskId, focusPhase, elapsedMinutes, taskTitle }) {
     const normalizedPhase = this.normalizeFocusPhase(focusPhase);
     const screensaverVisible = isScreensaverMode(this.displayMode);
-    const matchedTask = activeFocusTaskId
-      ? this.taskLibrary.find(task => task.id === activeFocusTaskId)
+    const reportedTaskID = activeFocusTaskId ?? this.activeFocusTaskId;
+    const reconcilingConnectedFocus = normalizedPhase !== 'idle'
+      && this.appConnected
+      && this.activeFocusTaskId
+      && this.focusStartedAt !== null;
+    const resolvedTaskID = reconcilingConnectedFocus
+      ? this.activeFocusTaskId
+      : reportedTaskID;
+    const continuingSameFocus = normalizedPhase !== 'idle'
+      && resolvedTaskID
+      && resolvedTaskID === this.activeFocusTaskId
+      && this.focusStartedAt !== null;
+    const reportedElapsed = Math.max(
+      0,
+      Math.floor(elapsedMinutes ?? this._minimumElapsedForPhase(normalizedPhase))
+    );
+    const nextElapsed = reconcilingConnectedFocus
+      ? Math.max(
+          this.focusElapsedMinutes,
+          this._elapsedFocusMinutesAt(this._nowProvider()),
+          reportedTaskID === this.activeFocusTaskId ? reportedElapsed : 0
+        )
+      : reportedElapsed;
+    const resolvedPhase = normalizedPhase === 'idle'
+      ? 'idle'
+      : this._focusPhaseAt(nextElapsed);
+    const matchedTask = resolvedTaskID
+      ? this.taskLibrary.find(task => task.id === resolvedTaskID)
       : null;
-    const nextFocusTask = activeFocusTaskId
+    const nextFocusTask = continuingSameFocus
+      ? this.focusTask
+      : resolvedTaskID
       ? this._normalizeTaskRecord({
           ...(matchedTask || this.focusTask || {}),
-          id: activeFocusTaskId,
+          id: resolvedTaskID,
           title: taskTitle || matchedTask?.title || this.focusTask?.title,
         })
       : this.focusTask;
     let nextDisplayMode;
     if (screensaverVisible) {
-      if (normalizedPhase === 'idle') {
+      if (resolvedPhase === 'idle') {
         if (isFocusMode(this.screensaverSourceMode)) {
           this.screensaverSourceMode = this._restorableMode(this.focusSourceMode);
         }
@@ -458,29 +532,35 @@ export class SimulatorState {
         if (!isFocusMode(this.screensaverSourceMode)) {
           this.focusSourceMode = this._restorableMode(this.screensaverSourceMode);
         }
-        this.screensaverSourceMode = this.focusPhaseToDisplayMode(normalizedPhase);
+        this.screensaverSourceMode = this.focusPhaseToDisplayMode(resolvedPhase);
       }
       nextDisplayMode = this.displayMode;
     } else {
-      nextDisplayMode = normalizedPhase === 'idle'
+      nextDisplayMode = resolvedPhase === 'idle'
         ? (isFocusMode(this.displayMode) ? this._restorableMode(this.focusSourceMode) : this.displayMode)
-        : this.focusPhaseToDisplayMode(normalizedPhase);
+        : this.focusPhaseToDisplayMode(resolvedPhase);
     }
 
-    if (!screensaverVisible && normalizedPhase !== 'idle' && !isFocusMode(this.displayMode)) {
+    if (!screensaverVisible && resolvedPhase !== 'idle' && !isFocusMode(this.displayMode)) {
       this.focusSourceMode = this._restorableMode(this.displayMode);
     }
 
     this.update({
       energyBottles: energyBottles ?? this.energyBottles,
-      activeFocusTaskId: normalizedPhase === 'idle' ? null : (activeFocusTaskId ?? this.activeFocusTaskId),
+      activeFocusTaskId: resolvedPhase === 'idle' ? null : resolvedTaskID,
       focusTask: nextFocusTask,
-      focusPhase: normalizedPhase,
+      focusPhase: resolvedPhase,
       displayMode: nextDisplayMode,
-      focusElapsedMinutes: normalizedPhase === 'idle' ? 0 : (elapsedMinutes ?? this.focusElapsedMinutes),
-      currentPhaseBottleProgress: normalizedPhase === 'idle'
+      focusElapsedMinutes: resolvedPhase === 'idle' ? 0 : nextElapsed,
+      focusStartedAt: resolvedPhase === 'idle'
+        ? null
+        : (reconcilingConnectedFocus
+          ? this.focusStartedAt
+          : this._nowProvider() - (nextElapsed * 60_000)),
+      focusTimerActive: resolvedPhase !== 'idle',
+      currentPhaseBottleProgress: resolvedPhase === 'idle'
         ? 0
-        : ((elapsedMinutes ?? this.focusElapsedMinutes) / 30),
+        : (nextElapsed / 30),
     });
   }
 
@@ -566,6 +646,8 @@ export class SimulatorState {
       focusPhase: 'idle',
       displayMode: this._restorableMode(this.focusSourceMode),
       focusElapsedMinutes: 0,
+      focusStartedAt: null,
+      focusTimerActive: false,
       currentPhaseBottleProgress: 0,
     });
   }
@@ -604,6 +686,27 @@ export class SimulatorState {
         return 'deep';
       default:
         return 'idle';
+    }
+  }
+
+  _elapsedFocusMinutesAt(now) {
+    return Math.max(0, Math.floor((now - this.focusStartedAt) / 60_000));
+  }
+
+  _focusPhaseAt(elapsedMinutes) {
+    if (elapsedMinutes <= 5) return 'warmup';
+    if (elapsedMinutes <= 15) return 'building';
+    return 'deep';
+  }
+
+  _minimumElapsedForPhase(phase) {
+    switch (phase) {
+      case 'building':
+        return 6;
+      case 'deep':
+        return 16;
+      default:
+        return 0;
     }
   }
 }

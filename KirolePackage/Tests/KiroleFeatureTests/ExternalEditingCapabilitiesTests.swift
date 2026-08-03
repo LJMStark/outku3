@@ -152,6 +152,93 @@ struct TaskEditCapabilityTests {
 
         #expect(task.editCapabilities.isEditable == false)
     }
+
+    @Test("Connected focus locks only the active canonical task")
+    func connectedFocusLocksActiveTask() {
+        let activeTask = TaskItem(id: "active-task", title: "Active", source: .apple)
+        let otherTask = TaskItem(id: "other-task", title: "Other", source: .apple)
+        let context = TaskEditingContext(
+            isDeviceConnected: true,
+            activeFocusTaskID: activeTask.id
+        )
+
+        let activeCapabilities = activeTask.editCapabilities(in: context)
+
+        #expect(activeCapabilities.isEditable == false)
+        #expect(activeCapabilities.guidance == TaskEditingError.activeOnConnectedDevice.errorDescription)
+        #expect(otherTask.editCapabilities(in: context).isEditable)
+    }
+
+    @Test("Disconnecting unlocks the active task for editing")
+    func disconnectedFocusDoesNotLockTask() {
+        let task = TaskItem(id: "active-task", title: "Active", source: .apple)
+        let context = TaskEditingContext(
+            isDeviceConnected: false,
+            activeFocusTaskID: task.id
+        )
+
+        #expect(task.editCapabilities(in: context).isEditable)
+    }
+
+    @Test("Accessibility status clearly describes focus lock transitions")
+    func accessibilityStatusDescribesLockAndUnlock() {
+        let task = TaskItem(id: "active-task", title: "Active", source: .apple)
+        let connectedContext = TaskEditingContext(
+            isDeviceConnected: true,
+            activeFocusTaskID: task.id
+        )
+        let disconnectedContext = TaskEditingContext(
+            isDeviceConnected: false,
+            activeFocusTaskID: task.id
+        )
+
+        #expect(
+            task.editCapabilities(in: connectedContext).accessibilityStatus
+                == "Editing locked. This task is active on your Kirole device. End focus or disconnect the device before editing it."
+        )
+        #expect(
+            task.editCapabilities(in: disconnectedContext).accessibilityStatus
+                == "Editing unlocked. You can edit this task."
+        )
+    }
+
+    @Test("A wire identifier is not treated as the canonical focus task ID")
+    func wireIdentifierDoesNotLockCanonicalTask() {
+        let task = TaskItem(
+            id: "long-unicode-task-你好-🚀-abcdefghijklmnopqrstuvwxyz",
+            title: "Active",
+            source: .apple
+        )
+        let context = TaskEditingContext(
+            isDeviceConnected: true,
+            activeFocusTaskID: task.hardwareIdentifier
+        )
+
+        #expect(task.hardwareIdentifier != task.id)
+        #expect(task.editCapabilities(in: context).isEditable)
+    }
+
+    @Test("A focus lock never replaces permanent source read-only guidance")
+    func sourceReadOnlyGuidanceTakesPriorityOverFocusLock() {
+        let context = TaskEditingContext(
+            isDeviceConnected: true,
+            activeFocusTaskID: "active-task"
+        )
+        let expectations: [(EventSource, String)] = [
+            (.notion, "Notion tasks are read-only in Kirole. Edit them in Notion."),
+            (.taskade, "Taskade tasks are read-only in Kirole. Edit them in Taskade."),
+            (.todoist, "Writing back to Todoist isn't supported yet. Edit it in Todoist.")
+        ]
+
+        for (source, expectedGuidance) in expectations {
+            let task = TaskItem(id: "active-task", title: "Active", source: source)
+            let capabilities = task.editCapabilities(in: context)
+
+            #expect(capabilities.isEditable == false)
+            #expect(capabilities.guidance == expectedGuidance)
+            #expect(capabilities.accessibilityStatus == "Editing unavailable. \(expectedGuidance)")
+        }
+    }
 }
 
 @Suite("Event Edit Capability Tests")

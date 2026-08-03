@@ -100,7 +100,7 @@ extension BLEService: CBCentralManagerDelegate {
             // 错误完成它的 connectCompletion，自动重连也会与在飞的新尝试打架——整体跳过。
             // 身份不符（含 cleanup 已跑完、connectedPeripheral 已空）同理。
             guard shouldProcessCallback(generationAtDelivery: generation, peripheralID: peripheral.identifier) else { return }
-            // 设备断开时结束活跃的专注会话
+            // 断连只中断传输，Focus 服务保留活跃会话和连续计时。
             FocusSessionService.shared.handleDeviceDisconnected()
 
             // cleanup 会把 Wi-Fi 调试协调器重置为 unknown，故重连判定也必须先快照。

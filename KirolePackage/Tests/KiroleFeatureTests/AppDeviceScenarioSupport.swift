@@ -134,6 +134,15 @@ final class AppDeviceScenario {
         connectionState = .connected
     }
 
+    func reconnectFocus(taskID: String, elapsedMinutes: Int) throws {
+        try devicePageState.reconcileFocus(
+            taskID: taskID,
+            elapsedMinutes: elapsedMinutes,
+            at: currentDate
+        )
+        connectionState = .connected
+    }
+
     func replaceAppTasks(_ tasks: [TaskItem]) async {
         appState.tasks = tasks
         await appPersistence.replace(tasks: tasks, pet: appState.pet)
@@ -507,7 +516,7 @@ final class AppDeviceScenario {
         guard record.taskID == taskID else {
             throw SimulationError.taskLibraryTaskNotFound
         }
-        try devicePageState.enterFocus(taskID: taskID, at: currentDate)
+        try devicePageState.enterFocus(task: record, at: currentDate)
         return record
     }
 
@@ -520,18 +529,22 @@ final class AppDeviceScenario {
 
     func enterTaskFromQueueHead() throws -> TaskLibraryRecord {
         let record = try taskLibraryFirmware.queueHead()
-        try devicePageState.enterFocus(taskID: record.taskID, at: currentDate)
+        try devicePageState.enterFocus(task: record, at: currentDate)
         return record
     }
 
     func currentTaskPhaseText(elapsedMinutes: Int) throws -> String {
-        guard let taskID = devicePageState.focus?.taskID else {
+        guard let focus = devicePageState.focus else {
             throw AppDeviceScenarioError.invalidDevicePageAction
         }
-        return try taskLibraryFirmware.phaseText(
-            taskID: taskID,
-            elapsedMinutes: elapsedMinutes
-        )
+        return focus.phaseText(elapsedMinutes: elapsedMinutes)
+    }
+
+    func currentTaskPhaseText() throws -> String {
+        guard let focus = devicePageState.focus else {
+            throw AppDeviceScenarioError.invalidDevicePageAction
+        }
+        return focus.phaseText(at: currentDate)
     }
 
     @discardableResult

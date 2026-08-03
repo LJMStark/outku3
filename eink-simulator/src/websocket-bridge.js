@@ -34,17 +34,20 @@ export class WebSocketBridge {
     }
 
     this.ws.onopen = () => {
+      this.state.setAppConnected(true);
       this._setStatus('connected', 'Connected');
       this._log('out', 'Connected to APP');
       document.getElementById('btn-ws-connect').textContent = 'Disconnect';
     };
 
     this.ws.onclose = () => {
+      this.state.setAppConnected(false);
       this._setStatus('disconnected', 'Disconnected');
       document.getElementById('btn-ws-connect').textContent = 'Connect';
     };
 
     this.ws.onerror = () => {
+      this.state.setAppConnected(false);
       this._setStatus('disconnected', 'Connection Error');
       this._log('in', `Error: WebSocket failed`);
     };
@@ -115,16 +118,11 @@ export class WebSocketBridge {
         break;
 
       case 'focus_phase':
-        {
-          const focusPhase = this.state.normalizeFocusPhase(msg.payload.phase);
-          const elapsed = msg.payload.elapsed || 0;
-          this.state.update({
-            focusPhase,
-            focusElapsedMinutes: elapsed,
-            displayMode: this.state.focusPhaseToDisplayMode(focusPhase),
-            currentPhaseBottleProgress: elapsed / 30,
-          });
-        }
+        this.state.applyFocusState({
+          activeFocusTaskId: this.state.activeFocusTaskId,
+          focusPhase: msg.payload.phase,
+          elapsedMinutes: msg.payload.elapsed,
+        });
         break;
 
       case 'focus_end':

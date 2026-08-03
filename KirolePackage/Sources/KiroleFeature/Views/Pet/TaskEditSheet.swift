@@ -1,10 +1,14 @@
+import Accessibility
 import SwiftUI
 
 public struct TaskEditSheet: View {
     let task: TaskItem
     @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
+    @Environment(\.focusService) private var focusService
     @Environment(\.dismiss) private var dismiss
+
+    @State private var bleService = BLEService.shared
 
     @State private var title: String
     @State private var priority: TaskPriority
@@ -19,7 +23,10 @@ public struct TaskEditSheet: View {
     }
 
     private var capabilities: TaskEditCapabilities {
-        task.editCapabilities
+        task.editCapabilities(in: TaskEditingContext(
+            isDeviceConnected: bleService.connectionState.isConnected,
+            activeFocusTaskID: focusService.activeSession?.taskId
+        ))
     }
 
     private var dueDateComponents: DatePickerComponents {
@@ -47,8 +54,11 @@ public struct TaskEditSheet: View {
             Form {
                 if let guidance = capabilities.guidance {
                     Section {
-                        Label(guidance, systemImage: capabilities.isEditable ? "info.circle" : "arrow.up.forward")
+                        Label(guidance, systemImage: statusIconName)
                             .foregroundStyle(.secondary)
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityLabel(capabilities.accessibilityStatus)
+                            .accessibilityIdentifier("TaskEdit_Status")
                     }
                 }
 
@@ -65,6 +75,7 @@ public struct TaskEditSheet: View {
                             Text("High").tag(TaskPriority.high)
                         }
                         .pickerStyle(.segmented)
+                        .disabled(!capabilities.isEditable)
                     }
                 }
 
@@ -93,6 +104,10 @@ public struct TaskEditSheet: View {
                 }
             }
             .navigationTitle("Edit Task")
+            .onChange(of: capabilities.accessibilityStatus) { oldValue, newValue in
+                guard oldValue != newValue else { return }
+                AccessibilityNotification.Announcement(newValue).post()
+            }
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
@@ -122,6 +137,13 @@ public struct TaskEditSheet: View {
                 }
             }
         }
+    }
+
+    private var statusIconName: String {
+        if capabilities.isFocusLocked {
+            return "lock.fill"
+        }
+        return capabilities.isEditable ? "info.circle" : "arrow.up.forward"
     }
 
     @MainActor

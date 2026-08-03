@@ -6,8 +6,34 @@ public enum TaskDueDateEditPrecision: Sendable, Equatable {
     case dateAndTime
 }
 
+public struct TaskEditingContext: Sendable, Equatable {
+    public let isDeviceConnected: Bool
+    public let activeFocusTaskID: String?
+
+    public init(isDeviceConnected: Bool, activeFocusTaskID: String?) {
+        self.isDeviceConnected = isDeviceConnected
+        self.activeFocusTaskID = activeFocusTaskID
+    }
+
+    public func locksEditing(of taskID: String) -> Bool {
+        isDeviceConnected && activeFocusTaskID == taskID
+    }
+}
+
+public enum TaskEditingError: LocalizedError, Sendable, Equatable {
+    case activeOnConnectedDevice
+
+    public var errorDescription: String? {
+        switch self {
+        case .activeOnConnectedDevice:
+            return "This task is active on your Kirole device. End focus or disconnect the device before editing it."
+        }
+    }
+}
+
 public struct TaskEditCapabilities: Sendable, Equatable {
     public let isEditable: Bool
+    public let isFocusLocked: Bool
     public let supportsTitle: Bool
     public let supportsPriority: Bool
     public let dueDatePrecision: TaskDueDateEditPrecision
@@ -16,6 +42,7 @@ public struct TaskEditCapabilities: Sendable, Equatable {
 
     public init(
         isEditable: Bool,
+        isFocusLocked: Bool = false,
         supportsTitle: Bool,
         supportsPriority: Bool,
         dueDatePrecision: TaskDueDateEditPrecision,
@@ -23,11 +50,26 @@ public struct TaskEditCapabilities: Sendable, Equatable {
         guidance: String? = nil
     ) {
         self.isEditable = isEditable
+        self.isFocusLocked = isFocusLocked
         self.supportsTitle = supportsTitle
         self.supportsPriority = supportsPriority
         self.dueDatePrecision = dueDatePrecision
         self.supportsNotes = supportsNotes
         self.guidance = guidance
+    }
+
+    public var accessibilityStatus: String {
+        if isFocusLocked {
+            return "Editing locked. \(guidance ?? "End focus or disconnect the device before editing this task.")"
+        }
+
+        if isEditable {
+            let status = "Editing unlocked. You can edit this task."
+            return guidance.map { "\(status) \($0)" } ?? status
+        }
+
+        let status = "Editing unavailable."
+        return guidance.map { "\(status) \($0)" } ?? status
     }
 }
 
@@ -89,6 +131,25 @@ extension TaskItem {
                 guidance: "Writing back to Todoist isn't supported yet. Edit it in Todoist."
             )
         }
+    }
+
+    public func editCapabilities(in context: TaskEditingContext) -> TaskEditCapabilities {
+        let sourceCapabilities = editCapabilities
+        guard sourceCapabilities.isEditable else {
+            return sourceCapabilities
+        }
+        guard context.locksEditing(of: id) else {
+            return sourceCapabilities
+        }
+        return TaskEditCapabilities(
+            isEditable: false,
+            isFocusLocked: true,
+            supportsTitle: sourceCapabilities.supportsTitle,
+            supportsPriority: sourceCapabilities.supportsPriority,
+            dueDatePrecision: sourceCapabilities.dueDatePrecision,
+            supportsNotes: sourceCapabilities.supportsNotes,
+            guidance: TaskEditingError.activeOnConnectedDevice.errorDescription
+        )
     }
 }
 

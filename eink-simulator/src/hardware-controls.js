@@ -3,17 +3,34 @@
 // ============================================================
 
 export class HardwareControls {
-  constructor(state) {
+  constructor(
+    state,
+    {
+      scheduleRepeating = (callback, milliseconds) => setInterval(callback, milliseconds),
+      cancelRepeating = timer => clearInterval(timer),
+    } = {}
+  ) {
     this.state = state;
     this._longPressTimer = null;
     this._isLongPress = false;
     this._wsBridge = null;
+    this._cancelRepeating = cancelRepeating;
 
     this._bindButtons();
+    this._focusClockTimer = scheduleRepeating(() => {
+      this.state.refreshFocusFromClock();
+    }, 1_000);
   }
 
   setWebSocketBridge(bridge) {
     this._wsBridge = bridge;
+  }
+
+  dispose() {
+    if (this._focusClockTimer !== null) {
+      this._cancelRepeating(this._focusClockTimer);
+      this._focusClockTimer = null;
+    }
   }
 
   _bindButtons() {

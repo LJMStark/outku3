@@ -402,10 +402,8 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
         isIntentionalDisconnect = true
         reconnectTask?.cancel()
         reconnectTask = nil
-        // 断连结束专注必须在意图点直接触发：cleanup() 清空 connectedPeripheral 后，
-        // 随后到达的合法 didDisconnect 会被 shouldProcessCallback 身份门拒绝，
-        // 回调里的 handleDeviceDisconnected 永远不跑（2a7bf26 引入的回归，联审 2026-07-16 F7）。
-        // 双结算无风险：回调被门拒；即使放行，endSession 的 activeSession guard 也会挡住第二次。
+        // cleanup() 会清空 connectedPeripheral，随后的 didDisconnect 回调可能被代次门拒绝。
+        // 在意图点通知 Focus 服务；该服务明确保留活跃会话，断连不等于结束专注。
         FocusSessionService.shared.handleDeviceDisconnected()
         if let peripheral = connectedPeripheral {
             centralManager?.cancelPeripheralConnection(peripheral)

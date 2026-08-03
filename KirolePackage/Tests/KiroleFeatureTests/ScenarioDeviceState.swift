@@ -9,8 +9,40 @@ enum ScenarioDevicePage: Codable, Equatable, Sendable {
 }
 
 struct ScenarioDeviceFocus: Codable, Equatable, Sendable {
-    let taskID: String
+    let task: TaskLibraryRecord
     let startedAt: Date
+
+    var taskID: String { task.taskID }
+
+    init(task: TaskLibraryRecord, startedAt: Date) {
+        self.task = task
+        self.startedAt = startedAt
+    }
+
+    init(taskID: String, startedAt: Date) {
+        self.init(
+            task: TaskLibraryRecord(
+                taskID: taskID,
+                order: 0,
+                title: "",
+                detail: "",
+                phaseTexts: .localFallback
+            ),
+            startedAt: startedAt
+        )
+    }
+
+    func elapsedMinutes(at now: Date) -> Int {
+        Int(max(0, now.timeIntervalSince(startedAt)) / 60)
+    }
+
+    func phaseText(at now: Date) -> String {
+        task.phaseTexts.text(atElapsedMinutes: elapsedMinutes(at: now))
+    }
+
+    func phaseText(elapsedMinutes: Int) -> String {
+        task.phaseTexts.text(atElapsedMinutes: elapsedMinutes)
+    }
 }
 
 struct ScenarioDeviceStaticFeedback: Equatable, Sendable {
@@ -43,14 +75,23 @@ struct ScenarioDeviceLocalPageState: Equatable, Sendable {
         self.focus = focus
     }
 
-    mutating func enterFocus(taskID: String, at now: Date) throws {
+    mutating func enterFocus(task: TaskLibraryRecord, at now: Date) throws {
         guard case .focus = currentPage else {
             focusSourcePage = currentPage
-            currentPage = .focus(taskID: taskID)
-            focus = ScenarioDeviceFocus(taskID: taskID, startedAt: now)
+            currentPage = .focus(taskID: task.taskID)
+            focus = ScenarioDeviceFocus(task: task, startedAt: now)
             return
         }
         throw AppDeviceScenarioError.invalidDevicePageAction
+    }
+
+    func reconcileFocus(taskID: String, elapsedMinutes: Int, at now: Date) throws {
+        guard currentPage == .focus(taskID: taskID),
+              let focus,
+              focus.taskID == taskID,
+              focus.elapsedMinutes(at: now) == max(0, elapsedMinutes) else {
+            throw AppDeviceScenarioError.invalidDevicePageAction
+        }
     }
 
     mutating func exitFocus(taskID: String) throws {

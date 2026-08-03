@@ -711,12 +711,9 @@ public final class FocusSessionService {
         }
     }
 
-    /// 设备断开连接时结束会话
-    public func handleDeviceDisconnected() {
-        if activeSession != nil {
-            endSession(reason: .disconnected)
-        }
-    }
+    /// BLE 断连只中断硬件显示同步，不结束 App 内的专注会话。
+    /// `FocusEndReason.disconnected` 仅保留用于解码历史记录。
+    public func handleDeviceDisconnected() {}
 
     /// 应用回到前台时，刷新深度专注权限并在必要时降级
     public func refreshProtectionStatus() async {

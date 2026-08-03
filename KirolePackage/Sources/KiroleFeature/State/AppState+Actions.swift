@@ -565,9 +565,33 @@ extension AppState {
         dueDate: Date?,
         notes: String?
     ) async throws {
+        try await editTask(
+            task,
+            title: title,
+            priority: priority,
+            dueDate: dueDate,
+            notes: notes,
+            editingContext: TaskEditingContext(
+                isDeviceConnected: BLEService.shared.connectionState.isConnected,
+                activeFocusTaskID: FocusSessionService.shared.activeSession?.taskId
+            )
+        )
+    }
+
+    func editTask(
+        _ task: TaskItem,
+        title: String,
+        priority: TaskPriority,
+        dueDate: Date?,
+        notes: String?,
+        editingContext: TaskEditingContext
+    ) async throws {
         guard let index = tasks.firstIndex(where: { $0.id == task.id }) else { return }
 
         let baselineTask = tasks[index]
+        guard !editingContext.locksEditing(of: baselineTask.id) else {
+            throw TaskEditingError.activeOnConnectedDevice
+        }
         var updatedTask = baselineTask
         updatedTask.title = title
         updatedTask.priority = priority
