@@ -164,6 +164,7 @@
 
     .hero { padding-top: clamp(56px, 8vw, 110px); }
     .hero-grid { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(280px, .55fr); gap: 46px; align-items: end; }
+    .hero-grid > *, .version-card { min-width: 0; }
     .hero .lead { max-width: 820px; margin-top: 26px; }
     .version-card {
       padding: 24px;
@@ -175,7 +176,9 @@
     .version-card p { color: #d7d3c9; font-size: 14px; }
     .version-card strong { display: block; margin-bottom: 6px; color: white; font-size: 18px; }
     .version-line { display: flex; justify-content: space-between; gap: 16px; padding: 10px 0; border-top: 1px solid #3e3e37; }
+    .version-line span { min-width: 0; }
     .version-line span:first-child { color: #b9b7ae; }
+    .version-line span:last-child { max-width: 62%; text-align: right; overflow-wrap: anywhere; }
     .truth-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-top: 48px; }
     .truth-card {
       min-height: 230px;
@@ -615,10 +618,11 @@
         <aside class="version-card" aria-label="文档适用范围">
           <strong>当前梳理范围</strong>
           <p>依据当前 App 行为、双方通信约定与固件需求整理。本页为<strong>中文交付</strong>（产品经理阅读版），不含英文对照。</p>
-          <div class="version-line"><span>更新日期</span><span>2026-08-01</span></div>
+          <div class="version-line"><span>更新日期</span><span>2026-08-02</span></div>
           <div class="version-line"><span>手机端基线</span><span>App build 631</span></div>
           <div class="version-line"><span>通信约定</span><span>v2.10.2</span></div>
           <div class="version-line"><span>设备需求</span><span>v1.9.2</span></div>
+          <div class="version-line"><span>本轮产品决策</span><span>已确认，待 App / 固件实现</span></div>
           <div class="version-line"><span>本轮真机验收</span><span>尚无通过记录</span></div>
           <div class="version-line"><span>语言</span><span>中文交付</span></div>
         </aside>
@@ -633,8 +637,8 @@
         </article>
         <article class="truth-card">
           <span class="num">02 / 数据</span>
-          <h3>先保存，再写文案</h3>
-          <p>任务或日程先成为可靠数据，随后才刷新 AI 文案并准备发给硬件。AI 失败不会让任务本身丢失，也不会阻塞完成、编辑或同步。</p>
+          <h3>保存后等三分钟稳定</h3>
+          <p>任务或当天日程每次修改都先保存；最后一次修改连续三分钟没有再变化后，只准备并发送最新结果。完成和跳过立即处理，不等待三分钟。</p>
         </article>
         <article class="truth-card">
           <span class="num">03 / 按键</span>
@@ -643,19 +647,19 @@
         </article>
         <article class="truth-card">
           <span class="num">04 / 离线</span>
-          <h3>有的预先发，有的现场取</h3>
-          <p>当天日程的支持文案和晚间总结会预先发到设备；任务详情文案要在用户进入任务时现场发送。两者断开后的表现不同。</p>
+          <h3>内容先发，现场只提取</h3>
+          <p>全部未完成任务、每项任务的详情与三阶段文案，以及当天日程和每日文字都预先放进设备。进入任务、日程到点和进入屏保时只在设备本地选择，不现场索取。</p>
         </article>
       </div>
 
       <div class="boundary-note">
         <strong>阅读约定</strong>
-        <p>页面里的“手机端已具备”只说明 App 已经会做；“设备端按约定处理”说明固件还要配合；“真机确认”才代表蓝牙、固件和墨水屏已经在真实设备上共同跑通。三者不能混为一谈。</p>
+        <p>本页已经按 2026-08-02 确认的目标行为更新。页面里的“手机端已具备”只说明旧基线已有相应能力；标记“产品已确认，待实现”的场景仍要修改 App、通信约定和固件；“真机确认”才代表整套行为已经在真实设备上跑通。</p>
       </div>
-      <div class="status-summary" aria-label="二十四个重点场景的当前状态">
-        <div><strong>13</strong><span>手机端已具备</span></div>
-        <div><strong>9</strong><span>待真机确认</span></div>
-        <div><strong>2</strong><span>降级可用</span></div>
+      <div class="status-summary" aria-label="产品规则、实现与验收的区别">
+        <div><strong>规则</strong><span>本轮产品行为已确认</span></div>
+        <div><strong>实现</strong><span>App、通信与固件待修改</span></div>
+        <div><strong>验收</strong><span>完成后仍需真机证据</span></div>
       </div>
     </section>
 
@@ -674,17 +678,17 @@
         </li>
         <li>
           <h3>手机 App</h3>
-          <p>合并数据、保存用户动作、决定今天要给硬件哪些内容，并记录哪些硬件动作已经处理过。</p>
+          <p>合并数据、保存用户动作，准备完整未完成任务库和当天内容包，并记录哪些硬件动作已经处理过。</p>
           <span class="actor-tag">业务决定者</span>
         </li>
         <li>
           <h3>AI 文案</h3>
-          <p>根据角色、时段、日程与任务写一句合适的话。可使用缓存，失败时有本地替代文案。</p>
+          <p>在内容同步前，为任务、日程和每日页面一次匹配好所需文字。首次失败后后台重试一次，仍失败就用本地模板补齐完整内容。</p>
           <span class="actor-tag">内容作者，不是数据源</span>
         </li>
         <li>
           <h3>蓝牙连接</h3>
-          <p>在手机和设备之间传送当天内容、任务页面、专注状态与硬件操作记录。</p>
+          <p>在手机和设备之间传送完整任务库、任务变化、当天内容包、专注状态与硬件操作记录。</p>
           <span class="actor-tag">只负责送达</span>
         </li>
         <li>
@@ -696,12 +700,12 @@
 
       <div class="two-way">
         <article class="direction-card">
-          <h3>手机改了东西：发“最新结果”</h3>
+          <h3>手机改了东西：三分钟后发“最新结果”</h3>
           <ol>
             <li>用户或外部服务修改任务 / 日程。</li>
-            <li>App 合并成当前最新状态。</li>
-            <li>文案按需更新，连接允许时发送。</li>
-            <li>中间连续改了五次，设备通常只需拿到最后一版。</li>
+            <li>App 立即保存，并从最后一次修改开始等待三分钟。</li>
+            <li>只重新准备真正受影响的文案；首次失败后后台重试一次，仍失败就用本地模板。</li>
+            <li>连续修改会重新计时，设备最终只接收最后一版；断联不重置倒计时。</li>
           </ol>
         </article>
         <article class="direction-card reverse">
@@ -710,7 +714,7 @@
             <li>设备在断开时记录完成、跳过、提醒确认等动作。</li>
             <li>重新连接后逐条交给 App。</li>
             <li>App 按真实发生顺序处理，重复记录不会重复奖励。</li>
-            <li>最后把 App 当前任务清单发回设备。</li>
+            <li>先合并离线动作，再把 App 当前任务库变化发回设备。</li>
           </ol>
         </article>
       </div>
@@ -744,7 +748,7 @@
         </article>
         <article class="path">
           <strong>专注中断开</strong>
-          <p>当前专注在 App 端结束。重新连接后不会擅自恢复旧专注页，用户要重新进入任务，避免旧页面与新状态冲突。</p>
+          <p>断联不结束专注。设备继续按本地时钟计时并保持当前专注页，App 保留同一次专注；重连后不切页，只核对当前任务和已专注时长。</p>
         </article>
       </div>
       <p class="fine">说明：测试版本可以配置为保持连接；正式产品也可以采用“需要时连接、完成后断开”的省电方式。无论采用哪一种，数据与动作恢复规则不变。</p>
@@ -753,27 +757,27 @@
     <section id="copy" aria-labelledby="copy-title">
       <div class="section-head">
         <p class="kicker">03 / AI 文案时机</p>
-        <h2 id="copy-title">哪些先发，哪些到现场再发</h2>
-        <p class="lead">用户最关心的答案是：同一天的日程支持文案会随当天内容预先下发，设备断开后仍可按本地时钟切换；但所有任务详情不会提前逐条塞进设备。</p>
+        <h2 id="copy-title">内容全部先准备，设备到现场本地提取</h2>
+        <p class="lead">全部未完成任务不限制数量和日期范围，任务详情与三阶段文案随任务库同步；日历日程仍只同步当天内容。进入任务、日程到点、进入总结或屏保都不再现场请求文字。</p>
       </div>
 
       <div class="preload-answer">
         <article class="preload-card">
           <h3>会预先放进设备</h3>
           <ul>
-            <li>当天最多八条日程，以及每条日程各自的支持文案。</li>
-            <li>一句当前宠物对话、当天概览和下一项提示。</li>
-            <li>晚间总结页的点评与金句。</li>
-            <li>当天要在概览中显示的任务标题。</li>
+            <li>全部未完成任务，不限制数量、日期或屏幕一次可见条数。</li>
+            <li>每项任务的标题、备注等详情，以及 0–5、6–15、16 分钟以后使用的三条阶段文案。</li>
+            <li>当天全部日历日程，以及每条日程各自的角色对话和支持文案。</li>
+            <li>每日早晨、空闲、收尾、屏保、总结点评与总结金句等整套文字。</li>
           </ul>
         </article>
         <article class="preload-card">
-          <h3>需要现场请求或只在 App</h3>
+          <h3>不再现场索取</h3>
           <ul>
-            <li>进入某个任务时的任务详情和支持文案。</li>
-            <li>专注页面上的动态时长、能量瓶和阶段状态。</li>
-            <li>App 首页的每日俳句、完成动画、声音与震动。</li>
-            <li>刚进入屏保时想换一条全新金句。</li>
+            <li>进入任务时不向 App 请求详情或新文案，设备直接读取本地任务库。</li>
+            <li>进入屏保、每日总结或日程到点时不临时生成新句。</li>
+            <li>设备按本地专注时长选择三阶段文案，断联也能继续。</li>
+            <li>墨水屏没有声音、震动和完成动画；App 自己的反馈不传给设备。</li>
           </ul>
         </article>
       </div>
@@ -793,46 +797,46 @@
           </thead>
           <tbody>
             <tr>
-              <th scope="row">当前宠物对话</th>
-              <td>同步当天内容时，按早晨、日程中、任务中、收尾或空闲选择一句。</td>
-              <td><span class="yes">能</span>，显示上次收到的那一句。</td>
-              <td>使用缓存或角色本地模板。</td>
-              <td>设备里只有“当前一句”，不是一整天逐时对话。</td>
+              <th scope="row">每日宠物对话</th>
+              <td>同步当天内容时，一次准备早晨、空闲、日程中与收尾等当天可能用到的文字。</td>
+              <td><span class="yes">能</span>，设备按本地时间和页面状态提取。</td>
+              <td>首次失败后台重试一次，仍失败就用角色本地模板补齐。</td>
+              <td>显示现场不请求 AI；内容未变化不重新生成。</td>
             </tr>
             <tr>
               <th scope="row">每条日程支持文案</th>
-              <td>生成当天内容时，为最多八条日程分别准备。</td>
+              <td>生成当天内容时，为当天全部日程分别准备角色对话和支持文案。</td>
               <td><span class="yes">能</span>，设备按本地时间选择当前日程。</td>
               <td>按日程类别使用固定而不空白的替代句。</td>
-              <td>只保证最近一次成功同步的当天；跨零点长期断开不保证有第二天内容。</td>
+              <td>只属于当天；设备跨零点后立即停用昨日文字，等待新一天内容。</td>
             </tr>
             <tr>
               <th scope="row">当天概览 / 下一项</th>
-              <td>同步当天内容时准备。</td>
+              <td>当天内容和任务库准备完成时生成。</td>
               <td><span class="yes">能</span>，使用最近一版。</td>
               <td>使用中性本地模板。</td>
-              <td>数据变化前可能暂时显示旧版，重连后更新。</td>
+              <td>任务库不限日期和数量；设备页面可只展示其中一部分。</td>
             </tr>
             <tr>
               <th scope="row">晚间总结 / 金句</th>
               <td>提前随当天内容准备，而不是长按后才临时生成。</td>
               <td><span class="yes">能</span>，这是离线可进入总结页的前提。</td>
               <td>使用满足产品规则的固定模板。</td>
-              <td>断开后显示的是上次同步时的进度总结。</td>
+              <td>再次长按返回进入总结前的来源页面，不固定回概览。</td>
             </tr>
             <tr>
-              <th scope="row">任务详情支持文案</th>
-              <td>App 可提前在内存中预热，但真正进入任务时才随任务页发送。</td>
-              <td><span class="some">部分能</span>，依赖设备本地兜底或旧缓存。</td>
-              <td>进入任务时立即用本地模板，不等待网络。</td>
-              <td>它不在当天总包里，不能承诺所有任务都预先存入硬件。</td>
+              <th scope="row">任务详情与三阶段文案</th>
+              <td>任务新增或内容变化稳定三分钟后，与任务记录一起准备并同步。</td>
+              <td><span class="yes">能</span>，设备进入队首任务时直接读取本地内容。</td>
+              <td>首次失败后台重试一次，仍失败就用三阶段本地模板补齐。</td>
+              <td>全部未完成任务都同步；设备分别在 0–5、6–15、16 分钟以后提取对应文案。</td>
             </tr>
             <tr>
               <th scope="row">专注动态状态</th>
-              <td>专注过程中不断按当前时长重新计算。</td>
-              <td><span class="no">不能继续更新</span>；断连即结束 App 侧专注。</td>
+              <td>进入任务后由设备按本地时钟计算时长、阶段和页面状态。</td>
+              <td><span class="yes">能继续</span>；断联不结束专注，重连不切页。</td>
               <td>不依赖 AI。</td>
-              <td>App 上的伙伴短句不传到硬件，硬件只接收专注数据。</td>
+              <td>蓝牙连接且专注进行中时，App 锁住当前任务编辑。</td>
             </tr>
             <tr>
               <th scope="row">智能提醒</th>
@@ -843,10 +847,10 @@
             </tr>
             <tr>
               <th scope="row">屏保金句</th>
-              <td>设备准备休眠时发送当前可用句，同时后台准备下一次。</td>
-              <td><span class="some">能显示旧缓存</span>。</td>
-              <td>当前次始终有本地句。</td>
-              <td>设备若过快断开，可能收不到本次新句，因此必须保留上一句。</td>
+              <td>随当天内容包提前准备并发送。</td>
+              <td><span class="yes">能</span>，进入屏保时直接读取当天预存金句。</td>
+              <td>首次失败后台重试一次，仍失败就用本地金句模板。</td>
+              <td>进入屏保时不临时换新句；跨零点后昨日金句失效。</td>
             </tr>
           </tbody>
         </table>
@@ -862,25 +866,24 @@
       <div class="screen-map">
         <article class="screen-card">
           <header><h3>当天概览页</h3><p>显示当前宠物对话、日程、任务和进度。</p></header>
-          <div class="button-action"><strong>滚轮 / 选择</strong><p>当前概览没有任务高亮或选中状态；原始滚动可记录，但不会改变 App 里的任务。</p></div>
-          <div class="button-action"><strong>短按</strong><p>进入清单第一项可用任务。连接时向 App 取任务页；断开时走设备本地兜底。</p></div>
+          <div class="button-action"><strong>短按</strong><p>直接从本地任务库进入顺序队列的队首任务，不向 App 现场请求任务页。</p></div>
           <div class="button-action"><strong>长按</strong><p>进入“完成当日”的总结页，属于设备本地页面切换。</p></div>
         </article>
         <article class="screen-card">
           <header><h3>任务专注页</h3><p>显示任务详情、支持文案、时长和能量状态。</p></header>
-          <div class="button-action"><strong>短按</strong><p>完成任务。任务从当天未完成清单移除，专注结束。</p></div>
-          <div class="button-action"><strong>长按</strong><p>跳过当前任务。专注结束，但任务仍留在清单中。</p></div>
-          <div class="button-action"><strong>断开</strong><p>结束 App 侧当前专注；重连后回概览，不恢复旧专注。</p></div>
+          <div class="button-action"><strong>短按</strong><p>完成任务。专注结束，任务移出设备任务库，并返回进入专注前的来源页面。</p></div>
+          <div class="button-action"><strong>长按</strong><p>跳过当前任务。专注结束，不完成、不奖励，任务移到队尾，并返回来源页面。</p></div>
+          <div class="button-action"><strong>断开</strong><p>设备继续本地计时并保持专注页；重连后不切页，只核对任务和时长。</p></div>
         </article>
         <article class="screen-card">
           <header><h3>每日总结页</h3><p>使用已经预先收到的点评、金句和数字。</p></header>
-          <div class="button-action"><strong>进入时</strong><p>设备可请求更新，但不应卡住等待；旧内容也能先显示。</p></div>
-          <div class="button-action"><strong>再次长按</strong><p>返回概览页，作为防误触退出。</p></div>
+          <div class="button-action"><strong>进入时</strong><p>直接使用当天预存的点评、金句和数字，不现场请求更新。</p></div>
+          <div class="button-action"><strong>再次长按</strong><p>返回进入总结前的来源页面，不固定回概览。</p></div>
           <div class="button-action"><strong>断开</strong><p>仍能用最近一次成功同步的总结。</p></div>
         </article>
         <article class="screen-card">
           <header><h3>屏保 / 电源</h3><p>任何页面都可以进入静态屏保。</p></header>
-          <div class="button-action"><strong>短按电源</strong><p>记住来源页面，进入屏保；App 连接着时尝试补一条新金句。</p></div>
+          <div class="button-action"><strong>短按电源</strong><p>记住来源页面并进入屏保，直接显示当天预存金句，不向 App 临时取新句。</p></div>
           <div class="button-action"><strong>再次短按</strong><p>返回进入屏保前的页面，而不是强制回到当天首页。</p></div>
           <div class="button-action"><strong>长按电源</strong><p>由设备本地处理关机，不依赖 App。</p></div>
         </article>
@@ -906,7 +909,7 @@
           <button class="filter-button" type="button" data-filter="focus" aria-pressed="false">专注</button>
           <button class="filter-button" type="button" data-filter="system" aria-pressed="false">系统事件</button>
           <button class="filter-button" type="button" data-filter="ready" aria-pressed="false">手机端已具备</button>
-          <button class="filter-button" type="button" data-filter="device" aria-pressed="false">待真机确认</button>
+          <button class="filter-button" type="button" data-filter="device" aria-pressed="false">待实现 / 真机</button>
           <button class="filter-button" type="button" data-filter="fallback" aria-pressed="false">降级可用</button>
         </div>
         <div class="result-line">
@@ -929,21 +932,21 @@
             <span class="scenario-id">S01</span>
             <span class="scenario-title">在 App 里完成或撤销完成一个任务</span>
             <span class="scenario-sub">本地先变化，外部回写和硬件更新随后进行</span>
-            <span class="scenario-status status-ready">手机端已具备</span>
+            <span class="scenario-status status-device">产品已确认，待实现</span>
           </summary>
           <div class="scenario-body">
-            <p class="one-line-result"><strong>用户结果：</strong>App 立即变化；设备连接时更新当天清单，断开时等下次同步拿最新结果。</p>
+            <p class="one-line-result"><strong>用户结果：</strong>完成立即保存并移出设备任务库，不进入三分钟稳定窗；撤销完成相当于重新加入任务，内容准备完整后再恢复到设备。</p>
             <ol class="flow-steps">
               <li><span class="who">APP</span>先切换任务完成状态，同时更新宠物进度和当天统计。</li>
               <li><span class="who">APP</span>把本地结果保存下来，并排队准备更新硬件。</li>
               <li><span class="who">外部来源</span>如果任务来自 Google、Apple、Notion 或 Taskade，再尝试写回原服务。</li>
-              <li><span class="who">AI</span>根据新状态刷新当前对话；命中缓存就复用，网络失败则用本地句。</li>
-              <li><span class="who">设备</span>拿到最新当天清单后，完成项消失；撤销完成后重新出现。</li>
+              <li><span class="who">APP</span>完成时取消这个任务尚未发送的文案更新，直接形成任务移除记录；撤销完成时重新准备任务详情与三阶段文案。</li>
+              <li><span class="who">设备</span>收到变化后让完成项消失；撤销完成准备完整后重新加入任务库。</li>
             </ol>
             <div class="connection-grid">
-              <div class="connection-lane"><strong>已连接</strong><p>合并短时间内的变化后发送最新一版。</p></div>
-              <div class="connection-lane"><strong>已断开</strong><p>App 结果不回滚；设备暂时保留旧清单。</p></div>
-              <div class="connection-lane"><strong>重新连接</strong><p>设备拿当前最终清单，不逐条重演 App 里的每次点击。</p></div>
+              <div class="connection-lane"><strong>已连接</strong><p>完成动作立即发送任务移除结果。</p></div>
+              <div class="connection-lane"><strong>已断开</strong><p>App 结果不回滚；设备暂时保留旧任务记录。</p></div>
+              <div class="connection-lane"><strong>重新连接</strong><p>设备接收最终任务变化，不逐条重演 App 里的每次点击。</p></div>
             </div>
             <div class="guardrail"><strong>保护规则：</strong>外部服务写回失败不应让本地已完成任务凭空消失；App 会显示同步错误，之后再补同步到一致。</div>
           </div>
@@ -953,8 +956,8 @@
           <summary>
             <span class="scenario-id">S02</span>
             <span class="scenario-title">在 App 里修改任务标题、日期或备注</span>
-            <span class="scenario-sub">外部任务要先写回来源，成功后才替换本地内容</span>
-            <span class="scenario-status status-ready">手机端已具备</span>
+            <span class="scenario-sub">保存后等待最后一次修改稳定三分钟</span>
+            <span class="scenario-status status-device">产品已确认，待实现</span>
           </summary>
           <div class="scenario-body">
             <p class="one-line-result"><strong>用户结果：</strong>能写回的来源先确认成功，再更新 App 和硬件；只读来源会明确要求回原服务修改。</p>
@@ -962,13 +965,16 @@
               <li><span class="who">用户</span>在编辑页修改标题、日期、时间或备注。</li>
               <li><span class="who">APP</span>判断这个来源是否允许修改。Google Tasks 和 Apple Reminders 可以；Notion、Taskade 等内容目前只读。</li>
               <li><span class="who">外部来源</span>写入成功后返回规范化结果，App 再保存并刷新画面。</li>
-              <li><span class="who">AI / 设备</span>按新任务状态刷新对话和当天任务清单。</li>
+              <li><span class="who">APP</span>每次成功修改都重新开始三分钟稳定窗，只保留最后一版。</li>
+              <li><span class="who">AI</span>标题或备注变化时只重写这个任务的三阶段文案；日期或优先级变化只更新数据和排序。</li>
+              <li><span class="who">设备</span>收到这一个任务的最新变化，不要求重传完整任务库。</li>
             </ol>
             <div class="connection-grid">
-              <div class="connection-lane"><strong>已连接</strong><p>成功修改后发送新标题与排序。</p></div>
+              <div class="connection-lane"><strong>已连接</strong><p>最后一次修改三分钟后发送完整的新任务记录。</p></div>
               <div class="connection-lane"><strong>已断开</strong><p>App 保存成功，硬件继续显示旧标题。</p></div>
-              <div class="connection-lane"><strong>重新连接</strong><p>以 App 当前最新版覆盖硬件旧标题。</p></div>
+              <div class="connection-lane"><strong>重新连接</strong><p>稳定窗已结束就立即发送；否则只等待剩余时间。</p></div>
             </div>
+            <div class="guardrail"><strong>编辑锁：</strong>蓝牙连接且用户正在专注时，App 不允许修改当前专注任务；只有断联后才允许修改，重连也不在中途替换当前专注页。</div>
             <div class="guardrail"><strong>失败表现：</strong>远端修改失败时，本地不应假装已经成功；用户留在可理解的错误状态，而不是出现两边标题不一致。</div>
           </div>
         </details>
@@ -976,21 +982,21 @@
         <details class="scenario" data-category="app source offline">
           <summary>
             <span class="scenario-id">S03</span>
-            <span class="scenario-title">删除任务，或把任务加入 / 移出“今天”</span>
-            <span class="scenario-sub">删除会考虑来源；“显示在今天”只属于 Kirole</span>
-            <span class="scenario-status status-ready">手机端已具备</span>
+            <span class="scenario-title">删除任务，或改变任务日期</span>
+            <span class="scenario-sub">任务库包含所有未完成任务，不再只有“今天”</span>
+            <span class="scenario-status status-device">产品已确认，待实现</span>
           </summary>
           <div class="scenario-body">
-            <p class="one-line-result"><strong>用户结果：</strong>当天概览只保留应该显示的未完成任务；外部删除失败时，不应静默把来源数据当成已经删除。</p>
+            <p class="one-line-result"><strong>用户结果：</strong>设备任务库保留全部未完成任务，不按日期或数量截断；任务删除成功后才从设备移除。</p>
             <ol class="flow-steps">
-              <li><span class="who">APP</span>“显示在今天”只改 Kirole 自己的展示日期，不修改外部服务。</li>
+              <li><span class="who">APP</span>日期只影响任务数据和排序，不决定这个未完成任务是否能同步到设备。</li>
               <li><span class="who">APP</span>删除外部任务时，根据来源决定先等待远端删除，还是只做本地删除。</li>
-              <li><span class="who">设备</span>下一次收到最新清单后，重新排出当天最多可显示的任务。</li>
+              <li><span class="who">设备</span>收到新增、修改或删除记录后更新本地任务库；屏幕一次显示几项不限制库内总数。</li>
             </ol>
             <div class="connection-grid">
-              <div class="connection-lane"><strong>已连接</strong><p>短暂合并后更新任务区域。</p></div>
+              <div class="connection-lane"><strong>已连接</strong><p>按稳定窗发送最终变化记录。</p></div>
               <div class="connection-lane"><strong>已断开</strong><p>设备旧任务暂留，但 App 不会丢失决定。</p></div>
-              <div class="connection-lane"><strong>重新连接</strong><p>直接拿最终清单，中间加入又移出的动作无需重演。</p></div>
+              <div class="connection-lane"><strong>重新连接</strong><p>只拿最终任务变化，中间加入又移出的动作无需重演。</p></div>
             </div>
           </div>
         </details>
@@ -1000,20 +1006,21 @@
             <span class="scenario-id">S04</span>
             <span class="scenario-title">在 App 里修改日历日程</span>
             <span class="scenario-sub">Google / Apple 日历写回成功后，重新准备日程文字</span>
-            <span class="scenario-status status-ready">手机端已具备</span>
+            <span class="scenario-status status-device">产品已确认，待实现</span>
           </summary>
           <div class="scenario-body">
             <p class="one-line-result"><strong>用户结果：</strong>标题或时间改变后，当前日程、下一项和对应支持文案都会按新版重算。</p>
             <ol class="flow-steps">
               <li><span class="who">用户</span>修改标题、开始与结束时间、地点或备注。</li>
               <li><span class="who">外部日历</span>Google 有写权限或 Apple 日历写入成功后，App 才接受新版本。</li>
-              <li><span class="who">AI</span>重新判断日程类别和支持文案；如果文字来不及或生成失败，用本地模板。</li>
+              <li><span class="who">APP</span>从最后一次成功修改开始等待三分钟，只保留最后一版当天日程。</li>
+              <li><span class="who">AI</span>只重写受影响日程的角色对话、支持文案和受影响总结；首次失败后台重试一次，仍失败就用本地模板。</li>
               <li><span class="who">设备</span>收到新版当天内容后，用本地时钟重新判断此刻是哪一场日程。</li>
             </ol>
             <div class="connection-grid">
-              <div class="connection-lane"><strong>已连接</strong><p>日程数据或支持文案发生实质变化时发送新版。</p></div>
+              <div class="connection-lane"><strong>已连接</strong><p>最后一次变化稳定三分钟后发送新版。</p></div>
               <div class="connection-lane"><strong>已断开</strong><p>设备继续按旧日程运行，App 中显示新版。</p></div>
-              <div class="connection-lane"><strong>重新连接</strong><p>新日程覆盖旧版，本地时钟立即按新时间重新判断。</p></div>
+              <div class="connection-lane"><strong>重新连接</strong><p>稳定窗已结束就立即发送；否则等待剩余时间。</p></div>
             </div>
           </div>
         </details>
@@ -1023,16 +1030,17 @@
             <span class="scenario-id">S05</span>
             <span class="scenario-title">App 自动拉取外部日历和任务</span>
             <span class="scenario-sub">回到前台、定时检查或用户主动刷新</span>
-            <span class="scenario-status status-ready">手机端已具备</span>
+            <span class="scenario-status status-device">产品已确认，待实现</span>
           </summary>
           <div class="scenario-body">
             <p class="one-line-result"><strong>用户结果：</strong>多个来源先各自同步，最后合成一轮硬件更新，避免每回来一个来源就让墨水屏刷一次。</p>
             <ol class="flow-steps">
               <li><span class="who">APP</span>回到前台或到达检查窗口后，读取已连接的外部来源。</li>
               <li><span class="who">外部来源</span>各自返回任务和日程；某一个失败，不应清空上次成功数据。</li>
-              <li><span class="who">APP</span>合并冲突并保留 Kirole 自己的“显示在今天”等字段。</li>
-              <li><span class="who">AI</span>刷新共享对话、日程分类和支持文案。</li>
-              <li><span class="who">设备</span>所有来源完成后只接收一轮合并结果。</li>
+              <li><span class="who">APP</span>合并冲突并保留 Kirole 自己的排序等字段。</li>
+              <li><span class="who">APP</span>把实际变化纳入同一个三分钟稳定窗，不因每个来源分别回来就发送。</li>
+              <li><span class="who">AI</span>只准备受影响的任务、日程和每日文字。</li>
+              <li><span class="who">设备</span>所有来源完成并稳定后只接收一轮合并结果。</li>
             </ol>
             <div class="guardrail"><strong>保护规则：</strong>同一来源重复触发同步时，后来的请求等待正在进行的那一轮，不再并发拉一份；部分失败保留旧数据。</div>
           </div>
@@ -1043,15 +1051,15 @@
             <span class="scenario-id">S06</span>
             <span class="scenario-title">用户在首页下拉手动刷新</span>
             <span class="scenario-sub">先等所有来源，再强制整理一次手机与硬件内容</span>
-            <span class="scenario-status status-ready">手机端已具备</span>
+            <span class="scenario-status status-device">产品已确认，待实现</span>
           </summary>
           <div class="scenario-body">
-            <p class="one-line-result"><strong>用户结果：</strong>手动刷新代表“我现在就要最新版”，优先级高于普通后台更新。</p>
+            <p class="one-line-result"><strong>用户结果：</strong>手动刷新负责拉取最新来源数据；硬件发送仍遵守“有变化才准备、最后一次变化稳定三分钟”的规则。</p>
             <ol class="flow-steps">
               <li><span class="who">APP</span>取消尚未开始的零散硬件更新，防止旧请求插队。</li>
               <li><span class="who">外部来源</span>逐一完成同步，期间不单独刷新硬件。</li>
-              <li><span class="who">AI</span>强制刷新当前共享对话，App 首页切到这句新对话。</li>
-              <li><span class="who">设备</span>收到最终合并后的当天内容。</li>
+              <li><span class="who">APP</span>没有内容变化时不重新生成，也不为了响应刷新而重发硬件内容。</li>
+              <li><span class="who">设备</span>有变化时在稳定窗结束后收到最终合并结果。</li>
             </ol>
             <div class="connection-grid">
               <div class="connection-lane"><strong>已连接</strong><p>按最终结果更新。</p></div>
@@ -1065,18 +1073,18 @@
           <summary>
             <span class="scenario-id">S07</span>
             <span class="scenario-title">数据改变后，AI 是否每次都重新写一句</span>
-            <span class="scenario-sub">不一定；先判断情境是否真的变化，过期结果会被丢弃</span>
-            <span class="scenario-status status-ready">手机端已具备</span>
+            <span class="scenario-sub">只重写受影响内容，不用现场缓存决定</span>
+            <span class="scenario-status status-device">产品已确认，待实现</span>
           </summary>
           <div class="scenario-body">
-            <p class="one-line-result"><strong>用户结果：</strong>数据变化会进入文案刷新流程，但不等于每次都请求 AI；同一状态可以复用，真正改变才重写。</p>
+            <p class="one-line-result"><strong>用户结果：</strong>文案与任务、日程和每日内容一起准备；内容没有变化就不生成，变化时只重写受影响部分。</p>
             <ol class="flow-steps">
-              <li><span class="who">APP</span>把时段、当前日程、任务进度和伙伴身份组成“当前情境”。</li>
-              <li><span class="who">APP</span>情境没变就复用缓存，避免刷新同一句话却浪费等待。</li>
-              <li><span class="who">AI</span>情境变化才生成；如果生成期间任务又改了，旧结果不再使用。</li>
-              <li><span class="who">APP / 设备</span>同一句共享对话用于手机首页和当天硬件内容，避免两个端各说各话。</li>
+              <li><span class="who">APP</span>任务标题或备注变化，只重写该任务三阶段文案；日期或优先级变化只更新数据。</li>
+              <li><span class="who">APP</span>日程变化只重写该日程文字和受影响总结；伙伴身份变化才重写所有依赖角色的文字。</li>
+              <li><span class="who">AI</span>首次失败后后台重试一次；到期仍失败就用本地模板，迟到结果丢弃。</li>
+              <li><span class="who">APP / 设备</span>同步完整版本后，手机和设备都读取已匹配好的同一套文字。</li>
             </ol>
-            <div class="guardrail"><strong>重要：</strong>AI 是可替换的文案步骤，不是保存任务的必经步骤。网络断开、限流或返回空白，都有可立即显示的本地句。</div>
+            <div class="guardrail"><strong>重要：</strong>不存在进入页面时再查缓存或现场等待 AI 的分支；失败模板会补齐完整内容后再发送。</div>
           </div>
         </details>
 
@@ -1085,17 +1093,17 @@
             <span class="scenario-id">S08</span>
             <span class="scenario-title">日程到时间了，但手机已经不在附近</span>
             <span class="scenario-sub">设备按本地时钟切换，不应等 App 临时来一句</span>
-            <span class="scenario-status status-device">待真机确认</span>
+            <span class="scenario-status status-device">产品已确认，待实现</span>
           </summary>
           <div class="scenario-body">
-            <p class="one-line-result"><strong>用户结果：</strong>只要当天内容之前成功同步过，日程到点时就能显示这条日程对应的支持文案。</p>
+            <p class="one-line-result"><strong>用户结果：</strong>只要当天内容之前成功同步过，当天任意日程到点时都能显示对应角色对话和支持文案。</p>
             <ol class="flow-steps">
               <li><span class="who">同步时</span>App 把当天每条日程和各自支持文案一次发给设备。</li>
               <li><span class="who">断开后</span>设备继续走自己的时钟，不向手机发实时请求。</li>
               <li><span class="who">到点时</span>固件找到当前日程，切换日程卡与对应支持文字。</li>
               <li><span class="who">结束时</span>固件再次按本地时间切换到下一种页面状态。</li>
             </ol>
-            <div class="guardrail"><strong>边界：</strong>这只保证“最近同步过的当天”。设备没有提前拿到一周内容；若跨过零点仍长期断开，第二天的新日程不能凭空出现。</div>
+            <div class="guardrail"><strong>边界：</strong>日历只同步当天。跨零点后昨日内容立即失效，设备显示新日期、空日程和本地默认对话；完整任务库继续保留。</div>
           </div>
         </details>
 
@@ -1103,22 +1111,21 @@
           <summary>
             <span class="scenario-id">S09</span>
             <span class="scenario-title">概览页短按：进入一个任务</span>
-            <span class="scenario-sub">连接时取完整任务页，断开时不能卡死</span>
-            <span class="scenario-status status-device">待真机确认</span>
+            <span class="scenario-sub">从本地任务库进入队首，不现场请求</span>
+            <span class="scenario-status status-device">产品已确认，待实现</span>
           </summary>
           <div class="scenario-body">
-            <p class="one-line-result"><strong>用户结果：</strong>连接正常时很快进入任务页；没有连接或等待超时时，设备仍要给出可用页面或退回概览。</p>
+            <p class="one-line-result"><strong>用户结果：</strong>短按直接进入设备顺序任务队列的队首；连接状态和 AI 网络都不决定页面能否打开。</p>
             <ol class="flow-steps">
-              <li><span class="who">设备</span>把“进入这个任务”以及任务身份交给 App，而不是只说“刚才短按了”。</li>
-              <li><span class="who">APP</span>先确保本地任务加载完成，再查找对应任务。</li>
-              <li><span class="who">APP</span>立即组装任务标题、备注和支持文案；缓存没有命中就用本地句，不等待 AI。</li>
-              <li><span class="who">设备</span>完整收到任务页后，App 才正式开始本次专注。</li>
-              <li><span class="who">APP</span>会话开始后自动打开全屏专注界面；如果会话在后台开始，用户下次打开 App 时会直接进入该界面。</li>
+              <li><span class="who">设备</span>从已提交任务库读取队首任务的标题、详情和三阶段文案。</li>
+              <li><span class="who">设备</span>立即进入专注页，并用本地时钟开始计时。</li>
+              <li><span class="who">设备</span>分别在 0–5、6–15、16 分钟以后选择该任务预存的对应文案。</li>
+              <li><span class="who">APP</span>连接存在时接收专注开始状态，并锁住当前任务编辑；断联时设备仍可独立继续。</li>
             </ol>
             <div class="connection-grid">
-              <div class="connection-lane"><strong>已连接</strong><p>最多等待约五秒；收到任务页后进入。</p></div>
-              <div class="connection-lane"><strong>已断开</strong><p>直接使用设备本地兜底，不能一直转圈。</p></div>
-              <div class="connection-lane"><strong>重新连接</strong><p>只同步当前状态，不补建过去那段“专注”。</p></div>
+              <div class="connection-lane"><strong>已连接</strong><p>本地进入，并把专注状态通知 App。</p></div>
+              <div class="connection-lane"><strong>已断开</strong><p>使用同一份本地任务内容和阶段文案。</p></div>
+              <div class="connection-lane"><strong>重新连接</strong><p>保持当前页面，只核对当前任务和已专注时长。</p></div>
             </div>
             <div class="guardrail"><strong>空任务清单：</strong>概览没有可用任务时，短按不应发起一个不存在的任务，也不应进入空白任务页。</div>
           </div>
@@ -1128,19 +1135,18 @@
           <summary>
             <span class="scenario-id">S10</span>
             <span class="scenario-title">任务页短按：在线完成任务</span>
-            <span class="scenario-sub">先准备最终画面，再确认任务完成，屏幕只刷新一次</span>
-            <span class="scenario-status status-device">待真机确认</span>
+            <span class="scenario-sub">立即完成、移出任务库并返回来源页面</span>
+            <span class="scenario-status status-device">产品已确认，待实现</span>
           </summary>
           <div class="scenario-body">
-            <p class="one-line-result"><strong>用户结果：</strong>完成后回到概览，已完成任务消失，新对话和新清单同时出现，不应先闪旧页面再刷第二次。</p>
+            <p class="one-line-result"><strong>用户结果：</strong>短按后任务立即完成并移出任务库，设备以静态画面返回进入专注前的来源页面。</p>
             <ol class="flow-steps">
-              <li><span class="who">设备</span>发送带唯一身份的“完成任务”动作，并保持在等待确认状态。</li>
-              <li><span class="who">APP</span>先记录这次动作，再保存专注历史、任务完成、宠物进度等结果。</li>
-              <li><span class="who">AI / APP</span>准备完成后的最新宠物对话和当天概览。</li>
-              <li><span class="who">设备</span>先收好最终内容但暂不刷屏，再收到匹配的任务确认。</li>
-              <li><span class="who">墨水屏</span>一次性回概览并刷新，完成任务从清单中移除。</li>
+              <li><span class="who">设备</span>立即结束本次专注、移除当前任务，并让下一项成为新队首。</li>
+              <li><span class="who">APP</span>收到动作后保存专注历史、任务完成和奖励结果，不等待 AI。</li>
+              <li><span class="who">设备</span>返回来源页面，不固定跳到概览。</li>
+              <li><span class="who">墨水屏</span>没有完成动画、声音或震动；App 仍可保留自己的反馈。</li>
             </ol>
-            <div class="guardrail"><strong>为什么要分两步：</strong>“蓝牙写出成功”只说明数据送到了通道，不代表任务业务已经确认，更不代表墨水屏已经刷新。</div>
+            <div class="guardrail"><strong>确认不阻塞本地反馈：</strong>设备先按产品规则完成本地页面变化，再用固定动作编号交给 App；确认丢失时用同一编号重试，不能重复完成或重复奖励。</div>
           </div>
         </details>
 
@@ -1148,16 +1154,16 @@
           <summary>
             <span class="scenario-id">S11</span>
             <span class="scenario-title">任务页长按：在线跳过任务</span>
-            <span class="scenario-sub">结束专注，但任务继续留在当天清单</span>
-            <span class="scenario-status status-device">待真机确认</span>
+            <span class="scenario-sub">结束专注、移到队尾并返回来源页面</span>
+            <span class="scenario-status status-device">产品已确认，待实现</span>
           </summary>
           <div class="scenario-body">
-            <p class="one-line-result"><strong>用户结果：</strong>返回概览后仍能看到这个任务；它可以因排序变化移动位置，但不能被当作完成删除。</p>
+            <p class="one-line-result"><strong>用户结果：</strong>任务保持未完成、不增加奖励，并移动到顺序任务队列末尾；设备返回进入专注前的来源页面。</p>
             <ol class="flow-steps">
-              <li><span class="who">设备</span>发送“跳过当前任务”动作并等待确认。</li>
-              <li><span class="who">APP</span>结束对应专注，不修改任务的完成状态。</li>
-              <li><span class="who">APP</span>准备结束后的最终概览与最新任务排序。</li>
-              <li><span class="who">设备</span>收到完整结果后一次回到概览，任务仍在。</li>
+              <li><span class="who">设备</span>立即结束本地专注，把任务移到队尾，让下一项成为新队首。</li>
+              <li><span class="who">设备</span>立即返回来源页面，任务仍在本地任务库。</li>
+              <li><span class="who">设备</span>用固定动作编号把“跳过当前任务”交给 App，确认过程在后台进行。</li>
+              <li><span class="who">APP</span>结束对应专注，不修改任务完成状态，也不增加奖励。</li>
             </ol>
             <div class="guardrail"><strong>不要混淆：</strong>“长按”只有在任务页才是跳过；在概览页长按是进入每日总结，两者不能共用同一个业务解释。</div>
           </div>
@@ -1168,16 +1174,16 @@
             <span class="scenario-id">S12</span>
             <span class="scenario-title">断开时在任务页完成或跳过</span>
             <span class="scenario-sub">设备先记账，重连后逐条交给 App</span>
-            <span class="scenario-status status-device">待真机确认</span>
+            <span class="scenario-status status-device">产品已确认，待实现</span>
           </summary>
           <div class="scenario-body">
-            <p class="one-line-result"><strong>用户结果：</strong>设备不能因为手机不在就吞掉动作；也不能假装 App 已经最终确认。</p>
+            <p class="one-line-result"><strong>用户结果：</strong>设备在本地立即完成或跳过并更新页面；重连后再把正式动作交给 App，App 不能用旧状态改回去。</p>
             <ol class="flow-steps">
-              <li><span class="who">设备</span>为完成或跳过保留固定编号，并写入断电后仍能保存的离线队列。</li>
-              <li><span class="who">设备</span>先给用户一个本地可理解的反馈，但保留“等待 App 最终确认”。</li>
+              <li><span class="who">设备</span>立即应用完成或跳过，更新本地任务库、队列和来源页面。</li>
+              <li><span class="who">设备</span>为动作保留固定编号，并写入断电后仍能保存的离线队列。</li>
               <li><span class="who">重连</span>App 主动询问上次之后发生过哪些动作。</li>
               <li><span class="who">APP</span>按设备记录的真实顺序逐条处理，并为每条动作直接返回结果；这一过程不等待整批动作之后再补一份最终画面。</li>
-              <li><span class="who">设备</span>收到每条结果时立即采用其中附带的 App 当前任务清单，再清掉对应记录；普通同步随后只补齐当天其它内容。</li>
+              <li><span class="who">设备</span>App 确认接受后清掉对应记录；随后再接收合并后的任务变化和当天内容。</li>
             </ol>
             <div class="guardrail"><strong>重复保护：</strong>如果确认在空中丢了，设备必须用同一个编号重试；App 会返回第一次结果，不会第二次完成、第二次加宠物进度。离线恢复按动作逐条确认，刷新次数不能套用在线“只刷新一次”的规则。</div>
           </div>
@@ -1187,18 +1193,18 @@
           <summary>
             <span class="scenario-id">S13</span>
             <span class="scenario-title">离线动作与 App 的新修改发生冲突</span>
-            <span class="scenario-sub">较新的 App 决定不能被晚到的旧硬件动作覆盖</span>
-            <span class="scenario-status status-ready">手机端已具备</span>
+            <span class="scenario-sub">完成、删除、修改、排序和跳过按明确规则合并</span>
+            <span class="scenario-status status-device">产品已确认，待实现</span>
           </summary>
           <div class="scenario-body">
-            <p class="one-line-result"><strong>用户结果：</strong>重连后以更新、更完整的 App 状态为准，旧动作收到“已被新版决定取代”的结果。</p>
+            <p class="one-line-result"><strong>用户结果：</strong>设备明确完成的任务不会被内容修改复活；跳过与内容修改可以同时保留；删除优先于跳过。</p>
             <ol class="flow-steps">
-              <li><span class="who">设备</span>断开时记录了一个完成或跳过动作。</li>
-              <li><span class="who">用户</span>随后在 App 修改、撤销、删除同一任务，或开始了更新的专注。</li>
-              <li><span class="who">重连</span>旧设备动作到达时，App 比较动作时间与用户后来在 App 中的修改时间。</li>
-              <li><span class="who">APP</span>若旧动作会覆盖新决定，就拒绝覆盖，并把当前清单发回设备。</li>
+              <li><span class="who">完成 + 修改</span>以完成为准，任务保持完成并从任务库移除。</li>
+              <li><span class="who">跳过 + 修改</span>任务保持未完成并在队尾，内容采用 App 最新版本，受影响文案重新准备。</li>
+              <li><span class="who">跳过 + 删除</span>以删除为准，不让跳过恢复已删除任务。</li>
+              <li><span class="who">跳过 + App 排序</span>先采用 App 最新顺序，再按实际跳过先后把跳过任务移到队尾。</li>
             </ol>
-            <div class="guardrail"><strong>另外两种结果：</strong>任务已经不存在时返回“找不到任务”；同一个编号却换了任务或时间时返回“无效请求”，防止编号被错误复用。</div>
+            <div class="guardrail"><strong>正在专注时删除：</strong>重连不打断当前专注；用户主动结束后任务彻底移除。若用户短按完成，专注时长和能量照常结算，但任务不会恢复。</div>
           </div>
         </details>
 
@@ -1207,15 +1213,15 @@
             <span class="scenario-id">S14</span>
             <span class="scenario-title">意外断开后自动重新连接</span>
             <span class="scenario-sub">先恢复通道、再问离线动作，不等于自动全量刷屏</span>
-            <span class="scenario-status status-ready">手机端已具备</span>
+            <span class="scenario-status status-device">产品已确认，待实现</span>
           </summary>
           <div class="scenario-body">
-            <p class="one-line-result"><strong>用户结果：</strong>设备回到附近后连接可以恢复；有离线动作时先补动作，完整当天内容则在有同步请求时更新。</p>
+            <p class="one-line-result"><strong>用户结果：</strong>设备回到附近后先补离线动作，再发送已经准备好的任务变化或当天内容；重连本身不改变当前页面。</p>
             <ol class="flow-steps">
               <li><span class="who">APP</span>识别这是信号丢失等意外断开，而不是用户主动断开。</li>
               <li><span class="who">APP</span>记住上次设备，等待系统在设备重新可见时恢复连接，避免反复扫描耗电。</li>
               <li><span class="who">连接后</span>立即询问离线期间发生的动作。</li>
-              <li><span class="who">同步</span>若已有待发送变更、设备主动唤醒 / 刷新，或到下一个同步时机，再发送完整最新内容。</li>
+              <li><span class="who">同步</span>稳定窗已经结束的待发送版本立即发送；尚未结束就只等待剩余时间。</li>
             </ol>
             <div class="guardrail"><strong>准确表述：</strong>“自动重连”只保证恢复通信意图，不应对客户写成“重连后必然立刻全量刷新完成”。</div>
           </div>
@@ -1226,14 +1232,14 @@
             <span class="scenario-id">S15</span>
             <span class="scenario-title">App 主动断开或一轮同步自然结束</span>
             <span class="scenario-sub">这是预期行为，不立即自动连回</span>
-            <span class="scenario-status status-ready">手机端已具备</span>
+            <span class="scenario-status status-device">产品已确认，待实现</span>
           </summary>
           <div class="scenario-body">
             <p class="one-line-result"><strong>用户结果：</strong>连接显示“已断开”不一定是故障；在省电连接方式下，数据传完就断开是正常的。</p>
             <ol class="flow-steps">
               <li><span class="who">APP</span>标记这是主动断开，并清理当前传输。</li>
               <li><span class="who">APP</span>不会马上自动重连造成循环。</li>
-              <li><span class="who">下一次</span>任务 / 日程变化、手动刷新、设备唤醒或同步窗口会重新发起连接。</li>
+              <li><span class="who">下一次</span>三分钟稳定窗到期、跨日内容就绪、手动刷新、设备唤醒或同步窗口会重新发起连接。</li>
             </ol>
           </div>
         </details>
@@ -1249,7 +1255,7 @@
             <p class="one-line-result"><strong>用户结果：</strong>可以继续看和改 App 里的任务 / 日程，但硬件不更新；恢复蓝牙条件后再同步。</p>
             <ol class="flow-steps">
               <li><span class="who">APP</span>把连接状态显示为可理解的错误，不把它伪装成普通断开。</li>
-              <li><span class="who">APP</span>继续保存本地数据、外部同步和 AI 缓存。</li>
+              <li><span class="who">APP</span>继续保存本地数据、外部同步和已经准备好的文字。</li>
               <li><span class="who">用户</span>打开蓝牙、允许权限或让设备重新广播后，再连接。</li>
             </ol>
             <div class="guardrail"><strong>提醒：</strong>连接错误不能通过反复重试绕过系统权限；需要用户恢复明确的外部条件。</div>
@@ -1260,18 +1266,19 @@
           <summary>
             <span class="scenario-id">S17</span>
             <span class="scenario-title">专注进行中，手机息屏或蓝牙断开</span>
-            <span class="scenario-sub">息屏靠设备定期唤醒更新；断开则结束会话</span>
-            <span class="scenario-status status-device">待真机确认</span>
+            <span class="scenario-sub">断联继续本地计时，重连保持原页</span>
+            <span class="scenario-status status-device">产品已确认，待实现</span>
           </summary>
           <div class="scenario-body">
-            <p class="one-line-result"><strong>用户结果：</strong>连接仍在时，设备约每五分钟提醒 App 更新专注数字；真正断开后，本次专注不在重连时复活。</p>
+            <p class="one-line-result"><strong>用户结果：</strong>蓝牙断开不结束专注；设备继续本地计时并保持专注页，重连后仍是同一次专注。</p>
             <ol class="flow-steps">
               <li><span class="who">APP</span>专注开始后持续计算总时长、连续未打断时长和能量瓶。</li>
               <li><span class="who">设备</span>手机息屏可能让 App 暂停计时推送，因此设备定期发一次“请更新”。</li>
               <li><span class="who">APP</span>被唤醒后立即回最新专注状态。</li>
-              <li><span class="who">断开</span>App 结束会话并清理保护；重连后回概览，等待用户重新进入。</li>
+              <li><span class="who">断开</span>设备继续本地计时，App 保留当前会话，不把断联当作结束原因。</li>
+              <li><span class="who">重连</span>双方核对当前任务和已专注时长，不切页、不新建会话。</li>
             </ol>
-            <div class="guardrail"><strong>真机重点：</strong>要验证 iOS 息屏后能否稳定被设备唤醒、能量瓶是否准时增长，以及断开后旧专注页不会残留。</div>
+            <div class="guardrail"><strong>真机重点：</strong>要验证断联期间本地时长与阶段切换、离线完成 / 跳过保存，以及重连后页面和时长不跳变。</div>
           </div>
         </details>
 
@@ -1300,15 +1307,15 @@
             <span class="scenario-id">S19</span>
             <span class="scenario-title">概览页长按：进入每日总结</span>
             <span class="scenario-sub">页面本地切换，文案提前准备</span>
-            <span class="scenario-status status-device">待真机确认</span>
+            <span class="scenario-status status-device">产品已确认，待实现</span>
           </summary>
           <div class="scenario-body">
-            <p class="one-line-result"><strong>用户结果：</strong>即使手机已断开，也能先看到最近一次同步的总结；再次长按返回概览。</p>
+            <p class="one-line-result"><strong>用户结果：</strong>即使手机已断开，也能看到当天预存总结；再次长按返回进入总结前的来源页面。</p>
             <ol class="flow-steps">
               <li><span class="who">同步时</span>App 已经把点评、金句和统计一起放进设备。</li>
               <li><span class="who">长按时</span>固件本地进入总结页，不等待 AI 现场生成。</li>
-              <li><span class="who">可选刷新</span>连接存在时设备可以顺便请求新数据，但不能因此卡住页面。</li>
-              <li><span class="who">再次长按</span>固件本地返回概览，作为防误触。</li>
+              <li><span class="who">进入时</span>不请求新数据，也不现场生成文字。</li>
+              <li><span class="who">再次长按</span>固件本地返回进入总结前的来源页面。</li>
             </ol>
           </div>
         </details>
@@ -1317,15 +1324,14 @@
           <summary>
             <span class="scenario-id">S20</span>
             <span class="scenario-title">短按电源进入屏保，再短按返回</span>
-            <span class="scenario-sub">优先显示可用缓存，不让新 AI 文案阻塞休眠</span>
-            <span class="scenario-status status-device">待真机确认</span>
+            <span class="scenario-sub">直接显示当天预存金句，不现场取新句</span>
+            <span class="scenario-status status-device">产品已确认，待实现</span>
           </summary>
           <div class="scenario-body">
             <p class="one-line-result"><strong>用户结果：</strong>屏保立即可见；再次短按回到原来的页面，而不是固定回首页。</p>
             <ol class="flow-steps">
-              <li><span class="who">设备</span>记住当前所在页面，通知 App 即将进入屏保。</li>
-              <li><span class="who">APP</span>立即发送一条本地已有金句，同时后台准备下一次可用的新句。</li>
-              <li><span class="who">设备</span>若新句来不及送到，就使用上次缓存，随后可以断开省电。</li>
+              <li><span class="who">设备</span>记住当前所在页面，直接读取当天内容包中的屏保金句。</li>
+              <li><span class="who">设备</span>不因进入屏保向 App 请求新句，也不等待 AI。</li>
               <li><span class="who">再次短按</span>回到进入屏保前的页面。</li>
             </ol>
           </div>
@@ -1355,13 +1361,13 @@
             <span class="scenario-id">S22</span>
             <span class="scenario-title">设备唤醒、休眠与低电量</span>
             <span class="scenario-sub">系统事件更新电量、同步内容或触发手机提醒</span>
-            <span class="scenario-status status-ready">手机端已具备</span>
+            <span class="scenario-status status-device">产品已确认，待实现</span>
           </summary>
           <div class="scenario-body">
             <p class="one-line-result"><strong>用户结果：</strong>唤醒后尽量校时和更新；休眠前准备屏保；低电量时手机得到提示，不改变任务业务状态。</p>
             <ol class="flow-steps">
               <li><span class="who">设备唤醒</span>回传当前电量，App 校准时间并按节流规则安排同步。</li>
-              <li><span class="who">设备休眠</span>App 尝试补发屏保文字，设备保留可用缓存。</li>
+              <li><span class="who">设备休眠</span>直接使用当天预存屏保文字，不在休眠现场补发新句。</li>
               <li><span class="who">低电量</span>App 更新电量并发手机本地通知，不完成或跳过任何任务。</li>
             </ol>
           </div>
@@ -1371,17 +1377,18 @@
           <summary>
             <span class="scenario-id">S23</span>
             <span class="scenario-title">设备主动要求刷新</span>
-            <span class="scenario-sub">先回当前任务清单，完整当天内容另行判断</span>
-            <span class="scenario-status status-device">待真机确认</span>
+            <span class="scenario-sub">比较版本，只补缺少的任务变化或当天内容</span>
+            <span class="scenario-status status-device">产品已确认，待实现</span>
           </summary>
           <div class="scenario-body">
-            <p class="one-line-result"><strong>用户结果：</strong>设备可以很快知道当前任务清单；如果完整当天内容没有变化，就不必为了“看起来响应了”再刷一次墨水屏。</p>
+            <p class="one-line-result"><strong>用户结果：</strong>设备与 App 比较已提交版本；没有变化就不重发，有缺失才补任务变化或当天内容。</p>
             <ol class="flow-steps">
               <li><span class="who">设备</span>为本次刷新生成新的编号。</li>
-              <li><span class="who">APP</span>立即返回 App 当前任务清单，作为本次刷新已处理的明确结果。</li>
-              <li><span class="who">APP</span>再检查完整当天内容是否真的改变、是否处于不适合全刷的当前日程或专注状态。</li>
-              <li><span class="who">设备</span>只有收到实质新内容时才更新整页；没有新整包不等于刷新请求失败。</li>
+              <li><span class="who">APP</span>比较任务库版本与当天内容日期，判断设备缺少什么。</li>
+              <li><span class="who">APP</span>首次绑定或设备任务库丢失时发送完整任务库；平时只发送新增、修改和删除记录。</li>
+              <li><span class="who">设备</span>只有完整接收并提交后才替换旧版本；没有新内容不等于刷新失败。</li>
             </ol>
+            <div class="guardrail"><strong>失败重试：</strong>本次更新传输失败后，从事务开头完整重试一次，不续接状态不明的半包；第二次仍失败就保留旧版本，等下次连接再发送最新变化。没有已提交版本的新设备显示空任务和本地默认对话。</div>
           </div>
         </details>
 
@@ -1389,18 +1396,18 @@
           <summary>
             <span class="scenario-id">S24</span>
             <span class="scenario-title">整天断开、跨过零点后才重连</span>
-            <span class="scenario-sub">同一天离线可用，不承诺多天内容预装</span>
-            <span class="scenario-status status-fallback">降级可用</span>
+            <span class="scenario-sub">昨日内容失效，任务库保留，重连立即补当天</span>
+            <span class="scenario-status status-device">产品已确认，待实现</span>
           </summary>
           <div class="scenario-body">
-            <p class="one-line-result"><strong>用户结果：</strong>当天已同步内容可离线运行；进入第二天后，设备只能继续保留旧内容或使用本地空态，直到拿到新一天数据。</p>
+            <p class="one-line-result"><strong>用户结果：</strong>跨零点后昨日日程和每日文字立即失效；设备显示新日期、空日程和本地默认对话，完整任务库继续可用。</p>
             <ol class="flow-steps">
               <li><span class="who">当天</span>设备按本地时钟使用已收到的日程、支持文案和总结。</li>
-              <li><span class="who">跨零点</span>设备知道日期变了，但没有第二天的新任务与日程来源。</li>
-              <li><span class="who">重连</span>App 生成并发送当天最新版，覆盖旧日内容。</li>
+              <li><span class="who">跨零点</span>设备停用昨日内容，但不清空全部未完成任务。</li>
+              <li><span class="who">重连</span>App 准备并立即发送新一天内容，不进入三分钟稳定窗；AI 首次失败会重试一次，仍失败就用本地模板补齐。</li>
               <li><span class="who">离线动作</span>如有完成 / 跳过记录，仍按顺序补给 App；它们不会被新一天内容吞掉。</li>
             </ol>
-            <div class="guardrail"><strong>产品边界：</strong>当前设计是“同步当天”，不是“预装未来一周”。如果需要多日完全离线，要另立产品需求、容量规则和跨日状态机。</div>
+            <div class="guardrail"><strong>产品边界：</strong>日历日程仍只同步当天；任务库不限制日期范围，两者不要混成同一个“当天任务包”。</div>
           </div>
         </details>
       </div>
@@ -1410,13 +1417,13 @@
       <div class="section-head">
         <p class="kicker">06 / 一天的真实故事</p>
         <h2 id="day-title">把所有机制串进同一天</h2>
-        <p class="lead">下面这个例子说明：为什么日程文字要预先发、任务动作要逐条补，而 App 修改只需要发最后一版。</p>
+        <p class="lead">下面这个例子说明：任务与文字如何提前准备、设备如何离线运行，以及 App 修改为什么只发送稳定后的最后一版。</p>
       </div>
       <div class="timeline">
         <article class="moment">
           <time datetime="07:30">07:30</time>
           <h3>早晨同步当天内容</h3>
-          <p>App 合并日历和任务，准备当前宠物对话、当天日程与每条支持文字、任务清单、概览和晚间总结，一次发给设备。</p>
+          <p>App 准备全部未完成任务及各自三阶段文案，再准备当天日程、每日对话、屏保金句和晚间总结；设备完整接收后分别提交任务库和当天内容包。</p>
         </article>
         <article class="moment">
           <time datetime="09:00">09:00</time>
@@ -1426,32 +1433,32 @@
         <article class="moment">
           <time datetime="10:25">10:25</time>
           <h3>手机回来，恢复连接</h3>
-          <p>App 先问设备离线期间有没有动作。没有动作时无需制造补传；有新数据请求时再发当前最新版。</p>
+          <p>App 先接收设备离线期间的完成或跳过，再检查任务库和当天内容版本。没有变化就不制造补传。</p>
         </article>
         <article class="moment">
           <time datetime="10:30">10:30</time>
           <h3>用户短按进入任务</h3>
-          <p>设备告诉 App 要进入哪个任务；App 立即回任务页，完整送达后才开始专注。AI 网络慢也不会让页面一直等待。</p>
+          <p>设备直接从本地顺序队列进入队首任务，读取预存详情和第一阶段文案；连接存在时只把专注开始状态通知 App。</p>
         </article>
         <article class="moment">
           <time datetime="11:05">11:05</time>
           <h3>在线短按完成</h3>
-          <p>App 先保存完成结果和最终画面；设备收好后一次回到概览，任务消失，不出现连续两次墨水屏刷新。</p>
+          <p>设备立即完成任务并移出本地任务库，下一项成为队首；随后返回进入专注前的来源页面，不播放动画。</p>
         </article>
         <article class="moment">
           <time datetime="14:00">14:00</time>
           <h3>断开时又完成一个任务</h3>
-          <p>设备保存这个动作和唯一身份。它可以给本地反馈，但保留等待 App 确认的状态。</p>
+          <p>设备立即在本地完成任务、更新队列和页面，同时保存这个动作和唯一身份，等待重连后交给 App。</p>
         </article>
         <article class="moment">
           <time datetime="14:20">14:20</time>
           <h3>重连后补动作</h3>
-          <p>设备逐条交回离线动作；App 让同一动作只处理一次，保存后返回当前任务清单。不会重复加进度，也不会补播二十分钟前的完成动画。</p>
+          <p>设备逐条交回离线动作；App 先合并动作，再发送需要的任务变化。同一动作只处理一次，旧 App 状态不会把设备改回去。</p>
         </article>
         <article class="moment">
           <time datetime="22:00">22:00</time>
           <h3>长按查看每日总结</h3>
-          <p>即使手机再次离开，设备也能显示早已收到的点评与金句；再次长按回概览。</p>
+          <p>即使手机再次离开，设备也能显示早已收到的点评与金句；再次长按回到进入总结前的页面。</p>
         </article>
       </div>
     </section>
@@ -1476,26 +1483,26 @@
             </tr>
           </thead>
           <tbody>
-            <tr><th scope="row">App 完成 / 撤销完成</th><td>本地立即更新并发送当前清单</td><td>App 成功，设备暂留旧版</td><td>发当前最终清单</td><td>不阻塞</td></tr>
-            <tr><th scope="row">App 修改任务</th><td>来源成功后更新硬件</td><td>App 保存，设备暂留旧标题</td><td>发当前最终清单</td><td>不阻塞</td></tr>
-            <tr><th scope="row">删除任务 / 加入今天</th><td>更新当天任务区域</td><td>App 保存，设备暂留旧版</td><td>发当前最终清单</td><td>不阻塞</td></tr>
-            <tr><th scope="row">App 修改日程</th><td>重算日程文案并更新</td><td>设备按旧日程继续</td><td>新日程覆盖旧版</td><td>有本地替代</td></tr>
-            <tr><th scope="row">外部来源变化</th><td>合并所有来源后更新一次</td><td>手机合并，设备等待</td><td>发当前合并结果</td><td>有缓存 / 替代</td></tr>
-            <tr><th scope="row">首页下拉刷新</th><td>等所有来源后强制整理一轮</td><td>手机刷新成功，设备等待</td><td>发送刷新后的当前版本</td><td>有缓存 / 替代</td></tr>
-            <tr><th scope="row">首次连接设备</th><td>校时、检查离线动作并按需同步</td><td>等待用户或系统建立连接</td><td>不适用</td><td>不依赖 AI 才能连接</td></tr>
+            <tr><th scope="row">App 完成 / 撤销完成</th><td>完成立即移除；撤销准备完整后恢复</td><td>App 保存，设备等重连</td><td>发送最终任务变化</td><td>不阻塞完成</td></tr>
+            <tr><th scope="row">App 修改任务</th><td>最后一次修改三分钟后发送</td><td>稳定窗照常计时</td><td>到期立即发，否则等剩余时间</td><td>失败重试一次后用模板</td></tr>
+            <tr><th scope="row">删除任务 / 改日期</th><td>更新完整任务库中的对应记录</td><td>App 保存，设备暂留旧版</td><td>只发送变化记录</td><td>不阻塞数据保存</td></tr>
+            <tr><th scope="row">App 修改当天日程</th><td>三分钟后发送当天最新版</td><td>设备按旧日程继续</td><td>到期立即发，否则等剩余时间</td><td>失败重试一次后用模板</td></tr>
+            <tr><th scope="row">外部来源变化</th><td>合并后进入同一稳定窗</td><td>手机合并，设备等待</td><td>发最终合并结果</td><td>只准备受影响文案</td></tr>
+            <tr><th scope="row">首页下拉刷新</th><td>拉取来源；无变化不重发</td><td>手机刷新成功，设备等待</td><td>有变化才按规则发送</td><td>不强制重新生成</td></tr>
+            <tr><th scope="row">首次连接设备</th><td>校时、收离线动作并发送完整任务库</td><td>等待建立连接</td><td>不适用</td><td>失败模板补齐后仍可发送</td></tr>
             <tr><th scope="row">蓝牙关闭 / 无权限</th><td>不适用</td><td>App 可继续，硬件不更新</td><td>条件恢复后再同步</td><td>不阻塞 App 数据</td></tr>
             <tr><th scope="row">日程到点</th><td>设备本地按时间切换</td><td>同样本地切换</td><td>若内容变过则更新</td><td>不现场请求</td></tr>
-            <tr><th scope="row">概览短按</th><td>向 App 取任务页</td><td>设备本地兜底</td><td>不补建旧专注</td><td>不等待 AI</td></tr>
-            <tr><th scope="row">任务短按完成</th><td>最终画面与确认一次提交</td><td>设备保存动作</td><td>逐条补动作并确认</td><td>文案失败有替代</td></tr>
-            <tr><th scope="row">任务长按跳过</th><td>回概览，任务仍保留</td><td>设备保存动作</td><td>逐条补动作并确认</td><td>文案失败有替代</td></tr>
-            <tr><th scope="row">概览长按</th><td>本地进总结，可顺便请求更新</td><td>用预存总结</td><td>下次同步更新总结</td><td>不现场请求</td></tr>
-            <tr><th scope="row">短按电源</th><td>尝试补新屏保句</td><td>用旧缓存句</td><td>下次休眠再取新句</td><td>不阻塞</td></tr>
+            <tr><th scope="row">概览短按</th><td>本地进入队首任务</td><td>同样本地进入</td><td>保持当前专注状态</td><td>不现场请求</td></tr>
+            <tr><th scope="row">任务短按完成</th><td>立即移除并返回来源页</td><td>本地执行并保存动作</td><td>先补动作，再合并任务库</td><td>不依赖 AI</td></tr>
+            <tr><th scope="row">任务长按跳过</th><td>移到队尾并返回来源页</td><td>本地执行并保存动作</td><td>先补动作，再合并排序</td><td>不依赖 AI</td></tr>
+            <tr><th scope="row">概览长按</th><td>本地进入预存总结</td><td>同样使用预存总结</td><td>不改变当前页面</td><td>不现场请求</td></tr>
+            <tr><th scope="row">短按电源</th><td>显示当天预存金句</td><td>同样显示预存金句</td><td>不因重连换句</td><td>不现场请求</td></tr>
             <tr><th scope="row">智能提醒</th><td>发到硬件</td><td>改发手机通知</td><td>补处理确认 / 忽略记录</td><td>有本地替代</td></tr>
             <tr><th scope="row">设备唤醒</th><td>更新电量、校时并按需同步</td><td>事件暂时无法送到 App</td><td>恢复后再检查当前内容</td><td>不依赖 AI</td></tr>
-            <tr><th scope="row">设备休眠</th><td>尝试发送新屏保句</td><td>设备使用缓存句</td><td>下次休眠再取新句</td><td>不阻塞休眠</td></tr>
+            <tr><th scope="row">设备休眠</th><td>设备使用当天预存金句</td><td>同样使用预存金句</td><td>新一天内容另行同步</td><td>不现场请求</td></tr>
             <tr><th scope="row">设备低电量</th><td>更新电量并提醒手机</td><td>手机暂时收不到本次事件</td><td>恢复后更新电量状态</td><td>不依赖 AI</td></tr>
-            <tr><th scope="row">专注中断开</th><td>持续更新状态</td><td>App 结束专注</td><td>回概览，不恢复旧页</td><td>不依赖 AI</td></tr>
-            <tr><th scope="row">跨零点长期断开</th><td>同步新一天</td><td>只有旧一天内容</td><td>发新当天内容</td><td>有本地替代</td></tr>
+            <tr><th scope="row">专注中断开</th><td>持续同一次专注</td><td>设备本地计时并保持页面</td><td>核对任务和时长，不切页</td><td>不依赖 AI</td></tr>
+            <tr><th scope="row">跨零点长期断开</th><td>新一天内容就绪后立即发</td><td>昨日内容失效，任务库保留</td><td>发送新当天内容</td><td>失败重试一次后用模板</td></tr>
           </tbody>
         </table>
       </div>
@@ -1513,7 +1520,7 @@
         </article>
         <article class="principle">
           <h3>业务确认</h3>
-          <p>设备拿到与本次动作匹配的完整结果，知道完成、跳过或刷新应该采用哪份任务清单。</p>
+          <p>设备拿到与本次动作匹配的完整结果，知道完成、跳过或刷新应该采用哪份任务库变化。</p>
         </article>
         <article class="principle">
           <h3>屏幕刷新</h3>
@@ -1522,7 +1529,7 @@
       </div>
       <div class="boundary-note">
         <strong>墨水屏特别规则</strong>
-        <p>屏幕正在刷新时又来了多份当天内容，设备应只保留最新完整一份。当前刷新结束后最多再刷一次，不能排队把每个中间版本都刷出来。</p>
+        <p>屏幕正在刷新时又来了多份内容，设备只保留最新完整版本。任务库或当天内容只有完整接收并提交后才替换旧版；半包和失败传输继续使用上一个已提交版本。</p>
       </div>
     </section>
 
@@ -1559,57 +1566,60 @@
     <section id="acceptance" aria-labelledby="acceptance-title">
       <div class="section-head">
         <p class="kicker">10 / 交付边界</p>
-        <h2 id="acceptance-title">哪些已由手机保证，哪些还要设备证明</h2>
+        <h2 id="acceptance-title">哪些要改，哪些还要设备和真机证明</h2>
         <p class="lead">这部分用于排期和验收，不使用“基本完成”这类模糊状态。</p>
       </div>
       <div class="acceptance-grid">
         <article class="acceptance-card ready">
-          <strong>手机端已具备</strong>
+          <strong>需要 App 与通信约定改造</strong>
           <ul>
-            <li>任务 / 日程修改、外部同步与本地保存。</li>
-            <li>AI 缓存、失败替代、过期结果丢弃。</li>
-            <li>当天内容、任务页、专注状态的发送准备。</li>
-            <li>同一硬件动作只处理一次，并能判断冲突、按序恢复。</li>
-            <li>连接、断开、意外重连的控制策略。</li>
+            <li>完整未完成任务库，不限制数量和日期；首次全量，之后发送新增、修改和删除记录。</li>
+            <li>每项任务固定准备三阶段文案；每日文字、当天日程和屏保 / 总结文字组成当天内容包。</li>
+            <li>任务与当天日程修改使用三分钟稳定窗，断联不重置；完成和跳过立即处理。</li>
+            <li>AI 首次失败后后台重试一次，仍失败就用模板补齐；迟到结果丢弃。</li>
+            <li>重连先合并离线动作，再发送稳定后的任务变化和当天内容。</li>
+            <li>蓝牙连接专注期间锁住当前任务编辑；断联不结束 App 侧专注。</li>
+            <li>一次传输失败后从更新开头重试一次；再次失败保留待发送版本，等下次连接。</li>
           </ul>
         </article>
         <article class="acceptance-card contract">
           <strong>设备端必须按约定实现</strong>
           <ul>
-            <li>不同页面正确解释短按和长按。</li>
-            <li>没有连接时立即使用本地兜底，不死等。</li>
-            <li>离线动作跨重启保存，并用同一身份重试。</li>
-            <li>仅在线完成 / 跳过：先收好最终画面，收到对应确认后只刷新一次。</li>
-            <li>离线批量恢复：按真实顺序逐条确认，不能套用在线单次刷新规则。</li>
-            <li>按本地时钟切换日程和预存支持文案。</li>
-            <li>刷新繁忙时只留下最新完整内容。</li>
+            <li>保存完整任务库和当天内容包，只在完整提交后替换旧版本。</li>
+            <li>概览没有滚轮选择；短按只进入顺序队列的队首。</li>
+            <li>本地读取任务详情，按 0–5、6–15、16 分钟以后选择三阶段文案。</li>
+            <li>短按完成后移除任务，长按跳过后移到队尾；两者都返回来源页面。</li>
+            <li>断联继续专注和计时；离线完成 / 跳过立即生效，并跨重启保存等待回传。</li>
+            <li>跨零点停用昨日日程和每日文字，但保留完整任务库。</li>
+            <li>墨水屏保持静态，不播放声音、震动或完成动画。</li>
+            <li>新任务库或当天内容只有完整校验后才提交，半包不能替换旧版本。</li>
           </ul>
         </article>
         <article class="acceptance-card verify">
           <strong>必须用真机确认</strong>
           <ul>
-            <li>短按等待超时后页面仍可用。</li>
-            <li>在线完成 / 跳过只刷新一次墨水屏。</li>
-            <li>走远、重启、关机后的重连和补动作。</li>
-            <li>iPhone 息屏时专注状态仍能按时更新。</li>
-            <li>跨零点、低电、蓝牙关闭等长时间场景。</li>
-            <li>真实传输顺序、视觉延迟与屏幕最终效果。</li>
+            <li>任意数量与日期范围的任务能否完整写入、重启保存并正确增量更新。</li>
+            <li>进入任务完全不依赖现场蓝牙，三个时间段能否选中正确文案。</li>
+            <li>连续修改只发送稳定后的最后一版，失败重试不会产生半包。</li>
+            <li>走远、重启、关机后的专注保持、离线动作和冲突合并。</li>
+            <li>跨零点旧日内容失效、新日内容恢复，以及任务库继续可用。</li>
+            <li>静态页面、返回来源页面和真实墨水屏刷新次数。</li>
           </ul>
         </article>
       </div>
 
       <div class="faq" style="margin-top: 32px">
         <details>
-          <summary>为什么 App 已做好，还不能写“客户已经能用”？</summary>
-          <p>因为日常体验横跨手机、蓝牙、固件和墨水屏。App 测试只能证明手机会准备和发送正确结果；设备是否保存离线动作、是否只刷一次、用户是否看到最终画面，必须由固件与真机证据确认。</p>
+          <summary>为什么产品规则已确认，还不能写“客户已经能用”？</summary>
+          <p>因为本轮规则仍要落实到 App、通信约定和固件。完成代码与自动测试后，还要用真机证明完整任务库、离线专注、离线动作、页面返回和墨水屏刷新都按同一套规则运行。</p>
         </details>
         <details>
-          <summary>为什么不让 AI 生成完一整天所有任务对话再全部发过去？</summary>
-          <p>日历日程有明确时间，适合预先准备每条支持文案并由设备到点选择；普通任务何时进入、是否跳过、备注是否刚改都不确定。把所有任务详情提前塞入设备会增加体积、变旧风险和无效生成，因此任务页采用进入时发送、断开时本地兜底。</p>
+          <summary>为什么改成提前准备并发送所有未完成任务？</summary>
+          <p>任务详情和三阶段文案都是文字，体积远小于图片。提前随任务库发送后，用户进入任务不再依赖现场蓝牙，设备断联也能完整显示。任务新增或修改时只发送对应变化，不需要每次重传整库。</p>
         </details>
         <details>
           <summary>重连后会不会把所有变化逐条播放一遍？</summary>
-          <p>不会。App 侧的编辑只发送当前最后一版，避免中间状态连续刷屏；只有硬件在离线时发生的业务动作需要按顺序逐条补，因为每个完成、跳过和提醒确认都可能改变结果。</p>
+          <p>不会。App 侧的编辑从最后一次修改开始等待三分钟，只发送稳定后的最后一版；硬件离线发生的完成、跳过和提醒确认仍按顺序逐条补，因为每个动作都会改变正式结果。</p>
         </details>
         <details>
           <summary>原始短按和长按会不会直接改变 App 状态？</summary>
@@ -1617,21 +1627,21 @@
         </details>
         <details>
           <summary>如果 AI 当时完全不可用，硬件是不是没有文字？</summary>
-          <p>不是。共享对话、日程支持文字、任务支持文字、总结、提醒和屏保都设计了缓存或本地替代。AI 不可用会降低新鲜感，但不应该出现空白页，也不应该阻塞任务动作。</p>
+          <p>不是。App 会先后台重试一次；仍失败就用对应的本地模板补齐任务三阶段文案或当天文字，再发送完整版本。设备不会在进入页面时查询缓存或等待 AI。</p>
         </details>
         <details>
           <summary>不同外部任务来源都能在 Kirole 里修改吗？</summary>
           <p>不能一概而论。Google Tasks 可以修改标题、日期和备注，Apple Reminders 还可修改优先级与具体时间；两者都支持完成和删除。Notion 与 Taskade 可以同步并回写完成状态，但任务内容要回原服务修改，其中 Taskade 支持删除、Notion 不支持从 Kirole 删除远端记录；旧的 Todoist 路径按只读处理。Google 与 Apple 日历在有写权限时可以修改日程内容。</p>
         </details>
         <details>
-          <summary>滚轮选择或“查看日程详情”会让 App 回一张新页面吗？</summary>
-          <p>当前不会。原始滚轮选择和查看日程详情主要用于记录与调试；真正进入任务详情必须由设备发送“进入这个任务”的明确动作，App 才会返回任务页。产品若要新增日程详情页，需要另行定义页面、离线内容和返回动作。</p>
+          <summary>概览页如何选择要进入的任务？</summary>
+          <p>设备不再提供滚轮或任意任务选择。任务由 App 排好顺序，概览短按只进入本地队列的队首；完成后移除队首，跳过后把队首移到队尾。</p>
         </details>
       </div>
     </section>
 
     <footer class="doc-footer">
-      <span>Kirole 日常互动全景图 · 产品经理阅读版 · 2026-08-01</span>
+      <span>Kirole 日常互动全景图 · 产品经理阅读版 · 2026-08-02</span>
       <a class="back-top" href="#answer">返回顶部</a>
     </footer>
   </main>
