@@ -25,6 +25,11 @@
     "expectedUserSHA256": "cefd34fb4f8608f598b56e90843e412e34f179fcd5036abc565c3e50ad9aada0"
   },
   {
+    "scenarioId": "taskLibraryPhaseText",
+    "expectedSystemSHA256": "d801460f90ccb04ddd2f9b75a1fb342d0a07e4276a384dfa7373c39a43fdead5",
+    "expectedUserSHA256": "b11c55b5a91de2228d8e7824936cbe694644ec75e8e1329c9e53bac51cc93c28"
+  },
+  {
     "scenarioId": "settlementReview",
     "expectedSystemSHA256": "eac77ad6fb1cb81dbe2ff97e333e50fb3f742dea51af431f604a19de0cc4649b",
     "expectedUserSHA256": "f5ee170057b5c6eaeb7fd93b9b495e00e53f16a79461a2f544071d37d91a87b4"

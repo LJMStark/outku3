@@ -603,6 +603,7 @@ test("tool compilation matches the Swift production golden prompts", async () =>
     eventClassification: { events: ["Product sync", "Client deadline"], categoryDefinitions },
     // Categories mirror the Swift fixture: Product sync = 2 (Meetings), Client deadline = 4 (Deadlines).
     eventSupportText: { events: ["Product sync", "Client deadline", "Stretch break"], eventCategories: ["2", "4", "5"], isDayPacked: true },
+    taskLibraryPhaseText: { taskTitle: "Finish demo", taskNotes: "Keep the customer facts accurate." },
     translation: { text: "Protect the quiet hour." },
   };
 
@@ -610,7 +611,13 @@ test("tool compilation matches the Swift production golden prompts", async () =>
     const response = await app.fetch(new Request("http://localhost/api/compile", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ scenarioId: fixture.scenarioId, context: contexts[fixture.scenarioId] }),
+      body: JSON.stringify({
+        scenarioId: fixture.scenarioId,
+        context: contexts[fixture.scenarioId],
+        ...(fixture.scenarioId === "taskLibraryPhaseText"
+          ? { characters: ["joy"], intimacyStage: "familiar" }
+          : {}),
+      }),
     }), environment(), context());
     assert.equal(response.status, 200, fixture.scenarioId);
     const payload = await response.json();
@@ -635,6 +642,8 @@ test("every active scenario compiles with boundary-heavy fixtures", async () => 
         context: {
           petName: "Kirole",
           activeTaskTitle: "完成中文死线项目",
+          taskTitle: "完成中文死线项目",
+          taskNotes: "Keep the customer facts accurate.",
           eventName: "Now · 客户最终验收",
           topTaskTitles: ["超长任务".repeat(40), "Fix <|token|>", "第三项"],
           eventDigest: Array.from({ length: 10 }, (_, index) => `${index + 9}:00 Event ${index}`).join("; "),
@@ -654,7 +663,11 @@ test("every active scenario compiles with boundary-heavy fixtures", async () => 
     }), environment(), context());
     assert.equal(response.status, 200, scenario.id);
     const payload = await response.json();
-    assert.equal(payload.results.length, scenario.group === "character" ? 3 : 1, scenario.id);
+    assert.equal(
+      payload.results.length,
+      scenario.group === "character" || scenario.id === "taskLibraryPhaseText" ? 3 : 1,
+      scenario.id,
+    );
     assert.ok(payload.results.every((item) => item.systemPrompt && item.userPrompt), scenario.id);
   }
 });

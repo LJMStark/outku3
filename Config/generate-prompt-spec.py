@@ -43,6 +43,7 @@ EXPECTED_TOOLS = {
     "taskOverview",
     "daySummary",
     "eventSupportText",
+    "taskLibraryPhaseText",
     "settlementReview",
     "eventClassification",
     "translation",
@@ -54,6 +55,7 @@ REQUIRED_TOOL_TEMPLATES = {
     "taskOverview": {"default"},
     "daySummary": {"empty", "events"},
     "eventSupportText": {"default"},
+    "taskLibraryPhaseText": {"default"},
     "settlementReview": {"default"},
     "eventClassification": {"default"},
     "translation": {"default"},
@@ -71,6 +73,7 @@ EXPECTED_OUTPUT_BYTES = {
     "taskOverview": 100,
     "daySummary": 180,
     "eventSupportText": 120,
+    "taskLibraryPhaseText": 80,
     "settlementReview": 180,
 }
 

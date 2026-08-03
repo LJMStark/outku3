@@ -169,6 +169,20 @@ struct TaskLibraryTransactionTests {
     }
 
     @MainActor
+    @Test("The virtual device selects phase copy at the exact local minute boundaries")
+    func localPhaseBoundaries() async throws {
+        let scenario = AppDeviceScenario(now: Date(timeIntervalSince1970: 1_800_000_000))
+        scenario.connect()
+        _ = try scenario.sendTaskLibrary(makeTransaction(), messageID: 0x6250, maxChunkSize: 24)
+
+        #expect(try scenario.taskPhaseText(taskID: "task-15", elapsedMinutes: 0) == "Choose the first byte.")
+        #expect(try scenario.taskPhaseText(taskID: "task-15", elapsedMinutes: 5) == "Choose the first byte.")
+        #expect(try scenario.taskPhaseText(taskID: "task-15", elapsedMinutes: 6) == "Keep the transaction whole.")
+        #expect(try scenario.taskPhaseText(taskID: "task-15", elapsedMinutes: 15) == "Keep the transaction whole.")
+        #expect(try scenario.taskPhaseText(taskID: "task-15", elapsedMinutes: 16) == "Commit only after validation.")
+    }
+
+    @MainActor
     @Test("The existing Overview acknowledgement path remains available during migration")
     func oldOverviewPathStillWorks() async throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)

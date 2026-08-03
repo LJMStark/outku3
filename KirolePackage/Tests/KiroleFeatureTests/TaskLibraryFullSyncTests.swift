@@ -4,6 +4,10 @@ import Testing
 
 @Suite("Complete task-library sync")
 struct TaskLibraryFullSyncTests {
+    private enum SnapshotValidationError: Error {
+        case companionChanged
+    }
+
     @Test("Every incomplete task is included regardless of date while completed and deleting tasks are excluded")
     func completeLibraryHasNoDateOrDisplayLimit() throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
@@ -64,6 +68,25 @@ struct TaskLibraryFullSyncTests {
         #expect(snapshot.taskLibraryRecords.count == 12)
         #expect(snapshot.taskLibraryRecords.map(\.taskID) == tasks.map(\.hardwareIdentifier))
         #expect(snapshot.taskLibraryRecords.map(\.order) == Array(0..<12).map(UInt32.init))
+    }
+
+    @MainActor
+    @Test("A changed companion snapshot rejects the task library before transport")
+    func changedCompanionSnapshotRejectsSend() async throws {
+        let transaction = try TaskLibraryTransaction.fullLibrary(
+            from: [TaskItem(id: "stale-persona", title: "Stale persona")],
+            version: TaskLibraryVersion(epoch: 6, revision: 2)
+        )
+
+        await #expect(throws: SnapshotValidationError.self) {
+            try await BLEService.shared.sendTaskLibraryTransaction(
+                transaction,
+                expectedTaskStateVersion: AppState.shared.taskStateVersion,
+                validateAdditionalSnapshot: {
+                    throw SnapshotValidationError.companionChanged
+                }
+            )
+        }
     }
 
     @Test("Full library sends only for first binding or an explicit device-missing report")

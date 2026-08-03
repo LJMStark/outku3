@@ -112,6 +112,7 @@ const toolContexts = {
   },
   // eventCategories are strings: the compile API rejects number arrays in context.
   eventSupportText: { events: ["Product sync", "Client deadline", "Stretch break"], eventCategories: ["2", "4", "5"], isDayPacked: true },
+  taskLibraryPhaseText: { taskTitle: "Finish demo", taskNotes: "Keep the customer facts accurate." },
   eventClassification: { events: ["Product sync", "Client deadline"], categoryDefinitions },
   translation: { text: "Protect the quiet hour." },
 };
@@ -129,7 +130,13 @@ for (const scenarioId of toolIds) {
   const context = toolContexts[scenarioId];
   if (!context) throw new Error(`Missing fixture context for tool prompt: ${scenarioId}`);
   const compiled = await compileScenario(
-    { scenarioId, context },
+    {
+      scenarioId,
+      context,
+      ...(scenarioId === "taskLibraryPhaseText"
+        ? { characters: ["joy"], intimacyStage: "familiar" }
+        : {}),
+    },
     `tool ${scenarioId}`,
   );
   toolFixtures.push({

@@ -57,13 +57,51 @@ public struct TaskLibraryPhaseTexts: Sendable, Equatable, Codable {
         self.deep = deep
     }
 
-    /// Deterministic expand-phase copy. Issue #17 replaces these with generated per-task text
-    /// while retaining this value as the three-stage failure fallback.
+    /// Neutral fallback for a custom companion whose user-defined voice cannot be reproduced
+    /// safely without AI.
     public static let localFallback = TaskLibraryPhaseTexts(
         starting: "Start with the smallest clear step.",
         building: "Keep moving through the useful middle.",
         deep: "Stay with the work that matters most."
     )
+
+    public static func localFallback(
+        for character: CompanionCharacter
+    ) -> TaskLibraryPhaseTexts {
+        switch character {
+        case .joy:
+            return TaskLibraryPhaseTexts(
+                starting: "A tiny start still counts.",
+                building: "Look at this task taking shape.",
+                deep: "You found the good part; stay awhile."
+            )
+        case .silas:
+            return TaskLibraryPhaseTexts(
+                starting: "Begin gently; you are not alone.",
+                building: "Keep going with quiet courage.",
+                deep: "Stay steady; this work is being held."
+            )
+        case .nova:
+            return TaskLibraryPhaseTexts(
+                starting: "Take the first critical step.",
+                building: "Keep the signal; drop the noise.",
+                deep: "Protect this stretch of focused work."
+            )
+        }
+    }
+
+    /// Firmware uses its local focus clock. Minute 0 belongs to the first phase; negative input is
+    /// treated defensively as 0 so a clock correction cannot select a later line.
+    public func text(atElapsedMinutes elapsedMinutes: Int) -> String {
+        switch max(0, elapsedMinutes) {
+        case ...5:
+            return starting
+        case 6...15:
+            return building
+        default:
+            return deep
+        }
+    }
 }
 
 /// One complete device task-library record.

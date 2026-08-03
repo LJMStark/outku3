@@ -54,6 +54,7 @@ public final class BLESyncCoordinator {
 
     private let bleService = BLEService.shared
     private let dayPackGenerator = DayPackGenerator.shared
+    private let taskLibraryPhaseTextService = TaskLibraryPhaseTextService.shared
     private let localStorage = LocalStorage.shared
     private let policy = BLESyncPolicy()
 
@@ -71,6 +72,10 @@ public final class BLESyncCoordinator {
     /// A sent full library remains pending until the same device confirms the exact version and
     /// CRC. This is connection-scoped; issue #18 owns durable retry state after interruption.
     private var pendingTaskLibraries: [String: TaskLibraryCommittedState] = [:]
+    /// A phase-text preparation may use the full three-minute product window. Keep the connection
+    /// alive through preparation and the following 0x23 write so the 30-second idle recycler cannot
+    /// discard the exact transaction this window is preparing.
+    private var isTaskLibraryTransactionInFlight = false
     /// Real-time DeviceWake inventory wins over the persisted marker for the current connection.
     private var taskLibraryDeviceInventories: [String: TaskLibraryDeviceInventory] = [:]
     /// Complete/Skip keeps the device on TaskIn until one final DayPack has been sent. Routine
@@ -200,7 +205,10 @@ public final class BLESyncCoordinator {
 
     private func sendFullTaskLibraryIfNeeded(
         tasks: [TaskItem],
-        expectedTaskStateVersion: UInt64
+        userProfile: UserProfile,
+        customCompanions: [CustomCompanion],
+        expectedTaskStateVersion: UInt64,
+        expectedCompanionIdentityFingerprint: String
     ) async throws {
         guard let destinationID = connectedDestinationProvider(), !destinationID.isEmpty else {
             return
@@ -223,16 +231,35 @@ public final class BLESyncCoordinator {
             return
         }
 
+        isTaskLibraryTransactionInFlight = true
+        defer { isTaskLibraryTransactionInFlight = false }
+        let phaseTexts = await taskLibraryPhaseTextService.prepare(
+            tasks: tasks,
+            userProfile: userProfile,
+            customCompanions: customCompanions
+        )
         let transaction = try TaskLibraryTransaction.fullLibrary(
             from: tasks,
-            version: Self.nextTaskLibraryVersion(after: locallyCommitted?.version)
+            version: Self.nextTaskLibraryVersion(after: locallyCommitted?.version),
+            phaseTexts: { task in
+                phaseTexts[task.hardwareIdentifier]
+                    ?? (userProfile.customCompanionId == nil
+                        ? .localFallback(for: userProfile.companionCharacter)
+                        : .localFallback)
+            }
         )
         let pendingState = try TaskLibraryCodec.committedState(for: transaction)
         pendingTaskLibraries[destinationID] = pendingState
         do {
             try await bleService.sendTaskLibraryTransaction(
                 transaction,
-                expectedTaskStateVersion: expectedTaskStateVersion
+                expectedTaskStateVersion: expectedTaskStateVersion,
+                validateAdditionalSnapshot: {
+                    guard Self.companionIdentityFingerprint(AppState.shared)
+                            == expectedCompanionIdentityFingerprint else {
+                        throw BLEError.staleTaskSnapshot
+                    }
+                }
             )
         } catch {
             if pendingTaskLibraries[destinationID] == pendingState {
@@ -478,10 +505,11 @@ public final class BLESyncCoordinator {
             // 最坏 0x15 KRI 约 2.24MB / 4472 片，限流下需 4–5 分钟。
             // 30s 超时到点先等它结束，否则同步收尾会主动提前掐断每次头像传输。
             while !Task.isCancelled,
-                  self.policy.shouldHoldConnectionForCustomAvatar(
-                    chunkedTransferInFlight: self.bleService.isChunkedTransferInFlight,
-                    operationState: appState.customAvatarOperationState
-                  ) {
+                  self.isTaskLibraryTransactionInFlight
+                    || self.policy.shouldHoldConnectionForCustomAvatar(
+                        chunkedTransferInFlight: self.bleService.isChunkedTransferInFlight,
+                        operationState: appState.customAvatarOperationState
+                    ) {
                 try? await Task.sleep(for: .seconds(5))
             }
             guard !Task.isCancelled else { return }
@@ -681,7 +709,10 @@ public final class BLESyncCoordinator {
             do {
                 try await sendFullTaskLibraryIfNeeded(
                     tasks: appState.tasks,
-                    expectedTaskStateVersion: sourceTaskStateVersion
+                    userProfile: appState.userProfile,
+                    customCompanions: appState.customCompanions,
+                    expectedTaskStateVersion: sourceTaskStateVersion,
+                    expectedCompanionIdentityFingerprint: sourceIdentityFingerprint
                 )
             } catch {
                 if let bleError = error as? BLEError,
@@ -769,7 +800,7 @@ public final class BLESyncCoordinator {
     private static func companionIdentityFingerprint(_ appState: AppState) -> String {
         let profile = appState.userProfile
         guard let customID = profile.customCompanionId else {
-            return "built-in|\(profile.companionCharacter.rawValue)"
+            return "built-in|\(profile.companionCharacter.rawValue)|\(profile.intimacyStage.rawValue)"
         }
         let revision = appState.customCompanions
             .first(where: { $0.id == customID })?

@@ -455,6 +455,13 @@ final class AppDeviceScenario {
         return record
     }
 
+    func taskPhaseText(taskID: String, elapsedMinutes: Int) throws -> String {
+        try taskLibraryFirmware.phaseText(
+            taskID: taskID,
+            elapsedMinutes: elapsedMinutes
+        )
+    }
+
     func snapshot() async -> AppDeviceScenarioSnapshot {
         let operationEntries = await operationPersistence.entries()
         let focusHistory = await focusPersistence.sessions()

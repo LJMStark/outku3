@@ -150,19 +150,21 @@ extension BLEService {
     /// makes it visible only after the transaction CRC and every record validate.
     public func sendTaskLibraryTransaction(
         _ transaction: TaskLibraryTransaction,
-        expectedTaskStateVersion: UInt64
+        expectedTaskStateVersion: UInt64,
+        validateAdditionalSnapshot: @escaping @MainActor @Sendable () throws -> Void = {}
     ) async throws {
-        let validateTaskState: PacketWriteValidator = {
+        let validateSnapshot: PacketWriteValidator = {
             guard AppState.shared.taskStateVersion == expectedTaskStateVersion else {
                 throw BLEError.staleTaskSnapshot
             }
+            try validateAdditionalSnapshot()
         }
-        try validateTaskState()
+        try validateSnapshot()
         let payload = try TaskLibraryCodec.encodeTransaction(transaction)
         try await writeData(
             type: .taskLibraryTransaction,
             data: payload,
-            validateBeforeWrite: validateTaskState
+            validateBeforeWrite: validateSnapshot
         )
     }
 

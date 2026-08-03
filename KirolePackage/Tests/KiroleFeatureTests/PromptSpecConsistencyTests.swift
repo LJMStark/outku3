@@ -119,6 +119,7 @@ struct PromptSpecConsistencyTests {
             "daySummary",
             // v2.10.0: per-event support line, one writing rule per customer category.
             "eventSupportText",
+            "taskLibraryPhaseText",
             "settlementReview",
             "eventClassification",
             "translation"
@@ -385,7 +386,7 @@ struct PromptSpecConsistencyTests {
             from: Data(contentsOf: fixtureURL)
         )
 
-        #expect(fixtures.count == 8)
+        #expect(fixtures.count == 9)
         for fixture in fixtures {
             let compiled = try await compilationForToolFixture(fixture.scenarioId)
             #expect(Self.sha256(compiled.systemPrompt) == fixture.expectedSystemSHA256)
@@ -451,6 +452,18 @@ struct PromptSpecConsistencyTests {
                         title: "Stretch break", category: .wellness, isDayPacked: true
                     )
                 ]
+            )
+        case "taskLibraryPhaseText":
+            return await OpenAIService.shared.compileTaskLibraryPhasePromptForFixture(
+                task: TaskItem(
+                    id: "phase-fixture",
+                    title: "Finish demo",
+                    notes: "Keep the customer facts accurate."
+                ),
+                userProfile: UserProfile(
+                    companionCharacter: .joy,
+                    intimacyStage: .familiar
+                )
             )
         case "translation":
             return await OpenAIService.shared.compileTranslationPromptForFixture(

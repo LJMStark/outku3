@@ -41,6 +41,10 @@ struct SimulatedTaskLibraryFirmware {
         return record
     }
 
+    func phaseText(taskID: String, elapsedMinutes: Int) throws -> String {
+        try record(taskID: taskID).phaseTexts.text(atElapsedMinutes: elapsedMinutes)
+    }
+
     private func validate(version: TaskLibraryVersion) throws {
         guard version.epoch != 0, version.revision != 0 else {
             throw SimulationError.taskLibraryVersionRejected

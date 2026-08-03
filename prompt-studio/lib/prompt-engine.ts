@@ -169,6 +169,8 @@ function keyOf(variable: VariableDefinition): string {
 
 const inputMaxLengths: Record<string, number> = {
   activeTaskTitle: 80,
+  taskTitle: 120,
+  taskNotes: 300,
   eventName: 80,
   notes: 300,
   text: 500,
@@ -334,6 +336,8 @@ function toolValues(scenario: ScenarioDefinition, inputs: PromptContext): Record
   return {
     ...templateValues(inputs),
     notes: userContent(stringify(inputs.notes ?? ""), 300),
+    taskTitle: userContent(stringify(inputs.taskTitle ?? ""), 120),
+    taskNotes: userContent(stringify(inputs.taskNotes ?? ""), 300),
     text: userContent(stringify(inputs.text ?? ""), 500),
     profileContext: userContent(stringify(inputs.profileContext ?? ""), 300),
     workContext: userContent(stringify(inputs.workContext ?? ""), 300),
@@ -402,7 +406,8 @@ export function compilePrompts(request: CompileRequest): CompiledPrompt[] {
   const found = scenarioById(request.scenarioId);
   if (!found) throw new Error(`Unknown scenario: ${request.scenarioId}`);
   const inputs = prepareInputs(found.scenario, request.context ?? {});
-  const characters = found.kind === "persona" ? request.characters?.slice(0, 3) ?? ["joy"] : [undefined];
+  const usesPersona = found.kind === "persona" || found.scenario.id === "taskLibraryPhaseText";
+  const characters = usesPersona ? request.characters?.slice(0, 3) ?? ["joy"] : [undefined];
 
   return characters.map((characterId) => {
     const character = characterId ? promptSpec.characters.find((item) => item.id === characterId) : undefined;
@@ -430,9 +435,15 @@ export function compilePrompts(request: CompileRequest): CompiledPrompt[] {
           : "",
     };
 
-    let defaultSystem = found.kind === "persona"
-      ? render(promptSpec.companionSystemTemplate, values)
-      : render(found.scenario.systemPromptTemplate ?? "", values);
+    let defaultSystem: string;
+    if (found.kind === "persona") {
+      defaultSystem = render(promptSpec.companionSystemTemplate, values);
+    } else if (found.scenario.id === "taskLibraryPhaseText") {
+      defaultSystem = [values.characterPrompt, values.intimacyPrompt, values.personaPrompt]
+        .join("\n") + `\n\n${render(found.scenario.systemPromptTemplate ?? "", values)}`;
+    } else {
+      defaultSystem = render(found.scenario.systemPromptTemplate ?? "", values);
+    }
     if (overrides.globalRules?.trim()) defaultSystem += `\n\n${overrides.globalRules.trim()}`;
     let defaultUser = found.kind === "persona"
       ? render(found.scenario.userPromptTemplate ?? "", {
@@ -515,6 +526,7 @@ export function outputMaxBytes(compiled: CompiledPrompt): number {
 type NumberedEventSupportLine = { index: number; text: string };
 
 function expectedEventSupportCount(compiled: CompiledPrompt): number {
+  if (compiled.scenarioId === "taskLibraryPhaseText") return 3;
   const source = compiled.sanitizedInputs.events;
   return Array.isArray(source)
     ? source.length
@@ -564,7 +576,7 @@ export function deviceOutputs(compiled: CompiledPrompt, output: string): {
   asciiOutput: string;
 } {
   const maxBytes = outputMaxBytes(compiled);
-  if (compiled.scenarioId !== "eventSupportText") {
+  if (!["eventSupportText", "taskLibraryPhaseText"].includes(compiled.scenarioId)) {
     const truncatedOutput = utf8Truncate(output, maxBytes);
     return {
       truncatedOutput,
@@ -670,7 +682,7 @@ export function validateOutput(compiled: CompiledPrompt, output: string): Valida
       { id: "count", labelZh: "分类数量", labelEn: "Category count", passed: formatPassed && values.length === expected, detail: `${formatPassed ? values.length : -1} / ${expected}` },
     ];
   }
-  if (compiled.scenarioId === "eventSupportText") {
+  if (["eventSupportText", "taskLibraryPhaseText"].includes(compiled.scenarioId)) {
     const { lines, expectedCount, formatPassed } = parseEventSupportLines(compiled, output);
     const numberingPassed = formatPassed && lines.length === expectedCount
       && lines.every((line, index) => line.index === index + 1);
