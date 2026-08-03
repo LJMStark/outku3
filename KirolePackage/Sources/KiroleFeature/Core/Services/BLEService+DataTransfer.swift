@@ -151,11 +151,16 @@ extension BLEService {
     public func sendTaskLibraryTransaction(
         _ transaction: TaskLibraryTransaction,
         expectedTaskStateVersion: UInt64,
+        expectedDestinationID: String? = nil,
         validateAdditionalSnapshot: @escaping @MainActor @Sendable () throws -> Void = {}
     ) async throws {
         let validateSnapshot: PacketWriteValidator = {
             guard AppState.shared.taskStateVersion == expectedTaskStateVersion else {
                 throw BLEError.staleTaskSnapshot
+            }
+            if let expectedDestinationID,
+               self.taskListSnapshotDestinationID != expectedDestinationID {
+                throw BLEPresentationDestinationError.changed
             }
             try validateAdditionalSnapshot()
         }

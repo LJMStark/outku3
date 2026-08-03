@@ -130,6 +130,85 @@ struct TaskLibraryTransactionTests {
     }
 
     @MainActor
+    @Test("Capacity rejection keeps the whole previous library instead of truncating")
+    func capacityFailureKeepsCommittedLibrary() async throws {
+        let scenario = AppDeviceScenario(now: Date(timeIntervalSince1970: 1_800_000_000))
+        scenario.connect()
+        let first = makeTransaction(
+            version: TaskLibraryVersion(epoch: 7, revision: 10),
+            title: "Committed task"
+        )
+        _ = try scenario.sendTaskLibrary(first, messageID: 0x6120, maxChunkSize: 24)
+        scenario.configureTaskLibraryCapacity(maxRecords: 1)
+        let oversized = TaskLibraryTransaction(
+            version: TaskLibraryVersion(epoch: 7, revision: 11),
+            records: first.records + [TaskLibraryRecord(
+                taskID: "second-task",
+                order: 1,
+                title: "Must not be partially saved",
+                detail: "",
+                phaseTexts: .localFallback
+            )]
+        )
+
+        let acknowledgement = try scenario.sendTaskLibrary(
+            oversized,
+            messageID: 0x6121,
+            maxChunkSize: 24
+        )
+        let snapshot = await scenario.snapshot()
+
+        #expect(acknowledgement.result == .capacityExceeded)
+        #expect(snapshot.taskLibraryCommittedVersion == first.version)
+        #expect(snapshot.taskLibraryRecords == first.records)
+    }
+
+    @MainActor
+    @Test("A failed multi-chunk transfer retries from chunk zero and commits the whole version")
+    func retryRestartsCompleteTransaction() async throws {
+        let scenario = AppDeviceScenario(now: Date(timeIntervalSince1970: 1_800_000_000))
+        scenario.connect()
+        let transaction = makeTransaction(
+            version: TaskLibraryVersion(epoch: 7, revision: 12),
+            title: "A complete retry that crosses several chunks",
+            detail: String(repeating: "Frozen detail. ", count: 10)
+        )
+        scenario.failNextWrite(atChunk: 1)
+        var messageID: UInt16 = 0x6130
+        let retrier = TaskLibraryDeliveryRetrier(retrySleeper: { _ in })
+
+        _ = try await retrier.deliver(transaction) { frozen in
+            defer { messageID += 1 }
+            return try scenario.sendTaskLibrary(
+                frozen,
+                messageID: messageID,
+                maxChunkSize: 24
+            )
+        }
+
+        let snapshot = await scenario.snapshot()
+        let attempts = Array(snapshot.outboundTransactions.suffix(2))
+        let expectedCommitted = try TaskLibraryCodec.decodeTransaction(
+            TaskLibraryCodec.encodeTransaction(transaction)
+        )
+        #expect(attempts.count == 2)
+        #expect(attempts[0].result == .failed(chunkIndex: 1))
+        #expect(attempts[0].writtenPacketCount == 1)
+        #expect(attempts[1].result == .delivered)
+        #expect(attempts[1].writtenPacketCount == attempts[1].packetCount)
+        #expect(snapshot.taskLibraryCommittedVersion == transaction.version)
+        #expect(snapshot.taskLibraryRecords == expectedCommitted.records)
+    }
+
+    @Test("A device with no committed library exposes an empty list and local default dialogue")
+    func neverCommittedDeviceUsesEmptyLocalFallback() {
+        let firmware = SimulatedTaskLibraryFirmware()
+
+        #expect(firmware.committedRecords.isEmpty)
+        #expect(firmware.localDefaultDialogue == TaskLibraryPhaseTexts.localFallback.starting)
+    }
+
+    @MainActor
     @Test("The virtual device accepts any non-zero version identity")
     func arbitraryNonZeroVersionIsAccepted() async throws {
         let scenario = AppDeviceScenario(now: Date(timeIntervalSince1970: 1_800_000_000))

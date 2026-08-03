@@ -89,6 +89,23 @@ struct TaskLibraryFullSyncTests {
         }
     }
 
+    @MainActor
+    @Test("A task library cannot cross from its captured destination to another device")
+    func changedDestinationRejectsSend() async throws {
+        let transaction = try TaskLibraryTransaction.fullLibrary(
+            from: [TaskItem(id: "device-bound", title: "Device bound")],
+            version: TaskLibraryVersion(epoch: 6, revision: 3)
+        )
+
+        await #expect(throws: BLEPresentationDestinationError.self) {
+            try await BLEService.shared.sendTaskLibraryTransaction(
+                transaction,
+                expectedTaskStateVersion: AppState.shared.taskStateVersion,
+                expectedDestinationID: "a-different-device"
+            )
+        }
+    }
+
     @Test("Full library sends only for first binding or an explicit device-missing report")
     func fullSyncPolicyDoesNotUnconditionallyResend() {
         let committed = TaskLibraryCommittedState(
@@ -121,7 +138,7 @@ struct TaskLibraryFullSyncTests {
             deviceInventory: nil,
             hasPendingTransaction: false
         ))
-        #expect(!TaskLibraryFullSyncPolicy.shouldSendFullLibrary(
+        #expect(TaskLibraryFullSyncPolicy.shouldSendFullLibrary(
             locallyCommitted: nil,
             deviceInventory: nil,
             hasPendingTransaction: true
@@ -257,6 +274,261 @@ struct TaskLibraryFullSyncTests {
     }
 
     @MainActor
+    @Test("Rejected and disconnected deliveries remain durable until an exact commit")
+    func failedDeliveryRemainsPendingUntilCommit() async throws {
+        try await SharedPersistenceTestLock.shared.withLock {
+            let destination = "test-task-library-durable-\(UUID().uuidString)"
+            let transaction = try TaskLibraryTransaction.fullLibrary(
+                from: [TaskItem(id: "durable", title: "Durable pending")],
+                version: TaskLibraryVersion(epoch: 12, revision: 8)
+            )
+            let state = try TaskLibraryCodec.committedState(for: transaction)
+            let appState = AppState.shared
+            let delivery = TaskLibraryPendingDelivery(
+                transaction: transaction,
+                sourceFingerprint: TaskLibrarySourceFingerprint.make(
+                    tasks: appState.tasks,
+                    userProfile: appState.userProfile,
+                    customCompanions: appState.customCompanions
+                )
+            )
+
+            do {
+                try await LocalStorage.shared.saveTaskLibraryPendingDelivery(
+                    delivery,
+                    for: destination
+                )
+                BLESyncCoordinator.shared.setPendingTaskLibraryForTesting(
+                    state,
+                    destinationID: destination
+                )
+                await BLESyncCoordinator.shared.handleTaskLibraryCommitAcknowledgement(
+                    TaskLibraryCommitAcknowledgement(
+                        version: state.version,
+                        result: .capacityExceeded,
+                        contentCRC32: state.contentCRC32
+                    ),
+                    destinationID: destination
+                )
+                BLESyncCoordinator.shared.handleTaskLibraryDisconnected(
+                    destinationID: destination
+                )
+
+                #expect(try await LocalStorage.shared.loadTaskLibraryPendingDelivery(
+                    for: destination
+                ) == delivery)
+                #expect(try await LocalStorage.shared.loadTaskLibraryCommittedState(
+                    for: destination
+                ) == nil)
+
+                BLESyncCoordinator.shared.setPendingTaskLibraryForTesting(
+                    state,
+                    destinationID: destination
+                )
+                await BLESyncCoordinator.shared.handleTaskLibraryCommitAcknowledgement(
+                    TaskLibraryCommitAcknowledgement(
+                        version: state.version,
+                        result: .committed,
+                        contentCRC32: state.contentCRC32
+                    ),
+                    destinationID: destination
+                )
+
+                #expect(try await LocalStorage.shared.loadTaskLibraryPendingDelivery(
+                    for: destination
+                ) == nil)
+                #expect(try await LocalStorage.shared.loadTaskLibraryCommittedState(
+                    for: destination
+                ) == state)
+            } catch {
+                BLESyncCoordinator.shared.clearPendingTaskLibraryForTesting(destinationID: destination)
+                try? await LocalStorage.shared.removeTaskLibraryPendingDelivery(for: destination)
+                try? await LocalStorage.shared.removeTaskLibraryCommittedState(for: destination)
+                throw error
+            }
+            BLESyncCoordinator.shared.clearPendingTaskLibraryForTesting(destinationID: destination)
+            try await LocalStorage.shared.removeTaskLibraryPendingDelivery(for: destination)
+            try await LocalStorage.shared.removeTaskLibraryCommittedState(for: destination)
+        }
+    }
+
+    @MainActor
+    @Test("A late commit after timeout records device state without clearing a changed source")
+    func lateCommitAfterTimeoutPreservesChangedSource() async throws {
+        try await SharedPersistenceTestLock.shared.withLock {
+            let destination = "test-task-library-late-\(UUID().uuidString)"
+            let transaction = try TaskLibraryTransaction.fullLibrary(
+                from: [TaskItem(id: "late", title: "Old source")],
+                version: TaskLibraryVersion(epoch: 12, revision: 10)
+            )
+            let state = try TaskLibraryCodec.committedState(for: transaction)
+            let delivery = TaskLibraryPendingDelivery(
+                transaction: transaction,
+                sourceFingerprint: "source-that-is-no-longer-current"
+            )
+
+            do {
+                try await LocalStorage.shared.saveTaskLibraryPendingDelivery(
+                    delivery,
+                    for: destination
+                )
+                BLESyncCoordinator.shared.setPendingTaskLibraryForTesting(
+                    state,
+                    destinationID: destination
+                )
+
+                await BLESyncCoordinator.shared.handleTaskLibraryCommitAcknowledgement(
+                    TaskLibraryCommitAcknowledgement(
+                        version: state.version,
+                        result: .committed,
+                        contentCRC32: state.contentCRC32
+                    ),
+                    destinationID: destination
+                )
+
+                #expect(try await LocalStorage.shared.loadTaskLibraryCommittedState(
+                    for: destination
+                ) == state)
+                #expect(try await LocalStorage.shared.loadTaskLibraryPendingDelivery(
+                    for: destination
+                ) == delivery)
+            } catch {
+                BLESyncCoordinator.shared.clearPendingTaskLibraryForTesting(destinationID: destination)
+                try? await LocalStorage.shared.removeTaskLibraryPendingDelivery(for: destination)
+                try? await LocalStorage.shared.removeTaskLibraryCommittedState(for: destination)
+                throw error
+            }
+            BLESyncCoordinator.shared.clearPendingTaskLibraryForTesting(destinationID: destination)
+            try await LocalStorage.shared.removeTaskLibraryPendingDelivery(for: destination)
+            try await LocalStorage.shared.removeTaskLibraryCommittedState(for: destination)
+        }
+    }
+
+    @MainActor
+    @Test("A late old commit cannot clear a newer durable transaction before its marker updates")
+    func lateOldCommitPreservesNewerDurableTransaction() async throws {
+        try await SharedPersistenceTestLock.shared.withLock {
+            let destination = "test-task-library-late-version-\(UUID().uuidString)"
+            let oldTransaction = try TaskLibraryTransaction.fullLibrary(
+                from: [TaskItem(id: "old", title: "Old frozen source")],
+                version: TaskLibraryVersion(epoch: 12, revision: 11)
+            )
+            let newTransaction = try TaskLibraryTransaction.fullLibrary(
+                from: [TaskItem(id: "new", title: "New frozen source")],
+                version: TaskLibraryVersion(epoch: 12, revision: 12)
+            )
+            let oldState = try TaskLibraryCodec.committedState(for: oldTransaction)
+            let appState = AppState.shared
+            let newDelivery = TaskLibraryPendingDelivery(
+                transaction: newTransaction,
+                sourceFingerprint: TaskLibrarySourceFingerprint.make(
+                    tasks: appState.tasks,
+                    userProfile: appState.userProfile,
+                    customCompanions: appState.customCompanions
+                )
+            )
+
+            do {
+                // Reproduce the narrow window after the new durable write but before the
+                // connection-only marker advances from the old transaction.
+                try await LocalStorage.shared.saveTaskLibraryPendingDelivery(
+                    newDelivery,
+                    for: destination
+                )
+                BLESyncCoordinator.shared.setPendingTaskLibraryForTesting(
+                    oldState,
+                    destinationID: destination
+                )
+
+                await BLESyncCoordinator.shared.handleTaskLibraryCommitAcknowledgement(
+                    TaskLibraryCommitAcknowledgement(
+                        version: oldState.version,
+                        result: .committed,
+                        contentCRC32: oldState.contentCRC32
+                    ),
+                    destinationID: destination
+                )
+
+                #expect(try await LocalStorage.shared.loadTaskLibraryCommittedState(
+                    for: destination
+                ) == oldState)
+                #expect(try await LocalStorage.shared.loadTaskLibraryPendingDelivery(
+                    for: destination
+                ) == newDelivery)
+            } catch {
+                BLESyncCoordinator.shared.clearPendingTaskLibraryForTesting(destinationID: destination)
+                try? await LocalStorage.shared.removeTaskLibraryPendingDelivery(for: destination)
+                try? await LocalStorage.shared.removeTaskLibraryCommittedState(for: destination)
+                throw error
+            }
+            BLESyncCoordinator.shared.clearPendingTaskLibraryForTesting(destinationID: destination)
+            try await LocalStorage.shared.removeTaskLibraryPendingDelivery(for: destination)
+            try await LocalStorage.shared.removeTaskLibraryCommittedState(for: destination)
+        }
+    }
+
+    @MainActor
+    @Test("A duplicate commit ACK cannot clear pending while source validation is unfinished")
+    func duplicateCommitCannotWinSourceValidationRace() async throws {
+        try await SharedPersistenceTestLock.shared.withLock {
+            let destination = "test-task-library-duplicate-\(UUID().uuidString)"
+            let transaction = try TaskLibraryTransaction.fullLibrary(
+                from: [TaskItem(id: "duplicate", title: "Old frozen source")],
+                version: TaskLibraryVersion(epoch: 12, revision: 9)
+            )
+            let state = try TaskLibraryCodec.committedState(for: transaction)
+            let delivery = TaskLibraryPendingDelivery(
+                transaction: transaction,
+                sourceFingerprint: "old-source"
+            )
+            let acknowledgement = TaskLibraryCommitAcknowledgement(
+                version: state.version,
+                result: .committed,
+                contentCRC32: state.contentCRC32
+            )
+
+            do {
+                try await LocalStorage.shared.saveTaskLibraryPendingDelivery(
+                    delivery,
+                    for: destination
+                )
+                BLESyncCoordinator.shared.setPendingTaskLibraryForTesting(
+                    state,
+                    destinationID: destination
+                )
+                BLESyncCoordinator.shared.registerTaskLibraryAcknowledgementForTesting(
+                    state,
+                    destinationID: destination
+                )
+
+                await BLESyncCoordinator.shared.handleTaskLibraryCommitAcknowledgement(
+                    acknowledgement,
+                    destinationID: destination
+                )
+                await BLESyncCoordinator.shared.handleTaskLibraryCommitAcknowledgement(
+                    acknowledgement,
+                    destinationID: destination
+                )
+
+                #expect(try await LocalStorage.shared.loadTaskLibraryPendingDelivery(
+                    for: destination
+                ) == delivery)
+                #expect(try await LocalStorage.shared.loadTaskLibraryCommittedState(
+                    for: destination
+                ) == nil)
+            } catch {
+                BLESyncCoordinator.shared.clearPendingTaskLibraryForTesting(destinationID: destination)
+                try? await LocalStorage.shared.removeTaskLibraryPendingDelivery(for: destination)
+                try? await LocalStorage.shared.removeTaskLibraryCommittedState(for: destination)
+                throw error
+            }
+            BLESyncCoordinator.shared.clearPendingTaskLibraryForTesting(destinationID: destination)
+            try await LocalStorage.shared.removeTaskLibraryPendingDelivery(for: destination)
+            try? await LocalStorage.shared.removeTaskLibraryCommittedState(for: destination)
+        }
+    }
+
+    @MainActor
     @Test("Unbinding hardware clears every remembered task-library binding")
     func unbindingClearsCommittedDestinations() async throws {
         try await SharedPersistenceTestLock.shared.withLock {
@@ -268,11 +540,19 @@ struct TaskLibraryFullSyncTests {
             )
             try await LocalStorage.shared.saveTaskLibraryCommittedState(state, for: destinationA)
             try await LocalStorage.shared.saveTaskLibraryCommittedState(state, for: destinationB)
+            try await LocalStorage.shared.saveTaskLibraryPendingDelivery(
+                TaskLibraryPendingDelivery(
+                    transaction: TaskLibraryTransaction(version: state.version, records: []),
+                    sourceFingerprint: "pending"
+                ),
+                for: destinationA
+            )
 
             await BLESyncCoordinator.shared.handleAllTaskLibrariesUnbound()
 
             #expect(try await LocalStorage.shared.loadTaskLibraryCommittedState(for: destinationA) == nil)
             #expect(try await LocalStorage.shared.loadTaskLibraryCommittedState(for: destinationB) == nil)
+            #expect(try await LocalStorage.shared.loadTaskLibraryPendingDelivery(for: destinationA) == nil)
         }
     }
 

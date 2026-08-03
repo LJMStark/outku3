@@ -41,6 +41,7 @@ public actor LocalStorage {
         static let taskOperationLedger = "task_operation_ledger.json"
         static let taskListSnapshotVersion = "task_list_snapshot_version.json"
         static let taskLibraryCommittedStates = "task_library_committed_states.json"
+        static let taskLibraryPendingDeliveries = "task_library_pending_deliveries.json"
         static let focusEnergyAwardReceipts = "focus_energy_award_receipts.json"
         static let aiInteractions = "ai_interactions.json"
         static let behaviorSummary = "behavior_summary.json"
@@ -72,7 +73,7 @@ public actor LocalStorage {
             pet, tasks, events,
             syncState, haikuCache, userProfile,
             focusSessions, eventLogs, taskOperationLedger, taskListSnapshotVersion,
-            taskLibraryCommittedStates,
+            taskLibraryCommittedStates, taskLibraryPendingDeliveries,
             focusEnergyAwardReceipts, aiInteractions,
             behaviorSummary, onboardingProfile,
             deepFocusSelection, activeFocusSession,
@@ -343,10 +344,45 @@ public actor LocalStorage {
         try deleteFile(named: Files.taskLibraryCommittedStates)
     }
 
+    func saveTaskLibraryPendingDelivery(
+        _ delivery: TaskLibraryPendingDelivery,
+        for destinationID: String
+    ) throws {
+        guard !destinationID.isEmpty else { return }
+        var deliveries = try loadTaskLibraryPendingDeliveries()
+        deliveries[destinationID] = delivery
+        try save(deliveries, to: Files.taskLibraryPendingDeliveries)
+    }
+
+    func loadTaskLibraryPendingDelivery(
+        for destinationID: String
+    ) throws -> TaskLibraryPendingDelivery? {
+        guard !destinationID.isEmpty else { return nil }
+        return try loadTaskLibraryPendingDeliveries()[destinationID]
+    }
+
+    func removeTaskLibraryPendingDelivery(for destinationID: String) throws {
+        guard !destinationID.isEmpty else { return }
+        var deliveries = try loadTaskLibraryPendingDeliveries()
+        guard deliveries.removeValue(forKey: destinationID) != nil else { return }
+        try save(deliveries, to: Files.taskLibraryPendingDeliveries)
+    }
+
+    func clearTaskLibraryPendingDeliveries() throws {
+        try deleteFile(named: Files.taskLibraryPendingDeliveries)
+    }
+
     private func loadTaskLibraryCommittedStates() throws -> [String: TaskLibraryCommittedState] {
         try load(
             [String: TaskLibraryCommittedState].self,
             from: Files.taskLibraryCommittedStates
+        ) ?? [:]
+    }
+
+    private func loadTaskLibraryPendingDeliveries() throws -> [String: TaskLibraryPendingDelivery] {
+        try load(
+            [String: TaskLibraryPendingDelivery].self,
+            from: Files.taskLibraryPendingDeliveries
         ) ?? [:]
     }
 

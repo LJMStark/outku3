@@ -7,6 +7,15 @@ struct SimulatedTaskLibraryFirmware {
     private(set) var pendingVersion: TaskLibraryVersion?
     private(set) var committedVersion: TaskLibraryVersion?
     private(set) var committedRecords: [TaskLibraryRecord] = []
+    private var maximumRecords: Int?
+
+    var localDefaultDialogue: String {
+        TaskLibraryPhaseTexts.localFallback.starting
+    }
+
+    mutating func setMaximumRecords(_ maximumRecords: Int?) {
+        self.maximumRecords = maximumRecords
+    }
 
     mutating func begin(version: TaskLibraryVersion) throws {
         try validate(version: version)
@@ -19,6 +28,14 @@ struct SimulatedTaskLibraryFirmware {
             throw SimulationError.taskLibraryPendingMismatch
         }
         try validate(version: transaction.version)
+        if let maximumRecords, transaction.records.count > maximumRecords {
+            pendingVersion = nil
+            return TaskLibraryCommitAcknowledgement(
+                version: transaction.version,
+                result: .capacityExceeded,
+                contentCRC32: payload.bigEndianUInt32(at: payload.count - 4)
+            )
+        }
 
         committedRecords = transaction.records
         committedVersion = transaction.version

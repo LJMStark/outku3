@@ -55,6 +55,8 @@ public final class BLESyncCoordinator {
     private let bleService = BLEService.shared
     private let dayPackGenerator = DayPackGenerator.shared
     private let taskLibraryPhaseTextService = TaskLibraryPhaseTextService.shared
+    private let taskLibraryDeliveryRetrier = TaskLibraryDeliveryRetrier()
+    private let taskLibraryAcknowledgementGate = TaskLibraryAcknowledgementGate()
     private let localStorage = LocalStorage.shared
     private let policy = BLESyncPolicy()
 
@@ -69,8 +71,8 @@ public final class BLESyncCoordinator {
     private var pendingSync = false
     private var pendingForceSync = false
     private var pendingSyncTrigger: BLESyncTrigger?
-    /// A sent full library remains pending until the same device confirms the exact version and
-    /// CRC. This is connection-scoped; issue #18 owns durable retry state after interruption.
+    /// Current-connection lookup for late 0x23 results. The frozen transaction itself is durable
+    /// in LocalStorage, so disconnect cleanup can discard this map without losing retry state.
     private var pendingTaskLibraries: [String: TaskLibraryCommittedState] = [:]
     /// A phase-text preparation may use the full three-minute product window. Keep the connection
     /// alive through preparation and the following 0x23 write so the 30-second idle recycler cannot
@@ -188,18 +190,23 @@ public final class BLESyncCoordinator {
             return false
         }
         let locallyCommitted: TaskLibraryCommittedState?
+        let pendingDelivery: TaskLibraryPendingDelivery?
         do {
             locallyCommitted = try await localStorage.loadTaskLibraryCommittedState(
                 for: destinationID
             )
+            pendingDelivery = try await localStorage.loadTaskLibraryPendingDelivery(
+                for: destinationID
+            )
         } catch {
-            ErrorReporter.log(error, context: "BLESyncCoordinator.loadTaskLibraryCommittedState")
+            ErrorReporter.log(error, context: "BLESyncCoordinator.loadTaskLibraryDeliveryState")
             return true
         }
         return TaskLibraryFullSyncPolicy.shouldSendFullLibrary(
             locallyCommitted: locallyCommitted,
             deviceInventory: taskLibraryDeviceInventories[destinationID],
-            hasPendingTransaction: pendingTaskLibraries[destinationID] != nil
+            hasPendingTransaction: pendingDelivery != nil
+                || pendingTaskLibraries[destinationID] != nil
         )
     }
 
@@ -214,46 +221,107 @@ public final class BLESyncCoordinator {
             return
         }
 
-        let locallyCommitted: TaskLibraryCommittedState?
+        var locallyCommitted: TaskLibraryCommittedState?
+        var persistedPending: TaskLibraryPendingDelivery?
         do {
             locallyCommitted = try await localStorage.loadTaskLibraryCommittedState(
                 for: destinationID
             )
+            persistedPending = try await localStorage.loadTaskLibraryPendingDelivery(
+                for: destinationID
+            )
         } catch {
-            ErrorReporter.log(error, context: "BLESyncCoordinator.loadTaskLibraryCommittedState")
+            ErrorReporter.log(error, context: "BLESyncCoordinator.loadTaskLibraryDeliveryState")
             locallyCommitted = nil
+            persistedPending = nil
         }
         guard TaskLibraryFullSyncPolicy.shouldSendFullLibrary(
             locallyCommitted: locallyCommitted,
             deviceInventory: taskLibraryDeviceInventories[destinationID],
-            hasPendingTransaction: pendingTaskLibraries[destinationID] != nil
+            hasPendingTransaction: persistedPending != nil
+                || pendingTaskLibraries[destinationID] != nil
         ) else {
             return
         }
 
         isTaskLibraryTransactionInFlight = true
         defer { isTaskLibraryTransactionInFlight = false }
-        let phaseTexts = await taskLibraryPhaseTextService.prepare(
+        let sourceFingerprint = TaskLibrarySourceFingerprint.make(
             tasks: tasks,
             userProfile: userProfile,
             customCompanions: customCompanions
         )
-        let transaction = try TaskLibraryTransaction.fullLibrary(
-            from: tasks,
-            version: Self.nextTaskLibraryVersion(after: locallyCommitted?.version),
-            phaseTexts: { task in
-                phaseTexts[task.hardwareIdentifier]
-                    ?? (userProfile.customCompanionId == nil
-                        ? .localFallback(for: userProfile.companionCharacter)
-                        : .localFallback)
-            }
-        )
-        let pendingState = try TaskLibraryCodec.committedState(for: transaction)
+        let delivery: TaskLibraryPendingDelivery
+        if let persistedPending,
+           persistedPending.sourceFingerprint == sourceFingerprint {
+            delivery = persistedPending
+        } else {
+            let phaseTexts = await taskLibraryPhaseTextService.prepare(
+                tasks: tasks,
+                userProfile: userProfile,
+                customCompanions: customCompanions
+            )
+            let transaction = try TaskLibraryTransaction.fullLibrary(
+                from: tasks,
+                version: Self.nextTaskLibraryVersion(
+                    after: persistedPending?.transaction.version ?? locallyCommitted?.version
+                ),
+                phaseTexts: { task in
+                    phaseTexts[task.hardwareIdentifier]
+                        ?? (userProfile.customCompanionId == nil
+                            ? .localFallback(for: userProfile.companionCharacter)
+                            : .localFallback)
+                }
+            )
+            delivery = TaskLibraryPendingDelivery(
+                transaction: transaction,
+                sourceFingerprint: sourceFingerprint
+            )
+            try await localStorage.saveTaskLibraryPendingDelivery(
+                delivery,
+                for: destinationID
+            )
+        }
+
+        let pendingState = try TaskLibraryCodec.committedState(for: delivery.transaction)
         pendingTaskLibraries[destinationID] = pendingState
+        _ = try await taskLibraryDeliveryRetrier.deliver(delivery.transaction) { transaction in
+            try await self.sendTaskLibraryAttempt(
+                transaction,
+                expectedState: pendingState,
+                expectedDestinationID: destinationID,
+                expectedTaskStateVersion: expectedTaskStateVersion,
+                expectedCompanionIdentityFingerprint: expectedCompanionIdentityFingerprint
+            )
+        }
+        let didClearPending = try await recordTaskLibraryCommit(
+            pendingState,
+            destinationID: destinationID,
+            pendingDelivery: delivery,
+            clearPendingRequested: true
+        )
+        guard didClearPending else {
+            throw BLEError.staleTaskSnapshot
+        }
+    }
+
+    private func sendTaskLibraryAttempt(
+        _ transaction: TaskLibraryTransaction,
+        expectedState: TaskLibraryCommittedState,
+        expectedDestinationID: String,
+        expectedTaskStateVersion: UInt64,
+        expectedCompanionIdentityFingerprint: String
+    ) async throws -> TaskLibraryCommitAcknowledgement {
+        let registration = taskLibraryAcknowledgementGate.register(
+            expected: expectedState,
+            expectedDestinationID: expectedDestinationID,
+            timeout: .seconds(5)
+        )
         do {
             try await bleService.sendTaskLibraryTransaction(
                 transaction,
                 expectedTaskStateVersion: expectedTaskStateVersion,
+                expectedDestinationID: expectedDestinationID,
                 validateAdditionalSnapshot: {
                     guard Self.companionIdentityFingerprint(AppState.shared)
                             == expectedCompanionIdentityFingerprint else {
@@ -262,11 +330,60 @@ public final class BLESyncCoordinator {
                 }
             )
         } catch {
-            if pendingTaskLibraries[destinationID] == pendingState {
-                pendingTaskLibraries.removeValue(forKey: destinationID)
-            }
+            taskLibraryAcknowledgementGate.fail(error)
             throw error
         }
+
+        return try await withTaskCancellationHandler {
+            try await taskLibraryAcknowledgementGate.value(for: registration)
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                self?.taskLibraryAcknowledgementGate.fail(CancellationError())
+            }
+        }
+    }
+
+    private func recordTaskLibraryCommit(
+        _ state: TaskLibraryCommittedState,
+        destinationID: String,
+        pendingDelivery: TaskLibraryPendingDelivery?,
+        clearPendingRequested: Bool
+    ) async throws -> Bool {
+        try await localStorage.saveTaskLibraryCommittedState(state, for: destinationID)
+        var didClearPending = clearPendingRequested
+        if clearPendingRequested, let pendingDelivery {
+            let pendingState = try TaskLibraryCodec.committedState(
+                for: pendingDelivery.transaction
+            )
+            didClearPending = pendingState == state
+                && Self.currentTaskLibrarySourceFingerprint()
+                    == pendingDelivery.sourceFingerprint
+        }
+        if didClearPending {
+            try await localStorage.removeTaskLibraryPendingDelivery(for: destinationID)
+            if let pendingDelivery,
+               Self.currentTaskLibrarySourceFingerprint() != pendingDelivery.sourceFingerprint {
+                // The source changed while the storage actor was removing the old marker. Restore
+                // the frozen delivery so the queued sync can replace it with the new source.
+                try await localStorage.saveTaskLibraryPendingDelivery(
+                    pendingDelivery,
+                    for: destinationID
+                )
+                didClearPending = false
+            }
+        }
+        if didClearPending {
+            if pendingTaskLibraries[destinationID] == state {
+                pendingTaskLibraries.removeValue(forKey: destinationID)
+            }
+        } else if pendingTaskLibraries[destinationID] == state {
+            // The device committed this exact version, but the App source changed before the ACK.
+            // Keep only the durable marker that forces a newer rebuild; a duplicate old ACK must
+            // not enter the late-result path and clear that marker.
+            pendingTaskLibraries.removeValue(forKey: destinationID)
+        }
+        taskLibraryDeviceInventories[destinationID] = .committed(state)
+        return didClearPending
     }
 
     private static func nextTaskLibraryVersion(
@@ -318,35 +435,86 @@ public final class BLESyncCoordinator {
         _ acknowledgement: TaskLibraryCommitAcknowledgement,
         destinationID: String
     ) async {
+        if taskLibraryAcknowledgementGate.receive(
+            acknowledgement,
+            destinationID: destinationID
+        ) {
+            let acknowledgedState = TaskLibraryCommittedState(
+                version: acknowledgement.version,
+                contentCRC32: acknowledgement.contentCRC32
+            )
+            if pendingTaskLibraries[destinationID] == acknowledgedState {
+                // The sending coroutine owns durable cleanup after it rechecks the source snapshot.
+                // Removing this connection-only marker now prevents a duplicate ACK from racing
+                // through the late-result path and deleting a newer pending source.
+                pendingTaskLibraries.removeValue(forKey: destinationID)
+            }
+            return
+        }
         guard !destinationID.isEmpty,
               let pending = pendingTaskLibraries[destinationID],
               pending.version == acknowledgement.version,
               pending.contentCRC32 == acknowledgement.contentCRC32 else {
             return
         }
-        pendingTaskLibraries.removeValue(forKey: destinationID)
         guard acknowledgement.result == .committed else { return }
-        taskLibraryDeviceInventories[destinationID] = .committed(pending)
+        let persistedPending: TaskLibraryPendingDelivery?
         do {
-            try await localStorage.saveTaskLibraryCommittedState(pending, for: destinationID)
+            persistedPending = try await localStorage.loadTaskLibraryPendingDelivery(
+                for: destinationID
+            )
+        } catch {
+            ErrorReporter.log(
+                error,
+                context: "BLESyncCoordinator.handleTaskLibraryCommitAcknowledgement.pending"
+            )
+            do {
+                _ = try await recordTaskLibraryCommit(
+                    pending,
+                    destinationID: destinationID,
+                    pendingDelivery: nil,
+                    clearPendingRequested: false
+                )
+            } catch {
+                ErrorReporter.log(
+                    error,
+                    context: "BLESyncCoordinator.handleTaskLibraryCommitAcknowledgement.commit"
+                )
+            }
+            return
+        }
+        do {
+            _ = try await recordTaskLibraryCommit(
+                pending,
+                destinationID: destinationID,
+                pendingDelivery: persistedPending,
+                clearPendingRequested: true
+            )
         } catch {
             ErrorReporter.log(error, context: "BLESyncCoordinator.handleTaskLibraryCommitAcknowledgement")
         }
     }
 
     func handleTaskLibraryDisconnected(destinationID: String) {
+        taskLibraryAcknowledgementGate.fail(BLEError.disconnected)
         guard !destinationID.isEmpty else { return }
         pendingTaskLibraries.removeValue(forKey: destinationID)
         taskLibraryDeviceInventories.removeValue(forKey: destinationID)
     }
 
     func handleAllTaskLibrariesUnbound() async {
+        taskLibraryAcknowledgementGate.fail(BLEError.disconnected)
         pendingTaskLibraries.removeAll()
         taskLibraryDeviceInventories.removeAll()
         do {
             try await localStorage.clearTaskLibraryCommittedStates()
         } catch {
             ErrorReporter.log(error, context: "BLESyncCoordinator.handleAllTaskLibrariesUnbound")
+        }
+        do {
+            try await localStorage.clearTaskLibraryPendingDeliveries()
+        } catch {
+            ErrorReporter.log(error, context: "BLESyncCoordinator.handleAllTaskLibrariesUnbound.pending")
         }
     }
 
@@ -361,6 +529,17 @@ public final class BLESyncCoordinator {
     func clearPendingTaskLibraryForTesting(destinationID: String) {
         pendingTaskLibraries.removeValue(forKey: destinationID)
         taskLibraryDeviceInventories.removeValue(forKey: destinationID)
+    }
+
+    func registerTaskLibraryAcknowledgementForTesting(
+        _ state: TaskLibraryCommittedState,
+        destinationID: String
+    ) {
+        _ = taskLibraryAcknowledgementGate.register(
+            expected: state,
+            expectedDestinationID: destinationID,
+            timeout: .seconds(86_400)
+        )
     }
 #endif
 
@@ -720,6 +899,10 @@ public final class BLESyncCoordinator {
                     queuePendingSync(force: force, trigger: trigger)
                     return
                 }
+                if error is BLEPresentationDestinationError {
+                    queuePendingSync(force: force, trigger: trigger)
+                    return
+                }
                 // Older firmware may not support 0x23 yet. The retained DayPack/TaskIn/0x1B
                 // path continues while firmware work is tracked separately in issue #26.
                 ErrorReporter.log(
@@ -806,6 +989,15 @@ public final class BLESyncCoordinator {
             .first(where: { $0.id == customID })?
             .avatarRevisionKey ?? "missing"
         return "custom|\(customID.uuidString)|\(revision)"
+    }
+
+    private static func currentTaskLibrarySourceFingerprint() -> String {
+        let appState = AppState.shared
+        return TaskLibrarySourceFingerprint.make(
+            tasks: appState.tasks,
+            userProfile: appState.userProfile,
+            customCompanions: appState.customCompanions
+        )
     }
 
     static func shouldSendPreparedDayPack(

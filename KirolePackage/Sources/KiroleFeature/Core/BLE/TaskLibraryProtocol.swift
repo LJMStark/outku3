@@ -33,7 +33,7 @@ public enum TaskLibraryFullSyncPolicy {
         deviceInventory: TaskLibraryDeviceInventory?,
         hasPendingTransaction: Bool
     ) -> Bool {
-        guard !hasPendingTransaction else { return false }
+        if hasPendingTransaction { return true }
         switch deviceInventory {
         case .missing:
             return true

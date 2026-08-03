@@ -210,6 +210,10 @@ final class AppDeviceScenario {
         taskSnapshotMaxWriteLength = max(maxWriteLength, BLEPacketizer.headerSize + 1)
     }
 
+    func configureTaskLibraryCapacity(maxRecords: Int?) {
+        taskLibraryFirmware.setMaximumRecords(maxRecords)
+    }
+
     func failNextWrite(atChunk index: Int) {
         failedChunkIndexes.append(index)
     }
