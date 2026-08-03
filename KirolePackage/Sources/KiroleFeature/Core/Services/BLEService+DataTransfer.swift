@@ -59,7 +59,7 @@ extension BLEService {
             }
             try validatePresentationState()
             let latestTasks = DayPackGenerator.topTaskSummaries(
-                from: AppState.shared.tasks,
+                from: AppState.shared.tasksForHardwarePresentation(),
                 screenSize: hardwareScreenSize
             )
             guard TaskListSnapshotContent.isEquivalent(dayPack.topTasks, latestTasks) else {

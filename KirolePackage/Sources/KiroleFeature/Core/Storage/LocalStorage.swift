@@ -27,6 +27,7 @@ public actor LocalStorage {
         static let energyBottles = "energyBottles"
         static let lastCelebratedUnlockCount = "lastCelebratedUnlockCount"
         static let lastHomeHaikuShownDate = "lastHomeHaikuShownDate"
+        static let taskLibraryStabilityCheckpoint = "taskLibraryStabilityCheckpoint"
     }
 
     private enum Files {
@@ -98,7 +99,7 @@ public actor LocalStorage {
     }
 
     enum DevelopmentStorageSchema {
-        static let currentVersion = 6
+        static let currentVersion = 7
     }
 
     private struct TaskListSnapshotDeliveryState: Codable {
@@ -158,6 +159,7 @@ public actor LocalStorage {
         Keys.energyBottles,
         Keys.lastCelebratedUnlockCount,
         Keys.lastHomeHaikuShownDate,
+        Keys.taskLibraryStabilityCheckpoint,
         "isOnboardingCompleted",
     ]
 
@@ -314,6 +316,28 @@ public actor LocalStorage {
         try load([TaskItem].self, from: Files.tasks)
     }
 
+    nonisolated static func saveTaskLibraryStabilityCheckpoint(
+        _ checkpoint: TaskLibraryStabilityCheckpoint,
+        userDefaults: UserDefaults = .standard
+    ) throws {
+        userDefaults.set(try JSONEncoder().encode(checkpoint), forKey: Keys.taskLibraryStabilityCheckpoint)
+    }
+
+    nonisolated static func loadTaskLibraryStabilityCheckpoint(
+        userDefaults: UserDefaults = .standard
+    ) throws -> TaskLibraryStabilityCheckpoint? {
+        guard let data = userDefaults.data(forKey: Keys.taskLibraryStabilityCheckpoint) else {
+            return nil
+        }
+        return try JSONDecoder().decode(TaskLibraryStabilityCheckpoint.self, from: data)
+    }
+
+    nonisolated static func clearTaskLibraryStabilityCheckpoint(
+        userDefaults: UserDefaults = .standard
+    ) {
+        userDefaults.removeObject(forKey: Keys.taskLibraryStabilityCheckpoint)
+    }
+
     // MARK: - Task Library Delivery
 
     func saveTaskLibraryCommittedState(
@@ -321,23 +345,48 @@ public actor LocalStorage {
         for destinationID: String
     ) throws {
         guard !destinationID.isEmpty else { return }
-        var states = try loadTaskLibraryCommittedStates()
-        states[destinationID] = state
-        try save(states, to: Files.taskLibraryCommittedStates)
+        var snapshots = try loadTaskLibraryCommittedSnapshots()
+        if snapshots[destinationID]?.state != state {
+            snapshots[destinationID] = TaskLibraryCommittedSnapshot(
+                state: state,
+                records: [],
+                phaseSourceFingerprints: [:],
+                hasCompleteRecords: false,
+                personaFingerprint: ""
+            )
+        }
+        try save(snapshots, to: Files.taskLibraryCommittedStates)
     }
 
     func loadTaskLibraryCommittedState(
         for destinationID: String
     ) throws -> TaskLibraryCommittedState? {
         guard !destinationID.isEmpty else { return nil }
-        return try loadTaskLibraryCommittedStates()[destinationID]
+        return try loadTaskLibraryCommittedSnapshots()[destinationID]?.state
+    }
+
+    func saveTaskLibraryCommittedSnapshot(
+        _ snapshot: TaskLibraryCommittedSnapshot,
+        for destinationID: String
+    ) throws {
+        guard !destinationID.isEmpty else { return }
+        var snapshots = try loadTaskLibraryCommittedSnapshots()
+        snapshots[destinationID] = snapshot
+        try save(snapshots, to: Files.taskLibraryCommittedStates)
+    }
+
+    func loadTaskLibraryCommittedSnapshot(
+        for destinationID: String
+    ) throws -> TaskLibraryCommittedSnapshot? {
+        guard !destinationID.isEmpty else { return nil }
+        return try loadTaskLibraryCommittedSnapshots()[destinationID]
     }
 
     func removeTaskLibraryCommittedState(for destinationID: String) throws {
         guard !destinationID.isEmpty else { return }
-        var states = try loadTaskLibraryCommittedStates()
-        guard states.removeValue(forKey: destinationID) != nil else { return }
-        try save(states, to: Files.taskLibraryCommittedStates)
+        var snapshots = try loadTaskLibraryCommittedSnapshots()
+        guard snapshots.removeValue(forKey: destinationID) != nil else { return }
+        try save(snapshots, to: Files.taskLibraryCommittedStates)
     }
 
     func clearTaskLibraryCommittedStates() throws {
@@ -372,9 +421,10 @@ public actor LocalStorage {
         try deleteFile(named: Files.taskLibraryPendingDeliveries)
     }
 
-    private func loadTaskLibraryCommittedStates() throws -> [String: TaskLibraryCommittedState] {
+    private func loadTaskLibraryCommittedSnapshots() throws
+        -> [String: TaskLibraryCommittedSnapshot] {
         try load(
-            [String: TaskLibraryCommittedState].self,
+            [String: TaskLibraryCommittedSnapshot].self,
             from: Files.taskLibraryCommittedStates
         ) ?? [:]
     }

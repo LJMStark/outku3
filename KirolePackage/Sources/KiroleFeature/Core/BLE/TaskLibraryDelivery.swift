@@ -8,13 +8,70 @@ import os
 public struct TaskLibraryPendingDelivery: Sendable, Equatable, Codable {
     public let transaction: TaskLibraryTransaction
     public let sourceFingerprint: String
+    public let targetRecords: [TaskLibraryRecord]
+    public let phaseSourceFingerprints: [String: String]
+    public let validation: TaskLibraryPendingValidation
+    public let personaFingerprint: String
+    let updateScope: TaskLibraryUpdateScope?
+    let capturedStabilityGeneration: UInt64?
 
     public init(
         transaction: TaskLibraryTransaction,
-        sourceFingerprint: String
+        sourceFingerprint: String,
+        targetRecords: [TaskLibraryRecord]? = nil,
+        phaseSourceFingerprints: [String: String] = [:],
+        validation: TaskLibraryPendingValidation? = nil,
+        personaFingerprint: String = "",
+        updateScope: TaskLibraryUpdateScope? = nil,
+        capturedStabilityGeneration: UInt64? = nil
     ) {
         self.transaction = transaction
         self.sourceFingerprint = sourceFingerprint
+        self.targetRecords = targetRecords ?? transaction.records
+        self.phaseSourceFingerprints = phaseSourceFingerprints
+        self.validation = validation ?? .completeSource(sourceFingerprint)
+        self.personaFingerprint = personaFingerprint
+        self.updateScope = updateScope
+        self.capturedStabilityGeneration = capturedStabilityGeneration
+    }
+
+    init(
+        preparedUpdate: TaskLibraryPreparedUpdate,
+        updateScope: TaskLibraryUpdateScope,
+        capturedStabilityGeneration: UInt64
+    ) {
+        self.init(
+            transaction: preparedUpdate.transaction,
+            sourceFingerprint: Self.fingerprint(
+                records: preparedUpdate.targetRecords,
+                phaseSourceFingerprints: preparedUpdate.phaseSourceFingerprints
+            ),
+            targetRecords: preparedUpdate.targetRecords,
+            phaseSourceFingerprints: preparedUpdate.phaseSourceFingerprints,
+            validation: preparedUpdate.validation,
+            personaFingerprint: preparedUpdate.personaFingerprint,
+            updateScope: updateScope,
+            capturedStabilityGeneration: capturedStabilityGeneration
+        )
+    }
+
+    private static func fingerprint(
+        records: [TaskLibraryRecord],
+        phaseSourceFingerprints: [String: String]
+    ) -> String {
+        var framed = Data()
+        for record in records {
+            let value = "\(record.taskID)|\(record.order)|\(record.title)|\(record.detail)|"
+                + "\(record.dueTimestamp.map(String.init) ?? "")|\(record.priority.rawValue)|"
+                + "\(phaseSourceFingerprints[record.taskID] ?? "")"
+            let bytes = Data(value.utf8)
+            var length = UInt64(bytes.count).bigEndian
+            Swift.withUnsafeBytes(of: &length) { framed.append(contentsOf: $0) }
+            framed.append(bytes)
+        }
+        return SHA256.hash(data: framed)
+            .map { String(format: "%02x", $0) }
+            .joined()
     }
 }
 
@@ -152,6 +209,9 @@ enum TaskLibrarySourceFingerprint {
             parts.append("id=\(task.hardwareIdentifier)")
             parts.append("title=\(task.title)")
             parts.append("notes=\(task.notes ?? "")")
+            parts.append("due=\(task.dueDate?.timeIntervalSince1970.bitPattern ?? 0)")
+            parts.append("todayDisplay=\(task.todayDisplayDate?.timeIntervalSince1970.bitPattern ?? 0)")
+            parts.append("priority=\(task.priority.rawValue)")
         }
 
         if let customID = userProfile.customCompanionId {
@@ -289,6 +349,7 @@ private extension TaskLibraryCommitResult {
         case .checksumMismatch: "checksumMismatch"
         case .capacityExceeded: "capacityExceeded"
         case .unsupportedVersion: "unsupportedVersion"
+        case .baseMismatch: "baseMismatch"
         case .internalError: "internalError"
         }
     }

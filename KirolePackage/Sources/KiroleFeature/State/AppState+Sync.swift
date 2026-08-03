@@ -413,6 +413,112 @@ extension AppState {
         }
     }
 
+    // MARK: - Task Library Stability Window
+
+    func promoteTaskLibraryImmediateRemoval(taskID: String) {
+        taskLibraryStabilityState.promoteImmediateRemoval(taskID: taskID)
+        taskLibraryHardwareTasksBaseline?.removeAll { $0.hardwareIdentifier == taskID }
+        persistTaskLibraryStabilityCheckpoint()
+        scheduleTaskLibraryStabilityDeadline()
+        requestBLESync(reason: "taskLibraryImmediateRemoval", debounce: .zero)
+    }
+
+    /// Task rows for hardware presentation. Ordinary edits remain frozen until their stability
+    /// deadline; urgent completion/removal is reflected immediately without exposing other drafts.
+    func tasksForHardwarePresentation() -> [TaskItem] {
+        taskLibraryPresentationSnapshot().tasks
+    }
+
+    func petDialogueForHardwarePresentation() -> String {
+        taskLibraryPresentationSnapshot().petDialogue
+    }
+
+    func taskLibraryPresentationSnapshot() -> (
+        tasks: [TaskItem],
+        petDialogue: String,
+        readyUpdate: (scope: TaskLibraryUpdateScope, generation: UInt64)?,
+        usesFrozenBaseline: Bool
+    ) {
+        let scope = taskLibraryStabilityState.readyScope(at: taskLibraryNowProvider())
+        let readyUpdate = scope.map { ($0, taskLibraryStabilityState.generation) }
+        let usesFrozenBaseline = taskLibraryHardwareTasksBaseline != nil && scope != .complete
+        return (
+            usesFrozenBaseline ? taskLibraryHardwareTasksBaseline ?? tasks : tasks,
+            usesFrozenBaseline ? taskLibraryHardwarePetDialogueBaseline : currentPetDialogue,
+            readyUpdate,
+            usesFrozenBaseline
+        )
+    }
+
+    func taskLibraryReadyUpdate() -> (scope: TaskLibraryUpdateScope, generation: UInt64)? {
+        guard let scope = taskLibraryStabilityState.readyScope(at: taskLibraryNowProvider()) else {
+            return nil
+        }
+        return (scope, taskLibraryStabilityState.generation)
+    }
+
+    func currentPreparedTaskLibraryPhaseTexts(
+        for sourceTasks: [TaskItem]? = nil
+    ) -> [String: TaskLibraryPhaseTexts] {
+        var result: [String: TaskLibraryPhaseTexts] = [:]
+        for task in sourceTasks ?? tasks where !task.isCompleted && !task.pendingDeletion {
+            let taskID = task.hardwareIdentifier
+            let fingerprint = TaskLibraryPhaseSourceFingerprint.make(
+                task: task,
+                userProfile: userProfile,
+                customCompanions: customCompanions
+            )
+            if let prepared = preparedTaskLibraryPhaseTexts[taskID],
+               prepared.fingerprint == fingerprint {
+                result[taskID] = prepared.texts
+            }
+        }
+        return result
+    }
+
+    func markTaskLibraryUpdateCommitted(
+        scope: TaskLibraryUpdateScope,
+        generation: UInt64
+    ) {
+        let clearsHardwareBaseline = scope == .complete
+            && taskLibraryStabilityState.generation == generation
+        taskLibraryStabilityState.markCommitted(
+            scope: scope,
+            capturedGeneration: generation
+        )
+        if clearsHardwareBaseline {
+            taskLibraryHardwareTasksBaseline = nil
+            taskLibraryHardwarePetDialogueBaseline = ""
+        }
+        persistTaskLibraryStabilityCheckpoint()
+        scheduleTaskLibraryStabilityDeadline()
+    }
+
+    func scheduleTaskLibraryStabilityDeadline() {
+        taskLibraryStabilityTask?.cancel()
+        taskLibraryStabilityTask = nil
+        guard let deadline = taskLibraryStabilityState.deadline,
+              !taskLibraryStabilityState.stableTaskIDs.isEmpty else {
+            return
+        }
+        let generation = taskLibraryStabilityState.generation
+        let remaining = max(0, deadline.timeIntervalSince(taskLibraryNowProvider()))
+        taskLibraryStabilityTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                try await bleSyncSleeper(.seconds(remaining))
+            } catch {
+                return
+            }
+            guard !Task.isCancelled,
+                  taskLibraryStabilityState.generation == generation,
+                  taskLibraryStabilityState.readyScope(at: taskLibraryNowProvider()) != nil else {
+                return
+            }
+            requestBLESync(reason: "taskLibraryStabilityDeadline", debounce: .zero)
+        }
+    }
+
     // MARK: - BLE Sync Request
 
     /// Single entry-point used by every write site (and external sync hook)
@@ -476,8 +582,17 @@ extension AppState {
 
     /// Re-queues identity/manual presentation updates that were parked during Complete/Skip.
     func resumeDeferredBLESyncAfterTaskActionPresentation() {
-        guard let trigger = deferredBLESyncTriggerAfterTaskAction else { return }
-        deferredBLESyncTriggerAfterTaskAction = nil
-        requestBLESync(reason: "deferredAfterTaskAction", trigger: trigger)
+        if let trigger = deferredBLESyncTriggerAfterTaskAction {
+            deferredBLESyncTriggerAfterTaskAction = nil
+            requestBLESync(
+                reason: "deferredAfterTaskAction",
+                trigger: trigger,
+                debounce: taskLibraryReadyUpdate() == nil ? .seconds(1.5) : .zero
+            )
+            return
+        }
+        if taskLibraryReadyUpdate() != nil {
+            requestBLESync(reason: "taskLibraryAfterTaskAction", debounce: .zero)
+        }
     }
 }

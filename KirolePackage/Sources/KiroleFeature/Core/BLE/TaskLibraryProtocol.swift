@@ -110,6 +110,8 @@ public struct TaskLibraryRecord: Sendable, Equatable, Codable {
     public let order: UInt32
     public let title: String
     public let detail: String
+    public let dueTimestamp: UInt64?
+    public let priority: TaskPriority
     public let phaseTexts: TaskLibraryPhaseTexts
 
     public init(
@@ -117,12 +119,16 @@ public struct TaskLibraryRecord: Sendable, Equatable, Codable {
         order: UInt32,
         title: String,
         detail: String,
+        dueTimestamp: UInt64? = nil,
+        priority: TaskPriority = .medium,
         phaseTexts: TaskLibraryPhaseTexts
     ) {
         self.taskID = taskID
         self.order = order
         self.title = title
         self.detail = detail
+        self.dueTimestamp = dueTimestamp
+        self.priority = priority
         self.phaseTexts = phaseTexts
     }
 
@@ -132,20 +138,43 @@ public struct TaskLibraryRecord: Sendable, Equatable, Codable {
             order: order,
             title: task.title,
             detail: task.notes ?? "",
+            dueTimestamp: task.dueDate.map {
+                UInt64(max(0, $0.timeIntervalSince1970.rounded(.towardZero)))
+            },
+            priority: task.priority,
             phaseTexts: phaseTexts
         )
     }
 }
 
-/// A complete replacement snapshot. Issue #15 sends one record; the count is part of the
-/// transaction shape so the next expansion does not require another flag-day wire change.
-public struct TaskLibraryTransaction: Sendable, Equatable, Codable {
-    public let version: TaskLibraryVersion
-    public let records: [TaskLibraryRecord]
+public enum TaskLibraryTransactionKind: UInt8, Sendable, Equatable, Codable {
+    case full = 0x00
+    case incremental = 0x01
+}
 
-    public init(version: TaskLibraryVersion, records: [TaskLibraryRecord]) {
+/// One atomic full replacement or incremental update. Incremental transactions are bound to the
+/// exact previously committed version and CRC; firmware applies all upserts/deletions to a copy
+/// and swaps it into view only after the complete transaction validates.
+public struct TaskLibraryTransaction: Sendable, Equatable, Codable {
+    public let kind: TaskLibraryTransactionKind
+    public let baseState: TaskLibraryCommittedState?
+    public let version: TaskLibraryVersion
+    /// Full mode: every record. Incremental mode: only inserted or changed records.
+    public let records: [TaskLibraryRecord]
+    public let deletedTaskIDs: [String]
+
+    public init(
+        kind: TaskLibraryTransactionKind = .full,
+        baseState: TaskLibraryCommittedState? = nil,
+        version: TaskLibraryVersion,
+        records: [TaskLibraryRecord],
+        deletedTaskIDs: [String] = []
+    ) {
+        self.kind = kind
+        self.baseState = baseState
         self.version = version
         self.records = records
+        self.deletedTaskIDs = deletedTaskIDs
     }
 
     /// Builds the complete device library without a date or display-count filter. App array order
@@ -169,8 +198,26 @@ public struct TaskLibraryTransaction: Sendable, Equatable, Codable {
             ))
         }
         return TaskLibraryTransaction(
+            kind: .full,
+            baseState: nil,
             version: version,
-            records: records
+            records: records,
+            deletedTaskIDs: []
+        )
+    }
+
+    public static func incremental(
+        from base: TaskLibraryCommittedState,
+        to version: TaskLibraryVersion,
+        upserts: [TaskLibraryRecord],
+        deletions: [String]
+    ) -> TaskLibraryTransaction {
+        TaskLibraryTransaction(
+            kind: .incremental,
+            baseState: base,
+            version: version,
+            records: upserts,
+            deletedTaskIDs: deletions
         )
     }
 }
@@ -181,6 +228,7 @@ public enum TaskLibraryCommitResult: UInt8, Sendable, Equatable, Codable {
     case checksumMismatch = 0x02
     case capacityExceeded = 0x03
     case unsupportedVersion = 0x04
+    case baseMismatch = 0x05
     case internalError = 0xFF
 }
 
@@ -203,8 +251,11 @@ public struct TaskLibraryCommitAcknowledgement: Sendable, Equatable, Codable {
 
 public enum TaskLibraryCodecError: Error, Equatable, Sendable {
     case invalidVersion
+    case invalidTransactionShape
     case unsupportedSubVersion(UInt8)
+    case unsupportedTransactionKind(UInt8)
     case invalidTaskID
+    case invalidPriority(UInt8)
     case recordCountOverflow
     case truncated(field: String)
     case fieldTooLong(field: String, length: Int, max: Int)
@@ -216,7 +267,7 @@ public enum TaskLibraryCodecError: Error, Equatable, Sendable {
 
 /// `0x23` task-library snapshot and acknowledgement codec.
 public enum TaskLibraryCodec {
-    public static let subVersion: UInt8 = 0x01
+    public static let subVersion: UInt8 = 0x02
     public static let maxTaskIDBytes = 36
     public static let maxTitleBytes = 40
     public static let maxDetailBytes = DayPackTextBudget.taskDescription
@@ -224,23 +275,45 @@ public enum TaskLibraryCodec {
     private static let taskTitleFallback = "Task"
 
     /// App→Device:
-    /// `SubVersion | Epoch | Revision | RecordCount(4) | Records[] | ContentCRC32`.
+    /// `SubVersion | Kind | BaseEpoch | BaseRevision | BaseCRC | Epoch | Revision |
+    /// UpsertCount(4) | Upserts[] | DeleteCount(4) | DeleteIDs[] | ContentCRC32`.
     public static func encodeTransaction(_ transaction: TaskLibraryTransaction) throws -> Data {
         try validate(version: transaction.version)
+        switch transaction.kind {
+        case .full:
+            guard transaction.baseState == nil, transaction.deletedTaskIDs.isEmpty else {
+                throw TaskLibraryCodecError.invalidTransactionShape
+            }
+        case .incremental:
+            guard let baseState = transaction.baseState else {
+                throw TaskLibraryCodecError.invalidTransactionShape
+            }
+            try validate(version: baseState.version)
+        }
         guard transaction.records.count <= Int(UInt32.max) else {
+            throw TaskLibraryCodecError.recordCountOverflow
+        }
+        guard transaction.deletedTaskIDs.count <= Int(UInt32.max) else {
             throw TaskLibraryCodecError.recordCountOverflow
         }
 
         var payload = Data()
         payload.append(subVersion)
+        payload.append(transaction.kind.rawValue)
+        payload.appendBigEndian(transaction.baseState?.version.epoch ?? 0)
+        payload.appendBigEndian(transaction.baseState?.version.revision ?? 0)
+        payload.appendBigEndian(transaction.baseState?.contentCRC32 ?? 0)
         payload.appendBigEndian(transaction.version.epoch)
         payload.appendBigEndian(transaction.version.revision)
         payload.appendBigEndian(UInt32(transaction.records.count))
 
+        var seenTaskIDs: Set<String> = []
         for record in transaction.records {
             let taskID = record.taskID.asciiSanitizedForEInk()
             let taskIDLength = taskID.utf8.count
-            guard !taskID.isEmpty, taskIDLength <= maxTaskIDBytes else {
+            guard !taskID.isEmpty,
+                  taskIDLength <= maxTaskIDBytes,
+                  seenTaskIDs.insert(taskID).inserted else {
                 throw TaskLibraryCodecError.invalidTaskID
             }
             payload.appendString(taskID, maxLength: maxTaskIDBytes)
@@ -251,9 +324,28 @@ public enum TaskLibraryCodec {
                 fallbackIfSanitizedEmpty: taskTitleFallback
             )
             payload.appendString(record.detail, maxLength: maxDetailBytes)
+            if let dueTimestamp = record.dueTimestamp {
+                payload.append(0x01)
+                payload.appendBigEndian(dueTimestamp)
+            } else {
+                payload.append(0x00)
+                payload.appendBigEndian(UInt64(0))
+            }
+            payload.append(UInt8(record.priority.rawValue))
             payload.appendString(record.phaseTexts.starting, maxLength: maxPhaseTextBytes)
             payload.appendString(record.phaseTexts.building, maxLength: maxPhaseTextBytes)
             payload.appendString(record.phaseTexts.deep, maxLength: maxPhaseTextBytes)
+        }
+
+        payload.appendBigEndian(UInt32(transaction.deletedTaskIDs.count))
+        for taskIDValue in transaction.deletedTaskIDs {
+            let taskID = taskIDValue.asciiSanitizedForEInk()
+            guard !taskID.isEmpty,
+                  taskID.utf8.count <= maxTaskIDBytes,
+                  seenTaskIDs.insert(taskID).inserted else {
+                throw TaskLibraryCodecError.invalidTaskID
+            }
+            payload.appendString(taskID, maxLength: maxTaskIDBytes)
         }
 
         payload.appendBigEndian(CRC32.ieee(payload))
@@ -271,7 +363,7 @@ public enum TaskLibraryCodec {
     }
 
     public static func decodeTransaction(_ payload: Data) throws -> TaskLibraryTransaction {
-        guard payload.count >= 17 else {
+        guard payload.count >= 34 else {
             throw TaskLibraryCodecError.truncated(field: "transaction")
         }
         let crcOffset = payload.count - 4
@@ -287,6 +379,24 @@ public enum TaskLibraryCodec {
         guard receivedSubVersion == subVersion else {
             throw TaskLibraryCodecError.unsupportedSubVersion(receivedSubVersion)
         }
+        let kindByte = try reader.readByte(field: "kind")
+        guard let kind = TaskLibraryTransactionKind(rawValue: kindByte) else {
+            throw TaskLibraryCodecError.unsupportedTransactionKind(kindByte)
+        }
+        let baseEpoch = try reader.readUInt32(field: "baseEpoch")
+        let baseRevision = try reader.readUInt32(field: "baseRevision")
+        let baseCRC32 = try reader.readUInt32(field: "baseCRC32")
+        let baseState: TaskLibraryCommittedState?
+        if baseEpoch == 0, baseRevision == 0, baseCRC32 == 0 {
+            baseState = nil
+        } else {
+            let baseVersion = TaskLibraryVersion(epoch: baseEpoch, revision: baseRevision)
+            try validate(version: baseVersion)
+            baseState = TaskLibraryCommittedState(
+                version: baseVersion,
+                contentCRC32: baseCRC32
+            )
+        }
         let version = TaskLibraryVersion(
             epoch: try reader.readUInt32(field: "epoch"),
             revision: try reader.readUInt32(field: "revision")
@@ -295,13 +405,28 @@ public enum TaskLibraryCodec {
         let recordCount = try reader.readUInt32(field: "recordCount")
 
         var records: [TaskLibraryRecord] = []
+        var seenTaskIDs: Set<String> = []
         for index in 0..<recordCount {
             let prefix = "records[\(index)]"
             let taskID = try reader.readString(field: "\(prefix).taskID", max: maxTaskIDBytes)
-            guard !taskID.isEmpty else { throw TaskLibraryCodecError.invalidTaskID }
+            guard !taskID.isEmpty, seenTaskIDs.insert(taskID).inserted else {
+                throw TaskLibraryCodecError.invalidTaskID
+            }
             let order = try reader.readUInt32(field: "\(prefix).order")
             let title = try reader.readString(field: "\(prefix).title", max: maxTitleBytes)
             let detail = try reader.readString(field: "\(prefix).detail", max: maxDetailBytes)
+            let hasDueDate = try reader.readByte(field: "\(prefix).hasDueDate")
+            guard hasDueDate <= 1 else {
+                throw TaskLibraryCodecError.invalidTransactionShape
+            }
+            let dueTimestampValue = try reader.readUInt64(field: "\(prefix).dueTimestamp")
+            guard hasDueDate == 1 || dueTimestampValue == 0 else {
+                throw TaskLibraryCodecError.invalidTransactionShape
+            }
+            let priorityByte = try reader.readByte(field: "\(prefix).priority")
+            guard let priority = TaskPriority(rawValue: Int(priorityByte)) else {
+                throw TaskLibraryCodecError.invalidPriority(priorityByte)
+            }
             let starting = try reader.readString(field: "\(prefix).starting", max: maxPhaseTextBytes)
             let building = try reader.readString(field: "\(prefix).building", max: maxPhaseTextBytes)
             let deep = try reader.readString(field: "\(prefix).deep", max: maxPhaseTextBytes)
@@ -310,6 +435,8 @@ public enum TaskLibraryCodec {
                 order: order,
                 title: title,
                 detail: detail,
+                dueTimestamp: hasDueDate == 1 ? dueTimestampValue : nil,
+                priority: priority,
                 phaseTexts: TaskLibraryPhaseTexts(
                     starting: starting,
                     building: building,
@@ -317,8 +444,37 @@ public enum TaskLibraryCodec {
                 )
             ))
         }
+        let deletionCount = try reader.readUInt32(field: "deletionCount")
+        var deletedTaskIDs: [String] = []
+        for index in 0..<deletionCount {
+            let taskID = try reader.readString(
+                field: "deletions[\(index)]",
+                max: maxTaskIDBytes
+            )
+            guard !taskID.isEmpty, seenTaskIDs.insert(taskID).inserted else {
+                throw TaskLibraryCodecError.invalidTaskID
+            }
+            deletedTaskIDs.append(taskID)
+        }
         try reader.requireEnd()
-        return TaskLibraryTransaction(version: version, records: records)
+        let transaction = TaskLibraryTransaction(
+            kind: kind,
+            baseState: baseState,
+            version: version,
+            records: records,
+            deletedTaskIDs: deletedTaskIDs
+        )
+        switch kind {
+        case .full:
+            guard baseState == nil, deletedTaskIDs.isEmpty else {
+                throw TaskLibraryCodecError.invalidTransactionShape
+            }
+        case .incremental:
+            guard baseState != nil else {
+                throw TaskLibraryCodecError.invalidTransactionShape
+            }
+        }
+        return transaction
     }
 
     /// Device→App: `SubVersion | Epoch | Revision | Result | ContentCRC32`.
@@ -382,6 +538,12 @@ private extension TaskLibraryCodec {
             try require(4, field: field)
             defer { offset += 4 }
             return data.bigEndianUInt32(at: offset)
+        }
+
+        mutating func readUInt64(field: String) throws -> UInt64 {
+            try require(8, field: field)
+            defer { offset += 8 }
+            return data.bigEndianUInt64(at: offset)
         }
 
         mutating func readString(field: String, max: Int) throws -> String {

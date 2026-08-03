@@ -4,6 +4,45 @@ import Testing
 
 @Suite("Task Edit Reconciliation")
 struct AppStateTaskEditReconciliationTests {
+    @Test("A task edit is visible and durable before a read-only provider rejects it")
+    @MainActor
+    func localEditPersistsBeforeRemoteFailure() async throws {
+        try await SharedPersistenceTestLock.shared.withLock {
+            let previousTasks = try await LocalStorage.shared.loadTasks()
+            let state = AppState.makeForTesting()
+            let task = TaskItem(
+                id: "optimistic-edit",
+                title: "Before",
+                source: .todoist,
+                notes: "Old notes"
+            )
+            state.tasks = [task]
+
+            do {
+                try await state.editTask(
+                    task,
+                    title: "Saved now",
+                    priority: .high,
+                    dueDate: Date(timeIntervalSince1970: 1_800_000_000),
+                    notes: "New notes"
+                )
+                Issue.record("Expected the read-only provider to reject the remote edit")
+            } catch is ExternalEditingError {
+                // The remote error is expected; the local edit must already be authoritative.
+            }
+
+            #expect(state.tasks.first?.title == "Saved now")
+            #expect(state.tasks.first?.priority == .high)
+            #expect(state.taskLibraryStabilityState.deadline != nil)
+            #expect(try await LocalStorage.shared.loadTasks()?.first?.title == "Saved now")
+
+            state.cancelPendingBLESync()
+            state.taskLibraryStabilityTask?.cancel()
+            state.taskLibraryPhasePreparationTasks.values.forEach { $0.cancel() }
+            try await LocalStorage.shared.saveTasks(previousTasks ?? [])
+        }
+    }
+
     @Test("A remote edit result follows its task after the local array is reordered")
     func remoteResultFollowsReorderedTask() throws {
         let baseline = Date(timeIntervalSince1970: 1_700_000_000)

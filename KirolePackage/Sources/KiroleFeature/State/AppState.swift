@@ -62,6 +62,9 @@ public final class AppState {
     public var tasks: [TaskItem] = [] {
         didSet {
             recordTaskMutations(from: oldValue, to: tasks)
+            guard !suppressesTaskLibraryChangeTracking else { return }
+            recordTaskLibraryChanges(from: oldValue, to: tasks)
+            prepareChangedTaskLibraryPhaseTexts(from: oldValue, to: tasks)
         }
     }
     public var statistics: TaskStatistics = TaskStatistics()
@@ -94,10 +97,28 @@ public final class AppState {
     @ObservationIgnored var hasExplicitIntegrationConnectionPreferences = false
 
     // User Profile
-    public var userProfile: UserProfile = .default
+    public var userProfile: UserProfile = .default {
+        didSet {
+            recordTaskLibraryPersonaChange(
+                oldProfile: oldValue,
+                oldCustomCompanions: customCompanions,
+                newProfile: userProfile,
+                newCustomCompanions: customCompanions
+            )
+        }
+    }
     /// User-created companions (4th option alongside Joy/Silas/Nova).
     /// Loaded from disk on app start; mutated through AppState+Companion methods.
-    public var customCompanions: [CustomCompanion] = []
+    public var customCompanions: [CustomCompanion] = [] {
+        didSet {
+            recordTaskLibraryPersonaChange(
+                oldProfile: userProfile,
+                oldCustomCompanions: oldValue,
+                newProfile: userProfile,
+                newCustomCompanions: customCompanions
+            )
+        }
+    }
 
     // Onboarding Profile
     public var onboardingProfile: OnboardingProfile?
@@ -249,6 +270,18 @@ public final class AppState {
     var bleSyncSleeper: BLESyncSleeper = { duration in
         try await Task.sleep(for: duration)
     }
+    @ObservationIgnored var taskLibraryStabilityState = TaskLibraryStabilityState()
+    @ObservationIgnored var taskLibraryStabilityTask: Task<Void, Never>?
+    @ObservationIgnored var taskLibraryNowProvider: @MainActor () -> Date = { Date() }
+    @ObservationIgnored var taskLibraryPhasePreparationTasks: [String: Task<Void, Never>] = [:]
+    @ObservationIgnored var preparedTaskLibraryPhaseTexts: [String: PreparedTaskLibraryPhaseText] = [:]
+    @ObservationIgnored var immediateTaskLibraryRemovalMutations: Set<String> = []
+    /// Frozen task projection used by DayPack while ordinary task edits are inside the three-minute
+    /// stability window. The App shows edits immediately; hardware keeps its previous rows until
+    /// the same update becomes eligible for the task-library transaction.
+    @ObservationIgnored var taskLibraryHardwareTasksBaseline: [TaskItem]?
+    @ObservationIgnored var taskLibraryHardwarePetDialogueBaseline = ""
+    @ObservationIgnored var suppressesTaskLibraryChangeTracking = false
     var externalSyncWaiters: [ExternalSyncTarget: [CheckedContinuation<Void, Never>]] = [:]
 
     /// 启动本地加载任务句柄；ensureInitialLoadComplete() 等它完成，避免首轮外部同步 / Apple observer
@@ -259,7 +292,7 @@ public final class AppState {
         guard loadLocalDataOnInit else { return }
         installCustomAvatarTransportRouter()
         initialLoadTask = Task { @MainActor in
-            await loadLocalData()
+            await loadLocalData(trackTaskChanges: false)
             await restorePendingCustomAvatarOperation()
             BLEService.shared.onAvatarControlResult = { [weak self] result in
                 self?.handleAvatarControlResult(result)
@@ -324,6 +357,181 @@ public final class AppState {
         }
     }
 
+    private func recordTaskLibraryChanges(from oldTasks: [TaskItem], to newTasks: [TaskItem]) {
+        let immediateRemovals = immediateTaskLibraryRemovalMutations
+        immediateTaskLibraryRemovalMutations.removeAll()
+        if !immediateRemovals.isEmpty, taskLibraryHardwareTasksBaseline != nil {
+            taskLibraryHardwareTasksBaseline?.removeAll {
+                immediateRemovals.contains($0.hardwareIdentifier)
+            }
+        }
+        let alreadyHadStableChanges = !taskLibraryStabilityState.stableTaskIDs.isEmpty
+        guard taskLibraryStabilityState.recordTaskChanges(
+            from: oldTasks,
+            to: newTasks,
+            at: taskLibraryNowProvider(),
+            immediateRemovalTaskIDs: immediateRemovals
+        ) else { return }
+        if !alreadyHadStableChanges {
+            taskLibraryHardwareTasksBaseline = oldTasks.filter {
+                !immediateRemovals.contains($0.hardwareIdentifier)
+            }
+            taskLibraryHardwarePetDialogueBaseline = currentPetDialogue
+        }
+        persistTaskLibraryStabilityCheckpoint()
+        scheduleTaskLibraryStabilityDeadline()
+    }
+
+    private func recordTaskLibraryPersonaChange(
+        oldProfile: UserProfile,
+        oldCustomCompanions: [CustomCompanion],
+        newProfile: UserProfile,
+        newCustomCompanions: [CustomCompanion]
+    ) {
+        guard !taskLibraryStabilityState.stableTaskIDs.isEmpty else { return }
+        let oldPersona = TaskLibraryPhaseSourceFingerprint.persona(
+            userProfile: oldProfile,
+            customCompanions: oldCustomCompanions
+        )
+        let newPersona = TaskLibraryPhaseSourceFingerprint.persona(
+            userProfile: newProfile,
+            customCompanions: newCustomCompanions
+        )
+        guard oldPersona != newPersona else { return }
+        prepareChangedTaskLibraryPhaseTexts(from: [], to: tasks)
+        persistTaskLibraryStabilityCheckpoint()
+    }
+
+    func persistTaskLibraryStabilityCheckpoint() {
+        guard !taskLibraryStabilityState.stableTaskIDs.isEmpty
+                || !taskLibraryStabilityState.urgentRemovalTaskIDs.isEmpty else {
+            LocalStorage.clearTaskLibraryStabilityCheckpoint()
+            return
+        }
+        do {
+            try LocalStorage.saveTaskLibraryStabilityCheckpoint(
+                TaskLibraryStabilityCheckpoint(
+                    state: taskLibraryStabilityState,
+                    hardwareTasksBaseline: taskLibraryHardwareTasksBaseline,
+                    hardwarePetDialogueBaseline: taskLibraryHardwarePetDialogueBaseline,
+                    sourceFingerprint: TaskLibrarySourceFingerprint.make(
+                        tasks: tasks,
+                        userProfile: userProfile,
+                        customCompanions: customCompanions
+                    )
+                )
+            )
+        } catch {
+            ErrorReporter.log(error, context: "AppState.persistTaskLibraryStabilityCheckpoint")
+        }
+    }
+
+    func restoreTaskLibraryStabilityCheckpoint() {
+        do {
+            guard let checkpoint = try LocalStorage.loadTaskLibraryStabilityCheckpoint() else {
+                return
+            }
+            guard applyTaskLibraryStabilityCheckpoint(checkpoint) else {
+                LocalStorage.clearTaskLibraryStabilityCheckpoint()
+                return
+            }
+        } catch {
+            LocalStorage.clearTaskLibraryStabilityCheckpoint()
+            ErrorReporter.log(error, context: "AppState.restoreTaskLibraryStabilityCheckpoint")
+        }
+    }
+
+    @discardableResult
+    func applyTaskLibraryStabilityCheckpoint(
+        _ checkpoint: TaskLibraryStabilityCheckpoint
+    ) -> Bool {
+        let currentFingerprint = TaskLibrarySourceFingerprint.make(
+            tasks: tasks,
+            userProfile: userProfile,
+            customCompanions: customCompanions
+        )
+        guard checkpoint.sourceFingerprint == currentFingerprint else { return false }
+        taskLibraryStabilityState = checkpoint.state
+        taskLibraryHardwareTasksBaseline = checkpoint.hardwareTasksBaseline
+        taskLibraryHardwarePetDialogueBaseline = checkpoint.hardwarePetDialogueBaseline
+        prepareChangedTaskLibraryPhaseTexts(
+            from: checkpoint.hardwareTasksBaseline ?? tasks,
+            to: tasks
+        )
+        if taskLibraryStabilityState.readyScope(at: taskLibraryNowProvider()) != nil {
+            requestBLESync(reason: "restoredTaskLibraryUpdate", debounce: .zero)
+        } else {
+            scheduleTaskLibraryStabilityDeadline()
+        }
+        return true
+    }
+
+    private func prepareChangedTaskLibraryPhaseTexts(
+        from oldTasks: [TaskItem],
+        to newTasks: [TaskItem]
+    ) {
+        var oldByID: [String: TaskItem] = [:]
+        var newByID: [String: TaskItem] = [:]
+        for task in oldTasks where oldByID[task.hardwareIdentifier] == nil {
+            oldByID[task.hardwareIdentifier] = task
+        }
+        for task in newTasks where newByID[task.hardwareIdentifier] == nil {
+            newByID[task.hardwareIdentifier] = task
+        }
+        let allIDs = Set(oldByID.keys).union(newByID.keys)
+        for taskID in allIDs {
+            guard let task = newByID[taskID], !task.isCompleted, !task.pendingDeletion else {
+                taskLibraryPhasePreparationTasks[taskID]?.cancel()
+                taskLibraryPhasePreparationTasks.removeValue(forKey: taskID)
+                preparedTaskLibraryPhaseTexts.removeValue(forKey: taskID)
+                continue
+            }
+            let oldTask = oldByID[taskID]
+            guard oldTask == nil
+                    || oldTask?.isCompleted == true
+                    || oldTask?.pendingDeletion == true
+                    || oldTask?.title != task.title
+                    || oldTask?.notes != task.notes else {
+                continue
+            }
+            let fingerprint = TaskLibraryPhaseSourceFingerprint.make(
+                task: task,
+                userProfile: userProfile,
+                customCompanions: customCompanions
+            )
+            taskLibraryPhasePreparationTasks[taskID]?.cancel()
+            taskLibraryPhasePreparationTasks[taskID] = Task { @MainActor [weak self] in
+                guard let self else { return }
+                let prepared = await TaskLibraryPhaseTextService.shared.prepare(
+                    tasks: [task],
+                    userProfile: userProfile,
+                    customCompanions: customCompanions
+                )
+                guard !Task.isCancelled,
+                      let current = tasks.first(where: { $0.hardwareIdentifier == taskID }),
+                      TaskLibraryPhaseSourceFingerprint.make(
+                        task: current,
+                        userProfile: userProfile,
+                        customCompanions: customCompanions
+                      ) == fingerprint else {
+                    return
+                }
+                if let texts = prepared[taskID] {
+                    preparedTaskLibraryPhaseTexts[taskID] = PreparedTaskLibraryPhaseText(
+                        fingerprint: fingerprint,
+                        texts: texts
+                    )
+                }
+                taskLibraryPhasePreparationTasks.removeValue(forKey: taskID)
+            }
+        }
+    }
+
+}
+
+struct PreparedTaskLibraryPhaseText: Sendable, Equatable {
+    let fingerprint: String
+    let texts: TaskLibraryPhaseTexts
 }
 
 private struct TaskMutationFingerprint: Equatable {

@@ -110,6 +110,19 @@ struct CompanionIdentityPresentationTests {
         #expect(state.pendingBLESyncTrigger == nil)
     }
 
+    @Test("An immediate task-library removal is re-queued after task-action presentation")
+    @MainActor
+    func taskLibraryRemovalSurvivesTaskActionCancellation() {
+        let state = AppState.makeForTesting()
+        state.taskLibraryStabilityState.promoteImmediateRemoval(taskID: "completed")
+
+        state.cancelPendingBLESyncForTaskActionPresentation()
+        state.resumeDeferredBLESyncAfterTaskActionPresentation()
+
+        #expect(state.pendingBLESyncTask != nil)
+        state.cancelPendingBLESync()
+    }
+
     @Test("makeForTesting installs a no-op BLE sync executor instead of CoreBluetooth")
     @MainActor
     func testingStateInstallsNoOpBLEExecutorByDefault() {

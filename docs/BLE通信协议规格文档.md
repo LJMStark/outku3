@@ -1,8 +1,8 @@
 # Kirole BLE 通信协议规格文档
 
-**版本:** v2.11.3
+**版本:** v2.12.0
 **更新日期:** 2026-08-03
-**状态:** v2.11.3 的 App 已通过 `TaskLibraryTransaction(0x23)` 发送全部未完成任务，不按日期或展示条数截断；零任务同样发送完整替换事务。每项任务携带与当前角色匹配的 `0–5 / 6–15 / 16+` 三阶段文案。完整事务先按设备持久化，失败后从第一个字节完整重试一次；第二次失败、断连或明确容量不足时保留最新待发版本，下次连接重新开始。设备只有返回版本、CRC 和 `committed` 全部匹配的 `0x23` 结果才替换 App 记录；旧已提交库不受半包或失败影响。任务编辑后三分钟稳定窗和增量更新属 Issue #19；真实固件任务库属 Issue #26。旧 `DayPack(0x10)`、`TaskInPage(0x11)` 和 `TaskListSnapshotAck(0x1B)` 迁移期继续保留。
+**状态:** v2.12.0 的 App 已实现完整任务库与增量任务库事务。首次绑定或设备报告 missing 时发送全部未完成任务；设备已有有效库后，新增、编辑、删除和撤销完成从最后一次变化起等待三分钟，只发送最终变化记录。完成动作立即发送原子删除，不推进其他任务的稳定窗。标题或备注变化只重新准备该任务的三阶段文案；日期、优先级和顺序复用原文案。断连和重连不重置窗口。所有事务先持久化、失败后从第一个字节完整重试一次，只有版本、CRC 和 `committed` 全部匹配才推进已提交库。真实固件任务库属 Issue #26；旧 `DayPack(0x10)`、`TaskInPage(0x11)` 和 `TaskListSnapshotAck(0x1B)` 迁移期继续保留。
 
 v2.9.0 的严格请求、OperationID 幂等和 `0x1B` 权威快照仍生效；v2.10.1 把在线 Complete/Skip 的 `0x1B` 延后到最终 DayPack 之后。App 是任务最终状态来源；GATT `.withResponse` 只代表传输确认，不能替代 `0x1B` 业务确认。
 
@@ -102,6 +102,7 @@ v2.9.0 的严格请求、OperationID 幂等和 `0x1B` 权威快照仍生效；v2
 | v2.11.1 | 2026-08-03 | **完整任务库 App 路径**：`0x23` 改为发送全部未完成且非待删除任务，保留 App 顺序，不设日期范围或展示条数上限；零任务发送 RecordCount=0 的完整替换事务。新增按设备保存的已提交 Epoch/Revision/CRC，以及 42B `DeviceWake(0x30)` 任务库库存尾段：首次绑定或设备报告 missing 时全量发送；已有本地绑定记录且设备报告 committed 时记录精确版本并跳过无条件重发。只有设备、版本、CRC 和 committed 结果全部匹配才落盘。真实固件、AI 三阶段文案和失败重试仍由后续票完成。§4.22/§5.8/§5.21 |
 | v2.11.2 | 2026-08-03 | **任务库三阶段文案（wire 不变）**：每项任务在 `0x23` 形成前预生成三条与任务内容和当前角色匹配的文案，设备按本地专注分钟在 `0–5 / 6–15 / 16+` 三段选择。每项任务首次 AI 失败只后台重试一次；第二次失败或三分钟截止时按角色使用本地三阶段模板。每项任务独立准备，一个失败不删除任务或阻止其他任务；截止后取消在途请求，迟到结果不再形成第二个任务库版本。任务标题和备注继续通过 `<user_content>` 隔离，三条输出各自限制 80B 可打印 ASCII。§4.22 |
 | v2.11.3 | 2026-08-03 | **任务库失败保护与持久待发（wire 不变）**：App 在首个 `0x23` 字节写入前按设备保存完整冻结事务；写入失败、断连、五秒未收到匹配业务结果或设备返回失败结果时，从 Seq=0 完整重试一次，不续接半包。第二次失败后停止本轮并保留最新待发事务；后续连接重新从 Seq=0 发送。待发期间任务或伴侣来源变化时，以内容指纹替换旧待发事务，只保存最新完整版本。只有匹配 Epoch/Revision/CRC 且 Result=`committed` 才清除待发并推进已提交状态；`capacityExceeded` 明确记录且不得截断。诊断只记录阶段、attempt 和版本，不写任务正文。§4.22/§5.21/§8.4 |
+| v2.12.0 | 2026-08-03 | **三分钟稳定窗与增量任务库（`0x23` SubVersion `0x02`，破坏性）**：事务新增 Full/Incremental 类型、精确 Base Epoch/Revision/CRC、删除列表，并把截止时间与优先级加入任务记录。普通任务内容变化从最后一次变化起等 180 秒；断连/重连不重计。已有有效库只发送 upsert/delete 差异，设备在副本中完整应用后原子提交；Base 不匹配回 `0x05` 且旧库不变。完成动作立即删除同一任务，不提前提交其他仍在稳定窗内的编辑。标题/备注只重做该任务三阶段文案，日期/优先级/顺序复用旧文案；到点缺文案用本地模板，迟到结果不补发。§4.22/§5.21 |
 
 | 术语 | 定义 |
 |---------------|------------------------------------------------------|
@@ -1061,23 +1062,29 @@ IsCompleted(1) | Priority(1)
 
 ### 4.22 TaskLibraryTransaction (0x23)
 
-App→Device 发送一个可原子替换的设备任务库完整版本。`0x23` 保存任务详情和三阶段文案；`0x1B` 仍是 Complete/Skip/Refresh 的 Overview 状态确认，两者不能混用。
+App→Device 发送一个可原子提交的完整或增量设备任务库版本。`0x23` 保存任务详情和三阶段文案；`0x1B` 仍是 Complete/Skip/Refresh 的 Overview 状态确认，两者不能混用。
 
 **Payload：**
 
 ```text
-SubVersion(1) | LibraryEpoch(4 BE) | LibraryRevision(4 BE) |
-RecordCount(4 BE) | Records[] | TransactionCRC32(4 BE)
+SubVersion(1) | Kind(1) |
+BaseEpoch(4 BE) | BaseRevision(4 BE) | BaseCRC32(4 BE) |
+LibraryEpoch(4 BE) | LibraryRevision(4 BE) |
+UpsertCount(4 BE) | Upserts[] |
+DeleteCount(4 BE) | DeleteTaskIDs[] | TransactionCRC32(4 BE)
 ```
 
 | 字段 | 大小 | 说明 |
 |------|------|------|
-| SubVersion | 1 byte | 固定 `0x01`；未知版本整帧拒绝 |
+| SubVersion | 1 byte | 固定 `0x02`；未知版本整帧拒绝 |
+| Kind | 1 byte | `0x00`=Full；`0x01`=Incremental |
+| BaseEpoch / BaseRevision / BaseCRC32 | 12 bytes | Full 时全部为 0；Incremental 时必须精确等于设备当前 committed 状态 |
 | LibraryEpoch | 4 bytes BE | 任务库世代，必须非零 |
 | LibraryRevision | 4 bytes BE | 同一世代内的版本，必须非零 |
-| RecordCount | 4 bytes BE | 完整记录数；允许为 0。协议表示范围为 UInt32，产品不另设任务数量上限 |
-| Records[] | Variable | 按任务顺序连续编码的完整记录 |
-| TransactionCRC32 | 4 bytes BE | CRC-32/IEEE，覆盖从 SubVersion 到最后一条记录的所有字节 |
+| UpsertCount | 4 bytes BE | Full 时为完整记录数；Incremental 时仅为新增或变化记录数；允许为 0 |
+| Upserts[] | Variable | 按目标任务顺序编码的完整记录 |
+| DeleteCount / DeleteTaskIDs[] | Variable | Full 必须为 0；Incremental 为删除数量及逐项 `TaskIDLength + TaskID` |
+| TransactionCRC32 | 4 bytes BE | CRC-32/IEEE，覆盖此前全部事务字节 |
 
 **单条任务记录：**
 
@@ -1085,12 +1092,13 @@ RecordCount(4 BE) | Records[] | TransactionCRC32(4 BE)
 TaskIDLength(1) | TaskID(N1, N1<=36) | Order(4 BE) |
 TitleLength(1) | Title(N2, N2<=40) |
 DetailLength(1) | Detail(N3, N3<=100) |
+HasDueDate(1) | DueTimestamp(8 BE) | Priority(1) |
 StartingLength(1) | Starting(N4, N4<=80) |
 BuildingLength(1) | Building(N5, N5<=80) |
 DeepLength(1) | Deep(N6, N6<=80)
 ```
 
-TaskID 必须非空；所有文本都按 §3.5 转为可打印 ASCII 后再计算长度和截断。`Order` 与 App 任务数组顺序一致。App 纳入全部未完成且非待删除任务，包括今天、未来、过期和无日期任务；已完成及待删除任务不进入事务。不得使用 DayPack 的屏幕展示条数或日期窗口截断任务库。三条阶段文案分别供本地专注计时 `0–5 分钟`、`6–15 分钟`、`16 分钟及以后` 取用；边界分钟 0、5 取 Starting，6、15 取 Building，16 起取 Deep。
+TaskID 必须非空；所有文本都按 §3.5 转为可打印 ASCII 后再计算长度和截断。`Order` 与 App 任务数组顺序一致。`HasDueDate=0` 时 DueTimestamp 必须为 0；`HasDueDate=1` 时为 Unix 秒。Priority 为 `0=low / 1=medium / 2=high`。App 纳入全部未完成且非待删除任务，包括今天、未来、过期和无日期任务；已完成及待删除任务不进入事务。不得使用 DayPack 的屏幕展示条数或日期窗口截断任务库。三条阶段文案分别供本地专注计时 `0–5 分钟`、`6–15 分钟`、`16 分钟及以后` 取用；边界分钟 0、5 取 Starting，6、15 取 Building，16 起取 Deep。
 
 **三阶段文案准备规则（v2.11.2）：**
 
@@ -1109,7 +1117,9 @@ TaskID 必须非空；所有文本都按 §3.5 转为可打印 ASCII 后再计�
 5. App 在首个字节发送前持久化完整冻结事务。写入、断连、五秒业务应答超时或非 committed 结果均算失败；首次失败等待 500ms 后用同一 Epoch/Revision/CRC 从 Seq=0 完整重发一次，不续接半包。
 6. 第二次失败后停止本轮，保留该设备最新待发事务。后续连接优先重发；若任务标题、备注、顺序、完成/删除状态或当前伴侣人设已变化，旧待发事务作废，只保存并发送最新完整版本。
 7. 匹配的 `capacityExceeded` 是明确容量失败，App 不得把前若干条任务当作成功。诊断只记录 prepare、attempt、retry、committed、pending-next-connection 和版本号，不记录任务标题或备注。
-8. 任务后续新增、修改、完成和删除的三分钟稳定窗与增量 wire 由 Issue #19 定义；本版只保证一旦形成新版完整事务，就会替换旧待发版本。
+8. 普通任务新增、标题/备注/日期/优先级/顺序修改、删除和撤销完成都从最后一次相关变化起等待 180 秒；每次变化重置同一全局截止点。断连与重连不修改截止点：到点后重连立即发送，未到点只等待剩余时间。
+9. 标题或备注变化只重新准备该任务的三阶段文案；日期、优先级或顺序变化复用已提交文案。窗口到点仍缺少结果时使用本地模板，迟到结果不得形成第二版。
+10. 已有有效 committed 库时发送 Incremental，只包含变化记录和删除 ID；设备先核对 Base，再在 committed 副本上完整应用并一次提交。完成动作立即删除同一任务，不等待 180 秒，也不得提前带上其他仍在窗口中的编辑。
 
 **设备提交规则：**
 
@@ -1117,7 +1127,8 @@ TaskID 必须非空；所有文本都按 §3.5 转为可打印 ASCII 后再计�
 2. 收到首个合法分片后可建立 pending 区，但已提交任务库继续对页面和本地按键可见。
 3. 只有完整帧、版本、所有长度前缀、RecordCount、文本上限、解析终点和 CRC 全部合法时，才能一次性原子替换 committed 区。
 4. 中断、校验失败或内部错误都不得部分改写已提交库。完成后按 §5.21 实时回复 `TaskLibraryCommitResult(0x23)`。
-5. 本版本仍保留 `0x10/0x11/0x1B` 生产路径，不得在真实固件和完整任务库尚未完成时提前删除。
+5. Incremental 的 BaseEpoch/BaseRevision/BaseCRC32 任一不等于当前 committed 状态时返回 `baseMismatch`，旧库不变；禁止在错误基线之上尝试部分合并。
+6. 本版本仍保留 `0x10/0x11/0x1B` 生产路径，不得在真实固件和完整任务库尚未完成时提前删除。
 
 > **确认边界：** GATT `.withResponse` 只说明某个分片写入成功。只有版本和 TransactionCRC32 都与本次发送一致，且 Result=`committed` 的 `0x23` 应答，才说明新任务库已对设备本地页面可见。
 
@@ -1615,6 +1626,7 @@ Result(1) | ContentCRC32(4 BE)
 | `0x02` | checksumMismatch | TransactionCRC32 不匹配 |
 | `0x03` | capacityExceeded | 设备无法完整容纳本版本，旧库不变 |
 | `0x04` | unsupportedVersion | SubVersion 或任务库版本不受支持 |
+| `0x05` | baseMismatch | 增量事务的 Base 版本或 CRC 与当前 committed 库不一致 |
 | `0xFF` | internalError | 设备内部错误，旧库不变 |
 
 `ContentCRC32` 回显该事务声明的 TransactionCRC32。App 只把 SubVersion、Epoch、Revision、ContentCRC32 全部匹配且 Result=`committed` 的应答当作成功；过期或不属于当前事务的应答不能改变待发状态。

@@ -9,7 +9,7 @@ extension AppState {
         taskManager.completedTasksForToday(tasks: tasks)
     }
 
-    func loadLocalData() async {
+    func loadLocalData(trackTaskChanges: Bool = true) async {
         do {
             if let savedPet = try await localStorage.loadPet() {
                 pet = savedPet
@@ -33,7 +33,10 @@ extension AppState {
 
         do {
             if let savedTasks = try await localStorage.loadTasks() {
+                let previousSuppression = suppressesTaskLibraryChangeTracking
+                suppressesTaskLibraryChangeTracking = !trackTaskChanges
                 tasks = savedTasks
+                suppressesTaskLibraryChangeTracking = previousSuppression
             }
         } catch {
             reportPersistenceError(error, operation: "load", target: "tasks.json")
@@ -125,6 +128,10 @@ extension AppState {
             }
         } catch {
             reportPersistenceError(error, operation: "load", target: "custom_companions.json")
+        }
+
+        if !trackTaskChanges {
+            restoreTaskLibraryStabilityCheckpoint()
         }
 
         do {

@@ -213,6 +213,87 @@ struct TaskLibraryFullSyncTests {
     }
 
     @MainActor
+    @Test("Reconnect inventory promotes an exact lost-ACK target snapshot")
+    func reconnectInventoryPromotesLostAcknowledgementSnapshot() async throws {
+        try await SharedPersistenceTestLock.shared.withLock {
+            let destination = "test-task-library-lost-ack-\(UUID().uuidString)"
+            let phaseTexts = TaskLibraryPhaseTexts(
+                starting: "Start",
+                building: "Build",
+                deep: "Deep"
+            )
+            let oldTransaction = try TaskLibraryTransaction.fullLibrary(
+                from: [TaskItem(id: "task", title: "Before")],
+                version: TaskLibraryVersion(epoch: 10, revision: 3),
+                phaseTexts: { _ in phaseTexts }
+            )
+            let oldState = try TaskLibraryCodec.committedState(for: oldTransaction)
+            let newRecord = TaskLibraryRecord(
+                taskID: "task",
+                order: 0,
+                title: "After",
+                detail: "Detail",
+                dueTimestamp: nil,
+                priority: .high,
+                phaseTexts: phaseTexts
+            )
+            let newTransaction = TaskLibraryTransaction.incremental(
+                from: oldState,
+                to: TaskLibraryVersion(epoch: 10, revision: 4),
+                upserts: [newRecord],
+                deletions: []
+            )
+            let newState = try TaskLibraryCodec.committedState(for: newTransaction)
+            let pending = TaskLibraryPendingDelivery(
+                transaction: newTransaction,
+                sourceFingerprint: "frozen-source",
+                targetRecords: [newRecord],
+                phaseSourceFingerprints: ["task": "phase-source"],
+                validation: .completeSource("not-current"),
+                personaFingerprint: "persona"
+            )
+            let oldSnapshot = TaskLibraryCommittedSnapshot(
+                state: oldState,
+                records: oldTransaction.records,
+                phaseSourceFingerprints: ["task": "old-phase"],
+                personaFingerprint: "persona"
+            )
+
+            do {
+                try await LocalStorage.shared.saveTaskLibraryCommittedSnapshot(
+                    oldSnapshot,
+                    for: destination
+                )
+                try await LocalStorage.shared.saveTaskLibraryPendingDelivery(
+                    pending,
+                    for: destination
+                )
+
+                #expect(!(await BLESyncCoordinator.shared.reconcileTaskLibraryInventory(
+                    .committed(newState),
+                    destinationID: destination
+                )))
+                let promoted = try await LocalStorage.shared.loadTaskLibraryCommittedSnapshot(
+                    for: destination
+                )
+                #expect(promoted?.state == newState)
+                #expect(promoted?.records == [newRecord])
+                #expect(promoted?.phaseSourceFingerprints == ["task": "phase-source"])
+                #expect(promoted?.personaFingerprint == "persona")
+                #expect(try await LocalStorage.shared.loadTaskLibraryPendingDelivery(
+                    for: destination
+                ) == nil)
+            } catch {
+                try? await LocalStorage.shared.removeTaskLibraryPendingDelivery(for: destination)
+                try? await LocalStorage.shared.removeTaskLibraryCommittedState(for: destination)
+                throw error
+            }
+            try await LocalStorage.shared.removeTaskLibraryPendingDelivery(for: destination)
+            try await LocalStorage.shared.removeTaskLibraryCommittedState(for: destination)
+        }
+    }
+
+    @MainActor
     @Test("Device inventory and matching ACK advance only the reported destination")
     func inventoryAndAcknowledgementAdvanceExactDestination() async throws {
         try await SharedPersistenceTestLock.shared.withLock {

@@ -50,13 +50,18 @@ struct TaskLibraryTransactionTests {
     @Test("An impossible record count fails from the payload bytes without reserving attacker-sized memory")
     func impossibleRecordCountIsRejected() {
         var body = Data([TaskLibraryCodec.subVersion])
+        body.append(TaskLibraryTransactionKind.full.rawValue)
+        body.appendBigEndian(UInt32(0))
+        body.appendBigEndian(UInt32(0))
+        body.appendBigEndian(UInt32(0))
         body.appendBigEndian(UInt32(1))
         body.appendBigEndian(UInt32(1))
         body.appendBigEndian(UInt32.max)
+        body.appendBigEndian(UInt32(0))
         var payload = body
         payload.appendBigEndian(CRC32.ieee(body))
 
-        #expect(throws: TaskLibraryCodecError.truncated(field: "records[0].taskID")) {
+        #expect(throws: TaskLibraryCodecError.invalidTaskID) {
             try TaskLibraryCodec.decodeTransaction(payload)
         }
     }

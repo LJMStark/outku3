@@ -499,6 +499,9 @@ final class AppDeviceScenario {
         appState.bleSyncSleeper = { duration in
             try await clock.sleep(for: duration)
         }
+        appState.taskLibraryNowProvider = { [weak self] in
+            self?.currentDate ?? Date()
+        }
         appState.bleSyncExecutor = { [weak self] trigger in
             self?.executedSyncTriggers.append(trigger)
         }

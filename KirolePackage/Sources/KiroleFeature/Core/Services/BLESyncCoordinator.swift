@@ -189,10 +189,10 @@ public final class BLESyncCoordinator {
         guard let destinationID = connectedDestinationProvider(), !destinationID.isEmpty else {
             return false
         }
-        let locallyCommitted: TaskLibraryCommittedState?
+        let committedSnapshot: TaskLibraryCommittedSnapshot?
         let pendingDelivery: TaskLibraryPendingDelivery?
         do {
-            locallyCommitted = try await localStorage.loadTaskLibraryCommittedState(
+            committedSnapshot = try await localStorage.loadTaskLibraryCommittedSnapshot(
                 for: destinationID
             )
             pendingDelivery = try await localStorage.loadTaskLibraryPendingDelivery(
@@ -202,18 +202,32 @@ public final class BLESyncCoordinator {
             ErrorReporter.log(error, context: "BLESyncCoordinator.loadTaskLibraryDeliveryState")
             return true
         }
-        return TaskLibraryFullSyncPolicy.shouldSendFullLibrary(
-            locallyCommitted: locallyCommitted,
-            deviceInventory: taskLibraryDeviceInventories[destinationID],
-            hasPendingTransaction: pendingDelivery != nil
-                || pendingTaskLibraries[destinationID] != nil
+        let pendingMatchesCurrent = pendingDelivery?.validation.matchesCurrentSource() == true
+            && Self.pendingTaskLibraryBaseMatches(
+                pendingDelivery,
+                committedState: committedSnapshot?.state
+            )
+        let currentPersona = TaskLibraryPhaseSourceFingerprint.persona(
+            userProfile: AppState.shared.userProfile,
+            customCompanions: AppState.shared.customCompanions
         )
+        let personaChanged = committedSnapshot?.hasCompleteRecords == true
+            && committedSnapshot?.personaFingerprint != currentPersona
+        return TaskLibraryFullSyncPolicy.shouldSendFullLibrary(
+            locallyCommitted: committedSnapshot?.state,
+            deviceInventory: taskLibraryDeviceInventories[destinationID],
+            hasPendingTransaction: pendingMatchesCurrent
+        ) || committedSnapshot?.hasCompleteRecords == false
+            || personaChanged
+            || AppState.shared.taskLibraryReadyUpdate() != nil
     }
 
     private func sendFullTaskLibraryIfNeeded(
         tasks: [TaskItem],
         userProfile: UserProfile,
         customCompanions: [CustomCompanion],
+        allowedReadyUpdate: (scope: TaskLibraryUpdateScope, generation: UInt64)?,
+        preservesPendingStableChanges: Bool,
         expectedTaskStateVersion: UInt64,
         expectedCompanionIdentityFingerprint: String
     ) async throws {
@@ -221,10 +235,10 @@ public final class BLESyncCoordinator {
             return
         }
 
-        var locallyCommitted: TaskLibraryCommittedState?
+        var committedSnapshot: TaskLibraryCommittedSnapshot?
         var persistedPending: TaskLibraryPendingDelivery?
         do {
-            locallyCommitted = try await localStorage.loadTaskLibraryCommittedState(
+            committedSnapshot = try await localStorage.loadTaskLibraryCommittedSnapshot(
                 for: destinationID
             )
             persistedPending = try await localStorage.loadTaskLibraryPendingDelivery(
@@ -232,51 +246,114 @@ public final class BLESyncCoordinator {
             )
         } catch {
             ErrorReporter.log(error, context: "BLESyncCoordinator.loadTaskLibraryDeliveryState")
-            locallyCommitted = nil
+            committedSnapshot = nil
             persistedPending = nil
         }
-        guard TaskLibraryFullSyncPolicy.shouldSendFullLibrary(
-            locallyCommitted: locallyCommitted,
+        let requiresFullLibrary = TaskLibraryFullSyncPolicy.shouldSendFullLibrary(
+            locallyCommitted: committedSnapshot?.state,
             deviceInventory: taskLibraryDeviceInventories[destinationID],
-            hasPendingTransaction: persistedPending != nil
-                || pendingTaskLibraries[destinationID] != nil
-        ) else {
+            hasPendingTransaction: false
+        ) || committedSnapshot?.hasCompleteRecords == false
+        let currentPersona = TaskLibraryPhaseSourceFingerprint.persona(
+            userProfile: userProfile,
+            customCompanions: customCompanions
+        )
+        let personaChanged = committedSnapshot?.hasCompleteRecords == true
+            && committedSnapshot?.personaFingerprint != currentPersona
+        let pendingIsSupersededByComplete = allowedReadyUpdate?.scope == .complete
+            && persistedPending?.updateScope != .complete
+        let pendingMatchesCurrent = !pendingIsSupersededByComplete
+            && persistedPending?.validation.matchesCurrentSource() == true
+            && persistedPending?.personaFingerprint == currentPersona
+            && Self.pendingTaskLibraryBaseMatches(
+                persistedPending,
+                committedState: committedSnapshot?.state
+            )
+        guard requiresFullLibrary || personaChanged || pendingMatchesCurrent
+                || allowedReadyUpdate != nil else {
             return
         }
 
         isTaskLibraryTransactionInFlight = true
         defer { isTaskLibraryTransactionInFlight = false }
-        let sourceFingerprint = TaskLibrarySourceFingerprint.make(
-            tasks: tasks,
-            userProfile: userProfile,
-            customCompanions: customCompanions
-        )
         let delivery: TaskLibraryPendingDelivery
-        if let persistedPending,
-           persistedPending.sourceFingerprint == sourceFingerprint {
+        if let persistedPending, pendingMatchesCurrent {
             delivery = persistedPending
         } else {
-            let phaseTexts = await taskLibraryPhaseTextService.prepare(
+            let scope: TaskLibraryUpdateScope
+            let capturedGeneration: UInt64
+            if requiresFullLibrary || personaChanged {
+                scope = preservesPendingStableChanges
+                    ? allowedReadyUpdate?.scope ?? .taskRemovals([])
+                    : .complete
+                capturedGeneration = AppState.shared.taskLibraryStabilityState.generation
+            } else if let readyUpdate = allowedReadyUpdate {
+                scope = readyUpdate.scope
+                capturedGeneration = readyUpdate.generation
+            } else {
+                return
+            }
+
+            var phaseTexts = AppState.shared.currentPreparedTaskLibraryPhaseTexts(for: tasks)
+            if committedSnapshot == nil || personaChanged {
+                // A first binding has no prior lines to reuse and is not delayed by the edit
+                // stability window. Give its initial AI preparation the normal bounded chance.
+                let initial = await taskLibraryPhaseTextService.prepare(
+                    tasks: tasks,
+                    userProfile: userProfile,
+                    customCompanions: customCompanions
+                )
+                phaseTexts.merge(initial) { _, newest in newest }
+            }
+            let plannedUpdate = try TaskLibraryUpdatePlanner.makeUpdate(
                 tasks: tasks,
-                userProfile: userProfile,
-                customCompanions: customCompanions
-            )
-            let transaction = try TaskLibraryTransaction.fullLibrary(
-                from: tasks,
+                baseline: committedSnapshot,
                 version: Self.nextTaskLibraryVersion(
-                    after: persistedPending?.transaction.version ?? locallyCommitted?.version
+                    after: persistedPending?.transaction.version ?? committedSnapshot?.state.version
                 ),
-                phaseTexts: { task in
-                    phaseTexts[task.hardwareIdentifier]
-                        ?? (userProfile.customCompanionId == nil
-                            ? .localFallback(for: userProfile.companionCharacter)
-                            : .localFallback)
+                scope: scope,
+                preparedPhaseTexts: phaseTexts,
+                userProfile: userProfile,
+                customCompanions: customCompanions,
+                forceFullTransaction: requiresFullLibrary || personaChanged
+            )
+            let preparedUpdate: TaskLibraryPreparedUpdate
+            if preservesPendingStableChanges, requiresFullLibrary || personaChanged {
+                let removalIDs: [String]
+                if case .taskRemovals(let taskIDs) = scope {
+                    removalIDs = Array(taskIDs).sorted()
+                } else {
+                    removalIDs = []
                 }
-            )
+                preparedUpdate = TaskLibraryPreparedUpdate(
+                    transaction: plannedUpdate.transaction,
+                    targetRecords: plannedUpdate.targetRecords,
+                    phaseSourceFingerprints: plannedUpdate.phaseSourceFingerprints,
+                    validation: .taskRemovals(removalIDs),
+                    personaFingerprint: plannedUpdate.personaFingerprint
+                )
+            } else {
+                preparedUpdate = plannedUpdate
+            }
+            if preparedUpdate.transaction.kind == .incremental,
+               preparedUpdate.transaction.records.isEmpty,
+               preparedUpdate.transaction.deletedTaskIDs.isEmpty {
+                try await localStorage.removeTaskLibraryPendingDelivery(for: destinationID)
+                AppState.shared.markTaskLibraryUpdateCommitted(
+                    scope: scope,
+                    generation: capturedGeneration
+                )
+                return
+            }
             delivery = TaskLibraryPendingDelivery(
-                transaction: transaction,
-                sourceFingerprint: sourceFingerprint
+                preparedUpdate: preparedUpdate,
+                updateScope: scope,
+                capturedStabilityGeneration: capturedGeneration
             )
+            // Validate the exact wire shape before making it the durable retry candidate. A local
+            // duplicate/oversized identifier must not poison every future connection with an
+            // unencodable pending transaction.
+            _ = try TaskLibraryCodec.committedState(for: delivery.transaction)
             try await localStorage.saveTaskLibraryPendingDelivery(
                 delivery,
                 for: destinationID
@@ -302,6 +379,13 @@ public final class BLESyncCoordinator {
         )
         guard didClearPending else {
             throw BLEError.staleTaskSnapshot
+        }
+        if let scope = delivery.updateScope,
+           let generation = delivery.capturedStabilityGeneration {
+            AppState.shared.markTaskLibraryUpdateCommitted(
+                scope: scope,
+                generation: generation
+            )
         }
     }
 
@@ -349,20 +433,31 @@ public final class BLESyncCoordinator {
         pendingDelivery: TaskLibraryPendingDelivery?,
         clearPendingRequested: Bool
     ) async throws -> Bool {
-        try await localStorage.saveTaskLibraryCommittedState(state, for: destinationID)
+        let deliveryState = try pendingDelivery.map {
+            try TaskLibraryCodec.committedState(for: $0.transaction)
+        }
+        if deliveryState == state, let pendingDelivery {
+            try await localStorage.saveTaskLibraryCommittedSnapshot(
+                TaskLibraryCommittedSnapshot(
+                    state: state,
+                    records: pendingDelivery.targetRecords,
+                    phaseSourceFingerprints: pendingDelivery.phaseSourceFingerprints,
+                    personaFingerprint: pendingDelivery.personaFingerprint
+                ),
+                for: destinationID
+            )
+        } else {
+            try await localStorage.saveTaskLibraryCommittedState(state, for: destinationID)
+        }
         var didClearPending = clearPendingRequested
         if clearPendingRequested, let pendingDelivery {
-            let pendingState = try TaskLibraryCodec.committedState(
-                for: pendingDelivery.transaction
-            )
-            didClearPending = pendingState == state
-                && Self.currentTaskLibrarySourceFingerprint()
-                    == pendingDelivery.sourceFingerprint
+            didClearPending = deliveryState == state
+                && pendingDelivery.validation.matchesCurrentSource()
         }
         if didClearPending {
             try await localStorage.removeTaskLibraryPendingDelivery(for: destinationID)
             if let pendingDelivery,
-               Self.currentTaskLibrarySourceFingerprint() != pendingDelivery.sourceFingerprint {
+               !pendingDelivery.validation.matchesCurrentSource() {
                 // The source changed while the storage actor was removing the old marker. Restore
                 // the frozen delivery so the queued sync can replace it with the new source.
                 try await localStorage.saveTaskLibraryPendingDelivery(
@@ -399,6 +494,19 @@ public final class BLESyncCoordinator {
         return TaskLibraryVersion(epoch: nextEpoch, revision: 1)
     }
 
+    private static func pendingTaskLibraryBaseMatches(
+        _ delivery: TaskLibraryPendingDelivery?,
+        committedState: TaskLibraryCommittedState?
+    ) -> Bool {
+        guard let delivery else { return false }
+        switch delivery.transaction.kind {
+        case .full:
+            return true
+        case .incremental:
+            return delivery.transaction.baseState == committedState
+        }
+    }
+
     public func nextSyncDate() async -> Date {
         let lastSync = await localStorage.loadLastBleSyncTime()
         return policy.nextSyncTime(now: Date(), lastSync: lastSync)
@@ -417,6 +525,33 @@ public final class BLESyncCoordinator {
                 try await localStorage.removeTaskLibraryCommittedState(for: destinationID)
                 return true
             case let .committed(state):
+                if let pending = try await localStorage.loadTaskLibraryPendingDelivery(
+                    for: destinationID
+                ), try TaskLibraryCodec.committedState(for: pending.transaction) == state {
+                    // The device may have committed the transaction while its 0x23 ACK was lost.
+                    // Its reconnect inventory is authoritative: promote the exact frozen target
+                    // instead of degrading the local baseline to a state-only marker and rebuilding
+                    // the same library with fallback copy.
+                    try await localStorage.saveTaskLibraryCommittedSnapshot(
+                        TaskLibraryCommittedSnapshot(
+                            state: state,
+                            records: pending.targetRecords,
+                            phaseSourceFingerprints: pending.phaseSourceFingerprints,
+                            personaFingerprint: pending.personaFingerprint
+                        ),
+                        for: destinationID
+                    )
+                    try await localStorage.removeTaskLibraryPendingDelivery(for: destinationID)
+                    if pending.validation.matchesCurrentSource(),
+                       let scope = pending.updateScope,
+                       let generation = pending.capturedStabilityGeneration {
+                        AppState.shared.markTaskLibraryUpdateCommitted(
+                            scope: scope,
+                            generation: generation
+                        )
+                    }
+                    return false
+                }
                 guard try await localStorage.loadTaskLibraryCommittedState(
                     for: destinationID
                 ) != nil else {
@@ -484,12 +619,20 @@ public final class BLESyncCoordinator {
             return
         }
         do {
-            _ = try await recordTaskLibraryCommit(
+            let didClearPending = try await recordTaskLibraryCommit(
                 pending,
                 destinationID: destinationID,
                 pendingDelivery: persistedPending,
                 clearPendingRequested: true
             )
+            if didClearPending,
+               let scope = persistedPending?.updateScope,
+               let generation = persistedPending?.capturedStabilityGeneration {
+                AppState.shared.markTaskLibraryUpdateCommitted(
+                    scope: scope,
+                    generation: generation
+                )
+            }
         } catch {
             ErrorReporter.log(error, context: "BLESyncCoordinator.handleTaskLibraryCommitAcknowledgement")
         }
@@ -601,20 +744,23 @@ public final class BLESyncCoordinator {
         guard !Task.isCancelled else { return }
         let sourceTaskStateVersion = appState.taskStateVersion
         let sourceIdentityFingerprint = Self.companionIdentityFingerprint(appState)
+        let taskLibraryPresentation = appState.taskLibraryPresentationSnapshot()
+        let presentationTasks = taskLibraryPresentation.tasks
+        let presentationPetDialogue = taskLibraryPresentation.petDialogue
         guard appState.currentPetDialogueTaskStateVersion == sourceTaskStateVersion else {
             queuePendingSync(force: force, trigger: trigger)
             return
         }
         let dayPack = await dayPackGenerator.generateDayPack(
             pet: appState.pet,
-            tasks: appState.tasks,
+            tasks: presentationTasks,
             events: appState.events,
             weather: appState.weather,
             deviceMode: appState.deviceMode,
             userProfile: appState.userProfile,
             customCompanions: appState.customCompanions,
             screenSize: bleService.hardwareScreenSize,
-            petDialogue: appState.currentPetDialogue
+            petDialogue: presentationPetDialogue
         )
         // DayPack generation also awaits event/support/settlement text. If tasks changed during
         // that work, do not let the old task/dialogue transaction reach the hardware.
@@ -627,7 +773,7 @@ public final class BLESyncCoordinator {
 
         let fingerprint = dayPack.stableFingerprint()
         let semanticFingerprint = dayPack.refreshSemanticFingerprint(
-            allTasks: appState.tasks,
+            allTasks: presentationTasks,
             at: Date()
         )
         let lastHash = await localStorage.loadLastDayPackHash()
@@ -663,7 +809,15 @@ public final class BLESyncCoordinator {
 
         let hasPriorityCustomAvatarOperation = appState.pendingCustomAvatarOperation?
             .requiresPriorityBLEFlush == true
-        let hasPriorityTaskLibrarySync = await shouldSendFullTaskLibraryForConnectedDevice()
+        // A stability deadline is process-local and can expire while BLE is disconnected. It must
+        // open a connection even though no destination inventory can be queried until afterward.
+        let hasReadyTaskLibraryUpdate = taskLibraryPresentation.readyUpdate != nil
+        let commitsTaskLibraryBeforeDayPack = Self.commitsTaskLibraryBeforeDayPack(
+            readyUpdate: taskLibraryPresentation.readyUpdate
+        )
+        let connectedDeviceNeedsTaskLibrarySync = await shouldSendFullTaskLibraryForConnectedDevice()
+        let hasPriorityTaskLibrarySync = hasReadyTaskLibraryUpdate
+            || connectedDeviceNeedsTaskLibrarySync
         guard policy.shouldSync(
             now: now,
             lastSync: lastSync,
@@ -777,6 +931,7 @@ public final class BLESyncCoordinator {
             await appState.flushPriorityCustomAvatarOperationIfNeeded()
             var dayPackSendFailed = false
             var presentationSnapshotIsCurrent = false
+            var taskLibraryCommittedBeforeDayPack = false
             _ = try await hardwarePagePresentationGate.performPresentationWrite(
                 droppingIfPageTransactionIntervened: false
             ) {
@@ -818,6 +973,27 @@ public final class BLESyncCoordinator {
                       Self.companionIdentityFingerprint(appState) == sourceIdentityFingerprint else {
                     presentationSnapshotIsCurrent = false
                     return
+                }
+                if commitsTaskLibraryBeforeDayPack {
+                    // At the stability deadline, the new Overview must not appear until the
+                    // matching offline task details are durably committed by firmware. A lost or
+                    // rejected 0x23 therefore leaves the old DayPack visible and retries later.
+                    try await sendFullTaskLibraryIfNeeded(
+                        tasks: taskLibraryPresentation.tasks,
+                        userProfile: appState.userProfile,
+                        customCompanions: appState.customCompanions,
+                        allowedReadyUpdate: taskLibraryPresentation.readyUpdate,
+                        preservesPendingStableChanges: taskLibraryPresentation.usesFrozenBaseline,
+                        expectedTaskStateVersion: sourceTaskStateVersion,
+                        expectedCompanionIdentityFingerprint: sourceIdentityFingerprint
+                    )
+                    taskLibraryCommittedBeforeDayPack = true
+                    guard appState.taskStateVersion == sourceTaskStateVersion,
+                          Self.companionIdentityFingerprint(appState)
+                            == sourceIdentityFingerprint else {
+                        presentationSnapshotIsCurrent = false
+                        return
+                    }
                 }
                 if Self.shouldSendPreparedDayPack(
                     requested: shouldSendDayPack,
@@ -885,33 +1061,46 @@ public final class BLESyncCoordinator {
                 return
             }
 
-            do {
-                try await sendFullTaskLibraryIfNeeded(
-                    tasks: appState.tasks,
-                    userProfile: appState.userProfile,
-                    customCompanions: appState.customCompanions,
-                    expectedTaskStateVersion: sourceTaskStateVersion,
-                    expectedCompanionIdentityFingerprint: sourceIdentityFingerprint
-                )
-            } catch {
-                if let bleError = error as? BLEError,
-                   case .staleTaskSnapshot = bleError {
+            if !taskLibraryCommittedBeforeDayPack {
+                if Self.commitsTaskLibraryBeforeDayPack(
+                    readyUpdate: appState.taskLibraryReadyUpdate()
+                ) {
+                    // The deadline crossed while this round was preparing or connecting. This
+                    // round used the frozen DayPack, so keep the old library with it and let the
+                    // next round perform the ordered library-first switch.
                     queuePendingSync(force: force, trigger: trigger)
                     return
                 }
-                if error is BLEPresentationDestinationError {
-                    queuePendingSync(force: force, trigger: trigger)
-                    return
+                do {
+                    try await sendFullTaskLibraryIfNeeded(
+                        tasks: taskLibraryPresentation.tasks,
+                        userProfile: appState.userProfile,
+                        customCompanions: appState.customCompanions,
+                        allowedReadyUpdate: taskLibraryPresentation.readyUpdate,
+                        preservesPendingStableChanges: taskLibraryPresentation.usesFrozenBaseline,
+                        expectedTaskStateVersion: sourceTaskStateVersion,
+                        expectedCompanionIdentityFingerprint: sourceIdentityFingerprint
+                    )
+                } catch {
+                    if let bleError = error as? BLEError,
+                       case .staleTaskSnapshot = bleError {
+                        queuePendingSync(force: force, trigger: trigger)
+                        return
+                    }
+                    if error is BLEPresentationDestinationError {
+                        queuePendingSync(force: force, trigger: trigger)
+                        return
+                    }
+                    // Older firmware may not support 0x23 yet. The retained DayPack/TaskIn/0x1B
+                    // path continues while firmware work is tracked separately in issue #26.
+                    ErrorReporter.log(
+                        .sync(
+                            component: "BLE Task Library",
+                            underlying: error.localizedDescription
+                        ),
+                        context: "BLESyncCoordinator.performSync"
+                    )
                 }
-                // Older firmware may not support 0x23 yet. The retained DayPack/TaskIn/0x1B
-                // path continues while firmware work is tracked separately in issue #26.
-                ErrorReporter.log(
-                    .sync(
-                        component: "BLE Task Library",
-                        underlying: error.localizedDescription
-                    ),
-                    context: "BLESyncCoordinator.performSync"
-                )
             }
 
             await appState.flushPendingCustomCompanionPushIfNeeded()
@@ -989,15 +1178,6 @@ public final class BLESyncCoordinator {
             .first(where: { $0.id == customID })?
             .avatarRevisionKey ?? "missing"
         return "custom|\(customID.uuidString)|\(revision)"
-    }
-
-    private static func currentTaskLibrarySourceFingerprint() -> String {
-        let appState = AppState.shared
-        return TaskLibrarySourceFingerprint.make(
-            tasks: appState.tasks,
-            userProfile: appState.userProfile,
-            customCompanions: appState.customCompanions
-        )
     }
 
     static func shouldSendPreparedDayPack(
@@ -1187,27 +1367,29 @@ public final class BLESyncCoordinator {
             await appState.refreshSharedPetDialogueIfNeeded()
             guard validateDestination() else { return nil }
             let sourceTaskStateVersion = appState.taskStateVersion
+            let presentationTasks = appState.tasksForHardwarePresentation()
+            let presentationPetDialogue = appState.petDialogueForHardwarePresentation()
             guard appState.currentPetDialogueTaskStateVersion == sourceTaskStateVersion else {
                 continue
             }
 
             let dayPack = await dayPackGenerator.generateDayPack(
                 pet: appState.pet,
-                tasks: appState.tasks,
+                tasks: presentationTasks,
                 events: appState.events,
                 weather: appState.weather,
                 deviceMode: appState.deviceMode,
                 userProfile: appState.userProfile,
                 customCompanions: appState.customCompanions,
                 screenSize: bleService.hardwareScreenSize,
-                petDialogue: appState.currentPetDialogue
+                petDialogue: presentationPetDialogue
             )
             guard validateDestination() else { return nil }
             guard appState.taskStateVersion == sourceTaskStateVersion else { continue }
 
             let fingerprint = dayPack.stableFingerprint()
             let semanticFingerprint = dayPack.refreshSemanticFingerprint(
-                allTasks: appState.tasks,
+                allTasks: presentationTasks,
                 at: Date()
             )
             let lastDayPackHash = await localStorage.loadLastDayPackHash()
@@ -1297,6 +1479,12 @@ public final class BLESyncCoordinator {
             }
         }
         return false
+    }
+
+    nonisolated static func commitsTaskLibraryBeforeDayPack(
+        readyUpdate: (scope: TaskLibraryUpdateScope, generation: UInt64)?
+    ) -> Bool {
+        readyUpdate?.scope == .complete
     }
 
     /// 路由一条到期的智能提醒：硬件可达就推设备，否则落本地通知，让离线用户也收得到。

@@ -77,13 +77,18 @@ extension AppState {
         let syncVersion = updatedTask.lastModified
         let isCompleted = updatedTask.isCompleted
 
+        if isCompleted {
+            immediateTaskLibraryRemovalMutations.insert(updatedTask.hardwareIdentifier)
+        }
         tasks = taskManager.withTask(tasks, updatedTask: updatedTask)
         updatePetForTaskToggle(isCompleted: isCompleted, playFeedback: source == .user)
         if let motion = source.companionMotion(isCompleted: isCompleted) {
             emitCompanionMotion(motion)
         }
         updateStatistics()
-        requestBLESync(reason: "toggleTaskCompletion")
+        if isCompleted {
+            promoteTaskLibraryImmediateRemoval(taskID: updatedTask.hardwareIdentifier)
+        }
 
         let externalSyncTask = taskExternalSyncQueue.enqueue(for: updatedTask.id) { [weak self] in
             guard let self else { return }
@@ -168,6 +173,7 @@ extension AppState {
             let syncSupport = taskSyncSupport(for: completedTask, action: .updateCompletion)
             completedTask.syncStatus = syncSupport == .remote ? .pending : .error
             completedTask.pendingDeletion = false
+            immediateTaskLibraryRemovalMutations.insert(completedTask.hardwareIdentifier)
             performHardwareTaskMutation {
                 tasks = taskManager.withTask(tasks, updatedTask: completedTask)
             }
@@ -210,7 +216,7 @@ extension AppState {
 
         if didApplyDomainState {
             updateStatistics()
-            requestBLESync(reason: "hardwareTaskCompletion")
+            promoteTaskLibraryImmediateRemoval(taskID: initialTask.hardwareIdentifier)
             if source == .user {
                 SoundService.shared.playWithHaptic(.taskComplete, haptic: .success)
                 emitCompanionMotion(.celebrate)
@@ -458,7 +464,6 @@ extension AppState {
     public func addTask(_ task: TaskItem) {
         tasks = taskManager.addingTask(tasks, task: task)
         updateStatistics()
-        requestBLESync(reason: "addTask")
 
         Task { @MainActor in
             await persistTasks(tasks, context: "AppState.addTask")
@@ -478,7 +483,6 @@ extension AppState {
         updatedTask.todayDisplayDate = displayed ? now : nil
         tasks = taskManager.withTask(tasks, updatedTask: updatedTask)
         updateStatistics()
-        requestBLESync(reason: displayed ? "addTaskToTodayDisplay" : "removeTaskFromTodayDisplay")
 
         await persistTasks(tasks, context: "AppState.setTaskDisplayedToday")
         await updatePetState()
@@ -493,7 +497,6 @@ extension AppState {
         if support == .localOnly {
             tasks = taskManager.removingTask(tasks, taskID: task.id)
             updateStatistics()
-            requestBLESync(reason: "deleteTask.localOnly")
 
             Task { @MainActor in
                 await persistTasks(tasks, context: "AppState.deleteTask.localOnly")
@@ -509,7 +512,6 @@ extension AppState {
 
         tasks = taskManager.withTask(tasks, updatedTask: deletingTask)
         updateStatistics()
-        requestBLESync(reason: "deleteTask.pending")
 
         let externalSyncTask = taskExternalSyncQueue.enqueue(for: deletingTask.id) { [weak self] in
             guard let self else { return }
@@ -549,7 +551,6 @@ extension AppState {
         }
         await persistTasks(tasks, context: "AppState.retryTaskSync.pending")
         await externalSyncTask.value
-        requestBLESync(reason: "retryTaskSync")
     }
 
     public func editTask(
@@ -569,6 +570,13 @@ extension AppState {
         updatedTask.notes = notes
         updatedTask.lastModified = Date()
 
+        // The App is authoritative for the user's edit immediately. Provider reconciliation runs
+        // afterward and may update remote metadata, but it must not hold the local state or the
+        // three-minute hardware stability window behind a network request.
+        tasks = taskManager.withTask(tasks, updatedTask: updatedTask)
+        updateStatistics()
+        await persistTasks(tasks, context: "AppState.editTask.local")
+
         do {
             let syncedTask = try await taskExternalSyncQueue.run(for: updatedTask.id) {
                 try await ExternalSyncDispatcher.syncTaskContentEdit(updatedTask)
@@ -577,14 +585,13 @@ extension AppState {
                 in: tasks,
                 with: syncedTask,
                 matching: task.id,
-                baseline: baselineTask
+                baseline: updatedTask
             ) else {
                 return
             }
             tasks = reconciled
             updateStatistics()
             await persistTasks(tasks, context: "AppState.editTask")
-            requestBLESync(reason: "editTask")
         } catch {
             reportSyncError(error, component: task.source.rawValue, context: "AppState.editTask")
             throw error

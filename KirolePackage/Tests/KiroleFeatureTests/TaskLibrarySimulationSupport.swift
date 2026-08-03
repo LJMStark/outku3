@@ -7,6 +7,7 @@ struct SimulatedTaskLibraryFirmware {
     private(set) var pendingVersion: TaskLibraryVersion?
     private(set) var committedVersion: TaskLibraryVersion?
     private(set) var committedRecords: [TaskLibraryRecord] = []
+    private(set) var committedState: TaskLibraryCommittedState?
     private var maximumRecords: Int?
 
     var localDefaultDialogue: String {
@@ -28,22 +29,52 @@ struct SimulatedTaskLibraryFirmware {
             throw SimulationError.taskLibraryPendingMismatch
         }
         try validate(version: transaction.version)
-        if let maximumRecords, transaction.records.count > maximumRecords {
+        let transactionState = try TaskLibraryCodec.committedState(for: transaction)
+        let nextRecords: [TaskLibraryRecord]
+        switch transaction.kind {
+        case .full:
+            nextRecords = transaction.records
+        case .incremental:
+            guard transaction.baseState == committedState else {
+                pendingVersion = nil
+                return TaskLibraryCommitAcknowledgement(
+                    version: transaction.version,
+                    result: .baseMismatch,
+                    contentCRC32: transactionState.contentCRC32
+                )
+            }
+            var recordsByID: [String: TaskLibraryRecord] = [:]
+            for record in committedRecords where recordsByID[record.taskID] == nil {
+                recordsByID[record.taskID] = record
+            }
+            for taskID in transaction.deletedTaskIDs {
+                recordsByID.removeValue(forKey: taskID)
+            }
+            for record in transaction.records {
+                recordsByID[record.taskID] = record
+            }
+            nextRecords = recordsByID.values.sorted {
+                if $0.order != $1.order { return $0.order < $1.order }
+                return $0.taskID < $1.taskID
+            }
+        }
+        if let maximumRecords, nextRecords.count > maximumRecords {
             pendingVersion = nil
             return TaskLibraryCommitAcknowledgement(
                 version: transaction.version,
                 result: .capacityExceeded,
-                contentCRC32: payload.bigEndianUInt32(at: payload.count - 4)
+                contentCRC32: transactionState.contentCRC32
             )
         }
 
-        committedRecords = transaction.records
+        committedRecords = nextRecords
         committedVersion = transaction.version
+        committedState = transactionState
         pendingVersion = nil
         return TaskLibraryCommitAcknowledgement(
             version: transaction.version,
             result: .committed,
-            contentCRC32: payload.bigEndianUInt32(at: payload.count - 4)
+            contentCRC32: transactionState.contentCRC32
         )
     }
 
