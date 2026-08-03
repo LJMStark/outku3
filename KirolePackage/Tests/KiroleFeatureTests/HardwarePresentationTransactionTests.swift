@@ -405,6 +405,7 @@ struct HardwarePresentationTransactionTests {
             sender: sender,
             presentationCoordinator: presentation,
             versionProvider: SingleSnapshotVersionProvider(),
+            deliveryStore: nil,
             tasksProvider: { [] },
             taskStateVersionProvider: { 0 }
         )

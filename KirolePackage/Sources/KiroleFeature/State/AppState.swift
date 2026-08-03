@@ -15,6 +15,7 @@ typealias CustomAvatarFrameSender = @MainActor (
 ) async throws -> Void
 typealias AvatarControlSender = @MainActor (AvatarControlCommand) async throws -> Void
 typealias SharedPetDialogueGenerator = @MainActor (AIContext, AITextType) async -> String
+typealias BLESyncSleeper = @MainActor (Duration) async throws -> Void
 
 struct AvatarControlResultWaiter {
     let operationID: UInt32
@@ -243,6 +244,11 @@ public final class AppState {
     /// Production runs `BLESyncCoordinator.shared.performSync`. Tests install a no-op so
     /// `AppState.makeForTesting()` cannot open real CoreBluetooth sessions from debounce timers.
     var bleSyncExecutor: (@MainActor (BLESyncTrigger) async -> Void)?
+    /// Production waits on the continuous clock. Acceptance scenarios replace this boundary so
+    /// stabilization windows can advance without sleeping for wall-clock minutes.
+    var bleSyncSleeper: BLESyncSleeper = { duration in
+        try await Task.sleep(for: duration)
+    }
     var externalSyncWaiters: [ExternalSyncTarget: [CheckedContinuation<Void, Never>]] = [:]
 
     /// 启动本地加载任务句柄；ensureInitialLoadComplete() 等它完成，避免首轮外部同步 / Apple observer

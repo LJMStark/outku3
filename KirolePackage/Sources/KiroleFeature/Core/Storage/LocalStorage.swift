@@ -98,6 +98,47 @@ public actor LocalStorage {
         static let currentVersion = 6
     }
 
+    private struct TaskListSnapshotDeliveryState: Codable {
+        /// Compatibility cursor for the pre-delivery-store API. It has no device identity and is
+        /// deliberately never used to seed a real destination.
+        var legacyVersion: TaskListSnapshotVersion?
+        var destinations: [TaskListSnapshotDestinationState]
+
+        static let empty = TaskListSnapshotDeliveryState(
+            legacyVersion: nil,
+            destinations: []
+        )
+    }
+
+    private struct TaskListSnapshotDestinationState: Codable {
+        let destinationID: String
+        var lastFrozenVersion: TaskListSnapshotVersion?
+        var reservation: TaskListSnapshotDeliveryReservation?
+        var frozenResponses: [StoredTaskListSnapshotResponse]
+    }
+
+    private struct TaskListSnapshotDeliveryReservation: Codable {
+        let key: TaskListSnapshotRequestKey
+        let version: TaskListSnapshotVersion
+    }
+
+    private struct StoredTaskListSnapshotResponse: Codable {
+        var response: FrozenTaskListSnapshotResponse
+        var phase: TaskListSnapshotDeliveryPhase
+    }
+
+    private enum TaskListSnapshotDeliveryPhase: String, Codable {
+        case prepared
+        case attempted
+        case delivered
+    }
+
+    private enum TaskListSnapshotDeliveryStorageError: Error {
+        case activeDeliveryConflict
+        case reservationMismatch
+        case responseMismatch
+    }
+
     private nonisolated static let resettableUserDefaultKeys = [
         Keys.developmentStorageSchemaVersion,
         Keys.lastEventLogTimestamp,
@@ -619,31 +660,311 @@ public actor LocalStorage {
     }
 
     /// Atomically advances the durable version used by `0x1B TaskListSnapshotAck`.
-    /// Epoch and revision live in one atomically-replaced JSON document; two independent
-    /// UserDefaults writes could expose a mixed pair after process termination.
+    /// This legacy entry point shares the same atomically-replaced delivery-state document used
+    /// by the responder, so tests and older call sites cannot expose a mixed epoch/revision pair.
     public func nextTaskListSnapshotVersion() throws -> TaskListSnapshotVersion {
-        let current: TaskListSnapshotVersion?
+        var state: TaskListSnapshotDeliveryState
         do {
-            current = try loadTaskListSnapshotVersion()
+            state = try loadTaskListSnapshotDeliveryState()
         } catch {
             try quarantineCorruptFile(named: Files.taskListSnapshotVersion)
-            current = nil
+            state = .empty
         }
-        var newEpoch = UInt32.random(in: 1...UInt32.max)
-        if newEpoch == current?.epoch {
-            newEpoch = newEpoch == UInt32.max ? 1 : newEpoch + 1
-        }
-        let next = TaskListSnapshotVersion.advanced(from: current, newEpoch: newEpoch)
-        try saveTaskListSnapshotVersion(next)
+        let next = nextTaskListSnapshotVersion(
+            after: state.legacyVersion,
+            avoiding: taskListSnapshotEpochs(in: state)
+        )
+        state.legacyVersion = next
+        try save(state, to: Files.taskListSnapshotVersion)
         return next
     }
 
     func saveTaskListSnapshotVersion(_ version: TaskListSnapshotVersion) throws {
-        try save(version, to: Files.taskListSnapshotVersion)
+        var state = try loadTaskListSnapshotDeliveryState()
+        state.legacyVersion = version
+        try save(state, to: Files.taskListSnapshotVersion)
     }
 
     func loadTaskListSnapshotVersion() throws -> TaskListSnapshotVersion? {
-        try load(TaskListSnapshotVersion.self, from: Files.taskListSnapshotVersion)
+        try loadTaskListSnapshotDeliveryState().legacyVersion
+    }
+
+    func hasAttemptedTaskListSnapshotDelivery(
+        for destinationID: String
+    ) async throws -> Bool {
+        let state = try loadTaskListSnapshotDeliveryState()
+        guard let destination = state.destinations.first(where: {
+            $0.destinationID == destinationID
+        }) else { return false }
+        return destination.frozenResponses.contains { $0.phase == .attempted }
+    }
+
+    func prepareTaskListSnapshotDelivery(
+        for key: TaskListSnapshotRequestKey
+    ) throws -> TaskListSnapshotDeliveryPreparation {
+        var state: TaskListSnapshotDeliveryState
+        do {
+            state = try loadTaskListSnapshotDeliveryState()
+        } catch {
+            try quarantineCorruptFile(named: Files.taskListSnapshotVersion)
+            state = .empty
+        }
+
+        guard let destinationIndex = state.destinations.firstIndex(where: {
+            $0.destinationID == key.destinationID
+        }) else {
+            let version = nextTaskListSnapshotVersion(
+                after: nil,
+                avoiding: taskListSnapshotEpochs(in: state)
+            )
+            state.destinations.append(TaskListSnapshotDestinationState(
+                destinationID: key.destinationID,
+                lastFrozenVersion: nil,
+                reservation: TaskListSnapshotDeliveryReservation(
+                    key: key,
+                    version: version
+                ),
+                frozenResponses: []
+            ))
+            try save(state, to: Files.taskListSnapshotVersion)
+            return .reserved(version)
+        }
+
+        var destination = state.destinations[destinationIndex]
+        if let immutable = destination.frozenResponses.first(where: {
+            $0.response.key == key && $0.phase != .prepared
+        }) {
+            return .frozen(immutable.response)
+        }
+        // OperationID is not a globally monotonic firmware sequence. Even a numerically larger
+        // different key cannot prove that an uncertain write was applied; offline batches may
+        // legitimately contain several pending operations.
+        guard !destination.frozenResponses.contains(where: {
+            $0.phase == .attempted
+        }) else {
+            throw TaskListSnapshotDeliveryStorageError.activeDeliveryConflict
+        }
+        let removedDeliveredResponse = destination.frozenResponses.contains {
+            $0.phase == .delivered
+        }
+        destination.frozenResponses.removeAll { $0.phase == .delivered }
+        if let preparedIndex = destination.frozenResponses.firstIndex(where: {
+            $0.phase == .prepared
+        }) {
+            let prepared = destination.frozenResponses.remove(at: preparedIndex)
+            destination.reservation = TaskListSnapshotDeliveryReservation(
+                key: key,
+                version: prepared.response.version
+            )
+            state.destinations[destinationIndex] = destination
+            try save(state, to: Files.taskListSnapshotVersion)
+            return .reserved(prepared.response.version)
+        }
+        if let reservation = destination.reservation {
+            if reservation.key != key {
+                destination.reservation = TaskListSnapshotDeliveryReservation(
+                    key: key,
+                    version: reservation.version
+                )
+            }
+            if reservation.key != key || removedDeliveredResponse {
+                state.destinations[destinationIndex] = destination
+                try save(state, to: Files.taskListSnapshotVersion)
+            }
+            return .reserved(reservation.version)
+        }
+        let version = nextTaskListSnapshotVersion(
+            after: destination.lastFrozenVersion,
+            avoiding: taskListSnapshotEpochs(in: state)
+        )
+        destination.reservation = TaskListSnapshotDeliveryReservation(
+            key: key,
+            version: version
+        )
+        state.destinations[destinationIndex] = destination
+        try save(state, to: Files.taskListSnapshotVersion)
+        return .reserved(version)
+    }
+
+    func freezeTaskListSnapshotDelivery(
+        _ response: FrozenTaskListSnapshotResponse
+    ) throws {
+        var state = try loadTaskListSnapshotDeliveryState()
+        guard let destinationIndex = state.destinations.firstIndex(where: {
+            $0.destinationID == response.key.destinationID
+        }) else {
+            throw TaskListSnapshotDeliveryStorageError.reservationMismatch
+        }
+        var destination = state.destinations[destinationIndex]
+        guard destination.reservation?.key == response.key,
+              destination.reservation?.version == response.version else {
+            throw TaskListSnapshotDeliveryStorageError.reservationMismatch
+        }
+        destination.frozenResponses.removeAll { $0.response.key == response.key }
+        destination.frozenResponses.append(StoredTaskListSnapshotResponse(
+            response: response,
+            phase: .prepared
+        ))
+        destination.lastFrozenVersion = response.version
+        destination.reservation = nil
+        state.destinations[destinationIndex] = destination
+        try save(state, to: Files.taskListSnapshotVersion)
+    }
+
+    func markTaskListSnapshotDeliveryAttempted(
+        _ response: FrozenTaskListSnapshotResponse
+    ) throws {
+        var state = try loadTaskListSnapshotDeliveryState()
+        guard let destinationIndex = state.destinations.firstIndex(where: {
+            $0.destinationID == response.key.destinationID
+        }) else {
+            throw TaskListSnapshotDeliveryStorageError.responseMismatch
+        }
+        var destination = state.destinations[destinationIndex]
+        guard let responseIndex = destination.frozenResponses.firstIndex(where: {
+            $0.response == response
+        }) else {
+            throw TaskListSnapshotDeliveryStorageError.responseMismatch
+        }
+        switch destination.frozenResponses[responseIndex].phase {
+        case .prepared:
+            destination.frozenResponses[responseIndex].phase = .attempted
+            state.destinations[destinationIndex] = destination
+            try save(state, to: Files.taskListSnapshotVersion)
+        case .attempted:
+            return
+        case .delivered:
+            throw TaskListSnapshotDeliveryStorageError.responseMismatch
+        }
+    }
+
+    func rewindUnwrittenTaskListSnapshotDelivery(
+        _ response: FrozenTaskListSnapshotResponse
+    ) throws {
+        var state = try loadTaskListSnapshotDeliveryState()
+        guard let destinationIndex = state.destinations.firstIndex(where: {
+            $0.destinationID == response.key.destinationID
+        }) else {
+            throw TaskListSnapshotDeliveryStorageError.responseMismatch
+        }
+        var destination = state.destinations[destinationIndex]
+        if destination.reservation?.key == response.key,
+           destination.reservation?.version == response.version {
+            return
+        }
+        guard destination.frozenResponses.contains(where: {
+            $0.response == response && $0.phase != .delivered
+        }) else {
+            throw TaskListSnapshotDeliveryStorageError.responseMismatch
+        }
+        destination.frozenResponses.removeAll { $0.response == response }
+        destination.reservation = TaskListSnapshotDeliveryReservation(
+            key: response.key,
+            version: response.version
+        )
+        state.destinations[destinationIndex] = destination
+        try save(state, to: Files.taskListSnapshotVersion)
+    }
+
+    func markTaskListSnapshotDeliveryDelivered(
+        _ response: FrozenTaskListSnapshotResponse
+    ) async throws {
+        var state = try loadTaskListSnapshotDeliveryState()
+        guard let destinationIndex = state.destinations.firstIndex(where: {
+            $0.destinationID == response.key.destinationID
+        }) else {
+            throw TaskListSnapshotDeliveryStorageError.responseMismatch
+        }
+        var destination = state.destinations[destinationIndex]
+        guard let responseIndex = destination.frozenResponses.firstIndex(where: {
+            $0.response == response
+        }) else {
+            throw TaskListSnapshotDeliveryStorageError.responseMismatch
+        }
+        switch destination.frozenResponses[responseIndex].phase {
+        case .attempted:
+            destination.frozenResponses[responseIndex].phase = .delivered
+            state.destinations[destinationIndex] = destination
+            try save(state, to: Files.taskListSnapshotVersion)
+        case .delivered:
+            return
+        case .prepared:
+            throw TaskListSnapshotDeliveryStorageError.responseMismatch
+        }
+    }
+
+    func completeTaskListSnapshotDelivery(
+        _ response: FrozenTaskListSnapshotResponse
+    ) throws {
+        var state = try loadTaskListSnapshotDeliveryState()
+        guard let destinationIndex = state.destinations.firstIndex(where: {
+            $0.destinationID == response.key.destinationID
+        }) else { return }
+        var destination = state.destinations[destinationIndex]
+        guard let responseIndex = destination.frozenResponses.firstIndex(where: {
+            $0.response == response
+        }) else { return }
+        guard destination.frozenResponses[responseIndex].phase == .delivered else {
+            throw TaskListSnapshotDeliveryStorageError.responseMismatch
+        }
+        destination.frozenResponses.remove(at: responseIndex)
+        state.destinations[destinationIndex] = destination
+        try save(state, to: Files.taskListSnapshotVersion)
+    }
+
+    private func loadTaskListSnapshotDeliveryState() throws -> TaskListSnapshotDeliveryState {
+        do {
+            return try load(
+                TaskListSnapshotDeliveryState.self,
+                from: Files.taskListSnapshotVersion
+            ) ?? .empty
+        } catch {
+            if let legacy = try? load(
+                TaskListSnapshotVersion.self,
+                from: Files.taskListSnapshotVersion
+            ) {
+                return TaskListSnapshotDeliveryState(
+                    legacyVersion: legacy,
+                    destinations: []
+                )
+            }
+            throw error
+        }
+    }
+
+    private func nextTaskListSnapshotVersion(
+        after current: TaskListSnapshotVersion?,
+        avoiding usedEpochs: Set<UInt32>
+    ) -> TaskListSnapshotVersion {
+        if let current, current.revision < UInt32.max {
+            return TaskListSnapshotVersion(
+                epoch: current.epoch,
+                revision: current.revision + 1
+            )
+        }
+        var newEpoch = UInt32.random(in: 1...UInt32.max)
+        while usedEpochs.contains(newEpoch) {
+            newEpoch = newEpoch == UInt32.max ? 1 : newEpoch + 1
+        }
+        return TaskListSnapshotVersion(epoch: newEpoch, revision: 1)
+    }
+
+    private func taskListSnapshotEpochs(
+        in state: TaskListSnapshotDeliveryState
+    ) -> Set<UInt32> {
+        var epochs = Set(state.legacyVersion.map { [$0.epoch] } ?? [])
+        for destination in state.destinations {
+            if let version = destination.lastFrozenVersion {
+                epochs.insert(version.epoch)
+            }
+            if let reservation = destination.reservation {
+                epochs.insert(reservation.version.epoch)
+            }
+            for stored in destination.frozenResponses {
+                epochs.insert(stored.response.version.epoch)
+            }
+        }
+        return epochs
     }
 
     public func saveLastBleSyncTime(_ date: Date) {
@@ -878,7 +1199,9 @@ public actor LocalStorage {
     }
 }
 
-extension LocalStorage: TaskListSnapshotVersionProviding {}
+extension LocalStorage:
+    TaskListSnapshotDeliveryStoring,
+    TaskListSnapshotVersionProviding {}
 
 // MARK: - Haiku Cache
 

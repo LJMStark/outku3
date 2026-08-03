@@ -2,6 +2,52 @@ import Foundation
 
 // MARK: - BLE Sync Coordinator
 
+private struct TaskActionDestinationBlocks {
+    /// An empty destination is deliberately retained as an unbound fail-closed marker. It cannot
+    /// be mistaken for any real device and therefore blocks every destination until process-local
+    /// state is rebuilt from durable delivery records.
+    private var destinationIDs: Set<String> = []
+
+    var hasAny: Bool {
+        !destinationIDs.isEmpty
+    }
+
+    mutating func insert(_ destinationID: String) {
+        destinationIDs.insert(destinationID)
+    }
+
+    mutating func remove(_ destinationID: String, includingUnbound: Bool = false) {
+        destinationIDs.remove(destinationID)
+        if includingUnbound {
+            destinationIDs.remove("")
+        }
+    }
+
+    mutating func replace(_ destinationID: String, isBlocked: Bool) {
+        if isBlocked {
+            insert(destinationID)
+        } else {
+            remove(destinationID)
+        }
+    }
+
+    /// A missing current destination means an explicit sync may still connect and identify B; a
+    /// previously blocked A must not prevent that discovery. An unbound marker remains global.
+    func blocks(_ destinationID: String?) -> Bool {
+        if destinationIDs.contains("") { return true }
+        guard let destinationID else { return false }
+        guard !destinationID.isEmpty else { return true }
+        return destinationIDs.contains(destinationID)
+    }
+
+    /// The internal pending runner cannot discover a destination without re-entering sync. Park it
+    /// while disconnected if any destination is blocked, avoiding a self-scheduling retry loop.
+    func blocksScheduledSync(_ destinationID: String?) -> Bool {
+        guard destinationID != nil else { return hasAny }
+        return blocks(destinationID)
+    }
+}
+
 @MainActor
 public final class BLESyncCoordinator {
     public static let shared = BLESyncCoordinator()
@@ -25,40 +71,105 @@ public final class BLESyncCoordinator {
     /// Complete/Skip keeps the device on TaskIn until one final DayPack has been sent. Routine
     /// sync requests queue behind this window so no second DayPack can race the later 0x1B.
     private var taskActionPresentationCount = 0
+    /// An uncertain 0x1B write keeps its original DayPack/Overview pair authoritative across
+    /// firmware retries. Pending routine sync stays parked until that exact response is delivered
+    /// and its delivery-state cleanup has returned.
+    private var pendingTaskActionAcknowledgementBlocks = TaskActionDestinationBlocks()
+    /// A durable attempted response can outlive the process. This destination-bound state stops the
+    /// internal pending scheduler from spinning while still allowing a later explicit performSync
+    /// call to re-query storage and clear a transient lookup failure.
+    private var persistedAttemptedDeliveryBlocks = TaskActionDestinationBlocks()
     private let taskActionPresentationGate = BLEWriteGate()
+    private let hardwarePagePresentationGate: HardwarePagePresentationGate
     private let taskActionAppState: AppState
     private let taskActionDayPackSender: (@MainActor () async -> UInt64?)?
+    private let pendingSyncRunner: (@MainActor (_ force: Bool, _ trigger: BLESyncTrigger) -> Void)?
+    private let attemptedDeliveryChecker: @Sendable (_ destinationID: String) async throws -> Bool
+    private let connectedDestinationProvider: @MainActor () -> String?
 
     /// Connection timeout in seconds. Configurable for larger screen sizes
     /// that require longer refresh times (e.g., 7.3寸 full refresh ~12s).
     public var connectionTimeoutSeconds: TimeInterval = 30
 
     private init() {
+        hardwarePagePresentationGate = .shared
         taskActionAppState = .shared
         taskActionDayPackSender = nil
+        pendingSyncRunner = nil
+        attemptedDeliveryChecker = { destinationID in
+            try await LocalStorage.shared.hasAttemptedTaskListSnapshotDelivery(
+                for: destinationID
+            )
+        }
+        connectedDestinationProvider = {
+            let service = BLEService.shared
+            guard service.connectionState.isConnected else { return nil }
+            return service.taskListSnapshotDestinationID
+        }
     }
 
 #if DEBUG
     static func makeForTestingTaskActionPresentation(
         appState: AppState,
-        sendFinalDayPack: @escaping @MainActor () async -> UInt64?
+        sendFinalDayPack: @escaping @MainActor () async -> UInt64?,
+        runScheduledSync: (@MainActor (_ force: Bool, _ trigger: BLESyncTrigger) -> Void)? = nil,
+        hardwarePagePresentationGate: HardwarePagePresentationGate = .shared,
+        attemptedDeliveryChecker: @escaping @Sendable (
+            _ destinationID: String
+        ) async throws -> Bool = { _ in false },
+        connectedDestinationProvider: @escaping @MainActor () -> String? = { nil }
     ) -> BLESyncCoordinator {
         BLESyncCoordinator(
+            hardwarePagePresentationGate: hardwarePagePresentationGate,
             taskActionAppState: appState,
-            taskActionDayPackSender: sendFinalDayPack
+            taskActionDayPackSender: sendFinalDayPack,
+            pendingSyncRunner: runScheduledSync,
+            attemptedDeliveryChecker: attemptedDeliveryChecker,
+            connectedDestinationProvider: connectedDestinationProvider
         )
     }
 
     private init(
+        hardwarePagePresentationGate: HardwarePagePresentationGate,
         taskActionAppState: AppState,
-        taskActionDayPackSender: @escaping @MainActor () async -> UInt64?
+        taskActionDayPackSender: @escaping @MainActor () async -> UInt64?,
+        pendingSyncRunner: (@MainActor (_ force: Bool, _ trigger: BLESyncTrigger) -> Void)?,
+        attemptedDeliveryChecker: @escaping @Sendable (
+            _ destinationID: String
+        ) async throws -> Bool,
+        connectedDestinationProvider: @escaping @MainActor () -> String?
     ) {
+        self.hardwarePagePresentationGate = hardwarePagePresentationGate
         self.taskActionAppState = taskActionAppState
         self.taskActionDayPackSender = taskActionDayPackSender
+        self.pendingSyncRunner = pendingSyncRunner
+        self.attemptedDeliveryChecker = attemptedDeliveryChecker
+        self.connectedDestinationProvider = connectedDestinationProvider
     }
 
     func setSyncingForTesting(_ isSyncing: Bool) {
         self.isSyncing = isSyncing
+        if !isSyncing {
+            schedulePendingSyncIfPossible()
+        }
+    }
+
+    func shouldDeferForPersistedAttemptedDeliveryForTesting(
+        force: Bool,
+        trigger: BLESyncTrigger
+    ) async -> Bool {
+        await shouldDeferForPersistedAttemptedDelivery(
+            force: force,
+            trigger: trigger,
+            missingDestinationBlocks: false
+        )
+    }
+
+    func shouldDeferRoutineDayPackWriteForTesting(
+        force: Bool,
+        trigger: BLESyncTrigger
+    ) async -> Bool {
+        await shouldDeferRoutineDayPackWrite(force: force, trigger: trigger)
     }
 #endif
 
@@ -84,9 +195,30 @@ public final class BLESyncCoordinator {
             return
         }
         isSyncing = true
+        var shouldSchedulePendingSyncOnExit = true
         defer {
             isSyncing = false
-            schedulePendingSyncIfPossible()
+            if shouldSchedulePendingSyncOnExit {
+                schedulePendingSyncIfPossible()
+            }
+        }
+
+        // Re-query before the in-memory ACK guard. A prior storage read may have failed, and an
+        // explicit refresh must be able to prove that the durable attempted response is now gone.
+        if await shouldDeferForPersistedAttemptedDelivery(
+            force: force,
+            trigger: trigger,
+            missingDestinationBlocks: true
+        ) {
+            shouldSchedulePendingSyncOnExit = false
+            return
+        }
+        guard taskActionPresentationCount == 0,
+              !pendingTaskActionAcknowledgementBlocks.blocks(
+                connectedDestinationProvider()
+              ) else {
+            queuePendingSync(force: force, trigger: trigger)
+            return
         }
 
         let now = Date()
@@ -244,6 +376,23 @@ public final class BLESyncCoordinator {
                 guard connected else { throw BLEError.connectionFailed(lastConnectError) }
             }
 
+            // Entry cannot know the target while disconnected. Once connection identifies the
+            // device, durable attempted state is authoritative and every lookup error fails closed.
+            if await shouldDeferForPersistedAttemptedDelivery(
+                force: force,
+                trigger: trigger,
+                missingDestinationBlocks: true
+            ) {
+                shouldSchedulePendingSyncOnExit = false
+                return
+            }
+            guard !pendingTaskActionAcknowledgementBlocks.blocks(
+                connectedDestinationProvider()
+            ) else {
+                queuePendingSync(force: force, trigger: trigger)
+                return
+            }
+
             if Task.isCancelled {
                 if bleService.connectionState.isConnected,
                    !bleService.shouldKeepConnectionOpenForDebug,
@@ -261,7 +410,7 @@ public final class BLESyncCoordinator {
             await appState.flushPriorityCustomAvatarOperationIfNeeded()
             var dayPackSendFailed = false
             var presentationSnapshotIsCurrent = false
-            _ = try await HardwarePagePresentationGate.shared.performPresentationWrite(
+            _ = try await hardwarePagePresentationGate.performPresentationWrite(
                 droppingIfPageTransactionIntervened: false
             ) {
                 guard appState.taskStateVersion == sourceTaskStateVersion,
@@ -314,6 +463,15 @@ public final class BLESyncCoordinator {
                     var superseded = false
                     var lastWriteError: Error?
                     for attempt in 0..<2 {
+                        guard !(await shouldDeferRoutineDayPackWrite(
+                            force: force,
+                            trigger: trigger
+                        )) else {
+                            presentationSnapshotIsCurrent = false
+                            shouldSchedulePendingSyncOnExit = false
+                            superseded = true
+                            break
+                        }
                         do {
                             try await bleService.sendDayPack(
                                 dayPack,
@@ -447,12 +605,21 @@ public final class BLESyncCoordinator {
     }
 
     private func schedulePendingSyncIfPossible() {
-        guard pendingSync, !isSyncing, taskActionPresentationCount == 0 else { return }
+        let destinationID = connectedDestinationProvider()
+        guard pendingSync,
+              !isSyncing,
+              taskActionPresentationCount == 0,
+              !pendingTaskActionAcknowledgementBlocks.blocksScheduledSync(destinationID),
+              !persistedAttemptedDeliveryBlocks.blocksScheduledSync(destinationID) else { return }
         let shouldForce = pendingForceSync
         let trigger = pendingSyncTrigger ?? .automatic
         pendingSync = false
         pendingForceSync = false
         pendingSyncTrigger = nil
+        if let pendingSyncRunner {
+            pendingSyncRunner(shouldForce, trigger)
+            return
+        }
         Task { @MainActor in await self.performSync(force: shouldForce, trigger: trigger) }
     }
 
@@ -466,12 +633,154 @@ public final class BLESyncCoordinator {
         }
     }
 
-    private func sendFinalTaskActionDayPack() async -> UInt64? {
+    /// Reads the durable attempted marker for the currently connected target. The caller decides
+    /// whether an empty destination is an expected pre-connect state or a fail-closed error.
+    private func shouldDeferForPersistedAttemptedDelivery(
+        force: Bool,
+        trigger: BLESyncTrigger,
+        missingDestinationBlocks: Bool
+    ) async -> Bool {
+        guard let destinationID = connectedDestinationProvider() else {
+            // A disconnected entry is allowed to establish a connection, but it must not clear a
+            // block learned for the last connected target. The post-connect checkpoint rechecks.
+            if persistedAttemptedDeliveryBlocks.hasAny {
+                queuePendingSync(force: force, trigger: trigger)
+            }
+            return false
+        }
+        guard !destinationID.isEmpty else {
+            guard missingDestinationBlocks else { return false }
+            persistedAttemptedDeliveryBlocks.insert(destinationID)
+            queuePendingSync(force: force, trigger: trigger)
+            ErrorReporter.log(
+                .sync(
+                    component: "BLE Task Action Delivery Check",
+                    underlying: "connected device has no snapshot destination ID"
+                ),
+                context: "BLESyncCoordinator.performSync"
+            )
+            return true
+        }
+
+        do {
+            let hasAttemptedDelivery = try await attemptedDeliveryChecker(destinationID)
+            let currentDestinationID = connectedDestinationProvider()
+            guard currentDestinationID == destinationID else {
+                persistedAttemptedDeliveryBlocks.replace(
+                    destinationID,
+                    isBlocked: hasAttemptedDelivery
+                )
+                if let currentDestinationID {
+                    persistedAttemptedDeliveryBlocks.insert(currentDestinationID)
+                }
+                queuePendingSync(force: force, trigger: trigger)
+                ErrorReporter.log(
+                    .sync(
+                        component: "BLE Task Action Delivery Check",
+                        underlying: "connected snapshot destination changed during lookup"
+                    ),
+                    context: "BLESyncCoordinator.performSync"
+                )
+                return true
+            }
+            // A successful lookup for an identified current device supersedes a prior transient
+            // empty-ID lookup. Per-device blocks for every other destination remain untouched.
+            persistedAttemptedDeliveryBlocks.remove(
+                destinationID,
+                includingUnbound: true
+            )
+            if hasAttemptedDelivery {
+                persistedAttemptedDeliveryBlocks.insert(destinationID)
+            }
+            guard hasAttemptedDelivery else { return false }
+        } catch {
+            persistedAttemptedDeliveryBlocks.insert(destinationID)
+            if let currentDestinationID = connectedDestinationProvider(),
+               currentDestinationID != destinationID {
+                persistedAttemptedDeliveryBlocks.insert(currentDestinationID)
+            }
+            queuePendingSync(force: force, trigger: trigger)
+            ErrorReporter.log(
+                .sync(
+                    component: "BLE Task Action Delivery Check",
+                    underlying: error.localizedDescription
+                ),
+                context: "BLESyncCoordinator.performSync"
+            )
+            return true
+        }
+
+        queuePendingSync(force: force, trigger: trigger)
+        return true
+    }
+
+    private func shouldDeferRoutineDayPackWrite(
+        force: Bool,
+        trigger: BLESyncTrigger
+    ) async -> Bool {
+        if taskActionPresentationCount > 0
+            || pendingTaskActionAcknowledgementBlocks.blocks(
+                connectedDestinationProvider()
+            )
+            || hardwarePagePresentationGate.hasPageTransactionDemand {
+            queuePendingSync(force: force, trigger: trigger)
+            return true
+        }
+        if await shouldDeferForPersistedAttemptedDelivery(
+            force: force,
+            trigger: trigger,
+            missingDestinationBlocks: true
+        ) {
+            return true
+        }
+        // The storage query yielded MainActor. A task-action page transaction may have queued
+        // during that suspension, so close the final race immediately before sendDayPack.
+        if taskActionPresentationCount > 0
+            || pendingTaskActionAcknowledgementBlocks.blocks(
+                connectedDestinationProvider()
+            )
+            || hardwarePagePresentationGate.hasPageTransactionDemand {
+            queuePendingSync(force: force, trigger: trigger)
+            return true
+        }
+        return false
+    }
+
+    private func sendFinalTaskActionDayPack(
+        destinationID: String,
+        destinationDidChange: @MainActor () -> Void
+    ) async -> UInt64? {
+        var reportedDestinationChange = false
+        func recordDestinationChange() {
+            destinationDidChange()
+            pendingSync = true
+            if !reportedDestinationChange {
+                reportedDestinationChange = true
+                ErrorReporter.log(
+                    .sync(
+                        component: "BLE Task Action DayPack",
+                        underlying: "snapshot destination changed during presentation"
+                    ),
+                    context: "BLESyncCoordinator.sendFinalTaskActionDayPack"
+                )
+            }
+        }
+        func validateDestination() -> Bool {
+            guard connectedDestinationProvider() == destinationID else {
+                recordDestinationChange()
+                return false
+            }
+            return true
+        }
+
+        guard validateDestination() else { return nil }
         let appState = AppState.shared
         await appState.ensureInitialLoadComplete()
+        guard validateDestination() else { return nil }
 
         for _ in 0..<3 {
             await appState.refreshSharedPetDialogueIfNeeded()
+            guard validateDestination() else { return nil }
             let sourceTaskStateVersion = appState.taskStateVersion
             guard appState.currentPetDialogueTaskStateVersion == sourceTaskStateVersion else {
                 continue
@@ -488,6 +797,7 @@ public final class BLESyncCoordinator {
                 screenSize: bleService.hardwareScreenSize,
                 petDialogue: appState.currentPetDialogue
             )
+            guard validateDestination() else { return nil }
             guard appState.taskStateVersion == sourceTaskStateVersion else { continue }
 
             let fingerprint = dayPack.stableFingerprint()
@@ -495,52 +805,50 @@ public final class BLESyncCoordinator {
                 allTasks: appState.tasks,
                 at: Date()
             )
-            if await localStorage.loadLastDayPackHash() == fingerprint {
+            let lastDayPackHash = await localStorage.loadLastDayPackHash()
+            guard validateDestination() else { return nil }
+            if lastDayPackHash == fingerprint {
                 // A routine sync that was already in flight successfully sent this exact final
                 // state. Reuse it instead of emitting a duplicate 0x10 before the same 0x1B.
                 await localStorage.saveLastDayPackSemanticHash(semanticFingerprint)
+                guard validateDestination() else { return nil }
                 return sourceTaskStateVersion
-            }
-
-            if !bleService.connectionState.isConnected {
-                do {
-                    try await bleService.connectToPreferredDevice(timeout: 10)
-                } catch {
-                    pendingSync = true
-                    ErrorReporter.log(
-                        .sync(
-                            component: "BLE Task Action DayPack",
-                            underlying: error.localizedDescription
-                        ),
-                        context: "BLESyncCoordinator.sendFinalTaskActionDayPack"
-                    )
-                    return nil
-                }
             }
 
             var taskStateChanged = false
             var lastWriteError: Error?
             for attempt in 0..<2 {
+                guard validateDestination() else { return nil }
                 do {
                     try await bleService.sendDayPack(
                         dayPack,
-                        expectedTaskStateVersion: sourceTaskStateVersion
+                        expectedTaskStateVersion: sourceTaskStateVersion,
+                        expectedDestinationID: destinationID
                     )
+                    guard validateDestination() else { return nil }
                     await localStorage.saveLastDayPackHash(fingerprint)
+                    guard validateDestination() else { return nil }
                     await localStorage.saveLastDayPackSemanticHash(semanticFingerprint)
+                    guard validateDestination() else { return nil }
                     return sourceTaskStateVersion
+                } catch is BLEPresentationDestinationError {
+                    recordDestinationChange()
+                    return nil
                 } catch let error as BLEError {
+                    guard validateDestination() else { return nil }
                     if case .staleTaskSnapshot = error {
                         taskStateChanged = true
                         break
                     }
                     lastWriteError = error
                 } catch {
+                    guard validateDestination() else { return nil }
                     lastWriteError = error
                 }
 
                 if attempt == 0 {
                     try? await Task.sleep(for: .milliseconds(500))
+                    guard validateDestination() else { return nil }
                 }
             }
             if taskStateChanged { continue }
@@ -643,6 +951,134 @@ extension BLESyncCoordinator: TaskActionPresentationCoordinating {
             _ expectedTaskStateVersion: UInt64
         ) async -> TaskListSnapshotResponder.Outcome
     ) async {
+        await sendFinalDayPackBeforeAcknowledgement(
+            // Compatibility entry point for isolated coordinators that predate destination
+            // binding. Production event handling always calls the explicit overload.
+            destinationID: connectedDestinationProvider() ?? "single-active-device",
+            acknowledgement
+        )
+    }
+
+    func sendFinalDayPackBeforeAcknowledgement(
+        destinationID: String,
+        _ acknowledgement: @MainActor @Sendable (
+            _ expectedTaskStateVersion: UInt64
+        ) async -> TaskListSnapshotResponder.Outcome
+    ) async {
+        guard !destinationID.isEmpty else {
+            failClosedForUnboundTaskAction(
+                context: "BLESyncCoordinator.sendFinalDayPackBeforeAcknowledgement"
+            )
+            return
+        }
+
+        await performTaskActionPresentation {
+            var acknowledgementFailed = false
+            var destinationChanged = false
+            let completed = await Self.completeTaskActionPresentation(
+                sendFinalDayPack: {
+                    if let taskActionDayPackSender = self.taskActionDayPackSender {
+                        if let currentDestinationID = self.connectedDestinationProvider(),
+                           currentDestinationID != destinationID {
+                            destinationChanged = true
+                            return nil
+                        }
+                        let taskStateVersion = await taskActionDayPackSender()
+                        if let currentDestinationID = self.connectedDestinationProvider(),
+                           currentDestinationID != destinationID {
+                            destinationChanged = true
+                            return nil
+                        }
+                        return taskStateVersion
+                    }
+                    return await self.sendFinalTaskActionDayPack(
+                        destinationID: destinationID,
+                        destinationDidChange: { destinationChanged = true }
+                    )
+                },
+                acknowledge: { taskStateVersion in
+                    let outcome = await acknowledgement(taskStateVersion)
+                    if outcome == .failed {
+                        acknowledgementFailed = true
+                    }
+                    return outcome
+                }
+            )
+            if completed {
+                pendingTaskActionAcknowledgementBlocks.remove(destinationID)
+                persistedAttemptedDeliveryBlocks.remove(destinationID)
+            } else if acknowledgementFailed || destinationChanged {
+                pendingTaskActionAcknowledgementBlocks.insert(destinationID)
+                persistedAttemptedDeliveryBlocks.insert(destinationID)
+            }
+            if !completed {
+                pendingSync = true
+                ErrorReporter.log(
+                    .sync(
+                        component: "BLE Task Action Presentation",
+                        underlying: "final DayPack and acknowledgement did not complete as one task version"
+                    ),
+                    context: "BLESyncCoordinator.sendFinalDayPackBeforeAcknowledgement"
+                )
+            }
+            return !pendingTaskActionAcknowledgementBlocks.blocks(
+                connectedDestinationProvider()
+            )
+        }
+    }
+
+    func replayAttemptedAcknowledgement(
+        _ acknowledgement: @MainActor @Sendable () async -> TaskListSnapshotResponder.Outcome
+    ) async {
+        await replayAttemptedAcknowledgement(
+            destinationID: connectedDestinationProvider() ?? "single-active-device",
+            acknowledgement
+        )
+    }
+
+    func replayAttemptedAcknowledgement(
+        destinationID: String,
+        _ acknowledgement: @MainActor @Sendable () async -> TaskListSnapshotResponder.Outcome
+    ) async {
+        guard !destinationID.isEmpty else {
+            failClosedForUnboundTaskAction(
+                context: "BLESyncCoordinator.replayAttemptedAcknowledgement"
+            )
+            return
+        }
+
+        pendingTaskActionAcknowledgementBlocks.insert(destinationID)
+        persistedAttemptedDeliveryBlocks.insert(destinationID)
+        await performTaskActionPresentation {
+            let outcome = await acknowledgement()
+            if outcome == .sent {
+                pendingTaskActionAcknowledgementBlocks.remove(destinationID)
+                persistedAttemptedDeliveryBlocks.remove(destinationID)
+            }
+            // A failed replay for A still must release routine work after the connection has
+            // switched to clear B. A remains blocked in its own destination entry.
+            return !pendingTaskActionAcknowledgementBlocks.blocks(
+                connectedDestinationProvider()
+            )
+        }
+    }
+
+    private func failClosedForUnboundTaskAction(context: String) {
+        pendingTaskActionAcknowledgementBlocks.insert("")
+        persistedAttemptedDeliveryBlocks.insert("")
+        pendingSync = true
+        ErrorReporter.log(
+            .sync(
+                component: "BLE Task Action Presentation",
+                underlying: "task action has no snapshot destination ID"
+            ),
+            context: context
+        )
+    }
+
+    private func performTaskActionPresentation(
+        _ operation: @MainActor () async -> Bool
+    ) async {
         taskActionPresentationCount += 1
         taskActionAppState.cancelPendingBLESyncForTaskActionPresentation()
 
@@ -652,34 +1088,20 @@ extension BLESyncCoordinator: TaskActionPresentationCoordinating {
             // Firmware keeps the operation pending and retries the same OperationID. Sending
             // 0x1B here would exit TaskIn without the final DayPack and recreate the double refresh.
             taskActionPresentationCount -= 1
+            guard !pendingTaskActionAcknowledgementBlocks.blocks(
+                connectedDestinationProvider()
+            ) else { return }
             taskActionAppState.resumeDeferredBLESyncAfterTaskActionPresentation()
             schedulePendingSyncIfPossible()
             return
         }
 
         taskActionAppState.cancelPendingBLESyncForTaskActionPresentation()
-        let completed = await Self.completeTaskActionPresentation(
-            sendFinalDayPack: {
-                if let taskActionDayPackSender = self.taskActionDayPackSender {
-                    return await taskActionDayPackSender()
-                }
-                return await self.sendFinalTaskActionDayPack()
-            },
-            acknowledge: acknowledgement
-        )
-        if !completed {
-            pendingSync = true
-            ErrorReporter.log(
-                .sync(
-                    component: "BLE Task Action Presentation",
-                    underlying: "final DayPack and acknowledgement did not complete as one task version"
-                ),
-                context: "BLESyncCoordinator.sendFinalDayPackBeforeAcknowledgement"
-            )
-        }
+        let shouldResumeRoutineSync = await operation()
 
         await taskActionPresentationGate.release()
         taskActionPresentationCount -= 1
+        guard shouldResumeRoutineSync else { return }
         // PetStatus(0x01) is not part of the final DayPack→0x1B transaction. Re-fire any
         // identity/manual round that was parked so hardware does not keep a stale companion.
         taskActionAppState.resumeDeferredBLESyncAfterTaskActionPresentation()

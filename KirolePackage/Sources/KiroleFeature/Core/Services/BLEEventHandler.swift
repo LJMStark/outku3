@@ -401,7 +401,8 @@ public enum BLEEventHandler {
         persistLogs: Bool = true,
         operationLedger: TaskOperationLedger = .shared,
         deviceIDOverride: String? = nil,
-        appState: AppState = .shared
+        appState: AppState = .shared,
+        hardwareTaskPersistence: (any HardwareTaskStatePersisting)? = nil
     ) async -> [EventLog] {
         await processEventLogs(
             logs,
@@ -413,13 +414,14 @@ public enum BLEEventHandler {
             persistLogs: persistLogs,
             operationLedger: operationLedger,
             deviceIDOverride: deviceIDOverride,
-            appState: appState
+            appState: appState,
+            hardwareTaskPersistence: hardwareTaskPersistence
         ).logs
     }
 
     static func processEventLogs(
         _ logs: [EventLog],
-        service: BLEService,
+        service: BLEService?,
         focusService: FocusSessionService = .shared,
         isReplay: Bool = false,
         lastTimestampOverride: UInt32? = nil,
@@ -428,6 +430,8 @@ public enum BLEEventHandler {
         operationLedger: TaskOperationLedger = .shared,
         deviceIDOverride: String? = nil,
         appState: AppState = .shared,
+        hardwareTaskPersistence: (any HardwareTaskStatePersisting)? = nil,
+        nowProvider: @MainActor () -> Date = { Date() },
         allowEnterTaskInFocusStart: Bool = true,
         suppressInitialEnterTaskInFocusStatus: Bool = false
     ) async -> EventProcessingResult {
@@ -465,8 +469,8 @@ public enum BLEEventHandler {
         }
 
         let deviceID = deviceIDOverride
-            ?? service.connectedDeviceID?.uuidString
-            ?? service.lastKnownDeviceID?.uuidString
+            ?? service?.connectedDeviceID?.uuidString
+            ?? service?.lastKnownDeviceID?.uuidString
             ?? "unidentified-device"
         var receipts: [TaskOperationReceipt] = []
         var didStartFocusSession = false
@@ -486,7 +490,9 @@ public enum BLEEventHandler {
                     focusService: focusService,
                     isReplay: isReplay,
                     operationLedger: operationLedger,
-                    appState: appState
+                    appState: appState,
+                    hardwareTaskPersistence: hardwareTaskPersistence,
+                    receivedAt: nowProvider()
                 ))
                 continue
             }

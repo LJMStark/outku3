@@ -126,6 +126,7 @@ extension AppState {
         operationKey: String,
         deviceTimestamp: UInt32? = nil,
         reservedAt: Date,
+        mutationDate: Date = Date(),
         source: TaskToggleSource,
         persistence: any HardwareTaskStatePersisting = LocalHardwareTaskStatePersistence()
     ) async -> HardwareTaskCompletionPersistenceResult {
@@ -162,7 +163,7 @@ extension AppState {
             var completedTask = initialTask
             completedTask.isCompleted = true
             completedTask.hardwareCompletionOperationKey = operationKey
-            completedTask.lastModified = Date()
+            completedTask.lastModified = mutationDate
             expectedLastModified = completedTask.lastModified
             let syncSupport = taskSyncSupport(for: completedTask, action: .updateCompletion)
             completedTask.syncStatus = syncSupport == .remote ? .pending : .error
@@ -177,7 +178,10 @@ extension AppState {
         } else if pet.lastHardwareTaskOperationKey != operationKey {
             // `tasks.json` reached disk but `pet.json` did not before a crash. The task marker makes
             // this one missing reward distinguishable from a duplicate retry.
-            updatePetForHardwareCompletionRecovery(operationKey: operationKey)
+            updatePetForHardwareCompletionRecovery(
+                operationKey: operationKey,
+                mutationDate: mutationDate
+            )
             didApplyDomainState = true
         }
 
@@ -279,11 +283,14 @@ extension AppState {
         }
     }
 
-    private func updatePetForHardwareCompletionRecovery(operationKey: String) {
+    private func updatePetForHardwareCompletionRecovery(
+        operationKey: String,
+        mutationDate: Date
+    ) {
         guard pet.lastHardwareTaskOperationKey != operationKey else { return }
         pet.adventuresCount += 1
         pet.points += ProgressConstants.pointsPerTask
-        pet.lastInteraction = Date()
+        pet.lastInteraction = mutationDate
         pet.lastHardwareTaskOperationKey = operationKey
     }
 

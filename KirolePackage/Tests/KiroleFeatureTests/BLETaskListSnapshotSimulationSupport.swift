@@ -22,17 +22,31 @@ struct SimulatedTaskListSnapshotAck: Equatable {
 struct SimulatedTaskListSnapshotFirmware {
     private(set) var pendingAction: TaskListSnapshotAction?
     private(set) var pendingOperationID: UInt32?
+    private(set) var pendingVersion: TaskListSnapshotVersion?
     private(set) var version: TaskListSnapshotVersion?
     private(set) var tasks: [SimulatedTaskListSnapshotAck.Task] = []
     private var lastAppliedAcknowledgement: SimulatedTaskListSnapshotAck?
+    private var stagedAcknowledgement: SimulatedTaskListSnapshotAck?
 
     mutating func beginPending(action: TaskListSnapshotAction, operationID: UInt32) throws {
         guard operationID != 0 else { throw SimulationError.invalidSnapshotState }
         pendingAction = action
         pendingOperationID = operationID
+        pendingVersion = nil
+        stagedAcknowledgement = nil
     }
 
-    mutating func apply(
+    /// Firmware restart keeps the committed Overview but drops an unfinished request.
+    mutating func simulatePowerCycle() {
+        pendingAction = nil
+        pendingOperationID = nil
+        pendingVersion = nil
+        stagedAcknowledgement = nil
+    }
+
+    /// Stages the version carried by one real 0x1B transaction before the transport completes.
+    /// The committed Overview remains untouched until `apply` receives the complete frozen frame.
+    mutating func stage(
         _ acknowledgement: SimulatedTaskListSnapshotAck,
         screenSize: ScreenSize
     ) throws {
@@ -46,6 +60,31 @@ struct SimulatedTaskListSnapshotFirmware {
               pendingOperationID == acknowledgement.operationID else {
             throw SimulationError.snapshotPendingMismatch
         }
+        guard acknowledgement.result != .internalError else { return }
+
+        let incomingVersion = TaskListSnapshotVersion(
+            epoch: acknowledgement.epoch,
+            revision: acknowledgement.revision
+        )
+        try validate(incomingVersion: incomingVersion)
+        if let stagedAcknowledgement {
+            guard stagedAcknowledgement == acknowledgement else {
+                throw SimulationError.snapshotPendingMismatch
+            }
+            return
+        }
+        self.stagedAcknowledgement = acknowledgement
+        pendingVersion = incomingVersion
+    }
+
+    mutating func apply(
+        _ acknowledgement: SimulatedTaskListSnapshotAck,
+        screenSize: ScreenSize
+    ) throws {
+        if acknowledgement == lastAppliedAcknowledgement {
+            return
+        }
+        try stage(acknowledgement, screenSize: screenSize)
         if acknowledgement.result == .internalError {
             return
         }
@@ -54,6 +93,21 @@ struct SimulatedTaskListSnapshotFirmware {
             epoch: acknowledgement.epoch,
             revision: acknowledgement.revision
         )
+        guard stagedAcknowledgement == acknowledgement,
+              pendingVersion == incomingVersion else {
+            throw SimulationError.snapshotPendingMismatch
+        }
+        let replacement = acknowledgement.tasks
+        tasks = replacement
+        version = incomingVersion
+        lastAppliedAcknowledgement = acknowledgement
+        pendingAction = nil
+        pendingOperationID = nil
+        pendingVersion = nil
+        stagedAcknowledgement = nil
+    }
+
+    private func validate(incomingVersion: TaskListSnapshotVersion) throws {
         guard incomingVersion.epoch != 0, incomingVersion.revision != 0 else {
             throw SimulationError.snapshotVersionRejected
         }
@@ -72,13 +126,6 @@ struct SimulatedTaskListSnapshotFirmware {
                 throw SimulationError.snapshotVersionRejected
             }
         }
-
-        let replacement = acknowledgement.tasks
-        tasks = replacement
-        version = incomingVersion
-        lastAppliedAcknowledgement = acknowledgement
-        pendingAction = nil
-        pendingOperationID = nil
     }
 }
 

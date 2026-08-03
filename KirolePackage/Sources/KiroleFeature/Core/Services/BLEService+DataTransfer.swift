@@ -2,9 +2,17 @@
 import Foundation
 import os
 
+enum BLEPresentationDestinationError: Error, Sendable {
+    case changed
+}
+
 // MARK: - App-to-device data transfer
 
 extension BLEService {
+    var taskListSnapshotDestinationID: String {
+        connectedDeviceID?.uuidString ?? ""
+    }
+
     /// 发送宠物状态到 E-ink 设备
     public func sendPetStatus(_ pet: Pet, companionCharacter: CompanionCharacter, customActive: Bool) async throws {
         let data = BLEDataEncoder.encodePetStatus(pet, companionCharacter: companionCharacter, customActive: customActive)
@@ -36,15 +44,20 @@ extension BLEService {
     /// 发送 Day Pack 到 E-ink 设备
     public func sendDayPack(
         _ dayPack: DayPack,
-        expectedTaskStateVersion: UInt64
+        expectedTaskStateVersion: UInt64,
+        expectedDestinationID: String? = nil
     ) async throws {
         try await withTaskStateMessageGate {
-            let validateTaskState: PacketWriteValidator = {
+            let validatePresentationState: PacketWriteValidator = {
                 guard AppState.shared.taskStateVersion == expectedTaskStateVersion else {
                     throw BLEError.staleTaskSnapshot
                 }
+                if let expectedDestinationID,
+                   self.taskListSnapshotDestinationID != expectedDestinationID {
+                    throw BLEPresentationDestinationError.changed
+                }
             }
-            try validateTaskState()
+            try validatePresentationState()
             let latestTasks = DayPackGenerator.topTaskSummaries(
                 from: AppState.shared.tasks,
                 screenSize: hardwareScreenSize
@@ -56,7 +69,9 @@ extension BLEService {
             try await writeData(
                 type: .dayPack,
                 data: data,
-                validateBeforeWrite: validateTaskState
+                // The message gate, rate limiter and every packet write can suspend. Rechecking
+                // here keeps every 0x10 chunk on the destination that raised the task action.
+                validateBeforeWrite: validatePresentationState
             )
         }
     }
@@ -80,6 +95,18 @@ extension BLEService {
         _ payload: Data,
         expectedTaskStateVersion: UInt64?
     ) async throws {
+        try await writeTaskListSnapshotAckPayload(
+            payload,
+            expectedTaskStateVersion: expectedTaskStateVersion,
+            beforeFirstWrite: {}
+        )
+    }
+
+    func writeTaskListSnapshotAckPayload(
+        _ payload: Data,
+        expectedTaskStateVersion: UInt64?,
+        beforeFirstWrite: @escaping @MainActor @Sendable () async throws -> Void
+    ) async throws {
         let validateTaskState: PacketWriteValidator?
         if let expectedTaskStateVersion {
             validateTaskState = {
@@ -93,7 +120,8 @@ extension BLEService {
         try await writeData(
             type: .taskListSnapshotAck,
             data: payload,
-            validateBeforeWrite: validateTaskState
+            validateBeforeWrite: validateTaskState,
+            beforeFirstWrite: beforeFirstWrite
         )
     }
 
@@ -268,6 +296,7 @@ extension BLEService {
         type: BLEDataType,
         data: Data,
         validateBeforeWrite: PacketWriteValidator? = nil,
+        beforeFirstWrite: (@MainActor @Sendable () async throws -> Void)? = nil,
         progress: (@MainActor @Sendable (_ sentBytes: Int, _ totalBytes: Int) -> Void)? = nil
     ) async throws {
         guard connectionState.isConnected,
@@ -283,6 +312,7 @@ extension BLEService {
                 peripheral: peripheral,
                 characteristic: characteristic,
                 validateBeforeWrite: validateBeforeWrite,
+                beforeFirstWrite: beforeFirstWrite,
                 progress: progress
             )
             return
@@ -304,7 +334,7 @@ extension BLEService {
             inFlightChunkedTransfers += 1
             defer { inFlightChunkedTransfers -= 1 }
             var sentBytes = 0
-            for plainPacket in plainPackets {
+            for (index, plainPacket) in plainPackets.enumerated() {
                 try Task.checkCancellation()
                 // 必须临写前即时签名。整批预签会让 4–5 分钟传输后半段的 issuedAt
                 // 超过 SecureEnvelope 的 120 秒接收窗口。
@@ -317,7 +347,8 @@ extension BLEService {
                     packet,
                     peripheral: peripheral,
                     characteristic: characteristic,
-                    validateBeforeWrite: validateBeforeWrite
+                    validateBeforeWrite: validateBeforeWrite,
+                    beforeWrite: index == 0 ? beforeFirstWrite : nil
                 )
                 sentBytes += chunkPayloadLength(plainPacket)
                 progress?(min(sentBytes, data.count), data.count)
@@ -337,7 +368,7 @@ extension BLEService {
             )
             inFlightChunkedTransfers += 1
             defer { inFlightChunkedTransfers -= 1 }
-            for packet in packets {
+            for (index, packet) in packets.enumerated() {
                 // 外层任务被取消（如切换伴侣废弃旧头像流）时立即停发——写锁只串行单个
                 // packet，不检查取消的话两条 2000 片消息会逐片交错、旧流可能反杀新流。
                 try Task.checkCancellation()
@@ -345,7 +376,8 @@ extension BLEService {
                     packet,
                     peripheral: peripheral,
                     characteristic: characteristic,
-                    validateBeforeWrite: validateBeforeWrite
+                    validateBeforeWrite: validateBeforeWrite,
+                    beforeWrite: index == 0 ? beforeFirstWrite : nil
                 )
             }
             return
@@ -356,7 +388,8 @@ extension BLEService {
             packet,
             peripheral: peripheral,
             characteristic: characteristic,
-            validateBeforeWrite: validateBeforeWrite
+            validateBeforeWrite: validateBeforeWrite,
+            beforeWrite: beforeFirstWrite
         )
     }
 
@@ -366,6 +399,7 @@ extension BLEService {
         peripheral: CBPeripheral,
         characteristic: CBCharacteristic,
         validateBeforeWrite: PacketWriteValidator?,
+        beforeFirstWrite: (@MainActor @Sendable () async throws -> Void)?,
         progress: (@MainActor @Sendable (_ sentBytes: Int, _ totalBytes: Int) -> Void)?
     ) async throws {
         let maxLength = peripheral.maximumWriteValueLength(for: .withResponse)
@@ -381,14 +415,15 @@ extension BLEService {
             inFlightChunkedTransfers += 1
             defer { inFlightChunkedTransfers -= 1 }
             var sentBytes = 0
-            for packet in packets {
+            for (index, packet) in packets.enumerated() {
                 // 同 writeData：任务取消即停发，防多条大帧流逐片交错。
                 try Task.checkCancellation()
                 try await writePacket(
                     packet,
                     peripheral: peripheral,
                     characteristic: characteristic,
-                    validateBeforeWrite: validateBeforeWrite
+                    validateBeforeWrite: validateBeforeWrite,
+                    beforeWrite: index == 0 ? beforeFirstWrite : nil
                 )
                 sentBytes += chunkPayloadLength(packet)
                 progress?(min(sentBytes, data.count), data.count)
@@ -401,7 +436,8 @@ extension BLEService {
             packet,
             peripheral: peripheral,
             characteristic: characteristic,
-            validateBeforeWrite: validateBeforeWrite
+            validateBeforeWrite: validateBeforeWrite,
+            beforeWrite: beforeFirstWrite
         )
         progress?(data.count, data.count)
     }
@@ -434,7 +470,8 @@ extension BLEService {
         _ packet: Data,
         peripheral: CBPeripheral,
         characteristic: CBCharacteristic,
-        validateBeforeWrite: PacketWriteValidator? = nil
+        validateBeforeWrite: PacketWriteValidator? = nil,
+        beforeWrite: (@MainActor @Sendable () async throws -> Void)? = nil
     ) async throws {
         if AppBuildEnvironment.showsHardwareDebugTools {
             let typeText = packet.first.map { String(format: "%02X", $0) } ?? "??"
@@ -457,7 +494,38 @@ extension BLEService {
             // packetized DayPack this is the last point before each chunk is committed to
             // CoreBluetooth. If tasks changed, the remaining chunks are withheld and firmware
             // never receives a complete old 0x10 message to render.
-            try validateBeforeWrite?()
+            do {
+                try validateBeforeWrite?()
+            } catch {
+                if beforeWrite != nil,
+                   let bleError = error as? BLEError,
+                   case .staleTaskSnapshot = bleError {
+                    throw TaskListSnapshotWriteError.staleBeforeFirstWrite
+                }
+                throw error
+            }
+            if let beforeWrite {
+                try await beforeWrite()
+                // Persisting the attempt marker suspends while this packet still owns the write
+                // gate. Revalidate once more, then synchronously hand the first packet to
+                // CoreBluetooth without another suspension point.
+                guard let packetType = packet.first,
+                      BLEWritePolicy.canWrite(
+                        state: connectionState,
+                        packetType: packetType
+                      ) else {
+                    throw BLEError.disconnected
+                }
+                do {
+                    try validateBeforeWrite?()
+                } catch {
+                    if let bleError = error as? BLEError,
+                       case .staleTaskSnapshot = bleError {
+                        throw TaskListSnapshotWriteError.staleBeforeFirstWrite
+                    }
+                    throw error
+                }
+            }
 
             // HIGH-1: strong capture — no retain cycle (@MainActor task, singleton service)
             let writeID = UUID()

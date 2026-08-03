@@ -433,7 +433,7 @@ extension AppState {
         pendingBLESyncRequestGeneration &+= 1
         let requestGeneration = pendingBLESyncRequestGeneration
         pendingBLESyncTask = Task { @MainActor in
-            try? await Task.sleep(for: debounce)
+            try? await bleSyncSleeper(debounce)
             guard !Task.isCancelled else { return }
             #if DEBUG
             print(

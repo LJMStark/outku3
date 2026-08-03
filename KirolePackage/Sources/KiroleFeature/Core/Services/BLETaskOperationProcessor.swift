@@ -37,9 +37,10 @@ enum BLETaskOperationProcessor {
         focusService: FocusSessionService,
         isReplay: Bool,
         operationLedger: TaskOperationLedger,
-        appState: AppState = .shared
+        appState: AppState = .shared,
+        hardwareTaskPersistence: (any HardwareTaskStatePersisting)? = nil,
+        receivedAt: Date = Date()
     ) async -> TaskOperationReceipt {
-        let receivedAt = Date()
         let authoritySnapshot = makeAuthoritySnapshot(
             for: log,
             appState: appState,
@@ -59,7 +60,8 @@ enum BLETaskOperationProcessor {
             operationLedger: operationLedger,
             appState: appState,
             receivedAt: receivedAt,
-            authoritySnapshot: authoritySnapshot
+            authoritySnapshot: authoritySnapshot,
+            hardwareTaskPersistence: hardwareTaskPersistence
         )
         await processingGate.release()
         return receipt
@@ -74,7 +76,8 @@ enum BLETaskOperationProcessor {
         operationLedger: TaskOperationLedger,
         appState: AppState,
         receivedAt: Date,
-        authoritySnapshot: AuthoritySnapshot
+        authoritySnapshot: AuthoritySnapshot,
+        hardwareTaskPersistence: (any HardwareTaskStatePersisting)?
     ) async -> TaskOperationReceipt {
         // App task state may change while this notification waits for the gate. Re-plan inside the
         // transaction; a resumed write-ahead entry still uses the first durable result below.
@@ -112,7 +115,9 @@ enum BLETaskOperationProcessor {
                 entry: entry,
                 expectedFocusStartGeneration: authoritySnapshot.focusStartGeneration,
                 focusService: focusService,
-                appState: appState
+                appState: appState,
+                hardwareTaskPersistence: hardwareTaskPersistence,
+                mutationDate: receivedAt
             )
         }
         if finalResult.canBeSupersededByApp,
@@ -170,7 +175,9 @@ enum BLETaskOperationProcessor {
         entry: TaskOperationLedgerEntry,
         expectedFocusStartGeneration: UInt64?,
         focusService: FocusSessionService,
-        appState: AppState
+        appState: AppState,
+        hardwareTaskPersistence: (any HardwareTaskStatePersisting)?,
+        mutationDate: Date
     ) async -> TaskListSnapshotResultCode {
         guard let action = TaskListSnapshotAction(eventType: log.eventType) else {
             return .invalidRequest
@@ -202,13 +209,29 @@ enum BLETaskOperationProcessor {
             return .taskNotFound
         }
 
-        switch await appState.persistHardwareTaskCompletion(
-            taskID: task.id,
-            operationKey: entry.operationKey,
-            deviceTimestamp: entry.deviceTimestamp,
-            reservedAt: entry.recordedAt,
-            source: entry.timestampAuthority == .deviceClock ? .hardwareReplay : .user
-        ) {
+        let persistenceResult: HardwareTaskCompletionPersistenceResult
+        if let hardwareTaskPersistence {
+            persistenceResult = await appState.persistHardwareTaskCompletion(
+                taskID: task.id,
+                operationKey: entry.operationKey,
+                deviceTimestamp: entry.deviceTimestamp,
+                reservedAt: entry.recordedAt,
+                mutationDate: mutationDate,
+                source: entry.timestampAuthority == .deviceClock ? .hardwareReplay : .user,
+                persistence: hardwareTaskPersistence
+            )
+        } else {
+            persistenceResult = await appState.persistHardwareTaskCompletion(
+                taskID: task.id,
+                operationKey: entry.operationKey,
+                deviceTimestamp: entry.deviceTimestamp,
+                reservedAt: entry.recordedAt,
+                mutationDate: mutationDate,
+                source: entry.timestampAuthority == .deviceClock ? .hardwareReplay : .user
+            )
+        }
+
+        switch persistenceResult {
         case .applied:
             return .applied
         case .alreadyApplied:

@@ -193,6 +193,15 @@ public final class FocusSessionService {
         }
     }
 
+    /// Mirrors process death for stateful acceptance tests without settling or deleting the
+    /// durable active-session marker that the replacement service must recover.
+    func stopRuntimeForTesting() {
+        stopFocusDisplaySyncLoop()
+        interruptionDetector.stopMonitoring()
+        launchRecoveryTask?.cancel()
+        launchRecoveryTask = nil
+    }
+
     /// 打断检测当前状态（专注界面据此明示"检测是否开启"，spec D-2）。
     public var interruptionDetectionState: FocusInterruptionDetectionState {
         interruptionDetector.detectionState
