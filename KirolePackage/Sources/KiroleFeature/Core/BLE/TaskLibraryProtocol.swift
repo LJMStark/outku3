@@ -11,6 +11,40 @@ public struct TaskLibraryVersion: Sendable, Equatable, Codable {
     }
 }
 
+/// Exact device-side library identity reported on wake and persisted after a matching commit ACK.
+public struct TaskLibraryCommittedState: Sendable, Equatable, Codable {
+    public let version: TaskLibraryVersion
+    public let contentCRC32: UInt32
+
+    public init(version: TaskLibraryVersion, contentCRC32: UInt32) {
+        self.version = version
+        self.contentCRC32 = contentCRC32
+    }
+}
+
+public enum TaskLibraryDeviceInventory: Sendable, Equatable, Codable {
+    case missing
+    case committed(TaskLibraryCommittedState)
+}
+
+public enum TaskLibraryFullSyncPolicy {
+    public static func shouldSendFullLibrary(
+        locallyCommitted: TaskLibraryCommittedState?,
+        deviceInventory: TaskLibraryDeviceInventory?,
+        hasPendingTransaction: Bool
+    ) -> Bool {
+        guard !hasPendingTransaction else { return false }
+        switch deviceInventory {
+        case .missing:
+            return true
+        case .committed:
+            return locallyCommitted == nil
+        case nil:
+            return locallyCommitted == nil
+        }
+    }
+}
+
 /// The three lines stored with one task. Firmware selects them by local focus time.
 public struct TaskLibraryPhaseTexts: Sendable, Equatable, Codable {
     public let starting: String
@@ -76,19 +110,29 @@ public struct TaskLibraryTransaction: Sendable, Equatable, Codable {
         self.records = records
     }
 
-    /// Expand-phase production slice: prepare the first sendable task. The next issue widens this
-    /// to the entire incomplete library without changing the transaction wire shape.
-    public static func firstIncomplete(
+    /// Builds the complete device library without a date or display-count filter. App array order
+    /// is the device queue order; completed and pending-deletion tasks are omitted.
+    public static func fullLibrary(
         from tasks: [TaskItem],
         version: TaskLibraryVersion,
-        phaseTexts: TaskLibraryPhaseTexts = .localFallback
-    ) -> TaskLibraryTransaction? {
-        guard let task = tasks.first(where: { !$0.isCompleted && !$0.pendingDeletion }) else {
-            return nil
+        phaseTexts: (TaskItem) -> TaskLibraryPhaseTexts = { _ in .localFallback }
+    ) throws -> TaskLibraryTransaction {
+        let incompleteTasks = tasks.filter { !$0.isCompleted && !$0.pendingDeletion }
+        var records: [TaskLibraryRecord] = []
+        records.reserveCapacity(incompleteTasks.count)
+        for (index, task) in incompleteTasks.enumerated() {
+            guard let order = UInt32(exactly: index) else {
+                throw TaskLibraryCodecError.recordCountOverflow
+            }
+            records.append(TaskLibraryRecord(
+                task: task,
+                order: order,
+                phaseTexts: phaseTexts(task)
+            ))
         }
         return TaskLibraryTransaction(
             version: version,
-            records: [TaskLibraryRecord(task: task, order: 0, phaseTexts: phaseTexts)]
+            records: records
         )
     }
 }
@@ -176,6 +220,16 @@ public enum TaskLibraryCodec {
 
         payload.appendBigEndian(CRC32.ieee(payload))
         return payload
+    }
+
+    public static func committedState(
+        for transaction: TaskLibraryTransaction
+    ) throws -> TaskLibraryCommittedState {
+        let payload = try encodeTransaction(transaction)
+        return TaskLibraryCommittedState(
+            version: transaction.version,
+            contentCRC32: payload.bigEndianUInt32(at: payload.count - 4)
+        )
     }
 
     public static func decodeTransaction(_ payload: Data) throws -> TaskLibraryTransaction {

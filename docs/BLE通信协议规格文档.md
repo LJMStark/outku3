@@ -1,8 +1,8 @@
 # Kirole BLE 通信协议规格文档
 
-**版本:** v2.11.0
+**版本:** v2.11.1
 **更新日期:** 2026-08-03
-**状态:** v2.11.0 新增双向 `TaskLibraryTransaction(0x23)`，用独立版本、内容 CRC 和提交结果完成任务库原子替换。当前是 expand 阶段：App 编解码、发送及应答路由和 Swift 虚拟设备已实现，只贯通一条任务；完整任务库数据源、三阶段 AI 生成、持久待发和真实固件属后续实现。旧 `DayPack(0x10)`、`TaskInPage(0x11)` 和 `TaskListSnapshotAck(0x1B)` 迁移期继续保留。
+**状态:** v2.11.1 的 App 已通过 `TaskLibraryTransaction(0x23)` 发送全部未完成任务，不按日期或展示条数截断；零任务同样发送完整替换事务。App 按设备保存最后确认的版本和内容 CRC，首次绑定或设备明确报告任务库丢失时全量发送；已有本地绑定记录且设备报告有效已提交版本时，不无条件重发。三阶段内容当前由本地模板补齐，AI 生成属 Issue #17；自动重试和持久待发属 Issue #18；真实固件任务库属 Issue #26。旧 `DayPack(0x10)`、`TaskInPage(0x11)` 和 `TaskListSnapshotAck(0x1B)` 迁移期继续保留。
 
 v2.9.0 的严格请求、OperationID 幂等和 `0x1B` 权威快照仍生效；v2.10.1 把在线 Complete/Skip 的 `0x1B` 延后到最终 DayPack 之后。App 是任务最终状态来源；GATT `.withResponse` 只代表传输确认，不能替代 `0x1B` 业务确认。
 
@@ -99,6 +99,7 @@ v2.9.0 的严格请求、OperationID 幂等和 `0x1B` 权威快照仍生效；v2
 | v2.10.2 | 2026-07-31 | **日程边界刷屏仲裁与短按等待边界（wire 不变）**：App build 630 在当前定时日程进行中时，对 `RequestRefresh`、`DeviceWake` 和后台自动同步区分“语义内容”和“展示字段”。仅 `PetDialogue`、`FirstUp`、结算文案或统计变化不发 DayPack、也不安排冷却后补发；任务、日程、`SupportText`、App 手动同步和 Complete/Skip 最终 DayPack 仍照常发送。App 先完成本地数据加载再处理 `EnterTaskIn`，任务页支持性文字只用缓存/本地兜底，不等 AI。固件无 BLE 立即本地执行；有 BLE 最多等 5 秒，超时本地兜底并保留事件；EPD 忙时只留最新 DayPack。§5.3/§8.3/§8.4/§8.5 |
 | v2.10.1 | 2026-07-30 | **在线任务动作单次刷屏时序（wire 不变）**：Complete/Skip 状态落盘后，App 等当前任务版本的 AI 对话，先发送最终 DayPack，再发送绑定同一任务版本的 `0x1B`。DayPack 失败时不发 `0x1B`；生成/发送期间任务版本变化时废弃旧组合并重新生成。固件在 TaskIn/pending 内收到 DayPack 只换后台缓存、不刷屏；匹配 `0x1B` 到达后一次性退出并刷新。RequestRefresh 与离线批次确认保持原规则。§5.4/§5.5/§5.16/§6.2 |
 | v2.11.0 | 2026-08-03 | **新增双向 `TaskLibraryTransaction(0x23)`（expand 阶段）**：App→Device 携带非零 Epoch/Revision、完整任务记录和 CRC-32/IEEE；设备完整重组、严格解析和校验后才原子替换已提交库，再通过 Device→App 同 type 回报版本、结果和内容 CRC。接收中断或失败不得改变旧已提交库。当前 App 只贯通一条任务和虚拟固件，旧 `0x10/0x11/0x1B` 仍保留。§4.22/§5.21/§8.4 |
+| v2.11.1 | 2026-08-03 | **完整任务库 App 路径**：`0x23` 改为发送全部未完成且非待删除任务，保留 App 顺序，不设日期范围或展示条数上限；零任务发送 RecordCount=0 的完整替换事务。新增按设备保存的已提交 Epoch/Revision/CRC，以及 42B `DeviceWake(0x30)` 任务库库存尾段：首次绑定或设备报告 missing 时全量发送；已有本地绑定记录且设备报告 committed 时记录精确版本并跳过无条件重发。只有设备、版本、CRC 和 committed 结果全部匹配才落盘。真实固件、AI 三阶段文案和失败重试仍由后续票完成。§4.22/§5.8/§5.21 |
 
 | 术语 | 定义 |
 |---------------|------------------------------------------------------|
@@ -1072,7 +1073,7 @@ RecordCount(4 BE) | Records[] | TransactionCRC32(4 BE)
 | SubVersion | 1 byte | 固定 `0x01`；未知版本整帧拒绝 |
 | LibraryEpoch | 4 bytes BE | 任务库世代，必须非零 |
 | LibraryRevision | 4 bytes BE | 同一世代内的版本，必须非零 |
-| RecordCount | 4 bytes BE | 记录数；Issue #15 的 App 贯通路径固定为 1，完整任务库由后续版本启用 |
+| RecordCount | 4 bytes BE | 完整记录数；允许为 0。协议表示范围为 UInt32，产品不另设任务数量上限 |
 | Records[] | Variable | 按任务顺序连续编码的完整记录 |
 | TransactionCRC32 | 4 bytes BE | CRC-32/IEEE，覆盖从 SubVersion 到最后一条记录的所有字节 |
 
@@ -1087,7 +1088,15 @@ BuildingLength(1) | Building(N5, N5<=80) |
 DeepLength(1) | Deep(N6, N6<=80)
 ```
 
-TaskID 必须非空；所有文本都按 §3.5 转为可打印 ASCII 后再计算长度和截断。`Order` 是设备本地任务队列顺序。三条阶段文案分别供本地专注计时 `0–5 分钟`、`6–15 分钟`、`16 分钟及以后` 取用；本票只存入三条内容，阶段切换由后续票完成。
+TaskID 必须非空；所有文本都按 §3.5 转为可打印 ASCII 后再计算长度和截断。`Order` 与 App 任务数组顺序一致。App 纳入全部未完成且非待删除任务，包括今天、未来、过期和无日期任务；已完成及待删除任务不进入事务。不得使用 DayPack 的屏幕展示条数或日期窗口截断任务库。三条阶段文案分别供本地专注计时 `0–5 分钟`、`6–15 分钟`、`16 分钟及以后` 取用；v2.11.1 暂用三条本地模板，Issue #17 接入逐任务 AI 生成。
+
+**App 全量发送规则：**
+
+1. 首次绑定该设备、App 没有该设备的已提交任务库记录时，发送当前完整任务库。
+2. 设备通过 §5.8 明确报告任务库 missing 时，清除该设备的已提交记录并立即发送当前完整任务库。
+3. App 已有该设备的本地绑定记录，且设备报告有效 committed Epoch/Revision/CRC 时，App 按设备更新该状态，不因普通重连或 App 重启无条件重发全量库。App 没有本地绑定记录时仍按首次绑定处理，不能采信设备残留库跳过全量。
+4. 发送后只有当前设备返回完全匹配的 Epoch、Revision、ContentCRC32 且 Result=`committed`，App 才保存为已提交版本。错误、迟到或其他设备的应答均不推进状态。
+5. 任务后续新增、修改、完成和删除的稳定窗增量同步由 Issue #19 定义，不在 v2.11.1 伪装成重复全量发送。
 
 **设备提交规则：**
 
@@ -1281,16 +1290,21 @@ BLE Notify 特征开启后，固件**主动**向 App 发送此帧，表示「设
 | 5      | AvatarID     | 16 bytes | 正式头像 UUID 原始字节；AvatarState=0 时全填 0 |
 | 21     | FileLength   | 4 bytes | committed KRI 文件长度，Big Endian；无图填 0 |
 | 25     | AvatarCRC32  | 4 bytes | committed KRI 文件的 CRC-32/IEEE，Big Endian；无图填 0 |
+| 29     | TaskLibraryState | 1 byte | v2.11.1：`0x00`=任务库缺失，`0x01`=已有 committed 任务库 |
+| 30     | LibraryEpoch | 4 bytes | Big Endian；缺失时填 0，已提交时必须非零 |
+| 34     | LibraryRevision | 4 bytes | Big Endian；缺失时填 0，已提交时必须非零 |
+| 38     | LibraryCRC32 | 4 bytes | committed `0x23` 内容 CRC；缺失时填 0 |
 
-> **固件版本要求：** v2.7 固件的实时 DeviceWake payload 固定 29B。App 仍能读取旧 0/1/4/9B 唤醒包的电量和版本，但旧库存格式不足以恢复 v2.7 事务，不得据此自动提交候选身份。版本语义仍是本次启动实际运行的固件版本。
+> **固件版本要求：** v2.11.1 固件的实时 DeviceWake payload 固定 42B；v2.7 固件为 29B。App 仍能读取旧 0/1/4/9/29B 唤醒包的电量、版本和已有头像库存，但只有 42B 包能报告任务库库存。版本语义仍是本次启动实际运行的固件版本。
 >
 > **⚠️ 版本与头像库存字节仅限本实时通知帧：** `0x21 EventLogBatch` 中的 `0x30` 记录**保持 2 字节**（`0x30 + BatteryLevel`，见 §5.15）。批量记录是定长走表解析，在批量记录里追加任何新字节都会导致 App 解析错位、**整批丢弃**（离线补传丢失）。
 
 **App 响应：**
 1. 若 payload 非空：更新并显示设备电量。
 2. 若 payload ≥ 4 字节：记录固件版本（Settings 显示；OTA 升级前后对比判定升级结果，见 §4.17）。
-3. 若 payload = 29B：记录 committed AvatarID+长度+CRC。存在 `PendingCustomAvatarOperation` 且当前没有活跃事务时，只触发一次优先恢复；App 随后发送 `0x22 query` 并按 §4.12 的三分支处理。DeviceWake 不含 `CustomActive`，不得直接提交候选身份。活跃传输期间不得让 DeviceWake 抢占事务；无待办操作时仅记录库存，不启动后台重发。
-4. 同步时间并发送更新数据。
+3. 若 payload = 29B 或 42B：记录 committed AvatarID+长度+CRC。存在 `PendingCustomAvatarOperation` 且当前没有活跃事务时，只触发一次优先恢复；App 随后发送 `0x22 query` 并按 §4.12 的三分支处理。DeviceWake 不含 `CustomActive`，不得直接提交候选身份。活跃传输期间不得让 DeviceWake 抢占事务；无待办操作时仅记录库存，不启动后台重发。
+4. 若 payload = 42B：`TaskLibraryState=0x00` 时四个版本/CRC 字段必须全为 0，App 立即安排完整任务库；`TaskLibraryState=0x01` 时 Epoch/Revision 必须非零。App 已有该设备本地绑定记录时更新精确 committed 状态并阻止无条件全量重发；没有本地绑定记录时仍视为首次绑定并发送完整任务库，避免采信其他账号或旧 App 遗留内容。其他组合视为无效库存，不改变已知状态。
+5. 同步时间并发送更新数据。任务库 missing 属优先恢复，不受普通 DeviceWake 10 秒节流阻挡。
 
 ---
 

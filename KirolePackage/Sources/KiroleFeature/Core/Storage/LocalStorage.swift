@@ -40,6 +40,7 @@ public actor LocalStorage {
         static let eventLogs = "event_logs.json"
         static let taskOperationLedger = "task_operation_ledger.json"
         static let taskListSnapshotVersion = "task_list_snapshot_version.json"
+        static let taskLibraryCommittedStates = "task_library_committed_states.json"
         static let focusEnergyAwardReceipts = "focus_energy_award_receipts.json"
         static let aiInteractions = "ai_interactions.json"
         static let behaviorSummary = "behavior_summary.json"
@@ -71,6 +72,7 @@ public actor LocalStorage {
             pet, tasks, events,
             syncState, haikuCache, userProfile,
             focusSessions, eventLogs, taskOperationLedger, taskListSnapshotVersion,
+            taskLibraryCommittedStates,
             focusEnergyAwardReceipts, aiInteractions,
             behaviorSummary, onboardingProfile,
             deepFocusSelection, activeFocusSession,
@@ -309,6 +311,43 @@ public actor LocalStorage {
 
     public func loadTasks() throws -> [TaskItem]? {
         try load([TaskItem].self, from: Files.tasks)
+    }
+
+    // MARK: - Task Library Delivery
+
+    func saveTaskLibraryCommittedState(
+        _ state: TaskLibraryCommittedState,
+        for destinationID: String
+    ) throws {
+        guard !destinationID.isEmpty else { return }
+        var states = try loadTaskLibraryCommittedStates()
+        states[destinationID] = state
+        try save(states, to: Files.taskLibraryCommittedStates)
+    }
+
+    func loadTaskLibraryCommittedState(
+        for destinationID: String
+    ) throws -> TaskLibraryCommittedState? {
+        guard !destinationID.isEmpty else { return nil }
+        return try loadTaskLibraryCommittedStates()[destinationID]
+    }
+
+    func removeTaskLibraryCommittedState(for destinationID: String) throws {
+        guard !destinationID.isEmpty else { return }
+        var states = try loadTaskLibraryCommittedStates()
+        guard states.removeValue(forKey: destinationID) != nil else { return }
+        try save(states, to: Files.taskLibraryCommittedStates)
+    }
+
+    func clearTaskLibraryCommittedStates() throws {
+        try deleteFile(named: Files.taskLibraryCommittedStates)
+    }
+
+    private func loadTaskLibraryCommittedStates() throws -> [String: TaskLibraryCommittedState] {
+        try load(
+            [String: TaskLibraryCommittedState].self,
+            from: Files.taskLibraryCommittedStates
+        ) ?? [:]
     }
 
     func saveTaskOperationLedger(_ entries: [TaskOperationLedgerEntry]) throws {

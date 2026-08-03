@@ -172,6 +172,17 @@ public enum BLEEventHandler {
                 } else {
                     avatarNeedsRecovery = false
                 }
+                let taskLibraryNeedsReseed: Bool
+                let destinationID = service.taskListSnapshotDestinationID
+                if let inventory = eventLog.taskLibraryInventory, !destinationID.isEmpty {
+                    taskLibraryNeedsReseed = await BLESyncCoordinator.shared
+                        .reconcileTaskLibraryInventory(
+                            inventory,
+                            destinationID: destinationID
+                        )
+                } else {
+                    taskLibraryNeedsReseed = false
+                }
                 do {
                     try await service.syncTime()
                 } catch {
@@ -182,7 +193,8 @@ public enum BLEEventHandler {
                 }
                 await AppState.shared.handleHardwareWake(now: eventLog.timestamp)
                 // 普通唤醒经退避节流；存在待办头像事务时强制本轮 query 恢复。
-                if !avatarNeedsRecovery {
+                let needsPrioritySync = avatarNeedsRecovery || taskLibraryNeedsReseed
+                if !needsPrioritySync {
                     guard await BLERateLimiter.shared.allowSyncTrigger() else {
                         ErrorReporter.log(
                             .sync(component: "BLE DeviceWake", underlying: "throttled"),
@@ -192,7 +204,7 @@ public enum BLEEventHandler {
                     }
                 }
                 await BLESyncCoordinator.shared.performSync(
-                    force: avatarNeedsRecovery,
+                    force: needsPrioritySync,
                     trigger: .deviceWake
                 )
             }

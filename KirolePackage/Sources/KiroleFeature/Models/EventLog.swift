@@ -24,6 +24,9 @@ public struct EventLog: Codable, Sendable, Identifiable {
     /// 设备侧自定义头像库存（v2.7，仅实时 DeviceWake ≥29B payload）。AvatarID 避免
     /// 两个内容相同（CRC 相同）的伴侣被误认为同一身份；长度+CRC 用于断线后的库存对账。
     public let avatarInventory: AvatarInventory?
+    /// v2.11.1 仅实时 DeviceWake 42B payload 携带。设备明确报告丢失时
+    /// App 重发完整任务库；已提交版本用于阻止每次连接无条件重传。
+    public let taskLibraryInventory: TaskLibraryDeviceInventory?
 
     public struct AvatarInventory: Codable, Sendable, Equatable {
         public let hasImage: Bool
@@ -48,7 +51,8 @@ public struct EventLog: Codable, Sendable, Identifiable {
         value: Int = 0,
         hasDeviceTimestamp: Bool = false,
         firmwareVersion: FirmwareVersion? = nil,
-        avatarInventory: AvatarInventory? = nil
+        avatarInventory: AvatarInventory? = nil,
+        taskLibraryInventory: TaskLibraryDeviceInventory? = nil
     ) {
         self.id = id
         self.eventType = eventType
@@ -59,6 +63,7 @@ public struct EventLog: Codable, Sendable, Identifiable {
         self.hasDeviceTimestamp = hasDeviceTimestamp
         self.firmwareVersion = firmwareVersion
         self.avatarInventory = avatarInventory
+        self.taskLibraryInventory = taskLibraryInventory
     }
 
     // 向后兼容：旧 event_logs.json 没有 hasDeviceTimestamp 字段，缺失时默认 false，
@@ -74,6 +79,10 @@ public struct EventLog: Codable, Sendable, Identifiable {
         self.hasDeviceTimestamp = try container.decodeIfPresent(Bool.self, forKey: .hasDeviceTimestamp) ?? false
         self.firmwareVersion = try container.decodeIfPresent(FirmwareVersion.self, forKey: .firmwareVersion)
         self.avatarInventory = try container.decodeIfPresent(AvatarInventory.self, forKey: .avatarInventory)
+        self.taskLibraryInventory = try container.decodeIfPresent(
+            TaskLibraryDeviceInventory.self,
+            forKey: .taskLibraryInventory
+        )
     }
 }
 
@@ -227,7 +236,7 @@ public extension EventLog {
             // v2.7: AvatarState(1) | AvatarID(16 raw UUID; empty 时全 0) |
             // FileLength(4 BE) | FileCRC32(4 BE)。仅实时帧；旧 9B 库存格式不兼容。
             let inventory: AvatarInventory?
-            if payload.count == 29, payload[4] <= 0x01 {
+            if (payload.count == 29 || payload.count == 42), payload[4] <= 0x01 {
                 let hasImage = payload[4] == 0x01
                 let avatarBytes = payload.subdata(in: 5..<21)
                 let avatarID = avatarBytes.allSatisfy { $0 == 0 }
@@ -251,7 +260,35 @@ public extension EventLog {
             } else {
                 inventory = nil
             }
-            return EventLog(eventType: eventType, value: level, firmwareVersion: version, avatarInventory: inventory)
+            // v2.11.1: TaskLibraryState(1) | Epoch(4 BE) | Revision(4 BE) |
+            // ContentCRC32(4 BE), appended after the v2.7 avatar inventory.
+            let taskLibraryInventory: TaskLibraryDeviceInventory?
+            if payload.count == 42 {
+                let state = payload[29]
+                let epoch = payload.bigEndianUInt32(at: 30)
+                let revision = payload.bigEndianUInt32(at: 34)
+                let contentCRC32 = payload.bigEndianUInt32(at: 38)
+                switch state {
+                case 0 where epoch == 0 && revision == 0 && contentCRC32 == 0:
+                    taskLibraryInventory = .missing
+                case 1 where epoch != 0 && revision != 0:
+                    taskLibraryInventory = .committed(TaskLibraryCommittedState(
+                        version: TaskLibraryVersion(epoch: epoch, revision: revision),
+                        contentCRC32: contentCRC32
+                    ))
+                default:
+                    taskLibraryInventory = nil
+                }
+            } else {
+                taskLibraryInventory = nil
+            }
+            return EventLog(
+                eventType: eventType,
+                value: level,
+                firmwareVersion: version,
+                avatarInventory: inventory,
+                taskLibraryInventory: taskLibraryInventory
+            )
 
         default:
             return EventLog(eventType: eventType)

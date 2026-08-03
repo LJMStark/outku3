@@ -410,6 +410,7 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
 
     public func clearTrustedDevices() async {
         disconnect()
+        await BLESyncCoordinator.shared.handleAllTaskLibrariesUnbound()
         await deviceIdentityStore.clearDeviceIdentities()
         lastConnectedDeviceID = nil
         discoveredDevices = []
@@ -679,6 +680,9 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
     }
 
     func cleanup() {
+        BLESyncCoordinator.shared.handleTaskLibraryDisconnected(
+            destinationID: taskListSnapshotDestinationID
+        )
         BLEWiFiDebugCoordinator.shared.handleDisconnected()
         WiFiAvatarSessionCoordinator.shared.handleDisconnected()
         AppState.shared.handleCustomAvatarDeviceDisconnected()

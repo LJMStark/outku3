@@ -4,27 +4,6 @@ import Testing
 
 @Suite("Task library transaction")
 struct TaskLibraryTransactionTests {
-    @Test("The App prepares the first incomplete task for the expand-phase production send")
-    func appPreparesOneIncompleteTask() throws {
-        let tasks = [
-            TaskItem(id: "done", title: "Done", isCompleted: true),
-            TaskItem(id: "deleting", title: "Deleting", pendingDeletion: true),
-            TaskItem(id: "ready", title: "Ready", notes: "Local detail")
-        ]
-
-        let transaction = try #require(TaskLibraryTransaction.firstIncomplete(
-            from: tasks,
-            version: TaskLibraryVersion(epoch: 4, revision: 9)
-        ))
-
-        #expect(transaction.records.map(\.taskID) == ["ready"])
-        #expect(transaction.records[0].order == 0)
-        #expect(transaction.records[0].detail == "Local detail")
-        #expect(!transaction.records[0].phaseTexts.starting.isEmpty)
-        #expect(!transaction.records[0].phaseTexts.building.isEmpty)
-        #expect(!transaction.records[0].phaseTexts.deep.isEmpty)
-    }
-
     @Test("One complete task record round-trips with its version and integrity check")
     func oneTaskRoundTrip() throws {
         let transaction = makeTransaction(

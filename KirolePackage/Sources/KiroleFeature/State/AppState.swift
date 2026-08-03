@@ -264,6 +264,15 @@ public final class AppState {
             BLEService.shared.onAvatarControlResult = { [weak self] result in
                 self?.handleAvatarControlResult(result)
             }
+            BLEService.shared.onTaskLibraryCommitAcknowledgement = { acknowledgement in
+                let destinationID = BLEService.shared.taskListSnapshotDestinationID
+                Task { @MainActor in
+                    await BLESyncCoordinator.shared.handleTaskLibraryCommitAcknowledgement(
+                        acknowledgement,
+                        destinationID: destinationID
+                    )
+                }
+            }
         }
     }
 

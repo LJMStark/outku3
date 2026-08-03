@@ -68,6 +68,11 @@ public final class BLESyncCoordinator {
     private var pendingSync = false
     private var pendingForceSync = false
     private var pendingSyncTrigger: BLESyncTrigger?
+    /// A sent full library remains pending until the same device confirms the exact version and
+    /// CRC. This is connection-scoped; issue #18 owns durable retry state after interruption.
+    private var pendingTaskLibraries: [String: TaskLibraryCommittedState] = [:]
+    /// Real-time DeviceWake inventory wins over the persisted marker for the current connection.
+    private var taskLibraryDeviceInventories: [String: TaskLibraryDeviceInventory] = [:]
     /// Complete/Skip keeps the device on TaskIn until one final DayPack has been sent. Routine
     /// sync requests queue behind this window so no second DayPack can race the later 0x1B.
     private var taskActionPresentationCount = 0
@@ -173,10 +178,164 @@ public final class BLESyncCoordinator {
     }
 #endif
 
+    private func shouldSendFullTaskLibraryForConnectedDevice() async -> Bool {
+        guard let destinationID = connectedDestinationProvider(), !destinationID.isEmpty else {
+            return false
+        }
+        let locallyCommitted: TaskLibraryCommittedState?
+        do {
+            locallyCommitted = try await localStorage.loadTaskLibraryCommittedState(
+                for: destinationID
+            )
+        } catch {
+            ErrorReporter.log(error, context: "BLESyncCoordinator.loadTaskLibraryCommittedState")
+            return true
+        }
+        return TaskLibraryFullSyncPolicy.shouldSendFullLibrary(
+            locallyCommitted: locallyCommitted,
+            deviceInventory: taskLibraryDeviceInventories[destinationID],
+            hasPendingTransaction: pendingTaskLibraries[destinationID] != nil
+        )
+    }
+
+    private func sendFullTaskLibraryIfNeeded(
+        tasks: [TaskItem],
+        expectedTaskStateVersion: UInt64
+    ) async throws {
+        guard let destinationID = connectedDestinationProvider(), !destinationID.isEmpty else {
+            return
+        }
+
+        let locallyCommitted: TaskLibraryCommittedState?
+        do {
+            locallyCommitted = try await localStorage.loadTaskLibraryCommittedState(
+                for: destinationID
+            )
+        } catch {
+            ErrorReporter.log(error, context: "BLESyncCoordinator.loadTaskLibraryCommittedState")
+            locallyCommitted = nil
+        }
+        guard TaskLibraryFullSyncPolicy.shouldSendFullLibrary(
+            locallyCommitted: locallyCommitted,
+            deviceInventory: taskLibraryDeviceInventories[destinationID],
+            hasPendingTransaction: pendingTaskLibraries[destinationID] != nil
+        ) else {
+            return
+        }
+
+        let transaction = try TaskLibraryTransaction.fullLibrary(
+            from: tasks,
+            version: Self.nextTaskLibraryVersion(after: locallyCommitted?.version)
+        )
+        let pendingState = try TaskLibraryCodec.committedState(for: transaction)
+        pendingTaskLibraries[destinationID] = pendingState
+        do {
+            try await bleService.sendTaskLibraryTransaction(
+                transaction,
+                expectedTaskStateVersion: expectedTaskStateVersion
+            )
+        } catch {
+            if pendingTaskLibraries[destinationID] == pendingState {
+                pendingTaskLibraries.removeValue(forKey: destinationID)
+            }
+            throw error
+        }
+    }
+
+    private static func nextTaskLibraryVersion(
+        after version: TaskLibraryVersion?
+    ) -> TaskLibraryVersion {
+        guard let version else {
+            return TaskLibraryVersion(epoch: 1, revision: 1)
+        }
+        if version.revision < .max {
+            return TaskLibraryVersion(epoch: version.epoch, revision: version.revision + 1)
+        }
+        let nextEpoch = version.epoch == .max ? UInt32(1) : version.epoch + 1
+        return TaskLibraryVersion(epoch: nextEpoch, revision: 1)
+    }
+
     public func nextSyncDate() async -> Date {
         let lastSync = await localStorage.loadLastBleSyncTime()
         return policy.nextSyncTime(now: Date(), lastSync: lastSync)
     }
+
+    func reconcileTaskLibraryInventory(
+        _ inventory: TaskLibraryDeviceInventory,
+        destinationID: String
+    ) async -> Bool {
+        guard !destinationID.isEmpty else { return false }
+        taskLibraryDeviceInventories[destinationID] = inventory
+        pendingTaskLibraries.removeValue(forKey: destinationID)
+        do {
+            switch inventory {
+            case .missing:
+                try await localStorage.removeTaskLibraryCommittedState(for: destinationID)
+                return true
+            case let .committed(state):
+                guard try await localStorage.loadTaskLibraryCommittedState(
+                    for: destinationID
+                ) != nil else {
+                    return true
+                }
+                try await localStorage.saveTaskLibraryCommittedState(state, for: destinationID)
+                return false
+            }
+        } catch {
+            ErrorReporter.log(error, context: "BLESyncCoordinator.reconcileTaskLibraryInventory")
+            return inventory == .missing
+        }
+    }
+
+    func handleTaskLibraryCommitAcknowledgement(
+        _ acknowledgement: TaskLibraryCommitAcknowledgement,
+        destinationID: String
+    ) async {
+        guard !destinationID.isEmpty,
+              let pending = pendingTaskLibraries[destinationID],
+              pending.version == acknowledgement.version,
+              pending.contentCRC32 == acknowledgement.contentCRC32 else {
+            return
+        }
+        pendingTaskLibraries.removeValue(forKey: destinationID)
+        guard acknowledgement.result == .committed else { return }
+        taskLibraryDeviceInventories[destinationID] = .committed(pending)
+        do {
+            try await localStorage.saveTaskLibraryCommittedState(pending, for: destinationID)
+        } catch {
+            ErrorReporter.log(error, context: "BLESyncCoordinator.handleTaskLibraryCommitAcknowledgement")
+        }
+    }
+
+    func handleTaskLibraryDisconnected(destinationID: String) {
+        guard !destinationID.isEmpty else { return }
+        pendingTaskLibraries.removeValue(forKey: destinationID)
+        taskLibraryDeviceInventories.removeValue(forKey: destinationID)
+    }
+
+    func handleAllTaskLibrariesUnbound() async {
+        pendingTaskLibraries.removeAll()
+        taskLibraryDeviceInventories.removeAll()
+        do {
+            try await localStorage.clearTaskLibraryCommittedStates()
+        } catch {
+            ErrorReporter.log(error, context: "BLESyncCoordinator.handleAllTaskLibrariesUnbound")
+        }
+    }
+
+#if DEBUG
+    func setPendingTaskLibraryForTesting(
+        _ state: TaskLibraryCommittedState,
+        destinationID: String
+    ) {
+        pendingTaskLibraries[destinationID] = state
+    }
+
+    func clearPendingTaskLibraryForTesting(destinationID: String) {
+        pendingTaskLibraries.removeValue(forKey: destinationID)
+        taskLibraryDeviceInventories.removeValue(forKey: destinationID)
+    }
+#endif
 
     public func performSync(
         force: Bool = false,
@@ -298,6 +457,7 @@ public final class BLESyncCoordinator {
 
         let hasPriorityCustomAvatarOperation = appState.pendingCustomAvatarOperation?
             .requiresPriorityBLEFlush == true
+        let hasPriorityTaskLibrarySync = await shouldSendFullTaskLibraryForConnectedDevice()
         guard policy.shouldSync(
             now: now,
             lastSync: lastSync,
@@ -305,7 +465,7 @@ public final class BLESyncCoordinator {
             // Identity lives in the small 0x01 frame, not necessarily in DayPack's fingerprint.
             // It therefore owns one immediate sync round even when AI text falls back to the same
             // bytes and the routine interval has not elapsed.
-            force: force || trigger.bypassesRoutineSyncInterval,
+            force: force || trigger.bypassesRoutineSyncInterval || hasPriorityTaskLibrarySync,
             hasPriorityCustomAvatarOperation: hasPriorityCustomAvatarOperation
         ) else {
             return
@@ -518,39 +678,26 @@ public final class BLESyncCoordinator {
                 return
             }
 
-            // v2.11 expand phase: exercise the production App→device path with one incomplete
-            // task while the existing DayPack/TaskIn/0x1B paths remain authoritative. Issue #16
-            // replaces this single-record builder with the complete task library and its durable
-            // version policy.
-            let taskLibraryVersion = TaskLibraryVersion(
-                epoch: 1,
-                revision: UInt32(clamping: max(sourceTaskStateVersion, 1))
-            )
-            if let taskLibraryTransaction = TaskLibraryTransaction.firstIncomplete(
-                from: appState.tasks,
-                version: taskLibraryVersion
-            ) {
-                do {
-                    try await bleService.sendTaskLibraryTransaction(
-                        taskLibraryTransaction,
-                        expectedTaskStateVersion: sourceTaskStateVersion
-                    )
-                } catch {
-                    if let bleError = error as? BLEError,
-                       case .staleTaskSnapshot = bleError {
-                        queuePendingSync(force: force, trigger: trigger)
-                        return
-                    }
-                    // Expand-contract safety: an older device may not support 0x23 yet. The new
-                    // slice must not prevent the retained DayPack/TaskIn/0x1B path from completing.
-                    ErrorReporter.log(
-                        .sync(
-                            component: "BLE Task Library",
-                            underlying: error.localizedDescription
-                        ),
-                        context: "BLESyncCoordinator.performSync"
-                    )
+            do {
+                try await sendFullTaskLibraryIfNeeded(
+                    tasks: appState.tasks,
+                    expectedTaskStateVersion: sourceTaskStateVersion
+                )
+            } catch {
+                if let bleError = error as? BLEError,
+                   case .staleTaskSnapshot = bleError {
+                    queuePendingSync(force: force, trigger: trigger)
+                    return
                 }
+                // Older firmware may not support 0x23 yet. The retained DayPack/TaskIn/0x1B
+                // path continues while firmware work is tracked separately in issue #26.
+                ErrorReporter.log(
+                    .sync(
+                        component: "BLE Task Library",
+                        underlying: error.localizedDescription
+                    ),
+                    context: "BLESyncCoordinator.performSync"
+                )
             }
 
             await appState.flushPendingCustomCompanionPushIfNeeded()
