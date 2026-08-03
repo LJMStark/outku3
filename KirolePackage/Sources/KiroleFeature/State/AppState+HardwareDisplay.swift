@@ -107,6 +107,8 @@ extension AppState {
     }
 
     func handleAppDidBecomeActive(now: Date = Date()) async {
+        _ = await observeDailyContentDay(at: now)
+        await startDailyContentDayRolloverMonitoring()
         await registerUsageActivity(now: now)
         // 统计缓存只在加载/结算时重算——App 跨午夜后回前台，Pet 页与专注页读到的
         // todayFocusTime 仍是昨日值。回前台是换日重算的统一时机（同日 no-op）。
@@ -124,6 +126,9 @@ extension AppState {
     }
 
     func handleHardwareWake(now: Date = Date()) async {
+        // iOS may have suspended the midnight timer. Clear any prior-day schedule projection and
+        // prepare the current date before the DeviceWake-triggered full sync samples AppState.
+        _ = await observeDailyContentDay(at: now)
         await registerUsageActivity(now: now)
         if FocusSessionService.shared.activeSession == nil {
             await syncIdleHardwareDisplay()

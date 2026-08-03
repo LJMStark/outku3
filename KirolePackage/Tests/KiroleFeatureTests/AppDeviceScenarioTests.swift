@@ -80,6 +80,78 @@ struct AppDeviceScenarioTests {
         #expect(await scenario.snapshot().focus?.phase == .deep)
     }
 
+    @Test("Midnight hides yesterday content while task records survive App and device restarts")
+    func dailyContentRolloverSurvivesRestarts() async throws {
+        let scenario = AppDeviceScenario(now: Self.minuteBeforeMidnight)
+        let phaseTexts = TaskLibraryPhaseTexts.localFallback(for: .joy)
+        let taskRecord = TaskLibraryRecord(
+            taskID: "persistent-task",
+            order: 0,
+            title: "Persistent task",
+            detail: "Keep this across midnight.",
+            phaseTexts: phaseTexts
+        )
+        let taskLibrary = TaskLibraryTransaction(
+            version: TaskLibraryVersion(epoch: 1, revision: 1),
+            records: [taskRecord]
+        )
+        let yesterdayPackage = Self.dailyPackage(
+            at: Self.minuteBeforeMidnight,
+            eventTitle: "Yesterday event"
+        )
+
+        scenario.connect()
+        _ = try scenario.sendTaskLibrary(taskLibrary, messageID: 0x7101, maxChunkSize: 24)
+        _ = try scenario.sendDailyContent(
+            DailyContentTransaction(
+                version: DailyContentVersion(epoch: 1, revision: 1),
+                package: yesterdayPackage
+            ),
+            messageID: 0x7102,
+            maxChunkSize: 24
+        )
+        await scenario.startDailyContentRolloverMonitoring()
+        var snapshot = await scenario.snapshot()
+        #expect(snapshot.dailyContentVisiblePackage?.events.map(\.title) == ["Yesterday event"])
+        #expect(snapshot.taskLibraryRecords.map(\.taskID) == ["persistent-task"])
+
+        await scenario.advance(by: .seconds(60))
+        snapshot = await scenario.snapshot()
+        #expect(snapshot.dailyContentCommittedDate == yesterdayPackage.localDate)
+        #expect(snapshot.dailyContentVisiblePackage == nil)
+        #expect(snapshot.taskLibraryRecords.map(\.taskID) == ["persistent-task"])
+        #expect(snapshot.executedSyncTriggers == [.automatic])
+
+        scenario.restartDevice()
+        snapshot = await scenario.snapshot()
+        #expect(snapshot.dailyContentVisiblePackage == nil)
+        #expect(snapshot.taskLibraryRecords.map(\.taskID) == ["persistent-task"])
+
+        await scenario.restartApp()
+        await scenario.startDailyContentRolloverMonitoring()
+        scenario.reconnect()
+        snapshot = await scenario.snapshot()
+        #expect(snapshot.dailyContentVisiblePackage == nil)
+        #expect(snapshot.taskLibraryRecords.map(\.taskID) == ["persistent-task"])
+        #expect(snapshot.executedSyncTriggers == [.automatic])
+
+        let todayPackage = Self.dailyPackage(
+            at: snapshot.now,
+            eventTitle: "Today event"
+        )
+        _ = try scenario.sendDailyContent(
+            DailyContentTransaction(
+                version: DailyContentVersion(epoch: 1, revision: 2),
+                package: todayPackage
+            ),
+            messageID: 0x7103,
+            maxChunkSize: 24
+        )
+        snapshot = await scenario.snapshot()
+        #expect(snapshot.dailyContentVisiblePackage?.events.map(\.title) == ["Today event"])
+        #expect(snapshot.taskLibraryRecords.map(\.taskID) == ["persistent-task"])
+    }
+
     @Test("Replacing a scheduled wait starts from the newest request")
     func controllableClockTracksReplacementSleeper() async {
         let scenario = AppDeviceScenario(now: Self.startDate)
@@ -466,6 +538,32 @@ struct AppDeviceScenarioTests {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
         return calendar
+    }
+
+    private static func dailyPackage(at date: Date, eventTitle: String) -> DailyContentPackage {
+        let timestamp = UInt64(date.timeIntervalSince1970)
+        return DailyContentPackage(
+            localDate: DailyContentDate(date: date, calendar: deviceCalendar),
+            morningDialogue: "Morning",
+            idleDialogue: "Idle",
+            closingDialogue: "Closing",
+            daySummary: "Summary",
+            screensaverQuote: "Quote",
+            screensaverAuthor: "Joy",
+            settlementReview: "Review",
+            settlementQuote: "Closing quote",
+            events: [DailyContentEvent(
+                eventID: "event-\(eventTitle)",
+                startTimestamp: timestamp,
+                endTimestamp: timestamp + 1_800,
+                isAllDay: false,
+                title: eventTitle,
+                detail: "",
+                category: .admin,
+                companionDialogue: "Dialogue",
+                supportText: "Support"
+            )]
+        )
     }
 
     private func expectAIError(

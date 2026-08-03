@@ -29,6 +29,7 @@ public actor LocalStorage {
         static let lastHomeHaikuShownDate = "lastHomeHaikuShownDate"
         static let taskLibraryStabilityCheckpoint = "taskLibraryStabilityCheckpoint"
         static let dailyContentStabilityCheckpoint = "dailyContentStabilityCheckpoint"
+        static let dailyContentObservedDate = "dailyContentObservedDate"
     }
 
     private enum Files {
@@ -165,6 +166,7 @@ public actor LocalStorage {
         Keys.lastHomeHaikuShownDate,
         Keys.taskLibraryStabilityCheckpoint,
         Keys.dailyContentStabilityCheckpoint,
+        Keys.dailyContentObservedDate,
         "isOnboardingCompleted",
     ]
 
@@ -366,6 +368,25 @@ public actor LocalStorage {
         userDefaults: UserDefaults = .standard
     ) {
         userDefaults.removeObject(forKey: Keys.dailyContentStabilityCheckpoint)
+    }
+
+    nonisolated static func saveDailyContentObservedDate(
+        _ date: DailyContentDate,
+        userDefaults: UserDefaults = .standard
+    ) {
+        userDefaults.set(
+            try? JSONEncoder().encode(date),
+            forKey: Keys.dailyContentObservedDate
+        )
+    }
+
+    nonisolated static func loadDailyContentObservedDate(
+        userDefaults: UserDefaults = .standard
+    ) -> DailyContentDate? {
+        guard let data = userDefaults.data(forKey: Keys.dailyContentObservedDate) else {
+            return nil
+        }
+        return try? JSONDecoder().decode(DailyContentDate.self, from: data)
     }
 
     // MARK: - Task Library Delivery

@@ -32,6 +32,8 @@ struct AppDeviceScenarioSnapshot {
     let taskLibraryCommittedVersion: TaskLibraryVersion?
     let taskLibraryPendingVersion: TaskLibraryVersion?
     let taskLibraryRecords: [TaskLibraryRecord]
+    let dailyContentCommittedDate: DailyContentDate?
+    let dailyContentVisiblePackage: DailyContentPackage?
     let focus: FocusProgressSnapshot?
     let currentPage: ScenarioDevicePage
     let deviceFocus: ScenarioDeviceFocus?
@@ -59,6 +61,7 @@ final class AppDeviceScenario {
     private let focusPersistence: ScenarioFocusPersistence
     private let operationPersistence: ScenarioTaskOperationPersistence
     private let frozenTaskSnapshotPersistence: InMemoryTaskListSnapshotDeliveryStore
+    private let dailyContentUserDefaults: UserDefaults
     private var taskOperationLedger: TaskOperationLedger
     private var focusService: FocusSessionService
     private var currentDate: Date
@@ -68,6 +71,7 @@ final class AppDeviceScenario {
     private var appInboundAssembler = BLEPacketAssembler()
     private var taskSnapshotFirmware = SimulatedTaskListSnapshotFirmware()
     private var taskLibraryFirmware = SimulatedTaskLibraryFirmware()
+    private var dailyContentFirmware = SimulatedDailyContentFirmware()
     private var outboundTransactions: [ScenarioOutboundTransaction] = []
     private var failedChunkIndexes: [Int] = []
     private var taskSnapshotMaxWriteLength = 185
@@ -90,6 +94,9 @@ final class AppDeviceScenario {
             persistenceEnabled: true,
             persistence: operationPersistence
         )
+        let dailyContentUserDefaults = UserDefaults(
+            suiteName: "AppDeviceScenario.daily-content.\(UUID().uuidString)"
+        )!
         self.clock = clock
         self.ai = ScriptedScenarioAI(responses: aiResponses)
         self.taskSnapshotVersionProvider = taskSnapshotVersionProvider
@@ -97,6 +104,7 @@ final class AppDeviceScenario {
         self.focusPersistence = focusPersistence
         self.operationPersistence = operationPersistence
         self.frozenTaskSnapshotPersistence = frozenTaskSnapshotPersistence
+        self.dailyContentUserDefaults = dailyContentUserDefaults
         self.taskOperationLedger = taskOperationLedger
         self.currentDate = now
         self.appState = AppState.makeForTesting()
@@ -173,6 +181,7 @@ final class AppDeviceScenario {
         appInboundAssembler = BLEPacketAssembler()
         taskSnapshotFirmware.simulatePowerCycle()
         taskLibraryFirmware.simulatePowerCycle()
+        dailyContentFirmware.simulatePowerCycle()
         failedChunkIndexes.removeAll()
     }
 
@@ -364,11 +373,20 @@ final class AppDeviceScenario {
 
     func advance(by duration: Duration) async {
         let pendingSyncTask = appState.pendingBLESyncTask
+        let rolloverTask = appState.dailyContentDayRolloverTask
         let result = await clock.advance(by: duration)
         currentDate = result.now
         if result.resumedSleeperCount > 0 {
             await pendingSyncTask?.value
+            await rolloverTask?.value
+            await appState.pendingBLESyncTask?.value
         }
+    }
+
+    func startDailyContentRolloverMonitoring() async {
+        await appState.startDailyContentDayRolloverMonitoring(
+            userDefaults: dailyContentUserDefaults
+        )
     }
 
     func startFocus(taskID: String, title: String) async {
@@ -453,6 +471,34 @@ final class AppDeviceScenario {
         )
     }
 
+    @discardableResult
+    func sendDailyContent(
+        _ transaction: DailyContentTransaction,
+        messageID: UInt16,
+        maxChunkSize: Int
+    ) throws -> DailyContentCommitAcknowledgement {
+        guard connectionState == .connected else {
+            throw AppDeviceScenarioError.disconnected
+        }
+        let payload = try DailyContentCodec.encodeTransaction(transaction)
+        let packets = try BLEPacketizer.packetize(
+            type: BLEDataType.dailyContentTransaction.rawValue,
+            messageId: messageID,
+            payload: payload,
+            maxChunkSize: maxChunkSize
+        )
+        let received = try transmit(
+            type: BLEDataType.dailyContentTransaction.rawValue,
+            messageID: messageID,
+            packets: packets
+        )
+        guard let received,
+              received.type == BLEDataType.dailyContentTransaction.rawValue else {
+            throw SimulationError.incompleteChunkedMessage
+        }
+        return try dailyContentFirmware.apply(payload: received.payload)
+    }
+
     func enterTaskFromCommittedLibrary(taskID: String) throws -> TaskLibraryRecord {
         let record = try taskLibraryFirmware.record(taskID: taskID)
         currentPage = .focus(taskID: taskID)
@@ -469,6 +515,7 @@ final class AppDeviceScenario {
     func snapshot() async -> AppDeviceScenarioSnapshot {
         let operationEntries = await operationPersistence.entries()
         let focusHistory = await focusPersistence.sessions()
+        let deviceCalendar = Self.deviceCalendar
         return AppDeviceScenarioSnapshot(
             now: currentDate,
             connectionState: connectionState,
@@ -481,6 +528,11 @@ final class AppDeviceScenario {
             taskLibraryCommittedVersion: taskLibraryFirmware.committedVersion,
             taskLibraryPendingVersion: taskLibraryFirmware.pendingVersion,
             taskLibraryRecords: taskLibraryFirmware.committedRecords,
+            dailyContentCommittedDate: dailyContentFirmware.committedPackage?.localDate,
+            dailyContentVisiblePackage: dailyContentFirmware.packageForDisplay(
+                at: currentDate,
+                calendar: deviceCalendar
+            ),
             focus: focusService.activeSession == nil
                 ? nil
                 : focusService.progressSnapshot(now: currentDate),
@@ -502,9 +554,23 @@ final class AppDeviceScenario {
         appState.taskLibraryNowProvider = { [weak self] in
             self?.currentDate ?? Date()
         }
+        appState.dailyContentNowProvider = { [weak self] in
+            self?.currentDate ?? Date()
+        }
+        appState.dailyContentCalendarProvider = { Self.deviceCalendar }
+        appState.dailyContentDayRolloverSleeper = { duration in
+            try await clock.sleep(for: duration)
+        }
+        appState.dailyContentDayRefreshExecutor = {}
         appState.bleSyncExecutor = { [weak self] trigger in
             self?.executedSyncTriggers.append(trigger)
         }
+    }
+
+    private static var deviceCalendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
+        return calendar
     }
 
     private func transmit(

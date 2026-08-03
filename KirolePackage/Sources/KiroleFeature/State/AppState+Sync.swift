@@ -103,7 +103,25 @@ extension AppState {
     }
 
     public func syncGoogleData(scheduleBLESync: Bool = true) async {
-        guard await claimExternalSync(.google) else {
+        await syncGoogleData(
+            scheduleBLESync: scheduleBLESync,
+            includesTasks: true,
+            waitsForFreshTurn: false,
+            tracksDailyContentChanges: true
+        )
+    }
+
+    private func syncGoogleData(
+        scheduleBLESync: Bool,
+        includesTasks: Bool,
+        waitsForFreshTurn: Bool,
+        tracksDailyContentChanges: Bool
+    ) async {
+        var ownsSync = await claimExternalSync(.google)
+        while waitsForFreshTurn, !ownsSync, !Task.isCancelled {
+            ownsSync = await claimExternalSync(.google)
+        }
+        guard ownsSync else {
             if !scheduleBLESync { cancelPendingBLESync() }
             return
         }
@@ -118,7 +136,9 @@ extension AppState {
 
         let syncPlan = (
             calendar: isIntegrationConnected(.googleCalendar) && AuthManager.shared.hasCalendarAccess,
-            tasks: isIntegrationConnected(.googleTasks) && AuthManager.shared.hasTasksAccess
+            tasks: includesTasks
+                && isIntegrationConnected(.googleTasks)
+                && AuthManager.shared.hasTasksAccess
         )
 
         guard syncPlan.calendar || syncPlan.tasks else {
@@ -147,7 +167,10 @@ extension AppState {
                 //   Google events (syncedEvents == the .google set passed in), so recombining here keeps
                 //   them stale rather than dropping the failed calendar's events.
                 let nonGoogleEvents = events.filter { $0.source != .google }
-                events = nonGoogleEvents + syncedEvents
+                replaceCalendarEventsFromSync(
+                    nonGoogleEvents + syncedEvents,
+                    tracksDailyContentChanges: tracksDailyContentChanges
+                )
                 try await localStorage.saveEvents(events)
             }
 
@@ -193,7 +216,9 @@ extension AppState {
         isIntegrationConnected(.appleCalendar) || isIntegrationConnected(.appleReminders)
     }
 
-    public func syncAppleCalendarEvents() async {
+    public func syncAppleCalendarEvents(
+        tracksDailyContentChanges: Bool = true
+    ) async {
         guard isIntegrationConnected(.appleCalendar) else { return }
 
         isLoading = true
@@ -205,7 +230,10 @@ extension AppState {
             let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
             let appleEvents = try await appleSyncEngine.fetchCalendarEvents(from: startOfDay, to: endOfDay)
             let otherEvents = events.filter { $0.source != .apple }
-            events = otherEvents + appleEvents
+            replaceCalendarEventsFromSync(
+                otherEvents + appleEvents,
+                tracksDailyContentChanges: tracksDailyContentChanges
+            )
             try await localStorage.saveEvents(events)
             remoteSyncErrors.removeValue(forKey: "Apple Calendar")
             markIntegrationSynced("Apple Calendar")
@@ -239,20 +267,40 @@ extension AppState {
     }
 
     public func syncAppleData(scheduleBLESync: Bool = true) async {
+        await syncAppleData(
+            scheduleBLESync: scheduleBLESync,
+            includesReminders: true,
+            waitsForFreshTurn: false,
+            tracksDailyContentChanges: true
+        )
+    }
+
+    private func syncAppleData(
+        scheduleBLESync: Bool,
+        includesReminders: Bool,
+        waitsForFreshTurn: Bool,
+        tracksDailyContentChanges: Bool
+    ) async {
         // 纵深防御：syncAppleData 是 public，且 Apple change observer 回调会直接调它（绕过
         // syncConnectedExternalData）。自带等待，确保任何入口都不会在集成连接状态恢复前导入。
         await ensureInitialLoadComplete()
-        guard await claimExternalSync(.apple) else {
+        var ownsSync = await claimExternalSync(.apple)
+        while waitsForFreshTurn, !ownsSync, !Task.isCancelled {
+            ownsSync = await claimExternalSync(.apple)
+        }
+        guard ownsSync else {
             if !scheduleBLESync { cancelPendingBLESync() }
             return
         }
         defer { finishExternalSync(.apple) }
 
         let shouldSyncCalendar = isIntegrationConnected(.appleCalendar)
-        let shouldSyncReminders = isIntegrationConnected(.appleReminders)
+        let shouldSyncReminders = includesReminders && isIntegrationConnected(.appleReminders)
 
         if shouldSyncCalendar {
-            await syncAppleCalendarEvents()
+            await syncAppleCalendarEvents(
+                tracksDailyContentChanges: tracksDailyContentChanges
+            )
         }
 
         if shouldSyncReminders {
@@ -260,6 +308,45 @@ extension AppState {
         }
 
         await applyPostSyncHooks(scheduleBLESync: scheduleBLESync)
+    }
+
+    /// Refreshes only date-windowed calendar sources for a new local day. Task providers are
+    /// intentionally excluded so midnight itself cannot reorder or replace the independent 0x23
+    /// library. If a provider sync is already running, wait for it and then take one fresh turn;
+    /// a request that began before midnight is not proof that the new date was fetched.
+    func syncCurrentDayCalendarEvents() async {
+        await ensureInitialLoadComplete()
+        syncIntegrationStatusFromAuth()
+
+        if isIntegrationConnected(.googleCalendar), AuthManager.shared.hasCalendarAccess {
+            await syncGoogleData(
+                scheduleBLESync: false,
+                includesTasks: false,
+                waitsForFreshTurn: true,
+                tracksDailyContentChanges: false
+            )
+        }
+        if isIntegrationConnected(.appleCalendar) {
+            await syncAppleData(
+                scheduleBLESync: false,
+                includesReminders: false,
+                waitsForFreshTurn: true,
+                tracksDailyContentChanges: false
+            )
+        }
+    }
+
+    /// Applies only the synchronous assignment under change-tracking suppression. Network awaits
+    /// stay outside this scope, so a real user edit made while a provider request is in flight is
+    /// still recorded and keeps its ordinary three-minute window.
+    func replaceCalendarEventsFromSync(
+        _ syncedEvents: [CalendarEvent],
+        tracksDailyContentChanges: Bool
+    ) {
+        let previousSuppression = suppressesDailyContentChangeTracking
+        suppressesDailyContentChangeTracking = previousSuppression || !tracksDailyContentChanges
+        events = syncedEvents
+        suppressesDailyContentChangeTracking = previousSuppression
     }
 
     public func requestAppleCalendarAccess() async -> Bool {

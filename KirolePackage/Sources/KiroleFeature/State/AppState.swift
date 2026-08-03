@@ -290,6 +290,16 @@ public final class AppState {
     @ObservationIgnored var dailyContentStabilityState = DailyContentStabilityState()
     @ObservationIgnored var dailyContentStabilityTask: Task<Void, Never>?
     @ObservationIgnored var dailyContentNowProvider: @MainActor () -> Date = { Date() }
+    @ObservationIgnored var dailyContentCalendarProvider: @MainActor () -> Calendar = {
+        Calendar.current
+    }
+    @ObservationIgnored var dailyContentDayRolloverSleeper: BLESyncSleeper = { duration in
+        try await Task.sleep(for: duration)
+    }
+    @ObservationIgnored var dailyContentDayRolloverTask: Task<Void, Never>?
+    @ObservationIgnored var dailyContentObservedDate: DailyContentDate?
+    @ObservationIgnored var dailyContentDayRolloverInProgressDate: DailyContentDate?
+    @ObservationIgnored var dailyContentDayRefreshExecutor: (@MainActor () async -> Void)?
     /// The last committed schedule projection remains visible while the App accepts new edits.
     @ObservationIgnored var dailyContentHardwareEventsBaseline: [CalendarEvent]?
     @ObservationIgnored var suppressesDailyContentChangeTracking = false

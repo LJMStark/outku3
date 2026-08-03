@@ -84,6 +84,7 @@ public struct ContentView: View {
             await appState.ensureInitialLoadComplete()
             appState.syncIntegrationStatusFromAuth()
             await configureOpenAI()
+            await appState.startDailyContentDayRolloverMonitoring()
             // Ask for notification permission only after onboarding — it powers the offline
             // fallback reminder (the one channel that reaches the user when the companion
             // device is out of range). Requesting before onboarding would prompt before the
@@ -93,6 +94,7 @@ public struct ContentView: View {
             }
             TimezoneObserver.shared.startObserving { [appState] newZone in
                 appState.pendingTimezoneChangeName = newZone.localizedName(for: .generic, locale: .current) ?? newZone.identifier
+                Task { await appState.handleDailyContentTimeZoneChange() }
             }
             #if DEBUG
             SimulatorBridge.shared.connect()

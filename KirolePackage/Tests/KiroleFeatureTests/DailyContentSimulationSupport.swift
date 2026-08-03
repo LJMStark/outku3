@@ -30,4 +30,16 @@ struct SimulatedDailyContentFirmware {
             contentCRC32: state.contentCRC32
         )
     }
+
+    mutating func simulatePowerCycle() {
+        // Atomic committed storage survives; only an in-progress staging buffer would be lost.
+    }
+
+    func packageForDisplay(at date: Date, calendar: Calendar) -> DailyContentPackage? {
+        DailyContentLocalDayPolicy.packageForDisplay(
+            committedPackage,
+            at: date,
+            calendar: calendar
+        )
+    }
 }
