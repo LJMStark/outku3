@@ -189,6 +189,45 @@ test('task-library updates stay frozen on the current focus page and appear afte
   assert.equal(state.focusSupportText(), 'updated 0-5');
 });
 
+test('a reconnect library update that deletes the active task neither interrupts focus nor leaves the page', () => {
+  let now = 1_778_100_000_000;
+  const state = new SimulatorState({ nowProvider: () => now });
+  const bridge = bridgeFor(state);
+  const otherTask = { ...originalTask, taskID: 'beta', title: 'Beta task' };
+  state.setCommittedTaskLibrary([originalTask, otherTask]);
+  state.enterQueueHead();
+  const startedAt = state.focusStartedAt;
+
+  state.setAppConnected(false);
+  now += 16 * 60_000;
+  state.refreshFocusFromClock();
+  state.setAppConnected(true);
+
+  // App or an external service deleted the focused task while the link was down; the
+  // removal arrives on reconnect as an ordinary task-library update.
+  bridge._handleMessage({
+    type: 'app_task_library',
+    payload: { records: [otherTask] },
+  });
+
+  // ADR 0024: reconnect must not interrupt the session or switch away from the focus page.
+  assert.equal(state.displayMode, DisplayMode.FOCUS_DEEP);
+  assert.equal(state.activeFocusTaskId, 'alpha');
+  assert.equal(state.focusStartedAt, startedAt);
+  assert.equal(state.focusElapsedMinutes, 16);
+  assert.equal(state.focusTask.title, 'Original title');
+  assert.equal(state.focusSupportText(), 'original 16+');
+  assert.deepEqual(state.taskLibrary.map(task => task.id), ['beta']);
+
+  // ADR 0025: only the user's own action exits, and the task never returns to the queue.
+  const event = state.completeCurrentTask();
+
+  assert.equal(event.type, 'hw_complete_task');
+  assert.equal(event.taskId, 'alpha');
+  assert.equal(state.activeFocusTaskId, null);
+  assert.deepEqual(state.taskLibrary.map(task => task.id), ['beta']);
+});
+
 test('skip exits a deleted active task without restoring it to the queue', () => {
   const state = new SimulatorState();
   state.setCommittedTaskLibrary([originalTask]);
