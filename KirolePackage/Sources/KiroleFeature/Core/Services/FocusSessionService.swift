@@ -749,6 +749,9 @@ public final class FocusSessionService {
         suppressHardwarePresentation: Bool = false
     ) {
         var durableSession = session
+        if durableSession.endReason == .skipped {
+            durableSession.earnedEnergyBottles = 0
+        }
         if persistenceEnabled, durableSession.energyAwardReceiptID == nil {
             durableSession.energyAwardReceiptID = durableSession.id
         }

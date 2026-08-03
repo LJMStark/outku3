@@ -8,6 +8,7 @@ export const DisplayMode = Object.freeze({
   FOCUS_WARMUP: 'focus-warmup',
   FOCUS_BUILDING: 'focus-building',
   FOCUS_DEEP: 'focus-deep',
+  DAILY_SUMMARY: 'daily-summary',
   SCREENSAVER_NORMAL: 'screensaver-normal',
   SCREENSAVER_POSTCARD: 'screensaver-postcard',
 });
@@ -51,12 +52,52 @@ const SUPPORTED_RENDER_MOODS = new Set([
 
 // Default tasks and events for demo
 const DEFAULT_TASKS = [
-  { id: '1', title: 'Laundry', completed: false },
-  { id: '2', title: 'Brainstorm Kirole Colorways', completed: false },
+  {
+    id: '1',
+    title: 'Laundry',
+    completed: false,
+    overview: 'Sort the clothes and start the next load.',
+    phaseTexts: {
+      warmup: 'One small load is enough to begin.',
+      building: 'Keep the cycle moving.',
+      deep: 'Finish the load you already started.',
+    },
+  },
+  {
+    id: '2',
+    title: 'Brainstorm Kirole Colorways',
+    completed: false,
+    overview: 'Explore a focused set of color directions for Kirole.',
+    phaseTexts: {
+      warmup: 'Start with the first useful contrast.',
+      building: 'Keep only the strongest directions.',
+      deep: 'Commit to the clearest palette.',
+    },
+  },
   { id: '3', title: 'Approve Factory Prototypes', completed: true },
-  { id: '4', title: 'Check and reply to emails', completed: false },
+  {
+    id: '4',
+    title: 'Check and reply to emails',
+    completed: false,
+    overview: 'Reply to the messages that need a decision today.',
+    phaseTexts: {
+      warmup: 'Open the message that needs one clear answer.',
+      building: 'Keep each reply short and useful.',
+      deep: 'Close the remaining decision threads.',
+    },
+  },
   { id: '5', title: 'Plan your tasks for the day', completed: true },
-  { id: '6', title: 'Complete a key task', completed: false },
+  {
+    id: '6',
+    title: 'Complete a key task',
+    completed: false,
+    overview: 'Protect time for the most important unfinished task.',
+    phaseTexts: {
+      warmup: 'Begin with the smallest concrete action.',
+      building: 'Stay with the one useful path.',
+      deep: 'Finish the core result before polishing.',
+    },
+  },
 ];
 
 const DEFAULT_EVENTS = [
@@ -74,12 +115,14 @@ const DEFAULT_EVENTS = [
   },
 ];
 
-const DEFAULT_FOCUS_TASK = {
-  id: 'ft1',
-  title: 'Deployment: OpenClaw System',
-  overview: 'Deploying OpenClaw core clusters via Docker. Syncing configuration files.',
-  tips: 'Check server port availability first. Ensuring port 8080 is clear will prevent common \'address already in use\' errors during the initial launch.',
-};
+const DEFAULT_PHASE_TEXTS = Object.freeze({
+  warmup: 'Start with one small step.',
+  building: 'Stay with the task in front of you.',
+  deep: 'Keep the important work moving.',
+});
+
+const isFocusMode = mode => String(mode).startsWith('focus');
+const isScreensaverMode = mode => String(mode).startsWith('screensaver');
 
 export class SimulatorState {
   constructor() {
@@ -98,14 +141,18 @@ export class SimulatorState {
 
     // Tasks & Events
     this.tasks = [...DEFAULT_TASKS];
+    this.taskLibrary = DEFAULT_TASKS
+      .filter(task => !task.completed)
+      .map(task => this._normalizeTaskRecord(task));
     this.events = [...DEFAULT_EVENTS];
 
     // Focus
-    this.focusTask = { ...DEFAULT_FOCUS_TASK };
-    this.activeFocusTaskId = DEFAULT_FOCUS_TASK.id;
+    this.focusTask = this.taskLibrary[0] || null;
+    this.activeFocusTaskId = null;
     this.focusPhase = 'idle';
     this.focusElapsedMinutes = 0;
     this.focusTimerActive = false;
+    this.focusSourceMode = DisplayMode.IDLE;
 
     // Energy
     this.energyBottles = 0;
@@ -121,6 +168,12 @@ export class SimulatorState {
     this.screensaverQuote = 'We are all in the gutter, but some of us are looking at the stars.';
     this.screensaverAuthor = 'Oscar Wilde';
     this.postcardDay = 7;
+    this.screensaverSourceMode = DisplayMode.IDLE;
+
+    // Daily summary
+    this.settlementReview = 'You kept the day moving and made steady progress.';
+    this.settlementQuote = 'Leave a little space for tomorrow.';
+    this.dailySummarySourceMode = DisplayMode.IDLE;
 
     // Streak
     this.consecutiveDays = 7;
@@ -174,17 +227,25 @@ export class SimulatorState {
 
   // Focus timer
   setFocusMinutes(minutes) {
+    if (minutes > 0 && !isFocusMode(this.displayMode)) {
+      this.enterQueueHead();
+    }
+
     let mode = DisplayMode.IDLE;
     if (minutes > 0 && minutes <= 5) mode = DisplayMode.FOCUS_WARMUP;
     else if (minutes > 5 && minutes <= 15) mode = DisplayMode.FOCUS_BUILDING;
     else if (minutes > 15) mode = DisplayMode.FOCUS_DEEP;
 
-    this.update({
+    const updates = {
       focusPhase: this._displayModeToFocusPhase(mode),
       focusElapsedMinutes: minutes,
       displayMode: mode,
       currentPhaseBottleProgress: minutes / 30,
-    });
+    };
+    if (mode === DisplayMode.IDLE) {
+      updates.activeFocusTaskId = null;
+    }
+    this.update(updates);
   }
 
   // Energy bottles
@@ -196,40 +257,119 @@ export class SimulatorState {
     this.update({ energyBottles: 0 });
   }
 
+  setCommittedTaskLibrary(records = []) {
+    const taskLibrary = records
+      .map(record => this._normalizeTaskRecord(record))
+      .filter(record => record.id && !record.completed);
+
+    this.update({ taskLibrary });
+  }
+
+  enterQueueHead() {
+    if (this.displayMode !== DisplayMode.IDLE) return null;
+    const task = this.taskLibrary[0];
+    if (!task) return null;
+
+    this.startFocusTask(task);
+    return { type: 'hw_start_task', taskId: task.id };
+  }
+
+  startFocusTask(record) {
+    const task = this._normalizeTaskRecord(record);
+    if (!task.id) return;
+    if (!isFocusMode(this.displayMode)) {
+      this.focusSourceMode = this._restorableMode(this.displayMode);
+    }
+    this.update({
+      focusTask: task,
+      activeFocusTaskId: task.id,
+      focusPhase: 'warmup',
+      displayMode: DisplayMode.FOCUS_WARMUP,
+      focusElapsedMinutes: 0,
+      currentPhaseBottleProgress: 0,
+    });
+  }
+
   // Complete task
   completeCurrentTask() {
-    if (this.displayMode.startsWith('focus')) {
-      const completed = this.tasks.filter(t => !t.completed)[0];
-      if (completed) {
-        completed.completed = true;
-        this.update({
-          tasks: [...this.tasks],
-          displayMode: DisplayMode.IDLE,
-          focusElapsedMinutes: 0,
-        });
-      }
-    }
-    return { type: 'hw_complete_task', payload: { taskId: this.focusTask.id } };
+    if (!isFocusMode(this.displayMode) || !this.activeFocusTaskId) return null;
+
+    const taskId = this.activeFocusTaskId;
+    const taskLibrary = this.taskLibrary.filter(task => task.id !== taskId);
+    const tasks = this.tasks.map(task => (
+      this._taskId(task) === taskId ? { ...task, completed: true } : task
+    ));
+    this._returnFromFocus({ taskLibrary, tasks });
+    return { type: 'hw_complete_task', taskId };
   }
 
   // Skip task
   skipCurrentTask() {
-    if (this.displayMode.startsWith('focus')) {
-      this.update({
-        displayMode: DisplayMode.IDLE,
-        focusElapsedMinutes: 0,
-      });
+    if (!isFocusMode(this.displayMode) || !this.activeFocusTaskId) return null;
+
+    const taskId = this.activeFocusTaskId;
+    const taskIndex = this.taskLibrary.findIndex(task => task.id === taskId);
+    if (taskIndex < 0) return null;
+    const task = this.taskLibrary[taskIndex];
+    const taskLibrary = [
+      ...this.taskLibrary.slice(0, taskIndex),
+      ...this.taskLibrary.slice(taskIndex + 1),
+      task,
+    ];
+    this._returnFromFocus({ taskLibrary });
+    return { type: 'hw_skip_task', taskId };
+  }
+
+  handleShortPress() {
+    if (this.displayMode === DisplayMode.IDLE) {
+      return this.enterQueueHead();
     }
-    return { type: 'hw_skip_task', payload: { taskId: this.focusTask.id } };
+    if (isFocusMode(this.displayMode)) {
+      return this.completeCurrentTask();
+    }
+    return null;
+  }
+
+  handleLongPress() {
+    if (this.displayMode === DisplayMode.IDLE) {
+      return this.enterDailySummary();
+    }
+    if (isFocusMode(this.displayMode)) {
+      return this.skipCurrentTask();
+    }
+    if (this.displayMode === DisplayMode.DAILY_SUMMARY) {
+      return this.exitDailySummary();
+    }
+    return null;
+  }
+
+  enterDailySummary() {
+    if (isScreensaverMode(this.displayMode) || isFocusMode(this.displayMode)) return null;
+    if (this.displayMode !== DisplayMode.DAILY_SUMMARY) {
+      this.dailySummarySourceMode = this.displayMode;
+    }
+    this.update({ displayMode: DisplayMode.DAILY_SUMMARY });
+    return { type: 'hw_enter_daily_summary' };
+  }
+
+  exitDailySummary() {
+    if (this.displayMode !== DisplayMode.DAILY_SUMMARY) return null;
+    const displayMode = this._restorableMode(this.dailySummarySourceMode);
+    this.update({ displayMode });
+    return { type: 'hw_exit_daily_summary' };
   }
 
   // Toggle screensaver
   toggleScreensaver() {
-    if (this.displayMode.startsWith('screensaver')) {
-      this.update({ displayMode: DisplayMode.IDLE });
+    if (isScreensaverMode(this.displayMode)) {
+      const displayMode = isScreensaverMode(this.screensaverSourceMode)
+        ? DisplayMode.IDLE
+        : (this.screensaverSourceMode || DisplayMode.IDLE);
+      this.update({ displayMode });
       return { type: 'hw_exit_screensaver' };
     }
 
+    this.screensaverSourceMode = this.displayMode;
     const isPostcard = [3, 7, 21].includes(this.consecutiveDays);
     this.update({
       displayMode: isPostcard
@@ -297,20 +437,46 @@ export class SimulatorState {
 
   applyFocusState({ energyBottles, activeFocusTaskId, focusPhase, elapsedMinutes, taskTitle }) {
     const normalizedPhase = this.normalizeFocusPhase(focusPhase);
+    const screensaverVisible = isScreensaverMode(this.displayMode);
+    const matchedTask = activeFocusTaskId
+      ? this.taskLibrary.find(task => task.id === activeFocusTaskId)
+      : null;
     const nextFocusTask = activeFocusTaskId
-      ? {
-          ...this.focusTask,
+      ? this._normalizeTaskRecord({
+          ...(matchedTask || this.focusTask || {}),
           id: activeFocusTaskId,
-          title: taskTitle || this.focusTask.title,
-        }
+          title: taskTitle || matchedTask?.title || this.focusTask?.title,
+        })
       : this.focusTask;
+    let nextDisplayMode;
+    if (screensaverVisible) {
+      if (normalizedPhase === 'idle') {
+        if (isFocusMode(this.screensaverSourceMode)) {
+          this.screensaverSourceMode = this._restorableMode(this.focusSourceMode);
+        }
+      } else {
+        if (!isFocusMode(this.screensaverSourceMode)) {
+          this.focusSourceMode = this._restorableMode(this.screensaverSourceMode);
+        }
+        this.screensaverSourceMode = this.focusPhaseToDisplayMode(normalizedPhase);
+      }
+      nextDisplayMode = this.displayMode;
+    } else {
+      nextDisplayMode = normalizedPhase === 'idle'
+        ? (isFocusMode(this.displayMode) ? this._restorableMode(this.focusSourceMode) : this.displayMode)
+        : this.focusPhaseToDisplayMode(normalizedPhase);
+    }
+
+    if (!screensaverVisible && normalizedPhase !== 'idle' && !isFocusMode(this.displayMode)) {
+      this.focusSourceMode = this._restorableMode(this.displayMode);
+    }
 
     this.update({
       energyBottles: energyBottles ?? this.energyBottles,
-      activeFocusTaskId: activeFocusTaskId ?? this.activeFocusTaskId,
+      activeFocusTaskId: normalizedPhase === 'idle' ? null : (activeFocusTaskId ?? this.activeFocusTaskId),
       focusTask: nextFocusTask,
       focusPhase: normalizedPhase,
-      displayMode: this.focusPhaseToDisplayMode(normalizedPhase),
+      displayMode: nextDisplayMode,
       focusElapsedMinutes: normalizedPhase === 'idle' ? 0 : (elapsedMinutes ?? this.focusElapsedMinutes),
       currentPhaseBottleProgress: normalizedPhase === 'idle'
         ? 0
@@ -322,6 +488,9 @@ export class SimulatorState {
     const nextDisplayMode = config.type === 'postcard'
       ? DisplayMode.SCREENSAVER_POSTCARD
       : DisplayMode.SCREENSAVER_NORMAL;
+    if (!isScreensaverMode(this.displayMode)) {
+      this.screensaverSourceMode = this.displayMode;
+    }
     const updates = {
       displayMode: nextDisplayMode,
       screensaverQuote: config.quote || this.screensaverQuote,
@@ -381,6 +550,48 @@ export class SimulatorState {
   // Get scene class name
   getSceneClass() {
     return `scene-${this.scene}`;
+  }
+
+  focusSupportText() {
+    if (!this.focusTask) return '';
+    if (this.focusElapsedMinutes <= 5) return this.focusTask.phaseTexts.warmup;
+    if (this.focusElapsedMinutes <= 15) return this.focusTask.phaseTexts.building;
+    return this.focusTask.phaseTexts.deep;
+  }
+
+  _returnFromFocus(changes = {}) {
+    this.update({
+      ...changes,
+      activeFocusTaskId: null,
+      focusPhase: 'idle',
+      displayMode: this._restorableMode(this.focusSourceMode),
+      focusElapsedMinutes: 0,
+      currentPhaseBottleProgress: 0,
+    });
+  }
+
+  _normalizeTaskRecord(record = {}) {
+    const phaseTexts = record.phaseTexts || record.phase_texts || {};
+    return {
+      ...record,
+      id: this._taskId(record),
+      title: record.title || 'Untitled task',
+      overview: record.overview || record.detail || record.details || record.notes || '',
+      phaseTexts: {
+        warmup: phaseTexts.starting || phaseTexts.warmup || phaseTexts.zeroToFive || DEFAULT_PHASE_TEXTS.warmup,
+        building: phaseTexts.building || phaseTexts.sixToFifteen || DEFAULT_PHASE_TEXTS.building,
+        deep: phaseTexts.deep || phaseTexts.sixteenPlus || DEFAULT_PHASE_TEXTS.deep,
+      },
+    };
+  }
+
+  _taskId(task = {}) {
+    return String(task.id || task.taskId || task.taskID || '');
+  }
+
+  _restorableMode(mode) {
+    if (isFocusMode(mode) || isScreensaverMode(mode)) return DisplayMode.IDLE;
+    return mode || DisplayMode.IDLE;
   }
 
   _displayModeToFocusPhase(mode) {

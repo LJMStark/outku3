@@ -4,6 +4,26 @@ import Testing
 
 @Suite("Hardware task focus persistence", .serialized)
 struct FocusTaskOperationPersistenceTests {
+    @Test("Skipping a long session keeps focus time but awards no energy")
+    @MainActor
+    func skipNeverAwardsEnergy() async {
+        let persistence = FocusPersistenceFailureStub()
+        let service = makeService(persistence: persistence)
+        let start = Date().addingTimeInterval(-31 * 60)
+        await service.startSession(
+            taskId: "focus-skip-no-energy",
+            taskTitle: "Skip without reward",
+            startTime: start
+        )
+
+        service.endSession(reason: .skipped, endTime: start.addingTimeInterval(31 * 60))
+        await service.waitForPendingPersistenceForTesting()
+
+        #expect(abs((service.todaySessions.last?.calculatedFocusTime ?? 0) - 31 * 60) < 0.001)
+        #expect(service.todaySessions.last?.earnedEnergyBottles == 0)
+        #expect(await persistence.energyTotal() == 0)
+    }
+
     @Test("History failure keeps the active marker and exact retry finishes once")
     @MainActor
     func historyFailureRetries() async {

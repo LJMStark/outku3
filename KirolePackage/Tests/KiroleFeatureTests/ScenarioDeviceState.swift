@@ -13,6 +13,85 @@ struct ScenarioDeviceFocus: Codable, Equatable, Sendable {
     let startedAt: Date
 }
 
+struct ScenarioDeviceStaticFeedback: Equatable, Sendable {
+    let soundCount: Int
+    let hapticCount: Int
+    let animationCount: Int
+
+    static let none = ScenarioDeviceStaticFeedback(
+        soundCount: 0,
+        hapticCount: 0,
+        animationCount: 0
+    )
+}
+
+struct ScenarioDeviceLocalPageState: Equatable, Sendable {
+    private(set) var currentPage: ScenarioDevicePage = .overview
+    private(set) var focus: ScenarioDeviceFocus?
+    private(set) var staticFeedback: ScenarioDeviceStaticFeedback = .none
+    private(set) var rewardCount = 0
+
+    private var focusSourcePage: ScenarioDevicePage?
+    private var dailySummarySourcePage: ScenarioDevicePage?
+    private var screensaverSourcePage: ScenarioDevicePage?
+
+    mutating func showPageForTesting(_ page: ScenarioDevicePage) {
+        currentPage = page
+    }
+
+    mutating func setFocusForTesting(_ focus: ScenarioDeviceFocus?) {
+        self.focus = focus
+    }
+
+    mutating func enterFocus(taskID: String, at now: Date) throws {
+        guard case .focus = currentPage else {
+            focusSourcePage = currentPage
+            currentPage = .focus(taskID: taskID)
+            focus = ScenarioDeviceFocus(taskID: taskID, startedAt: now)
+            return
+        }
+        throw AppDeviceScenarioError.invalidDevicePageAction
+    }
+
+    mutating func exitFocus(taskID: String) throws {
+        guard currentPage == .focus(taskID: taskID),
+              focus?.taskID == taskID else {
+            throw AppDeviceScenarioError.invalidDevicePageAction
+        }
+        currentPage = focusSourcePage ?? .overview
+        focusSourcePage = nil
+        focus = nil
+    }
+
+    mutating func showDailySummary() {
+        guard currentPage != .dailySummary else { return }
+        dailySummarySourcePage = currentPage
+        currentPage = .dailySummary
+    }
+
+    mutating func exitDailySummary() throws {
+        guard currentPage == .dailySummary else {
+            throw AppDeviceScenarioError.invalidDevicePageAction
+        }
+        currentPage = dailySummarySourcePage ?? .overview
+        dailySummarySourcePage = nil
+    }
+
+    mutating func enterScreensaver() {
+        guard currentPage != .screensaver else { return }
+        screensaverSourcePage = currentPage
+        currentPage = .screensaver
+    }
+
+    mutating func exitScreensaver() throws {
+        guard currentPage == .screensaver else {
+            throw AppDeviceScenarioError.invalidDevicePageAction
+        }
+        currentPage = screensaverSourcePage ?? .overview
+        screensaverSourcePage = nil
+    }
+}
+
 enum ScenarioDeviceEventCodec {
     static func taskOperationRecord(
         action: TaskListSnapshotAction,

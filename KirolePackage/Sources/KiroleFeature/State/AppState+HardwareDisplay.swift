@@ -202,6 +202,7 @@ extension AppState {
             energyBottles: focusBottles,
             focusPhase: focusPhase,
             elapsedMinutes: elapsedMinutes,
+            taskID: simulatorFocusTaskID(for: session),
             taskTitle: session?.taskTitle
         )
         #endif
@@ -225,6 +226,7 @@ extension AppState {
         if !SimulatorBridge.shared.isConnected {
             SimulatorBridge.shared.connect()
         }
+        SimulatorBridge.shared.sendTaskLibrary(records: simulatorTaskLibraryRecords())
         SimulatorBridge.shared.sendPetStatus(
             petName: userProfile.companionCharacter.displayName,
             petMood: pet.mood.rawValue,
@@ -232,6 +234,20 @@ extension AppState {
             characterId: userProfile.companionCharacter.rawValue
         )
         #endif
+    }
+
+    func simulatorTaskLibraryRecords() -> [TaskLibraryRecord] {
+        let hardwareTasks = tasksForHardwarePresentation()
+        return SimulatorBridge.taskLibraryRecords(
+            tasks: hardwareTasks,
+            phaseTexts: currentPreparedTaskLibraryPhaseTexts(for: hardwareTasks)
+        )
+    }
+
+    func simulatorFocusTaskID(for session: FocusSession?) -> String? {
+        guard let session else { return nil }
+        return BLEEventHandler.resolveTask(taskId: session.taskId, in: tasks)?.hardwareIdentifier
+            ?? session.taskId
     }
 
     func handleFocusSessionDidEnd(

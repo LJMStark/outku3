@@ -37,6 +37,9 @@ struct AppDeviceScenarioSnapshot {
     let focus: FocusProgressSnapshot?
     let currentPage: ScenarioDevicePage
     let deviceFocus: ScenarioDeviceFocus?
+    let deviceCompletedTaskIDs: [String]
+    let deviceRewardCount: Int
+    let staticFeedback: ScenarioDeviceStaticFeedback
     let offlineActions: [EventLog]
     let appOperationLedger: [TaskOperationLedgerEntry]
     let focusHistory: [FocusSession]
@@ -48,6 +51,7 @@ enum AppDeviceScenarioError: Error, Equatable {
     case chunkIndexOutOfRange(index: Int, packetCount: Int)
     case invalidOfflineTaskAction
     case malformedOfflineEvent
+    case invalidDevicePageAction
 }
 
 @MainActor
@@ -77,8 +81,7 @@ final class AppDeviceScenario {
     private var taskSnapshotMaxWriteLength = 185
     private var nextTaskSnapshotMessageID: UInt16 = 0x7000
     private var nextDeviceMessageID: UInt16 = 0x5000
-    private var currentPage: ScenarioDevicePage = .overview
-    private var deviceFocus: ScenarioDeviceFocus?
+    private var devicePageState = ScenarioDeviceLocalPageState()
     private var offlineEventRecords: [Data] = []
 
     init(now: Date, aiResponses: [ScenarioAIResponse] = []) {
@@ -186,11 +189,11 @@ final class AppDeviceScenario {
     }
 
     func showDevicePage(_ page: ScenarioDevicePage) {
-        currentPage = page
+        devicePageState.showPageForTesting(page)
     }
 
     func setDeviceFocus(_ focus: ScenarioDeviceFocus?) {
-        deviceFocus = focus
+        devicePageState.setFocusForTesting(focus)
     }
 
     func recordOfflineTaskAction(
@@ -500,9 +503,71 @@ final class AppDeviceScenario {
     }
 
     func enterTaskFromCommittedLibrary(taskID: String) throws -> TaskLibraryRecord {
-        let record = try taskLibraryFirmware.record(taskID: taskID)
-        currentPage = .focus(taskID: taskID)
+        let record = try taskLibraryFirmware.queueHead()
+        guard record.taskID == taskID else {
+            throw SimulationError.taskLibraryTaskNotFound
+        }
+        try devicePageState.enterFocus(taskID: taskID, at: currentDate)
         return record
+    }
+
+    func shortPressOverview() throws -> TaskLibraryRecord {
+        guard devicePageState.currentPage == .overview else {
+            throw AppDeviceScenarioError.invalidDevicePageAction
+        }
+        return try enterTaskFromQueueHead()
+    }
+
+    func enterTaskFromQueueHead() throws -> TaskLibraryRecord {
+        let record = try taskLibraryFirmware.queueHead()
+        try devicePageState.enterFocus(taskID: record.taskID, at: currentDate)
+        return record
+    }
+
+    func currentTaskPhaseText(elapsedMinutes: Int) throws -> String {
+        guard let taskID = devicePageState.focus?.taskID else {
+            throw AppDeviceScenarioError.invalidDevicePageAction
+        }
+        return try taskLibraryFirmware.phaseText(
+            taskID: taskID,
+            elapsedMinutes: elapsedMinutes
+        )
+    }
+
+    @discardableResult
+    func completeCurrentTaskLocally() throws -> TaskLibraryRecord {
+        guard let taskID = devicePageState.focus?.taskID else {
+            throw AppDeviceScenarioError.invalidDevicePageAction
+        }
+        let completed = try taskLibraryFirmware.completeQueueHead(taskID: taskID)
+        try devicePageState.exitFocus(taskID: taskID)
+        return completed
+    }
+
+    @discardableResult
+    func skipCurrentTaskLocally() throws -> TaskLibraryRecord {
+        guard let taskID = devicePageState.focus?.taskID else {
+            throw AppDeviceScenarioError.invalidDevicePageAction
+        }
+        let skipped = try taskLibraryFirmware.skipQueueHead(taskID: taskID)
+        try devicePageState.exitFocus(taskID: taskID)
+        return skipped
+    }
+
+    func showDailySummary() {
+        devicePageState.showDailySummary()
+    }
+
+    func longPressDailySummary() throws {
+        try devicePageState.exitDailySummary()
+    }
+
+    func enterScreensaver() {
+        devicePageState.enterScreensaver()
+    }
+
+    func exitScreensaver() throws {
+        try devicePageState.exitScreensaver()
     }
 
     func taskPhaseText(taskID: String, elapsedMinutes: Int) throws -> String {
@@ -527,7 +592,7 @@ final class AppDeviceScenario {
             taskQueue: taskSnapshotFirmware.tasks.map(\.id),
             taskLibraryCommittedVersion: taskLibraryFirmware.committedVersion,
             taskLibraryPendingVersion: taskLibraryFirmware.pendingVersion,
-            taskLibraryRecords: taskLibraryFirmware.committedRecords,
+            taskLibraryRecords: taskLibraryFirmware.queueRecords,
             dailyContentCommittedDate: dailyContentFirmware.committedPackage?.localDate,
             dailyContentVisiblePackage: dailyContentFirmware.packageForDisplay(
                 at: currentDate,
@@ -536,8 +601,11 @@ final class AppDeviceScenario {
             focus: focusService.activeSession == nil
                 ? nil
                 : focusService.progressSnapshot(now: currentDate),
-            currentPage: currentPage,
-            deviceFocus: deviceFocus,
+            currentPage: devicePageState.currentPage,
+            deviceFocus: devicePageState.focus,
+            deviceCompletedTaskIDs: taskLibraryFirmware.completedTaskIDs,
+            deviceRewardCount: devicePageState.rewardCount,
+            staticFeedback: devicePageState.staticFeedback,
             offlineActions: offlineEventRecords.compactMap {
                 BLEEventHandler.parseEventLogRecord(from: $0)
             },

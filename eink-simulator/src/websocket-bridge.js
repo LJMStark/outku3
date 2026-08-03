@@ -8,13 +8,8 @@ export class WebSocketBridge {
     this.ws = null;
     this._statusEl = document.getElementById('ws-status');
     this._logEl = document.getElementById('ws-log');
-    this._screenRenderer = null;
 
     this._bindConnectButton();
-  }
-
-  setScreenRenderer(renderer) {
-    this._screenRenderer = renderer;
   }
 
   _bindConnectButton() {
@@ -106,19 +101,16 @@ export class WebSocketBridge {
         this._applyDayPack(msg.payload);
         break;
 
+      case 'app_task_library':
+        this.state.setCommittedTaskLibrary(msg.payload?.records || msg.records || []);
+        break;
+
       case 'focus_start':
-        this.state.update({
-          focusTask: {
-            id: msg.payload.taskId || 'remote',
-            title: msg.payload.taskTitle || 'Focus Task',
-            overview: msg.payload.overview || '',
-            tips: msg.payload.tips || '',
-          },
-          activeFocusTaskId: msg.payload.taskId || this.state.activeFocusTaskId,
-          focusPhase: 'warmup',
-          displayMode: 'focus-warmup',
-          focusElapsedMinutes: 0,
-          currentPhaseBottleProgress: 0,
+        this.state.startFocusTask({
+          id: msg.payload.taskId || 'remote',
+          title: msg.payload.taskTitle || 'Focus Task',
+          overview: msg.payload.overview || '',
+          phaseTexts: msg.payload.phaseTexts,
         });
         break;
 
@@ -137,6 +129,14 @@ export class WebSocketBridge {
 
       case 'focus_end':
         this._handleFocusEnd(msg.payload);
+        break;
+
+      case 'daily_summary':
+        this.state.update({
+          settlementReview: msg.payload?.review || this.state.settlementReview,
+          settlementQuote: msg.payload?.quote || this.state.settlementQuote,
+        });
+        this.state.enterDailySummary();
         break;
 
       case 'screensaver':
@@ -158,40 +158,15 @@ export class WebSocketBridge {
     }
   }
 
-  // Animated focus end: transition back to idle, then animate bottles one by one
-  async _handleFocusEnd(payload) {
+  // E-ink feedback is a static page replacement; no completion animation.
+  _handleFocusEnd(payload = {}) {
     const bottlesEarned = payload.bottlesEarned || 0;
-    const prevBottles = this.state.energyBottles;
-
-    // First, transition back to idle without adding bottles yet
-    this.state.update({
+    this.state.applyFocusState({
+      energyBottles: this.state.energyBottles + bottlesEarned,
+      activeFocusTaskId: null,
       focusPhase: 'idle',
-      displayMode: 'idle',
-      focusElapsedMinutes: 0,
-      currentPhaseBottleProgress: 0,
+      elapsedMinutes: 0,
     });
-
-    // If bottles earned, animate them in one by one
-    if (bottlesEarned > 0 && this._screenRenderer) {
-      const targetBottles = prevBottles + bottlesEarned;
-
-      // Wait for idle render to complete
-      await this._wait(500);
-
-      // Animate each bottle
-      this._screenRenderer.transition.animateBottles(
-        prevBottles,
-        targetBottles,
-        (count) => {
-          this.state.update({ energyBottles: count });
-        }
-      );
-    } else {
-      // No animation needed, just update count
-      this.state.update({
-        energyBottles: prevBottles + bottlesEarned,
-      });
-    }
   }
 
   _applyDayPack(payload) {
@@ -199,6 +174,12 @@ export class WebSocketBridge {
     if (payload.weather) updates.weather = payload.weather;
     if (payload.date) updates.date = payload.date;
     if (payload.tasks) updates.tasks = payload.tasks;
+    if (payload.taskLibrary) {
+      this.state.setCommittedTaskLibrary(payload.taskLibrary);
+    } else if (payload.tasks) {
+      // Compatibility for the current debug bridge until it sends the independent 0x23 library.
+      this.state.setCommittedTaskLibrary(payload.tasks);
+    }
     if (payload.events) updates.events = payload.events;
     if (payload.petDialogue) updates.petDialogue = payload.petDialogue;
     if (payload.taskProgress) updates.taskProgress = payload.taskProgress;
@@ -216,6 +197,8 @@ export class WebSocketBridge {
     if (payload.scene) updates.scene = this.state.normalizeSceneId(payload.scene);
     if (payload.energyBottles !== undefined) updates.energyBottles = payload.energyBottles;
     if (payload.consecutiveDays !== undefined) updates.consecutiveDays = payload.consecutiveDays;
+    if (payload.settlementReview) updates.settlementReview = payload.settlementReview;
+    if (payload.settlementQuote) updates.settlementQuote = payload.settlementQuote;
 
     if (Object.keys(updates).length > 0) {
       this.state.update(updates);
@@ -248,7 +231,4 @@ export class WebSocketBridge {
     }
   }
 
-  _wait(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-  }
 }

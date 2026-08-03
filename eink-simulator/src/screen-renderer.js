@@ -6,6 +6,14 @@ import { DisplayMode } from './state.js';
 import { PetRenderer } from './pet-renderer.js';
 import { EinkTransition } from './eink-transition.js';
 
+const escapeHTML = value => String(value ?? '').replace(/[&<>"']/g, character => ({
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;',
+})[character]);
+
 export class ScreenRenderer {
   constructor(screenEl, state) {
     this.el = screenEl;
@@ -64,6 +72,9 @@ export class ScreenRenderer {
         break;
       case DisplayMode.FOCUS_DEEP:
         this.renderFocusScreen('deep');
+        break;
+      case DisplayMode.DAILY_SUMMARY:
+        this.renderDailySummary();
         break;
       case DisplayMode.SCREENSAVER_NORMAL:
         this.renderScreensaver();
@@ -188,6 +199,21 @@ export class ScreenRenderer {
   }
 
   // ----------------------------------------------------------
+  // Daily Summary
+  // ----------------------------------------------------------
+  renderDailySummary() {
+    this.el.innerHTML = `
+      ${this._statusBarHTML()}
+      <div class="eink-summary">
+        <h2>Today</h2>
+        <p>${escapeHTML(this.state.settlementReview)}</p>
+        <div class="summary-divider"></div>
+        <blockquote>${escapeHTML(this.state.settlementQuote)}</blockquote>
+      </div>
+    `;
+  }
+
+  // ----------------------------------------------------------
   // Screensaver (normal - quote + scene)
   // ----------------------------------------------------------
   renderScreensaver() {
@@ -234,8 +260,8 @@ export class ScreenRenderer {
   // Helper: Render task list
   // ----------------------------------------------------------
   _renderTaskList() {
-    const items = this.state.tasks.map(t =>
-      `<li class="${t.completed ? 'completed' : ''}">${t.title}</li>`
+    const items = this.state.taskLibrary.map(t =>
+      `<li class="${t.completed ? 'completed' : ''}">${escapeHTML(t.title)}</li>`
     ).join('');
 
     return `
@@ -251,11 +277,12 @@ export class ScreenRenderer {
   // ----------------------------------------------------------
   _renderFocusTask() {
     const ft = this.state.focusTask;
+    if (!ft) return '';
     return `
       <div class="eink-card">
         <h3>${ft.title}</h3>
         <p>Overview: ${ft.overview}</p>
-        <div class="card-tips">*Tips: ${ft.tips}</div>
+        <div class="card-tips">${this.state.focusSupportText()}</div>
       </div>
     `;
   }

@@ -17,32 +17,33 @@ export class HardwareControls {
   }
 
   _bindButtons() {
-    const btnClick = document.getElementById('btn-scroll-click');
+    const btnClick = document.getElementById('btn-action');
     const btnPower = document.getElementById('btn-power');
-    const btnUp = document.getElementById('btn-scroll-up');
-    const btnDown = document.getElementById('btn-scroll-down');
 
-    // Scroll click: short = complete task, long = skip task
-    btnClick.addEventListener('mousedown', () => {
+    // The device has one action button. Its result depends on the current page.
+    btnClick.addEventListener('pointerdown', () => {
       this._isLongPress = false;
       this._longPressTimer = setTimeout(() => {
         this._isLongPress = true;
-        const msg = this.state.skipCurrentTask();
+        const msg = this.state.handleLongPress();
         this._sendToApp(msg);
       }, 800);
     });
 
-    btnClick.addEventListener('mouseup', () => {
+    btnClick.addEventListener('pointerup', () => {
       clearTimeout(this._longPressTimer);
       if (!this._isLongPress) {
-        const msg = this.state.completeCurrentTask();
+        const msg = this.state.handleShortPress();
         this._sendToApp(msg);
       }
     });
 
-    btnClick.addEventListener('mouseleave', () => {
+    const cancelPress = () => {
       clearTimeout(this._longPressTimer);
-    });
+      this._longPressTimer = null;
+    };
+    btnClick.addEventListener('pointercancel', cancelPress);
+    btnClick.addEventListener('pointerleave', cancelPress);
 
     // Power button: toggle screensaver
     btnPower.addEventListener('click', () => {
@@ -50,16 +51,6 @@ export class HardwareControls {
       this._sendToApp(msg);
     });
 
-    // Scroll up/down: cycle through tasks/events
-    btnUp.addEventListener('click', () => {
-      // Scroll up in task list (visual feedback only)
-      this.state._notify();
-    });
-
-    btnDown.addEventListener('click', () => {
-      // Scroll down in task list (visual feedback only)
-      this.state._notify();
-    });
   }
 
   _sendToApp(message) {

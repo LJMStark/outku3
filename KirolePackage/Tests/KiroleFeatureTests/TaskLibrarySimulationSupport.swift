@@ -8,7 +8,13 @@ struct SimulatedTaskLibraryFirmware {
     private(set) var committedVersion: TaskLibraryVersion?
     private(set) var committedRecords: [TaskLibraryRecord] = []
     private(set) var committedState: TaskLibraryCommittedState?
+    private(set) var completedTaskIDs: [String] = []
     private var maximumRecords: Int?
+    private var localQueueRecords: [TaskLibraryRecord]?
+
+    var queueRecords: [TaskLibraryRecord] {
+        localQueueRecords ?? committedRecords
+    }
 
     var localDefaultDialogue: String {
         TaskLibraryPhaseTexts.localFallback.starting
@@ -70,6 +76,8 @@ struct SimulatedTaskLibraryFirmware {
         committedRecords = nextRecords
         committedVersion = transaction.version
         committedState = transactionState
+        localQueueRecords = nil
+        completedTaskIDs = []
         pendingVersion = nil
         return TaskLibraryCommitAcknowledgement(
             version: transaction.version,
@@ -83,10 +91,37 @@ struct SimulatedTaskLibraryFirmware {
     }
 
     func record(taskID: String) throws -> TaskLibraryRecord {
-        guard let record = committedRecords.first(where: { $0.taskID == taskID }) else {
+        guard let record = queueRecords.first(where: { $0.taskID == taskID }) else {
             throw SimulationError.taskLibraryTaskNotFound
         }
         return record
+    }
+
+    func queueHead() throws -> TaskLibraryRecord {
+        guard let record = queueRecords.first else {
+            throw SimulationError.taskLibraryTaskNotFound
+        }
+        return record
+    }
+
+    mutating func completeQueueHead(taskID: String) throws -> TaskLibraryRecord {
+        let head = try queueHead()
+        guard head.taskID == taskID else {
+            throw SimulationError.taskLibraryTaskNotFound
+        }
+        completedTaskIDs.append(head.taskID)
+        localQueueRecords = reindexed(Array(queueRecords.dropFirst()))
+        return head
+    }
+
+    mutating func skipQueueHead(taskID: String) throws -> TaskLibraryRecord {
+        let head = try queueHead()
+        guard head.taskID == taskID else {
+            throw SimulationError.taskLibraryTaskNotFound
+        }
+        let tail = Array(queueRecords.dropFirst()) + [head]
+        localQueueRecords = reindexed(tail)
+        return head
     }
 
     func phaseText(taskID: String, elapsedMinutes: Int) throws -> String {
@@ -96,6 +131,20 @@ struct SimulatedTaskLibraryFirmware {
     private func validate(version: TaskLibraryVersion) throws {
         guard version.epoch != 0, version.revision != 0 else {
             throw SimulationError.taskLibraryVersionRejected
+        }
+    }
+
+    private func reindexed(_ records: [TaskLibraryRecord]) -> [TaskLibraryRecord] {
+        records.enumerated().map { index, record in
+            TaskLibraryRecord(
+                taskID: record.taskID,
+                order: UInt32(index),
+                title: record.title,
+                detail: record.detail,
+                dueTimestamp: record.dueTimestamp,
+                priority: record.priority,
+                phaseTexts: record.phaseTexts
+            )
         }
     }
 }

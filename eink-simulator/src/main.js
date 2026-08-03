@@ -20,8 +20,7 @@ const hardware = new HardwareControls(state);
 const devPanel = new DevPanel(state);
 const wsBridge = new WebSocketBridge(state);
 
-// Cross-wire: bridge needs renderer for animations, hardware needs bridge for events
-wsBridge.setScreenRenderer(screen);
+// Hardware events are forwarded to the App while page changes stay local.
 hardware.setWebSocketBridge(wsBridge);
 
 // Wire up state change listener
@@ -35,4 +34,3 @@ screen.render();
 // Auto-connect to the relay using the default ws-url so the dev flow
 // (relay + iOS app + web sim) doesn't require a manual Connect click.
 wsBridge.connect(document.getElementById('ws-url').value);
-
