@@ -45,7 +45,10 @@ extension AppState {
 
         do {
             if let savedEvents = try await localStorage.loadEvents() {
+                let previousSuppression = suppressesDailyContentChangeTracking
+                suppressesDailyContentChangeTracking = !trackTaskChanges
                 events = savedEvents
+                suppressesDailyContentChangeTracking = previousSuppression
             }
         } catch {
             reportPersistenceError(error, operation: "load", target: "events.json")
@@ -132,6 +135,7 @@ extension AppState {
 
         if !trackTaskChanges {
             restoreTaskLibraryStabilityCheckpoint()
+            restoreDailyContentStabilityCheckpoint()
         }
 
         do {

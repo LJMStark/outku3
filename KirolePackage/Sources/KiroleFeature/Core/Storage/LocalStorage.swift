@@ -28,6 +28,7 @@ public actor LocalStorage {
         static let lastCelebratedUnlockCount = "lastCelebratedUnlockCount"
         static let lastHomeHaikuShownDate = "lastHomeHaikuShownDate"
         static let taskLibraryStabilityCheckpoint = "taskLibraryStabilityCheckpoint"
+        static let dailyContentStabilityCheckpoint = "dailyContentStabilityCheckpoint"
     }
 
     private enum Files {
@@ -43,6 +44,8 @@ public actor LocalStorage {
         static let taskListSnapshotVersion = "task_list_snapshot_version.json"
         static let taskLibraryCommittedStates = "task_library_committed_states.json"
         static let taskLibraryPendingDeliveries = "task_library_pending_deliveries.json"
+        static let dailyContentCommittedStates = "daily_content_committed_states.json"
+        static let dailyContentPendingDeliveries = "daily_content_pending_deliveries.json"
         static let focusEnergyAwardReceipts = "focus_energy_award_receipts.json"
         static let aiInteractions = "ai_interactions.json"
         static let behaviorSummary = "behavior_summary.json"
@@ -75,6 +78,7 @@ public actor LocalStorage {
             syncState, haikuCache, userProfile,
             focusSessions, eventLogs, taskOperationLedger, taskListSnapshotVersion,
             taskLibraryCommittedStates, taskLibraryPendingDeliveries,
+            dailyContentCommittedStates, dailyContentPendingDeliveries,
             focusEnergyAwardReceipts, aiInteractions,
             behaviorSummary, onboardingProfile,
             deepFocusSelection, activeFocusSession,
@@ -99,7 +103,7 @@ public actor LocalStorage {
     }
 
     enum DevelopmentStorageSchema {
-        static let currentVersion = 7
+        static let currentVersion = 9
     }
 
     private struct TaskListSnapshotDeliveryState: Codable {
@@ -160,6 +164,7 @@ public actor LocalStorage {
         Keys.lastCelebratedUnlockCount,
         Keys.lastHomeHaikuShownDate,
         Keys.taskLibraryStabilityCheckpoint,
+        Keys.dailyContentStabilityCheckpoint,
         "isOnboardingCompleted",
     ]
 
@@ -338,6 +343,31 @@ public actor LocalStorage {
         userDefaults.removeObject(forKey: Keys.taskLibraryStabilityCheckpoint)
     }
 
+    nonisolated static func saveDailyContentStabilityCheckpoint(
+        _ checkpoint: DailyContentStabilityCheckpoint,
+        userDefaults: UserDefaults = .standard
+    ) throws {
+        userDefaults.set(
+            try JSONEncoder().encode(checkpoint),
+            forKey: Keys.dailyContentStabilityCheckpoint
+        )
+    }
+
+    nonisolated static func loadDailyContentStabilityCheckpoint(
+        userDefaults: UserDefaults = .standard
+    ) throws -> DailyContentStabilityCheckpoint? {
+        guard let data = userDefaults.data(forKey: Keys.dailyContentStabilityCheckpoint) else {
+            return nil
+        }
+        return try JSONDecoder().decode(DailyContentStabilityCheckpoint.self, from: data)
+    }
+
+    nonisolated static func clearDailyContentStabilityCheckpoint(
+        userDefaults: UserDefaults = .standard
+    ) {
+        userDefaults.removeObject(forKey: Keys.dailyContentStabilityCheckpoint)
+    }
+
     // MARK: - Task Library Delivery
 
     func saveTaskLibraryCommittedState(
@@ -433,6 +463,80 @@ public actor LocalStorage {
         try load(
             [String: TaskLibraryPendingDelivery].self,
             from: Files.taskLibraryPendingDeliveries
+        ) ?? [:]
+    }
+
+    // MARK: - Daily Content Delivery
+
+    func saveDailyContentCommittedSnapshot(
+        _ snapshot: DailyContentCommittedSnapshot,
+        for destinationID: String
+    ) throws {
+        guard !destinationID.isEmpty else { return }
+        var snapshots = try loadDailyContentCommittedSnapshots()
+        snapshots[destinationID] = snapshot
+        try save(snapshots, to: Files.dailyContentCommittedStates)
+    }
+
+    func loadDailyContentCommittedSnapshot(
+        for destinationID: String
+    ) throws -> DailyContentCommittedSnapshot? {
+        guard !destinationID.isEmpty else { return nil }
+        return try loadDailyContentCommittedSnapshots()[destinationID]
+    }
+
+    func removeDailyContentCommittedSnapshot(for destinationID: String) throws {
+        guard !destinationID.isEmpty else { return }
+        var snapshots = try loadDailyContentCommittedSnapshots()
+        guard snapshots.removeValue(forKey: destinationID) != nil else { return }
+        try save(snapshots, to: Files.dailyContentCommittedStates)
+    }
+
+    func saveDailyContentPendingDelivery(
+        _ delivery: DailyContentPendingDelivery,
+        for destinationID: String
+    ) throws {
+        guard !destinationID.isEmpty else { return }
+        var deliveries = try loadDailyContentPendingDeliveries()
+        deliveries[destinationID] = delivery
+        try save(deliveries, to: Files.dailyContentPendingDeliveries)
+    }
+
+    func loadDailyContentPendingDelivery(
+        for destinationID: String
+    ) throws -> DailyContentPendingDelivery? {
+        guard !destinationID.isEmpty else { return nil }
+        return try loadDailyContentPendingDeliveries()[destinationID]
+    }
+
+    func removeDailyContentPendingDelivery(for destinationID: String) throws {
+        guard !destinationID.isEmpty else { return }
+        var deliveries = try loadDailyContentPendingDeliveries()
+        guard deliveries.removeValue(forKey: destinationID) != nil else { return }
+        try save(deliveries, to: Files.dailyContentPendingDeliveries)
+    }
+
+    func clearDailyContentCommittedSnapshots() throws {
+        try save([String: DailyContentCommittedSnapshot](), to: Files.dailyContentCommittedStates)
+    }
+
+    func clearDailyContentPendingDeliveries() throws {
+        try save([String: DailyContentPendingDelivery](), to: Files.dailyContentPendingDeliveries)
+    }
+
+    private func loadDailyContentCommittedSnapshots()
+        throws -> [String: DailyContentCommittedSnapshot] {
+        try load(
+            [String: DailyContentCommittedSnapshot].self,
+            from: Files.dailyContentCommittedStates
+        ) ?? [:]
+    }
+
+    private func loadDailyContentPendingDeliveries()
+        throws -> [String: DailyContentPendingDelivery] {
+        try load(
+            [String: DailyContentPendingDelivery].self,
+            from: Files.dailyContentPendingDeliveries
         ) ?? [:]
     }
 

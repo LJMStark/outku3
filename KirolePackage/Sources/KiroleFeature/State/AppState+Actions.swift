@@ -401,13 +401,19 @@ extension AppState {
         guard let index = events.firstIndex(where: { $0.id == event.id }) else { return }
 
         var updatedEvent = events[index]
-        let expectedLastModified = updatedEvent.lastModified
         updatedEvent.title = title
         updatedEvent.startTime = startTime
         updatedEvent.endTime = endTime
         updatedEvent.location = location
         updatedEvent.description = notes
         updatedEvent.lastModified = Date()
+        let localVersion = updatedEvent.lastModified
+
+        // The App owns the user's latest edit immediately. Remote providers are a later delivery
+        // concern; a read-only or temporarily failing calendar must not erase what the user just
+        // changed or prevent the three-minute hardware stability window from starting.
+        events[index] = updatedEvent
+        await persistEvents(events, context: "AppState.editEvent.local")
 
         do {
             let syncedEvent = try await ExternalSyncDispatcher.syncEventContentEdit(updatedEvent)
@@ -415,13 +421,12 @@ extension AppState {
                 in: events,
                 with: syncedEvent,
                 matching: event.id,
-                expectedLastModified: expectedLastModified
+                expectedLastModified: localVersion
             ) else {
                 return
             }
             events = reconciled
             await persistEvents(events, context: "AppState.editEvent")
-            requestBLESync(reason: "editEvent")
         } catch {
             reportSyncError(error, component: event.source.rawValue, context: "AppState.editEvent")
             throw error

@@ -260,7 +260,14 @@ public actor OpenAIService {
                 && model == OpenAIService.openRouterFallbackModelID
             guard let fallbackKey = AppSecrets.fallbackAPIKey,
                   !(primaryIsFallbackRoute && fallbackKey == apiKey) else {
-                throw error
+                Self.logger.warning(
+                    "AI request failed once (model=\(model, privacy: .public)); retrying the same route once before local templates"
+                )
+                return try await sendChat(
+                    baseURL: primaryBaseURL, apiKey: apiKey, model: model,
+                    systemPrompt: systemPrompt, userPrompt: userPrompt,
+                    temperature: temperature, maxTokens: maxTokens
+                )
             }
             // `error.localizedDescription` is kept `.private`: NetworkError embeds the provider's
             // raw 401/403 response body (≤280 chars), which we do not want in exported system logs.

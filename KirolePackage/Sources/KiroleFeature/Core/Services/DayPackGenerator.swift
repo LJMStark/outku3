@@ -41,35 +41,50 @@ public final class DayPackGenerator {
         userProfile: UserProfile = .default,
         customCompanions: [CustomCompanion] = [],
         screenSize: ScreenSize = .fourInch,
-        petDialogue: String = ""
+        petDialogue: String = "",
+        now: Date = Date(),
+        calendar: Calendar = .current,
+        preparedEventSummaries: [EventSummary]? = nil,
+        focusMinutesOverride: Int? = nil,
+        precomputeEndOfDaySettlement: Bool = false
     ) async -> DayPack {
-        let todayTasks = tasks.filter { $0.isInTodayDisplay() }
+        let todayTasks = tasks.filter { $0.isInTodayDisplay(on: now, calendar: calendar) }
         let todayEvents = events
-            .filter { Calendar.current.isDateInToday($0.startTime) }
+            .filter { calendar.isDate($0.startTime, inSameDayAs: now) }
             .sorted { $0.startTime < $1.startTime }
 
         // v2.5.0: one pet bubble, sourced from the App's currentPetDialogue (the same line the
         // App home shows). Fall back to a phase-appropriate companion line if not yet computed.
         let bubble = petDialogue.isEmpty
-            ? await textService.generateCompanionPhrase(petMood: pet.mood, timeOfDay: TimeOfDay.current(), userProfile: userProfile)
+            ? await textService.generateCompanionPhrase(petMood: pet.mood, timeOfDay: TimeOfDay.current(at: now), userProfile: userProfile)
             : petDialogue
 
-        let uncategorizedEvents = todayEvents.prefix(8).map { EventSummary(from: $0) }
-        // Category tagging and the neutral day summary depend on the same immutable event snapshot,
-        // not on each other's result. Run both LLM-backed operations concurrently so a cold sync
-        // waits for the slower request instead of adding both request durations together.
-        async let categorizedEvents = EventCategoryService.shared.categorized(uncategorizedEvents)
-        async let generatedDaySummary = cachedDaySummary(for: uncategorizedEvents)
-        let (categorized, daySummary) = await (categorizedEvents, generatedDaySummary)
-
-        // 支持性文字（客户 2026-07-28 规格）：每条事件按其类别的生成规则各写一句，随
-        // DayPack Events[] 下发，固件在该日程进行中时自行排版展示。必须在分类**之后**——
-        // 六条规则是按 category 分派的，分类结果是它的输入。
-        let eventSummaries = await EventSupportTextService.shared.withSupportText(categorized)
+        let uncategorizedEvents = todayEvents.map { EventSummary(from: $0) }
+        let eventSummaries: [EventSummary]
+        let daySummary: String
+        if let preparedEventSummaries {
+            // The 0x24 generator already reused unchanged records and prepared only changed ones.
+            // Do not repeat classification or support-text requests here.
+            eventSummaries = preparedEventSummaries
+            daySummary = await cachedDaySummary(for: uncategorizedEvents)
+        } else {
+            // Category tagging and the neutral day summary depend on the same immutable event
+            // snapshot. Run both LLM-backed operations concurrently.
+            async let categorizedEvents = EventCategoryService.shared.categorized(uncategorizedEvents)
+            async let generatedDaySummary = cachedDaySummary(for: uncategorizedEvents)
+            let (categorized, generatedSummary) = await (categorizedEvents, generatedDaySummary)
+            daySummary = generatedSummary
+            eventSummaries = await EventSupportTextService.shared.withSupportText(categorized)
+        }
 
         // 手动加入 Today 的任务先于自然到期任务；组内再按 priority、dueDate、id 定序。
         // Swift sort 不稳定，保留完整兜底顺序，确保截断到 maxTasks 后结果可复现。
-        let topTasks = Self.topTaskSummaries(from: tasks, screenSize: screenSize)
+        let topTasks = Self.topTaskSummaries(
+            from: tasks,
+            screenSize: screenSize,
+            on: now,
+            calendar: calendar
+        )
 
         // 预热按键支持文字：硬件 Overview 只列出这批 topTasks，用户能按到的只可能是其中之一，
         // 提前生成好 `0x11` 响应就是纯缓存读取、零等待。
@@ -83,9 +98,21 @@ public final class DayPackGenerator {
         ) }
 
         // box③ "First up": next upcoming event, else the top (highest-priority) incomplete task.
-        let firstUp = Self.firstUpLabel(events: todayEvents, fallbackTaskTitle: topTasks.first?.title)
+        let firstUp = Self.firstUpLabel(
+            events: todayEvents,
+            fallbackTaskTitle: topTasks.first?.title,
+            now: now
+        )
 
-        let settlementData = await generateSettlementData(tasks: todayTasks, events: todayEvents, pet: pet, userProfile: userProfile)
+        let settlementData = await generateSettlementData(
+            tasks: todayTasks,
+            events: todayEvents,
+            pet: pet,
+            userProfile: userProfile,
+            focusMinutesOverride: focusMinutesOverride,
+            now: now,
+            countAllEvents: precomputeEndOfDaySettlement
+        )
         // 页面四 每日总结（v2.5.30）：概况点评 + 分支金句；素材未变走缓存。
         let activeCustomCompanion = userProfile.customCompanionId.flatMap { id in
             customCompanions.first { $0.id == id }
@@ -93,10 +120,12 @@ public final class DayPackGenerator {
         let settlementTexts = await cachedSettlementTexts(
             events: eventSummaries, todayEvents: todayEvents,
             settlement: settlementData, pet: pet, userProfile: userProfile,
-            activeCustomCompanion: activeCustomCompanion
+            activeCustomCompanion: activeCustomCompanion,
+            now: now,
+            countAllEvents: precomputeEndOfDaySettlement
         )
         return DayPack(
-            date: Date(),
+            date: now,
             weather: WeatherInfo(from: weather),
             deviceMode: deviceMode,
             focusChallengeEnabled: false,
@@ -159,10 +188,11 @@ public final class DayPackGenerator {
         events: [EventSummary], todayEvents: [CalendarEvent],
         settlement: SettlementData, pet: Pet, userProfile: UserProfile,
         activeCustomCompanion: CustomCompanion?,
-        now: Date = Date()
+        now: Date = Date(),
+        countAllEvents: Bool = false
     ) async -> (review: String, quote: String) {
         let combinedMinutes = Self.scheduledEventMinutes(events: todayEvents) + settlement.totalFocusMinutes
-        let unfinishedEvents = todayEvents.filter { $0.endTime > now }.count
+        let unfinishedEvents = countAllEvents ? 0 : todayEvents.filter { $0.endTime > now }.count
         let overflowDeadlineTitles = Self.overflowDeadlineTitles(events: todayEvents)
         let branch = Self.settlementQuoteBranch(
             completed: settlement.tasksCompleted, total: settlement.tasksTotal,
@@ -176,11 +206,27 @@ public final class DayPackGenerator {
         let customStamp = activeCustomCompanion.map {
             "\($0.id.uuidString)@\($0.updatedAt.timeIntervalSince1970)"
         } ?? userProfile.customCompanionId?.uuidString ?? "-"
-        let key = formatter.string(from: Date()) + "#"
-            + events.map { "\($0.time)|\($0.title)|\($0.category.rawValue)" }.joined(separator: "\u{1F}")
-            + "#\(settlement.tasksCompleted)/\(settlement.tasksTotal)#\(settlement.totalFocusMinutes)#\(branch)"
-            + "#\(overflowDeadlineTitles.joined(separator: "|"))"
-            + "#\(userProfile.companionCharacter.rawValue)#\(customStamp)"
+        let eventDigest = events.map {
+            "\($0.time)|\($0.title)|\($0.category.rawValue)"
+        }.joined(separator: "\u{1F}")
+        let profileDigest = [
+            userProfile.companionCharacter.rawValue,
+            userProfile.intimacyStage.rawValue,
+            userProfile.workType.rawValue,
+            userProfile.primaryGoals.map(\.rawValue).joined(separator: ","),
+            customStamp,
+        ].joined(separator: "|")
+        let key = [
+            formatter.string(from: now),
+            eventDigest,
+            "\(settlement.tasksCompleted)/\(settlement.tasksTotal)",
+            String(settlement.totalFocusMinutes),
+            String(describing: branch),
+            overflowDeadlineTitles.joined(separator: "|"),
+            profileDigest,
+            pet.name,
+            pet.mood.rawValue,
+        ].joined(separator: "#")
         if let cache = settlementTextCache, cache.key == key { return (cache.review, cache.quote) }
 
         // 两段文案互不依赖，并发生成（同 categorize/daySummary 的既有并发模式）。
@@ -365,20 +411,33 @@ public final class DayPackGenerator {
         return .fullSchedule
     }
 
-    private func generateSettlementData(tasks: [TaskItem], events: [CalendarEvent], pet: Pet, userProfile: UserProfile = .default) async -> SettlementData {
+    private func generateSettlementData(
+        tasks: [TaskItem],
+        events: [CalendarEvent],
+        pet: Pet,
+        userProfile: UserProfile = .default,
+        focusMinutesOverride: Int? = nil,
+        now: Date = Date(),
+        countAllEvents: Bool = false
+    ) async -> SettlementData {
         // 客户 docx 页面四：日程无法打卡，但只要未取消即视为完成一项任务，计入完成数/积分。
-        let counts = Self.settlementCounts(tasks: tasks, events: events)
+        let counts = Self.settlementCounts(
+            tasks: tasks,
+            events: events,
+            now: countAllEvents ? .distantFuture : now
+        )
         let completed = counts.completed
         let total = counts.total
         let rate = total > 0 ? Double(completed) / Double(total) : 0
         let focusStats = FocusSessionService.shared.statistics
+        let focusMinutes = focusMinutesOverride ?? Int(focusStats.todayFocusTime / 60)
         let energyBottles = await LocalStorage.shared.loadEnergyBottles()
 
         let aiMessage = await textService.generateSettlementMessage(
             tasksCompleted: completed,
             tasksTotal: total,
             petName: pet.name,
-            focusTimeToday: Int(focusStats.todayFocusTime / 60),
+            focusTimeToday: focusMinutes,
             energyBottles: energyBottles, // Loaded actual energy bottles score
             userProfile: userProfile
         )
@@ -397,7 +456,7 @@ public final class DayPackGenerator {
             tasksCompleted: completed, tasksTotal: total, pointsEarned: completed * 10,
             petMood: pet.mood.rawValue,
             summaryMessage: summary, encouragementMessage: encouragement,
-            totalFocusMinutes: Int(focusStats.todayFocusTime / 60),
+            totalFocusMinutes: focusMinutes,
             focusSessionCount: focusStats.todaySessions,
             longestFocusMinutes: focusStats.longestSessionMinutes,
             interruptionCount: focusStats.interruptionCount,

@@ -1,8 +1,8 @@
 # Kirole BLE 通信协议规格文档
 
-**版本:** v2.12.0
+**版本:** v2.13.0
 **更新日期:** 2026-08-03
-**状态:** v2.12.0 的 App 已实现完整任务库与增量任务库事务。首次绑定或设备报告 missing 时发送全部未完成任务；设备已有有效库后，新增、编辑、删除和撤销完成从最后一次变化起等待三分钟，只发送最终变化记录。完成动作立即发送原子删除，不推进其他任务的稳定窗。标题或备注变化只重新准备该任务的三阶段文案；日期、优先级和顺序复用原文案。断连和重连不重置窗口。所有事务先持久化、失败后从第一个字节完整重试一次，只有版本、CRC 和 `committed` 全部匹配才推进已提交库。真实固件任务库属 Issue #26；旧 `DayPack(0x10)`、`TaskInPage(0x11)` 和 `TaskListSnapshotAck(0x1B)` 迁移期继续保留。
+**状态:** v2.13.0 的 App 已新增独立当天内容包 `DailyContentTransaction(0x24)`。它只纳入设备本地自然日的日历日程，但不设条数上限；早间、空闲、收尾、屏保、结算和每条日程的伴侣文案均在 App 端准备后随完整事务发送。首次 AI 准备失败后台重试一次，第二次失败才用完整本地模板。当天日程修改立即保存到 App，从最后一次修改起等待三分钟后发送最终完整版本；设备在 CRC、版本和 `committed` 全部匹配前继续读取旧已提交包。任务库 `0x23` 与当天内容包 `0x24` 各自版本、各自提交，日程修改不重传任务库。真实固件实现属后续硬件 Issue；旧 `DayPack(0x10)` 迁移期继续保留。
 
 v2.9.0 的严格请求、OperationID 幂等和 `0x1B` 权威快照仍生效；v2.10.1 把在线 Complete/Skip 的 `0x1B` 延后到最终 DayPack 之后。App 是任务最终状态来源；GATT `.withResponse` 只代表传输确认，不能替代 `0x1B` 业务确认。
 
@@ -103,6 +103,7 @@ v2.9.0 的严格请求、OperationID 幂等和 `0x1B` 权威快照仍生效；v2
 | v2.11.2 | 2026-08-03 | **任务库三阶段文案（wire 不变）**：每项任务在 `0x23` 形成前预生成三条与任务内容和当前角色匹配的文案，设备按本地专注分钟在 `0–5 / 6–15 / 16+` 三段选择。每项任务首次 AI 失败只后台重试一次；第二次失败或三分钟截止时按角色使用本地三阶段模板。每项任务独立准备，一个失败不删除任务或阻止其他任务；截止后取消在途请求，迟到结果不再形成第二个任务库版本。任务标题和备注继续通过 `<user_content>` 隔离，三条输出各自限制 80B 可打印 ASCII。§4.22 |
 | v2.11.3 | 2026-08-03 | **任务库失败保护与持久待发（wire 不变）**：App 在首个 `0x23` 字节写入前按设备保存完整冻结事务；写入失败、断连、五秒未收到匹配业务结果或设备返回失败结果时，从 Seq=0 完整重试一次，不续接半包。第二次失败后停止本轮并保留最新待发事务；后续连接重新从 Seq=0 发送。待发期间任务或伴侣来源变化时，以内容指纹替换旧待发事务，只保存最新完整版本。只有匹配 Epoch/Revision/CRC 且 Result=`committed` 才清除待发并推进已提交状态；`capacityExceeded` 明确记录且不得截断。诊断只记录阶段、attempt 和版本，不写任务正文。§4.22/§5.21/§8.4 |
 | v2.12.0 | 2026-08-03 | **三分钟稳定窗与增量任务库（`0x23` SubVersion `0x02`，破坏性）**：事务新增 Full/Incremental 类型、精确 Base Epoch/Revision/CRC、删除列表，并把截止时间与优先级加入任务记录。普通任务内容变化从最后一次变化起等 180 秒；断连/重连不重计。已有有效库只发送 upsert/delete 差异，设备在副本中完整应用后原子提交；Base 不匹配回 `0x05` 且旧库不变。完成动作立即删除同一任务，不提前提交其他仍在稳定窗内的编辑。标题/备注只重做该任务三阶段文案，日期/优先级/顺序复用旧文案；到点缺文案用本地模板，迟到结果不补发。§4.22/§5.21 |
+| v2.13.0 | 2026-08-03 | **新增双向 `DailyContentTransaction(0x24)`**：App→Device 发送设备本地当天全部日历日程，以及早间/空闲/收尾、当天概览、屏保、结算和逐日程文案；未来日程不纳入，当天日程不设 App 条数上限。首次 AI 准备失败完整重试一次，第二次失败才使用覆盖所有字段的本地模板。当天日程修改立即保存 App，最后一次变化后等待 180 秒发送最终完整包；任务库版本不受影响。App 按设备持久化冻结事务，传输或业务应答失败后从 Seq=0 用相同版本和 CRC 完整重试一次。设备只在完整解析、容量和 CRC 校验通过后原子替换 committed 包；页面只读 committed，进入页面不现场请求 App、AI 或 BLE。§4.23/§5.22 |
 
 | 术语 | 定义 |
 |---------------|------------------------------------------------------|
@@ -170,6 +171,7 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 | `0x21` | 暂无 App 出站业务使用 | EventLogBatch |
 | `0x22` | AvatarControl | AvatarControlResult |
 | `0x23` | TaskLibraryTransaction | TaskLibraryCommitResult |
+| `0x24` | DailyContentTransaction | DailyContentCommitResult |
 
 ---
 
@@ -321,6 +323,7 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 | `0x20` | EventLogRequest | 请求指定时间戳之后的事件日志 |
 | `0x22` | AvatarControl | 提交、精确擦除、全部擦除、查询或取消头像事务，详见 §4.19 |
 | `0x23` | TaskLibraryTransaction | 设备任务库完整版本事务；App 发送全部未完成且非待删除任务及逐任务三阶段文案，详见 §4.22 |
+| `0x24` | DailyContentTransaction | 当天日程与全部设备日文案的原子完整替换事务，详见 §4.23 |
 | `0x7E` | SecureData | 安全业务封装（v2） |
 | `0x7F` | SecurityHandshake | 安全握手（v2） |
 
@@ -1134,6 +1137,56 @@ TaskID 必须非空；所有文本都按 §3.5 转为可打印 ASCII 后再计�
 
 ---
 
+### 4.23 DailyContentTransaction (0x24)
+
+App→Device 发送某个设备本地自然日的完整日程与显示文案。`0x24` 与任务库 `0x23` 使用独立版本和持久化区；日程变化不得触发任务库重传。
+
+**Payload：**
+
+```text
+SubVersion(1) | ContentEpoch(4 BE) | ContentRevision(4 BE) |
+Year(2 BE) | Month(1) | Day(1) |
+MorningDialogue | IdleDialogue | ClosingDialogue | DaySummary |
+ScreensaverQuote | ScreensaverAuthor | SettlementReview | SettlementQuote |
+EventCount(4 BE) | Events[] | TransactionCRC32(4 BE)
+```
+
+以上八个文本字段均为 `Length(1) + PrintableASCII(N)`。字节上限依次为 `120 / 120 / 120 / 180 / 180 / 40 / 180 / 120`。`SubVersion` 固定 `0x01`；Epoch、Revision 必须非零；年月日必须组成有效日期。CRC-32/IEEE 覆盖从 SubVersion 到最后一条日程的全部字节，不含 CRC 字段自身。
+
+**单条日程：**
+
+```text
+EventIDLength(1) | EventID(N1, 1...255) |
+StartTimestamp(8 BE) | EndTimestamp(8 BE) | IsAllDay(1) |
+TitleLength(1) | Title(N2, N2<=80) |
+DetailLength(1) | Detail(N3, N3<=180) | Category(1) |
+CompanionDialogueLength(1) | CompanionDialogue(N4, N4<=120) |
+SupportTextLength(1) | SupportText(N5, N5<=120)
+```
+
+EventID 在同一事务内必须唯一。时间为 Unix 秒；`IsAllDay` 只允许 0/1；Category 沿用 §4.7 的 `0x00...0x06`。所有文本先按 §3.5 净化为可打印 ASCII，再计算长度。
+
+**App 生成与发送规则：**
+
+1. 只纳入 Year/Month/Day 对应设备本地自然日内的日历日程；未来和其他日期日程不进入本包。App 不设日程条数上限，`EventCount` 为 4B；不得复用旧 DayPack 的八条限制或按首包容量截断。
+2. 包内必须一次备齐早间、空闲、收尾、当天概览、屏保、结算点评、结算金句，以及每条日程的伴侣文案和支持文案。进入任何本地页面时都不现场请求 App、AI 或 BLE。
+3. 第一次完整文案准备失败后，App 在后台重新准备一次；第二次仍失败才用本地模板补齐所有必填槽位。失败不得删除日程或生成缺字段事务。
+4. 当天日程新增、修改或删除立即保存到 App；硬件继续显示旧 committed 包，从最后一次当天日程变化起等待 180 秒。连续修改重置同一截止点，断连、重连和 App 重启不重置。其他日期日程变化不启动本窗口。
+5. 到期后发送最终完整替换包。只重新生成变化日程的两条文案及受影响的概览/结算；未变化日程在人设未变时复用已提交文案。人设变化时全部重新准备。
+6. 首字节发送前按目标设备持久化完整冻结事务。写入失败、断连、业务应答超时或非 committed 结果后等待 500ms，用同一 Epoch、Revision、CRC 从 Seq=0 完整重试一次；不得续接半包。第二次失败保留最新待发事务供后续连接重发。
+7. 待发期间来源再次变化时旧待发包作废，只保留最新完整版本。只有当前设备返回完全匹配的版本、CRC 和 committed，App 才推进本地已提交状态并让概览切到新日程。
+
+**设备提交与读取规则：**
+
+1. `0x24` 始终按 §3.2 分包规则发送；设备先完整重组并在 pending 区严格解析，不得边收边覆盖 committed 区。
+2. 只有版本、日期、文本长度、唯一 EventID、EventCount、解析终点、容量和 TransactionCRC32 全部合法时，才原子替换 committed 包并按 §5.22 应答。
+3. 中断、校验失败、容量不足或内部错误均保持旧 committed 包不变；没有任何已提交包时，页面显示固件本地空日程和默认对话模板，并继续显示本地日期。
+4. 页面、日程详情、屏保和晚间结算只读取 committed 包并按本地时钟选取字段。断连与重连不得改变当前页面或专注页状态。
+
+> **确认边界：** GATT `.withResponse` 只确认分片写入。只有版本与 CRC 完全匹配且 Result=`committed` 的 `0x24` 应答，才说明新当天内容包可被设备页面读取。
+
+---
+
 ## 5. Device → App 事件
 
 事件通过 Notify characteristic 从设备发送至 App。
@@ -1172,6 +1225,7 @@ TaskID 必须非空；所有文本都按 §3.5 转为可打印 ASCII 后再计�
 | `0x21` | EventLogBatch       | 批量回传事件日志 |
 | `0x22` | AvatarControlResult | 头像暂存、提交、擦除、查询或取消的实时结果，详见 §5.19 |
 | `0x23` | TaskLibraryCommitResult | 任务库事务提交结果，详见 §5.21 |
+| `0x24` | DailyContentCommitResult | 当天内容包提交结果，详见 §5.22 |
 | `0x30` | DeviceWake          | 设备上线通知：BLE Notify 建立后固件主动上报（非 App 触发 MCU 唤醒） |
 | `0x31` | DeviceSleep         | 设备进入睡眠模式 |
 | `0x40` | LowBattery          | 设备电量低通知 |
@@ -1630,6 +1684,30 @@ Result(1) | ContentCRC32(4 BE)
 | `0xFF` | internalError | 设备内部错误，旧库不变 |
 
 `ContentCRC32` 回显该事务声明的 TransactionCRC32。App 只把 SubVersion、Epoch、Revision、ContentCRC32 全部匹配且 Result=`committed` 的应答当作成功；过期或不属于当前事务的应答不能改变待发状态。
+
+**实时事件约束：** 本结果只走当前 Notify，不写入 `EventLogBatch(0x21)`。secure 模式按普通短 payload 放入 `SecureEnvelope(0x7E)`。
+
+---
+
+### 5.22 DailyContentCommitResult (0x24)
+
+Device→App 实时回复 `DailyContentTransaction(0x24)` 的提交结果。Payload 固定 14 字节：
+
+```text
+SubVersion(1) | ContentEpoch(4 BE) | ContentRevision(4 BE) |
+Result(1) | ContentCRC32(4 BE)
+```
+
+| Result | 名称 | 说明 |
+|--------|------|------|
+| `0x00` | committed | 完整当天内容包已原子替换，可供全部本地页面读取 |
+| `0x01` | invalidPayload | 字段、日期、EventID、计数或解析终点非法 |
+| `0x02` | checksumMismatch | TransactionCRC32 不匹配 |
+| `0x03` | capacityExceeded | 无法完整容纳本包，旧 committed 包不变；不得截断后报成功 |
+| `0x04` | unsupportedVersion | SubVersion 或内容包版本不受支持 |
+| `0xFF` | internalError | 设备内部错误，旧 committed 包不变 |
+
+`ContentCRC32` 回显事务声明的 TransactionCRC32。App 只接受当前连接设备、SubVersion、Epoch、Revision、CRC 全部匹配且 Result=`committed` 的结果；迟到、其他设备或旧事务结果不得清除更新后的待发包。
 
 **实时事件约束：** 本结果只走当前 Notify，不写入 `EventLogBatch(0x21)`。secure 模式按普通短 payload 放入 `SecureEnvelope(0x7E)`。
 

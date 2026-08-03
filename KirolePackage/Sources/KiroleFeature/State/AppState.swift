@@ -58,7 +58,12 @@ public final class AppState {
     public var pet: Pet = Pet()
 
     // Tasks & Events
-    public var events: [CalendarEvent] = []
+    public var events: [CalendarEvent] = [] {
+        didSet {
+            guard !suppressesDailyContentChangeTracking else { return }
+            recordDailyContentChanges(from: oldValue, to: events)
+        }
+    }
     public var tasks: [TaskItem] = [] {
         didSet {
             recordTaskMutations(from: oldValue, to: tasks)
@@ -282,6 +287,12 @@ public final class AppState {
     @ObservationIgnored var taskLibraryHardwareTasksBaseline: [TaskItem]?
     @ObservationIgnored var taskLibraryHardwarePetDialogueBaseline = ""
     @ObservationIgnored var suppressesTaskLibraryChangeTracking = false
+    @ObservationIgnored var dailyContentStabilityState = DailyContentStabilityState()
+    @ObservationIgnored var dailyContentStabilityTask: Task<Void, Never>?
+    @ObservationIgnored var dailyContentNowProvider: @MainActor () -> Date = { Date() }
+    /// The last committed schedule projection remains visible while the App accepts new edits.
+    @ObservationIgnored var dailyContentHardwareEventsBaseline: [CalendarEvent]?
+    @ObservationIgnored var suppressesDailyContentChangeTracking = false
     var externalSyncWaiters: [ExternalSyncTarget: [CheckedContinuation<Void, Never>]] = [:]
 
     /// 启动本地加载任务句柄；ensureInitialLoadComplete() 等它完成，避免首轮外部同步 / Apple observer
@@ -301,6 +312,15 @@ public final class AppState {
                 let destinationID = BLEService.shared.taskListSnapshotDestinationID
                 Task { @MainActor in
                     await BLESyncCoordinator.shared.handleTaskLibraryCommitAcknowledgement(
+                        acknowledgement,
+                        destinationID: destinationID
+                    )
+                }
+            }
+            BLEService.shared.onDailyContentCommitAcknowledgement = { acknowledgement in
+                let destinationID = BLEService.shared.taskListSnapshotDestinationID
+                Task { @MainActor in
+                    await BLESyncCoordinator.shared.handleDailyContentCommitAcknowledgement(
                         acknowledgement,
                         destinationID: destinationID
                     )
@@ -402,6 +422,23 @@ public final class AppState {
         persistTaskLibraryStabilityCheckpoint()
     }
 
+    private func recordDailyContentChanges(
+        from oldEvents: [CalendarEvent],
+        to newEvents: [CalendarEvent]
+    ) {
+        let hadPendingChanges = !dailyContentStabilityState.changedEventIDs.isEmpty
+        guard dailyContentStabilityState.recordChanges(
+            from: oldEvents,
+            to: newEvents,
+            at: dailyContentNowProvider()
+        ) else { return }
+        if !hadPendingChanges {
+            dailyContentHardwareEventsBaseline = oldEvents
+        }
+        persistDailyContentStabilityCheckpoint()
+        scheduleDailyContentStabilityDeadline()
+    }
+
     func persistTaskLibraryStabilityCheckpoint() {
         guard !taskLibraryStabilityState.stableTaskIDs.isEmpty
                 || !taskLibraryStabilityState.urgentRemovalTaskIDs.isEmpty else {
@@ -423,6 +460,59 @@ public final class AppState {
             )
         } catch {
             ErrorReporter.log(error, context: "AppState.persistTaskLibraryStabilityCheckpoint")
+        }
+    }
+
+    func persistDailyContentStabilityCheckpoint() {
+        guard !dailyContentStabilityState.changedEventIDs.isEmpty else {
+            LocalStorage.clearDailyContentStabilityCheckpoint()
+            return
+        }
+        do {
+            try LocalStorage.saveDailyContentStabilityCheckpoint(
+                DailyContentStabilityCheckpoint(
+                    state: dailyContentStabilityState,
+                    hardwareEventsBaseline: dailyContentHardwareEventsBaseline,
+                    sourceFingerprint: DailyContentSource.sourceFingerprint(
+                        events: events,
+                        at: dailyContentNowProvider(),
+                        userProfile: userProfile,
+                        customCompanions: customCompanions
+                    )
+                )
+            )
+        } catch {
+            ErrorReporter.log(error, context: "AppState.persistDailyContentStabilityCheckpoint")
+        }
+    }
+
+    func restoreDailyContentStabilityCheckpoint() {
+        do {
+            guard let checkpoint = try LocalStorage.loadDailyContentStabilityCheckpoint() else {
+                return
+            }
+            let currentFingerprint = DailyContentSource.sourceFingerprint(
+                events: events,
+                at: dailyContentNowProvider(),
+                userProfile: userProfile,
+                customCompanions: customCompanions
+            )
+            guard checkpoint.sourceFingerprint == currentFingerprint else {
+                LocalStorage.clearDailyContentStabilityCheckpoint()
+                return
+            }
+            dailyContentStabilityState = checkpoint.state
+            dailyContentHardwareEventsBaseline = checkpoint.hardwareEventsBaseline
+            if dailyContentStabilityState.readyGeneration(
+                at: dailyContentNowProvider()
+            ) != nil {
+                requestBLESync(reason: "restoredDailyContentUpdate", debounce: .zero)
+            } else {
+                scheduleDailyContentStabilityDeadline()
+            }
+        } catch {
+            LocalStorage.clearDailyContentStabilityCheckpoint()
+            ErrorReporter.log(error, context: "AppState.restoreDailyContentStabilityCheckpoint")
         }
     }
 

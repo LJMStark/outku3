@@ -57,6 +57,9 @@ public final class BLESyncCoordinator {
     private let taskLibraryPhaseTextService = TaskLibraryPhaseTextService.shared
     private let taskLibraryDeliveryRetrier = TaskLibraryDeliveryRetrier()
     private let taskLibraryAcknowledgementGate = TaskLibraryAcknowledgementGate()
+    private let dailyContentPackageGenerator = DailyContentPackageGenerator.shared
+    private let dailyContentDeliveryRetrier = DailyContentDeliveryRetrier()
+    private let dailyContentAcknowledgementGate = DailyContentAcknowledgementGate()
     private let localStorage = LocalStorage.shared
     private let policy = BLESyncPolicy()
 
@@ -74,10 +77,14 @@ public final class BLESyncCoordinator {
     /// Current-connection lookup for late 0x23 results. The frozen transaction itself is durable
     /// in LocalStorage, so disconnect cleanup can discard this map without losing retry state.
     private var pendingTaskLibraries: [String: TaskLibraryCommittedState] = [:]
+    /// Current-connection lookup for a late 0x24 commit result. The frozen package remains durable
+    /// so reconnect can resend the exact bytes from sequence zero.
+    private var pendingDailyContents: [String: DailyContentCommittedState] = [:]
     /// A phase-text preparation may use the full three-minute product window. Keep the connection
     /// alive through preparation and the following 0x23 write so the 30-second idle recycler cannot
     /// discard the exact transaction this window is preparing.
     private var isTaskLibraryTransactionInFlight = false
+    private var isDailyContentTransactionInFlight = false
     /// Real-time DeviceWake inventory wins over the persisted marker for the current connection.
     private var taskLibraryDeviceInventories: [String: TaskLibraryDeviceInventory] = [:]
     /// Complete/Skip keeps the device on TaskIn until one final DayPack has been sent. Routine
@@ -647,8 +654,10 @@ public final class BLESyncCoordinator {
 
     func handleAllTaskLibrariesUnbound() async {
         taskLibraryAcknowledgementGate.fail(BLEError.disconnected)
+        dailyContentAcknowledgementGate.fail(BLEError.disconnected)
         pendingTaskLibraries.removeAll()
         taskLibraryDeviceInventories.removeAll()
+        pendingDailyContents.removeAll()
         do {
             try await localStorage.clearTaskLibraryCommittedStates()
         } catch {
@@ -659,6 +668,329 @@ public final class BLESyncCoordinator {
         } catch {
             ErrorReporter.log(error, context: "BLESyncCoordinator.handleAllTaskLibrariesUnbound.pending")
         }
+        do {
+            try await localStorage.clearDailyContentCommittedSnapshots()
+        } catch {
+            ErrorReporter.log(error, context: "BLESyncCoordinator.handleAllTaskLibrariesUnbound.daily")
+        }
+        do {
+            try await localStorage.clearDailyContentPendingDeliveries()
+        } catch {
+            ErrorReporter.log(error, context: "BLESyncCoordinator.handleAllTaskLibrariesUnbound.dailyPending")
+        }
+    }
+
+    private func shouldSendDailyContentForConnectedDevice(
+        presentationSourceFingerprint: String,
+        readyGeneration: UInt64?
+    ) async -> Bool {
+        guard let destinationID = connectedDestinationProvider(), !destinationID.isEmpty else {
+            return false
+        }
+        do {
+            let committed = try await localStorage.loadDailyContentCommittedSnapshot(
+                for: destinationID
+            )
+            let pending = try await localStorage.loadDailyContentPendingDelivery(
+                for: destinationID
+            )
+            return readyGeneration != nil
+                || committed?.sourceFingerprint != presentationSourceFingerprint
+                || pending != nil
+        } catch {
+            ErrorReporter.log(error, context: "BLESyncCoordinator.loadDailyContentDeliveryState")
+            return true
+        }
+    }
+
+    private func sendDailyContentIfNeeded(
+        input: DailyContentGenerationInput,
+        presentationSourceFingerprint: String,
+        currentSourceFingerprint: String,
+        capturedStabilityGeneration: UInt64?
+    ) async throws {
+        guard let destinationID = connectedDestinationProvider(), !destinationID.isEmpty else {
+            return
+        }
+
+        let committed = try await localStorage.loadDailyContentCommittedSnapshot(
+            for: destinationID
+        )
+        var pending = try await localStorage.loadDailyContentPendingDelivery(
+            for: destinationID
+        )
+        var latestKnownVersion = committed?.state.version
+
+        if let stalePending = pending,
+           stalePending.sourceFingerprint != presentationSourceFingerprint {
+            latestKnownVersion = Self.newerDailyContentVersion(
+                latestKnownVersion,
+                stalePending.transaction.version
+            )
+            try await localStorage.removeDailyContentPendingDelivery(for: destinationID)
+            // The source changed, so only the latest replacement remains retryable. The old ACK
+            // may have been lost after firmware committed it; advance beyond its version to avoid
+            // reusing the same version with different bytes.
+            pendingDailyContents.removeValue(forKey: destinationID)
+            pending = nil
+        }
+
+        if committed?.sourceFingerprint == presentationSourceFingerprint, pending == nil {
+            AppState.shared.markDailyContentCommitted(
+                capturedGeneration: capturedStabilityGeneration
+            )
+            return
+        }
+
+        let delivery: DailyContentPendingDelivery
+        if let pending {
+            delivery = pending
+        } else {
+            let preparedInput = DailyContentGenerationInput(
+                now: input.now,
+                calendar: input.calendar,
+                events: input.events,
+                tasks: input.tasks,
+                pet: input.pet,
+                weather: input.weather,
+                deviceMode: input.deviceMode,
+                userProfile: input.userProfile,
+                customCompanions: input.customCompanions,
+                usageDays: input.usageDays,
+                sceneID: input.sceneID,
+                focusMinutes: input.focusMinutes,
+                previousPackage: committed?.package,
+                previousEventFingerprints: committed?.eventFingerprints ?? [:],
+                previousPersonaFingerprint: committed?.personaFingerprint ?? "",
+                previousEventDialogueFingerprint: committed?.eventDialogueFingerprint ?? "",
+                previousStaticCopyFingerprint: committed?.staticCopyFingerprint ?? ""
+            )
+            let package = await dailyContentPackageGenerator.generate(input: preparedInput)
+            guard connectedDestinationProvider() == destinationID else {
+                throw BLEPresentationDestinationError.changed
+            }
+            if capturedStabilityGeneration != nil {
+                let latestSource = DailyContentSource.packageSourceFingerprint(
+                    events: AppState.shared.events,
+                    tasks: AppState.shared.tasks,
+                    pet: AppState.shared.pet,
+                    usageDays: input.usageDays,
+                    sceneID: input.sceneID,
+                    focusMinutes: input.focusMinutes,
+                    at: input.now,
+                    calendar: input.calendar,
+                    userProfile: AppState.shared.userProfile,
+                    customCompanions: AppState.shared.customCompanions
+                )
+                guard latestSource == currentSourceFingerprint else {
+                    throw DailyContentDeliveryError.sourceChanged
+                }
+            }
+            let transaction = DailyContentTransaction(
+                version: Self.nextDailyContentVersion(after: latestKnownVersion),
+                package: package
+            )
+            delivery = DailyContentPendingDelivery(
+                transaction: transaction,
+                sourceFingerprint: presentationSourceFingerprint,
+                eventSourceFingerprint: DailyContentSource.sourceFingerprint(
+                    events: input.events,
+                    at: input.now,
+                    calendar: input.calendar,
+                    userProfile: input.userProfile,
+                    customCompanions: input.customCompanions
+                ),
+                eventFingerprints: DailyContentSource.eventFingerprints(
+                    input.events,
+                    at: input.now,
+                    calendar: input.calendar
+                ),
+                personaFingerprint: DailyContentSource.personaFingerprint(
+                    userProfile: input.userProfile,
+                    customCompanions: input.customCompanions
+                ),
+                eventDialogueFingerprint: DailyContentSource.eventDialogueFingerprint(
+                    pet: input.pet,
+                    userProfile: input.userProfile,
+                    customCompanions: input.customCompanions
+                ),
+                staticCopyFingerprint: DailyContentSource.staticCopyFingerprint(
+                    eventTitles: DailyContentSource.todayEvents(
+                        from: input.events,
+                        at: input.now,
+                        calendar: input.calendar
+                    ).map(\.title),
+                    tasks: input.tasks,
+                    pet: input.pet,
+                    usageDays: input.usageDays,
+                    sceneID: input.sceneID,
+                    userProfile: input.userProfile,
+                    customCompanions: input.customCompanions
+                ),
+                capturedStabilityGeneration: capturedStabilityGeneration
+            )
+            try await localStorage.saveDailyContentPendingDelivery(
+                delivery,
+                for: destinationID
+            )
+        }
+
+        let expected = try DailyContentCodec.committedState(for: delivery.transaction)
+        pendingDailyContents[destinationID] = expected
+        isDailyContentTransactionInFlight = true
+        defer { isDailyContentTransactionInFlight = false }
+        _ = try await dailyContentDeliveryRetrier.deliver(delivery.transaction) { transaction in
+            try await self.sendDailyContentAttempt(
+                transaction,
+                expected: expected,
+                destinationID: destinationID
+            )
+        }
+
+        guard connectedDestinationProvider() == destinationID else {
+            throw BLEPresentationDestinationError.changed
+        }
+        try await recordDailyContentCommit(
+            expected,
+            destinationID: destinationID,
+            pendingDelivery: delivery
+        )
+        pendingDailyContents.removeValue(forKey: destinationID)
+        AppState.shared.markDailyContentCommitted(
+            capturedGeneration: delivery.capturedStabilityGeneration
+        )
+    }
+
+    private func sendDailyContentAttempt(
+        _ transaction: DailyContentTransaction,
+        expected: DailyContentCommittedState,
+        destinationID: String
+    ) async throws -> DailyContentCommitAcknowledgement {
+        let registration = dailyContentAcknowledgementGate.register(
+            expected: expected,
+            expectedDestinationID: destinationID,
+            timeout: .seconds(120)
+        )
+        do {
+            try await bleService.sendDailyContentTransaction(
+                transaction,
+                expectedDestinationID: destinationID
+            )
+        } catch {
+            dailyContentAcknowledgementGate.fail(error)
+            throw error
+        }
+        return try await withTaskCancellationHandler {
+            try await dailyContentAcknowledgementGate.value(for: registration)
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                self?.dailyContentAcknowledgementGate.fail(CancellationError())
+            }
+        }
+    }
+
+    private func recordDailyContentCommit(
+        _ state: DailyContentCommittedState,
+        destinationID: String,
+        pendingDelivery: DailyContentPendingDelivery
+    ) async throws {
+        guard try DailyContentCodec.committedState(for: pendingDelivery.transaction) == state else {
+            return
+        }
+        try await localStorage.saveDailyContentCommittedSnapshot(
+            DailyContentCommittedSnapshot(
+                state: state,
+                package: pendingDelivery.transaction.package,
+                eventFingerprints: pendingDelivery.eventFingerprints,
+                personaFingerprint: pendingDelivery.personaFingerprint,
+                eventDialogueFingerprint: pendingDelivery.eventDialogueFingerprint,
+                staticCopyFingerprint: pendingDelivery.staticCopyFingerprint,
+                sourceFingerprint: pendingDelivery.sourceFingerprint
+            ),
+            for: destinationID
+        )
+        let persisted = try await localStorage.loadDailyContentPendingDelivery(for: destinationID)
+        if persisted?.transaction == pendingDelivery.transaction {
+            try await localStorage.removeDailyContentPendingDelivery(for: destinationID)
+        }
+    }
+
+    func handleDailyContentCommitAcknowledgement(
+        _ acknowledgement: DailyContentCommitAcknowledgement,
+        destinationID: String
+    ) async {
+        if dailyContentAcknowledgementGate.receive(
+            acknowledgement,
+            destinationID: destinationID
+        ) {
+            return
+        }
+        guard !destinationID.isEmpty,
+              acknowledgement.result == .committed,
+              pendingDailyContents[destinationID] == DailyContentCommittedState(
+                version: acknowledgement.version,
+                contentCRC32: acknowledgement.contentCRC32
+              ) else {
+            return
+        }
+        do {
+            guard let pending = try await localStorage.loadDailyContentPendingDelivery(
+                for: destinationID
+            ) else { return }
+            let state = try DailyContentCodec.committedState(for: pending.transaction)
+            guard state.version == acknowledgement.version,
+                  state.contentCRC32 == acknowledgement.contentCRC32 else { return }
+            try await recordDailyContentCommit(
+                state,
+                destinationID: destinationID,
+                pendingDelivery: pending
+            )
+            pendingDailyContents.removeValue(forKey: destinationID)
+            if pending.matchesCurrentSource() {
+                AppState.shared.markDailyContentCommitted(
+                    capturedGeneration: pending.capturedStabilityGeneration
+                )
+            }
+        } catch {
+            ErrorReporter.log(error, context: "BLESyncCoordinator.handleDailyContentCommitAcknowledgement")
+        }
+    }
+
+    func handleDailyContentDisconnected(destinationID: String) {
+        dailyContentAcknowledgementGate.fail(BLEError.disconnected)
+        guard !destinationID.isEmpty else { return }
+        pendingDailyContents.removeValue(forKey: destinationID)
+    }
+
+    private static func nextDailyContentVersion(
+        after previous: DailyContentVersion?
+    ) -> DailyContentVersion {
+        guard let previous else {
+            let seconds = UInt64(max(1, Int(Date().timeIntervalSince1970)))
+            return DailyContentVersion(
+                epoch: UInt32(truncatingIfNeeded: seconds),
+                revision: 1
+            )
+        }
+        if previous.revision < .max {
+            return DailyContentVersion(
+                epoch: previous.epoch,
+                revision: previous.revision + 1
+            )
+        }
+        return DailyContentVersion(
+            epoch: previous.epoch == .max ? 1 : previous.epoch + 1,
+            revision: 1
+        )
+    }
+
+    private static func newerDailyContentVersion(
+        _ lhs: DailyContentVersion?,
+        _ rhs: DailyContentVersion
+    ) -> DailyContentVersion {
+        guard let lhs else { return rhs }
+        if lhs.epoch != rhs.epoch { return lhs.epoch > rhs.epoch ? lhs : rhs }
+        return lhs.revision >= rhs.revision ? lhs : rhs
     }
 
 #if DEBUG
@@ -747,6 +1079,35 @@ public final class BLESyncCoordinator {
         let taskLibraryPresentation = appState.taskLibraryPresentationSnapshot()
         let presentationTasks = taskLibraryPresentation.tasks
         let presentationPetDialogue = taskLibraryPresentation.petDialogue
+        let dailyContentPresentation = appState.dailyContentPresentationSnapshot()
+        let presentationEvents = dailyContentPresentation.events
+        let usageDays = await localStorage.loadConsecutiveDays()
+        let dailyContentSceneID = appState.currentDisplaySceneId()
+        let dailyContentFocusMinutes = Int(
+            FocusSessionService.shared.todayFocusTimeIncludingActive(now: now) / 60
+        )
+        let dailyContentPresentationSourceFingerprint = DailyContentSource.packageSourceFingerprint(
+            events: presentationEvents,
+            tasks: presentationTasks,
+            pet: appState.pet,
+            usageDays: usageDays,
+            sceneID: dailyContentSceneID,
+            focusMinutes: dailyContentFocusMinutes,
+            at: now,
+            userProfile: appState.userProfile,
+            customCompanions: appState.customCompanions
+        )
+        let currentDailyContentSourceFingerprint = DailyContentSource.packageSourceFingerprint(
+            events: appState.events,
+            tasks: appState.tasks,
+            pet: appState.pet,
+            usageDays: usageDays,
+            sceneID: dailyContentSceneID,
+            focusMinutes: dailyContentFocusMinutes,
+            at: now,
+            userProfile: appState.userProfile,
+            customCompanions: appState.customCompanions
+        )
         guard appState.currentPetDialogueTaskStateVersion == sourceTaskStateVersion else {
             queuePendingSync(force: force, trigger: trigger)
             return
@@ -754,13 +1115,14 @@ public final class BLESyncCoordinator {
         let dayPack = await dayPackGenerator.generateDayPack(
             pet: appState.pet,
             tasks: presentationTasks,
-            events: appState.events,
+            events: presentationEvents,
             weather: appState.weather,
             deviceMode: appState.deviceMode,
             userProfile: appState.userProfile,
             customCompanions: appState.customCompanions,
             screenSize: bleService.hardwareScreenSize,
-            petDialogue: presentationPetDialogue
+            petDialogue: presentationPetDialogue,
+            now: now
         )
         // DayPack generation also awaits event/support/settlement text. If tasks changed during
         // that work, do not let the old task/dialogue transaction reach the hardware.
@@ -774,7 +1136,7 @@ public final class BLESyncCoordinator {
         let fingerprint = dayPack.stableFingerprint()
         let semanticFingerprint = dayPack.refreshSemanticFingerprint(
             allTasks: presentationTasks,
-            at: Date()
+            at: now
         )
         let lastHash = await localStorage.loadLastDayPackHash()
         let lastSemanticHash = await localStorage.loadLastDayPackSemanticHash()
@@ -789,8 +1151,8 @@ public final class BLESyncCoordinator {
             trigger: trigger,
             wireContentChanged: contentChanged,
             hasActiveTimedEvent: DayPackRefreshArbiter.hasActiveTimedEvent(
-                in: appState.events,
-                at: Date()
+                in: presentationEvents,
+                at: now
             ),
             hasPreviousSemanticFingerprint: lastSemanticHash != nil,
             semanticContentChanged: semanticContentChanged
@@ -816,8 +1178,14 @@ public final class BLESyncCoordinator {
             readyUpdate: taskLibraryPresentation.readyUpdate
         )
         let connectedDeviceNeedsTaskLibrarySync = await shouldSendFullTaskLibraryForConnectedDevice()
+        let connectedDeviceNeedsDailyContentSync = await shouldSendDailyContentForConnectedDevice(
+            presentationSourceFingerprint: dailyContentPresentationSourceFingerprint,
+            readyGeneration: dailyContentPresentation.readyGeneration
+        )
         let hasPriorityTaskLibrarySync = hasReadyTaskLibraryUpdate
             || connectedDeviceNeedsTaskLibrarySync
+        let hasPriorityDailyContentSync = dailyContentPresentation.readyGeneration != nil
+            || connectedDeviceNeedsDailyContentSync
         guard policy.shouldSync(
             now: now,
             lastSync: lastSync,
@@ -825,7 +1193,8 @@ public final class BLESyncCoordinator {
             // Identity lives in the small 0x01 frame, not necessarily in DayPack's fingerprint.
             // It therefore owns one immediate sync round even when AI text falls back to the same
             // bytes and the routine interval has not elapsed.
-            force: force || trigger.bypassesRoutineSyncInterval || hasPriorityTaskLibrarySync,
+            force: force || trigger.bypassesRoutineSyncInterval
+                || hasPriorityTaskLibrarySync || hasPriorityDailyContentSync,
             hasPriorityCustomAvatarOperation: hasPriorityCustomAvatarOperation
         ) else {
             return
@@ -839,6 +1208,7 @@ public final class BLESyncCoordinator {
             // 30s 超时到点先等它结束，否则同步收尾会主动提前掐断每次头像传输。
             while !Task.isCancelled,
                   self.isTaskLibraryTransactionInFlight
+                    || self.isDailyContentTransactionInFlight
                     || self.policy.shouldHoldConnectionForCustomAvatar(
                         chunkedTransferInFlight: self.bleService.isChunkedTransferInFlight,
                         operationState: appState.customAvatarOperationState
@@ -929,6 +1299,19 @@ public final class BLESyncCoordinator {
             }
 
             await appState.flushPriorityCustomAvatarOperationIfNeeded()
+            let dailyContentInput = DailyContentGenerationInput(
+                now: now,
+                events: presentationEvents,
+                tasks: presentationTasks,
+                pet: appState.pet,
+                weather: appState.weather,
+                deviceMode: appState.deviceMode,
+                userProfile: appState.userProfile,
+                customCompanions: appState.customCompanions,
+                usageDays: usageDays,
+                sceneID: dailyContentSceneID,
+                focusMinutes: dailyContentFocusMinutes
+            )
             var dayPackSendFailed = false
             var presentationSnapshotIsCurrent = false
             var taskLibraryCommittedBeforeDayPack = false
@@ -995,6 +1378,23 @@ public final class BLESyncCoordinator {
                         return
                     }
                 }
+                do {
+                    try await sendDailyContentIfNeeded(
+                        input: dailyContentInput,
+                        presentationSourceFingerprint: dailyContentPresentationSourceFingerprint,
+                        currentSourceFingerprint: currentDailyContentSourceFingerprint,
+                        capturedStabilityGeneration: dailyContentPresentation.readyGeneration
+                    )
+                } catch DailyContentDeliveryError.sourceChanged {
+                    presentationSnapshotIsCurrent = false
+                    return
+                }
+                guard appState.taskStateVersion == sourceTaskStateVersion,
+                      Self.companionIdentityFingerprint(appState)
+                        == sourceIdentityFingerprint else {
+                    presentationSnapshotIsCurrent = false
+                    return
+                }
                 if Self.shouldSendPreparedDayPack(
                     requested: shouldSendDayPack,
                     lastSentFingerprint: lastHashAtWire,
@@ -1057,6 +1457,14 @@ public final class BLESyncCoordinator {
                 }
             }
             guard presentationSnapshotIsCurrent else {
+                queuePendingSync(force: force, trigger: trigger)
+                return
+            }
+
+            if dailyContentPresentation.readyGeneration == nil,
+               appState.dailyContentPresentationSnapshot().readyGeneration != nil {
+                // The schedule deadline crossed while this round was preparing its frozen
+                // package. Keep the prior daily package/overview pair and switch in one next round.
                 queuePendingSync(force: force, trigger: trigger)
                 return
             }

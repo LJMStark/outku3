@@ -173,6 +173,23 @@ extension BLEService {
         )
     }
 
+    public func sendDailyContentTransaction(
+        _ transaction: DailyContentTransaction,
+        expectedDestinationID: String
+    ) async throws {
+        let validateDestination: PacketWriteValidator = {
+            guard self.taskListSnapshotDestinationID == expectedDestinationID else {
+                throw BLEPresentationDestinationError.changed
+            }
+        }
+        try validateDestination()
+        try await writeData(
+            type: .dailyContentTransaction,
+            data: DailyContentCodec.encodeTransaction(transaction),
+            validateBeforeWrite: validateDestination
+        )
+    }
+
     /// 发送设备模式到 E-ink 设备
     public func sendDeviceMode(_ mode: DeviceMode) async throws {
         let data = BLEDataEncoder.encodeDeviceMode(mode)
@@ -480,7 +497,8 @@ extension BLEService {
     private func shouldUseChunkedPacket(type: BLEDataType, payloadSize: Int, maxWriteLength: Int) -> Bool {
         if payloadSize + 3 > maxWriteLength { return true }
         switch type {
-        case .dayPack, .taskInPage, .customAvatarFrame, .taskLibraryTransaction:
+        case .dayPack, .taskInPage, .customAvatarFrame, .taskLibraryTransaction,
+             .dailyContentTransaction:
             return true
         default:
             return false

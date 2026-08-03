@@ -54,7 +54,8 @@ public final class ScreensaverService {
         userProfile: UserProfile,
         topTaskTitles: [String],
         upcomingEventTitles: [String],
-        customCompanion: CustomCompanion? = nil
+        customCompanion: CustomCompanion? = nil,
+        scheduleGeneration: Bool = true
     ) -> ScreensaverConfig {
         let isPostcardDay = Self.isPostcardDay(usageDays: usageDays)
         let workDigest = buildWorkDigest(
@@ -73,13 +74,15 @@ public final class ScreensaverService {
         )
         let quote = quoteCache[cacheKey] ?? Self.fallbackQuote
 
-        scheduleQuoteGenerationIfNeeded(
-            for: cacheKey,
-            isPostcard: isPostcardDay,
-            usageDays: usageDays,
-            workDigest: workDigest,
-            profileDigest: profileDigest
-        )
+        if scheduleGeneration {
+            scheduleQuoteGenerationIfNeeded(
+                for: cacheKey,
+                isPostcard: isPostcardDay,
+                usageDays: usageDays,
+                workDigest: workDigest,
+                profileDigest: profileDigest
+            )
+        }
 
         return ScreensaverConfig(
             type: isPostcardDay ? .postcard : .normal,

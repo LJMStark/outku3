@@ -60,6 +60,18 @@ public enum BLEEventHandler {
             return
         }
 
+        // `0x24` is the current connection's atomic daily-content result, not an offline event.
+        if message.type == BLEDataType.dailyContentTransaction.rawValue {
+            do {
+                service.handleDailyContentCommitAcknowledgement(
+                    try DailyContentCodec.decodeAcknowledgement(message.payload)
+                )
+            } catch {
+                ErrorReporter.log(error, context: "BLEEventHandler.dailyContentTransaction")
+            }
+            return
+        }
+
         // Handle event log batch (0x21) separately -- keep existing batch logic
         if message.type == BLEDataType.eventLogBatch.rawValue {
             await handleEventLogBatch(message.payload, service: service)

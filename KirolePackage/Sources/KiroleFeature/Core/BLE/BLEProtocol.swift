@@ -94,6 +94,8 @@ public enum BLEDataType: UInt8, Sendable {
     case avatarControl = 0x22
     /// 双向事务帧：App 发送完整设备任务库版本；设备只在完整校验后原子提交并回确认。
     case taskLibraryTransaction = 0x23
+    /// 双向事务帧：App 发送当前本地日期的完整日程与每日文字；与任务库独立版本化。
+    case dailyContentTransaction = 0x24
     case secureData = 0x7E
     case securityHandshake = 0x7F
 }

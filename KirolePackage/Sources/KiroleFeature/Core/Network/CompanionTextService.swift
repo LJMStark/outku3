@@ -56,7 +56,7 @@ public final class CompanionTextService {
         guard await openAI.isConfigured else { return FallbackText.daySummary(events: events) }
         // v2.5.31: digest 带结束时间 "HH:mm-HH:mm"——AI 判断"繁忙/紧凑"需要时段长度与
         // 间隙（客户示例：两个连续日程之间应建议插 break），只给开始时间判不出来。
-        let digest = events.prefix(8).map { event in
+        let digest = events.map { event in
             if event.time.isEmpty { return event.title }
             let span = event.endTime.isEmpty ? event.time : "\(event.time)-\(event.endTime)"
             return "\(span) \(event.title)"
@@ -64,13 +64,11 @@ public final class CompanionTextService {
         do {
             let raw = try await openAI.generateDaySummaryText(eventDigest: Array(digest))
             let text = CompanionTextService.enforceByteBudget(raw, maxBytes: DayPackTextBudget.daySummary)
-            // English-only product: if the model mirrored Chinese event titles, drop it and fall
-            // back to the English template rather than pushing CJK to the panel / hardware.
             if !text.isEmpty, !text.hasPrefix("[Error]"),
                !CompanionDialogueDisplayPolicy.containsCJKScript(text) { return text }
         } catch {
             ErrorReporter.log(
-                .sync(component: "DaySummary", underlying: "generate failed: \(error.localizedDescription)"),
+                .sync(component: "DaySummary", underlying: "generate failed after retry: \(error.localizedDescription)"),
                 context: "CompanionTextService.generateDaySummary"
             )
         }
@@ -192,7 +190,7 @@ public final class CompanionTextService {
             tasksCompleted: tasksCompleted, tasksTotal: tasksTotal
         )
         guard await openAI.isConfigured else { return fallback }
-        let digest = events.prefix(8).map { event in
+        let digest = events.map { event in
             event.time.isEmpty ? event.title : "\(event.time) \(event.title)"
         }
         do {
@@ -205,12 +203,10 @@ public final class CompanionTextService {
             if CompanionTextService.isDisplayablePanelText(text),
                CompanionTextService.reviewSatisfiesHardRules(
                    text, deadlineTitles: deadlineTitles, focusMinutes: focusMinutes
-               ) {
-                return text
-            }
+               ) { return text }
         } catch {
             ErrorReporter.log(
-                .sync(component: "SettlementReview", underlying: "generate failed: \(error.localizedDescription)"),
+                .sync(component: "SettlementReview", underlying: "generate failed after retry: \(error.localizedDescription)"),
                 context: "CompanionTextService.generateSettlementReview"
             )
         }

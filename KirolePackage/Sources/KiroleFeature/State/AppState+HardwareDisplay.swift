@@ -145,43 +145,9 @@ extension AppState {
     }
 
     func handleHardwareSleep(now: Date = Date()) async {
-        let usageDays = await localStorage.loadConsecutiveDays()
-        let sceneId = currentDisplaySceneId()
-        let topTaskTitles = tasksForToday()
-            .filter { !$0.isCompleted }
-            .prefix(3)
-            .map(\.title)
-        let upcomingEventTitles = events
-            .filter { $0.startTime >= now }
-            .sorted { $0.startTime < $1.startTime }
-            .prefix(2)
-            .map(\.title)
-        let config = ScreensaverService.shared.getScreensaverConfig(
-            usageDays: usageDays,
-            currentSceneId: sceneId,
-            userProfile: userProfile,
-            topTaskTitles: topTaskTitles,
-            upcomingEventTitles: upcomingEventTitles,
-            customCompanion: activeCustomCompanion
-        )
-
-        if BLEService.shared.connectionState.isConnected {
-            do {
-                try await BLEService.shared.sendScreensaverConfig(config)
-            } catch {
-                ErrorReporter.log(
-                    .sync(component: "BLE ScreensaverConfig", underlying: error.localizedDescription),
-                    context: "AppState.handleHardwareSleep"
-                )
-            }
-        }
-
-        #if DEBUG
-        if !SimulatorBridge.shared.isConnected {
-            SimulatorBridge.shared.connect()
-        }
-        SimulatorBridge.shared.sendScreensaver(config: config)
-        #endif
+        // The screen saver reads the already committed 0x24 package locally. A sleep transition
+        // must not start AI work or send legacy 0x16 content over the live connection.
+        _ = now
     }
 
     func syncFocusHardwareDisplay(session: FocusSession?, now: Date = Date()) async {

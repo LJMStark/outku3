@@ -59,6 +59,11 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
     public var onTaskLibraryCommitAcknowledgement: (
         @MainActor @Sendable (TaskLibraryCommitAcknowledgement) -> Void
     )?
+    /// `0x24` daily-content commit result, kept separate from the task-library version domain.
+    @ObservationIgnored
+    public var onDailyContentCommitAcknowledgement: (
+        @MainActor @Sendable (DailyContentCommitAcknowledgement) -> Void
+    )?
 
     // MARK: - Internal Transport State
 
@@ -625,6 +630,12 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
         onTaskLibraryCommitAcknowledgement?(acknowledgement)
     }
 
+    func handleDailyContentCommitAcknowledgement(
+        _ acknowledgement: DailyContentCommitAcknowledgement
+    ) {
+        onDailyContentCommitAcknowledgement?(acknowledgement)
+    }
+
     func decodeReceivedMessage(_ receivedData: Data) throws -> BLEReceivedMessage? {
         let decodedMessage: BLEReceivedMessage?
         if let message = packetAssembler.append(packetData: receivedData) {
@@ -681,6 +692,9 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
 
     func cleanup() {
         BLESyncCoordinator.shared.handleTaskLibraryDisconnected(
+            destinationID: taskListSnapshotDestinationID
+        )
+        BLESyncCoordinator.shared.handleDailyContentDisconnected(
             destinationID: taskListSnapshotDestinationID
         )
         BLEWiFiDebugCoordinator.shared.handleDisconnected()

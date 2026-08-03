@@ -48,13 +48,16 @@ public final class EventSupportTextService {
     ///
     /// Call this AFTER `EventCategoryService.categorized(_:)` — the category decides which rule
     /// the line follows, so an uncategorized input would generate against the wrong angle.
-    public func withSupportText(_ summaries: [EventSummary]) async -> [EventSummary] {
+    public func withSupportText(
+        _ summaries: [EventSummary],
+        densityContext: [EventSummary]? = nil
+    ) async -> [EventSummary] {
         guard !summaries.isEmpty else { return [] }
 
         // Density is a property of the whole day, not of one event, so compute it once from the full
         // snapshot (times included) and hand it to every pending line. Same rule as the box② day
         // summary, so the panel and the support lines never disagree about whether today was busy.
-        let isDayPacked = FallbackText.isDayBusy(summaries)
+        let isDayPacked = FallbackText.isDayBusy(densityContext ?? summaries)
 
         // Density joins the cache key. A Wellness line generated on a packed day may open with
         // "busy stretch today"; reusing it after the user clears their calendar would state

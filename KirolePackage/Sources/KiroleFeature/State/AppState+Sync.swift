@@ -519,6 +519,62 @@ extension AppState {
         }
     }
 
+    // MARK: - Daily Content Stability Window
+
+    func dailyContentPresentationSnapshot() -> (
+        events: [CalendarEvent],
+        readyGeneration: UInt64?,
+        usesFrozenBaseline: Bool
+    ) {
+        let readyGeneration = dailyContentStabilityState.readyGeneration(
+            at: dailyContentNowProvider()
+        )
+        let usesFrozenBaseline = dailyContentHardwareEventsBaseline != nil
+            && readyGeneration == nil
+        return (
+            usesFrozenBaseline ? dailyContentHardwareEventsBaseline ?? events : events,
+            readyGeneration,
+            usesFrozenBaseline
+        )
+    }
+
+    func markDailyContentCommitted(capturedGeneration: UInt64?) {
+        guard let capturedGeneration else { return }
+        dailyContentStabilityState.markCommitted(capturedGeneration: capturedGeneration)
+        if dailyContentStabilityState.changedEventIDs.isEmpty {
+            dailyContentHardwareEventsBaseline = nil
+        }
+        persistDailyContentStabilityCheckpoint()
+        scheduleDailyContentStabilityDeadline()
+    }
+
+    func scheduleDailyContentStabilityDeadline() {
+        dailyContentStabilityTask?.cancel()
+        dailyContentStabilityTask = nil
+        guard let deadline = dailyContentStabilityState.deadline,
+              !dailyContentStabilityState.changedEventIDs.isEmpty else {
+            return
+        }
+        let generation = dailyContentStabilityState.generation
+        let remaining = max(0, deadline.timeIntervalSince(dailyContentNowProvider()))
+        dailyContentStabilityTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                try await bleSyncSleeper(.seconds(remaining))
+            } catch {
+                return
+            }
+            guard !Task.isCancelled,
+                  dailyContentStabilityState.generation == generation,
+                  dailyContentStabilityState.readyGeneration(
+                    at: dailyContentNowProvider()
+                  ) != nil else {
+                return
+            }
+            requestBLESync(reason: "dailyContentStabilityDeadline", debounce: .zero)
+        }
+    }
+
     // MARK: - BLE Sync Request
 
     /// Single entry-point used by every write site (and external sync hook)
