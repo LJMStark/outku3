@@ -15,13 +15,15 @@ struct TaskLibraryIncrementalUpdateTests {
         finalEdit[0].notes = "Final notes"
         var state = TaskLibraryStabilityState()
 
-        let recordedFirst = state.recordTaskChanges(from: original, to: firstEdit, at: start)
+        let recordedFirst = state.recordTaskChanges(from: original, to: firstEdit, at: start,
+            calendar: TaskLibraryFullSyncTests.makeShanghaiCalendar())
         #expect(recordedFirst)
         #expect(state.readyScope(at: start.addingTimeInterval(179)) == nil)
         let recordedFinal = state.recordTaskChanges(
             from: firstEdit,
             to: finalEdit,
-            at: start.addingTimeInterval(120)
+            at: start.addingTimeInterval(120),
+            calendar: TaskLibraryFullSyncTests.makeShanghaiCalendar()
         )
         #expect(recordedFinal)
         #expect(state.readyScope(at: start.addingTimeInterval(299)) == nil)
@@ -40,11 +42,13 @@ struct TaskLibraryIncrementalUpdateTests {
         completed[1].isCompleted = true
         var state = TaskLibraryStabilityState()
 
-        _ = state.recordTaskChanges(from: original, to: edited, at: start)
+        _ = state.recordTaskChanges(from: original, to: edited, at: start,
+            calendar: TaskLibraryFullSyncTests.makeShanghaiCalendar())
         _ = state.recordTaskChanges(
             from: edited,
             to: completed,
             at: start.addingTimeInterval(60),
+            calendar: TaskLibraryFullSyncTests.makeShanghaiCalendar(),
             immediateRemovalTaskIDs: ["completed"]
         )
         state.promoteImmediateRemoval(taskID: "completed")
@@ -71,11 +75,13 @@ struct TaskLibraryIncrementalUpdateTests {
         completed[0].isCompleted = true
         var state = TaskLibraryStabilityState()
 
-        _ = state.recordTaskChanges(from: original, to: edited, at: start)
+        _ = state.recordTaskChanges(from: original, to: edited, at: start,
+            calendar: TaskLibraryFullSyncTests.makeShanghaiCalendar())
         let restarted = state.recordTaskChanges(
             from: edited,
             to: completed,
             at: start.addingTimeInterval(60),
+            calendar: TaskLibraryFullSyncTests.makeShanghaiCalendar(),
             immediateRemovalTaskIDs: ["completed"]
         )
         state.promoteImmediateRemoval(taskID: "completed")
@@ -115,7 +121,8 @@ struct TaskLibraryIncrementalUpdateTests {
         var edited = original
         edited[0].title = "After"
         var restoredState = TaskLibraryStabilityState()
-        _ = restoredState.recordTaskChanges(from: original, to: edited, at: start)
+        _ = restoredState.recordTaskChanges(from: original, to: edited, at: start,
+            calendar: TaskLibraryFullSyncTests.makeShanghaiCalendar())
         let appState = AppState.makeForTesting()
         appState.suppressesTaskLibraryChangeTracking = true
         appState.tasks = edited
@@ -227,7 +234,8 @@ struct TaskLibraryIncrementalUpdateTests {
         let active = [TaskItem(id: "task", title: "Return", isCompleted: false, dueDate: start)]
         var state = TaskLibraryStabilityState()
 
-        let recorded = state.recordTaskChanges(from: completed, to: active, at: start)
+        let recorded = state.recordTaskChanges(from: completed, to: active, at: start,
+            calendar: TaskLibraryFullSyncTests.makeShanghaiCalendar())
         #expect(recorded)
         #expect(state.readyScope(at: start.addingTimeInterval(179)) == nil)
         #expect(state.readyScope(at: start.addingTimeInterval(180)) == .complete)
@@ -407,5 +415,150 @@ struct TaskLibraryIncrementalUpdateTests {
         #expect(acknowledgement.result == .baseMismatch)
         #expect(snapshot.taskLibraryRecords.map(\.taskID) == ["a"])
         #expect(snapshot.taskLibraryCommittedVersion == first.version)
+    }
+
+    // MARK: - Today-only membership (2026-08-04)
+
+    @Test("A task leaving today becomes an incremental deletion and a manual selection an upsert")
+    func todayMembershipDrivesUpsertsAndDeletions() throws {
+        let calendar = TaskLibraryFullSyncTests.makeShanghaiCalendar()
+        let profile = UserProfile.default
+        let dueToday = TaskItem(id: "stay", title: "Stays today", dueDate: start)
+        let leaving = TaskItem(id: "leave", title: "Leaves today", dueDate: start)
+        let manual = TaskItem(id: "manual", title: "Joins today", todayDisplayDate: start)
+
+        let base = try TaskLibraryTransaction.fullLibrary(
+            from: [dueToday, leaving],
+            version: TaskLibraryVersion(epoch: 20, revision: 1),
+            now: start,
+            calendar: calendar,
+            // 与 planner 的按角色 fallback 一致，否则未变更的 record 会被误判为 upsert。
+            phaseTexts: { _ in .localFallback(for: profile.companionCharacter) }
+        )
+        let baseline = TaskLibraryCommittedSnapshot(
+            state: try TaskLibraryCodec.committedState(for: base),
+            records: base.records,
+            phaseSourceFingerprints: [:],
+            personaFingerprint: TaskLibraryPhaseSourceFingerprint.persona(
+                userProfile: profile,
+                customCompanions: []
+            )
+        )
+
+        // 用户把 leave 的日期改到明天（掉出今天），并把无日期任务手动设为今天。
+        var movedOut = leaving
+        movedOut.dueDate = start.addingTimeInterval(24 * 60 * 60)
+
+        let update = try TaskLibraryUpdatePlanner.makeUpdate(
+            tasks: [dueToday, movedOut, manual],
+            baseline: baseline,
+            version: TaskLibraryVersion(epoch: 20, revision: 2),
+            scope: .complete,
+            preparedPhaseTexts: [:],
+            userProfile: profile,
+            customCompanions: [],
+            now: start,
+            calendar: calendar
+        )
+
+        #expect(update.transaction.kind == .incremental)
+        #expect(update.transaction.deletedTaskIDs == ["leave"])
+        #expect(update.transaction.records.map(\.taskID) == ["manual"])
+        #expect(update.targetRecords.map(\.taskID) == ["stay", "manual"])
+    }
+
+    @Test("Setting a task to today opens one stability window and is ready only at 180 seconds")
+    func manualTodaySelectionUsesTheStabilityWindow() {
+        let calendar = TaskLibraryFullSyncTests.makeShanghaiCalendar()
+        var state = TaskLibraryStabilityState()
+        let undated = TaskItem(id: "manual", title: "Pick me")
+        var selected = undated
+        selected.todayDisplayDate = start
+
+        // 手动设为今天：进集合 = 变化，开 180 秒窗（客户拍板：走三分钟推送规则）。
+        let selectionRecorded = state.recordTaskChanges(
+            from: [undated],
+            to: [selected],
+            at: start,
+            calendar: calendar
+        )
+        #expect(selectionRecorded)
+        #expect(state.readyScope(at: start.addingTimeInterval(179)) == nil)
+        #expect(state.readyScope(at: start.addingTimeInterval(180)) == .complete)
+
+        // 移出今天：出集合 = 变化，同样走窗。
+        var afterCommit = TaskLibraryStabilityState()
+        let removalRecorded = afterCommit.recordTaskChanges(
+            from: [selected],
+            to: [undated],
+            at: start,
+            calendar: calendar
+        )
+        #expect(removalRecorded)
+        #expect(afterCommit.readyScope(at: start.addingTimeInterval(180)) == .complete)
+    }
+
+    @Test("Yesterday's frozen pending source cannot validate on the new local day")
+    @MainActor
+    func pendingValidationIsDayBound() {
+        let calendar = TaskLibraryFullSyncTests.makeShanghaiCalendar()
+        let appState = AppState.shared
+        let previousTasks = appState.tasks
+        let previousNow = appState.taskLibraryNowProvider
+        let previousCalendar = appState.dailyContentCalendarProvider
+        defer {
+            appState.tasks = previousTasks
+            appState.taskLibraryNowProvider = previousNow
+            appState.dailyContentCalendarProvider = previousCalendar
+        }
+
+        let task = TaskItem(id: "day-bound", title: "Day bound", dueDate: start)
+        appState.tasks = [task]
+        appState.dailyContentCalendarProvider = { calendar }
+        appState.taskLibraryNowProvider = { self.start }
+
+        let frozenYesterday = TaskLibraryPendingValidation.completeSource(
+            TaskLibrarySourceFingerprint.make(
+                tasks: [task],
+                userProfile: appState.userProfile,
+                customCompanions: appState.customCompanions,
+                now: start,
+                calendar: calendar
+            )
+        )
+        #expect(frozenYesterday.matchesCurrentSource())
+
+        // 跨到明天：同一份任务数组，指纹因本地日与成员资格变化而失配。
+        appState.taskLibraryNowProvider = { self.start.addingTimeInterval(24 * 60 * 60) }
+        #expect(!frozenYesterday.matchesCurrentSource())
+    }
+
+    @Test("A removal pending is satisfied when its task left today and blocked when it joined")
+    @MainActor
+    func removalValidationTracksTodayMembership() {
+        let calendar = TaskLibraryFullSyncTests.makeShanghaiCalendar()
+        let appState = AppState.shared
+        let previousTasks = appState.tasks
+        let previousNow = appState.taskLibraryNowProvider
+        let previousCalendar = appState.dailyContentCalendarProvider
+        defer {
+            appState.tasks = previousTasks
+            appState.taskLibraryNowProvider = previousNow
+            appState.dailyContentCalendarProvider = previousCalendar
+        }
+        appState.dailyContentCalendarProvider = { calendar }
+        appState.taskLibraryNowProvider = { self.start }
+
+        let tomorrow = start.addingTimeInterval(24 * 60 * 60)
+        // 任务已不在今天集（改期到明天）：旧 removal 判满足——设备上本就不该再有它。
+        appState.tasks = [TaskItem(id: "moved", title: "Moved", dueDate: tomorrow)]
+        let removal = TaskLibraryPendingValidation.taskRemovals(
+            [TaskItem(id: "moved", title: "Moved", dueDate: tomorrow).hardwareIdentifier]
+        )
+        #expect(removal.matchesCurrentSource())
+
+        // 同一任务回到今天集：removal 不再满足。
+        appState.tasks = [TaskItem(id: "moved", title: "Moved", dueDate: start)]
+        #expect(!removal.matchesCurrentSource())
     }
 }

@@ -362,15 +362,23 @@ struct TaskLibraryStabilityState: Sendable, Equatable, Codable {
     private(set) var deadline: Date?
     private(set) var generation: UInt64 = 0
 
+    /// 记录一次用户驱动的任务变化。old/new 双侧用**同一个** (now, calendar) 评估成员资格——
+    /// 差集只反映用户操作（编辑、手动设/移出今天、完成、删除），不反映时间流逝；
+    /// 跨日的成员整体换血走 `promoteImmediateCompleteUpdate()` 专属通道，不经本函数。
     mutating func recordTaskChanges(
         from oldTasks: [TaskItem],
         to newTasks: [TaskItem],
         at now: Date,
+        calendar: Calendar,
         immediateRemovalTaskIDs: Set<String> = [],
         immediateQueueReorderTaskIDs: Set<String> = []
     ) -> Bool {
-        let oldEligible = oldTasks.filter { !$0.isCompleted && !$0.pendingDeletion }
-        let newEligible = newTasks.filter { !$0.isCompleted && !$0.pendingDeletion }
+        let oldEligible = oldTasks.filter {
+            $0.isEligibleForHardwareTaskLibrary(on: now, calendar: calendar)
+        }
+        let newEligible = newTasks.filter {
+            $0.isEligibleForHardwareTaskLibrary(on: now, calendar: calendar)
+        }
         var oldByID: [String: TaskItem] = [:]
         var newByID: [String: TaskItem] = [:]
         var oldOrder: [String: Int] = [:]

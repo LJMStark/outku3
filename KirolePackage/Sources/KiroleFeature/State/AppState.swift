@@ -428,6 +428,7 @@ public final class AppState {
             from: oldTasks,
             to: newTasks,
             at: taskLibraryNowProvider(),
+            calendar: dailyContentCalendarProvider(),
             immediateRemovalTaskIDs: immediateRemovals,
             immediateQueueReorderTaskIDs: immediateQueueReorders
         )

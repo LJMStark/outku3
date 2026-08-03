@@ -74,9 +74,9 @@ struct HardwareTaskSkipPersistenceTests {
         var now = start
         let appState = AppState.makeForTesting()
         appState.taskLibraryNowProvider = { now }
-        let first = TaskItem(id: "frozen-first", title: "Before")
-        let second = TaskItem(id: "frozen-second", title: "Second")
-        let third = TaskItem(id: "frozen-third", title: "Third")
+        let first = TaskItem(id: "frozen-first", title: "Before", dueDate: start)
+        let second = TaskItem(id: "frozen-second", title: "Second", dueDate: start)
+        let third = TaskItem(id: "frozen-third", title: "Third", dueDate: start)
         appState.tasks = [first, second, third]
         appState.taskLibraryStabilityState = TaskLibraryStabilityState()
         appState.taskLibraryHardwareTasksBaseline = nil
