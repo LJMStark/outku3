@@ -241,6 +241,10 @@ public final class BLESyncCoordinator {
         guard let destinationID = connectedDestinationProvider(), !destinationID.isEmpty else {
             return
         }
+        // 0x23 的「今天」与 0x24 共用同一对时间源：任务库自 v2.16.0（2026-08-04 客户拍板）
+        // 只纳入当天任务，跨日边界必须与当天内容包一致。
+        let now = AppState.shared.taskLibraryNowProvider()
+        let calendar = AppState.shared.dailyContentCalendarProvider()
 
         var committedSnapshot: TaskLibraryCommittedSnapshot?
         var persistedPending: TaskLibraryPendingDelivery?
@@ -322,6 +326,8 @@ public final class BLESyncCoordinator {
                 preparedPhaseTexts: phaseTexts,
                 userProfile: userProfile,
                 customCompanions: customCompanions,
+                now: now,
+                calendar: calendar,
                 forceFullTransaction: requiresFullLibrary || personaChanged
             )
             let preparedUpdate: TaskLibraryPreparedUpdate

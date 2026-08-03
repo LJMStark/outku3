@@ -511,7 +511,9 @@ public final class AppState {
                     sourceFingerprint: TaskLibrarySourceFingerprint.make(
                         tasks: tasks,
                         userProfile: userProfile,
-                        customCompanions: customCompanions
+                        customCompanions: customCompanions,
+                        now: taskLibraryNowProvider(),
+                        calendar: dailyContentCalendarProvider()
                     )
                 )
             )
@@ -595,7 +597,9 @@ public final class AppState {
         let currentFingerprint = TaskLibrarySourceFingerprint.make(
             tasks: tasks,
             userProfile: userProfile,
-            customCompanions: customCompanions
+            customCompanions: customCompanions,
+            now: taskLibraryNowProvider(),
+            calendar: dailyContentCalendarProvider()
         )
         guard checkpoint.sourceFingerprint == currentFingerprint else { return false }
         taskLibraryStabilityState = checkpoint.state

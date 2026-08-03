@@ -197,13 +197,24 @@ private enum TaskLibraryDeliveryLogger {
 }
 
 enum TaskLibrarySourceFingerprint {
+    /// Fingerprints today's device-library source. The local day is part of the digest, so a
+    /// pending delivery frozen yesterday can never validate (and be resent as-is) after midnight —
+    /// membership is day-dependent since v2.16.0's today-only library (2026-08-04).
     static func make(
         tasks: [TaskItem],
         userProfile: UserProfile,
-        customCompanions: [CustomCompanion]
+        customCompanions: [CustomCompanion],
+        now: Date,
+        calendar: Calendar
     ) -> String {
-        let included = tasks.filter { !$0.isCompleted && !$0.pendingDeletion }
-        var parts = ["records=\(included.count)"]
+        let included = tasks.filter {
+            $0.isEligibleForHardwareTaskLibrary(on: now, calendar: calendar)
+        }
+        let localDay = DailyContentDate(date: now, calendar: calendar)
+        var parts = [
+            "day=\(localDay.year)-\(localDay.month)-\(localDay.day)",
+            "records=\(included.count)"
+        ]
         for (index, task) in included.enumerated() {
             parts.append("order=\(index)")
             parts.append("id=\(task.hardwareIdentifier)")

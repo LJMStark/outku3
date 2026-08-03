@@ -31,23 +31,32 @@ public enum TaskLibraryPendingValidation: Sendable, Equatable, Codable {
     @MainActor
     func matchesCurrentSource() -> Bool {
         let appState = AppState.shared
+        let now = appState.taskLibraryNowProvider()
+        let calendar = appState.dailyContentCalendarProvider()
         switch self {
         case .completeSource(let fingerprint):
             return TaskLibrarySourceFingerprint.make(
                 tasks: appState.tasks,
                 userProfile: appState.userProfile,
-                customCompanions: appState.customCompanions
+                customCompanions: appState.customCompanions,
+                now: now,
+                calendar: calendar
             ) == fingerprint
         case .taskRemovals(let taskIDs):
+            // Removal 满足 = 该 ID 在当前时刻的今天集里不可能出现。任务掉出今天（跨日、改日期、
+            // 取消手动今天）与完成/删除同判满足——设备上本来就不该再有它；整日范围重算由跨日
+            // promote 的 .complete 事务另行兜底（pendingIsSupersededByComplete）。
             let eligibleIDs = Set(appState.tasks.lazy
-                .filter { !$0.isCompleted && !$0.pendingDeletion }
+                .filter { $0.isEligibleForHardwareTaskLibrary(on: now, calendar: calendar) }
                 .map(\.hardwareIdentifier))
             return taskIDs.allSatisfy { !eligibleIDs.contains($0) }
         case .hardwareProjection(let fingerprint):
             return TaskLibrarySourceFingerprint.make(
                 tasks: appState.tasksForHardwarePresentation(),
                 userProfile: appState.userProfile,
-                customCompanions: appState.customCompanions
+                customCompanions: appState.customCompanions,
+                now: now,
+                calendar: calendar
             ) == fingerprint
         }
     }
@@ -113,12 +122,14 @@ enum TaskLibraryUpdatePlanner {
         tasks: [TaskItem],
         baseline: TaskLibraryCommittedSnapshot?,
         userProfile: UserProfile,
-        customCompanions: [CustomCompanion]
+        customCompanions: [CustomCompanion],
+        now: Date,
+        calendar: Calendar
     ) -> [TaskItem] {
         let existingIDs = Set(baseline?.records.map(\.taskID) ?? [])
         let oldFingerprints = baseline?.phaseSourceFingerprints ?? [:]
         return tasks.filter { task in
-            guard !task.isCompleted, !task.pendingDeletion else { return false }
+            guard task.isEligibleForHardwareTaskLibrary(on: now, calendar: calendar) else { return false }
             let taskID = task.hardwareIdentifier
             let fingerprint = TaskLibraryPhaseSourceFingerprint.make(
                 task: task,
@@ -137,6 +148,8 @@ enum TaskLibraryUpdatePlanner {
         preparedPhaseTexts: [String: TaskLibraryPhaseTexts],
         userProfile: UserProfile,
         customCompanions: [CustomCompanion],
+        now: Date,
+        calendar: Calendar,
         forceFullTransaction: Bool = false
     ) throws -> TaskLibraryPreparedUpdate {
         if forceFullTransaction {
@@ -147,6 +160,8 @@ enum TaskLibraryUpdatePlanner {
                 preparedPhaseTexts: preparedPhaseTexts,
                 userProfile: userProfile,
                 customCompanions: customCompanions,
+                now: now,
+                calendar: calendar,
                 forceFullTransaction: true
             )
         }
@@ -159,6 +174,8 @@ enum TaskLibraryUpdatePlanner {
                 preparedPhaseTexts: preparedPhaseTexts,
                 userProfile: userProfile,
                 customCompanions: customCompanions,
+                now: now,
+                calendar: calendar,
                 forceFullTransaction: false
             )
         case .hardwareQueue:
@@ -169,6 +186,8 @@ enum TaskLibraryUpdatePlanner {
                 preparedPhaseTexts: preparedPhaseTexts,
                 userProfile: userProfile,
                 customCompanions: customCompanions,
+                now: now,
+                calendar: calendar,
                 forceFullTransaction: false
             )
             return TaskLibraryPreparedUpdate(
@@ -178,7 +197,9 @@ enum TaskLibraryUpdatePlanner {
                 validation: .hardwareProjection(TaskLibrarySourceFingerprint.make(
                     tasks: tasks,
                     userProfile: userProfile,
-                    customCompanions: customCompanions
+                    customCompanions: customCompanions,
+                    now: now,
+                    calendar: calendar
                 )),
                 personaFingerprint: update.personaFingerprint
             )
@@ -191,6 +212,8 @@ enum TaskLibraryUpdatePlanner {
                     preparedPhaseTexts: preparedPhaseTexts,
                     userProfile: userProfile,
                     customCompanions: customCompanions,
+                    now: now,
+                    calendar: calendar,
                     forceFullTransaction: false
                 )
             }
@@ -242,6 +265,8 @@ enum TaskLibraryUpdatePlanner {
         preparedPhaseTexts: [String: TaskLibraryPhaseTexts],
         userProfile: UserProfile,
         customCompanions: [CustomCompanion],
+        now: Date,
+        calendar: Calendar,
         forceFullTransaction: Bool
     ) throws -> TaskLibraryPreparedUpdate {
         var oldRecords: [String: TaskLibraryRecord] = [:]
@@ -252,7 +277,9 @@ enum TaskLibraryUpdatePlanner {
         let fallback = userProfile.customCompanionId == nil
             ? TaskLibraryPhaseTexts.localFallback(for: userProfile.companionCharacter)
             : .localFallback
-        let eligible = tasks.filter { !$0.isCompleted && !$0.pendingDeletion }
+        let eligible = tasks.filter {
+            $0.isEligibleForHardwareTaskLibrary(on: now, calendar: calendar)
+        }
         var targetRecords: [TaskLibraryRecord] = []
         var targetFingerprints: [String: String] = [:]
         targetRecords.reserveCapacity(eligible.count)
@@ -307,7 +334,9 @@ enum TaskLibraryUpdatePlanner {
             validation: .completeSource(TaskLibrarySourceFingerprint.make(
                 tasks: tasks,
                 userProfile: userProfile,
-                customCompanions: customCompanions
+                customCompanions: customCompanions,
+                now: now,
+                calendar: calendar
             )),
             personaFingerprint: TaskLibraryPhaseSourceFingerprint.persona(
                 userProfile: userProfile,

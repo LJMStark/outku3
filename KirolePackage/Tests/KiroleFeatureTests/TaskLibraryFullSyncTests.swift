@@ -399,8 +399,10 @@ struct TaskLibraryFullSyncTests {
                 sourceFingerprint: TaskLibrarySourceFingerprint.make(
                     tasks: appState.tasks,
                     userProfile: appState.userProfile,
-                    customCompanions: appState.customCompanions
-                )
+                    customCompanions: appState.customCompanions,
+                        now: appState.taskLibraryNowProvider(),
+                    calendar: appState.dailyContentCalendarProvider()
+                    )
             )
 
             do {
@@ -540,8 +542,10 @@ struct TaskLibraryFullSyncTests {
                 sourceFingerprint: TaskLibrarySourceFingerprint.make(
                     tasks: appState.tasks,
                     userProfile: appState.userProfile,
-                    customCompanions: appState.customCompanions
-                )
+                    customCompanions: appState.customCompanions,
+                        now: appState.taskLibraryNowProvider(),
+                    calendar: appState.dailyContentCalendarProvider()
+                    )
             )
 
             do {

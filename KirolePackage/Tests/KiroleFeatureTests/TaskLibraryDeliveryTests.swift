@@ -82,24 +82,32 @@ struct TaskLibraryDeliveryTests {
 
     @Test("A changed task or built-in persona produces a new pending-source fingerprint")
     func sourceFingerprintTracksDeviceVisibleInputs() {
-        let original = [TaskItem(id: "task", title: "Original", notes: "First note")]
-        let edited = [TaskItem(id: "task", title: "Edited", notes: "First note")]
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let calendar = TaskLibraryFullSyncTests.makeShanghaiCalendar()
+        let original = [TaskItem(id: "task", title: "Original", dueDate: now, notes: "First note")]
+        let edited = [TaskItem(id: "task", title: "Edited", dueDate: now, notes: "First note")]
         let profile = UserProfile(companionCharacter: .joy, intimacyStage: .acquaintance)
 
         let baseline = TaskLibrarySourceFingerprint.make(
             tasks: original,
             userProfile: profile,
-            customCompanions: []
+            customCompanions: [],
+            now: now,
+            calendar: calendar
         )
         let repeated = TaskLibrarySourceFingerprint.make(
             tasks: original,
             userProfile: profile,
-            customCompanions: []
+            customCompanions: [],
+            now: now,
+            calendar: calendar
         )
         let taskChanged = TaskLibrarySourceFingerprint.make(
             tasks: edited,
             userProfile: profile,
-            customCompanions: []
+            customCompanions: [],
+            now: now,
+            calendar: calendar
         )
         let personaChanged = TaskLibrarySourceFingerprint.make(
             tasks: original,
@@ -107,12 +115,42 @@ struct TaskLibraryDeliveryTests {
                 companionCharacter: .joy,
                 intimacyStage: .familiar
             ),
-            customCompanions: []
+            customCompanions: [],
+            now: now,
+            calendar: calendar
         )
 
         #expect(baseline == repeated)
         #expect(baseline != taskChanged)
         #expect(baseline != personaChanged)
+    }
+
+    @Test("The pending-source fingerprint is bound to the local day and today's membership")
+    func sourceFingerprintIsDayBound() {
+        // 跨午夜后指纹必须自动失配：昨日冻结的待发事务不可原样重发，只能按新日重算。
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let calendar = TaskLibraryFullSyncTests.makeShanghaiCalendar()
+        let tomorrow = now.addingTimeInterval(24 * 60 * 60)
+        let dueToday = TaskItem(id: "due-today", title: "Due today", dueDate: now)
+        let future = TaskItem(id: "future", title: "Future", dueDate: tomorrow)
+        let profile = UserProfile(companionCharacter: .joy, intimacyStage: .acquaintance)
+
+        let today = TaskLibrarySourceFingerprint.make(
+            tasks: [dueToday], userProfile: profile, customCompanions: [],
+            now: now, calendar: calendar
+        )
+        let sameTasksNextDay = TaskLibrarySourceFingerprint.make(
+            tasks: [dueToday], userProfile: profile, customCompanions: [],
+            now: tomorrow, calendar: calendar
+        )
+        // 非今天的任务不进指纹：未来任务的存在与否不改变今天的指纹。
+        let withFutureNoise = TaskLibrarySourceFingerprint.make(
+            tasks: [dueToday, future], userProfile: profile, customCompanions: [],
+            now: now, calendar: calendar
+        )
+
+        #expect(today != sameTasksNextDay)
+        #expect(today == withFutureNoise)
     }
 
     @Test("A new pending version replaces the previous one for only that destination")

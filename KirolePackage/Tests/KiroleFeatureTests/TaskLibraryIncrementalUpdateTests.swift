@@ -8,7 +8,7 @@ struct TaskLibraryIncrementalUpdateTests {
 
     @Test("Each content change restarts one three-minute window and only the final source is ready")
     func stabilityWindowRestartsFromLatestChange() {
-        let original = [TaskItem(id: "task", title: "First")]
+        let original = [TaskItem(id: "task", title: "First", dueDate: start)]
         var firstEdit = original
         firstEdit[0].title = "Second"
         var finalEdit = firstEdit
@@ -31,7 +31,7 @@ struct TaskLibraryIncrementalUpdateTests {
     @Test("An immediate completion cancels that task's staged copy without delaying another edit")
     func completionDoesNotResetAnotherTasksDeadline() {
         let original = [
-            TaskItem(id: "edited", title: "Before"),
+            TaskItem(id: "edited", title: "Before", dueDate: start),
             TaskItem(id: "completed", title: "Finish me")
         ]
         var edited = original
@@ -63,7 +63,7 @@ struct TaskLibraryIncrementalUpdateTests {
     func completingEarlierTaskDoesNotChangeRemainingOrder() {
         let original = [
             TaskItem(id: "completed", title: "Finish me"),
-            TaskItem(id: "edited", title: "Before")
+            TaskItem(id: "edited", title: "Before", dueDate: start)
         ]
         var edited = original
         edited[1].title = "After"
@@ -111,7 +111,7 @@ struct TaskLibraryIncrementalUpdateTests {
     @MainActor
     @Test("A persisted window resumes after restart and becomes ready at its original deadline")
     func persistedWindowRestoresWithoutResettingDeadline() throws {
-        let original = [TaskItem(id: "task", title: "Before")]
+        let original = [TaskItem(id: "task", title: "Before", dueDate: start)]
         var edited = original
         edited[0].title = "After"
         var restoredState = TaskLibraryStabilityState()
@@ -129,8 +129,10 @@ struct TaskLibraryIncrementalUpdateTests {
             sourceFingerprint: TaskLibrarySourceFingerprint.make(
                 tasks: edited,
                 userProfile: appState.userProfile,
-                customCompanions: appState.customCompanions
-            )
+                customCompanions: appState.customCompanions,
+                        now: start,
+                        calendar: TaskLibraryFullSyncTests.makeShanghaiCalendar()
+                    )
         )
 
         #expect(appState.applyTaskLibraryStabilityCheckpoint(checkpoint))
@@ -172,7 +174,7 @@ struct TaskLibraryIncrementalUpdateTests {
     @Test("A forced full resync keeps the frozen task source during the stability window")
     func forcedFullResyncUsesFrozenSource() throws {
         let profile = UserProfile.default
-        let frozen = TaskItem(id: "task", title: "Before", notes: "Old notes")
+        let frozen = TaskItem(id: "task", title: "Before", dueDate: start, notes: "Old notes")
         let phaseTexts = TaskLibraryPhaseTexts(
             starting: "Old start",
             building: "Old middle",
@@ -209,6 +211,8 @@ struct TaskLibraryIncrementalUpdateTests {
             preparedPhaseTexts: [:],
             userProfile: profile,
             customCompanions: [],
+            now: start,
+            calendar: TaskLibraryFullSyncTests.makeShanghaiCalendar(),
             forceFullTransaction: true
         )
 
@@ -219,8 +223,8 @@ struct TaskLibraryIncrementalUpdateTests {
 
     @Test("Undo completion enters the stability window before the task returns")
     func undoCompletionWaitsForCompleteRecord() {
-        let completed = [TaskItem(id: "task", title: "Return", isCompleted: true)]
-        let active = [TaskItem(id: "task", title: "Return", isCompleted: false)]
+        let completed = [TaskItem(id: "task", title: "Return", isCompleted: true, dueDate: start)]
+        let active = [TaskItem(id: "task", title: "Return", isCompleted: false, dueDate: start)]
         var state = TaskLibraryStabilityState()
 
         let recorded = state.recordTaskChanges(from: completed, to: active, at: start)
@@ -239,7 +243,7 @@ struct TaskLibraryIncrementalUpdateTests {
             priority: .low,
             notes: "Same notes"
         )
-        let oldB = TaskItem(id: "b", title: "Old title", notes: "B notes")
+        let oldB = TaskItem(id: "b", title: "Old title", dueDate: start, notes: "B notes")
         let oldTextsA = TaskLibraryPhaseTexts(
             starting: "A start",
             building: "A middle",
@@ -274,7 +278,9 @@ struct TaskLibraryIncrementalUpdateTests {
             ]
         )
         var changedA = oldA
-        changedA.dueDate = start.addingTimeInterval(86_400)
+        // 同日内改期（+1h）：日期/优先级变化复用旧文案。+86400 会跨日、把任务改出今天集——
+        // 那是 deletion 语义，另有专测。
+        changedA.dueDate = start.addingTimeInterval(3_600)
         changedA.priority = .high
         var changedB = oldB
         changedB.title = "New title"
@@ -283,7 +289,9 @@ struct TaskLibraryIncrementalUpdateTests {
             tasks: [changedA, changedB],
             baseline: baseline,
             userProfile: profile,
-            customCompanions: []
+            customCompanions: [],
+            now: start,
+            calendar: TaskLibraryFullSyncTests.makeShanghaiCalendar()
         )
         #expect(needing.map(\.id) == ["b"])
 
@@ -299,7 +307,9 @@ struct TaskLibraryIncrementalUpdateTests {
             scope: .complete,
             preparedPhaseTexts: ["b": newTextsB],
             userProfile: profile,
-            customCompanions: []
+            customCompanions: [],
+            now: start,
+            calendar: TaskLibraryFullSyncTests.makeShanghaiCalendar()
         )
 
         #expect(update.transaction.kind == .incremental)
@@ -319,8 +329,8 @@ struct TaskLibraryIncrementalUpdateTests {
         scenario.connect()
         let first = try TaskLibraryTransaction.fullLibrary(
             from: [
-                TaskItem(id: "a", title: "A"),
-                TaskItem(id: "b", title: "B")
+                TaskItem(id: "a", title: "A", dueDate: start),
+                TaskItem(id: "b", title: "B", dueDate: start)
             ],
             version: TaskLibraryVersion(epoch: 3, revision: 1),
             now: start,
@@ -371,7 +381,7 @@ struct TaskLibraryIncrementalUpdateTests {
         let scenario = AppDeviceScenario(now: start)
         scenario.connect()
         let first = try TaskLibraryTransaction.fullLibrary(
-            from: [TaskItem(id: "a", title: "A")],
+            from: [TaskItem(id: "a", title: "A", dueDate: start)],
             version: TaskLibraryVersion(epoch: 4, revision: 1),
             now: start,
             calendar: TaskLibraryFullSyncTests.makeShanghaiCalendar()
