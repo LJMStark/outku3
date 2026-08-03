@@ -29,8 +29,8 @@ struct DailyContentDayRolloverTests {
         ) == nil)
     }
 
-    @Test("A new day clears only the schedule window and requests immediate fresh content")
-    func rolloverPreservesTaskLibraryAndBypassesScheduleWindow() async throws {
+    @Test("A new day resets both projections and promotes an immediate library recompute")
+    func rolloverPromotesTaskLibraryAndBypassesScheduleWindow() async throws {
         let calendar = try makeCalendar()
         let beforeMidnight = try date(
             calendar: calendar,
@@ -47,8 +47,11 @@ struct DailyContentDayRolloverTests {
         )
         var editedEvent = oldEvent
         editedEvent.title = "Edited yesterday"
-        let task = TaskItem(id: "task", title: "Keep me")
+        // 昨天到期的任务：跨日后不再属于今天集，重算后会成为增量 deletion。
+        let task = TaskItem(id: "task", title: "Keep me", dueDate: beforeMidnight)
         let state = AppState.makeForTesting()
+        state.taskLibraryNowProvider = { afterMidnight }
+        state.dailyContentCalendarProvider = { calendar }
         state.dailyContentObservedDate = DailyContentDate(
             date: beforeMidnight,
             calendar: calendar
@@ -58,8 +61,10 @@ struct DailyContentDayRolloverTests {
         state.suppressesDailyContentChangeTracking = false
         state.dailyContentNowProvider = { beforeMidnight }
         state.events = [editedEvent]
+        state.suppressesTaskLibraryChangeTracking = true
         state.tasks = [task]
-        let taskStateBefore = state.taskLibraryStabilityState
+        state.suppressesTaskLibraryChangeTracking = false
+        state.taskLibraryHardwareTasksBaseline = [task]
         var refreshCount = 0
         var syncTriggers: [BLESyncTrigger] = []
         state.dailyContentDayRefreshExecutor = { refreshCount += 1 }
@@ -77,8 +82,13 @@ struct DailyContentDayRolloverTests {
         #expect(syncTriggers == [.automatic])
         #expect(state.dailyContentStabilityState.changedEventIDs.isEmpty)
         #expect(state.dailyContentHardwareEventsBaseline == nil)
-        #expect(state.taskLibraryStabilityState == taskStateBefore)
+        // v2.16.0（仅今天任务库）：跨日必须整库立即重算——冻结投影作废、readyScope 立即 .complete，
+        // 与 0x24 同一轮 sync 送达（0x23 先行）。App 侧任务数据本身不动。
+        #expect(state.taskLibraryStabilityState.hasUrgentCompleteUpdate)
+        #expect(state.taskLibraryReadyUpdate()?.scope == .complete)
+        #expect(state.taskLibraryHardwareTasksBaseline == nil)
         #expect(state.tasks.map(\.id) == [task.id])
+        state.taskLibraryStabilityTask?.cancel()
     }
 
     @Test("A new-day calendar import does not reopen the three-minute window")

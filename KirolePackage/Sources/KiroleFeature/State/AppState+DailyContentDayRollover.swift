@@ -20,8 +20,11 @@ extension AppState {
         scheduleDailyContentDayRollover(userDefaults: userDefaults)
     }
 
-    /// Returns true only for a real local-date transition. The task library and any active focus
-    /// session are deliberately untouched; only the schedule stability projection is discarded.
+    /// Returns true only for a real local-date transition. Since v2.16.0 (2026-08-04, today-only
+    /// task library) the day boundary invalidates BOTH stability projections: the schedule window
+    /// resets and the task library promotes an immediate complete recompute — yesterday's due and
+    /// manual-today tasks leave the device on the next sync round. Any active focus session stays
+    /// deliberately untouched.
     @discardableResult
     func observeDailyContentDay(
         at now: Date,
@@ -43,6 +46,9 @@ extension AppState {
         defer { dailyContentDayRolloverInProgressDate = nil }
 
         resetDailyContentScheduleWindow(userDefaults: userDefaults)
+        // 两个投影同刻作废；任务 provider 不在午夜拉取——重算只用既有本地任务数据，
+        // 变化的只是过滤基准日。promote 幂等，monitor 重启重试无害。
+        invalidateTaskLibraryWindowForNewLocalDay()
 
         if let dailyContentDayRefreshExecutor {
             await dailyContentDayRefreshExecutor()
@@ -70,6 +76,8 @@ extension AppState {
         await previousTask?.value
         dailyContentDayRolloverTask = nil
         resetDailyContentScheduleWindow(userDefaults: userDefaults)
+        // 时区变了但本地日相同时：今天集不变 → planner 空增量短路，零 wire 流量，自熄。
+        invalidateTaskLibraryWindowForNewLocalDay()
         let now = dailyContentNowProvider()
         let currentDate = DailyContentDate(
             date: now,

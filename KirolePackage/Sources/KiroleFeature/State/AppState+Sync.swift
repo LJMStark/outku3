@@ -511,6 +511,18 @@ extension AppState {
         requestBLESync(reason: "taskLibraryImmediateRemoval", debounce: .zero)
     }
 
+    /// 本地日变更（午夜 / 时区切换）：作废跨日的冻结投影与稳定窗排程，立即就绪一次整库重算。
+    /// 今天集与设备已提交集相同时，planner 产出空增量并静默 markCommitted——不打扰硬件。
+    /// 触发推送复用调用方既有的 `dailyContentDayRollover` sync，一轮内 0x23 先于 0x24 先于 DayPack。
+    func invalidateTaskLibraryWindowForNewLocalDay() {
+        taskLibraryStabilityTask?.cancel()
+        taskLibraryStabilityTask = nil
+        taskLibraryHardwareTasksBaseline = nil
+        taskLibraryHardwarePetDialogueBaseline = ""
+        taskLibraryStabilityState.promoteImmediateCompleteUpdate()
+        persistTaskLibraryStabilityCheckpoint()
+    }
+
     /// Task rows for hardware presentation. Ordinary edits remain frozen until their stability
     /// deadline; urgent completion/removal is reflected immediately without exposing other drafts.
     func tasksForHardwarePresentation() -> [TaskItem] {

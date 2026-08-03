@@ -139,7 +139,11 @@ struct TaskLibraryIncrementalUpdateTests {
                 customCompanions: appState.customCompanions,
                         now: start,
                         calendar: TaskLibraryFullSyncTests.makeShanghaiCalendar()
-                    )
+                    ),
+            sourceDay: DailyContentDate(
+                date: start,
+                calendar: TaskLibraryFullSyncTests.makeShanghaiCalendar()
+            )
         )
 
         #expect(appState.applyTaskLibraryStabilityCheckpoint(checkpoint))
@@ -560,5 +564,91 @@ struct TaskLibraryIncrementalUpdateTests {
         // 同一任务回到今天集：removal 不再满足。
         appState.tasks = [TaskItem(id: "moved", title: "Moved", dueDate: start)]
         #expect(!removal.matchesCurrentSource())
+    }
+
+    @Test("A promoted complete update is ready immediately and cleared by its commit")
+    func promotedCompleteUpdateLifecycle() {
+        var state = TaskLibraryStabilityState()
+        state.promoteImmediateCompleteUpdate()
+
+        // 立即就绪，不等 180 秒 deadline。
+        #expect(state.readyScope(at: start) == .complete)
+        let generation = state.generation
+
+        // Complete/Skip 的小事务保持最高优先：跨日整库不得插进 0x1B 呈现窗。
+        var withRemoval = state
+        withRemoval.promoteImmediateRemoval(taskID: "urgent")
+        #expect(withRemoval.readyScope(at: start) == .taskRemovals(["urgent"]))
+        withRemoval.markCommitted(scope: .taskRemovals(["urgent"]), capturedGeneration: generation)
+        #expect(withRemoval.readyScope(at: start) == .complete)
+
+        // generation 匹配的 complete 提交清标志（R8：空 diff 短路也走这里，标志必须熄灭）。
+        state.markCommitted(scope: .complete, capturedGeneration: generation)
+        #expect(!state.hasUrgentCompleteUpdate)
+        #expect(state.readyScope(at: start) == nil)
+
+        // generation 不匹配（提交期间又有新变化）→ 标志保留，下轮重试。
+        var racing = TaskLibraryStabilityState()
+        racing.promoteImmediateCompleteUpdate()
+        racing.markCommitted(scope: .complete, capturedGeneration: racing.generation &+ 1)
+        #expect(racing.hasUrgentCompleteUpdate)
+        #expect(racing.readyScope(at: start) == .complete)
+    }
+
+    @Test("A checkpoint from yesterday promotes a recompute instead of being silently dropped")
+    @MainActor
+    func staleCheckpointPromotesRecomputeAcrossMidnight() {
+        let calendar = TaskLibraryFullSyncTests.makeShanghaiCalendar()
+        let appState = AppState.makeForTesting()
+        let yesterday = start
+        let today = start.addingTimeInterval(24 * 60 * 60)
+        appState.taskLibraryNowProvider = { today }
+        appState.dailyContentCalendarProvider = { calendar }
+        let task = TaskItem(id: "over-midnight", title: "Edited late", dueDate: yesterday)
+        appState.suppressesTaskLibraryChangeTracking = true
+        appState.tasks = [task]
+        appState.suppressesTaskLibraryChangeTracking = false
+        appState.taskLibraryHardwareTasksBaseline = [task]
+
+        var frozenState = TaskLibraryStabilityState()
+        _ = frozenState.recordTaskChanges(
+            from: [task],
+            to: [task],
+            at: yesterday,
+            calendar: calendar,
+            immediateRemovalTaskIDs: [task.hardwareIdentifier]
+        )
+        let checkpoint = TaskLibraryStabilityCheckpoint(
+            state: frozenState,
+            hardwareTasksBaseline: [task],
+            hardwarePetDialogueBaseline: "Yesterday dialogue",
+            sourceFingerprint: TaskLibrarySourceFingerprint.make(
+                tasks: [task],
+                userProfile: appState.userProfile,
+                customCompanions: appState.customCompanions,
+                now: yesterday,
+                calendar: calendar
+            ),
+            sourceDay: DailyContentDate(date: yesterday, calendar: calendar)
+        )
+
+        // 跨日：不静默丢弃——重置 + promote 整库重算（窗内编辑活在 tasks 里，重算是其超集）。
+        #expect(appState.applyTaskLibraryStabilityCheckpoint(checkpoint))
+        #expect(appState.taskLibraryStabilityState.hasUrgentCompleteUpdate)
+        #expect(appState.taskLibraryReadyUpdate()?.scope == .complete)
+        #expect(appState.taskLibraryHardwareTasksBaseline == nil)
+
+        // 同日但指纹失配（源已变）→ 维持既有丢弃语义。
+        appState.taskLibraryNowProvider = { yesterday }
+        appState.taskLibraryStabilityState = TaskLibraryStabilityState()
+        let mismatched = TaskLibraryStabilityCheckpoint(
+            state: frozenState,
+            hardwareTasksBaseline: [task],
+            hardwarePetDialogueBaseline: "",
+            sourceFingerprint: "no-longer-current",
+            sourceDay: DailyContentDate(date: yesterday, calendar: calendar)
+        )
+        #expect(!appState.applyTaskLibraryStabilityCheckpoint(mismatched))
+        appState.taskLibraryStabilityTask?.cancel()
     }
 }

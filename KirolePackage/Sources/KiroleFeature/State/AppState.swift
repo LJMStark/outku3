@@ -499,7 +499,8 @@ public final class AppState {
     func persistTaskLibraryStabilityCheckpoint() {
         guard !taskLibraryStabilityState.stableTaskIDs.isEmpty
                 || !taskLibraryStabilityState.urgentRemovalTaskIDs.isEmpty
-                || taskLibraryStabilityState.hasUrgentHardwareQueueUpdate else {
+                || taskLibraryStabilityState.hasUrgentHardwareQueueUpdate
+                || taskLibraryStabilityState.hasUrgentCompleteUpdate else {
             LocalStorage.clearTaskLibraryStabilityCheckpoint()
             return
         }
@@ -514,6 +515,10 @@ public final class AppState {
                         userProfile: userProfile,
                         customCompanions: customCompanions,
                         now: taskLibraryNowProvider(),
+                        calendar: dailyContentCalendarProvider()
+                    ),
+                    sourceDay: DailyContentDate(
+                        date: taskLibraryNowProvider(),
                         calendar: dailyContentCalendarProvider()
                     )
                 )
@@ -595,12 +600,21 @@ public final class AppState {
     func applyTaskLibraryStabilityCheckpoint(
         _ checkpoint: TaskLibraryStabilityCheckpoint
     ) -> Bool {
+        let now = taskLibraryNowProvider()
+        let calendar = dailyContentCalendarProvider()
+        let today = DailyContentDate(date: now, calendar: calendar)
+        if checkpoint.sourceDay != today {
+            // 跨日失配不是「源已变 → 丢弃」：窗内的编辑都活在 tasks.json 里，整库重算是它们的
+            // 超集。立即就绪一次 complete 重算，不静默丢弃重启前的待发意图。
+            invalidateTaskLibraryWindowForNewLocalDay()
+            return true
+        }
         let currentFingerprint = TaskLibrarySourceFingerprint.make(
             tasks: tasks,
             userProfile: userProfile,
             customCompanions: customCompanions,
-            now: taskLibraryNowProvider(),
-            calendar: dailyContentCalendarProvider()
+            now: now,
+            calendar: calendar
         )
         guard checkpoint.sourceFingerprint == currentFingerprint else { return false }
         taskLibraryStabilityState = checkpoint.state

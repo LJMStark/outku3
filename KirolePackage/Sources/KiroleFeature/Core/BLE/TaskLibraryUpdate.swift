@@ -351,6 +351,9 @@ struct TaskLibraryStabilityCheckpoint: Sendable, Codable {
     let hardwareTasksBaseline: [TaskItem]?
     let hardwarePetDialogueBaseline: String
     let sourceFingerprint: String
+    /// 计算 `sourceFingerprint` 时的本地日。App 重启后据此区分「跨日失配」（→ 立即整库重算，
+    /// 不静默丢弃在途窗口）与「同日源已变」（→ 维持既有丢弃语义）。
+    let sourceDay: DailyContentDate
 }
 
 struct TaskLibraryStabilityState: Sendable, Equatable, Codable {
@@ -359,6 +362,9 @@ struct TaskLibraryStabilityState: Sendable, Equatable, Codable {
     private(set) var stableTaskIDs: Set<String> = []
     private(set) var urgentRemovalTaskIDs: Set<String> = []
     private(set) var hasUrgentHardwareQueueUpdate = false
+    /// 跨本地日（午夜/时区变化）促发的整库立即重算。与 180 秒稳定窗互斥于时序而非语义：
+    /// 置位后 `readyScope` 立即返回 `.complete`，随后的 markCommitted 按 generation 一并清除。
+    private(set) var hasUrgentCompleteUpdate = false
     private(set) var deadline: Date?
     private(set) var generation: UInt64 = 0
 
@@ -434,9 +440,19 @@ struct TaskLibraryStabilityState: Sendable, Equatable, Codable {
         hasUrgentHardwareQueueUpdate = true
     }
 
+    /// 本地日变更：整库重算立即就绪，不等 180 秒。镜像 `promoteImmediateHardwareQueueUpdate`。
+    mutating func promoteImmediateCompleteUpdate() {
+        generation = generation == .max ? .max : generation + 1
+        hasUrgentCompleteUpdate = true
+    }
+
     func readyScope(at now: Date) -> TaskLibraryUpdateScope? {
+        // Complete/Skip 的小事务保持最高优先：跨日整库不得插进 0x1B 呈现窗。
         if !urgentRemovalTaskIDs.isEmpty {
             return .taskRemovals(urgentRemovalTaskIDs)
+        }
+        if hasUrgentCompleteUpdate {
+            return .complete
         }
         if hasUrgentHardwareQueueUpdate {
             return .hardwareQueue
@@ -460,6 +476,7 @@ struct TaskLibraryStabilityState: Sendable, Equatable, Codable {
             guard generation == capturedGeneration else { return }
             stableTaskIDs.removeAll()
             urgentRemovalTaskIDs.removeAll()
+            hasUrgentCompleteUpdate = false
             deadline = nil
         }
     }
