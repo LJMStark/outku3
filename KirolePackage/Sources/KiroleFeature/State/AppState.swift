@@ -281,6 +281,7 @@ public final class AppState {
     @ObservationIgnored var taskLibraryPhasePreparationTasks: [String: Task<Void, Never>] = [:]
     @ObservationIgnored var preparedTaskLibraryPhaseTexts: [String: PreparedTaskLibraryPhaseText] = [:]
     @ObservationIgnored var immediateTaskLibraryRemovalMutations: Set<String> = []
+    @ObservationIgnored var immediateTaskLibraryQueueReorderMutations: Set<String> = []
     /// Frozen task projection used by DayPack while ordinary task edits are inside the three-minute
     /// stability window. The App shows edits immediately; hardware keeps its previous rows until
     /// the same update becomes eligible for the task-library transaction.
@@ -390,26 +391,56 @@ public final class AppState {
     private func recordTaskLibraryChanges(from oldTasks: [TaskItem], to newTasks: [TaskItem]) {
         let immediateRemovals = immediateTaskLibraryRemovalMutations
         immediateTaskLibraryRemovalMutations.removeAll()
+        let immediateQueueReorders = immediateTaskLibraryQueueReorderMutations
+        immediateTaskLibraryQueueReorderMutations.removeAll()
         if !immediateRemovals.isEmpty, taskLibraryHardwareTasksBaseline != nil {
             taskLibraryHardwareTasksBaseline?.removeAll {
                 immediateRemovals.contains($0.hardwareIdentifier)
             }
         }
+        if !immediateQueueReorders.isEmpty,
+           var baseline = taskLibraryHardwareTasksBaseline {
+            for taskID in immediateQueueReorders.sorted() {
+                guard let index = baseline.firstIndex(where: {
+                    $0.hardwareIdentifier == taskID
+                }) else { continue }
+                baseline.append(baseline.remove(at: index))
+            }
+            taskLibraryHardwareTasksBaseline = baseline
+        }
         let alreadyHadStableChanges = !taskLibraryStabilityState.stableTaskIDs.isEmpty
-        guard taskLibraryStabilityState.recordTaskChanges(
+        let recordedStableChanges = taskLibraryStabilityState.recordTaskChanges(
             from: oldTasks,
             to: newTasks,
             at: taskLibraryNowProvider(),
-            immediateRemovalTaskIDs: immediateRemovals
-        ) else { return }
-        if !alreadyHadStableChanges {
+            immediateRemovalTaskIDs: immediateRemovals,
+            immediateQueueReorderTaskIDs: immediateQueueReorders
+        )
+        if recordedStableChanges, !alreadyHadStableChanges {
             taskLibraryHardwareTasksBaseline = oldTasks.filter {
                 !immediateRemovals.contains($0.hardwareIdentifier)
             }
+            if !immediateQueueReorders.isEmpty,
+               var baseline = taskLibraryHardwareTasksBaseline {
+                for taskID in immediateQueueReorders.sorted() {
+                    guard let index = baseline.firstIndex(where: {
+                        $0.hardwareIdentifier == taskID
+                    }) else { continue }
+                    baseline.append(baseline.remove(at: index))
+                }
+                taskLibraryHardwareTasksBaseline = baseline
+            }
             taskLibraryHardwarePetDialogueBaseline = currentPetDialogue
         }
+        if !immediateQueueReorders.isEmpty {
+            taskLibraryStabilityState.promoteImmediateHardwareQueueUpdate()
+        }
+        guard recordedStableChanges || !immediateQueueReorders.isEmpty else { return }
         persistTaskLibraryStabilityCheckpoint()
         scheduleTaskLibraryStabilityDeadline()
+        if !immediateQueueReorders.isEmpty {
+            requestBLESync(reason: "taskLibraryHardwareQueue", debounce: .zero)
+        }
     }
 
     private func recordTaskLibraryPersonaChange(
@@ -451,7 +482,8 @@ public final class AppState {
 
     func persistTaskLibraryStabilityCheckpoint() {
         guard !taskLibraryStabilityState.stableTaskIDs.isEmpty
-                || !taskLibraryStabilityState.urgentRemovalTaskIDs.isEmpty else {
+                || !taskLibraryStabilityState.urgentRemovalTaskIDs.isEmpty
+                || taskLibraryStabilityState.hasUrgentHardwareQueueUpdate else {
             LocalStorage.clearTaskLibraryStabilityCheckpoint()
             return
         }
@@ -644,6 +676,7 @@ private struct TaskMutationFingerprint: Equatable {
     let notes: String?
     let todayDisplayDate: Date?
     let hardwareCompletionOperationKey: String?
+    let hardwareSkipOperationKey: String?
 
     init(_ task: TaskItem) {
         title = task.title
@@ -655,6 +688,7 @@ private struct TaskMutationFingerprint: Equatable {
         notes = task.notes
         todayDisplayDate = task.todayDisplayDate
         hardwareCompletionOperationKey = task.hardwareCompletionOperationKey
+        hardwareSkipOperationKey = task.hardwareSkipOperationKey
     }
 }
 

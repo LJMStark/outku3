@@ -16,8 +16,8 @@ extension AppState {
         updateStatistics()
     }
 
-    /// Sync engines merge from a pre-await snapshot. Re-graft the one Kirole-only field from
-    /// current memory so a Show/Remove Today tap made during the network wait always wins.
+    /// Sync engines merge from a pre-await snapshot. Re-graft Kirole-only state from current
+    /// memory so provider responses cannot erase local display choices or skip idempotency.
     nonisolated static func regraftTodayDisplayDates(
         onto synced: [TaskItem],
         from current: [TaskItem]
@@ -31,6 +31,7 @@ extension AppState {
             guard let currentTask = currentById[task.id] else { return task }
             var regrafted = task
             regrafted.todayDisplayDate = currentTask.todayDisplayDate
+            regrafted.hardwareSkipOperationKey = currentTask.hardwareSkipOperationKey
             return regrafted
         }
     }

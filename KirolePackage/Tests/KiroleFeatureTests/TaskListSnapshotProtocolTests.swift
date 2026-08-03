@@ -210,6 +210,122 @@ struct TaskListSnapshotProtocolTests {
         #expect(focusService.todaySessions.last?.endReason == .completed)
     }
 
+    @Test("Lost ACK replay with raw wire hash matches ledger after the long provider task is gone")
+    @MainActor
+    func wireHashReplayAfterTaskRemovalReturnsCachedResult() async throws {
+        try await SharedPersistenceTestLock.shared.withLock {
+            let appState = AppState.makeForTesting()
+            let providerID = "外部任务-\(String(repeating: "provider-segment-", count: 6))"
+            let task = TaskItem(
+                id: providerID,
+                title: "Long provider id",
+                lastModified: Date().addingTimeInterval(-30)
+            )
+            let wireTaskID = task.hardwareIdentifier
+            #expect(wireTaskID.hasPrefix("h-"))
+            #expect(wireTaskID != providerID)
+            appState.tasks = [task]
+
+            let ledger = TaskOperationLedger(persistenceEnabled: false)
+            let focusService = makeFocusService()
+            await focusService.startSession(
+                taskId: task.id,
+                taskTitle: task.title,
+                startTime: Date().addingTimeInterval(-60)
+            )
+
+            let eventTime = Date(timeIntervalSince1970: 1_700_500_000)
+            let wireEvent = EventLog(
+                eventType: .completeTask,
+                taskId: wireTaskID,
+                operationID: 904,
+                timestamp: eventTime,
+                hasDeviceTimestamp: true
+            )
+
+            let first = await BLEEventHandler.processEventLogs(
+                [wireEvent],
+                service: .shared,
+                focusService: focusService,
+                persistLogs: false,
+                operationLedger: ledger,
+                deviceIDOverride: "test-device",
+                appState: appState
+            )
+            #expect(first.taskOperationReceipts.map(\.result) == [.applied])
+            #expect(appState.tasks.first?.isCompleted == true)
+            #expect(focusService.todaySessions.last?.taskId == providerID)
+
+            // ACK lost: task later disappears (delete / remote prune). Identical wire payload
+            // must hit the ledger by raw wire ID, not re-resolve or report a payload conflict.
+            appState.tasks = []
+            let completionCountBeforeReplay = focusService.todaySessions
+                .filter { $0.endReason == .completed }.count
+
+            let replay = await BLEEventHandler.processEventLogs(
+                [wireEvent],
+                service: .shared,
+                focusService: focusService,
+                isReplay: true,
+                persistLogs: false,
+                operationLedger: ledger,
+                deviceIDOverride: "test-device",
+                appState: appState
+            )
+
+            #expect(replay.taskOperationReceipts.map(\.result) == [.applied])
+            #expect(replay.taskOperationReceipts.map(\.result) != [.invalidRequest])
+            #expect(appState.tasks.isEmpty)
+            #expect(
+                focusService.todaySessions.filter { $0.endReason == .completed }.count
+                    == completionCountBeforeReplay
+            )
+
+            // Ledger retains wire identity for payload matching and domain ID for focus recovery.
+            guard case .duplicate(let cached) = await ledger.decision(
+                for: wireEvent,
+                deviceID: "test-device"
+            ) else {
+                Issue.record("Replay must classify as a duplicate of the first delivery")
+                return
+            }
+            #expect(cached == .applied)
+
+            let encoded = try JSONEncoder().encode(
+                TaskOperationLedgerEntry(
+                    deviceID: "legacy-device",
+                    action: .completeTask,
+                    operationID: 1,
+                    taskID: "legacy-only-task",
+                    deviceTimestamp: 10,
+                    result: .applied,
+                    recordedAt: Date(timeIntervalSince1970: 10)
+                )
+            )
+            var legacyJSON = try #require(
+                JSONSerialization.jsonObject(with: encoded) as? [String: Any]
+            )
+            legacyJSON.removeValue(forKey: "wireTaskID")
+            let decodedLegacy = try JSONDecoder().decode(
+                TaskOperationLedgerEntry.self,
+                from: JSONSerialization.data(withJSONObject: legacyJSON)
+            )
+            #expect(decodedLegacy.wireTaskID == nil)
+            #expect(decodedLegacy.taskID == "legacy-only-task")
+            #expect(
+                decodedLegacy.matchesPayload(
+                    of: EventLog(
+                        eventType: .completeTask,
+                        taskId: "legacy-only-task",
+                        operationID: 1,
+                        timestamp: Date(timeIntervalSince1970: 10),
+                        hasDeviceTimestamp: true
+                    )
+                )
+            )
+        }
+    }
+
     @Test("Conflicting payloads with one operation ID both reach the ledger")
     func operationIDConflictIsNotSilentlyDeduplicated() {
         let logs = [

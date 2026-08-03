@@ -15,13 +15,22 @@ export function normalizeTaskAction(action) {
 }
 
 export function normalizeAckResult(result) {
-  if (result == null) return 'applied';
+  if (result == null) return null;
   if (typeof result === 'string') return result;
   if (typeof result === 'object') {
-    return String(result.code || result.result || result.status || 'applied');
+    const code = result.code ?? result.result ?? result.status;
+    return code == null ? null : String(code);
   }
   return String(result);
 }
+
+const TERMINAL_ACK_RESULTS = new Set([
+  'applied',
+  'alreadyApplied',
+  'taskNotFound',
+  'invalidRequest',
+  'supersededByApp',
+]);
 
 export function isInternalErrorResult(result) {
   const code = normalizeAckResult(result);
@@ -175,6 +184,13 @@ export class TaskActionLedger {
     }
 
     const code = normalizeAckResult(result);
+    if (!TERMINAL_ACK_RESULTS.has(code)) {
+      return {
+        status: 'rejected',
+        result: { code: 'invalidRequest', reason: 'invalid_ack_result' },
+        entry: existing,
+      };
+    }
     this.entries = this.entries.map(entry => (
       entry.action === normalized && entry.operationId === opId
         ? {

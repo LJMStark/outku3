@@ -26,6 +26,7 @@ public struct TaskLibraryCommittedSnapshot: Sendable, Equatable, Codable {
 public enum TaskLibraryPendingValidation: Sendable, Equatable, Codable {
     case completeSource(String)
     case taskRemovals([String])
+    case hardwareProjection(String)
 
     @MainActor
     func matchesCurrentSource() -> Bool {
@@ -42,6 +43,12 @@ public enum TaskLibraryPendingValidation: Sendable, Equatable, Codable {
                 .filter { !$0.isCompleted && !$0.pendingDeletion }
                 .map(\.hardwareIdentifier))
             return taskIDs.allSatisfy { !eligibleIDs.contains($0) }
+        case .hardwareProjection(let fingerprint):
+            return TaskLibrarySourceFingerprint.make(
+                tasks: appState.tasksForHardwarePresentation(),
+                userProfile: appState.userProfile,
+                customCompanions: appState.customCompanions
+            ) == fingerprint
         }
     }
 }
@@ -90,6 +97,7 @@ enum TaskLibraryPhaseSourceFingerprint {
 public enum TaskLibraryUpdateScope: Sendable, Equatable, Codable {
     case complete
     case taskRemovals(Set<String>)
+    case hardwareQueue
 }
 
 struct TaskLibraryPreparedUpdate: Sendable, Equatable {
@@ -152,6 +160,27 @@ enum TaskLibraryUpdatePlanner {
                 userProfile: userProfile,
                 customCompanions: customCompanions,
                 forceFullTransaction: false
+            )
+        case .hardwareQueue:
+            let update = try makeCompleteUpdate(
+                tasks: tasks,
+                baseline: baseline,
+                version: version,
+                preparedPhaseTexts: preparedPhaseTexts,
+                userProfile: userProfile,
+                customCompanions: customCompanions,
+                forceFullTransaction: false
+            )
+            return TaskLibraryPreparedUpdate(
+                transaction: update.transaction,
+                targetRecords: update.targetRecords,
+                phaseSourceFingerprints: update.phaseSourceFingerprints,
+                validation: .hardwareProjection(TaskLibrarySourceFingerprint.make(
+                    tasks: tasks,
+                    userProfile: userProfile,
+                    customCompanions: customCompanions
+                )),
+                personaFingerprint: update.personaFingerprint
             )
         case .taskRemovals(let taskIDs):
             guard let baseline else {
@@ -300,6 +329,7 @@ struct TaskLibraryStabilityState: Sendable, Equatable, Codable {
 
     private(set) var stableTaskIDs: Set<String> = []
     private(set) var urgentRemovalTaskIDs: Set<String> = []
+    private(set) var hasUrgentHardwareQueueUpdate = false
     private(set) var deadline: Date?
     private(set) var generation: UInt64 = 0
 
@@ -307,7 +337,8 @@ struct TaskLibraryStabilityState: Sendable, Equatable, Codable {
         from oldTasks: [TaskItem],
         to newTasks: [TaskItem],
         at now: Date,
-        immediateRemovalTaskIDs: Set<String> = []
+        immediateRemovalTaskIDs: Set<String> = [],
+        immediateQueueReorderTaskIDs: Set<String> = []
     ) -> Bool {
         let oldEligible = oldTasks.filter { !$0.isCompleted && !$0.pendingDeletion }
         let newEligible = newTasks.filter { !$0.isCompleted && !$0.pendingDeletion }
@@ -341,7 +372,8 @@ struct TaskLibraryStabilityState: Sendable, Equatable, Codable {
                 || old.dueDate != new.dueDate
                 || old.todayDisplayDate != new.todayDisplayDate
                 || old.priority != new.priority
-                || oldOrder[taskID] != newOrder[taskID]
+                || (immediateQueueReorderTaskIDs.isEmpty
+                    && oldOrder[taskID] != newOrder[taskID])
         }
         guard !changed.isEmpty else { return false }
         generation = generation == .max ? .max : generation + 1
@@ -360,9 +392,17 @@ struct TaskLibraryStabilityState: Sendable, Equatable, Codable {
         }
     }
 
+    mutating func promoteImmediateHardwareQueueUpdate() {
+        generation = generation == .max ? .max : generation + 1
+        hasUrgentHardwareQueueUpdate = true
+    }
+
     func readyScope(at now: Date) -> TaskLibraryUpdateScope? {
         if !urgentRemovalTaskIDs.isEmpty {
             return .taskRemovals(urgentRemovalTaskIDs)
+        }
+        if hasUrgentHardwareQueueUpdate {
+            return .hardwareQueue
         }
         if !stableTaskIDs.isEmpty, let deadline, deadline <= now {
             return .complete
@@ -377,6 +417,8 @@ struct TaskLibraryStabilityState: Sendable, Equatable, Codable {
         switch scope {
         case .taskRemovals(let taskIDs):
             urgentRemovalTaskIDs.subtract(taskIDs)
+        case .hardwareQueue:
+            hasUrgentHardwareQueueUpdate = false
         case .complete:
             guard generation == capturedGeneration else { return }
             stableTaskIDs.removeAll()

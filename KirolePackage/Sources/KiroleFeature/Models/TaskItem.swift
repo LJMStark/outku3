@@ -34,6 +34,9 @@ public struct TaskItem: Identifiable, Sendable, Codable {
     /// It lets a pending BLE operation finish a task→pet split write after a crash without
     /// awarding points twice. User-driven toggles clear it.
     public var hardwareCompletionOperationKey: String?
+    /// Identifies the last durable hardware skip that moved this task to the queue tail.
+    /// A pending ledger retry uses it to persist the same order without moving the task again.
+    public var hardwareSkipOperationKey: String?
 
     public init(
         id: String = UUID().uuidString,
@@ -59,7 +62,8 @@ public struct TaskItem: Identifiable, Sendable, Codable {
         remoteEtag: String? = nil,
         notes: String? = nil,
         todayDisplayDate: Date? = nil,
-        hardwareCompletionOperationKey: String? = nil
+        hardwareCompletionOperationKey: String? = nil,
+        hardwareSkipOperationKey: String? = nil
     ) {
         self.id = id
         self.localId = localId
@@ -85,6 +89,7 @@ public struct TaskItem: Identifiable, Sendable, Codable {
         self.notes = notes
         self.todayDisplayDate = todayDisplayDate
         self.hardwareCompletionOperationKey = hardwareCompletionOperationKey
+        self.hardwareSkipOperationKey = hardwareSkipOperationKey
     }
 
     // 从 Google API 响应创建

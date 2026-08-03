@@ -35,6 +35,13 @@ enum HardwareTaskCompletionPersistenceResult: Sendable, Equatable {
     case persistenceFailed
 }
 
+enum HardwareTaskSkipPersistenceResult: Sendable, Equatable {
+    case applied
+    case supersededByApp
+    case taskNotFound
+    case persistenceFailed
+}
+
 protocol HardwareTaskStatePersisting: Sendable {
     func saveTasks(_ tasks: [TaskItem]) async throws
     func savePet(_ pet: Pet) async throws
@@ -241,6 +248,51 @@ extension AppState {
                 await self?.updatePetState()
             }
         }
+        return .applied
+    }
+
+    /// Moves one hardware-skipped task to the queue tail and persists the new order before the
+    /// operation ledger may commit. The task marker makes a crash-pending retry idempotent even
+    /// when later skips have already changed the queue again.
+    func persistHardwareTaskSkip(
+        taskID: String,
+        operationKey: String,
+        persistence: any HardwareTaskStatePersisting = LocalHardwareTaskStatePersistence()
+    ) async -> HardwareTaskSkipPersistenceResult {
+        guard let initialIndex = tasks.firstIndex(where: { $0.id == taskID }) else {
+            return .taskNotFound
+        }
+
+        let initialTask = tasks[initialIndex]
+        let expectedLastModified = initialTask.lastModified
+        if initialTask.hardwareSkipOperationKey != operationKey {
+            var skippedTask = initialTask
+            skippedTask.hardwareSkipOperationKey = operationKey
+            var reorderedTasks = tasks
+            reorderedTasks.remove(at: initialIndex)
+            reorderedTasks.append(skippedTask)
+            immediateTaskLibraryQueueReorderMutations.insert(
+                skippedTask.hardwareIdentifier
+            )
+            performHardwareTaskMutation {
+                tasks = reorderedTasks
+            }
+        }
+
+        do {
+            try await persistence.saveTasks(tasks)
+            guard let current = tasks.first(where: { $0.id == taskID }),
+                  current.hardwareSkipOperationKey == operationKey,
+                  current.lastModified == expectedLastModified else {
+                try await persistence.saveTasks(tasks)
+                return .supersededByApp
+            }
+        } catch {
+            reportPersistenceError(error, operation: "save", target: "tasks.json")
+            ErrorReporter.log(error, context: "AppState.persistHardwareTaskSkip")
+            return .persistenceFailed
+        }
+
         return .applied
     }
 
@@ -654,6 +706,7 @@ extension AppState {
         // `setTaskDisplayedToday` intentionally does not change `lastModified`, so this
         // local-only presentation field must always win over the awaited provider result.
         reconciledTask.todayDisplayDate = current.todayDisplayDate
+        reconciledTask.hardwareSkipOperationKey = current.hardwareSkipOperationKey
         if current.lastModified != baseline.lastModified {
             // A completion toggle may win while the content request is in flight. Keep that newer
             // local state and version, but apply the requested content and remote metadata.

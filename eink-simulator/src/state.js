@@ -223,13 +223,13 @@ export class SimulatorState {
   }
 
   // Update state and notify
-  update(changes) {
+  update(changes, { notify = true } = {}) {
     for (const [key, value] of Object.entries(changes)) {
       if (key !== '_listeners') {
         this[key] = value;
       }
     }
-    this._notify();
+    if (notify) this._notify();
   }
 
   // Set display mode
@@ -662,7 +662,7 @@ export class SimulatorState {
     return this.focusTask.phaseTexts.deep;
   }
 
-  _returnFromFocus(changes = {}) {
+  _returnFromFocus(changes = {}, options = {}) {
     this.update({
       ...changes,
       activeFocusTaskId: null,
@@ -672,7 +672,7 @@ export class SimulatorState {
       focusStartedAt: null,
       focusTimerActive: false,
       currentPhaseBottleProgress: 0,
-    });
+    }, options);
   }
 
   _normalizeTaskRecord(record = {}) {

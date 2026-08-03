@@ -326,17 +326,14 @@ public final class BLESyncCoordinator {
             )
             let preparedUpdate: TaskLibraryPreparedUpdate
             if preservesPendingStableChanges, requiresFullLibrary || personaChanged {
-                let removalIDs: [String]
-                if case .taskRemovals(let taskIDs) = scope {
-                    removalIDs = Array(taskIDs).sorted()
-                } else {
-                    removalIDs = []
-                }
                 preparedUpdate = TaskLibraryPreparedUpdate(
                     transaction: plannedUpdate.transaction,
                     targetRecords: plannedUpdate.targetRecords,
                     phaseSourceFingerprints: plannedUpdate.phaseSourceFingerprints,
-                    validation: .taskRemovals(removalIDs),
+                    validation: Self.pendingValidationForFrozenUpdate(
+                        scope: scope,
+                        plannedValidation: plannedUpdate.validation
+                    ),
                     personaFingerprint: plannedUpdate.personaFingerprint
                 )
             } else {
@@ -1284,6 +1281,19 @@ public final class BLESyncCoordinator {
                 return
             }
 
+            // `completeSecureConnection` opens this window before reporting success. Re-check it
+            // here because keep-alive/parallel triggers can observe `.connected` while the 0x21
+            // batch is still being processed and otherwise bypass connection waiting entirely.
+            guard await bleService.requestEventLogsIfNeeded() else {
+                throw BLEError.connectionFailed(nil)
+            }
+            guard appState.taskStateVersion == sourceTaskStateVersion else {
+                // Offline Complete/Skip changed the source after this round generated its
+                // DayPack. Keep every old byte off the wire and rebuild from the replayed state.
+                queuePendingSync(force: true, trigger: trigger)
+                return
+            }
+
             if Task.isCancelled {
                 if bleService.connectionState.isConnected,
                    !bleService.shouldKeepConnectionOpenForDebug,
@@ -1513,12 +1523,9 @@ public final class BLESyncCoordinator {
 
             await appState.flushPendingCustomCompanionPushIfNeeded()
 
-            let eventLogRequestSucceeded = await bleService.requestEventLogsIfNeeded()
-            if dayPackSendFailed || !eventLogRequestSucceeded {
-                // 硬件还在显示旧内容，或事件补传请求(0x20)没写出去：这轮不算成功。补传是核心功能，
-                // 0x20 写失败与 DayPack 写失败同等对待——不更新 lastBleSyncTime（避免 Settings 显示
-                // 绿色"刚同步过"），点亮 lastSyncFailed 供用户重试；lastBleSyncTime 不前进
-                // 也让 BLESyncPolicy 更早安排下一轮。
+            if dayPackSendFailed {
+                // 硬件仍在显示旧内容：这轮不算成功。不更新 lastBleSyncTime（避免 Settings 显示
+                // 绿色"刚同步过"），点亮 lastSyncFailed 供用户重试。
                 bleService.lastSyncFailed = true
                 lastSyncSucceeded = false
             } else {
@@ -1892,7 +1899,17 @@ public final class BLESyncCoordinator {
     nonisolated static func commitsTaskLibraryBeforeDayPack(
         readyUpdate: (scope: TaskLibraryUpdateScope, generation: UInt64)?
     ) -> Bool {
-        readyUpdate?.scope == .complete
+        readyUpdate?.scope == .complete || readyUpdate?.scope == .hardwareQueue
+    }
+
+    nonisolated static func pendingValidationForFrozenUpdate(
+        scope: TaskLibraryUpdateScope,
+        plannedValidation: TaskLibraryPendingValidation
+    ) -> TaskLibraryPendingValidation {
+        guard case .taskRemovals(let taskIDs) = scope else {
+            return plannedValidation
+        }
+        return .taskRemovals(Array(taskIDs).sorted())
     }
 
     /// 路由一条到期的智能提醒：硬件可达就推设备，否则落本地通知，让离线用户也收得到。

@@ -7,9 +7,14 @@ import { HardwareControls } from './hardware-controls.js';
 import { DevPanel } from './dev-panel.js';
 import { WebSocketBridge } from './websocket-bridge.js';
 import { SimulatorState } from './state.js';
+import {
+  persistDurableDeviceState,
+  restoreDurableDeviceState,
+} from './durable-device-state.js';
 
 // Initialize global state
 const state = new SimulatorState();
+restoreDurableDeviceState(state);
 
 // Initialize modules
 const screen = new ScreenRenderer(
@@ -25,6 +30,7 @@ hardware.setWebSocketBridge(wsBridge);
 
 // Wire up state change listener
 state.onChange(() => {
+  persistDurableDeviceState(state);
   screen.render();
 });
 

@@ -204,9 +204,9 @@ export function installTaskActionDeviceApi(proto, { isFocusMode }) {
           this._taskId(task) === taskId ? { ...task, completed: true } : task
         ));
         if (isFocusMode(this.displayMode) && this.activeFocusTaskId === taskId) {
-          this._returnFromFocus({ taskLibrary, tasks });
+          this._returnFromFocus({ taskLibrary, tasks }, { notify: false });
         } else {
-          this.update({ taskLibrary, tasks });
+          this.update({ taskLibrary, tasks }, { notify: false });
         }
         return { applied: true, inLibrary };
       }
@@ -221,9 +221,9 @@ export function installTaskActionDeviceApi(proto, { isFocusMode }) {
               this.taskLibrary[taskIndex],
             ];
         if (isFocusMode(this.displayMode) && this.activeFocusTaskId === taskId) {
-          this._returnFromFocus({ taskLibrary });
+          this._returnFromFocus({ taskLibrary }, { notify: false });
         } else {
-          this.update({ taskLibrary });
+          this.update({ taskLibrary }, { notify: false });
         }
         return { applied: true, inLibrary: taskIndex >= 0, reward: 0 };
       }

@@ -3,6 +3,10 @@ import test from 'node:test';
 
 import { DisplayMode, SimulatorState } from '../src/state.js';
 import { WebSocketBridge } from '../src/websocket-bridge.js';
+import {
+  persistDurableDeviceState,
+  restoreDurableDeviceState,
+} from '../src/durable-device-state.js';
 
 const committedTasks = [
   {
@@ -324,14 +328,21 @@ test('websocket reconnect emits action A, action B, then hw_task_action_replay_e
   );
 });
 
-test('restart keeps unacknowledged outbox replayable on the next reconnect', () => {
+test('browser restart restores the unacknowledged outbox from durable storage', () => {
   const state = disconnectedState();
   state.handleShortPress();
   const complete = state.completeCurrentTask();
   state.flushPendingTaskActions();
 
+  const values = new Map();
+  const storage = {
+    getItem: key => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, value),
+  };
+  assert.equal(persistDurableDeviceState(state, storage), true);
+
   const restored = new SimulatorState();
-  restored.importDurableDeviceState(state.exportDurableDeviceState());
+  assert.equal(restoreDurableDeviceState(restored, storage), true);
   assert.equal(restored.unacknowledgedTaskActions().length, 1);
 
   const bridge = bridgeFor(restored);
@@ -350,6 +361,42 @@ test('restart keeps unacknowledged outbox replayable on the next reconnect', () 
     },
   });
   assert.equal(restored.canAcceptTaskLibrarySnapshot(), true);
+});
+
+test('offline mutation and pending outbox persist in one state notification', () => {
+  const state = disconnectedState();
+  state.handleShortPress();
+  const snapshots = [];
+  const storage = {
+    getItem: () => null,
+    setItem: (_key, value) => snapshots.push(JSON.parse(value)),
+  };
+  state.onChange(() => persistDurableDeviceState(state, storage));
+
+  state.completeCurrentTask();
+
+  assert.equal(snapshots.length, 1);
+  assert.deepEqual(snapshots[0].taskLibrary.map(task => task.id), ['beta', 'gamma']);
+  assert.equal(snapshots[0].taskActionLedger.length, 1);
+  assert.equal(snapshots[0].taskActionLedger[0].status, 'pending');
+});
+
+test('missing or unknown ACK result keeps the outbox blocked', () => {
+  const state = disconnectedState();
+  state.handleShortPress();
+  const complete = state.completeCurrentTask();
+  state.flushPendingTaskActions();
+
+  for (const result of [undefined, 'unexpected']) {
+    const outcome = state.applyTaskActionAck({
+      action: 'complete',
+      operationId: complete.operationId,
+      result,
+    });
+    assert.equal(outcome.status, 'rejected');
+    assert.equal(state.unacknowledgedTaskActions().length, 1);
+    assert.equal(state.canAcceptTaskLibrarySnapshot(), false);
+  }
 });
 
 test('internalError ACK keeps the outbox item and continues blocking the library', () => {

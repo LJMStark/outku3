@@ -130,7 +130,13 @@ struct TaskOperationLedgerEntry: Sendable, Equatable, Codable {
     let deviceID: String
     let action: TaskListSnapshotAction
     let operationID: UInt32
+    /// Domain/focus identity. When the wire ID is a bounded hash (`h-…`), this holds the
+    /// provider's canonical task ID so focus recovery can match `FocusSession.taskId`.
     let taskID: String
+    /// Raw task ID bytes as delivered on the wire. Idempotency compares this value so a lost ACK
+    /// can still match after the task row (and therefore the hash→canonical resolver) is gone.
+    /// Absent on pre-#24 ledger rows; those fall back to comparing `taskID`.
+    let wireTaskID: String?
     let deviceTimestamp: UInt32
     let result: TaskListSnapshotResultCode
     let state: TaskOperationLedgerState
@@ -142,6 +148,7 @@ struct TaskOperationLedgerEntry: Sendable, Equatable, Codable {
         action: TaskListSnapshotAction,
         operationID: UInt32,
         taskID: String,
+        wireTaskID: String? = nil,
         deviceTimestamp: UInt32,
         result: TaskListSnapshotResultCode,
         state: TaskOperationLedgerState = .committed,
@@ -152,6 +159,7 @@ struct TaskOperationLedgerEntry: Sendable, Equatable, Codable {
         self.action = action
         self.operationID = operationID
         self.taskID = taskID
+        self.wireTaskID = wireTaskID
         self.deviceTimestamp = deviceTimestamp
         self.result = result
         self.state = state
@@ -164,6 +172,7 @@ struct TaskOperationLedgerEntry: Sendable, Equatable, Codable {
         case action
         case operationID
         case taskID
+        case wireTaskID
         case deviceTimestamp
         case result
         case state
@@ -177,6 +186,9 @@ struct TaskOperationLedgerEntry: Sendable, Equatable, Codable {
         action = try container.decode(TaskListSnapshotAction.self, forKey: .action)
         operationID = try container.decode(UInt32.self, forKey: .operationID)
         taskID = try container.decode(String.self, forKey: .taskID)
+        // Pre-#24 entries only persisted the domain taskID (often already resolved). Decode
+        // succeeds without wireTaskID; matchesPayload falls back to taskID for those rows.
+        wireTaskID = try container.decodeIfPresent(String.self, forKey: .wireTaskID)
         deviceTimestamp = try container.decode(UInt32.self, forKey: .deviceTimestamp)
         result = try container.decode(TaskListSnapshotResultCode.self, forKey: .result)
         state = try container.decodeIfPresent(TaskOperationLedgerState.self, forKey: .state) ?? .committed
@@ -190,8 +202,13 @@ struct TaskOperationLedgerEntry: Sendable, Equatable, Codable {
         ) ?? .deviceClock
     }
 
+    /// Payload identity for idempotency: raw wire task ID + device timestamp.
+    /// Identity scope remains (deviceID, action, operationID); this only guards against a
+    /// conflicting reuse of the same operationID with different payload bytes.
     func matchesPayload(of event: EventLog) -> Bool {
-        taskID == (event.taskId ?? "")
+        let eventTaskID = event.taskId ?? ""
+        let expectedTaskID = wireTaskID ?? taskID
+        return expectedTaskID == eventTaskID
             && deviceTimestamp == UInt32(event.timestamp.timeIntervalSince1970)
     }
 
@@ -201,6 +218,7 @@ struct TaskOperationLedgerEntry: Sendable, Equatable, Codable {
             action: action,
             operationID: operationID,
             taskID: taskID,
+            wireTaskID: wireTaskID,
             deviceTimestamp: deviceTimestamp,
             result: result,
             state: state,
@@ -218,6 +236,7 @@ struct TaskOperationLedgerEntry: Sendable, Equatable, Codable {
             action: action,
             operationID: operationID,
             taskID: taskID,
+            wireTaskID: wireTaskID,
             deviceTimestamp: deviceTimestamp,
             result: result,
             state: state,
@@ -333,10 +352,16 @@ actor TaskOperationLedger {
     /// Atomically checks and persists a new operation receipt. Production calls this before any
     /// focus or task mutation, so concurrent copies of one notification cannot both pass a
     /// separate lookup and then execute twice.
+    ///
+    /// - Parameters:
+    ///   - event: Wire payload. `event.taskId` is the raw hardware ID used for payload matching.
+    ///   - domainTaskID: Canonical provider task ID for focus/task recovery. Defaults to the wire
+    ///     ID when the caller has not resolved a longer provider identity.
     func reserve(
         event: EventLog,
         deviceID: String,
         result: TaskListSnapshotResultCode,
+        domainTaskID: String? = nil,
         timestampAuthority: TaskOperationTimestampAuthority = .appReceipt,
         now: Date = Date()
     ) async -> TaskOperationLedgerReservation {
@@ -366,11 +391,13 @@ actor TaskOperationLedger {
             }
         }
 
+        let wireTaskID = event.taskId ?? ""
         let entry = TaskOperationLedgerEntry(
             deviceID: deviceID,
             action: action,
             operationID: operationID,
-            taskID: event.taskId ?? "",
+            taskID: domainTaskID ?? wireTaskID,
+            wireTaskID: wireTaskID,
             deviceTimestamp: UInt32(event.timestamp.timeIntervalSince1970),
             result: result,
             state: .pending,

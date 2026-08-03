@@ -147,10 +147,26 @@ struct TaskLibraryIncrementalUpdateTests {
         #expect(BLESyncCoordinator.commitsTaskLibraryBeforeDayPack(
             readyUpdate: (.complete, 3)
         ))
+        #expect(BLESyncCoordinator.commitsTaskLibraryBeforeDayPack(
+            readyUpdate: (.hardwareQueue, 4)
+        ))
         #expect(!BLESyncCoordinator.commitsTaskLibraryBeforeDayPack(
-            readyUpdate: (.taskRemovals(["done"]), 4)
+            readyUpdate: (.taskRemovals(["done"]), 5)
         ))
         #expect(!BLESyncCoordinator.commitsTaskLibraryBeforeDayPack(readyUpdate: nil))
+    }
+
+    @Test("A frozen hardware queue update keeps its projection validation")
+    func frozenHardwareQueueKeepsProjectionValidation() {
+        let projection = TaskLibraryPendingValidation.hardwareProjection("queue-v2")
+        #expect(BLESyncCoordinator.pendingValidationForFrozenUpdate(
+            scope: .hardwareQueue,
+            plannedValidation: projection
+        ) == projection)
+        #expect(BLESyncCoordinator.pendingValidationForFrozenUpdate(
+            scope: .taskRemovals(["b", "a"]),
+            plannedValidation: projection
+        ) == .taskRemovals(["a", "b"]))
     }
 
     @Test("A forced full resync keeps the frozen task source during the stability window")

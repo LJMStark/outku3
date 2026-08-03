@@ -82,6 +82,10 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
     /// Serializes complete task-state messages. The packet gate below is intentionally finer
     /// grained; without this second gate, a simple 0x1B could land between DayPack chunks.
     let taskStateMessageGate = BLEWriteGate()
+    /// Every connection must finish its 0x20 → 0x21 offline replay before presentation data can
+    /// be generated or written. Kept separate from the write gates because it spans an inbound
+    /// response and must fail closed on timeout/disconnect.
+    let eventReplayBarrier = BLEEventReplayBarrier()
 
     private var scanCompletion: (([BLEDevice]) -> Void)?
     var connectCompletion: ((Result<Void, BLEError>) -> Void)?
@@ -606,9 +610,27 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
             // connectCompletion 属于新尝试，不得用旧尝试的结果提前完成它。
             guard connectGeneration == generation else { return }
         }
+        let replaySucceeded = await requestEventLogsIfNeeded()
+        guard connectGeneration == generation else { return }
+        guard replaySucceeded else {
+            ErrorReporter.log(
+                .sync(
+                    component: "BLE Event Replay",
+                    underlying: "connection replay did not complete successfully"
+                ),
+                context: "BLEService.completeSecureConnection"
+            )
+            connectCompletion?(.failure(.connectionFailed(nil)))
+            connectCompletion = nil
+            isIntentionalDisconnect = true
+            if let connectedPeripheral {
+                centralManager?.cancelPeripheralConnection(connectedPeripheral)
+            }
+            cleanup()
+            return
+        }
         connectCompletion?(.success(()))
         connectCompletion = nil
-        await requestEventLogsIfNeeded()
         if AppBuildEnvironment.showsHardwareDebugTools {
             await BLEWiFiDebugCoordinator.shared.queryStatus()
         }
@@ -689,6 +711,7 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
     }
 
     func cleanup() {
+        eventReplayBarrier.handleDisconnect()
         BLESyncCoordinator.shared.handleTaskLibraryDisconnected(
             destinationID: taskListSnapshotDestinationID
         )

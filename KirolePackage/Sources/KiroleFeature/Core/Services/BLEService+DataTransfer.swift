@@ -238,21 +238,29 @@ extension BLEService {
         try await writeData(type: .eventLogRequest, data: data)
     }
 
-    /// 发起事件补传请求(0x20)。返回值仅表示请求帧是否成功写出（不代表设备已回传——回传走后续
-    /// 0x21 eventLogBatch 路径）。补传是核心功能，调用方据此判定整轮同步成败。
+    /// 发起事件补传请求(0x20)，并等待对应 0x21 批次完成解析、状态变更和任务操作确认。
+    /// 每个连接只开一个强制窗口；并发的连接完成与 sync 共用同一等待，不能用第二个请求覆盖它。
     @discardableResult
     public func requestEventLogsIfNeeded() async -> Bool {
+        if let existing = await eventReplayBarrier.waitForExistingRequest(
+            connectionGeneration: connectGeneration
+        ) {
+            return existing
+        }
+
+        let ticket = eventReplayBarrier.beginRequest(connectionGeneration: connectGeneration)
         let since = await localStorage.loadLastEventLogTimestamp() ?? 0
         do {
             try await requestEventLogs(since: since)
-            return true
         } catch {
+            eventReplayBarrier.failRequest(ticket)
             ErrorReporter.log(
                 .sync(component: "BLE Event Logs", underlying: error.localizedDescription),
                 context: "BLEService.requestEventLogsIfNeeded"
             )
             return false
         }
+        return await eventReplayBarrier.wait(for: ticket)
     }
 
     /// 推送场景解锁到 E-ink 设备。

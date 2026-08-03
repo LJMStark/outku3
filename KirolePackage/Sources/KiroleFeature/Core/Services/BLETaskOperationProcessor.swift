@@ -81,14 +81,20 @@ enum BLETaskOperationProcessor {
     ) async -> TaskOperationReceipt {
         // App task state may change while this notification waits for the gate. Re-plan inside the
         // transaction; a resumed write-ahead entry still uses the first durable result below.
+        // `log.taskId` stays the raw wire ID (e.g. h-…) so the ledger can match lost-ACK retries
+        // even after the task row is gone. Domain mutations resolve to the canonical ID separately.
         let currentReceipt = BLEEventHandler.plannedTaskOperationReceipt(
             log,
             tasks: appState.tasks
         ) ?? plannedReceipt
+        let wireTaskID = log.taskId ?? ""
+        let domainTaskID = BLEEventHandler.resolveTask(taskId: wireTaskID, in: appState.tasks)?.id
+            ?? wireTaskID
         let reservation = await operationLedger.reserve(
             event: log,
             deviceID: deviceID,
             result: currentReceipt.result,
+            domainTaskID: domainTaskID,
             timestampAuthority: isReplay ? .deviceClock : .appReceipt,
             now: receivedAt
         )
@@ -197,8 +203,7 @@ enum BLETaskOperationProcessor {
             }
         }
 
-        guard action == .completeTask,
-              entry.result == .applied || entry.result == .alreadyApplied,
+        guard entry.result == .applied || entry.result == .alreadyApplied,
               let hardwareTaskID = log.taskId else {
             return entry.result
         }
@@ -208,6 +213,34 @@ enum BLETaskOperationProcessor {
         ) else {
             return .taskNotFound
         }
+
+        if action == .skipTask {
+            let persistenceResult: HardwareTaskSkipPersistenceResult
+            if let hardwareTaskPersistence {
+                persistenceResult = await appState.persistHardwareTaskSkip(
+                    taskID: task.id,
+                    operationKey: entry.operationKey,
+                    persistence: hardwareTaskPersistence
+                )
+            } else {
+                persistenceResult = await appState.persistHardwareTaskSkip(
+                    taskID: task.id,
+                    operationKey: entry.operationKey
+                )
+            }
+            switch persistenceResult {
+            case .applied:
+                return .applied
+            case .supersededByApp:
+                return .supersededByApp
+            case .taskNotFound:
+                return .taskNotFound
+            case .persistenceFailed:
+                return .internalError
+            }
+        }
+
+        guard action == .completeTask else { return .invalidRequest }
 
         let persistenceResult: HardwareTaskCompletionPersistenceResult
         if let hardwareTaskPersistence {

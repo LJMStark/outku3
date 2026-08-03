@@ -11,6 +11,7 @@ public enum BLEEventHandler {
         let logs: [EventLog]
         let taskOperationReceipts: [TaskOperationReceipt]
         let didStartFocusSession: Bool
+        let didFailReplay: Bool
     }
 
     // MARK: - Payload Handling
@@ -74,7 +75,8 @@ public enum BLEEventHandler {
 
         // Handle event log batch (0x21) separately -- keep existing batch logic
         if message.type == BLEDataType.eventLogBatch.rawValue {
-            await handleEventLogBatch(message.payload, service: service)
+            let succeeded = await handleEventLogBatch(message.payload, service: service)
+            service.eventReplayBarrier.completeCurrentBatch(succeeded: succeeded)
             return
         }
 
@@ -356,7 +358,7 @@ public enum BLEEventHandler {
     // MARK: - Event Log Batch Processing
 
     /// 处理 Event Log 批次数据
-    private static func handleEventLogBatch(_ payload: Data, service: BLEService) async {
+    private static func handleEventLogBatch(_ payload: Data, service: BLEService) async -> Bool {
         let logs = parseEventLogBatchPayload(payload)
         guard !logs.isEmpty else {
             // count>0 却一条都没解析出来 = 真正的解析失败。补传是核心功能：若静默丢弃，硬件下次还发
@@ -369,7 +371,9 @@ public enum BLEEventHandler {
                     context: "BLEEventHandler.handleEventLogBatch"
                 )
             }
-            return
+            // A single zero count byte is the protocol's valid empty batch and still closes the
+            // reconnect replay window. Missing or malformed bodies fail closed.
+            return payload == Data([0])
         }
         // 补传路径补回电量：实时路径在 handleReceivedPayload 已处理电量，但批量重放的
         // deviceWake/lowBattery 原先会丢掉电量字节，这里取本批最新一条带电量的应用。
@@ -390,27 +394,30 @@ public enum BLEEventHandler {
             $0.eventType == .completeTask || $0.eventType == .skipTask
         }
         if hasFocusPageTransition {
+            var succeeded = false
             await HardwarePagePresentationGate.shared.performPageTransaction {
-                await processAndRespondToReplayedEvents(logs, service: service)
+                succeeded = await processAndRespondToReplayedEvents(logs, service: service)
             }
+            return succeeded
         } else {
-            await processAndRespondToReplayedEvents(logs, service: service)
+            return await processAndRespondToReplayedEvents(logs, service: service)
         }
     }
 
     private static func processAndRespondToReplayedEvents(
         _ logs: [EventLog],
         service: BLEService
-    ) async {
+    ) async -> Bool {
         let processing = await processEventLogs(logs, service: service, isReplay: true)
         // Replay deliberately skips stale live-only presentation work. There is no live TaskIn
         // page to commit after reconnect, so preserve record order and acknowledge each operation
         // directly as required by the offline recovery protocol.
-        _ = await respondToReplayedTaskOperations(
+        let outcome = await respondToReplayedTaskOperations(
             processing.taskOperationReceipts,
             sender: service,
             versionProvider: LocalStorage.shared
         )
+        return !processing.didFailReplay && outcome == .sent
     }
 
     // MARK: - Event Log Handling
@@ -496,32 +503,24 @@ public enum BLEEventHandler {
             processable = BLEEventHandler.sortAndDedup(logs)
         }
 
-        // 持久化在后台进行，不阻塞状态变更。实时事件只写日志；只有 0x21 重放批次
-        // 才能推进离线重放水位，否则先到的较新实时事件会吞掉更早的离线积压事件。
-        // 放在 processable 计算之后启动，也避免本批先抬高水位、再过滤掉自己。
-        if persistLogs {
-            Task {
-                await persistEventLogs(logs, advancesReplayWatermark: isReplay)
-            }
-        }
-
         let deviceID = deviceIDOverride
             ?? service?.connectedDeviceID?.uuidString
             ?? service?.lastKnownDeviceID?.uuidString
             ?? "unidentified-device"
         var receipts: [TaskOperationReceipt] = []
+        var processedLogs: [EventLog] = []
         var didStartFocusSession = false
+        var didFailReplay = false
         for log in processable {
-            // Hardware echoes the bounded ASCII ID advertised by DayPack/TaskInPage/0x1B. Resolve
-            // it once at the domain boundary so focus history and App persistence always retain the
-            // provider's original task ID instead of the wire hash.
-            let resolvedLog = resolvingTaskIdentifier(
-                in: log,
+            // Versioned Complete/Skip keep the raw wire task ID (often a bounded h-… hash) through
+            // the OperationID ledger so a lost 0x1B ACK can still match after the task row is gone.
+            // Canonical provider IDs are resolved only inside the domain mutation path.
+            if let plannedReceipt = plannedTaskOperationReceipt(
+                log,
                 tasks: tasksOverride ?? appState.tasks
-            )
-            if let plannedReceipt = plannedTaskOperationReceipt(resolvedLog, tasks: appState.tasks) {
-                receipts.append(await BLETaskOperationProcessor.process(
-                    resolvedLog,
+            ) {
+                let receipt = await BLETaskOperationProcessor.process(
+                    log,
                     plannedReceipt: plannedReceipt,
                     deviceID: deviceID,
                     focusService: focusService,
@@ -530,10 +529,27 @@ public enum BLEEventHandler {
                     appState: appState,
                     hardwareTaskPersistence: hardwareTaskPersistence,
                     receivedAt: nowProvider()
-                ))
+                )
+                processedLogs.append(log)
+                receipts.append(receipt)
+                if isReplay, receipt.result == .internalError {
+                    // The device outbox is an ordered command stream. Continuing after a failed
+                    // durable mutation could let a later operation overwrite its crash marker or
+                    // receive an ACK before the failed prefix is safe to clear.
+                    didFailReplay = true
+                    break
+                }
                 continue
             }
 
+            // Hardware echoes the bounded ASCII ID advertised by DayPack/TaskInPage/0x1B. Resolve
+            // it once at the focus boundary so focus history retains the provider's original task
+            // ID instead of the wire hash.
+            let resolvedLog = resolvingTaskIdentifier(
+                in: log,
+                tasks: tasksOverride ?? appState.tasks
+            )
+            processedLogs.append(log)
             let focusTransitionApplied = await handleFocusSessionEvent(
                 resolvedLog,
                 focusService: focusService,
@@ -551,10 +567,21 @@ public enum BLEEventHandler {
             applyReminderInteractionCooldown(resolvedLog)
         }
 
+        // Persist only the prefix that actually ran. In particular, a replay failure must not
+        // advance the watermark across later device outbox records that were neither executed nor
+        // acknowledged. Persistence remains off the state-mutation critical path.
+        if persistLogs {
+            let logsToPersist = isReplay ? processedLogs : logs
+            Task {
+                await persistEventLogs(logsToPersist, advancesReplayWatermark: isReplay)
+            }
+        }
+
         return EventProcessingResult(
-            logs: processable,
+            logs: isReplay ? processedLogs : processable,
             taskOperationReceipts: receipts,
-            didStartFocusSession: didStartFocusSession
+            didStartFocusSession: didStartFocusSession,
+            didFailReplay: didFailReplay
         )
     }
 
