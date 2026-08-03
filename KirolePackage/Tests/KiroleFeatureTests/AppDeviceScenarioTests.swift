@@ -80,8 +80,11 @@ struct AppDeviceScenarioTests {
         #expect(await scenario.snapshot().focus?.phase == .deep)
     }
 
-    @Test("Midnight hides yesterday content while task records survive App and device restarts")
+    @Test("Midnight keeps the old device library usable until the recomputed one arrives")
     func dailyContentRolloverSurvivesRestarts() async throws {
+        // v2.16.0（仅今天任务库）设备侧半边：跨午夜、断电重启、重连都不得清空已提交任务库——
+        // 旧库继续可用，直到 App 推来按新日重算的版本。App 侧半边（跨日立即就绪 .complete、
+        // 昨日任务成为 deletion）由 rollover/planner 专测覆盖；此处补断言 App 已就绪。
         let scenario = AppDeviceScenario(now: Self.minuteBeforeMidnight)
         let phaseTexts = TaskLibraryPhaseTexts.localFallback(for: .joy)
         let taskRecord = TaskLibraryRecord(
@@ -121,6 +124,9 @@ struct AppDeviceScenarioTests {
         #expect(snapshot.dailyContentVisiblePackage == nil)
         #expect(snapshot.taskLibraryRecords.map(\.taskID) == ["persistent-task"])
         #expect(snapshot.executedSyncTriggers == [.automatic])
+        // App 侧：跨日 promote 已把整库重算标记为立即就绪（同一轮 automatic sync 送达）。
+        #expect(scenario.appState.taskLibraryStabilityState.hasUrgentCompleteUpdate)
+        #expect(scenario.appState.taskLibraryReadyUpdate()?.scope == .complete)
 
         scenario.restartDevice()
         snapshot = await scenario.snapshot()
