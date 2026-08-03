@@ -16,7 +16,9 @@ Kirole 是 **硬件优先的宠物陪伴产品**：硬件 E-ink 设备是用户�
 
 **Pet 页面布局是设计内容（客户需求，勿动）**：上半部分显示宠物形象，下半部分是任务列表 UI（Tasks Today / Upcoming / No Due Dates，含 checkbox / Edit / Delete）。这是刻意的产品设计，不是"待办增强"。
 
-**硬件优先意味着**：硬件离线时用户操作不能丢——硬件本地缓存事件，BLE 重连后通过 `0x21 eventLogBatch` 帧批量回推给 App，App 必须把每条事件应用到 AppState（任务完成状态、专注会话等）。"补传"是核心功能而非可选项。
+**硬件优先意味着**：硬件离线时用户操作不能丢——硬件本地缓存事件，BLE 重连后通过 `0x21 eventLogBatch` 帧批量回推给 App，App 必须把每条事件应用到 AppState（任务完成状态、专注会话等）。"补传"是核心功能而非可选项。v2.16.0 起它还是**每个连接的强制前置握手**：`BLEEventReplayBarrier` fail-closed——App 处理完 `0x20→0x21` 回放前不发任何 presentation 数据，15 秒未完成判连接失败并主动断开（固件无离线事件也必须回空 `0x21`）。
+
+**设备内容 = 两个独立版本域（v2.16.0 预备模型）**：`0x23 TaskLibraryTransaction` 承载**当天任务库**（每条任务带详情 + 三条阶段文案，设备按本地专注分钟 0–5/6–15/16+ 自选，进任务不再向 App 现场索取——`0x11 TaskInPage` 生成路径已删除）；`0x24 DailyContentTransaction` 承载**当天内容包**（当天日程 + 每日文案 + 屏保/总结文字，跨自然日立即失效）。两者各自原子提交、独立持久化，普通内容变化走 **180 秒稳定窗**（`TaskLibraryStabilityState`），完成/删除即时。**任务库只含当天任务**（dueDate 当天 ∪ 手动设为今天，`TaskItem.isEligibleForHardwareTaskLibrary`，ADR 0029 拍板，2026-08-04）——未来/过期/未选入的无日期任务不上 wire，跨日由 App 立即重算重发、设备沿用旧库到新版到达。**断连不结束专注**（ADR 0019，`handleDeviceDisconnected` 为 no-op）：设备本地续计时，重连不切页不清零。
 
 **一账号 = 一活跃设备（单设备模型，READ）**：Supabase 数据按登录账号（`userId`）存，但产品是"一台手机配一台硬件"。同一账号**不预期同时在多台设备上活跃**——换机 / 重装是**顺序**事件（旧机退役 → 新机登录拉云端、`max` 合并恢复），不是并发。因此跨设备同步（能量瓶子、宠物状态）**不存在多写者并发**：分布式多写竞态（如"远端写非单调 / 较低值覆盖较高值"）**不适用本产品，勿当 bug 报**。与"不做 Watch / Mac / 家庭共享"定位一致。将来若真做多设备陪伴端，再引入 DB 端 `max` / 条件更新。
 
@@ -26,10 +28,10 @@ Kirole 是 **硬件优先的宠物陪伴产品**：硬件 E-ink 设备是用户�
    `appState.tasks/events` → `DayPackGenerator` / `CompanionTextService` → `OpenAIService`。家页伴侣槽显示**单一、随时段变脸**的 `currentPetDialogue`（晨安 / 任务鼓励 / 结算语，由 `AppState+Companion.resolveCompanionPhase` 选型；亦可切日俳句模式），DayPack 另带**中性面板文本** `daySummary`（框②，`OpenAIService.generateDaySummaryText` 非人格生成）+ `firstUp`（框③）；三者经 BLE 推给硬件。**宠物口吻只在 `currentPetDialogue` 一句**——v2.5.0 起旧的多输出 `morningGreeting / dailySummary / companionPhrase` 已收敛，面板文本一律中性。
 
 2. **App → 硬件同步有节流，不立刻 push**
-   `BLESyncCoordinator.performSync()` + `BLESyncPolicy`：白天 08-23 每 1 小时；夜间 23-08 每 4 小时。触发时机：iOS `BGAppRefreshTask`、硬件主动发 `0x20`/`0x30`、DayPack 指纹变化或 `force: true`。**用户加任务后硬件不会立刻显示**，要等下一个 sync。
+   `BLESyncCoordinator.performSync()` + `BLESyncPolicy`：白天 08-23 每 1 小时；夜间 23-08 每 4 小时。触发时机：iOS `BGAppRefreshTask`、硬件主动发 `0x20`/`0x30`、DayPack 指纹变化或 `force: true`。任务/当日日程的**内容编辑**另有 180 秒稳定窗（最后一次变化后 3 分钟才成为待发版本，断连/重连不重计）。**用户加任务后硬件不会立刻显示**，要等窗口到点 + 下一个 sync。跨自然日是例外：任务库与当天内容包**立即**重算推送（0x23 → 0x24 → DayPack 一轮）。
 
 3. **硬件 → App 反向触发专注模式**
-   硬件点击任务 → `0x10 enterTaskIn` → `BLEEventHandler` → `FocusSessionService.startSession(...)` → 整套专注链路自动启动。
+   硬件点击任务 → `0x10 enterTaskIn` → `BLEEventHandler` → `FocusSessionService.startSession(...)` → 整套专注链路自动启动。v2.16.0 起 `0x10` **只**用于建立会话（Device→App 唯一的"专注已开始"信号，固件不可停发）；App **不再回发 `0x11 TaskInPage`**，设备从已提交任务库本地读详情与三阶段文案。
 
 ## Development Rules
 1. After any frontend / UI change, rebuild and launch the simulator to visually verify. Do not mark UI work complete without this check.
@@ -47,7 +49,7 @@ KiroleFeature/
 ├── Core/
 │   ├── AppEnvironmentValues.swift   # EnvironmentKey definitions for all 4 singletons
 │   ├── Auth/                        # Google/Apple sign-in + KeychainService
-│   ├── BLE/                         # BLEProtocol.swift + TaskListSnapshotProtocol.swift — byte definitions and 0x1B task-snapshot ACK protocol
+│   ├── BLE/                         # BLEProtocol.swift（字节定义）、TaskLibraryProtocol/Update/Delivery.swift（0x23 当天任务库：codec + 稳定窗状态机 + 冻结事务）、DailyContentProtocol/Update/Delivery/DayBoundary.swift（0x24 当天内容包 + 跨日）、TaskListSnapshotProtocol.swift（0x1B 业务确认 + 离线动作账本）
 │   ├── Config/                      # AppSecrets (xcconfig-injected secrets), AppBuildEnvironment (debug-tool gating)
 │   ├── Error/                       # ErrorReporter
 │   ├── Network/                     # OpenAIService, CompanionTextService, PromptSanitizer, SimulatorBridge, PromptSpec.generated.swift
@@ -63,7 +65,7 @@ KiroleFeature/
 
 > **DeviceActivityMonitor extension mirrors constants — change both sides together.** `KiroleDeviceActivityMonitor/` is a **zero-dependency** appex (must NOT import KiroleFeature; appex memory limits): it detects "distracting app used ≥1 min during focus", writes the timestamp into the App Group, and posts a Darwin notification. Its `Bridge` enum duplicates three constants from `ScreenTimeInterruptionDetector` (`appGroupID` / `pendingKey` / `darwinName`) **verbatim by design** — any change must be made in both files or interruption detection silently dies. `agvtool` rewrites the extension's Info.plist build number on every release; that diff is expected.
 
-> **BLE byte namespaces are direction-split.** `Core/BLE/BLEProtocol.swift` (`BLEDataType`) defines App→Device bytes; Device→App bytes live in `Models/EventLog.swift` (`EventLogType.rawByte`). The **same byte value can mean different things by direction** — e.g. `0x15` is CustomAvatarFrame (outbound) vs ViewEventDetail (inbound). This is intentional and not an on-wire conflict; don't flag it as one.
+> **BLE byte namespaces are direction-split.** `Core/BLE/BLEProtocol.swift` (`BLEDataType`) defines App→Device bytes; Device→App bytes live in `Models/EventLog.swift` (`EventLogType.rawByte`). The **same byte value can mean different things by direction** — e.g. `0x15` is CustomAvatarFrame (outbound) vs ViewEventDetail (inbound), and `0x10` is DayPack (outbound) vs EnterTaskIn (inbound). This is intentional and not an on-wire conflict; don't flag it as one. The `0x10` pair is the one that bites: "停发 0x10" without naming the direction once nearly killed the focus-start signal (v2.16.0 correction) — always specify inbound/outbound when discussing these bytes.
 
 ### State Management
 Four `@Observable` singletons injected at `ContentView` via `.environment()`:
@@ -173,7 +175,8 @@ xcodebuild -workspace Kirole.xcworkspace -scheme Kirole \
 ```
 
 ### Test Suite Notes
-- **~103 test files (127 suites, ~1080 tests)** in `KirolePackage/Tests/KiroleFeatureTests/`. BLE is the most heavily covered surface (`BLEProtocolTests`, `BLESecurityTests`, `BLESyncPolicyTests`, `BLEWriteGateTests`, `BLEConnectionPolicyTests`, `BLEEventHandlerTests`, `BLEProtocolSimulationTests`, `BLEOTACoordinatorTests`), followed by focus/sync/companion logic.
+- **~129 test files (150 suites, ~1245 tests)** in `KirolePackage/Tests/KiroleFeatureTests/`. BLE is the most heavily covered surface (`BLEProtocolTests`, `BLESecurityTests`, `BLESyncPolicyTests`, `BLEWriteGateTests`, `BLEConnectionPolicyTests`, `BLEEventHandlerTests`, `BLEProtocolSimulationTests`, `BLEOTACoordinatorTests`, plus the task-library group: `TaskLibraryFullSyncTests` / `TaskLibraryIncrementalUpdateTests` / `TaskLibraryDeliveryTests` / `DailyContentDayRolloverTests` / `OfflineTaskStateMergeTests`), followed by focus/sync/companion logic. The stateful App↔virtual-device acceptance entry is `AppDeviceScenarioTests` (`AppDeviceScenarioSupport` wires controllable clock, AI, BLE fault points, and persistence).
+- **Time-dependent task-library tests**: the `0x23` filter is day-dependent (`isEligibleForHardwareTaskLibrary(on:calendar:)`, no default args). Fixtures pin fixed timestamps (`1_800_000_000` etc.) and MUST inject `appState.taskLibraryNowProvider` / `dailyContentCalendarProvider` (Asia/Shanghai helper: `TaskLibraryFullSyncTests.makeShanghaiCalendar()`); a fixture task needs `dueDate:`/`todayDisplayDate:` matching that clock or it silently drops out of the library and assertions go red. New offsets ≤ 3600s with an explicit calendar.
 - **`BLEDataEncoder` has a strict mirror decoder in the test layer.** `BLEProtocolSimulationSupport.swift`'s `parseDayPack` / `parseWeather` re-parse the exact wire bytes and call `requireEnd()` (any trailing byte throws `trailingBytes`). So **any field added to `encodeDayPack` / `encodeWeather` MUST be read back in the matching `parse*` before `requireEnd()`** — even an empty length-prefixed string appends a byte and trips it — and the fixture + `Simulated*` struct + round-trip assertion updated. `BLEProtocolTests` walks the cursor by hand and will *not* catch a desync; run the **full** `swift test` (which includes `BLEProtocolSimulationTests`) after any wire-format change, not just `BLEProtocolTests`.
 - **Parallel-test isolation (CRITICAL):** Swift Testing runs suites concurrently. Any test that mutates global `UserDefaults.standard` — i.e. anything going through `LocalStorage` resettable keys, focus energy bottles, or gamify storage — MUST wrap its body in `await SharedPersistenceTestLock.shared.withLock { ... }` (`Tests/.../SharedPersistenceTestLock.swift`) or it flakes intermittently. Suites that assert state on shared singletons (e.g. `BLEService.shared.isPendingOTAReboot` in `BLEOTACoordinatorTests`) must be `@Suite(..., .serialized)` — in-suite parallel tests interleave at `await` points and clobber the flag. **Adding a new key to `LocalStorage.resettableUserDefaultKeys` can make previously-green tests flaky.** If a suite flakes, run it alone first (`swift test --filter SuiteName`) to confirm an isolation problem before changing production code.
 - **Which runner:** `swift test` (package-only, fast) for logic/services; the simulator host (`xcodebuild ... test`, or XcodeBuildMCP `test_sim`) only when the test exercises app-shell / UI lifecycle. `Kirole/Kirole.xctestplan` coordinates the full run.
@@ -204,11 +207,11 @@ Pipeline steps (automated): `increment_build_number` → `gym` (archive ~3 min) 
 
 Credentials: `fastlane/.env` (git-ignored) — copy from `fastlane/.env.template` and fill `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_PATH`.
 
-**Version numbers live in the pbxproj, not the xcconfig.** `Config/Shared.xcconfig` declares `MARKETING_VERSION = 1.0` / `CURRENT_PROJECT_VERSION = 1`, but the Xcode project's own build settings override both (currently `2.0` / `631`). Editing the xcconfig values does nothing; `fastlane` bumps the build via `increment_build_number(xcodeproj:)`. Never hand-edit build numbers — let the lane do it.
+**Version numbers live in the pbxproj, not the xcconfig.** `Config/Shared.xcconfig` declares `MARKETING_VERSION = 1.0` / `CURRENT_PROJECT_VERSION = 1`, but the Xcode project's own build settings override both (currently `2.0` / `632`). Editing the xcconfig values does nothing; `fastlane` bumps the build via `increment_build_number(xcodeproj:)`. Never hand-edit build numbers — let the lane do it.
 
 **Verify the build actually landed.** `upload_to_testflight` can be killed mid-upload (process timeout / transient `SSL_read` EOF), leaving the build number bumped locally + an archive on disk but **nothing on App Store Connect** — a "Done" line or local archive is not proof. Confirm with `fastlane ios status` (or the ASC API directly: latest build number + `processing_state` + beta-review state). Run the release detached/in background so one timeout can't kill the upload; transient SSL errors are retryable.
 
-**Before App Store submission (TestFlight is fine as-is):** `AppBuildEnvironment.showsHardwareDebugTools` currently `return true` unconditionally — deliberately loosened in build 573 (all-builds-visible + keep-alive default-on) for firmware integration, and still loose as of build 631. The `DEBUG || isTestFlight` gate must be restored before a store release. Other pre-release gates (on-device interruption-detection acceptance, firmware OTA safety sign-off) are tracked in the `release-acceptance` skill — check there rather than assuming this is the only one.
+**Before App Store submission (TestFlight is fine as-is):** `AppBuildEnvironment.showsHardwareDebugTools` currently `return true` unconditionally — deliberately loosened in build 573 (all-builds-visible + keep-alive default-on) for firmware integration, and still loose as of build 632. The `DEBUG || isTestFlight` gate must be restored before a store release. Other pre-release gates (on-device interruption-detection acceptance, firmware OTA safety sign-off) are tracked in the `release-acceptance` skill — check there rather than assuming this is the only one.
 
 ### E-ink Simulator (hardware-free UI preview)
 ```bash
@@ -257,6 +260,8 @@ For TestFlight automation, copy `fastlane/.env.template` → `fastlane/.env` and
 
 ## Where to Look Next
 - `AGENTS.md` — full rules, BLE protocol *rules/summary*, companion IP prompt architecture, onboarding detail, Focus Mode state machine, Event→Output dispatch map.
+- `CONTEXT.md`（仓库根）— **领域术语表（ubiquitous language）**：设备任务库、当天内容包、三分钟稳定窗、来源页面、断联专注、完成优先/跳过合并/删除优先等 29 条术语的权威定义（每条附「避免」反义词）。给功能命名、判断行为对错、写协议条款前先对照它；产品决定变更时它随 ADR 一起改。
+- `docs/adr/` — 0001–0029 逐条产品决定（ADR），一篇一决定。已被推翻的顶部有 superseded 标注（0001/0002 → 0029「任务库仅当天」）。改任务范围、稳定窗、冲突优先级前先查这里——#13 明文：变更这些必须重新做产品决定，不能编码时自行改写。
 - `docs/` — **hardware-facing source of truth** (AGENTS.md defers here). `BLE通信协议规格文档.md` is the **authoritative BLE wire-protocol spec** — the firmware contract; edit this file directly (versioned — see its header for the current version), never a root-level copy. `BLE初次联调指南.md` / `BLE联调前全协议模拟报告.md` are the integration + dry-run guides; `硬件需求文档-Hardware-Requirements-Document.md` and `固件功能规格文档.md` are the hardware/firmware requirement specs; `Kirole显示屏页面（游戏机制2）.pdf` and `positioning-narrative.md` are the product mechanism / positioning source of truth (e.g. why the streak system was deleted); `2026-07-09-spec.md` is the executed spec for the focus-interruption redesign (D-1/D-2/D-3 decisions + "don't fix as bug" list). `电子墨水屏需求/客户答复-2026-07-20.md` + `待客户确认问题清单.md` are the **settled customer rulings** behind the current e-ink display behavior — check these before re-litigating a display question or reporting one as a bug. When you change a BLE/firmware doc here, the protocol byte tables and §-numbers are what the hardware team builds against — keep them exact.
 - `.cursor/rules/*.mdc` — Swift / SwiftUI / Testing / Concurrency / Foundation Models / XcodeBuildMCP guidance.
 - `TESTFLIGHT_GUIDE.md`, `TESTFLIGHT_PROGRESS.md` — release workflow state.
