@@ -4,13 +4,16 @@ import Observation
 /// 每次连接在发送任何业务帧之前完成的功耗握手（`0x25`，协议 §4.24/§5.24）。
 ///
 /// 客户要求硬件 BLE 常开：设备进入低功耗后连接仍然可达，所以「连上了」不等于「能收数据」。
-/// App 先 query，若设备回 lowPower 再发 wake 并等它回到 active。
 ///
-/// **整个流程 fail-open**：超时、写失败、老固件静默丢弃、设备明确拒绝，一律记 `ErrorReporter`
-/// 后当作设备醒着继续。这与紧随其后的 `0x20` 回放屏障（fail-closed，15 秒判连接失败并断开）
-/// 方向相反，是刻意的——丢失离线动作会造成数据错乱，而「查不到功耗状态」的正确降级就是继续
-/// （设备至少已经能维持 BLE 连接）。若这里也 fail-closed，不认识 `0x25` 的现役固件会当场全部
-/// 连不上。
+/// 流程（2026-08-04 硬件团队定的语义）：读状态 →（休眠则）下发唤醒 → **间隔轮询读状态** →
+/// **必须读到「正常运行」才允许继续通信**。唤醒命令是 fire-and-forget，判定完全依赖后续查询。
+///
+/// **整个流程 fail-closed**：任一环节读不到 active——无应答、格式非法、设备拒绝、轮询用尽——
+/// 都判本次连接失败并断开，与紧随其后的 `0x20` 回放屏障同一处置。轮询的意义就是「确认之后
+/// 才继续」，超时后照发不误等于白轮询。
+///
+/// > ⚠️ 这是 flag-day 切换：**固件实现 `0x25` 之前，App 连不上任何设备**（连上就断、反复重连）。
+/// > 协议 v2.18.0 已定案，固件按 §4.24 施工。
 ///
 /// 状态只代表当前 BLE 连接内的硬件状态；断连恢复为 unknown，不落盘。
 @MainActor
@@ -20,12 +23,10 @@ public final class BLEDeviceWakeCoordinator {
         case unknown
         case querying
         case waking
-        /// 设备明确回了 `PowerState=active`。
+        /// 读到 `PowerState=active`——**唯一**允许继续下发业务数据的状态。
         case awake
-        /// fail-open 的结果：超时 / 老固件无应答 / 写失败 / 设备拒绝。
-        /// 语义上等同 `awake`（后续照常发数据），分开是为了让日志和硬件面板能区分
-        /// 「确认醒着」与「猜它醒着」。
-        case assumedAwake
+        /// 轮询用尽仍未读到 active，或设备根本不应答 `0x25`。本次连接判失败并断开。
+        case failedToWake
         /// 收到设备主动上报的低功耗（`CommandEcho=0xFF`）或 `0x31 DeviceSleep`。
         case observedSleep
     }
@@ -46,13 +47,14 @@ public final class BLEDeviceWakeCoordinator {
 
     public private(set) var state: State = .unknown
 
-    /// 查询超时。这是**老固件每次连接都要付的固定税**——不认识 `0x25` 的固件不会回任何东西，
-    /// 必然吃满这段等待（随后 fail-open 跳过 wake，不会再吃第二次）。2 秒已是典型 BLE 往返的
-    /// 几十倍。
-    private let queryTimeout: Duration
-    /// 唤醒超时。设备只要还能回 BLE 就不在 deep sleep（那种情况连接本身就没了，走重连路径），
-    /// 所以这里等的是任务调度延迟而非重启，3 秒有充足余量。
-    private let wakeTimeout: Duration
+    /// 单次 `0x25` 查询的应答超时。2 秒已是典型 BLE 往返的几十倍。
+    private let responseTimeout: Duration
+    /// 唤醒后两次状态查询之间的间隔。
+    private let pollInterval: Duration
+    /// 唤醒后最多查几次状态。`pollInterval × maxPollAttempts` 就是允许设备醒来的总时长；
+    /// 500ms × 10 = 5 秒，能装进 `BLESyncCoordinator.connectionTimeoutSeconds` 的 40 秒预算
+    /// （connect 10 + 安全握手 5 + 唤醒 ≤5 + 回放 15 = 35）。
+    private let maxPollAttempts: Int
     private let sendCommand: SendCommand
     private let sleeper: Sleeper
     private var operation: Operation?
@@ -60,13 +62,15 @@ public final class BLEDeviceWakeCoordinator {
     private var activeGeneration: UInt64?
 
     private init(
-        queryTimeout: Duration = .seconds(2),
-        wakeTimeout: Duration = .seconds(3),
+        responseTimeout: Duration = .seconds(2),
+        pollInterval: Duration = .milliseconds(500),
+        maxPollAttempts: Int = 10,
         sendCommand: SendCommand? = nil,
         sleeper: @escaping Sleeper = { try await Task.sleep(for: $0) }
     ) {
-        self.queryTimeout = queryTimeout
-        self.wakeTimeout = wakeTimeout
+        self.responseTimeout = responseTimeout
+        self.pollInterval = pollInterval
+        self.maxPollAttempts = maxPollAttempts
         self.sendCommand = sendCommand ?? { command in
             try await BLEService.shared.sendDevicePowerCommand(command)
         }
@@ -74,65 +78,100 @@ public final class BLEDeviceWakeCoordinator {
     }
 
     static func makeForTesting(
-        queryTimeout: Duration = .seconds(2),
-        wakeTimeout: Duration = .seconds(3),
+        responseTimeout: Duration = .seconds(2),
+        pollInterval: Duration = .milliseconds(500),
+        maxPollAttempts: Int = 10,
         sendCommand: @escaping SendCommand,
         sleeper: @escaping Sleeper = { try await Task.sleep(for: $0) }
     ) -> BLEDeviceWakeCoordinator {
         BLEDeviceWakeCoordinator(
-            queryTimeout: queryTimeout,
-            wakeTimeout: wakeTimeout,
+            responseTimeout: responseTimeout,
+            pollInterval: pollInterval,
+            maxPollAttempts: maxPollAttempts,
             sendCommand: sendCommand,
             sleeper: sleeper
         )
     }
 
-    /// 确保设备能接收业务帧。无返回值——fail-open 意味着调用方没有需要分支的失败。
+    /// 确保设备已进入可通信状态。**返回 false 时本次连接必须判失败并断开**——读不到
+    /// 「正常运行」就不允许继续下发任何业务帧（2026-08-04 硬件团队定的语义）。
     ///
-    /// 换代（断连后新连接）会让在途的握手静默放弃：本代次之外的应答不改状态，也不重挂超时。
-    public func ensureAwake(connectionGeneration: UInt64) async {
+    /// 流程：读状态 →（休眠则）下发唤醒 → 间隔轮询读状态 → 必须读到 active 才放行。
+    /// 唤醒命令是 fire-and-forget：设备可以不回应答，回了 App 也不据此判定已醒，
+    /// **一切以后续 Query 读到的状态为准**。这样固件只需如实报告当前状态，
+    /// 不必承诺「在真正能收数据之后才回 active」——那是固件很难自证的东西。
+    ///
+    /// 换代（断连后新连接）会让在途的握手立即放弃并返回 false。
+    public func ensureAwake(connectionGeneration: UInt64) async -> Bool {
         activeGeneration = connectionGeneration
         state = .querying
 
         guard let query = await send(
             .query,
-            timeout: queryTimeout,
+            timeout: responseTimeout,
             generation: connectionGeneration
         ) else {
-            failOpen("no answer to the power query", generation: connectionGeneration)
-            return
+            return failClosed("no answer to the power query", generation: connectionGeneration)
         }
-        guard activeGeneration == connectionGeneration else { return }
+        guard activeGeneration == connectionGeneration else { return false }
         guard query.status == .ok else {
-            failOpen(
+            return failClosed(
                 "device rejected the power query (\(query.status.message))",
                 generation: connectionGeneration
             )
-            return
         }
         guard query.powerState == .lowPower else {
             state = .awake
-            return
+            return true
         }
 
         state = .waking
-        guard let wake = await send(
-            .wake,
-            timeout: wakeTimeout,
-            generation: connectionGeneration
-        ) else {
-            failOpen("no answer to the wake command", generation: connectionGeneration)
-            return
-        }
-        guard activeGeneration == connectionGeneration else { return }
-        guard wake.status == .ok, wake.powerState == .active else {
-            failOpen(
-                "device stayed in low power after wake (\(wake.status.message))",
+        await sendWakeCommand(generation: connectionGeneration)
+        guard activeGeneration == connectionGeneration else { return false }
+
+        for attempt in 1...maxPollAttempts {
+            do {
+                try await sleeper(pollInterval)
+            } catch {
+                return false
+            }
+            guard activeGeneration == connectionGeneration else { return false }
+
+            // 单次轮询无应答不算失败：设备正在醒来的过程中可能来不及回。继续下一次。
+            guard let poll = await send(
+                .query,
+                timeout: responseTimeout,
                 generation: connectionGeneration
-            )
-            return
+            ) else {
+                continue
+            }
+            guard activeGeneration == connectionGeneration else { return false }
+            if poll.status == .ok, poll.powerState == .active {
+                state = .awake
+                Log.ble.debug("Device woke after \(attempt) poll(s)")
+                return true
+            }
         }
-        state = .awake
+
+        return failClosed(
+            "device stayed in low power after \(maxPollAttempts) polls",
+            generation: connectionGeneration
+        )
+    }
+
+    /// 唤醒是 fire-and-forget：不等应答，写失败也只记日志继续轮询——设备可能已经在醒了。
+    private func sendWakeCommand(generation: UInt64) async {
+        do {
+            try await sendCommand(.wake)
+        } catch {
+            ErrorReporter.log(
+                .sync(
+                    component: "BLE Device Wake",
+                    underlying: "0x25 wake write failed: \(error.localizedDescription)"
+                ),
+                context: "BLEDeviceWakeCoordinator.sendWakeCommand"
+            )
+        }
     }
 
     public func handleResponse(payload: Data) {
@@ -263,12 +302,14 @@ public final class BLEDeviceWakeCoordinator {
         operation = nil
     }
 
-    private func failOpen(_ reason: String, generation: UInt64) {
-        guard activeGeneration == generation else { return }
+    @discardableResult
+    private func failClosed(_ reason: String, generation: UInt64) -> Bool {
+        guard activeGeneration == generation else { return false }
         ErrorReporter.log(
-            .sync(component: "BLE Device Wake", underlying: "assuming awake — \(reason)"),
+            .sync(component: "BLE Device Wake", underlying: "device not ready — \(reason)"),
             context: "BLEDeviceWakeCoordinator.ensureAwake"
         )
-        state = .assumedAwake
+        state = .failedToWake
+        return false
     }
 }
