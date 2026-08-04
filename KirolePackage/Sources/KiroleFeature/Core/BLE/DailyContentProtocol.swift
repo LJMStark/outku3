@@ -397,17 +397,32 @@ public enum DailyContentCodec {
 }
 
 public enum DailyContentSource {
+    /// 当天内容包（`0x24`）单次事务的日程上限（2026-08-04 客户拍板）。超出静默截断，App 不做
+    /// 任何 UI 提示。与任务库的 `TaskLibraryMembership.maxRecords` 今天同值，但**刻意不共享
+    /// 常量**——两个内容域独立版本化、独立持久化、协议 §4.22 与 §4.23 分开写，共享会暗示一种
+    /// 不存在的耦合。设备侧仍不得自行截断（放不下回 `capacityExceeded`）。
+    public static let maxEvents = 20
+
+    /// 当天日程的有序集合。先按开始时间排序**再**截断，所以留下的是当天最早的 20 条；
+    /// 反过来会截出一批任意日程再排序。
+    ///
+    /// 截断必须落在这一层：`DailyContentPackageGenerator` 用本函数造 `preparedEventSummaries`
+    /// 传给 `DayPackGenerator.generateDayPack`，而后者会自己重新筛一遍当天日程。只在更上层截断
+    /// 会让两条长度不同的列表进入结算文案，概览统计与实际列表对不上。
     public static func todayEvents(
         from events: [CalendarEvent],
         at date: Date = Date(),
         calendar: Calendar = .current
     ) -> [CalendarEvent] {
-        events
-            .filter { calendar.isDate($0.startTime, inSameDayAs: date) }
-            .sorted {
-                if $0.startTime != $1.startTime { return $0.startTime < $1.startTime }
-                return $0.id < $1.id
-            }
+        Array(
+            events
+                .filter { calendar.isDate($0.startTime, inSameDayAs: date) }
+                .sorted {
+                    if $0.startTime != $1.startTime { return $0.startTime < $1.startTime }
+                    return $0.id < $1.id
+                }
+                .prefix(maxEvents)
+        )
     }
 
     public static func eventIdentifier(_ event: CalendarEvent) -> String {

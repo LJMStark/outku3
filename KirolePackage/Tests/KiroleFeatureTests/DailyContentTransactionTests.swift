@@ -67,6 +67,31 @@ struct DailyContentTransactionTests {
         #expect(selected.map(\.id) == ["today"])
     }
 
+    @Test("Today's events are capped at the earliest twenty by start time")
+    func todayEventsKeepsTheEarliestTwentyByStartTime() throws {
+        // 排序在截断之前：乱序传入 25 条，留下的必须是最早的 20 条并按开始时间升序，
+        // 而不是任意 20 条再排序。
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(identifier: "Asia/Shanghai"))
+        let now = try #require(calendar.date(from: DateComponents(
+            year: 2026, month: 8, day: 3, hour: 0
+        )))
+        let shuffledOffsets = [24, 3, 17, 0, 9, 22, 5, 14, 1, 20, 11, 7, 18, 2,
+                               23, 8, 15, 4, 12, 21, 6, 19, 10, 16, 13]
+        let events = shuffledOffsets.map { offset in
+            makeEvent(
+                id: "event-\(String(format: "%02d", offset))",
+                start: now.addingTimeInterval(Double(offset) * 1_800)
+            )
+        }
+
+        let selected = DailyContentSource.todayEvents(from: events, at: now, calendar: calendar)
+
+        #expect(selected.count == DailyContentSource.maxEvents)
+        #expect(selected.map(\.id) == (0..<20).map { "event-\(String(format: "%02d", $0))" })
+        #expect(!selected.contains { $0.id == "event-24" })
+    }
+
     @Test("A corrupted replacement never changes the committed package")
     func corruptedReplacementKeepsCommittedPackage() throws {
         var firmware = SimulatedDailyContentFirmware()

@@ -46,15 +46,15 @@ struct DailyContentPackageGeneratorTests {
         #expect(result.events.allSatisfy { !$0.supportText.isEmpty })
     }
 
-    @Test("The fallback package excludes future events without truncating today")
-    func fallbackUsesOnlyTodayWithoutLimit() async throws {
+    @Test("The fallback package excludes future events and keeps today up to the device limit")
+    func fallbackUsesOnlyTodayUpToTheDeviceLimit() async throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try #require(TimeZone(identifier: "Asia/Shanghai"))
         let now = try #require(calendar.date(from: DateComponents(
             year: 2026, month: 8, day: 3, hour: 8
         )))
         let tomorrow = try #require(calendar.date(byAdding: .day, value: 1, to: now))
-        let todayEvents = (0..<20).map { index in
+        let todayEvents = (0..<25).map { index in
             CalendarEvent(
                 id: "today-\(index)",
                 title: "Today \(index)",
@@ -86,8 +86,11 @@ struct DailyContentPackageGeneratorTests {
 
         let result = await DailyContentPackageGenerator(preparer: preparer).generate(input: input)
 
-        #expect(result.events.count == 20)
+        #expect(result.events.count == DailyContentSource.maxEvents)
         #expect(!result.events.contains { $0.eventID == "future" })
+        // 超出上限的当天日程静默丢弃，留下的是最早的 20 条。
+        #expect(!result.events.contains { $0.eventID == "today-24" })
+        #expect(result.events.map(\.eventID) == (0..<20).map { "today-\($0)" })
     }
 
     @Test("Every input that can change packaged text changes the package source fingerprint")
