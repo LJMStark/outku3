@@ -610,6 +610,12 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
             // connectCompletion 属于新尝试，不得用旧尝试的结果提前完成它。
             guard connectGeneration == generation else { return }
         }
+        // 功耗握手必须先于 0x20：客户要求硬件 BLE 常开，所以「连上了」不等于「能收数据」——
+        // 设备可能在低功耗态处理不了 0x20，而 0x20 屏障是 fail-closed（15 秒判连接失败并断开），
+        // 那会让每次连接都失败。本步骤 fail-open，老固件不认识 0x25 也不影响连接建立。
+        await BLEDeviceWakeCoordinator.shared.ensureAwake(connectionGeneration: generation)
+        guard connectGeneration == generation else { return }
+
         let replaySucceeded = await requestEventLogsIfNeeded()
         guard connectGeneration == generation else { return }
         guard replaySucceeded else {
@@ -719,6 +725,7 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
             destinationID: taskListSnapshotDestinationID
         )
         BLEWiFiDebugCoordinator.shared.handleDisconnected()
+        BLEDeviceWakeCoordinator.shared.handleDisconnected()
         WiFiAvatarSessionCoordinator.shared.handleDisconnected()
         AppState.shared.handleCustomAvatarDeviceDisconnected()
         handshakeTimeoutTask?.cancel()

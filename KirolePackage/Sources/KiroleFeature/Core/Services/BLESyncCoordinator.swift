@@ -108,7 +108,12 @@ public final class BLESyncCoordinator {
 
     /// Connection timeout in seconds. Configurable for larger screen sizes
     /// that require longer refresh times (e.g., 7.3寸 full refresh ~12s).
-    public var connectionTimeoutSeconds: TimeInterval = 30
+    ///
+    /// 这个看门狗在 connect **之前**启动，所以预算必须覆盖整条握手链路：
+    /// connect 10s + 安全握手 5s + 功耗握手 `0x25` 最多 5s + 回放屏障 `0x20/0x21` 15s = 35s。
+    /// v2.17.0 加入功耗握手时从 30 提到 40——30 秒在原链路上已经顶格，不提会在慢链路上让看门狗
+    /// 在唤醒握手在途时开火并断连。
+    public var connectionTimeoutSeconds: TimeInterval = 40
 
     private init() {
         hardwarePagePresentationGate = .shared
