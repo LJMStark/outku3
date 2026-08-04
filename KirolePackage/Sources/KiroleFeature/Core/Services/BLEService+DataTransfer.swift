@@ -311,12 +311,6 @@ extension BLEService {
         try await writeData(type: .wifiDebugMode, data: command.payload)
     }
 
-    /// 发送设备功耗控制 (0x25) 命令（query/wake）。统一走 writeData，secure 模式自动封装为 0x7E。
-    /// 设备经 Notify 回 0x25 应答，由 `BLEDeviceWakeCoordinator.handleResponse` 处理。
-    public func sendDevicePowerCommand(_ command: BLEDevicePowerCommand) async throws {
-        try await writeData(type: .devicePowerControl, data: command.payload)
-    }
-
     /// 发送 WiFiAvatarSession (0x1A) 会话命令（close/open/query + OperationID）。
     /// 统一走 writeData，secure 模式自动封装为 0x7E。设备经 Notify 回 0x1A 应答，
     /// 由 `WiFiAvatarSessionCoordinator.handleResponse` 处理。

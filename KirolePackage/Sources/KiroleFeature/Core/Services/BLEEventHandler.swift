@@ -21,20 +21,12 @@ public enum BLEEventHandler {
         _ message: BLEReceivedMessage,
         service: BLEService,
         wifiDebugCoordinator: BLEWiFiDebugCoordinator = .shared,
-        wifiAvatarSessionCoordinator: WiFiAvatarSessionCoordinator = .shared,
-        deviceWakeCoordinator: BLEDeviceWakeCoordinator = .shared
+        wifiAvatarSessionCoordinator: WiFiAvatarSessionCoordinator = .shared
     ) async {
         // 0x19 是当前连接内的实时控制应答，不属于可离线重放的 Event Log。
         // 必须在 EventLog 解析之前截获，否则可能被误丢弃或将来撞上同字节的新事件。
         if message.type == BLEDataType.wifiDebugMode.rawValue {
             wifiDebugCoordinator.handleResponse(payload: message.payload)
-            return
-        }
-
-        // 0x25 是连接内的功耗握手应答，同样不进入可离线重放的 Event Log。
-        // 入站 0x25 目前在 EventLogType 里无定义，落到下面会被静默丢弃——而握手正在等它。
-        if message.type == BLEDataType.devicePowerControl.rawValue {
-            deviceWakeCoordinator.handleResponse(payload: message.payload)
             return
         }
 
@@ -232,8 +224,6 @@ public enum BLEEventHandler {
             }
 
         case .deviceSleep:
-            // 设备在活链路上进入低功耗——记下来，下次要发业务数据前就知道需要先唤醒。
-            BLEDeviceWakeCoordinator.shared.handleObservedSleep()
             await AppState.shared.handleHardwareSleep(now: eventLog.timestamp)
 
         case .lowBattery:

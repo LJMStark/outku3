@@ -27,7 +27,6 @@ import Foundation
 //   0x22 avatarControl   自定义头像提交、擦除、查询、取消与设备结果
 //   0x23 taskLibraryTransaction 设备任务库事务与提交确认（双向）
 //   0x24 dailyContentTransaction 当天内容包事务与提交确认（双向）
-//   0x25 devicePowerControl 设备功耗状态查询/唤醒（双向；App 发 query/wake，设备回状态）
 //   0x7E secureData      安全封装（v2 SecureEnvelope）
 //   0x7F securityHandshake 安全握手（v2）
 //
@@ -49,7 +48,6 @@ import Foundation
 //   0x19 wifiDebugMode          Wi-Fi PC 调试实时应答（不进入 Event Log 批次）
 //   0x20 requestRefresh         请求数据刷新
 //   0x21 eventLogBatch          批量回传事件（含 EventLogType.rawByte 流）
-//   0x25 devicePowerControl     功耗状态应答（不进入 Event Log 批次；见 BLEDevicePowerResponse）
 //   0x30 deviceWake             设备唤醒（payload: 电量1B；v2.5.19+ 追加固件版本3B，仅实时帧）
 //   0x31 deviceSleep            设备休眠
 //   0x40 lowBattery             低电量
@@ -104,15 +102,6 @@ public enum BLEDataType: UInt8, Sendable {
     case taskLibraryTransaction = 0x23
     /// 双向事务帧：App 发送当前本地日期的完整日程与每日文字；与任务库独立版本化。
     case dailyContentTransaction = 0x24
-    /// 双向实时帧：App 发 query(00)/wake(01)，设备回 CommandEcho + PowerState + Status。
-    ///
-    /// 客户要求硬件 BLE 常开，App 在发业务数据前先确认设备不在低功耗态。本帧在每次连接的
-    /// 安全握手之后、`0x20 EventLogRequest` 之前发一次——因为 `0x20` 回放屏障是 fail-closed
-    /// （15 秒判连接失败并断开），低功耗设备处理不了它就会陷入「每次连接都失败」。
-    ///
-    /// 命名刻意避开 "deviceWake"：`EventLogType.deviceWake`(0x30) 是 Device→App 的「我已上线」
-    /// 通知，方向和语义都不同，同名会在联调时反复被搞混。
-    case devicePowerControl = 0x25
     case secureData = 0x7E
     case securityHandshake = 0x7F
 }
@@ -667,101 +656,6 @@ public enum AvatarControlCodec {
             byteLength: byteLength,
             crc32: crc32
         )
-    }
-}
-
-// MARK: - Device Power Control (0x25)
-//
-// 客户要求硬件 BLE 常开：设备即使进入低功耗也保持连接可达，App 在通信前先查询功耗状态，
-// 必要时发唤醒命令。完整协议见 BLE 规格 §4.24 / §5.24。
-//
-// 与 `0x20` 回放屏障的失败方向**刻意相反**：`0x20` fail-closed（收不到 `0x21` 就断连），因为
-// 丢失离线动作会造成数据错乱；`0x25` fail-open（超时就当设备醒着继续），因为现役固件根本不
-// 认识这个字节、只会静默丢弃，fail-closed 会让所有设备当场连不上。
-
-/// App→Device：功耗控制命令（§4.24）。
-public enum BLEDevicePowerCommand: UInt8, Sendable, Equatable, CaseIterable {
-    /// 只查询当前功耗状态，不改变设备状态。
-    case query = 0x00
-    /// 请求退出低功耗、准备接收业务数据。
-    case wake = 0x01
-
-    public var payload: Data { Data([rawValue]) }
-}
-
-/// Device→App：设备当前功耗状态（§5.24）。
-public enum BLEDevicePowerState: UInt8, Sendable, Equatable {
-    /// 可以立即接收业务帧。
-    case active = 0x00
-    /// 处于低功耗，需要先唤醒。
-    case lowPower = 0x01
-}
-
-/// Device→App：功耗命令的处理结果（§5.24）。
-public enum BLEDevicePowerStatus: Sendable, Equatable {
-    case ok
-    case unsupported
-    case invalidCommand
-    case unknownError
-    case unrecognized(UInt8)
-
-    init(rawValue: UInt8) {
-        self = switch rawValue {
-        case 0x00: .ok
-        case 0x01: .unsupported
-        case 0x04: .invalidCommand
-        case 0xFF: .unknownError
-        default: .unrecognized(rawValue)
-        }
-    }
-
-    public var message: String {
-        switch self {
-        case .ok:
-            return "OK"
-        case .unsupported:
-            return "This firmware does not support device power control."
-        case .invalidCommand:
-            return "The device rejected an invalid power command."
-        case .unknownError:
-            return "The device reported an unknown power error."
-        case .unrecognized(let code):
-            return "The device reported power status 0x\(String(format: "%02X", code))."
-        }
-    }
-}
-
-public enum BLEDevicePowerResponseError: Error, Sendable, Equatable {
-    case invalidLength(Int)
-    case invalidPowerState(UInt8)
-}
-
-/// Device→App：`0x25` 应答，固定 3 字节。
-public struct BLEDevicePowerResponse: Sendable, Equatable {
-    /// 设备主动上报（非应答任何命令）时的回显值。
-    public static let unsolicitedEcho: UInt8 = 0xFF
-
-    /// 回显收到的命令字节；设备主动上报时为 `unsolicitedEcho`。
-    ///
-    /// 比 `0x19` 多这一个字节是必要的：一次连接会连发 query→wake 两条，若无回显，query 的
-    /// 迟到应答会被误当作 wake 成功、让 App 以为设备已醒。
-    public let commandEcho: UInt8
-    public let powerState: BLEDevicePowerState
-    public let status: BLEDevicePowerStatus
-
-    public var isUnsolicited: Bool { commandEcho == Self.unsolicitedEcho }
-
-    public init(payload: Data) throws {
-        guard payload.count == 3 else {
-            throw BLEDevicePowerResponseError.invalidLength(payload.count)
-        }
-        let bytes = [UInt8](payload)
-        guard let state = BLEDevicePowerState(rawValue: bytes[1]) else {
-            throw BLEDevicePowerResponseError.invalidPowerState(bytes[1])
-        }
-        commandEcho = bytes[0]
-        powerState = state
-        status = BLEDevicePowerStatus(rawValue: bytes[2])
     }
 }
 

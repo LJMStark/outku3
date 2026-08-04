@@ -110,10 +110,10 @@ public final class BLESyncCoordinator {
     /// that require longer refresh times (e.g., 7.3寸 full refresh ~12s).
     ///
     /// 这个看门狗在 connect **之前**启动，所以预算必须覆盖整条握手链路：
-    /// connect 10s + 安全握手 5s + 功耗握手 `0x25` 最多 5s + 回放屏障 `0x20/0x21` 15s = 35s。
-    /// v2.17.0 加入功耗握手时从 30 提到 40——30 秒在原链路上已经顶格，不提会在慢链路上让看门狗
-    /// 在唤醒握手在途时开火并断连。
-    public var connectionTimeoutSeconds: TimeInterval = 40
+    /// connect 10s + 安全握手 5s + 回放屏障 `0x20/0x21` 15s = 30s，正好顶格。
+    /// 在链路上再加任何 fail-closed 握手都要同步上调这个值——v2.18.0 的 `0x25` 功耗握手曾把它
+    /// 推到 40s，该握手在 v2.19.0 删除后恢复原值。
+    public var connectionTimeoutSeconds: TimeInterval = 30
 
     private init() {
         hardwarePagePresentationGate = .shared
