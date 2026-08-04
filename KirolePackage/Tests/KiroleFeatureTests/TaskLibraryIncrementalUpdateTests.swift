@@ -158,13 +158,13 @@ struct TaskLibraryIncrementalUpdateTests {
     @Test("A complete update commits its offline library before the new DayPack")
     func completeUpdateUsesLibraryFirstOrdering() {
         #expect(BLESyncCoordinator.commitsTaskLibraryBeforeDayPack(
-            readyUpdate: (.complete, 3)
+            readyUpdate: TaskLibraryReadyUpdate(scope: .complete, generation: 3)
         ))
         #expect(BLESyncCoordinator.commitsTaskLibraryBeforeDayPack(
-            readyUpdate: (.hardwareQueue, 4)
+            readyUpdate: TaskLibraryReadyUpdate(scope: .hardwareQueue, generation: 4)
         ))
         #expect(!BLESyncCoordinator.commitsTaskLibraryBeforeDayPack(
-            readyUpdate: (.taskRemovals(["done"]), 5)
+            readyUpdate: TaskLibraryReadyUpdate(scope: .taskRemovals(["done"]), generation: 5)
         ))
         #expect(!BLESyncCoordinator.commitsTaskLibraryBeforeDayPack(readyUpdate: nil))
     }

@@ -7,6 +7,16 @@ enum ExternalSyncTarget: Hashable, Sendable {
     case taskade
 }
 
+/// A task-library change that has cleared its stability window and may now be sent.
+///
+/// `generation` must travel with `scope`: it is captured before the transaction is built and
+/// checked again at `markTaskLibraryUpdateCommitted`, so a newer edit landing mid-flight cannot be
+/// marked committed by an older transaction's acknowledgement.
+struct TaskLibraryReadyUpdate: Sendable, Equatable {
+    let scope: TaskLibraryUpdateScope
+    let generation: UInt64
+}
+
 /// One coherent view of the task library as hardware should currently see it.
 ///
 /// Named rather than returned as a tuple because `usesFrozenBaseline` changes what the other
@@ -16,7 +26,7 @@ enum ExternalSyncTarget: Hashable, Sendable {
 struct TaskLibraryPresentationSnapshot {
     let tasks: [TaskItem]
     let petDialogue: String
-    let readyUpdate: (scope: TaskLibraryUpdateScope, generation: UInt64)?
+    let readyUpdate: TaskLibraryReadyUpdate?
     let usesFrozenBaseline: Bool
 }
 
@@ -556,7 +566,9 @@ extension AppState {
 
     func taskLibraryPresentationSnapshot() -> TaskLibraryPresentationSnapshot {
         let scope = taskLibraryStabilityState.readyScope(at: taskLibraryNowProvider())
-        let readyUpdate = scope.map { ($0, taskLibraryStabilityState.generation) }
+        let readyUpdate = scope.map {
+            TaskLibraryReadyUpdate(scope: $0, generation: taskLibraryStabilityState.generation)
+        }
         let usesFrozenBaseline = taskLibraryHardwareTasksBaseline != nil && scope != .complete
         return TaskLibraryPresentationSnapshot(
             tasks: usesFrozenBaseline ? taskLibraryHardwareTasksBaseline ?? tasks : tasks,
@@ -568,11 +580,14 @@ extension AppState {
         )
     }
 
-    func taskLibraryReadyUpdate() -> (scope: TaskLibraryUpdateScope, generation: UInt64)? {
+    func taskLibraryReadyUpdate() -> TaskLibraryReadyUpdate? {
         guard let scope = taskLibraryStabilityState.readyScope(at: taskLibraryNowProvider()) else {
             return nil
         }
-        return (scope, taskLibraryStabilityState.generation)
+        return TaskLibraryReadyUpdate(
+            scope: scope,
+            generation: taskLibraryStabilityState.generation
+        )
     }
 
     func currentPreparedTaskLibraryPhaseTexts(

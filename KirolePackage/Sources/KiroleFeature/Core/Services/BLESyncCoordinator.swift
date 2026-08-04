@@ -233,7 +233,7 @@ public final class BLESyncCoordinator {
         tasks: [TaskItem],
         userProfile: UserProfile,
         customCompanions: [CustomCompanion],
-        allowedReadyUpdate: (scope: TaskLibraryUpdateScope, generation: UInt64)?,
+        allowedReadyUpdate: TaskLibraryReadyUpdate?,
         preservesPendingStableChanges: Bool,
         expectedTaskStateVersion: UInt64,
         expectedCompanionIdentityFingerprint: String
@@ -1915,7 +1915,7 @@ public final class BLESyncCoordinator {
     }
 
     nonisolated static func commitsTaskLibraryBeforeDayPack(
-        readyUpdate: (scope: TaskLibraryUpdateScope, generation: UInt64)?
+        readyUpdate: TaskLibraryReadyUpdate?
     ) -> Bool {
         readyUpdate?.scope == .complete || readyUpdate?.scope == .hardwareQueue
     }
