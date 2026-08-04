@@ -30,6 +30,103 @@ struct TaskLibraryIncrementalUpdateTests {
         #expect(state.readyScope(at: start.addingTimeInterval(300)) == .complete)
     }
 
+    @Test("Editing the twenty-first task never opens a stability window")
+    func editingTheTwentyFirstTaskDoesNotOpenAStabilityWindow() {
+        // 变化跟踪必须用截断后的成员集：否则编辑第 21 条会开一个 180 秒窗，到点后
+        // makeCompleteUpdate 用截断集算出零 upsert 零 delete，发出一个版本号递增但零内容的
+        // 事务——设备白做一次原子提交 + flash 写，用户每编辑一次就来一发。
+        let original = (0..<21).map { index in
+            TaskItem(id: "task-\(index)", title: "Task \(index)", dueDate: start)
+        }
+        var edited = original
+        edited[20].title = "Edited beyond the cap"
+        var state = TaskLibraryStabilityState()
+
+        let recorded = state.recordTaskChanges(
+            from: original,
+            to: edited,
+            at: start,
+            calendar: TaskLibraryFullSyncTests.makeShanghaiCalendar()
+        )
+
+        #expect(!recorded)
+        #expect(state.deadline == nil)
+        #expect(state.readyScope(at: start.addingTimeInterval(600)) == nil)
+    }
+
+    @Test("Editing a task inside the cap still opens the window")
+    func editingATaskInsideTheCapStillOpensTheWindow() {
+        // 上一条的对照组：截断不能把正常编辑一起吃掉。
+        let original = (0..<21).map { index in
+            TaskItem(id: "task-\(index)", title: "Task \(index)", dueDate: start)
+        }
+        var edited = original
+        edited[19].title = "Edited inside the cap"
+        var state = TaskLibraryStabilityState()
+
+        let recorded = state.recordTaskChanges(
+            from: original,
+            to: edited,
+            at: start,
+            calendar: TaskLibraryFullSyncTests.makeShanghaiCalendar()
+        )
+
+        #expect(recorded)
+        #expect(state.readyScope(at: start.addingTimeInterval(180)) == .complete)
+    }
+
+    @Test("Removing a task promotes the twenty-first into the incremental upsert")
+    func removingATaskPromotesTheTwentyFirstIntoTheIncrementalUpsert() throws {
+        // 增量 diff 建立在「截断后的新集合 vs 截断后的 baseline」之上，所以递补是自动正确的，
+        // 不需要任何额外代码：删掉队中一条 → 第 21 条进库、被删的那条进 deletions。
+        let profile = UserProfile()
+        let calendar = TaskLibraryFullSyncTests.makeShanghaiCalendar()
+        let allTasks = (0..<21).map { index in
+            TaskItem(id: "task-\(index)", title: "Task \(index)", dueDate: start)
+        }
+        // baseline 的三阶段文案必须与 planner 的 fallback 一致，否则每条记录都会因文案差异进
+        // upsert，淹没掉本用例真正要验证的 order 递补。
+        let fallbackTexts = TaskLibraryPhaseTexts.localFallback(for: profile.companionCharacter)
+        let oldTransaction = try TaskLibraryTransaction.fullLibrary(
+            from: allTasks,
+            version: TaskLibraryVersion(epoch: 8, revision: 1),
+            now: start,
+            calendar: calendar,
+            phaseTexts: { _ in fallbackTexts }
+        )
+        #expect(oldTransaction.records.count == 20)
+        let baseline = TaskLibraryCommittedSnapshot(
+            state: try TaskLibraryCodec.committedState(for: oldTransaction),
+            records: oldTransaction.records,
+            phaseSourceFingerprints: [:],
+            personaFingerprint: TaskLibraryPhaseSourceFingerprint.persona(
+                userProfile: profile,
+                customCompanions: []
+            )
+        )
+        var remaining = allTasks
+        remaining.remove(at: 2)
+
+        let update = try TaskLibraryUpdatePlanner.makeUpdate(
+            tasks: remaining,
+            baseline: baseline,
+            version: TaskLibraryVersion(epoch: 8, revision: 2),
+            scope: .complete,
+            preparedPhaseTexts: [:],
+            userProfile: profile,
+            customCompanions: [],
+            now: start,
+            calendar: calendar
+        )
+
+        #expect(update.transaction.kind == .incremental)
+        #expect(update.transaction.deletedTaskIDs == ["task-2"])
+        #expect(update.targetRecords.count == 20)
+        #expect(update.targetRecords.map(\.taskID).contains("task-20"))
+        // task-3…task-20 的 order 整体前移一位，全部进 upsert；task-0 / task-1 没动，不进。
+        #expect(update.transaction.records.map(\.taskID) == (3...20).map { "task-\($0)" })
+    }
+
     @Test("An immediate completion cancels that task's staged copy without delaying another edit")
     func completionDoesNotResetAnotherTasksDeadline() {
         let original = [

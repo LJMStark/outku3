@@ -200,6 +200,10 @@ enum TaskLibrarySourceFingerprint {
     /// Fingerprints today's device-library source. The local day is part of the digest, so a
     /// pending delivery frozen yesterday can never validate (and be resent as-is) after midnight —
     /// membership is day-dependent since v2.16.0's today-only library (2026-08-04).
+    ///
+    /// Only covers what actually reaches the wire (`TaskLibraryMembership.members`, capped at 20).
+    /// Digesting tasks that never ship would make editing task #21 invalidate every frozen pending
+    /// delivery while the encoded bytes stay byte-for-byte identical.
     static func make(
         tasks: [TaskItem],
         userProfile: UserProfile,
@@ -207,9 +211,7 @@ enum TaskLibrarySourceFingerprint {
         now: Date,
         calendar: Calendar
     ) -> String {
-        let included = tasks.filter {
-            $0.isEligibleForHardwareTaskLibrary(on: now, calendar: calendar)
-        }
+        let included = TaskLibraryMembership.members(of: tasks, on: now, calendar: calendar)
         let localDay = DailyContentDate(date: now, calendar: calendar)
         var parts = [
             "day=\(localDay.year)-\(localDay.month)-\(localDay.day)",

@@ -57,9 +57,8 @@ struct TaskLibraryPhaseTextService: Sendable {
         timeout: Duration = defaultTimeout
     ) async -> [String: TaskLibraryPhaseTexts] {
         // 只为今天的任务烧模型配额：非今天任务不进 0x23，也就不需要三阶段文案。
-        let eligible = tasks.filter {
-            $0.isEligibleForHardwareTaskLibrary(on: now, calendar: calendar)
-        }
+        // 同理也不为被 20 条上限挤出去的第 21 条及以后烧配额——它们同样上不了 wire。
+        let eligible = TaskLibraryMembership.members(of: tasks, on: now, calendar: calendar)
         guard !eligible.isEmpty else { return [:] }
 
         let customCompanion = userProfile.customCompanionId.flatMap { id in

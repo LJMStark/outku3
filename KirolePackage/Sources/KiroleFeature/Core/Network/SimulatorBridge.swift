@@ -397,9 +397,8 @@ public final class SimulatorBridge {
         now: Date,
         calendar: Calendar
     ) -> [TaskLibraryRecord] {
-        tasks
-            // 与真机 0x23 同一过滤：只投影今天的任务，模拟器与硬件显示不得分叉。
-            .filter { $0.isEligibleForHardwareTaskLibrary(on: now, calendar: calendar) }
+        // 与真机 0x23 同一口径：只投影今天的任务且同样截到 20 条，模拟器与硬件显示不得分叉。
+        TaskLibraryMembership.members(of: tasks, on: now, calendar: calendar)
             .enumerated()
             .compactMap { index, task in
                 guard let order = UInt32(exactly: index) else { return nil }

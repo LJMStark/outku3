@@ -43,12 +43,19 @@ public enum TaskLibraryPendingValidation: Sendable, Equatable, Codable {
                 calendar: calendar
             ) == fingerprint
         case .taskRemovals(let taskIDs):
-            // Removal 满足 = 该 ID 在当前时刻的今天集里不可能出现。任务掉出今天（跨日、改日期、
-            // 取消手动今天）与完成/删除同判满足——设备上本来就不该再有它；整日范围重算由跨日
-            // promote 的 .complete 事务另行兜底（pendingIsSupersededByComplete）。
-            let eligibleIDs = Set(appState.tasks.lazy
-                .filter { $0.isEligibleForHardwareTaskLibrary(on: now, calendar: calendar) }
-                .map(\.hardwareIdentifier))
+            // Removal 满足 = 该 ID 在当前时刻的**设备成员集**里不可能出现。任务掉出今天（跨日、
+            // 改日期、取消手动今天）、被 20 条上限挤出去、完成/删除，一律同判满足——设备上本来
+            // 就不该再有它；整日范围重算由跨日 promote 的 .complete 事务另行兜底
+            // （pendingIsSupersededByComplete）。
+            //
+            // 这里必须用截断后的口径：否则用户新增一批任务把待删任务挤到第 21 位时，冻结的删除
+            // 事务会被误判「源已变」而丢弃重建，但那条删除指令依然完全有效（deletions 只从
+            // baseline.records 算，不会发出删除幽灵 ID 的指令）。
+            let eligibleIDs = TaskLibraryMembership.memberIDs(
+                of: appState.tasks,
+                on: now,
+                calendar: calendar
+            )
             return taskIDs.allSatisfy { !eligibleIDs.contains($0) }
         case .hardwareProjection(let fingerprint):
             return TaskLibrarySourceFingerprint.make(
@@ -128,8 +135,10 @@ enum TaskLibraryUpdatePlanner {
     ) -> [TaskItem] {
         let existingIDs = Set(baseline?.records.map(\.taskID) ?? [])
         let oldFingerprints = baseline?.phaseSourceFingerprints ?? [:]
+        // 用截断后的成员集：上不了 wire 的第 21 条及以后不该烧模型配额。
+        let memberIDs = TaskLibraryMembership.memberIDs(of: tasks, on: now, calendar: calendar)
         return tasks.filter { task in
-            guard task.isEligibleForHardwareTaskLibrary(on: now, calendar: calendar) else { return false }
+            guard memberIDs.contains(task.hardwareIdentifier) else { return false }
             let taskID = task.hardwareIdentifier
             let fingerprint = TaskLibraryPhaseSourceFingerprint.make(
                 task: task,
@@ -277,9 +286,7 @@ enum TaskLibraryUpdatePlanner {
         let fallback = userProfile.customCompanionId == nil
             ? TaskLibraryPhaseTexts.localFallback(for: userProfile.companionCharacter)
             : .localFallback
-        let eligible = tasks.filter {
-            $0.isEligibleForHardwareTaskLibrary(on: now, calendar: calendar)
-        }
+        let eligible = TaskLibraryMembership.members(of: tasks, on: now, calendar: calendar)
         var targetRecords: [TaskLibraryRecord] = []
         var targetFingerprints: [String: String] = [:]
         targetRecords.reserveCapacity(eligible.count)
@@ -368,9 +375,13 @@ struct TaskLibraryStabilityState: Sendable, Equatable, Codable {
     private(set) var deadline: Date?
     private(set) var generation: UInt64 = 0
 
-    /// 记录一次用户驱动的任务变化。old/new 双侧用**同一个** (now, calendar) 评估成员资格——
-    /// 差集只反映用户操作（编辑、手动设/移出今天、完成、删除），不反映时间流逝；
+    /// 记录一次用户驱动的任务变化。old/new 双侧用**同一个** (now, calendar, 20 条上限) 评估成员
+    /// 资格——差集只反映用户操作（编辑、手动设/移出今天、完成、删除），不反映时间流逝；
     /// 跨日的成员整体换血走 `promoteImmediateCompleteUpdate()` 专属通道，不经本函数。
+    ///
+    /// 双侧都必须用**截断后**的成员集，否则编辑第 21 条任务会开一个 180 秒稳定窗，到点后
+    /// `makeCompleteUpdate` 用截断集算出 `upserts=[] deletions=[]`，发出一个版本号递增但零内容的
+    /// 事务——设备白做一次原子提交 + flash 写，且用户每编辑一次就来一发。
     mutating func recordTaskChanges(
         from oldTasks: [TaskItem],
         to newTasks: [TaskItem],
@@ -379,12 +390,8 @@ struct TaskLibraryStabilityState: Sendable, Equatable, Codable {
         immediateRemovalTaskIDs: Set<String> = [],
         immediateQueueReorderTaskIDs: Set<String> = []
     ) -> Bool {
-        let oldEligible = oldTasks.filter {
-            $0.isEligibleForHardwareTaskLibrary(on: now, calendar: calendar)
-        }
-        let newEligible = newTasks.filter {
-            $0.isEligibleForHardwareTaskLibrary(on: now, calendar: calendar)
-        }
+        let oldEligible = TaskLibraryMembership.members(of: oldTasks, on: now, calendar: calendar)
+        let newEligible = TaskLibraryMembership.members(of: newTasks, on: now, calendar: calendar)
         var oldByID: [String: TaskItem] = [:]
         var newByID: [String: TaskItem] = [:]
         var oldOrder: [String: Int] = [:]

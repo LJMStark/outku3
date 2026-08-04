@@ -180,7 +180,9 @@ public struct TaskLibraryTransaction: Sendable, Equatable, Codable {
     /// Builds the complete device library for the given local day. App array order is the device
     /// queue order. Only today's tasks are included (dueDate strictly today, or manually selected
     /// for today) — future, overdue and unselected undated tasks stay off the wire (2026-08-04
-    /// product decision). There is still no display-count cap.
+    /// product decision). At most `TaskLibraryMembership.maxRecords` tasks ship; the rest are
+    /// dropped silently. That cap is a product policy, not a screen-display cap — the device
+    /// still must never truncate a transaction itself.
     public static func fullLibrary(
         from tasks: [TaskItem],
         version: TaskLibraryVersion,
@@ -188,9 +190,11 @@ public struct TaskLibraryTransaction: Sendable, Equatable, Codable {
         calendar: Calendar,
         phaseTexts: (TaskItem) -> TaskLibraryPhaseTexts = { _ in .localFallback }
     ) throws -> TaskLibraryTransaction {
-        let incompleteTasks = tasks.filter {
-            $0.isEligibleForHardwareTaskLibrary(on: now, calendar: calendar)
-        }
+        let incompleteTasks = TaskLibraryMembership.members(
+            of: tasks,
+            on: now,
+            calendar: calendar
+        )
         var records: [TaskLibraryRecord] = []
         records.reserveCapacity(incompleteTasks.count)
         for (index, task) in incompleteTasks.enumerated() {

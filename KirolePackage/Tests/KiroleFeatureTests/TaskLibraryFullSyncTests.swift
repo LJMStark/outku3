@@ -11,7 +11,7 @@ struct TaskLibraryFullSyncTests {
     @Test("The device library contains only today's tasks, including manual today selections")
     func deviceLibraryContainsOnlyTodaysTasks() throws {
         // 2026-08-04 客户拍板：只发当天（dueDate 严格今天 ∪ 手动设为今天的无日期任务）。
-        // 未来、过期、未手动选入的无日期任务不进设备任务库；条数仍不设上限。
+        // 未来、过期、未手动选入的无日期任务不进设备任务库；条数另有 20 条上限，见下方用例。
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let calendar = Self.makeShanghaiCalendar()
         let day: TimeInterval = 24 * 60 * 60
@@ -42,6 +42,84 @@ struct TaskLibraryFullSyncTests {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "Asia/Shanghai") ?? .current
         return calendar
+    }
+
+    @Test("The device library keeps the first twenty tasks in App order")
+    func deviceLibraryKeepsTheFirstTwentyTasksInAppOrder() throws {
+        // 客户拍板：当天任务至多发 20 条，取 App 列表前 20——不按优先级重排，因为设备队列顺序
+        // 就是 App 顺序（协议 §6.8.1 / ADR 0014）。第 25 条给 .high、第 1 条给 .low，验证高优先级
+        // 也不会插队进来。
+        let now = Self.libraryNow
+        let tasks = (0..<25).map { index in
+            TaskItem(
+                id: "task-\(index)",
+                title: "Task \(index)",
+                dueDate: now,
+                priority: index == 24 ? .high : (index == 0 ? .low : .medium)
+            )
+        }
+
+        let transaction = try TaskLibraryTransaction.fullLibrary(
+            from: tasks,
+            version: TaskLibraryVersion(epoch: 9, revision: 1),
+            now: now,
+            calendar: Self.makeShanghaiCalendar()
+        )
+
+        #expect(transaction.records.count == TaskLibraryMembership.maxRecords)
+        #expect(transaction.records.map(\.taskID) == (0..<20).map { "task-\($0)" })
+        #expect(transaction.records.map(\.order) == Array(0..<20).map(UInt32.init))
+        #expect(!transaction.records.contains { $0.taskID == "task-24" })
+    }
+
+    @Test("Tasks that are not eligible never consume one of the twenty slots")
+    func ineligibleTasksDoNotConsumeTheTwentySlots() throws {
+        // 先筛后截，不是先截后筛：前 10 条不合格的任务不占名额，否则设备只会收到 10 条。
+        let now = Self.libraryNow
+        let day: TimeInterval = 24 * 60 * 60
+        let ineligible = (0..<10).map { index in
+            TaskItem(
+                id: "skip-\(index)",
+                title: "Skip \(index)",
+                dueDate: now.addingTimeInterval(day * TimeInterval(index + 30))
+            )
+        }
+        let eligible = (0..<25).map { index in
+            TaskItem(id: "today-\(index)", title: "Today \(index)", dueDate: now)
+        }
+
+        let transaction = try TaskLibraryTransaction.fullLibrary(
+            from: ineligible + eligible,
+            version: TaskLibraryVersion(epoch: 9, revision: 2),
+            now: now,
+            calendar: Self.makeShanghaiCalendar()
+        )
+
+        #expect(transaction.records.map(\.taskID) == (0..<20).map { "today-\($0)" })
+    }
+
+    @Test("A prepared complete update never exceeds the record cap")
+    func thePreparedTransactionNeverExceedsTheRecordCap() throws {
+        // 刻意不在 codec 层加 guard（20 是产品策略不是 wire 容量），改由本用例守住。
+        let now = Self.libraryNow
+        let tasks = (0..<30).map { index in
+            TaskItem(id: "task-\(index)", title: "Task \(index)", dueDate: now)
+        }
+
+        let update = try TaskLibraryUpdatePlanner.makeUpdate(
+            tasks: tasks,
+            baseline: nil,
+            version: TaskLibraryVersion(epoch: 9, revision: 3),
+            scope: .complete,
+            preparedPhaseTexts: [:],
+            userProfile: UserProfile(),
+            customCompanions: [],
+            now: now,
+            calendar: Self.makeShanghaiCalendar()
+        )
+
+        #expect(update.transaction.records.count == TaskLibraryMembership.maxRecords)
+        #expect(update.targetRecords.count == TaskLibraryMembership.maxRecords)
     }
 
     @Test("An empty App library is still a complete zero-record replacement transaction")

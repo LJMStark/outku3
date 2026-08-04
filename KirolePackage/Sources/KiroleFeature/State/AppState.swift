@@ -647,6 +647,13 @@ public final class AppState {
             newByID[task.hardwareIdentifier] = task
         }
         let allIDs = Set(oldByID.keys).union(newByID.keys)
+        // 本函数刻意用**两套口径**，别当成不一致给"修"掉：
+        //  · 驱逐（取消在途生成 + 删缓存）用未截断的 isEligibleForHardwareTaskLibrary——只有任务
+        //    真的离开今天才该丢弃已烧的 token。用 20 条口径的话，一次插入把第 20 条挤到第 21 位
+        //    就会杀掉它的在途 LLM 请求，用户再删一条又要重烧。
+        //  · 点火（决定要不要生成）用截断后的成员集——上不了 wire 的不烧配额。
+        let memberIDs = TaskLibraryMembership.memberIDs(of: newTasks, on: now, calendar: calendar)
+        let oldMemberIDs = TaskLibraryMembership.memberIDs(of: oldTasks, on: now, calendar: calendar)
         for taskID in allIDs {
             guard let task = newByID[taskID],
                   task.isEligibleForHardwareTaskLibrary(on: now, calendar: calendar) else {
@@ -655,14 +662,14 @@ public final class AppState {
                 preparedTaskLibraryPhaseTexts.removeValue(forKey: taskID)
                 continue
             }
+            // 被 20 条上限挤出去：不点火，但**不驱逐**——它回到前 20 时能直接复用已有缓存。
+            guard memberIDs.contains(taskID) else { continue }
             let oldTask = oldByID[taskID]
-            // 进入今天集（手动设为今天 / 改期到今天）与新增任务同构：立即点火文案准备，
-            // 与 180 秒稳定窗并行，窗到期时大概率已就绪。
-            let enteredToday = oldTask.map {
-                !$0.isEligibleForHardwareTaskLibrary(on: now, calendar: calendar)
-            } ?? false
+            // 进入设备成员集（手动设为今天 / 改期到今天 / 前面的任务腾位后被提拔进前 20）与新增
+            // 任务同构：立即点火文案准备，与 180 秒稳定窗并行，窗到期时大概率已就绪。
+            let enteredLibrary = oldTask.map { _ in !oldMemberIDs.contains(taskID) } ?? false
             guard oldTask == nil
-                    || enteredToday
+                    || enteredLibrary
                     || oldTask?.title != task.title
                     || oldTask?.notes != task.notes else {
                 continue
