@@ -111,8 +111,8 @@ public final class BLESyncCoordinator {
     ///
     /// 这个看门狗在 connect **之前**启动，所以预算必须覆盖整条握手链路：
     /// connect 10s + 安全握手 5s + 回放屏障 `0x20/0x21` 15s = 30s，正好顶格。
-    /// 在链路上再加任何 fail-closed 握手都要同步上调这个值——v2.18.0 的 `0x25` 功耗握手曾把它
-    /// 推到 40s，该握手在 v2.19.0 删除后恢复原值。
+    /// 在链路上再加任何 fail-closed 握手都要同步上调这个值：曾有一版 `0x25` 功耗握手把它推到
+    /// 40s，该握手撤销后恢复原值（撤销理由见协议 §2.5.3）。
     public var connectionTimeoutSeconds: TimeInterval = 30
 
     private init() {
