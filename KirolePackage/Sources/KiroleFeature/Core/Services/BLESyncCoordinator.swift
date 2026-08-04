@@ -493,6 +493,11 @@ public final class BLESyncCoordinator {
         return didClearPending
     }
 
+    /// Restarts at epoch 1 after a reinstall. That is safe only because `0x30` reports the device's
+    /// committed task-library state: with no local binding record the App must send a Full
+    /// transaction (Base = 0, unconditional replace, §4.22 rule 3), so the device never orders
+    /// `0x23` versions against its own. Daily content seeds differently and for a different reason
+    /// — read `nextDailyContentVersion` before making the two match.
     private static func nextTaskLibraryVersion(
         after version: TaskLibraryVersion?
     ) -> TaskLibraryVersion {
@@ -967,6 +972,11 @@ public final class BLESyncCoordinator {
         pendingDailyContents.removeValue(forKey: destinationID)
     }
 
+    /// Seeds a fresh epoch from wall-clock seconds instead of restarting at 1. `0x30` carries a
+    /// `TaskLibraryState` field but no daily-content counterpart, so unlike the task library the App
+    /// cannot learn what a device still holds from a previous install; a clock-derived epoch keeps
+    /// a reinstall's first version off a value that device may already have committed. Do not
+    /// unify this with `nextTaskLibraryVersion` — each is safe for its own reason.
     private static func nextDailyContentVersion(
         after previous: DailyContentVersion?
     ) -> DailyContentVersion {
