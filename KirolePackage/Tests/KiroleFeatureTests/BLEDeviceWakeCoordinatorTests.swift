@@ -245,6 +245,14 @@ private actor ControlledWakeSleeper {
     private var waitingContinuations: [CheckedContinuation<Void, Never>] = []
 
     func sleep(for _: Duration) async throws {
+        // Mirror real `Task.sleep`'s cancellation behavior: a cancelled caller must bail out
+        // *before* claiming `continuation`. Without this check, a `send()` timeout task that
+        // was already cancelled by an early real response (e.g. the query resolving before its
+        // own timeout task got a chance to run) still reaches this call, overwrites
+        // `continuation` with its own, and silently strands whatever later call (e.g. the wake
+        // timeout) was actually being waited on — the coordinator hangs forever even though its
+        // own logic is correct, because this mock let a dead task clobber shared state.
+        try Task.checkCancellation()
         try await withCheckedThrowingContinuation { continuation in
             self.continuation = continuation
             waitingContinuations.forEach { $0.resume() }
