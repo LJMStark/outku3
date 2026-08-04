@@ -590,6 +590,10 @@ extension AppState {
         )
     }
 
+    /// 按 ID 查表用的字典，**刻意用未截断的谓词**——它是超集，`makeCompleteUpdate` 只按截断后的
+    /// `targetRecords` 的 ID 取值，多几个 key 不影响上 wire 的内容。截断反而会在任务被腾位提拔
+    /// 进前 20 时丢掉已经烧过 token 的结果。属于 `TaskLibraryMembership` 注释里说的
+    /// 「不产出有序集合或集合指纹」那一类，别顺手统一成截断口径。
     func currentPreparedTaskLibraryPhaseTexts(
         for sourceTasks: [TaskItem]? = nil
     ) -> [String: TaskLibraryPhaseTexts] {

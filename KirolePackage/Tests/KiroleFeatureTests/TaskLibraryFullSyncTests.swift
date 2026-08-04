@@ -67,8 +67,10 @@ struct TaskLibraryFullSyncTests {
         )
 
         #expect(transaction.records.count == TaskLibraryMembership.maxRecords)
-        #expect(transaction.records.map(\.taskID) == (0..<20).map { "task-\($0)" })
-        #expect(transaction.records.map(\.order) == Array(0..<20).map(UInt32.init))
+        #expect(transaction.records.map(\.taskID)
+            == (0..<TaskLibraryMembership.maxRecords).map { "task-\($0)" })
+        #expect(transaction.records.map(\.order)
+            == Array(0..<UInt32(TaskLibraryMembership.maxRecords)))
         #expect(!transaction.records.contains { $0.taskID == "task-24" })
     }
 
@@ -95,7 +97,8 @@ struct TaskLibraryFullSyncTests {
             calendar: Self.makeShanghaiCalendar()
         )
 
-        #expect(transaction.records.map(\.taskID) == (0..<20).map { "today-\($0)" })
+        #expect(transaction.records.map(\.taskID)
+            == (0..<TaskLibraryMembership.maxRecords).map { "today-\($0)" })
     }
 
     @Test("A prepared complete update never exceeds the record cap")

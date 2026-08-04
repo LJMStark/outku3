@@ -94,7 +94,7 @@ struct TaskLibraryIncrementalUpdateTests {
             calendar: calendar,
             phaseTexts: { _ in fallbackTexts }
         )
-        #expect(oldTransaction.records.count == 20)
+        #expect(oldTransaction.records.count == TaskLibraryMembership.maxRecords)
         let baseline = TaskLibraryCommittedSnapshot(
             state: try TaskLibraryCodec.committedState(for: oldTransaction),
             records: oldTransaction.records,
@@ -121,7 +121,7 @@ struct TaskLibraryIncrementalUpdateTests {
 
         #expect(update.transaction.kind == .incremental)
         #expect(update.transaction.deletedTaskIDs == ["task-2"])
-        #expect(update.targetRecords.count == 20)
+        #expect(update.targetRecords.count == TaskLibraryMembership.maxRecords)
         #expect(update.targetRecords.map(\.taskID).contains("task-20"))
         // task-3…task-20 的 order 整体前移一位，全部进 upsert；task-0 / task-1 没动，不进。
         #expect(update.transaction.records.map(\.taskID) == (3...20).map { "task-\($0)" })

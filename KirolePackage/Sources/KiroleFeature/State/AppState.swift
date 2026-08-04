@@ -667,7 +667,7 @@ public final class AppState {
             let oldTask = oldByID[taskID]
             // 进入设备成员集（手动设为今天 / 改期到今天 / 前面的任务腾位后被提拔进前 20）与新增
             // 任务同构：立即点火文案准备，与 180 秒稳定窗并行，窗到期时大概率已就绪。
-            let enteredLibrary = oldTask.map { _ in !oldMemberIDs.contains(taskID) } ?? false
+            let enteredLibrary = oldTask != nil && !oldMemberIDs.contains(taskID)
             guard oldTask == nil
                     || enteredLibrary
                     || oldTask?.title != task.title
