@@ -1652,7 +1652,7 @@ BLE Notify 特征开启后，固件**主动**向 App 发送此帧，表示「设
 |------------------|------------|--------------|
 | 设备上线（BLE Notify 建立后，固件发 Wake Notify） | `DeviceWake(0x30)`，payload 带 `BatteryLevel(1B)` | 更新电量，发送 Time，并按需同步数据 |
 | 用户手动刷新 | `RequestRefresh(0x20)` v1，带非零 RequestID | 立即回 `0x1B` 当前任务快照；完整 DayPack 同步仍受 60 秒合并窗与内容指纹影响（见 §8.5） |
-| 在任务列表中进入任务详情 | `EnterTaskIn(0x10)`，payload 带 TaskId 和时间戳 | 回发 `TaskInPage(0x11)`，并启动专注会话 |
+| 在任务列表中进入任务详情 | `EnterTaskIn(0x10)`，payload 带 TaskId 和时间戳 | **不回发 `0x11`**（v2.16.0 已废除，见 §4.8）；App 据此启动专注会话。设备发完 `0x10` 立即从本地已提交任务库（`0x23`）进专注页，**不等任何应答** |
 | 在任务详情页完成任务 | `CompleteTask(0x11)` v1，带非零 OperationID、TaskId 和时间戳 | App 标记任务完成，先发最终 `0x10`，再发同版本 `0x1B`；设备一次退出并刷新 |
 | 在任务详情页跳过任务 | `SkipTask(0x12)` v1，带非零 OperationID、TaskId 和时间戳 | 结束对应专注会话，不标记完成；先发最终 `0x10`，再发同版本 `0x1B` |
 | 普通旋钮确认但不进入任务详情 | `WheelSelect(0x14)` | 只记录/调试，不回发页面数据 |
