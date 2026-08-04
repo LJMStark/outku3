@@ -7,6 +7,27 @@ enum ExternalSyncTarget: Hashable, Sendable {
     case taskade
 }
 
+/// One coherent view of the task library as hardware should currently see it.
+///
+/// Named rather than returned as a tuple because `usesFrozenBaseline` changes what the other
+/// fields *mean*: when it is true, `tasks`/`petDialogue` are the last committed draft held by the
+/// stability window, not current App state. Callers that mix the two produce a device screen that
+/// never existed in the App.
+struct TaskLibraryPresentationSnapshot {
+    let tasks: [TaskItem]
+    let petDialogue: String
+    let readyUpdate: (scope: TaskLibraryUpdateScope, generation: UInt64)?
+    let usesFrozenBaseline: Bool
+}
+
+/// Daily-content counterpart of `TaskLibraryPresentationSnapshot`; `usesFrozenBaseline` carries the
+/// same warning for `events`.
+struct DailyContentPresentationSnapshot {
+    let events: [CalendarEvent]
+    let readyGeneration: UInt64?
+    let usesFrozenBaseline: Bool
+}
+
 extension AppState {
     /// Re-reads `tasks` at write time so concurrent syncs don't clobber each other's results.
     func mergeRemoteTasks(from source: EventSource, with synced: [TaskItem]) {
@@ -533,20 +554,17 @@ extension AppState {
         taskLibraryPresentationSnapshot().petDialogue
     }
 
-    func taskLibraryPresentationSnapshot() -> (
-        tasks: [TaskItem],
-        petDialogue: String,
-        readyUpdate: (scope: TaskLibraryUpdateScope, generation: UInt64)?,
-        usesFrozenBaseline: Bool
-    ) {
+    func taskLibraryPresentationSnapshot() -> TaskLibraryPresentationSnapshot {
         let scope = taskLibraryStabilityState.readyScope(at: taskLibraryNowProvider())
         let readyUpdate = scope.map { ($0, taskLibraryStabilityState.generation) }
         let usesFrozenBaseline = taskLibraryHardwareTasksBaseline != nil && scope != .complete
-        return (
-            usesFrozenBaseline ? taskLibraryHardwareTasksBaseline ?? tasks : tasks,
-            usesFrozenBaseline ? taskLibraryHardwarePetDialogueBaseline : currentPetDialogue,
-            readyUpdate,
-            usesFrozenBaseline
+        return TaskLibraryPresentationSnapshot(
+            tasks: usesFrozenBaseline ? taskLibraryHardwareTasksBaseline ?? tasks : tasks,
+            petDialogue: usesFrozenBaseline
+                ? taskLibraryHardwarePetDialogueBaseline
+                : currentPetDialogue,
+            readyUpdate: readyUpdate,
+            usesFrozenBaseline: usesFrozenBaseline
         )
     }
 
@@ -624,20 +642,16 @@ extension AppState {
 
     // MARK: - Daily Content Stability Window
 
-    func dailyContentPresentationSnapshot() -> (
-        events: [CalendarEvent],
-        readyGeneration: UInt64?,
-        usesFrozenBaseline: Bool
-    ) {
+    func dailyContentPresentationSnapshot() -> DailyContentPresentationSnapshot {
         let readyGeneration = dailyContentStabilityState.readyGeneration(
             at: dailyContentNowProvider()
         )
         let usesFrozenBaseline = dailyContentHardwareEventsBaseline != nil
             && readyGeneration == nil
-        return (
-            usesFrozenBaseline ? dailyContentHardwareEventsBaseline ?? events : events,
-            readyGeneration,
-            usesFrozenBaseline
+        return DailyContentPresentationSnapshot(
+            events: usesFrozenBaseline ? dailyContentHardwareEventsBaseline ?? events : events,
+            readyGeneration: readyGeneration,
+            usesFrozenBaseline: usesFrozenBaseline
         )
     }
 
