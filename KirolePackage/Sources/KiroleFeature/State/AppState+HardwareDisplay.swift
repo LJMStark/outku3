@@ -300,4 +300,30 @@ extension AppState {
         SoundService.shared.playWithHaptic(.sceneMilestone, haptic: .success)
         pendingSceneCelebration = SceneCelebration(sceneId: sceneId, presentedAt: now)
     }
+
+    /// Moves selected tasks to the end of a frozen hardware baseline in a stable, sorted order.
+    /// Same mutation applies before and after a new baseline is captured so queue reorder stays
+    /// consistent across both branches of `recordTaskLibraryChanges` (AppState.swift). Internal
+    /// (not private) because callers live in the main file.
+    func applyHardwareQueueReorders(
+        _ taskIDs: Set<String>,
+        to baseline: inout [TaskItem]?
+    ) {
+        guard !taskIDs.isEmpty, var tasks = baseline else { return }
+        applyHardwareQueueReorders(taskIDs, to: &tasks)
+        baseline = tasks
+    }
+
+    func applyHardwareQueueReorders(
+        _ taskIDs: Set<String>,
+        to tasks: inout [TaskItem]
+    ) {
+        guard !taskIDs.isEmpty else { return }
+        for taskID in taskIDs.sorted() {
+            guard let index = tasks.firstIndex(where: {
+                $0.hardwareIdentifier == taskID
+            }) else { continue }
+            tasks.append(tasks.remove(at: index))
+        }
+    }
 }
