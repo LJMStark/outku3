@@ -12,7 +12,7 @@ import Foundation
 ///
 /// 1. **删一句没人用的提示词会崩编码路径。** 旧实现用 `preconditionFailure` 从 PromptSpec 查预算，
 ///    而 `taskOverview` 的提示词自 `a5db1cd`（2026-07-31）起已无调用方——它的 `outputMaxBytes`
-///    却仍是 `0x23`/`0x24` detail 字段的上限。清理提示词时会崩在毫不相关的任务库编码上。
+///    却仍是 `0x23` 任务 detail 字段的上限。清理提示词时会崩在毫不相关的任务库编码上。
 /// 2. **名字会指向已不存在的东西。** `taskDescription` 之名来自 v2.16.0 已删除的 `0x11 TaskInPage`
 ///    字段，实际却在管任务库/当天内容包的 detail；`taskSupportText` 同理（现为三阶段文案预算）。
 ///
@@ -23,7 +23,8 @@ public enum DayPackTextBudget {
     public static let petDialogue = 120
     /// §4.7 DayPack `DaySummary`（框②中性面板文本）。
     public static let daySummary = 180
-    /// §4.22 `0x23` 每条任务 `Detail`，以及 §4.23 `0x24` 每条日程 `Detail`。
+    /// §4.22 `0x23` 每条任务 `Detail`。**仅限 0x23**——§4.23 `0x24` 每条日程 `Detail` 的上限
+    /// 是 `DailyContentCodec.maxDetailBytes`（180，独立本地常量），不从这里取。
     /// （v2.16.0 前叫 `taskDescription`，跟随已删除的 `0x11 TaskInPage` 描述字段命名。）
     public static let taskDetail = 100
     /// v2.5.30 页面四概况点评（§4.7 `SettlementReview`）。
