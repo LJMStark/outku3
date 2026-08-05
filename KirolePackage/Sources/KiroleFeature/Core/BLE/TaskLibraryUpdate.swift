@@ -88,15 +88,16 @@ enum TaskLibraryPhaseSourceFingerprint {
         userProfile: UserProfile,
         customCompanions: [CustomCompanion]
     ) -> String {
-        var parts = [task.title, task.notes ?? ""]
-        parts.append(persona(
-            userProfile: userProfile,
-            customCompanions: customCompanions
-        ))
-        return digest(parts)
+        digest([
+            task.title,
+            task.notes ?? "",
+            persona(userProfile: userProfile, customCompanions: customCompanions),
+        ])
     }
 
-    private static func digest(_ parts: [String]) -> String {
+    /// Length-prefixed SHA-256 over UTF-8 parts. Shared by phase-source and library-source
+    /// fingerprints so a part cannot collide across field boundaries.
+    static func digest(_ parts: [String]) -> String {
         var framed = Data()
         for part in parts {
             let bytes = Data(part.utf8)
@@ -161,6 +162,9 @@ enum TaskLibraryUpdatePlanner {
         calendar: Calendar,
         forceFullTransaction: Bool = false
     ) throws -> TaskLibraryPreparedUpdate {
+        // Full replace ignores scope shape: the caller needs a self-contained library snapshot
+        // (first bind / persona change). Stable-window scope is re-applied only to validation
+        // after this returns (see BLESyncCoordinator.pendingValidationForFrozenUpdate).
         if forceFullTransaction {
             return try makeCompleteUpdate(
                 tasks: tasks,
@@ -174,6 +178,7 @@ enum TaskLibraryUpdatePlanner {
                 forceFullTransaction: true
             )
         }
+
         switch scope {
         case .complete:
             return try makeCompleteUpdate(
@@ -240,13 +245,9 @@ enum TaskLibraryUpdatePlanner {
                         phaseTexts: record.phaseTexts
                     )
                 }
-            var remainingByID: [String: TaskLibraryRecord] = [:]
-            for record in remaining where remainingByID[record.taskID] == nil {
-                remainingByID[record.taskID] = record
-            }
-            let upserts = remaining.filter { record in
-                baseline.records.first(where: { $0.taskID == record.taskID }) != record
-            }
+            let remainingByID = uniqueRecordsByTaskID(remaining)
+            let baselineByID = uniqueRecordsByTaskID(baseline.records)
+            let upserts = remaining.filter { baselineByID[$0.taskID] != $0 }
             let deletions = baseline.records.map(\.taskID).filter { remainingByID[$0] == nil }
             let transaction = TaskLibraryTransaction.incremental(
                 from: baseline.state,
@@ -278,10 +279,7 @@ enum TaskLibraryUpdatePlanner {
         calendar: Calendar,
         forceFullTransaction: Bool
     ) throws -> TaskLibraryPreparedUpdate {
-        var oldRecords: [String: TaskLibraryRecord] = [:]
-        for record in baseline?.records ?? [] where oldRecords[record.taskID] == nil {
-            oldRecords[record.taskID] = record
-        }
+        let oldRecords = uniqueRecordsByTaskID(baseline?.records ?? [])
         let oldFingerprints = baseline?.phaseSourceFingerprints ?? [:]
         let fallback = userProfile.customCompanionId == nil
             ? TaskLibraryPhaseTexts.localFallback(for: userProfile.companionCharacter)
@@ -318,10 +316,7 @@ enum TaskLibraryUpdatePlanner {
 
         let transaction: TaskLibraryTransaction
         if let baseline, !forceFullTransaction {
-            var targetByID: [String: TaskLibraryRecord] = [:]
-            for record in targetRecords where targetByID[record.taskID] == nil {
-                targetByID[record.taskID] = record
-            }
+            let targetByID = uniqueRecordsByTaskID(targetRecords)
             let upserts = targetRecords.filter { oldRecords[$0.taskID] != $0 }
             let deletions = baseline.records.map(\.taskID).filter { targetByID[$0] == nil }
             transaction = .incremental(
@@ -350,6 +345,18 @@ enum TaskLibraryUpdatePlanner {
                 customCompanions: customCompanions
             )
         )
+    }
+
+    /// First-wins map keyed by taskID. Wire order is already encoded in `order`; this is only for
+    /// O(1) lookups while computing incremental upserts/deletions.
+    private static func uniqueRecordsByTaskID(
+        _ records: [TaskLibraryRecord]
+    ) -> [String: TaskLibraryRecord] {
+        var map: [String: TaskLibraryRecord] = [:]
+        for record in records where map[record.taskID] == nil {
+            map[record.taskID] = record
+        }
+        return map
     }
 }
 
@@ -426,7 +433,7 @@ struct TaskLibraryStabilityState: Sendable, Equatable, Codable {
                     && oldOrder[taskID] != newOrder[taskID])
         }
         guard !changed.isEmpty else { return false }
-        generation = generation == .max ? .max : generation + 1
+        bumpGeneration()
         stableTaskIDs.formUnion(changed)
         urgentRemovalTaskIDs.subtract(changed)
         deadline = now.addingTimeInterval(Self.window)
@@ -434,7 +441,7 @@ struct TaskLibraryStabilityState: Sendable, Equatable, Codable {
     }
 
     mutating func promoteImmediateRemoval(taskID: String) {
-        generation = generation == .max ? .max : generation + 1
+        bumpGeneration()
         stableTaskIDs.remove(taskID)
         urgentRemovalTaskIDs.insert(taskID)
         if stableTaskIDs.isEmpty {
@@ -443,14 +450,18 @@ struct TaskLibraryStabilityState: Sendable, Equatable, Codable {
     }
 
     mutating func promoteImmediateHardwareQueueUpdate() {
-        generation = generation == .max ? .max : generation + 1
+        bumpGeneration()
         hasUrgentHardwareQueueUpdate = true
     }
 
     /// 本地日变更：整库重算立即就绪，不等 180 秒。镜像 `promoteImmediateHardwareQueueUpdate`。
     mutating func promoteImmediateCompleteUpdate() {
-        generation = generation == .max ? .max : generation + 1
+        bumpGeneration()
         hasUrgentCompleteUpdate = true
+    }
+
+    private mutating func bumpGeneration() {
+        generation = generation == .max ? .max : generation + 1
     }
 
     func readyScope(at now: Date) -> TaskLibraryUpdateScope? {

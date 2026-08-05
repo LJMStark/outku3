@@ -413,16 +413,7 @@ public final class AppState {
                 immediateRemovals.contains($0.hardwareIdentifier)
             }
         }
-        if !immediateQueueReorders.isEmpty,
-           var baseline = taskLibraryHardwareTasksBaseline {
-            for taskID in immediateQueueReorders.sorted() {
-                guard let index = baseline.firstIndex(where: {
-                    $0.hardwareIdentifier == taskID
-                }) else { continue }
-                baseline.append(baseline.remove(at: index))
-            }
-            taskLibraryHardwareTasksBaseline = baseline
-        }
+        applyHardwareQueueReorders(immediateQueueReorders, to: &taskLibraryHardwareTasksBaseline)
         let alreadyHadStableChanges = !taskLibraryStabilityState.stableTaskIDs.isEmpty
         let recordedStableChanges = taskLibraryStabilityState.recordTaskChanges(
             from: oldTasks,
@@ -433,19 +424,11 @@ public final class AppState {
             immediateQueueReorderTaskIDs: immediateQueueReorders
         )
         if recordedStableChanges, !alreadyHadStableChanges {
-            taskLibraryHardwareTasksBaseline = oldTasks.filter {
+            var baseline = oldTasks.filter {
                 !immediateRemovals.contains($0.hardwareIdentifier)
             }
-            if !immediateQueueReorders.isEmpty,
-               var baseline = taskLibraryHardwareTasksBaseline {
-                for taskID in immediateQueueReorders.sorted() {
-                    guard let index = baseline.firstIndex(where: {
-                        $0.hardwareIdentifier == taskID
-                    }) else { continue }
-                    baseline.append(baseline.remove(at: index))
-                }
-                taskLibraryHardwareTasksBaseline = baseline
-            }
+            applyHardwareQueueReorders(immediateQueueReorders, to: &baseline)
+            taskLibraryHardwareTasksBaseline = baseline
             taskLibraryHardwarePetDialogueBaseline = currentPetDialogue
         }
         if !immediateQueueReorders.isEmpty {
@@ -456,6 +439,31 @@ public final class AppState {
         scheduleTaskLibraryStabilityDeadline()
         if !immediateQueueReorders.isEmpty {
             requestBLESync(reason: "taskLibraryHardwareQueue", debounce: .zero)
+        }
+    }
+
+    /// Moves selected tasks to the end of a frozen hardware baseline in a stable, sorted order.
+    /// Same mutation applies before and after a new baseline is captured so queue reorder stays
+    /// consistent across both branches of `recordTaskLibraryChanges`.
+    private func applyHardwareQueueReorders(
+        _ taskIDs: Set<String>,
+        to baseline: inout [TaskItem]?
+    ) {
+        guard !taskIDs.isEmpty, var tasks = baseline else { return }
+        applyHardwareQueueReorders(taskIDs, to: &tasks)
+        baseline = tasks
+    }
+
+    private func applyHardwareQueueReorders(
+        _ taskIDs: Set<String>,
+        to tasks: inout [TaskItem]
+    ) {
+        guard !taskIDs.isEmpty else { return }
+        for taskID in taskIDs.sorted() {
+            guard let index = tasks.firstIndex(where: {
+                $0.hardwareIdentifier == taskID
+            }) else { continue }
+            tasks.append(tasks.remove(at: index))
         }
     }
 

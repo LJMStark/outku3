@@ -61,7 +61,7 @@ struct DailyContentStabilityState: Sendable, Equatable, Codable {
             oldToday[$0] != newToday[$0]
         }
         guard !changed.isEmpty else { return false }
-        generation = generation == .max ? .max : generation + 1
+        bumpGeneration()
         changedEventIDs.formUnion(changed)
         deadline = now.addingTimeInterval(Self.window)
         return true
@@ -76,6 +76,10 @@ struct DailyContentStabilityState: Sendable, Equatable, Codable {
         guard generation == capturedGeneration else { return }
         changedEventIDs.removeAll()
         deadline = nil
+    }
+
+    private mutating func bumpGeneration() {
+        generation = generation == .max ? .max : generation + 1
     }
 
     private static func fingerprints(

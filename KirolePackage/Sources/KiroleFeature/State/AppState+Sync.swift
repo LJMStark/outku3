@@ -581,13 +581,9 @@ extension AppState {
     }
 
     func taskLibraryReadyUpdate() -> TaskLibraryReadyUpdate? {
-        guard let scope = taskLibraryStabilityState.readyScope(at: taskLibraryNowProvider()) else {
-            return nil
-        }
-        return TaskLibraryReadyUpdate(
-            scope: scope,
-            generation: taskLibraryStabilityState.generation
-        )
+        // Same readiness gate as the presentation snapshot — keep a single code path so a new
+        // urgent scope cannot diverge between "what to send" and "what hardware still shows".
+        taskLibraryPresentationSnapshot().readyUpdate
     }
 
     /// 按 ID 查表用的字典，**刻意用未截断的谓词**——它是超集，`makeCompleteUpdate` 只按截断后的

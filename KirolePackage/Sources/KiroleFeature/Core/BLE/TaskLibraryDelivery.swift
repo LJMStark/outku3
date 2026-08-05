@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 import os
 
@@ -59,19 +58,12 @@ public struct TaskLibraryPendingDelivery: Sendable, Equatable, Codable {
         records: [TaskLibraryRecord],
         phaseSourceFingerprints: [String: String]
     ) -> String {
-        var framed = Data()
-        for record in records {
-            let value = "\(record.taskID)|\(record.order)|\(record.title)|\(record.detail)|"
+        let parts = records.map { record in
+            "\(record.taskID)|\(record.order)|\(record.title)|\(record.detail)|"
                 + "\(record.dueTimestamp.map(String.init) ?? "")|\(record.priority.rawValue)|"
                 + "\(phaseSourceFingerprints[record.taskID] ?? "")"
-            let bytes = Data(value.utf8)
-            var length = UInt64(bytes.count).bigEndian
-            Swift.withUnsafeBytes(of: &length) { framed.append(contentsOf: $0) }
-            framed.append(bytes)
         }
-        return SHA256.hash(data: framed)
-            .map { String(format: "%02x", $0) }
-            .joined()
+        return TaskLibraryPhaseSourceFingerprint.digest(parts)
     }
 }
 
@@ -227,27 +219,14 @@ enum TaskLibrarySourceFingerprint {
             parts.append("priority=\(task.priority.rawValue)")
         }
 
-        if let customID = userProfile.customCompanionId {
-            let revision = customCompanions
-                .first(where: { $0.id == customID })?
-                .updatedAt.timeIntervalSinceReferenceDate.bitPattern ?? 0
-            parts.append("persona=custom|\(customID.uuidString)|\(revision)")
-        } else {
-            parts.append(
-                "persona=built-in|\(userProfile.companionCharacter.rawValue)|\(userProfile.intimacyStage.rawValue)"
-            )
-        }
-
-        var framed = Data()
-        for part in parts {
-            let bytes = Data(part.utf8)
-            var length = UInt64(bytes.count).bigEndian
-            Swift.withUnsafeBytes(of: &length) { framed.append(contentsOf: $0) }
-            framed.append(bytes)
-        }
-        return SHA256.hash(data: framed)
-            .map { String(format: "%02x", $0) }
-            .joined()
+        // Keep persona framing identical to phase-source fingerprints so a persona-only edit
+        // invalidates every digest that should re-run (source, phase texts, pending validation).
+        let persona = TaskLibraryPhaseSourceFingerprint.persona(
+            userProfile: userProfile,
+            customCompanions: customCompanions
+        )
+        parts.append("persona=\(persona)")
+        return TaskLibraryPhaseSourceFingerprint.digest(parts)
     }
 }
 
