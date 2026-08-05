@@ -1,8 +1,9 @@
 # Kirole BLE 初次联调指南
 
-**版本:** v0.2.2
-**更新日期:** 2026-07-31
+**版本:** v0.2.3
+**更新日期:** 2026-08-05
 **状态:** BLE v2.10.1 第一次联调、任务状态与单次刷新正式验收
+**v0.2.3 变更:** 订正 §5.5「进入任务」条：App 自 BLE v2.16.0（Issue #29）起**不再回发 `TaskInPage(0x11)`**，设备发完 `EnterTaskIn(0x10)` 应立即从本地已提交任务库（`0x23`）进入 TaskIn；尚未完成任务库改造的过渡期固件按 BLE §5.3 最多等 5 秒后走本地兜底。v0.2.2 该条描述的是当时 Build 631 的行为，验收以本条为准。纯陈旧引用订正，wire 不变。
 **v0.2.2 变更:** 补充 App Build 631 的并发显示顺序：进入任务先完整提交 `TaskInPage(0x11)`，在线 Complete/Skip 的最终 `0x10 → 0x1B` 之间不再夹入 idle `0x14` 或场景 `0x17`；明确离线 `0x21` 回放和屏保 `0x31 → 0x16` 的刷新计数。BLE payload、字段和协议版本不变。
 **v0.2.1 变更:** 在线 Complete/Skip 改为最终 `DayPack(0x10)` 先缓存、同任务版本 `0x1B` 后一次提交；固件在两帧之间保持 TaskIn/pending 且不刷新。RequestRefresh 与离线批次回放不变。
 **v0.2.0 变更:** 对齐 BLE v2.9.0 flag-day：RequestRefresh 改为严格 v1 + 非零 RequestID，新增 `0x1B TaskListSnapshotAck` 业务确认；加入 Complete/Skip 非零 OperationID、幂等重试、版本化原子替换、Skip 保留任务和旧离线日志清理验收。空 payload `0x20` 与旧 Complete/Skip 格式不再接受。
@@ -172,7 +173,7 @@ Result：`00 applied`、`01 alreadyApplied`、`02 taskNotFound`、`03 invalidReq
 
 ### 5.5 App Build 631 并发显示顺序（协议不变）
 
-- **进入任务：** 设备发送 `EnterTaskIn(0x10)` 后，App 先写完整 `TaskInPage(0x11)`。设备只在完整重组并校验通过后进入 TaskIn，计 1 次 EPD 刷新；后续 `FocusStatus(0x14)` 只是增量状态，不能抢在首帧前提交。
+- **进入任务：** 设备发送 `EnterTaskIn(0x10)` 后，App **不回发 `TaskInPage(0x11)`**（BLE v2.16.0 / Issue #29 已废除）。固件应发完 `0x10` 立即从本地已提交任务库（`0x23`）渲染进入 TaskIn，计 1 次 EPD 刷新；尚未完成任务库改造的过渡期固件按 BLE §5.3 最多等 5 秒后走本地兜底（有兜底＝慢 5 秒，没兜底＝卡在等待页）。后续 `FocusStatus(0x14)` 只是增量状态，不能抢在首帧前提交。
 - **在线 Complete/Skip：** 从设备发送 `CompleteTask(0x11)` 或 `SkipTask(0x12)` 起，到匹配的 `TaskListSnapshotAck(0x1B)` 提交前，设备保持 TaskIn/pending。App 发送顺序为最终 `DayPack(0x10)`、匹配 `0x1B`；中间不会再插入旧会话的 idle `FocusStatus(0x14)` 或 `SceneUnlock(0x17)`。`0x10` 只更新缓存、不刷屏；`0x1B` 一次切回 Overview，整个动作只增加 1 次 EPD 刷新。
 - **离线批次：** `EventLogBatch(0x21)` 按 Records 原始线序逐条处理并逐条回 `0x1B`，App 不在批次尾补最终 DayPack、idle `0x14` 或 `0x17`。离线恢复的刷新次数取决于固件收到的有效快照和当前恢复页，不能套用“整批只刷一次”的在线规则。
 - **屏保：** 设备发送 `ScreensaverRequest(0x31)` 后，App 立即且只回一帧 `ScreensaverFrame(0x16)`。缓存未命中时使用本地兜底文案；异步生成的新文案只供下一次休眠使用，不会为本次请求晚到补发第二帧。
