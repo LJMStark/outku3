@@ -597,9 +597,9 @@ public final class BLESyncCoordinator {
             switch inventory {
             case .missing:
                 // Device lost its version (RAM-only, power cycle). Clear App's persisted baseline
-                // to force a fresh epoch-1 revision-1 on the next 0x1B, matching the device's
-                // empty-state expectation. Return true to signal the caller should trigger an
-                // immediate 0x1B snapshot refresh.
+                // so the next 0x1B will be generated with a fresh random epoch, matching the
+                // device's empty-state expectation. Return true to signal the caller to trigger
+                // a priority sync — the 0x1B will be sent as part of that sync (not inline here).
                 try await localStorage.clearTaskListSnapshotDeliveryState(for: destinationID)
                 return true
             case let .committed(version):

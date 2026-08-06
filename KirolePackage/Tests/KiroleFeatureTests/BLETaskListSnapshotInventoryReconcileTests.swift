@@ -29,7 +29,7 @@ struct BLETaskListSnapshotInventoryReconcileTests {
             destinationID: destinationID
         )
 
-        // 应返回 true：触发立即刷新，下次操作从 epoch=1/revision=1 重新开始
+        // 应返回 true：触发优先级同步，下次 0x1B 将携带随机新 epoch（由 nextTaskListSnapshotVersion 生成）
         #expect(needsRefresh == true)
 
         // 本地版本应被清除

@@ -27,7 +27,7 @@ public struct EventLog: Codable, Sendable, Identifiable {
     /// v2.11.1 仅实时 DeviceWake 42B payload 携带。设备明确报告丢失时
     /// App 重发完整任务库；已提交版本用于阻止每次连接无条件重传。
     public let taskLibraryInventory: TaskLibraryDeviceInventory?
-    /// v2.12.0 仅实时 DeviceWake 51B payload 携带。设备上报 0x1B 快照版本库存，
+    /// 固件 v2.12.0（协议文档 v2.18.0）起，仅实时 DeviceWake 51B payload 携带。设备上报 0x1B 快照版本库存，
     /// App 对齐避免设备重启/App 重启导致的版本错位（双保险：NVS持久化 + inventory握手）。
     public let taskListSnapshotInventory: TaskListSnapshotDeviceInventory?
 
@@ -291,7 +291,7 @@ public extension EventLog {
             } else {
                 taskLibraryInventory = nil
             }
-            // v2.12.0: TaskListSnapshotState(1) | Epoch(4 BE) | Revision(4 BE),
+            // 固件 v2.12.0（协议文档 v2.18.0）: TaskListSnapshotState(1) | Epoch(4 BE) | Revision(4 BE),
             // appended after the v2.11.1 task library inventory.
             let taskListSnapshotInventory: TaskListSnapshotDeviceInventory?
             if payload.count == 51 {
@@ -426,7 +426,7 @@ public extension EventLog {
 
 // MARK: - Task List Snapshot Device Inventory
 
-/// 设备侧 0x1B 快照版本库存（v2.12.0，仅实时 DeviceWake 51B payload 携带）。
+/// 设备侧 0x1B 快照版本库存（固件 v2.12.0，协议文档 v2.18.0，仅实时 DeviceWake 51B payload 携带）。
 /// 双保险模式：Device 侧 NVS 持久化 + 0x30 inventory 握手，避免设备重启/App 重启导致版本错位。
 public enum TaskListSnapshotDeviceInventory: Sendable, Equatable, Codable {
     case missing
