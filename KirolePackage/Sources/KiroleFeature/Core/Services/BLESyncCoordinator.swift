@@ -588,6 +588,41 @@ public final class BLESyncCoordinator {
         }
     }
 
+    func reconcileTaskListSnapshotInventory(
+        _ inventory: TaskListSnapshotDeviceInventory,
+        destinationID: String
+    ) async -> Bool {
+        guard !destinationID.isEmpty else { return false }
+        do {
+            switch inventory {
+            case .missing:
+                // Device lost its version (RAM-only, power cycle). Clear App's persisted baseline
+                // to force a fresh epoch-1 revision-1 on the next 0x1B, matching the device's
+                // empty-state expectation. Return true to signal the caller should trigger an
+                // immediate 0x1B snapshot refresh.
+                try await localStorage.clearTaskListSnapshotDeliveryState(for: destinationID)
+                return true
+            case let .committed(version):
+                // Device reports a committed version. Load App's last frozen version and compare:
+                // - If App has no record, adopt device version as the new baseline (device authority).
+                // - If App's version matches, no action needed (already aligned).
+                // - If App's version differs, adopt device version to prevent epoch/revision drift.
+                let appVersion = try? await localStorage.loadTaskListSnapshotVersion(for: destinationID)
+                if appVersion == nil || appVersion != version {
+                    try await localStorage.saveTaskListSnapshotVersion(
+                        version,
+                        for: destinationID
+                    )
+                    return false
+                }
+                return false
+            }
+        } catch {
+            ErrorReporter.log(error, context: "BLESyncCoordinator.reconcileTaskListSnapshotInventory")
+            return inventory == .missing
+        }
+    }
+
     func handleTaskLibraryCommitAcknowledgement(
         _ acknowledgement: TaskLibraryCommitAcknowledgement,
         destinationID: String

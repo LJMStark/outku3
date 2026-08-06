@@ -197,6 +197,16 @@ public enum BLEEventHandler {
                 } else {
                     taskLibraryNeedsReseed = false
                 }
+                let taskListSnapshotNeedsRefresh: Bool
+                if let inventory = eventLog.taskListSnapshotInventory, !destinationID.isEmpty {
+                    taskListSnapshotNeedsRefresh = await BLESyncCoordinator.shared
+                        .reconcileTaskListSnapshotInventory(
+                            inventory,
+                            destinationID: destinationID
+                        )
+                } else {
+                    taskListSnapshotNeedsRefresh = false
+                }
                 do {
                     try await service.syncTime()
                 } catch {
@@ -206,8 +216,8 @@ public enum BLEEventHandler {
                     )
                 }
                 await AppState.shared.handleHardwareWake(now: eventLog.timestamp)
-                // 普通唤醒经退避节流；存在待办头像事务时强制本轮 query 恢复。
-                let needsPrioritySync = avatarNeedsRecovery || taskLibraryNeedsReseed
+                // 普通唤醒经退避节流；存在待办头像事务或版本错位时强制本轮 query 恢复。
+                let needsPrioritySync = avatarNeedsRecovery || taskLibraryNeedsReseed || taskListSnapshotNeedsRefresh
                 if !needsPrioritySync {
                     guard await BLERateLimiter.shared.allowSyncTrigger() else {
                         ErrorReporter.log(

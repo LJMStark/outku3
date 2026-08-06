@@ -27,6 +27,9 @@ public struct EventLog: Codable, Sendable, Identifiable {
     /// v2.11.1 仅实时 DeviceWake 42B payload 携带。设备明确报告丢失时
     /// App 重发完整任务库；已提交版本用于阻止每次连接无条件重传。
     public let taskLibraryInventory: TaskLibraryDeviceInventory?
+    /// v2.12.0 仅实时 DeviceWake 51B payload 携带。设备上报 0x1B 快照版本库存，
+    /// App 对齐避免设备重启/App 重启导致的版本错位（双保险：NVS持久化 + inventory握手）。
+    public let taskListSnapshotInventory: TaskListSnapshotDeviceInventory?
 
     public struct AvatarInventory: Codable, Sendable, Equatable {
         public let hasImage: Bool
@@ -52,7 +55,8 @@ public struct EventLog: Codable, Sendable, Identifiable {
         hasDeviceTimestamp: Bool = false,
         firmwareVersion: FirmwareVersion? = nil,
         avatarInventory: AvatarInventory? = nil,
-        taskLibraryInventory: TaskLibraryDeviceInventory? = nil
+        taskLibraryInventory: TaskLibraryDeviceInventory? = nil,
+        taskListSnapshotInventory: TaskListSnapshotDeviceInventory? = nil
     ) {
         self.id = id
         self.eventType = eventType
@@ -64,6 +68,7 @@ public struct EventLog: Codable, Sendable, Identifiable {
         self.firmwareVersion = firmwareVersion
         self.avatarInventory = avatarInventory
         self.taskLibraryInventory = taskLibraryInventory
+        self.taskListSnapshotInventory = taskListSnapshotInventory
     }
 
     // 向后兼容：旧 event_logs.json 没有 hasDeviceTimestamp 字段，缺失时默认 false，
@@ -82,6 +87,10 @@ public struct EventLog: Codable, Sendable, Identifiable {
         self.taskLibraryInventory = try container.decodeIfPresent(
             TaskLibraryDeviceInventory.self,
             forKey: .taskLibraryInventory
+        )
+        self.taskListSnapshotInventory = try container.decodeIfPresent(
+            TaskListSnapshotDeviceInventory.self,
+            forKey: .taskListSnapshotInventory
         )
     }
 }
@@ -282,12 +291,34 @@ public extension EventLog {
             } else {
                 taskLibraryInventory = nil
             }
+            // v2.12.0: TaskListSnapshotState(1) | Epoch(4 BE) | Revision(4 BE),
+            // appended after the v2.11.1 task library inventory.
+            let taskListSnapshotInventory: TaskListSnapshotDeviceInventory?
+            if payload.count == 51 {
+                let state = payload[42]
+                let epoch = payload.bigEndianUInt32(at: 43)
+                let revision = payload.bigEndianUInt32(at: 47)
+                switch state {
+                case 0 where epoch == 0 && revision == 0:
+                    taskListSnapshotInventory = .missing
+                case 1 where epoch != 0 && revision != 0:
+                    taskListSnapshotInventory = .committed(TaskListSnapshotVersion(
+                        epoch: epoch,
+                        revision: revision
+                    ))
+                default:
+                    taskListSnapshotInventory = nil
+                }
+            } else {
+                taskListSnapshotInventory = nil
+            }
             return EventLog(
                 eventType: eventType,
                 value: level,
                 firmwareVersion: version,
                 avatarInventory: inventory,
-                taskLibraryInventory: taskLibraryInventory
+                taskLibraryInventory: taskLibraryInventory,
+                taskListSnapshotInventory: taskListSnapshotInventory
             )
 
         default:
@@ -391,4 +422,13 @@ public extension EventLog {
 
         return EventLog(eventType: eventType, taskId: id)
     }
+}
+
+// MARK: - Task List Snapshot Device Inventory
+
+/// 设备侧 0x1B 快照版本库存（v2.12.0，仅实时 DeviceWake 51B payload 携带）。
+/// 双保险模式：Device 侧 NVS 持久化 + 0x30 inventory 握手，避免设备重启/App 重启导致版本错位。
+public enum TaskListSnapshotDeviceInventory: Sendable, Equatable, Codable {
+    case missing
+    case committed(TaskListSnapshotVersion)
 }

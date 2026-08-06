@@ -939,6 +939,58 @@ public actor LocalStorage {
         try loadTaskListSnapshotDeliveryState().legacyVersion
     }
 
+    // MARK: - Per-destination snapshot version management (v2.12.0 inventory reconciliation)
+
+    /// Load the last frozen version for a specific destination.
+    /// Returns nil if the destination has no record — caller should treat this as the device
+    /// being in a clean state (no baseline to compare against).
+    func loadTaskListSnapshotVersion(for destinationID: String) async throws -> TaskListSnapshotVersion? {
+        let state = try loadTaskListSnapshotDeliveryState()
+        return state.destinations.first(where: { $0.destinationID == destinationID })?.lastFrozenVersion
+    }
+
+    /// Update the last frozen version baseline for a specific destination.
+    /// Called when the device reports a committed version via 0x30 inventory that differs from
+    /// App's record — App adopts device's version as the new baseline.
+    func saveTaskListSnapshotVersion(
+        _ version: TaskListSnapshotVersion,
+        for destinationID: String
+    ) async throws {
+        var state: TaskListSnapshotDeliveryState
+        do {
+            state = try loadTaskListSnapshotDeliveryState()
+        } catch {
+            try quarantineCorruptFile(named: Files.taskListSnapshotVersion)
+            state = .empty
+        }
+        if let idx = state.destinations.firstIndex(where: { $0.destinationID == destinationID }) {
+            state.destinations[idx].lastFrozenVersion = version
+        } else {
+            state.destinations.append(TaskListSnapshotDestinationState(
+                destinationID: destinationID,
+                lastFrozenVersion: version,
+                reservation: nil,
+                frozenResponses: []
+            ))
+        }
+        try save(state, to: Files.taskListSnapshotVersion)
+    }
+
+    /// Remove the delivery state for a destination so the next 0x1B starts with a fresh epoch.
+    /// Called when device reports `.missing` via 0x30 inventory (power cycle / restart wiped RAM).
+    func clearTaskListSnapshotDeliveryState(for destinationID: String) async throws {
+        var state: TaskListSnapshotDeliveryState
+        do {
+            state = try loadTaskListSnapshotDeliveryState()
+        } catch {
+            // Already corrupt; quarantine and start fresh — desired end state is empty anyway.
+            try quarantineCorruptFile(named: Files.taskListSnapshotVersion)
+            return
+        }
+        state.destinations.removeAll { $0.destinationID == destinationID }
+        try save(state, to: Files.taskListSnapshotVersion)
+    }
+
     func hasAttemptedTaskListSnapshotDelivery(
         for destinationID: String
     ) async throws -> Bool {
