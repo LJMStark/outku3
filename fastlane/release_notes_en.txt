@@ -1,0 +1,8 @@
+BLE v2.18.0 — fix task-list snapshot version mismatch after device restart
+
+• DeviceWake (0x30) now carries 0x1B snapshot inventory (51B payload): App aligns to device NVS version or clears baseline when missing
+• Full 51B parse keeps avatar + task-library inventories working alongside the new snapshot fields
+• On version mismatch, App clears stale 0x1B delivery state (reservation/attempted) so the next prepare is not blocked
+• Docs/comments clarify random epoch on reset and that 0x1B is device-triggered (Complete/Skip/RequestRefresh), not sent inside performSync
+
+Requires matching firmware with NVS-persisted 0x1B version + 51B DeviceWake.

@@ -1,0 +1,8 @@
+BLE v2.18.0 — 修复设备重启后 0x1B 任务快照版本错位
+
+• DeviceWake(0x30) 扩展为 51B，携带 0x1B 快照版本库存：App 按设备 NVS 对齐，或在 missing 时清空本地基线
+• 51B 同时正确解析头像与任务库库存，避免只解快照、丢掉其余 inventory
+• 版本不一致时清理陈旧 0x1B delivery 状态（reservation/attempted），避免下次 prepare 被卡住
+• 注释澄清：重置时用随机新 epoch；0x1B 仅由 Complete/Skip/RequestRefresh 触发，不在 performSync 内发送
+
+需配套固件：NVS 持久化 0x1B 版本 + 51B DeviceWake。
