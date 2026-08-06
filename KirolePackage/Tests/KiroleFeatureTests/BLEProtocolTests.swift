@@ -1775,6 +1775,157 @@ struct BLEProtocolTests {
         let v = FirmwareVersion(major: 1, minor: 12, patch: 3)
         #expect(v.description == "1.12.3")
     }
+
+    // MARK: - DeviceWake 51B full-packet decode (v2.18.0, BLE spec §5.8)
+    //
+    // Payload layout (51 bytes):
+    //   [0]      battery level
+    //   [1..3]   firmware major/minor/patch
+    //   [4]      AvatarState (0x00 = no image)
+    //   [5..20]  AvatarID UUID bytes (all-zero = absent)
+    //   [21..24] AvatarFileLength BE
+    //   [25..28] AvatarCRC32 BE
+    //   [29]     TaskLibraryState
+    //   [30..33] TaskLibraryEpoch BE
+    //   [34..37] TaskLibraryRevision BE
+    //   [38..41] TaskLibraryContentCRC32 BE
+    //   [42]     SnapshotState
+    //   [43..46] SnapshotEpoch BE
+    //   [47..50] SnapshotRevision BE
+
+    /// Returns a 51B DeviceWake payload with:
+    /// - avatar: no image (hasImage=false, all-zero UUID/length/CRC → isConsistent=true)
+    /// - taskLibrary: committed, epoch=5, revision=10, contentCRC32=255
+    /// - snapshot: committed, epoch=7, revision=3
+    private func make51BDeviceWakePayload(
+        taskLibraryState: UInt8 = 0x01,
+        taskLibraryEpoch: UInt32 = 5,
+        taskLibraryRevision: UInt32 = 10,
+        taskLibraryCRC32: UInt32 = 255,
+        snapshotState: UInt8 = 0x01,
+        snapshotEpoch: UInt32 = 7,
+        snapshotRevision: UInt32 = 3
+    ) -> Data {
+        var bytes = [UInt8](repeating: 0, count: 51)
+        bytes[0] = 0x50                      // battery 80%
+        bytes[1] = 0x01; bytes[2] = 0x02; bytes[3] = 0x03  // firmware 1.2.3
+        // bytes[4] = 0x00 → hasImage=false; bytes[5..28] = 0 → consistent no-image avatar
+        bytes[29] = taskLibraryState
+        bytes[30] = UInt8((taskLibraryEpoch >> 24) & 0xFF)
+        bytes[31] = UInt8((taskLibraryEpoch >> 16) & 0xFF)
+        bytes[32] = UInt8((taskLibraryEpoch >>  8) & 0xFF)
+        bytes[33] = UInt8( taskLibraryEpoch        & 0xFF)
+        bytes[34] = UInt8((taskLibraryRevision >> 24) & 0xFF)
+        bytes[35] = UInt8((taskLibraryRevision >> 16) & 0xFF)
+        bytes[36] = UInt8((taskLibraryRevision >>  8) & 0xFF)
+        bytes[37] = UInt8( taskLibraryRevision        & 0xFF)
+        bytes[38] = UInt8((taskLibraryCRC32 >> 24) & 0xFF)
+        bytes[39] = UInt8((taskLibraryCRC32 >> 16) & 0xFF)
+        bytes[40] = UInt8((taskLibraryCRC32 >>  8) & 0xFF)
+        bytes[41] = UInt8( taskLibraryCRC32        & 0xFF)
+        bytes[42] = snapshotState
+        bytes[43] = UInt8((snapshotEpoch >> 24) & 0xFF)
+        bytes[44] = UInt8((snapshotEpoch >> 16) & 0xFF)
+        bytes[45] = UInt8((snapshotEpoch >>  8) & 0xFF)
+        bytes[46] = UInt8( snapshotEpoch        & 0xFF)
+        bytes[47] = UInt8((snapshotRevision >> 24) & 0xFF)
+        bytes[48] = UInt8((snapshotRevision >> 16) & 0xFF)
+        bytes[49] = UInt8((snapshotRevision >>  8) & 0xFF)
+        bytes[50] = UInt8( snapshotRevision        & 0xFF)
+        return Data(bytes)
+    }
+
+    @Test("DeviceWake 51B parses avatar, taskLibrary, and snapshot inventories together")
+    func deviceWake51BParsesAllThreeInventories() {
+        let payload = make51BDeviceWakePayload()
+        let log = EventLog.fromBLEPayload(type: 0x30, payload: payload)
+
+        #expect(payload.count == 51)
+        #expect(log?.eventType == .deviceWake)
+        #expect(log?.value == 80)
+        #expect(log?.firmwareVersion == FirmwareVersion(major: 1, minor: 2, patch: 3))
+
+        // Avatar: no-image, consistent → non-nil AvatarInventory
+        #expect(log?.avatarInventory != nil)
+        #expect(log?.avatarInventory?.hasImage == false)
+
+        // TaskLibrary: committed with epoch=5, revision=10, crc=255
+        if case let .committed(state) = log?.taskLibraryInventory {
+            #expect(state.version.epoch == 5)
+            #expect(state.version.revision == 10)
+            #expect(state.contentCRC32 == 255)
+        } else {
+            Issue.record("expected taskLibraryInventory .committed, got \(String(describing: log?.taskLibraryInventory))")
+        }
+
+        // Snapshot: committed with epoch=7, revision=3
+        if case let .committed(version) = log?.taskListSnapshotInventory {
+            #expect(version.epoch == 7)
+            #expect(version.revision == 3)
+        } else {
+            Issue.record("expected taskListSnapshotInventory .committed, got \(String(describing: log?.taskListSnapshotInventory))")
+        }
+    }
+
+    @Test("DeviceWake 51B with all-missing inventories parses correctly")
+    func deviceWake51BAllMissingInventories() {
+        // Avatar: no-image (hasImage=false, all zeros → consistent)
+        // TaskLibrary: state=0x00, epoch=0, revision=0, crc=0 → .missing
+        // Snapshot: state=0x00, epoch=0, revision=0 → .missing
+        let payload = make51BDeviceWakePayload(
+            taskLibraryState: 0x00,
+            taskLibraryEpoch: 0,
+            taskLibraryRevision: 0,
+            taskLibraryCRC32: 0,
+            snapshotState: 0x00,
+            snapshotEpoch: 0,
+            snapshotRevision: 0
+        )
+        let log = EventLog.fromBLEPayload(type: 0x30, payload: payload)
+
+        #expect(log?.avatarInventory != nil)   // no-image avatar is still consistent
+        #expect(log?.taskLibraryInventory == .missing)
+        #expect(log?.taskListSnapshotInventory == .missing)
+    }
+
+    /// Regression guard: 29B payload must still parse avatar, taskLibrary=nil, snapshot=nil.
+    @Test("DeviceWake 29B still parses avatar only, taskLibrary and snapshot are nil")
+    func deviceWake29BOnlyAvatar() {
+        var bytes = [UInt8](repeating: 0, count: 29)
+        bytes[0] = 0x64   // battery
+        bytes[1] = 0x02; bytes[2] = 0x00; bytes[3] = 0x00  // firmware 2.0.0
+        // bytes[4..28] = 0 → hasImage=false, consistent no-image avatar
+        let log = EventLog.fromBLEPayload(type: 0x30, payload: Data(bytes))
+
+        #expect(log?.avatarInventory != nil)
+        #expect(log?.taskLibraryInventory == nil)
+        #expect(log?.taskListSnapshotInventory == nil)
+    }
+
+    /// Regression guard: 42B payload must still parse avatar + taskLibrary, snapshot=nil.
+    @Test("DeviceWake 42B parses avatar and taskLibrary, snapshot is nil")
+    func deviceWake42BAvatarAndTaskLibrary() {
+        var bytes = [UInt8](repeating: 0, count: 42)
+        bytes[0] = 0x64
+        bytes[1] = 0x02; bytes[2] = 0x00; bytes[3] = 0x00
+        // avatar: hasImage=false, all-zero → consistent
+        // taskLibrary: committed, epoch=3, revision=2
+        bytes[29] = 0x01
+        bytes[30] = 0x00; bytes[31] = 0x00; bytes[32] = 0x00; bytes[33] = 0x03  // epoch=3
+        bytes[34] = 0x00; bytes[35] = 0x00; bytes[36] = 0x00; bytes[37] = 0x02  // revision=2
+        bytes[38] = 0x00; bytes[39] = 0x00; bytes[40] = 0x00; bytes[41] = 0xAB  // crc32=171
+        let log = EventLog.fromBLEPayload(type: 0x30, payload: Data(bytes))
+
+        #expect(log?.avatarInventory != nil)
+        if case let .committed(state) = log?.taskLibraryInventory {
+            #expect(state.version.epoch == 3)
+            #expect(state.version.revision == 2)
+            #expect(state.contentCRC32 == 171)
+        } else {
+            Issue.record("expected taskLibraryInventory .committed for 42B, got \(String(describing: log?.taskLibraryInventory))")
+        }
+        #expect(log?.taskListSnapshotInventory == nil)
+    }
 }
 
 // MARK: - Shared Mock

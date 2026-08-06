@@ -245,7 +245,7 @@ public extension EventLog {
             // v2.7: AvatarState(1) | AvatarID(16 raw UUID; empty 时全 0) |
             // FileLength(4 BE) | FileCRC32(4 BE)。仅实时帧；旧 9B 库存格式不兼容。
             let inventory: AvatarInventory?
-            if (payload.count == 29 || payload.count == 42), payload[4] <= 0x01 {
+            if (payload.count == 29 || payload.count == 42 || payload.count == 51), payload[4] <= 0x01 {
                 let hasImage = payload[4] == 0x01
                 let avatarBytes = payload.subdata(in: 5..<21)
                 let avatarID = avatarBytes.allSatisfy { $0 == 0 }
@@ -272,7 +272,7 @@ public extension EventLog {
             // v2.11.1: TaskLibraryState(1) | Epoch(4 BE) | Revision(4 BE) |
             // ContentCRC32(4 BE), appended after the v2.7 avatar inventory.
             let taskLibraryInventory: TaskLibraryDeviceInventory?
-            if payload.count == 42 {
+            if payload.count == 42 || payload.count == 51 {
                 let state = payload[29]
                 let epoch = payload.bigEndianUInt32(at: 30)
                 let revision = payload.bigEndianUInt32(at: 34)
