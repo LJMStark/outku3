@@ -939,7 +939,7 @@ public actor LocalStorage {
         try loadTaskListSnapshotDeliveryState().legacyVersion
     }
 
-    // MARK: - Per-destination snapshot version management (v2.12.0 inventory reconciliation)
+    // MARK: - Per-destination snapshot version management (固件 v2.12.0 / 协议文档 v2.18.0 inventory reconciliation)
 
     /// Load the last frozen version for a specific destination.
     /// Returns nil if the destination has no record — caller should treat this as the device
