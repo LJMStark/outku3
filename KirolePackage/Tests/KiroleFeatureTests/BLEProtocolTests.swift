@@ -785,6 +785,13 @@ struct BLEProtocolTests {
         #expect(BLEDataType.smartReminder.rawValue == 0x13)
     }
 
+    @Test("BLE v2.18 assigns 0x23 and 0x24 while 0x25 stays unassigned")
+    func currentFirmwareCommandAssignments() {
+        #expect(BLEDataType.taskLibraryTransaction.rawValue == 0x23)
+        #expect(BLEDataType.dailyContentTransaction.rawValue == 0x24)
+        #expect(BLEDataType(rawValue: 0x25) == nil)
+    }
+
     @Test("BLEDataEncoder encodeEventLogRequest encodes timestamp big-endian")
     func encodeEventLogRequestFormat() {
         let timestamp: UInt32 = 1_700_000_000

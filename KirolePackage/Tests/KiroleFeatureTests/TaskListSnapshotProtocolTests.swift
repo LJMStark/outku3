@@ -126,6 +126,34 @@ struct TaskListSnapshotProtocolTests {
         ]))
     }
 
+    @Test("An empty TaskListSnapshotAck has an exact 16-byte fixed header")
+    func emptySnapshotAckHasExactFixedHeader() {
+        let payload = BLEDataEncoder.encodeTaskListSnapshotAck(TaskListSnapshotAck(
+            action: .requestRefresh,
+            operationID: 0x0102_0304,
+            result: .applied,
+            version: TaskListSnapshotVersion(epoch: 0x1122_3344, revision: 0x5566_7788),
+            tasks: []
+        ))
+
+        #expect(payload == Data([
+            0x01, 0x20,
+            0x01, 0x02, 0x03, 0x04,
+            0x00,
+            0x11, 0x22, 0x33, 0x44,
+            0x55, 0x66, 0x77, 0x88,
+            0x00,
+        ]))
+        #expect(payload.count == 16)
+
+        let frame = BLESimpleEncoder.encode(
+            type: BLEDataType.taskListSnapshotAck.rawValue,
+            payload: payload
+        )
+        #expect(frame.prefix(3) == Data([0x1B, 0x00, 0x10]))
+        #expect(frame.count == 19)
+    }
+
     @Test("Task snapshot content comparison covers every field visible on Overview")
     func snapshotContentComparison() {
         let baseline = [

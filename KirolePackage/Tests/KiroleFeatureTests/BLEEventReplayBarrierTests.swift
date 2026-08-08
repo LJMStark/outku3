@@ -70,6 +70,52 @@ struct BLEEventReplayBarrierTests {
         #expect(!barrier.isSatisfied(connectionGeneration: 30))
     }
 
+    @Test("A single empty EventLogBatch closes the replay window")
+    func emptyBatchCompletesReplay() async {
+        await SharedPersistenceTestLock.shared.withLock {
+            let service = BLEService.shared
+            service.eventReplayBarrier.handleDisconnect()
+            defer { service.eventReplayBarrier.handleDisconnect() }
+
+            let ticket = service.eventReplayBarrier.beginRequest(connectionGeneration: 41)
+            let result = Task { @MainActor in await service.eventReplayBarrier.wait(for: ticket) }
+
+            await BLEEventHandler.handleReceivedPayload(
+                BLEReceivedMessage(
+                    type: BLEDataType.eventLogBatch.rawValue,
+                    payload: Data([0x00])
+                ),
+                service: service
+            )
+
+            #expect(await result.value)
+            #expect(service.eventReplayBarrier.isSatisfied(connectionGeneration: 41))
+        }
+    }
+
+    @Test("A malformed empty batch fails the current replay window")
+    func malformedEmptyBatchFailsClosed() async {
+        await SharedPersistenceTestLock.shared.withLock {
+            let service = BLEService.shared
+            service.eventReplayBarrier.handleDisconnect()
+            defer { service.eventReplayBarrier.handleDisconnect() }
+
+            let ticket = service.eventReplayBarrier.beginRequest(connectionGeneration: 42)
+            let result = Task { @MainActor in await service.eventReplayBarrier.wait(for: ticket) }
+
+            await BLEEventHandler.handleReceivedPayload(
+                BLEReceivedMessage(
+                    type: BLEDataType.eventLogBatch.rawValue,
+                    payload: Data([0x00, 0x00])
+                ),
+                service: service
+            )
+
+            #expect(await result.value == false)
+            #expect(!service.eventReplayBarrier.isSatisfied(connectionGeneration: 42))
+        }
+    }
+
     @Test("A failed replay operation stops the ordered batch before the next action")
     func replayFailureStopsLaterActions() async {
         let appState = AppState.makeForTesting()
