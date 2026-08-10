@@ -62,7 +62,7 @@ public actor EventKitService {
         return try queryEvents(from: startOfWeek, to: endOfWeek)
     }
 
-    private func queryEvents(from startDate: Date, to endDate: Date) throws -> [CalendarEvent] {
+x 在Ω      private func queryEvents(from startDate: Date, to endDate: Date) throws -> [CalendarEvent] {
         let calendars = eventStore.calendars(for: .event)
         guard !calendars.isEmpty else { return [] }
         let predicate = eventStore.predicateForEvents(withStart: startDate, end: endDate, calendars: calendars)
