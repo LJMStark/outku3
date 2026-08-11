@@ -72,6 +72,15 @@ struct BLEConnectionPolicyTests {
         #expect(!BLEConnectionPolicy.shouldAutoReconnect(isIntentional: false, autoReconnectEnabled: false))
     }
 
+    @Test("shipping-mode disconnect never auto-reconnects")
+    func shippingModeSuppressesAutoReconnect() {
+        #expect(!BLEConnectionPolicy.shouldAutoReconnect(
+            isIntentional: false,
+            autoReconnectEnabled: true,
+            suppressForShippingMode: true
+        ))
+    }
+
     @Test("WiFi debug keeps BLE open even when generic keep-alive is off")
     func wifiDebugKeepsConnectionOpen() {
         #expect(BLEConnectionPolicy.shouldKeepConnectionOpenForDebug(
@@ -85,6 +94,15 @@ struct BLEConnectionPolicyTests {
         #expect(!BLEConnectionPolicy.shouldKeepConnectionOpenForDebug(
             keepAliveEnabled: false,
             wifiDebugRequiresConnection: false
+        ))
+    }
+
+    @Test("shipping-mode activation keeps BLE open until the device disconnects")
+    func shippingModeKeepsConnectionOpen() {
+        #expect(BLEConnectionPolicy.shouldKeepConnectionOpenForDebug(
+            keepAliveEnabled: false,
+            wifiDebugRequiresConnection: false,
+            shippingModeRequiresConnection: true
         ))
     }
 

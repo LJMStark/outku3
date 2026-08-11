@@ -12,6 +12,7 @@ private enum KiroleBLEUUIDs {
 }
 
 private typealias PacketWriteValidator = @MainActor @Sendable () throws -> Void
+private typealias PacketWillWrite = @MainActor @Sendable () -> Void
 
 // MARK: - BLE Service
 
@@ -98,6 +99,9 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
     /// didDisconnectPeripheral 靠它把预期中的升级重启断连路由给协调器——§4.17 允许
     /// 固件收到 0x18 后不回应答直接重启，所以 sending 阶段就必须布防，不能等应答。
     var isPendingOTAReboot = false
+    /// ShippingMode(0x1C) 没有业务 ACK，设备主动断连就是唯一成功信号。
+    /// 断连期间必须压住自动重连，否则工厂命令生效后 App 会立刻尝试把设备连回来。
+    var isPendingShippingModeActivation = false
     /// 意外断开后的延迟重连任务，便于在主动断开 / 重新连接时取消。
     private var reconnectTask: Task<Void, Never>?
     /// 扫描代次。每次发起扫描自增；扫描超时任务只在仍是本轮扫描时才结束扫描，
@@ -171,7 +175,8 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
         BLEConnectionPolicy.shouldKeepConnectionOpenForDebug(
             keepAliveEnabled: keepAliveDebugMode,
             wifiDebugRequiresConnection: BLEWiFiDebugCoordinator.shared.requiresBLEConnection
-                || WiFiAvatarSessionCoordinator.shared.requiresBLEConnection
+                || WiFiAvatarSessionCoordinator.shared.requiresBLEConnection,
+            shippingModeRequiresConnection: BLEShippingModeCoordinator.shared.requiresCurrentConnection
         )
     }
 
@@ -396,6 +401,9 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
         // 回调里的 handleDeviceDisconnected 永远不跑（2a7bf26 引入的回归，联审 2026-07-16 F7）。
         // 双结算无风险：回调被门拒；即使放行，endSession 的 activeSession guard 也会挡住第二次。
         FocusSessionService.shared.handleDeviceDisconnected()
+        if isPendingShippingModeActivation {
+            BLEShippingModeCoordinator.shared.handleUnconfirmedDisconnect()
+        }
         if let peripheral = connectedPeripheral {
             centralManager?.cancelPeripheralConnection(peripheral)
         }
@@ -431,6 +439,9 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
     /// 再尝试系统已连接设备，最后才回退扫描。任一直连的非致命失败都会继续后续兜底，
     /// 避免旧 UUID 直连超时后直接放弃，让"找不到设备"更脆弱。
     public func connectToPreferredDevice(timeout: TimeInterval = 10) async throws {
+        guard !BLEShippingModeCoordinator.shared.blocksAutomaticBLEWork else {
+            throw BLEError.shippingModeActive
+        }
         let manager = try await poweredOnCentralManager(timeout: 3)
 
         // 1. 已知设备 identifier：retrievePeripherals 直接取回并连接，跳过扫描。
@@ -464,6 +475,7 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
     /// 返回是否成功发起了重连尝试。
     @discardableResult
     public func attemptAutoReconnect() async -> Bool {
+        guard !BLEShippingModeCoordinator.shared.blocksAutomaticBLEWork else { return false }
         guard autoReconnectEffective else { return false }
         return await beginPendingReconnect()
     }
@@ -746,6 +758,18 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
         try await writeData(type: .wifiDebugMode, data: command.payload)
     }
 
+    /// 发送工厂运输模式命令。写成功只代表帧已写出；最终成功由随后发生的设备断连确认。
+    public func sendShippingModeCommand(
+        _ command: BLEShippingModeCommand = .enable,
+        onWillWrite: @escaping @MainActor @Sendable () -> Void
+    ) async throws {
+        try await writeData(
+            type: .shippingMode,
+            data: command.payload,
+            onWillWrite: onWillWrite
+        )
+    }
+
     /// 发送 WiFiAvatarSession (0x1A) 会话命令（close/open/query + OperationID）。
     /// 统一走 writeData，secure 模式自动封装为 0x7E。设备经 Notify 回 0x1A 应答，
     /// 由 `WiFiAvatarSessionCoordinator.handleResponse` 处理。
@@ -762,8 +786,12 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
         type: BLEDataType,
         data: Data,
         validateBeforeWrite: PacketWriteValidator? = nil,
+        onWillWrite: PacketWillWrite? = nil,
         progress: (@MainActor @Sendable (_ sentBytes: Int, _ totalBytes: Int) -> Void)? = nil
     ) async throws {
+        guard type == .shippingMode || !BLEShippingModeCoordinator.shared.blocksAutomaticBLEWork else {
+            throw BLEError.shippingModeActive
+        }
         guard connectionState.isConnected,
               let characteristic = writeCharacteristic,
               let peripheral = connectedPeripheral else {
@@ -777,6 +805,7 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
                 peripheral: peripheral,
                 characteristic: characteristic,
                 validateBeforeWrite: validateBeforeWrite,
+                onWillWrite: onWillWrite,
                 progress: progress
             )
             return
@@ -831,7 +860,7 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
             )
             inFlightChunkedTransfers += 1
             defer { inFlightChunkedTransfers -= 1 }
-            for packet in packets {
+            for (index, packet) in packets.enumerated() {
                 // 外层任务被取消（如切换伴侣废弃旧头像流）时立即停发——写锁只串行单个
                 // packet，不检查取消的话两条 2000 片消息会逐片交错、旧流可能反杀新流。
                 try Task.checkCancellation()
@@ -839,7 +868,8 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
                     packet,
                     peripheral: peripheral,
                     characteristic: characteristic,
-                    validateBeforeWrite: validateBeforeWrite
+                    validateBeforeWrite: validateBeforeWrite,
+                    onWillWrite: index == packets.indices.last ? onWillWrite : nil
                 )
             }
             return
@@ -850,7 +880,8 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
             packet,
             peripheral: peripheral,
             characteristic: characteristic,
-            validateBeforeWrite: validateBeforeWrite
+            validateBeforeWrite: validateBeforeWrite,
+            onWillWrite: onWillWrite
         )
     }
 
@@ -860,6 +891,7 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
         peripheral: CBPeripheral,
         characteristic: CBCharacteristic,
         validateBeforeWrite: PacketWriteValidator?,
+        onWillWrite: PacketWillWrite?,
         progress: (@MainActor @Sendable (_ sentBytes: Int, _ totalBytes: Int) -> Void)?
     ) async throws {
         let maxLength = peripheral.maximumWriteValueLength(for: .withResponse)
@@ -875,14 +907,15 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
             inFlightChunkedTransfers += 1
             defer { inFlightChunkedTransfers -= 1 }
             var sentBytes = 0
-            for packet in packets {
+            for (index, packet) in packets.enumerated() {
                 // 同 writeData：任务取消即停发，防多条大帧流逐片交错。
                 try Task.checkCancellation()
                 try await writePacket(
                     packet,
                     peripheral: peripheral,
                     characteristic: characteristic,
-                    validateBeforeWrite: validateBeforeWrite
+                    validateBeforeWrite: validateBeforeWrite,
+                    onWillWrite: index == packets.indices.last ? onWillWrite : nil
                 )
                 sentBytes += chunkPayloadLength(packet)
                 progress?(min(sentBytes, data.count), data.count)
@@ -895,7 +928,8 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
             packet,
             peripheral: peripheral,
             characteristic: characteristic,
-            validateBeforeWrite: validateBeforeWrite
+            validateBeforeWrite: validateBeforeWrite,
+            onWillWrite: onWillWrite
         )
         progress?(data.count, data.count)
     }
@@ -928,7 +962,8 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
         _ packet: Data,
         peripheral: CBPeripheral,
         characteristic: CBCharacteristic,
-        validateBeforeWrite: PacketWriteValidator? = nil
+        validateBeforeWrite: PacketWriteValidator? = nil,
+        onWillWrite: PacketWillWrite? = nil
     ) async throws {
         if AppBuildEnvironment.showsHardwareDebugTools {
             let typeText = packet.first.map { String(format: "%02X", $0) } ?? "??"
@@ -978,6 +1013,7 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
                         continuation.resume(throwing: error)
                     }
                 }
+                onWillWrite?()
                 peripheral.writeValue(packet, for: characteristic, type: .withResponse)
             }
         } catch {
@@ -1047,6 +1083,7 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
             rssi: 0,
             isConnected: true
         )
+        BLEShippingModeCoordinator.shared.handleDeviceReconnected()
         lastConnectedDeviceID = peripheralID
         if requiresSecureChannel {
             await deviceIdentityStore.trust(peripheralID)
@@ -1266,18 +1303,27 @@ extension BLEService: CBCentralManagerDelegate {
             // cleanup 会把 Wi-Fi 调试协调器重置为 unknown，故重连判定也必须先快照。
             let wasIntentional = isIntentionalDisconnect
             let shouldAutoReconnect = autoReconnectEffective
+            let wasShippingModeActivation = isPendingShippingModeActivation
 
             // Notify OTA coordinator so it can transition to awaitingReboot
             // without waiting for a 0x18 response that will never arrive.
             if isPendingOTAReboot {
                 BLEOTACoordinator.shared.handleExpectedDisconnect()
             }
+            if wasShippingModeActivation {
+                if wasIntentional {
+                    BLEShippingModeCoordinator.shared.handleUnconfirmedDisconnect()
+                } else {
+                    BLEShippingModeCoordinator.shared.handleExpectedDisconnect()
+                }
+            }
 
             cleanup()
 
             guard BLEConnectionPolicy.shouldAutoReconnect(
                 isIntentional: wasIntentional,
-                autoReconnectEnabled: shouldAutoReconnect
+                autoReconnectEnabled: shouldAutoReconnect,
+                suppressForShippingMode: wasShippingModeActivation
             ) else { return }
 
             // Apple 警告：不要在 didDisconnect 回调里立刻 connect（会卡 bad state），延迟后再发起。

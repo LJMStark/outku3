@@ -12,6 +12,19 @@ struct BLEOTACoordinatorTests {
     func initialStateIsIdle() async {
         let c = BLEOTACoordinator.makeForTesting()
         #expect(c.state == .idle)
+        #expect(!c.isBusy)
+    }
+
+    @Test("Shipping mode blocks OTA before the reboot command is armed")
+    func shippingModeBlocksOTA() async {
+        BLEService.shared.isPendingOTAReboot = false
+        let c = BLEOTACoordinator.makeForTesting(canStartReboot: { false })
+
+        await c.requestReboot()
+
+        #expect(c.state == .idle)
+        #expect(!c.isBusy)
+        #expect(BLEService.shared.isPendingOTAReboot == false)
     }
 
     @Test("0x00 response transitions to awaitingReboot")

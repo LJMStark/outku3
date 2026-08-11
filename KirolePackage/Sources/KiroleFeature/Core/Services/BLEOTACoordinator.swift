@@ -62,9 +62,14 @@ public final class BLEOTACoordinator {
     /// 最近一次升级流程的结果；`requestReboot()` / `reset()` 时清空。
     public private(set) var lastOutcome: UpgradeOutcome?
 
+    public var isBusy: Bool {
+        state == .sending || state == .awaitingReboot
+    }
+
     // MARK: - Private
 
     private let bleService: BLEService
+    private let canStartReboot: @MainActor () -> Bool
     private var attemptCount = 0
     private var responseTimeoutTask: Task<Void, Never>?
     private var rebootTimeoutTask: Task<Void, Never>?
@@ -73,20 +78,29 @@ public final class BLEOTACoordinator {
     /// 进入 awaitingReboot 时的版本快照，用于与重启后版本对比。
     private var versionBeforeUpgrade: FirmwareVersion?
 
-    private init(bleService: BLEService = .shared) {
+    private init(
+        bleService: BLEService = .shared,
+        canStartReboot: (@MainActor () -> Bool)? = nil
+    ) {
         self.bleService = bleService
+        self.canStartReboot = canStartReboot ?? {
+            !BLEShippingModeCoordinator.shared.blocksAutomaticBLEWork
+        }
     }
 
     /// Factory for unit tests only — not for production call sites.
-    static func makeForTesting(bleService: BLEService = .shared) -> BLEOTACoordinator {
-        BLEOTACoordinator(bleService: bleService)
+    static func makeForTesting(
+        bleService: BLEService = .shared,
+        canStartReboot: @escaping @MainActor () -> Bool = { true }
+    ) -> BLEOTACoordinator {
+        BLEOTACoordinator(bleService: bleService, canStartReboot: canStartReboot)
     }
 
     // MARK: - Public API
 
     /// Initiates the OTA upgrade trigger. No-op if already in a non-idle state.
     public func requestReboot() async {
-        guard state == .idle else { return }
+        guard state == .idle, canStartReboot() else { return }
         attemptCount = 0
         lastOutcome = nil
         await sendAttempt()

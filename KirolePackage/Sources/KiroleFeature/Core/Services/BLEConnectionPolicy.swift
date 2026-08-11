@@ -53,16 +53,21 @@ public enum BLEConnectionPolicy {
     /// 主动断开（sync 收尾、用户点击断开、后台任务到期）**不**应触发自动重连，否则会形成
     /// "连上 → 同步 → 主动断开 → 自动重连 → 设备又发 wake/refresh → 再同步 → 再断开" 的
     /// 连接风暴，并放大扫描竞态。只有意外断开（信号丢失等）且用户开启了自动重连时才重连。
-    public static func shouldAutoReconnect(isIntentional: Bool, autoReconnectEnabled: Bool) -> Bool {
-        autoReconnectEnabled && !isIntentional
+    public static func shouldAutoReconnect(
+        isIntentional: Bool,
+        autoReconnectEnabled: Bool,
+        suppressForShippingMode: Bool = false
+    ) -> Bool {
+        autoReconnectEnabled && !isIntentional && !suppressForShippingMode
     }
 
     /// 固件联调是否仍依赖当前 BLE 控制通道。
     public static func shouldKeepConnectionOpenForDebug(
         keepAliveEnabled: Bool,
-        wifiDebugRequiresConnection: Bool
+        wifiDebugRequiresConnection: Bool,
+        shippingModeRequiresConnection: Bool = false
     ) -> Bool {
-        keepAliveEnabled || wifiDebugRequiresConnection
+        keepAliveEnabled || wifiDebugRequiresConnection || shippingModeRequiresConnection
     }
 
     /// 迟到 delegate 回调的准入判定（代次门 + 外设身份，两道都过才处理）。

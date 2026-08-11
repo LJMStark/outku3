@@ -40,4 +40,24 @@ struct AppBuildEnvironmentTests {
             arguments: ["swiftpm-testing-helper", "--test-bundle-path", "/x/KiroleFeaturePackageTests.xctest/Contents/MacOS/KiroleFeaturePackageTests"]
         ))
     }
+
+    @Test("factory tools are hidden from App Store builds")
+    func factoryToolVisibility() {
+        #expect(AppBuildEnvironment.shouldShowFactoryDebugTools(
+            isDebugBuild: true,
+            receiptName: nil
+        ))
+        #expect(AppBuildEnvironment.shouldShowFactoryDebugTools(
+            isDebugBuild: false,
+            receiptName: "sandboxReceipt"
+        ))
+        #expect(!AppBuildEnvironment.shouldShowFactoryDebugTools(
+            isDebugBuild: false,
+            receiptName: "receipt"
+        ))
+        #expect(!AppBuildEnvironment.shouldShowFactoryDebugTools(
+            isDebugBuild: false,
+            receiptName: nil
+        ))
+    }
 }

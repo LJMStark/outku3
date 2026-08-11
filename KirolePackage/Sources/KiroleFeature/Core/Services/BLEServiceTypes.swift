@@ -74,6 +74,7 @@ public enum BLEError: LocalizedError, Sendable {
     case writeTimeout
     case scanAlreadyInProgress
     case connectionInProgress
+    case shippingModeActive
     case staleTaskSnapshot
 
     public var errorDescription: String? {
@@ -106,6 +107,8 @@ public enum BLEError: LocalizedError, Sendable {
             return "A BLE scan is already in progress"
         case .connectionInProgress:
             return "A BLE connection is already in progress"
+        case .shippingModeActive:
+            return "Automatic BLE work is paused while shipping mode is active"
         case .staleTaskSnapshot:
             return "Task snapshot was superseded before transmission"
         }

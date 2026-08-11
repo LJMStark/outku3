@@ -22,6 +22,7 @@ import Foundation
 //   0x19 wifiDebugMode   Wi-Fi PC 调试模式（App 命令 00/01/02；Device 应答 enabled+status）
 //   0x1A wifiAvatarSession SoftAP 头像快传会话（双向回显 command+OpID；Device 再带 status+凭据/端点）
 //   0x1B taskListSnapshotAck 完成/跳过/刷新请求的业务确认 + 当前 Overview 任务全量快照
+//   0x1C shippingMode    工厂运输模式（payload 01；无业务 ACK，以设备断连为生效信号）
 //   0x20 eventLogRequest 请求增量 Event Log
 //   0x21 eventLogBatch   批量回传 Event Log（Device→App，此 type 仅出现在入站方向）
 //   0x22 avatarControl   自定义头像提交、擦除、查询、取消与设备结果
@@ -87,12 +88,22 @@ public enum BLEDataType: UInt8, Sendable {
     /// App→Device：设备任务操作的业务确认与当前 Overview 任务全量快照。
     /// payload 见 `TaskListSnapshotAck` / `BLEDataEncoder.encodeTaskListSnapshotAck`。
     case taskListSnapshotAck = 0x1B
+    /// App→Device：工厂运输模式。只允许从工厂调试入口发送；payload 固定为 0x01。
+    case shippingMode = 0x1C
     case eventLogRequest = 0x20
     case eventLogBatch = 0x21
     /// 双向实时帧：App 发 commit/erase/query/abort，设备回 staged/committed/erased/state/aborted。
     case avatarControl = 0x22
     case secureData = 0x7E
     case securityHandshake = 0x7F
+}
+
+/// App→Device：ShippingMode (0x1C) 工厂命令。
+/// 设备不回业务 ACK；收到 `enable` 后会主动断开 BLE 并进入运输模式。
+public enum BLEShippingModeCommand: UInt8, Sendable, Equatable {
+    case enable = 0x01
+
+    public var payload: Data { Data([rawValue]) }
 }
 
 // MARK: - WiFi Avatar Session (0x1A)

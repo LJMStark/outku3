@@ -8,10 +8,12 @@ public struct SettingsBLESection: View {
     @State private var bleService = BLEService.shared
     @State private var otaCoordinator = BLEOTACoordinator.shared
     @State private var wifiDebugCoordinator = BLEWiFiDebugCoordinator.shared
+    @State private var shippingModeCoordinator = BLEShippingModeCoordinator.shared
     @State private var trustedDeviceCount: Int = 0
     @State private var blockedDeviceCount: Int = 0
     @State private var showClearIdentityConfirmation = false
     @State private var showOTAUpgradeConfirmation = false
+    @State private var showShippingModeConfirmation = false
     @State private var keepAliveEnabled = false
     @State private var screenSize: ScreenSize = .fourInch
 
@@ -32,6 +34,10 @@ public struct SettingsBLESection: View {
             if AppBuildEnvironment.showsHardwareDebugTools {
                 wifiDebugCard
                 keepAliveCard
+            }
+
+            if AppBuildEnvironment.showsFactoryDebugTools {
+                shippingModeCard
             }
 
             #if DEBUG
@@ -66,6 +72,16 @@ public struct SettingsBLESection: View {
             }
         } message: {
             Text("The device will restart and apply the staged update.bin (about 20 seconds). Make sure update.bin was uploaded via the device WiFi AP first.")
+        }
+        .alert("Enable Shipping Mode?", isPresented: $showShippingModeConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Enable", role: .destructive) {
+                Task { @MainActor in
+                    await shippingModeCoordinator.enable()
+                }
+            }
+        } message: {
+            Text("The device will shut down and disconnect. To wake it again, hold the power button for 10 seconds or connect USB power for 10 seconds. Shipping mode turns off after wake-up.")
         }
     }
 
@@ -260,8 +276,9 @@ public struct SettingsBLESection: View {
         let hasFocusSession = FocusSessionService.shared.activeSession != nil
         let isConnected = bleService.connectionState.isConnected
         let isBusy = otaState == .sending || otaState == .awaitingReboot
+        let shippingModeInProgress = shippingModeCoordinator.blocksAutomaticBLEWork
         let isDisabled: Bool = {
-            if hasFocusSession { return true }
+            if hasFocusSession || shippingModeInProgress { return true }
             switch otaState {
             // 0x18 需要活跃连接才能送达；断连时禁用，防止点击后悬在 Sending...
             case .idle, .failed: return !isConnected
@@ -478,6 +495,88 @@ public struct SettingsBLESection: View {
             return "Stopping the device Wi-Fi debug access point..."
         case .failed:
             return "The Wi-Fi debug command failed. Toggle again to retry."
+        }
+    }
+
+    @MainActor
+    private var shippingModeCard: some View {
+        let isConnected = bleService.connectionState.isConnected
+        let isBusy = shippingModeCoordinator.state == .sending
+            || shippingModeCoordinator.state == .awaitingDisconnect
+        let otaInProgress = otaCoordinator.isBusy
+
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: "shippingbox.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Color.red)
+
+                Text("Shipping Mode (Factory)")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(theme.colors.primaryText)
+
+                Spacer()
+
+                if isBusy {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                        .tint(Color.red)
+                }
+            }
+
+            Text(shippingModeDescription(isConnected: isConnected))
+                .font(.system(size: 12))
+                .foregroundStyle(shippingModeTextColor)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button(role: .destructive) {
+                showShippingModeConfirmation = true
+            } label: {
+                Text(isBusy ? "Waiting for Device..." : "Enable Shipping Mode")
+                    .font(.system(size: 13, weight: .semibold))
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(Color.red)
+            .disabled(!isConnected || isBusy || otaInProgress)
+            .accessibilityHint("Puts the device into factory shipping mode after confirmation")
+            .accessibilityIdentifier("Settings_EnableShippingMode")
+        }
+        .padding(16)
+        .background(theme.colors.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 24))
+        .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("Settings_ShippingModeCard")
+    }
+
+    private var shippingModeTextColor: Color {
+        if case .failed = shippingModeCoordinator.state {
+            return .red
+        }
+        return theme.colors.secondaryText
+    }
+
+    private func shippingModeDescription(isConnected: Bool) -> String {
+        switch shippingModeCoordinator.state {
+        case .idle:
+            return isConnected
+                ? "Factory only. The device will shut down and disconnect immediately."
+                : "Connect your Kirole device before enabling factory shipping mode."
+        case .sending:
+            return "Sending the factory shipping-mode command..."
+        case .awaitingDisconnect:
+            return "Command sent. Waiting for the device to disconnect and confirm activation..."
+        case .activated:
+            return "Shipping mode is active. Hold the power button for 10 seconds or connect USB power for 10 seconds to wake the device."
+        case .failed(.sendFailed):
+            return "The command could not be sent. Check the BLE connection and try again."
+        case .failed(.didNotDisconnect):
+            return "The device did not disconnect, so the App cannot confirm shipping mode. Try again or check the firmware."
+        case .failed(.activationUnconfirmed):
+            return "The BLE connection was closed by the App, so shipping mode was not confirmed. Reconnect and try again."
+        case .failed(.conflictingDeviceOperation):
+            return "Wait for the firmware update to finish before enabling shipping mode."
         }
     }
 

@@ -61,4 +61,28 @@ public enum AppBuildEnvironment {
     public static var showsHardwareDebugTools: Bool {
         true
     }
+
+    /// 是否显示会改变设备出厂状态的工厂工具。
+    ///
+    /// 工厂命令比普通联调开关更危险：Debug 与 TestFlight 可见，App Store 正式包隐藏。
+    /// TestFlight 只看收据文件名，不要求文件已经落盘；StoreKit 2 下收据文件可能不存在，
+    /// 但 `appStoreReceiptURL` 仍能提供 `sandboxReceipt` / `receipt` 的安装来源差异。
+    public static var showsFactoryDebugTools: Bool {
+        #if DEBUG
+        let isDebugBuild = true
+        #else
+        let isDebugBuild = false
+        #endif
+        return shouldShowFactoryDebugTools(
+            isDebugBuild: isDebugBuild,
+            receiptName: Bundle.main.appStoreReceiptURL?.lastPathComponent
+        )
+    }
+
+    static func shouldShowFactoryDebugTools(
+        isDebugBuild: Bool,
+        receiptName: String?
+    ) -> Bool {
+        isDebugBuild || receiptName == "sandboxReceipt"
+    }
 }
