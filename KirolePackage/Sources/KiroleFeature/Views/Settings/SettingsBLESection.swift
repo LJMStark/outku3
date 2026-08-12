@@ -4,6 +4,7 @@ import SwiftUI
 
 public struct SettingsBLESection: View {
     @Environment(ThemeManager.self) private var theme
+    @Environment(\.focusService) private var focusService
     @State private var energyBottles: Int = 0
     @State private var bleService = BLEService.shared
     @State private var otaCoordinator = BLEOTACoordinator.shared
@@ -75,11 +76,15 @@ public struct SettingsBLESection: View {
         }
         .alert("Enable Shipping Mode?", isPresented: $showShippingModeConfirmation) {
             Button("Cancel", role: .cancel) {}
+                .accessibilityLabel("Cancel shipping mode")
+                .accessibilityIdentifier("Settings_CancelShippingMode")
             Button("Enable", role: .destructive) {
                 Task { @MainActor in
                     await shippingModeCoordinator.enable()
                 }
             }
+            .accessibilityLabel("Confirm shipping mode")
+            .accessibilityIdentifier("Settings_ConfirmShippingMode")
         } message: {
             Text("The device will shut down and disconnect. To wake it again, hold the power button for 10 seconds or connect USB power for 10 seconds. Shipping mode turns off after wake-up.")
         }
@@ -273,7 +278,7 @@ public struct SettingsBLESection: View {
     @MainActor
     private var otaUpgradeCard: some View {
         let otaState = otaCoordinator.state
-        let hasFocusSession = FocusSessionService.shared.activeSession != nil
+        let hasFocusSession = focusService.activeSession != nil
         let isConnected = bleService.connectionState.isConnected
         let isBusy = otaState == .sending || otaState == .awaitingReboot
         let shippingModeInProgress = shippingModeCoordinator.blocksAutomaticBLEWork
@@ -504,6 +509,7 @@ public struct SettingsBLESection: View {
         let isBusy = shippingModeCoordinator.state == .sending
             || shippingModeCoordinator.state == .awaitingDisconnect
         let otaInProgress = otaCoordinator.isBusy
+        let hasFocusSession = focusService.activeSession != nil
 
         return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
@@ -524,7 +530,10 @@ public struct SettingsBLESection: View {
                 }
             }
 
-            Text(shippingModeDescription(isConnected: isConnected))
+            Text(shippingModeDescription(
+                isConnected: isConnected,
+                hasFocusSession: hasFocusSession
+            ))
                 .font(.system(size: 12))
                 .foregroundStyle(shippingModeTextColor)
                 .fixedSize(horizontal: false, vertical: true)
@@ -538,7 +547,8 @@ public struct SettingsBLESection: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(Color.red)
-            .disabled(!isConnected || isBusy || otaInProgress)
+            .disabled(!isConnected || isBusy || otaInProgress || hasFocusSession)
+            .accessibilityLabel(isBusy ? "Shipping mode activation in progress" : "Enable shipping mode")
             .accessibilityHint("Puts the device into factory shipping mode after confirmation")
             .accessibilityIdentifier("Settings_EnableShippingMode")
         }
@@ -557,7 +567,10 @@ public struct SettingsBLESection: View {
         return theme.colors.secondaryText
     }
 
-    private func shippingModeDescription(isConnected: Bool) -> String {
+    private func shippingModeDescription(isConnected: Bool, hasFocusSession: Bool) -> String {
+        if hasFocusSession {
+            return "End the active focus session before enabling factory shipping mode."
+        }
         switch shippingModeCoordinator.state {
         case .idle:
             return isConnected
@@ -576,7 +589,7 @@ public struct SettingsBLESection: View {
         case .failed(.activationUnconfirmed):
             return "The BLE connection was closed by the App, so shipping mode was not confirmed. Reconnect and try again."
         case .failed(.conflictingDeviceOperation):
-            return "Wait for the firmware update to finish before enabling shipping mode."
+            return "End the active focus session or wait for the firmware update before enabling shipping mode."
         }
     }
 

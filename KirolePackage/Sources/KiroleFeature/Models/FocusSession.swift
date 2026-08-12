@@ -142,6 +142,7 @@ public enum FocusSessionStartResult: Sendable {
     case started(FocusSession)
     case alreadyActive(FocusSession)
     case blockedByActiveSession(FocusSession)
+    case blockedByDeviceOperation
     case rejected(FocusInterruptionSource)
     case persistenceUnavailable
 }

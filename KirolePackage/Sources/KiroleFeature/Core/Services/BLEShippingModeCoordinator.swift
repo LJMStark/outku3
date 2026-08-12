@@ -36,6 +36,7 @@ public final class BLEShippingModeCoordinator {
 
     /// 发送开始后停止普通同步和自动连接；只有明确的手动重连才解除。
     public var blocksAutomaticBLEWork: Bool {
+        if expectedDisconnectArmed { return true }
         switch state {
         case .sending, .awaitingDisconnect, .activated:
             return true
@@ -46,25 +47,31 @@ public final class BLEShippingModeCoordinator {
 
     /// 普通同步、看门狗和后台任务不能在命令发送与设备主动断连之间关闭 BLE。
     public var requiresCurrentConnection: Bool {
-        state == .sending || state == .awaitingDisconnect
+        expectedDisconnectArmed || state == .sending || state == .awaitingDisconnect
     }
 
     private let disconnectTimeout: Duration
+    private let lateDisconnectGrace: Duration
     private let canStart: CanStart
     private let setPendingDisconnect: SetPendingDisconnect
     private let sendCommand: SendCommand
     private var expectedDisconnectArmed = false
     private var timeoutTask: Task<Void, Never>?
+    private var lateDisconnectTask: Task<Void, Never>?
 
     private init(
         disconnectTimeout: Duration = .seconds(10),
+        lateDisconnectGrace: Duration = .seconds(2),
         canStart: CanStart? = nil,
         setPendingDisconnect: SetPendingDisconnect? = nil,
         sendCommand: SendCommand? = nil
     ) {
         self.disconnectTimeout = disconnectTimeout
+        self.lateDisconnectGrace = lateDisconnectGrace
         self.canStart = canStart ?? {
             !BLEOTACoordinator.shared.isBusy
+                && FocusSessionService.shared.activeSession == nil
+                && !FocusSessionService.shared.isStartingSession
         }
         self.setPendingDisconnect = setPendingDisconnect ?? { isPending in
             BLEService.shared.isPendingShippingModeActivation = isPending
@@ -78,12 +85,14 @@ public final class BLEShippingModeCoordinator {
 
     static func makeForTesting(
         disconnectTimeout: Duration,
+        lateDisconnectGrace: Duration = .seconds(2),
         canStart: @escaping CanStart = { true },
         setPendingDisconnect: @escaping SetPendingDisconnect,
         sendCommand: @escaping SendCommand
     ) -> BLEShippingModeCoordinator {
         BLEShippingModeCoordinator(
             disconnectTimeout: disconnectTimeout,
+            lateDisconnectGrace: lateDisconnectGrace,
             canStart: canStart,
             setPendingDisconnect: setPendingDisconnect,
             sendCommand: sendCommand
@@ -98,8 +107,8 @@ public final class BLEShippingModeCoordinator {
             return
         }
 
-        cancelTimeout()
-        expectedDisconnectArmed = false
+        cancelPendingTimers()
+        clearExpectedDisconnect()
         state = .sending
 
         do {
@@ -118,24 +127,30 @@ public final class BLEShippingModeCoordinator {
             scheduleTimeout()
         } catch {
             guard state != .activated else { return }
-            clearExpectedDisconnect()
-            state = .failed(.sendFailed)
+            guard expectedDisconnectArmed else {
+                state = .failed(.sendFailed)
+                return
+            }
+            // CoreBluetooth may report the write error before delivering the device's disconnect.
+            // Once writeValue was reached, keep the disconnect route armed and let the device's
+            // disconnect remain authoritative instead of misreporting failure and reconnecting.
+            state = .awaitingDisconnect
+            scheduleTimeout()
         }
     }
 
     /// 由 BLEService 在 0x1C 发送后的预期断连中调用。
     public func handleExpectedDisconnect() {
-        guard expectedDisconnectArmed,
-              state == .sending || state == .awaitingDisconnect else { return }
-        cancelTimeout()
+        guard expectedDisconnectArmed else { return }
+        cancelPendingTimers()
         clearExpectedDisconnect()
         state = .activated
     }
 
     /// App 主动断开不能冒充设备的生效信号。
     public func handleUnconfirmedDisconnect() {
-        guard state == .sending || state == .awaitingDisconnect else { return }
-        cancelTimeout()
+        guard expectedDisconnectArmed else { return }
+        cancelPendingTimers()
         clearExpectedDisconnect()
         state = .failed(.activationUnconfirmed)
     }
@@ -147,7 +162,7 @@ public final class BLEShippingModeCoordinator {
     }
 
     public func reset() {
-        cancelTimeout()
+        cancelPendingTimers()
         clearExpectedDisconnect()
         state = .idle
     }
@@ -158,8 +173,21 @@ public final class BLEShippingModeCoordinator {
             guard let self else { return }
             try? await Task.sleep(for: disconnectTimeout)
             guard !Task.isCancelled, state == .awaitingDisconnect else { return }
-            clearExpectedDisconnect()
+            // Keep the one-shot disconnect route armed. A device can disconnect just after this
+            // UI timeout; that late signal must still suppress auto-reconnect and confirm success.
             state = .failed(.didNotDisconnect)
+            scheduleLateDisconnectGrace()
+        }
+    }
+
+    private func scheduleLateDisconnectGrace() {
+        lateDisconnectTask?.cancel()
+        lateDisconnectTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            try? await Task.sleep(for: lateDisconnectGrace)
+            guard !Task.isCancelled,
+                  state == .failed(.didNotDisconnect) else { return }
+            clearExpectedDisconnect()
         }
     }
 
@@ -172,5 +200,11 @@ public final class BLEShippingModeCoordinator {
     private func cancelTimeout() {
         timeoutTask?.cancel()
         timeoutTask = nil
+    }
+
+    private func cancelPendingTimers() {
+        cancelTimeout()
+        lateDisconnectTask?.cancel()
+        lateDisconnectTask = nil
     }
 }

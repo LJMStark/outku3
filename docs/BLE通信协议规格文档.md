@@ -1,10 +1,10 @@
 # Kirole BLE 通信协议规格文档
 
-**版本:** v2.10.1
-**更新日期:** 2026-07-30
-**状态:** v2.10.1 不改 wire 字节，修正在线 Complete/Skip 的显示提交顺序：App 完成状态落盘后等待最新任务版本的 AI 对话，先发送最终 `DayPack(0x10)`，成功后才发送同版本的 `TaskListSnapshotAck(0x1B)`。固件在 TaskIn/pending 期间收到该 DayPack 只更新后台缓存，不刷屏；收到匹配 `0x1B` 后一次性退出 TaskIn、应用缓存和任务清单，只刷新一次。`RequestRefresh(0x20)` 仍立即回 `0x1B`。
+**版本:** v2.11.0
+**更新日期:** 2026-08-12
+**状态:** v2.11.0 新增工厂运输模式命令 `ShippingMode(0x1C)`：App 发送 1B `0x01`，设备不回业务 ACK，设备主动断开 BLE 即表示生效。App 随后禁止自动重连；设备仅可通过长按电源键 10 秒或持续接入 USB 电源 10 秒唤醒，唤醒后固件自动关闭运输模式。
 
-v2.9.0 的严格请求、OperationID 幂等和 `0x1B` 权威快照仍生效；v2.10.1 只把在线 Complete/Skip 的 `0x1B` 延后到最终 DayPack 之后。App 是任务最终状态来源；GATT `.withResponse` 只代表传输确认，不能替代 `0x1B` 业务确认。
+v2.10.1 的在线 Complete/Skip 时序、v2.9.0 的严格请求、OperationID 幂等和 `0x1B` 权威快照仍生效。App 是任务最终状态来源；GATT `.withResponse` 只代表传输确认，不能替代业务确认。`0x1C` 没有业务 ACK，其唯一成功信号是命令开始写入后设备主动断开。
 
 ---
 
@@ -97,6 +97,7 @@ v2.9.0 的严格请求、OperationID 幂等和 `0x1B` 权威快照仍生效；v2
 | v2.10.0 | 2026-07-28 | **日程支持性文字（破坏性 flag-day）**：① **DayPack(0x10)** Events[] 每条在 `EndTime` 后追加 `SupportText`（1+N bytes，≤120B ASCII）——该日程**进行中**时显示的一句支持性文字，**排版位置由固件自行决定**（App 只给文案）。生成规则按该事件的 `Category` 六类分派（客户 2026-07-28 规范）：Deep Work 只指向最小第一步 / Meetings 轻量准备提示 / Admin 框成自我小挑战 / Deadline 安抚不加压 / Wellness 温和非临床提醒 / Rest 给许可不派任务；通用规则=不编造数据里没有的具体事实、一句话两秒扫读、纯 ASCII。App 侧：批量 AI 生成 + 按「标题\|描述\|类别」缓存 + 按类别确定性模板兜底（**永不发空串**）+ AI 失败 10 分钟冷却。固件解析器须同步读取（§7.1 严格解析——读完 `EndTime` 必须再读这个长度前缀字符串，否则整体错位）。② **TaskInPage(0x11)** `Encouragement` **槽位改装**为「按按钮进入任务」的支持性文字，恒用 **Deep Work** 规则（`TaskItem` 无类别字段，客户拍板）；上限 50→**80 bytes**（客户例句最长 70B，50B 会静默截断），长度前缀不变故非 wire 形状变更，但固件行缓冲需容纳 80B。⚠️ **「鼓励语 / Tips」仍按 v2.6.0 停用、未被推翻**——这是 App 复用空槽承载新需求的实现决定，固件勿恢复当年 Tips 的渲染逻辑/位置。③ **伴侣 IP prompt 重写**（客户 2026-07-28，不上 wire）：三个角色改为显式双模——Mode A（~80% 日常口吻）+ Mode B（~20% 值得记住的时刻）；**Joy 的 Mode B 改为生成式**（自己写一句可引用的话、不署名、不加引号），Silas/Nova 的 Mode B 仍为**确定性白名单引用**（公版来源逐句核验：KJV / Marcus Aurelius / Sun Tzu / Seneca），并把引用格式由 `"text" (source).` 统一为 `"text" - source`。**⚠️ 与客户原文的已知偏差（有意，需客户知悉）**：客户规范写的分隔符是 em dash（`"[exact quoted line]" — [Source]`），实现用 ASCII 连字符 `-`。原因是 §3.5 的 wire 约束——出站文本一律净化为可打印 ASCII（`0x20`–`0x7E`），em dash 到固件必被转成 `-`（否则渲染成豆腐块）。若 App 内保留 `—` 而硬件显示 `-`，同一句话在两处不一致、且要维护两份格式；故三处（Swift `deterministicOutput` / Studio 校验 / Studio 运行时）统一用 `-`。客户若要求 App 内严格保留 em dash，改动范围=这三处 + 重生成 golden fixtures，硬件侧仍只能是 `-`。**Mode B 触发时机由 App 判定**（客户要求 «chosen externally by the system»）：只在"一天结算"这组时刻放行（日终结算语 + 每日总结页两支金句），日常场景（早安 / 陪伴 / 任务鼓励 / 日程提醒 / 空闲）恒 Mode A——此前一律 20% 随机会让早安语冒出署名引用。白名单引用**按当下情绪筛选**（每句带 tone 标签，庆祝时刻不抽安慰句、超载时刻不抽凯歌句）；App 侧另加词数校验（joy 25 / silas 15·20 / nova 20·25），超词即重试或回落兜底。§4.7/§4.8 |
 
 | v2.10.1 | 2026-07-30 | **在线任务动作单次刷屏时序（wire 不变）**：Complete/Skip 状态落盘后，App 等当前任务版本的 AI 对话，先发送最终 DayPack，再发送绑定同一任务版本的 `0x1B`。DayPack 失败时不发 `0x1B`；生成/发送期间任务版本变化时废弃旧组合并重新生成。固件在 TaskIn/pending 内收到 DayPack 只换后台缓存、不刷屏；匹配 `0x1B` 到达后一次性退出并刷新。RequestRefresh 与离线批次确认保持原规则。§5.4/§5.5/§5.16/§6.2 |
+| v2.11.0 | 2026-08-12 | **新增工厂运输模式 `ShippingMode(0x1C)`**：App→Device payload 固定为 `0x01`，明文完整帧为 `1C 00 01 01`；无业务 ACK，设备主动断开是唯一成功信号。App 在 GATT 写入完成或报错后等待断连 10 秒，界面超时后再保留 2 秒一次性宽限期；期限内的迟到断连仍确认成功并禁止自动重连，超过期限则不再作为运输模式成功信号。专注或 OTA 期间不发送。长按电源键 10 秒或接入 USB 电源 10 秒唤醒，唤醒后固件自动关闭运输模式。§2.4/§4.1/§4.22/附录 A |
 
 | 术语 | 定义 |
 |---------------|------------------------------------------------------|
@@ -160,6 +161,7 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 | `0x19` | WiFiDebugMode | WiFiDebugResult |
 | `0x1A` | WiFiAvatarSession | WiFiAvatarSessionResult |
 | `0x1B` | TaskListSnapshotAck | 未定义 |
+| `0x1C` | ShippingMode | 未定义 |
 | `0x20` | EventLogRequest | RequestRefresh |
 | `0x21` | 暂无 App 出站业务使用 | EventLogBatch |
 | `0x22` | AvatarControl | AvatarControlResult |
@@ -311,6 +313,7 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 | `0x19` | WiFiDebugMode | 开启、关闭或查询设备的 PC Wi-Fi 调试模式（1B 命令；详见 §4.18） |
 | `0x1A` | WiFiAvatarSession | 开启/关闭/查询 SoftAP 头像快速传输会话（5B 命令）；`open` 时设备回报热点凭据 + HTTP 收图端点，详见 §4.20 |
 | `0x1B` | TaskListSnapshotAck | 完成、跳过或刷新请求的业务确认 + 当前 Overview 完整任务快照，详见 §4.21 |
+| `0x1C` | ShippingMode | 工厂运输模式开启命令（payload 固定 `0x01`；无业务 ACK，以设备主动断开确认生效，详见 §4.22） |
 | `0x20` | EventLogRequest | 请求指定时间戳之后的事件日志 |
 | `0x22` | AvatarControl | 提交、精确擦除、全部擦除、查询或取消头像事务，详见 §4.19 |
 | `0x7E` | SecureData | 安全业务封装（v2） |
@@ -1049,6 +1052,40 @@ IsCompleted(1) | Priority(1)
 **App 生成规则：** `StateEpoch + Revision` 保存在同一个原子替换文件中，不能拆成两次 `UserDefaults` 写入。App 在任务状态消息闸内先持久化新版本，再读取当时最新的 Overview 清单并冻结完整 payload；`0x1B` 的全部写入及同一 payload 的 GATT 重试结束后才释放闸，保证 DayPack 不会插入其中。版本持久化失败时不发送半成品确认。
 
 > **确认边界：** GATT `.withResponse` 只证明 BLE 特征写入获得传输层响应。只有匹配的 `0x1B` 才是完成/跳过/刷新在 App 业务状态上的确认。设备可以在等待期间显示 `pending`，但不能把本地删除当作最终状态。
+
+---
+
+### 4.22 ShippingMode (0x1C)
+
+工厂调试入口用于让设备进入低功耗运输模式。该命令会主动关闭当前 BLE 连接，App Store 正式版本不得显示入口。
+
+**Payload：**
+
+| Offset | Field | Size | 值 | 说明 |
+|--------|-------|------|----|------|
+| 0 | Command | 1 byte | `0x01` | 开启运输模式；其他值保留，固件不得执行 |
+
+**明文完整帧：**
+
+```text
+1C 00 01 01
+```
+
+安全模式下仍使用 §3.4 的通用 `SecureEnvelope(0x7E)`：内层 `payloadType=0x1C`、`payloadLen=0x0001`、payload=`0x01`。固件不发送 `0x1C` 应答。
+
+**设备行为：**
+
+1. 固件收到并校验合法命令后进入运输模式，主动断开当前 BLE 连接，不发送业务 ACK。
+2. 未收到 App 新命令前，不得因为普通连接中断自行进入运输模式。
+3. 运输模式只能通过长按电源键 10 秒，或持续接入 USB 电源 10 秒唤醒。
+4. 唤醒后固件自动关闭运输模式，恢复正常启动和 BLE 广播。
+
+**App 行为：**
+
+1. 只在工厂调试区域提供入口，并进行二次确认；专注会话或 OTA 进行中不得发送。
+2. App 在调用 CoreBluetooth `writeValue` 前先标记本次预期断连。开始写入后，设备主动断开是唯一成功信号；没有业务 ACK。
+3. CoreBluetooth 写回调可能先报错误，设备断连回调也可能晚于 App 的界面等待时间。GATT 写入完成或报错后，App 等待设备断连 10 秒；界面超时后再保留 2 秒一次性宽限期。期限内设备主动断开仍按成功处理并禁止自动重连；超过该期限的断连不再作为运输模式成功信号，App 恢复普通 BLE 工作。
+4. 用户或 App 主动断开不能冒充运输模式成功。设备重新唤醒并由用户手动连接后，App 清除本地运输模式状态。
 
 ---
 
@@ -2099,6 +2136,7 @@ public enum BLEDataType: UInt8, Sendable {
     case wifiDebugMode = 0x19      // App→Device: 开启/关闭/查询 PC Wi-Fi 调试模式，见 §4.18
     case wifiAvatarSession = 0x1A  // 双向：SoftAP 头像快传会话开关 + 热点凭据/端点应答，见 §4.20/§5.20
     case taskListSnapshotAck = 0x1B // App→Device: v2.9 任务动作/刷新业务确认 + Overview 完整快照，见 §4.21
+    case shippingMode = 0x1C       // App→Device: 工厂运输模式开启命令，见 §4.22
     case eventLogRequest = 0x20
     case avatarControl = 0x22      // 双向：提交/擦除/查询/取消及结果
     case eventLogBatch = 0x21

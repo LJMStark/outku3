@@ -18,12 +18,19 @@ enum HardwareFocusSettlementResult: Sendable, Equatable {
 @Observable
 @MainActor
 public final class FocusSessionService {
+    typealias CanStartSession = @MainActor () -> Bool
+
     public static let shared = FocusSessionService()
 
     // MARK: - State
 
     /// 当前活跃的专注会话
     public internal(set) var activeSession: FocusSession?
+    private var sessionStartRequestsInFlight = 0
+
+    public var isStartingSession: Bool {
+        sessionStartRequestsInFlight > 0
+    }
 
     /// 今日所有专注会话
     public internal(set) var todaySessions: [FocusSession] = []
@@ -45,6 +52,7 @@ public final class FocusSessionService {
     let localStorage: LocalStorage
     let focusPersistence: any FocusSessionPersisting
     let taskOperationLedger: TaskOperationLedger
+    private let canStartSession: CanStartSession
     let focusGuardService: any FocusGuardService
     let interruptionDetector: any FocusInterruptionDetecting
     let persistenceEnabled: Bool
@@ -88,6 +96,7 @@ public final class FocusSessionService {
         localStorage: LocalStorage = .shared,
         focusPersistence: (any FocusSessionPersisting)? = nil,
         taskOperationLedger: TaskOperationLedger = .shared,
+        canStartSession: CanStartSession? = nil,
         focusGuardService: any FocusGuardService = ScreenTimeFocusGuardService.shared,
         interruptionDetector: (any FocusInterruptionDetecting)? = nil,
         persistenceEnabled: Bool = true,
@@ -97,6 +106,9 @@ public final class FocusSessionService {
         self.localStorage = localStorage
         self.focusPersistence = focusPersistence ?? LocalFocusSessionPersistence(storage: localStorage)
         self.taskOperationLedger = taskOperationLedger
+        self.canStartSession = canStartSession ?? {
+            !BLEShippingModeCoordinator.shared.blocksAutomaticBLEWork
+        }
         self.focusGuardService = focusGuardService
         self.interruptionDetector = interruptionDetector ?? ScreenTimeInterruptionDetector.shared
         self.persistenceEnabled = persistenceEnabled
@@ -123,12 +135,14 @@ public final class FocusSessionService {
         persistenceEnabled: Bool = false,
         launchRecoveryCompleted: Bool = true,
         focusPersistence: (any FocusSessionPersisting)? = nil,
-        taskOperationLedger: TaskOperationLedger = .shared
+        taskOperationLedger: TaskOperationLedger = .shared,
+        canStartSession: @escaping CanStartSession = { true }
     ) -> FocusSessionService {
         FocusSessionService(
             localStorage: .shared,
             focusPersistence: focusPersistence,
             taskOperationLedger: taskOperationLedger,
+            canStartSession: canStartSession,
             focusGuardService: focusGuardService,
             interruptionDetector: interruptionDetector,
             persistenceEnabled: persistenceEnabled,
@@ -270,6 +284,10 @@ public final class FocusSessionService {
         startTime: Date = Date(),
         fallbackPolicy: FocusSessionFallbackPolicy = .allowStandard
     ) async -> FocusSessionStartResult {
+        guard canStartSession() else { return .blockedByDeviceOperation }
+        sessionStartRequestsInFlight += 1
+        defer { sessionStartRequestsInFlight -= 1 }
+
         // Cold-start recovery owns the active-session file until it has loaded, settled, cleared,
         // and saved the previous session. Starting sooner can make recovery settle or delete the
         // brand-new session that arrived from hardware during launch.

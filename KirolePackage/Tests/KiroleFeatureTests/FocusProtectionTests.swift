@@ -19,6 +19,7 @@ private final class MockFocusGuardService: FocusGuardService {
     var requestAuthorizationResult: FocusAuthorizationStatus?
     var applyShieldError: FocusGuardError?
     var selection: FocusAppSelection?
+    var onRefreshAuthorizationStatus: (@MainActor () async -> Void)?
 
     init(
         authorizationStatus: FocusAuthorizationStatus,
@@ -34,7 +35,9 @@ private final class MockFocusGuardService: FocusGuardService {
         self.selection = selection
     }
 
-    func refreshAuthorizationStatus() async {}
+    func refreshAuthorizationStatus() async {
+        await onRefreshAuthorizationStatus?()
+    }
 
     func requestAuthorization() async -> FocusAuthorizationStatus {
         requestAuthorizationCalls += 1
@@ -66,6 +69,81 @@ private final class MockFocusGuardService: FocusGuardService {
 
 @Suite("Focus Protection Tests")
 struct FocusProtectionTests {
+    @Test("Shipping mode blocks a focus session before protection work starts")
+    @MainActor
+    func shippingModeBlocksFocusStart() async {
+        let guardService = MockFocusGuardService(authorizationStatus: .approved)
+        var pendingValues: [Bool] = []
+        let shippingCoordinator = BLEShippingModeCoordinator.makeForTesting(
+            disconnectTimeout: .seconds(1),
+            setPendingDisconnect: { pendingValues.append($0) },
+            sendCommand: { armExpectedDisconnect in armExpectedDisconnect() }
+        )
+        await shippingCoordinator.enable()
+        let service = FocusSessionService.makeForTesting(
+            focusGuardService: guardService,
+            persistenceEnabled: false,
+            canStartSession: { !shippingCoordinator.blocksAutomaticBLEWork }
+        )
+
+        let result = await service.startSession(
+            taskId: "shipping-blocked",
+            taskTitle: "Shipping Blocked",
+            mode: .deepFocus
+        )
+
+        guard case .blockedByDeviceOperation = result else {
+            Issue.record("Expected shipping mode to block focus startup")
+            return
+        }
+        #expect(service.activeSession == nil)
+        #expect(guardService.applyShieldCalls == 0)
+        #expect(pendingValues == [true])
+        shippingCoordinator.reset()
+    }
+
+    @Test("A focus session starting across an await blocks shipping mode")
+    @MainActor
+    func focusStartInFlightBlocksShippingMode() async {
+        let focusStartGate = FocusStartGate()
+        let guardService = MockFocusGuardService(authorizationStatus: .approved)
+        guardService.onRefreshAuthorizationStatus = {
+            await focusStartGate.suspendUntilReleased()
+        }
+        let service = FocusSessionService.makeForTesting(
+            focusGuardService: guardService,
+            persistenceEnabled: false
+        )
+        var sendCount = 0
+        let shippingCoordinator = BLEShippingModeCoordinator.makeForTesting(
+            disconnectTimeout: .seconds(1),
+            canStart: {
+                service.activeSession == nil && !service.isStartingSession
+            },
+            setPendingDisconnect: { _ in },
+            sendCommand: { _ in sendCount += 1 }
+        )
+
+        let focusTask = Task { @MainActor in
+            await service.startSession(
+                taskId: "focus-starting",
+                taskTitle: "Focus Starting",
+                mode: .deepFocus
+            )
+        }
+        await focusStartGate.waitUntilSuspended()
+
+        #expect(service.activeSession == nil)
+        #expect(service.isStartingSession)
+        await shippingCoordinator.enable()
+        #expect(shippingCoordinator.state == .failed(.conflictingDeviceOperation))
+        #expect(sendCount == 0)
+
+        focusStartGate.release()
+        _ = await focusTask.value
+        service.endSession(reason: .manual)
+    }
+
     @Test("Deep focus applies shield on start and clears once on end")
     @MainActor
     func deepFocusApplyAndClearFlow() async throws {
@@ -286,5 +364,33 @@ struct FocusProtectionTests {
         #expect(String(data: encoded, encoding: .utf8) == "\"manual\"")
         let decoded = try JSONDecoder().decode(FocusEndReason.self, from: encoded)
         #expect(decoded == .manual)
+    }
+}
+
+@MainActor
+private final class FocusStartGate {
+    private var isSuspended = false
+    private var suspendedContinuation: CheckedContinuation<Void, Never>?
+    private var releaseContinuation: CheckedContinuation<Void, Never>?
+
+    func waitUntilSuspended() async {
+        if isSuspended { return }
+        await withCheckedContinuation { continuation in
+            suspendedContinuation = continuation
+        }
+    }
+
+    func suspendUntilReleased() async {
+        isSuspended = true
+        suspendedContinuation?.resume()
+        suspendedContinuation = nil
+        await withCheckedContinuation { continuation in
+            releaseContinuation = continuation
+        }
+    }
+
+    func release() {
+        releaseContinuation?.resume()
+        releaseContinuation = nil
     }
 }

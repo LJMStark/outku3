@@ -78,6 +78,31 @@ struct BLEShippingModeTests {
         #expect(pendingValues.isEmpty)
     }
 
+    @Test("A write error after the CoreBluetooth boundary still accepts a late device disconnect")
+    func armedWriteFailureWaitsForDisconnect() async {
+        var pendingValues: [Bool] = []
+        let coordinator = BLEShippingModeCoordinator.makeForTesting(
+            disconnectTimeout: .seconds(1),
+            setPendingDisconnect: { pendingValues.append($0) },
+            sendCommand: { armExpectedDisconnect in
+                armExpectedDisconnect()
+                throw TestFailure.expected
+            }
+        )
+
+        await coordinator.enable()
+
+        #expect(coordinator.state == .awaitingDisconnect)
+        #expect(coordinator.blocksAutomaticBLEWork)
+        #expect(coordinator.requiresCurrentConnection)
+        #expect(pendingValues == [true])
+
+        coordinator.handleExpectedDisconnect()
+
+        #expect(coordinator.state == .activated)
+        #expect(pendingValues == [true, false])
+    }
+
     @Test("A send that never reaches CoreBluetooth cannot arm disconnect success")
     func missingWriteBoundaryFailsWithoutArming() async {
         var pendingValues: [Bool] = []
@@ -111,8 +136,8 @@ struct BLEShippingModeTests {
         #expect(pendingValues.isEmpty)
     }
 
-    @Test("No disconnect releases the pending state and allows a retry")
-    func missingDisconnectTimesOut() async throws {
+    @Test("A late disconnect after timeout still suppresses reconnect and confirms activation")
+    func lateDisconnectAfterTimeoutConfirmsActivation() async throws {
         var pendingValues: [Bool] = []
         let coordinator = BLEShippingModeCoordinator.makeForTesting(
             disconnectTimeout: .milliseconds(20),
@@ -123,7 +148,53 @@ struct BLEShippingModeTests {
         await coordinator.enable()
         try await waitForState(.failed(.didNotDisconnect), from: coordinator)
 
+        #expect(coordinator.blocksAutomaticBLEWork)
+        #expect(coordinator.requiresCurrentConnection)
+        #expect(pendingValues == [true])
+
+        coordinator.handleExpectedDisconnect()
+
+        #expect(coordinator.state == .activated)
         #expect(pendingValues == [true, false])
+    }
+
+    @Test("A manual retry after timeout replaces the old disconnect route")
+    func retryAfterTimeoutRearmsDisconnect() async throws {
+        var pendingValues: [Bool] = []
+        let coordinator = BLEShippingModeCoordinator.makeForTesting(
+            disconnectTimeout: .milliseconds(20),
+            setPendingDisconnect: { pendingValues.append($0) },
+            sendCommand: { armExpectedDisconnect in armExpectedDisconnect() }
+        )
+
+        await coordinator.enable()
+        try await waitForState(.failed(.didNotDisconnect), from: coordinator)
+        await coordinator.enable()
+
+        #expect(coordinator.state == .awaitingDisconnect)
+        #expect(pendingValues == [true, false, true])
+    }
+
+    @Test("The late-disconnect grace eventually releases ordinary BLE work")
+    func lateDisconnectGraceExpires() async throws {
+        var pendingValues: [Bool] = []
+        let coordinator = BLEShippingModeCoordinator.makeForTesting(
+            disconnectTimeout: .milliseconds(20),
+            lateDisconnectGrace: .milliseconds(20),
+            setPendingDisconnect: { pendingValues.append($0) },
+            sendCommand: { armExpectedDisconnect in armExpectedDisconnect() }
+        )
+
+        await coordinator.enable()
+        try await waitForAutomaticBLEWorkToResume(from: coordinator)
+
+        #expect(coordinator.state == .failed(.didNotDisconnect))
+        #expect(!coordinator.blocksAutomaticBLEWork)
+        #expect(!coordinator.requiresCurrentConnection)
+        #expect(pendingValues == [true, false])
+
+        coordinator.handleExpectedDisconnect()
+        #expect(coordinator.state == .failed(.didNotDisconnect))
     }
 
     private func waitForState(
@@ -134,6 +205,15 @@ struct BLEShippingModeTests {
             try await Task.sleep(for: .milliseconds(5))
         }
         #expect(coordinator.state == expected)
+    }
+
+    private func waitForAutomaticBLEWorkToResume(
+        from coordinator: BLEShippingModeCoordinator
+    ) async throws {
+        for _ in 0..<100 where coordinator.blocksAutomaticBLEWork {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(!coordinator.blocksAutomaticBLEWork)
     }
 }
 

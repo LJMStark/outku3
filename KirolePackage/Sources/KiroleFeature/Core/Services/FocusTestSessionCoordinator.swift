@@ -160,6 +160,8 @@ final class FocusTestSessionCoordinator {
             state = .idle
         case .blockedByActiveSession:
             state = .failed("Another focus session started while Deep Focus was being prepared. End it before starting a test session.")
+        case .blockedByDeviceOperation:
+            state = .failed("Wait for the device operation to finish before starting a focus session.")
         case .rejected(let source):
             state = .failed(protectionFailureMessage(for: source))
         case .persistenceUnavailable:
