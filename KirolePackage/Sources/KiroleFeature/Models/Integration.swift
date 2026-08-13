@@ -41,6 +41,8 @@ public enum IntegrationType: String, Sendable, Codable, CaseIterable {
         case .outlookCalendar, .microsoftToDo: AppSecrets.microsoftOAuthEnabled
         case .todoist: AppSecrets.todoistOAuthEnabled
         case .tickTick: AppSecrets.tickTickOAuthEnabled
+        case .notion: AppSecrets.notionOAuthEnabled
+        case .taskade: AppSecrets.taskadeOAuthEnabled
         default: true
         }
     }

@@ -9,7 +9,9 @@ public enum AppSecrets {
         var bleSharedSecret: String?
         var deepFocusFeatureEnabled: Bool
         var notionClientId: String?
+        var notionOAuthEnabled: Bool
         var taskadeClientId: String?
+        var taskadeOAuthEnabled: Bool
         var microsoftClientId: String?
         var microsoftOAuthEnabled: Bool
         var todoistClientId: String?
@@ -27,6 +29,8 @@ public enum AppSecrets {
     private static let lock = OSAllocatedUnfairLock(
         initialState: Storage(
             deepFocusFeatureEnabled: false,
+            notionOAuthEnabled: false,
+            taskadeOAuthEnabled: false,
             microsoftOAuthEnabled: false,
             todoistOAuthEnabled: false,
             tickTickOAuthEnabled: false
@@ -40,7 +44,9 @@ public enum AppSecrets {
         bleSharedSecret: String?,
         deepFocusFeatureEnabled: Bool = false,
         notionClientId: String? = nil,
+        notionOAuthEnabled: Bool = false,
         taskadeClientId: String? = nil,
+        taskadeOAuthEnabled: Bool = false,
         microsoftClientId: String? = nil,
         microsoftOAuthEnabled: Bool = false,
         todoistClientId: String? = nil,
@@ -57,7 +63,9 @@ public enum AppSecrets {
             storage.bleSharedSecret = normalize(bleSharedSecret)
             storage.deepFocusFeatureEnabled = deepFocusFeatureEnabled
             storage.notionClientId = normalize(notionClientId)
+            storage.notionOAuthEnabled = notionOAuthEnabled
             storage.taskadeClientId = normalize(taskadeClientId)
+            storage.taskadeOAuthEnabled = taskadeOAuthEnabled
             storage.microsoftClientId = normalize(microsoftClientId)
             storage.microsoftOAuthEnabled = microsoftOAuthEnabled
             storage.todoistClientId = normalize(todoistClientId)
@@ -92,8 +100,16 @@ public enum AppSecrets {
         lock.withLock { $0.notionClientId }
     }
 
+    public static var notionOAuthEnabled: Bool {
+        lock.withLock { $0.notionOAuthEnabled }
+    }
+
     public static var taskadeClientId: String? {
         lock.withLock { $0.taskadeClientId }
+    }
+
+    public static var taskadeOAuthEnabled: Bool {
+        lock.withLock { $0.taskadeOAuthEnabled }
     }
 
     public static var microsoftClientId: String? {

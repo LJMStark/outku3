@@ -43,6 +43,28 @@ struct IntegrationSettingsSourcePolicyTests {
         ))
     }
 
+    /// Notion and Taskade exchange their OAuth code through Supabase Edge Functions that are not
+    /// deployed, so a present client ID would still fail every connect. The gate must be explicit.
+    @Test("Notion and Taskade remain unavailable until their release gates are enabled")
+    func notionAndTaskadeHaveReleaseGates() throws {
+        let source = try integrationTypeSource()
+
+        #expect(source.contains("case .notion: AppSecrets.notionOAuthEnabled"))
+        #expect(source.contains("case .taskade: AppSecrets.taskadeOAuthEnabled"))
+    }
+
+    @Test("A gated integration row shows Coming Soon instead of Experimental")
+    func gatedRowsDropTheExperimentalTag() throws {
+        let source = try settingsIntegrationSource()
+
+        #expect(source.contains(
+            "if !type.isAvailable {\n                        Text(\"[Coming Soon]\")"
+        ))
+        #expect(source.contains(
+            "} else if type.isExperimental {\n                        Text(\"[Experimental]\")"
+        ))
+    }
+
     private func settingsIntegrationSource() throws -> String {
         try sourceFile(
             path: "KirolePackage/Sources/KiroleFeature/Views/Settings/SettingsIntegrationSection.swift"

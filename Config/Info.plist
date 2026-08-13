@@ -88,7 +88,7 @@
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Kirole connects to your companion device over Wi-Fi to send custom avatars quickly.</string>
 	<key>NSFamilyControlsUsageDescription</key>
-	<string>Kirole 需要访问屏幕使用时间权限,以便在专注模式下帮助你屏蔽分心应用,让你和你的宠物伙伴一起保持专注。</string>
+	<string>Kirole needs Screen Time access to block distracting apps during focus sessions and detect when your focus is interrupted.</string>
 	<key>NSRemindersFullAccessUsageDescription</key>
 	<string>Kirole needs full reminders access to sync your tasks and help track your habits.</string>
 	<key>NSRemindersUsageDescription</key>

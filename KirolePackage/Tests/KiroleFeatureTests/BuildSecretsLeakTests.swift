@@ -69,7 +69,9 @@ struct BuildSecretsLeakTests {
             openRouterAPIKey: "   ",
             bleSharedSecret: "YOUR_BLE_SHARED_SECRET",
             notionClientId: "  YOUR_NOTION_OAUTH_CLIENT_ID ",
+            notionOAuthEnabled: false,
             taskadeClientId: "YOUR_TASKADE_OAUTH_CLIENT_ID",
+            taskadeOAuthEnabled: false,
             microsoftClientId: "YOUR_MICROSOFT_OAUTH_CLIENT_ID",
             microsoftOAuthEnabled: false,
             todoistClientId: "YOUR_TODOIST_OAUTH_CLIENT_ID",
@@ -81,7 +83,9 @@ struct BuildSecretsLeakTests {
         #expect(AppSecrets.openRouterAPIKey == nil)
         #expect(AppSecrets.bleSharedSecret == nil)
         #expect(AppSecrets.notionClientId == nil)
+        #expect(AppSecrets.notionOAuthEnabled == false)
         #expect(AppSecrets.taskadeClientId == nil)
+        #expect(AppSecrets.taskadeOAuthEnabled == false)
         #expect(AppSecrets.microsoftClientId == nil)
         #expect(AppSecrets.microsoftOAuthEnabled == false)
         #expect(AppSecrets.todoistClientId == nil)
@@ -94,7 +98,9 @@ struct BuildSecretsLeakTests {
             openRouterAPIKey: "openrouter-key",
             bleSharedSecret: "ble-secret",
             notionClientId: "notion-client-id",
+            notionOAuthEnabled: true,
             taskadeClientId: "taskade-client-id",
+            taskadeOAuthEnabled: true,
             microsoftClientId: "microsoft-client-id",
             microsoftOAuthEnabled: true,
             todoistClientId: "todoist-client-id",
@@ -107,7 +113,9 @@ struct BuildSecretsLeakTests {
         #expect(AppSecrets.openRouterAPIKey == "openrouter-key")
         #expect(AppSecrets.bleSharedSecret == "ble-secret")
         #expect(AppSecrets.notionClientId == "notion-client-id")
+        #expect(AppSecrets.notionOAuthEnabled)
         #expect(AppSecrets.taskadeClientId == "taskade-client-id")
+        #expect(AppSecrets.taskadeOAuthEnabled)
         #expect(AppSecrets.microsoftClientId == "microsoft-client-id")
         #expect(AppSecrets.microsoftOAuthEnabled)
         #expect(AppSecrets.todoistClientId == "todoist-client-id")
@@ -206,6 +214,8 @@ struct BuildSecretsLeakTests {
             encoding: .utf8
         )
         #expect(generated.contains("static let todoistClientId = \"\""))
+        #expect(generated.contains("static let notionOAuthEnabled = \"0\" == \"1\""))
+        #expect(generated.contains("static let taskadeOAuthEnabled = \"0\" == \"1\""))
         #expect(generated.contains("static let microsoftOAuthEnabled = \"0\" == \"1\""))
         #expect(generated.contains("static let todoistOAuthEnabled = \"0\" == \"1\""))
     }

@@ -561,14 +561,14 @@ private struct IntegrationAppRow: View {
                         .font(.system(size: 15))
                         .foregroundStyle(theme.colors.primaryText)
 
-                    if type.isExperimental {
-                        Text("[Experimental]")
-                            .font(.system(size: 11))
-                            .foregroundStyle(theme.colors.secondaryText)
-                    }
-
+                    // Gated providers read as "Coming Soon" only: an unreachable row cannot
+                    // also be an experiment the user is invited to try.
                     if !type.isAvailable {
                         Text("[Coming Soon]")
+                            .font(.system(size: 11))
+                            .foregroundStyle(theme.colors.secondaryText)
+                    } else if type.isExperimental {
+                        Text("[Experimental]")
                             .font(.system(size: 11))
                             .foregroundStyle(theme.colors.secondaryText)
                     }
