@@ -1,0 +1,8 @@
+{
+  "connectedAtMilliseconds": 154755,
+  "deviceWakeAtMilliseconds": 160665,
+  "firstTimeFrameAtMilliseconds": 177735,
+  "firstCommitAtMilliseconds": 186795,
+  "secondTimeFrameAtMilliseconds": 189435,
+  "observedOfflineSyncTransactionCount": 2
+}

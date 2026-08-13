@@ -34,13 +34,13 @@ public final class BLESyncCoordinator {
     /// 上次成功发出的 Weather(0x04) 指纹（上 wire 的四个量化值）。内存态即可：重启后首轮
     /// 多发一次 ~10B 小帧，无害；不入 LocalStorage 以避开 resettable key 的测试隔离成本。
     private var lastSentWeatherFingerprint: String?
-    /// In-flight 守卫：防止并发 performSync 重复发整轮（keep-alive 常驻连接后更易触发）。
-    private var isSyncing = false
-    /// 在途同步期间到达的请求；当前同步收尾后补跑一次。普通内容变化也不能被吞，否则旧
-    /// DayPack 被判定过期后可能没有后续轮次发送最新清单。
-    private var pendingSync = false
-    private var pendingForceSync = false
-    private var pendingHardwareWakeDate: Date?
+    /// Owns both the active slot and any coalesced follow-up request. Reserving the next slot before
+    /// scheduling its Task prevents another DeviceWake from starting a competing transaction.
+    private var syncState = BLEDeviceWakeSyncState()
+    /// DeviceWake bookkeeping contains awaits. The snapshot closes the merge window, then waits for
+    /// every wake admitted before that close so focus/interruption state cannot miss the transaction.
+    private var deviceWakeProcessingCount = 0
+    private var deviceWakeProcessingWaiters: [CheckedContinuation<Void, Never>] = []
     private var deferredFocusSessionEndDisplay: DeferredFocusSessionEndDisplay?
     /// Set only while the frozen payloads used by the current 0x25 transaction are being built.
     /// It becomes durable sync metadata only after the device returns RESULT=COMMITTED.
@@ -102,6 +102,8 @@ public final class BLESyncCoordinator {
                 },
                 makeSnapshot: { [weak self] in
                     guard let self else { throw BLEError.disconnected }
+                    self.syncState.closeDeviceWakeMergeWindow()
+                    await self.waitForDeviceWakeProcessingToFinish()
                     let frozen = try await self.generateStableDayPack()
                     let snapshot = OfflineDatasetSnapshot(
                         tasks: frozen.tasks,
@@ -203,46 +205,56 @@ public final class BLESyncCoordinator {
         _ eventLog: EventLog,
         service: BLEService
     ) async {
+        let decision = syncState.handleDeviceWake(
+            at: eventLog.timestamp,
+            taskActionBlocked: taskActionPresentationCount > 0
+        )
+
+        switch decision {
+        case .mergeIntoActiveSync:
+            beginDeviceWakeProcessing()
+            await processDeviceWake(eventLog, service: service)
+            finishDeviceWakeProcessing()
+            return
+
+        case .enqueueForcedSync:
+            beginDeviceWakeProcessing()
+            await processDeviceWake(eventLog, service: service)
+            finishDeviceWakeProcessing()
+            schedulePendingSyncIfPossible()
+            return
+
+        case .startDedicatedSync:
+            break
+        }
+
         // DeviceWake must reserve the message boundary before generic event logging, inventory
         // reconciliation, or any other await can let a live 0x14/0x17/0x1B write run first.
-        guard !isSyncing, taskActionPresentationCount == 0 else {
-            pendingSync = true
-            pendingForceSync = true
-            pendingHardwareWakeDate = eventLog.timestamp
-            return
-        }
-        isSyncing = true
         do {
             try await bleService.beginOfflineSyncWriteSession()
         } catch {
-            isSyncing = false
+            beginDeviceWakeProcessing()
+            await processDeviceWake(eventLog, service: service)
+            finishDeviceWakeProcessing()
             lastSyncSucceeded = false
             bleService.lastSyncFailed = true
+            syncState.enqueue(force: true, hardwareWakeDate: eventLog.timestamp)
             ErrorReporter.log(
                 .sync(component: "BLESyncCoordinator", underlying: error.localizedDescription),
                 context: "BLESyncCoordinator.acquireDeviceWakeWriteSession"
             )
-            schedulePendingSyncIfPossible()
+            finishActiveSyncReservation(transactionCommitted: false)
             return
         }
 
-        if let firmware = eventLog.firmwareVersion {
-            service.deviceFirmwareVersion = firmware
-        }
-        BLEOTACoordinator.shared.handleDeviceWake(reportedVersion: eventLog.firmwareVersion)
-        if let inventory = eventLog.avatarInventory {
-            _ = await AppState.shared.reconcileCustomAvatarInventory(
-                hasImage: inventory.hasImage,
-                avatarID: inventory.avatarID,
-                byteLength: inventory.byteLength,
-                reportedCRC32: inventory.crc32
-            )
-        }
-        _ = await BLEEventHandler.processEventLogs([eventLog], service: service)
+        beginDeviceWakeProcessing()
+        await processDeviceWake(eventLog, service: service)
+        finishDeviceWakeProcessing()
         await performSync(
             force: true,
             hardwareWakeDate: eventLog.timestamp,
-            preacquiredOfflineWriteSession: true
+            preacquiredOfflineWriteSession: true,
+            activeSyncReservationAlreadyHeld: true
         )
     }
 
@@ -250,33 +262,31 @@ public final class BLESyncCoordinator {
         await performSync(
             force: force,
             hardwareWakeDate: hardwareWakeDate,
-            preacquiredOfflineWriteSession: false
+            preacquiredOfflineWriteSession: false,
+            activeSyncReservationAlreadyHeld: false
         )
     }
 
     private func performSync(
         force: Bool,
         hardwareWakeDate: Date?,
-        preacquiredOfflineWriteSession: Bool
+        preacquiredOfflineWriteSession: Bool,
+        activeSyncReservationAlreadyHeld: Bool
     ) async {
         // 并发守卫：keep-alive 默认开后连接常驻，多触发源（后台刷新 / 硬件 0x20·0x30 / 指纹变化）可能并发进入。
         // 以前靠"已连接→.connectionInProgress"意外串行；连接跳过后需显式守卫，否则会重复发整轮 + 帧交错。
         // @MainActor 下在首个 await 前同步置位，保证原子。被丢弃的 force:true 记下、收尾后补跑一次——
         // 否则在途的 force:false 若随后被 shouldSync 拦下，硬件的强制刷新就丢了。
-        guard preacquiredOfflineWriteSession
-            || (!isSyncing && taskActionPresentationCount == 0) else {
-            pendingSync = true
-            if force { pendingForceSync = true }
-            if let hardwareWakeDate { pendingHardwareWakeDate = hardwareWakeDate }
-            return
+        if !activeSyncReservationAlreadyHeld {
+            guard syncState.beginSync(
+                force: force,
+                hardwareWakeDate: hardwareWakeDate,
+                taskActionBlocked: taskActionPresentationCount > 0
+            ) else { return }
         }
-        isSyncing = true
+        var transactionCommitted = false
         defer {
-            isSyncing = false
-            let waiters = syncCompletionWaiters
-            syncCompletionWaiters.removeAll()
-            waiters.forEach { $0.resume() }
-            schedulePendingSyncIfPossible()
+            finishActiveSyncReservation(transactionCommitted: transactionCommitted)
         }
 
         // Own the complete-message boundary before the first await after accepting this sync.
@@ -305,11 +315,6 @@ public final class BLESyncCoordinator {
         // 空 DayPack 推上硬件（闪一屏空首页）。其余入口（syncConnectedExternalData 等）都已等待，
         // 这里补齐（幂等，加载完成后零开销）。2026-07-04 审计 F3。
         await appState.ensureInitialLoadComplete()
-        if let hardwareWakeDate {
-            // Local usage/interruption bookkeeping happens after the transaction boundary is
-            // owned. Its interruption drain suppresses the usual immediate 0x14 side effect.
-            await appState.recordHardwareWakeActivity(now: hardwareWakeDate)
-        }
         let contentChanged: Bool
         if force {
             // DeviceWake must reach Time/QUERY immediately. The actual frozen datasets are built
@@ -321,7 +326,7 @@ public final class BLESyncCoordinator {
                 contentChanged = await localStorage.loadLastDayPackHash()
                     != preliminaryDayPack.stableFingerprint()
             } catch {
-                pendingSync = true
+                syncState.enqueue(force: false, hardwareWakeDate: nil)
                 await bleService.endOfflineSyncWriteSession()
                 ownsOfflineWriteSession = false
                 return
@@ -341,11 +346,12 @@ public final class BLESyncCoordinator {
 
         let hasPriorityCustomAvatarOperation = appState.pendingCustomAvatarOperation?
             .requiresPriorityBLEFlush == true
+        let effectiveForce = force || syncState.activeSyncHadMergedWake
         guard policy.shouldSync(
             now: now,
             lastSync: lastSync,
             contentChanged: contentChanged || weatherChanged,
-            force: force,
+            force: effectiveForce,
             hasPriorityCustomAvatarOperation: hasPriorityCustomAvatarOperation
         ) else {
             await bleService.endOfflineSyncWriteSession()
@@ -376,7 +382,6 @@ public final class BLESyncCoordinator {
         }
         defer { timeoutTask.cancel() }
 
-        var transactionCommitted = false
         stagedDayPackFingerprint = nil
         stagedTaskStateVersion = nil
         defer {
@@ -424,7 +429,7 @@ public final class BLESyncCoordinator {
             await localStorage.saveLastDayPackHash(committedFingerprint)
             if let sourceVersion = stagedTaskStateVersion,
                appState.taskStateVersion != sourceVersion {
-                pendingSync = true
+                syncState.enqueue(force: false, hardwareWakeDate: nil)
             }
 
             let completedAt = Date()
@@ -462,8 +467,8 @@ public final class BLESyncCoordinator {
                     )
                 }
             }
-            if let hardwareWakeDate {
-                await appState.syncHardwareWakeDisplay(now: hardwareWakeDate)
+            if let wakeDate = syncState.activeHardwareWakeDate {
+                await appState.syncHardwareWakeDisplay(now: wakeDate)
             }
             await appState.flushPriorityCustomAvatarOperationIfNeeded()
             await appState.flushPendingCustomCompanionPushIfNeeded()
@@ -521,19 +526,68 @@ public final class BLESyncCoordinator {
     }
 
     private func schedulePendingSyncIfPossible() {
-        guard pendingSync, !isSyncing, taskActionPresentationCount == 0 else { return }
-        let shouldForce = pendingForceSync
-        pendingSync = false
-        pendingForceSync = false
-        let hardwareWakeDate = pendingHardwareWakeDate
-        pendingHardwareWakeDate = nil
+        guard let request = syncState.reservePendingSyncIfPossible(
+            taskActionBlocked: taskActionPresentationCount > 0
+        ) else { return }
         Task { @MainActor in
-            await self.performSync(force: shouldForce, hardwareWakeDate: hardwareWakeDate)
+            await self.performSync(
+                force: request.force,
+                hardwareWakeDate: request.hardwareWakeDate,
+                preacquiredOfflineWriteSession: false,
+                activeSyncReservationAlreadyHeld: true
+            )
         }
     }
 
+    private func finishActiveSyncReservation(transactionCommitted: Bool) {
+        syncState.finishActiveSync(transactionCommitted: transactionCommitted)
+        let waiters = syncCompletionWaiters
+        syncCompletionWaiters.removeAll()
+        waiters.forEach { $0.resume() }
+        schedulePendingSyncIfPossible()
+    }
+
+    private func beginDeviceWakeProcessing() {
+        deviceWakeProcessingCount += 1
+    }
+
+    private func finishDeviceWakeProcessing() {
+        precondition(deviceWakeProcessingCount > 0)
+        deviceWakeProcessingCount -= 1
+        guard deviceWakeProcessingCount == 0 else { return }
+        let waiters = deviceWakeProcessingWaiters
+        deviceWakeProcessingWaiters.removeAll()
+        waiters.forEach { $0.resume() }
+    }
+
+    private func waitForDeviceWakeProcessingToFinish() async {
+        guard deviceWakeProcessingCount > 0 else { return }
+        await withCheckedContinuation { continuation in
+            deviceWakeProcessingWaiters.append(continuation)
+        }
+    }
+
+    private func processDeviceWake(_ eventLog: EventLog, service: BLEService) async {
+        if let firmware = eventLog.firmwareVersion {
+            service.deviceFirmwareVersion = firmware
+        }
+        BLEOTACoordinator.shared.handleDeviceWake(reportedVersion: eventLog.firmwareVersion)
+        if let inventory = eventLog.avatarInventory {
+            _ = await AppState.shared.reconcileCustomAvatarInventory(
+                hasImage: inventory.hasImage,
+                avatarID: inventory.avatarID,
+                byteLength: inventory.byteLength,
+                reportedCRC32: inventory.crc32
+            )
+        }
+        _ = await BLEEventHandler.processEventLogs([eventLog], service: service)
+        let appState = AppState.shared
+        await appState.ensureInitialLoadComplete()
+        await appState.recordHardwareWakeActivity(now: eventLog.timestamp)
+    }
+
     private func waitForActiveSyncToFinish() async {
-        guard isSyncing else { return }
+        guard syncState.isSyncing else { return }
         await withCheckedContinuation { continuation in
             syncCompletionWaiters.append(continuation)
         }
@@ -574,7 +628,7 @@ public final class BLESyncCoordinator {
                 do {
                     try await bleService.connectToPreferredDevice(timeout: 10)
                 } catch {
-                    pendingSync = true
+                    syncState.enqueue(force: false, hardwareWakeDate: nil)
                     ErrorReporter.log(
                         .sync(
                             component: "BLE Task Action DayPack",
@@ -619,11 +673,11 @@ public final class BLESyncCoordinator {
                 ),
                 context: "BLESyncCoordinator.sendFinalTaskActionDayPack"
             )
-            pendingSync = true
+            syncState.enqueue(force: false, hardwareWakeDate: nil)
             return nil
         }
 
-        pendingSync = true
+        syncState.enqueue(force: false, hardwareWakeDate: nil)
         ErrorReporter.log(
             .sync(
                 component: "BLE Task Action DayPack",
@@ -715,7 +769,7 @@ extension BLESyncCoordinator: TaskActionPresentationCoordinating {
             acknowledge: acknowledgement
         )
         if !completed {
-            pendingSync = true
+            syncState.enqueue(force: false, hardwareWakeDate: nil)
             ErrorReporter.log(
                 .sync(
                     component: "BLE Task Action Presentation",
