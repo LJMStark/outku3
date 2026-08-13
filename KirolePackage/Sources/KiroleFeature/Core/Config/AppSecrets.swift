@@ -10,6 +10,11 @@ public enum AppSecrets {
         var deepFocusFeatureEnabled: Bool
         var notionClientId: String?
         var taskadeClientId: String?
+        var microsoftClientId: String?
+        var microsoftOAuthEnabled: Bool
+        var todoistClientId: String?
+        var todoistOAuthEnabled: Bool
+        var tickTickOAuthEnabled: Bool
         /// Optional AI base URL override (e.g. an OpenAI-compatible gateway). nil → OpenRouter default.
         var openAIBaseURL: String?
         /// Optional chat model override. nil → `OpenAIService.defaultChatModelID` OpenRouter default.
@@ -20,7 +25,12 @@ public enum AppSecrets {
     }
 
     private static let lock = OSAllocatedUnfairLock(
-        initialState: Storage(deepFocusFeatureEnabled: false)
+        initialState: Storage(
+            deepFocusFeatureEnabled: false,
+            microsoftOAuthEnabled: false,
+            todoistOAuthEnabled: false,
+            tickTickOAuthEnabled: false
+        )
     )
 
     public static func configure(
@@ -31,6 +41,11 @@ public enum AppSecrets {
         deepFocusFeatureEnabled: Bool = false,
         notionClientId: String? = nil,
         taskadeClientId: String? = nil,
+        microsoftClientId: String? = nil,
+        microsoftOAuthEnabled: Bool = false,
+        todoistClientId: String? = nil,
+        todoistOAuthEnabled: Bool = false,
+        tickTickOAuthEnabled: Bool = false,
         openAIBaseURL: String? = nil,
         chatModelID: String? = nil,
         fallbackAPIKey: String? = nil
@@ -43,6 +58,11 @@ public enum AppSecrets {
             storage.deepFocusFeatureEnabled = deepFocusFeatureEnabled
             storage.notionClientId = normalize(notionClientId)
             storage.taskadeClientId = normalize(taskadeClientId)
+            storage.microsoftClientId = normalize(microsoftClientId)
+            storage.microsoftOAuthEnabled = microsoftOAuthEnabled
+            storage.todoistClientId = normalize(todoistClientId)
+            storage.todoistOAuthEnabled = todoistOAuthEnabled
+            storage.tickTickOAuthEnabled = tickTickOAuthEnabled
             storage.openAIBaseURL = normalizeURL(openAIBaseURL)
             storage.chatModelID = normalize(chatModelID)
             storage.fallbackAPIKey = normalize(fallbackAPIKey)
@@ -74,6 +94,26 @@ public enum AppSecrets {
 
     public static var taskadeClientId: String? {
         lock.withLock { $0.taskadeClientId }
+    }
+
+    public static var microsoftClientId: String? {
+        lock.withLock { $0.microsoftClientId }
+    }
+
+    public static var microsoftOAuthEnabled: Bool {
+        lock.withLock { $0.microsoftOAuthEnabled }
+    }
+
+    public static var todoistClientId: String? {
+        lock.withLock { $0.todoistClientId }
+    }
+
+    public static var todoistOAuthEnabled: Bool {
+        lock.withLock { $0.todoistOAuthEnabled }
+    }
+
+    public static var tickTickOAuthEnabled: Bool {
+        lock.withLock { $0.tickTickOAuthEnabled }
     }
 
     /// Optional AI base URL override; nil → `OpenAIService` falls back to the OpenRouter default.

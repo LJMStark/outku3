@@ -26,7 +26,7 @@ struct TaskListSnapshotResponderTests {
         let expected = encodedAck(
             operationID: 5,
             version: TaskListSnapshotVersion(epoch: 7, revision: 8),
-            tasks: [TaskSummary(id: "open", title: "Open", isCompleted: false, priority: 1)]
+            tasks: [TaskSummary(id: "open", title: "Open", isCompleted: false, priority: 2)]
         )
         #expect(sender.sentPayloads == [expected])
     }
@@ -58,7 +58,7 @@ struct TaskListSnapshotResponderTests {
         let expected = encodedAck(
             operationID: 12,
             version: TaskListSnapshotVersion(epoch: 11, revision: 12),
-            tasks: [TaskSummary(id: "new", title: "New", isCompleted: false, priority: 1)]
+            tasks: [TaskSummary(id: "new", title: "New", isCompleted: false, priority: 2)]
         )
         #expect(sender.sentPayloads == [expected])
     }
@@ -147,14 +147,14 @@ struct TaskListSnapshotResponderTests {
         #expect(sender.sentPayloads[0] == encodedAck(
             operationID: 1,
             version: TaskListSnapshotVersion(epoch: 20, revision: 1),
-            tasks: [TaskSummary(id: "first", title: "First", isCompleted: false, priority: 1)]
+            tasks: [TaskSummary(id: "first", title: "First", isCompleted: false, priority: 2)]
         ))
         #expect(sender.sentPayloads[1] == BLEDataEncoder.encodeTaskListSnapshotAck(TaskListSnapshotAck(
             action: .skipTask,
             operationID: 2,
             result: .applied,
             version: TaskListSnapshotVersion(epoch: 20, revision: 2),
-            tasks: [TaskSummary(id: "second", title: "Second", isCompleted: false, priority: 1)]
+            tasks: [TaskSummary(id: "second", title: "Second", isCompleted: false, priority: 2)]
         )))
     }
 

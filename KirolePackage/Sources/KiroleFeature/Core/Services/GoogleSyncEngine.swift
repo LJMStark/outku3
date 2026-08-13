@@ -1,191 +1,69 @@
 import Foundation
 
-// MARK: - Google Sync Engine
+// MARK: - Injectable Google boundaries
 
-/// Orchestrates incremental sync between local data and Google Calendar/Tasks APIs.
-/// Uses an outbox pattern for offline-first writes and Last-Writer-Wins conflict resolution.
-public actor GoogleSyncEngine {
-    public static let shared = GoogleSyncEngine()
+protocol GoogleCalendarSyncServing: Sendable {
+    func fetchTodayEvents() async throws -> [CalendarEvent]
+}
 
-    private let calendarAPI = GoogleCalendarAPI.shared
-    private let tasksAPI = GoogleTasksAPI.shared
-    private let storage = LocalStorage.shared
+protocol GoogleTasksSyncServing: Sendable {
+    func fetchTasks(updatedMin: Date?) async throws -> [TaskItem]
+    func send(_ entry: OutboxEntry) async throws
+}
 
-    private var isSyncing = false
-    private var metadata: GoogleSyncMetadata
-    private var outbox: [OutboxEntry]
-    /// flush 在途批次。persistOutbox 落盘时始终写 inFlightOutbox + outbox，
-    /// 保证 flush 中途被杀时未处理完的批次仍在 outbox.json 里（重启后重试，
-    /// 已成功条目可能重推一次——与 drain 改造前的崩溃语义一致，不丢数据）。
-    private var inFlightOutbox: [OutboxEntry] = []
-    private var isFlushingOutbox = false
+protocol GoogleSyncStateStoring: Sendable {
+    func loadGoogleSyncMetadata() async throws -> GoogleSyncMetadata?
+    func saveGoogleSyncMetadata(_ metadata: GoogleSyncMetadata) async throws
+    func loadOutbox() async throws -> [OutboxEntry]
+    func saveOutbox(_ entries: [OutboxEntry]) async throws
+    func resetGoogleSyncState() async throws
+}
 
-    private static let maxRetryCount = 5
-    // 5-minute overlap to catch updates near the boundary
-    private static let syncOverlapInterval: TimeInterval = -5 * 60
+private struct LiveGoogleCalendarSyncService: GoogleCalendarSyncServing {
+    let api: GoogleCalendarAPI
 
-    private init() {
-        self.metadata = GoogleSyncMetadata()
-        self.outbox = []
-        // Async load deferred to first sync
+    init(api: GoogleCalendarAPI = .shared) {
+        self.api = api
     }
 
-    // MARK: - Initialization
+    func fetchTodayEvents() async throws -> [CalendarEvent] {
+        try await api.getTodayEvents()
+    }
+}
 
-    private func loadPersistedState() async {
-        do {
-            metadata = try await storage.loadGoogleSyncMetadata() ?? GoogleSyncMetadata()
-        } catch {
-            metadata = GoogleSyncMetadata()
-            ErrorReporter.log(
-                .persistence(
-                    operation: "load",
-                    target: "google_sync_metadata.json",
-                    underlying: error.localizedDescription
-                ),
-                context: "GoogleSyncEngine.loadPersistedState"
-            )
-        }
+private struct LiveGoogleTasksSyncService: GoogleTasksSyncServing {
+    let api: GoogleTasksAPI
 
-        do {
-            outbox = try await storage.loadOutbox()
-        } catch {
-            outbox = []
-            ErrorReporter.log(
-                .persistence(
-                    operation: "load",
-                    target: "outbox.json",
-                    underlying: error.localizedDescription
-                ),
-                context: "GoogleSyncEngine.loadPersistedState"
-            )
-        }
+    init(api: GoogleTasksAPI = .shared) {
+        self.api = api
     }
 
-    // MARK: - Main Entry Point
-
-    /// Perform a full sync cycle: flush outbox, pull calendar events, pull tasks.
-    public func performFullSync(
-        currentEvents: [CalendarEvent],
-        currentTasks: [TaskItem],
-        includeCalendar: Bool = true,
-        includeTasks: Bool = true
-    ) async throws -> (events: [CalendarEvent], tasks: [TaskItem], warnings: [String]) {
-        guard !isSyncing else { return (currentEvents, currentTasks, []) }
-        isSyncing = true
-        defer { isSyncing = false }
-
-        await loadPersistedState()
-
-        var events = currentEvents
-        var tasks = currentTasks
-        var warnings: [String] = []
-        var successCount = 0
-        let attemptedCount = (includeCalendar ? 1 : 0) + (includeTasks ? 1 : 0)
-
-        if includeCalendar {
-            switch await runSyncStep(name: "Calendar", operation: { try await self.syncCalendar() }) {
-            case .success(let syncedEvents):
-                events = syncedEvents
-                successCount += 1
-            case .failure(let warning):
-                warnings.append(warning)
-            }
+    func fetchTasks(updatedMin: Date?) async throws -> [TaskItem] {
+        guard let updatedMin else {
+            return try await api.getAllTasks(showCompleted: true)
         }
 
-        if includeTasks {
-            switch await runSyncStep(name: "Tasks", operation: { try await self.syncTasks(currentTasks: currentTasks) }) {
-            case .success(let syncedTasks):
-                tasks = syncedTasks
-                successCount += 1
-            case .failure(let warning):
-                warnings.append(warning)
-            }
-        }
-
-        metadata.lastFullSyncTime = Date()
-        await persistMetadata(context: "GoogleSyncEngine.performFullSync")
-
-        guard attemptedCount == 0 || successCount > 0 else {
-            throw GoogleSyncEngineError.fullSyncFailed(warnings)
-        }
-
-        return (events, tasks, warnings)
-    }
-
-    private func runSyncStep<T>(
-        name: String,
-        operation: () async throws -> T
-    ) async -> SyncStepResult<T> {
-        do {
-            return .success(try await operation())
-        } catch {
-            let warning = "\(name) sync failed: \(error.localizedDescription)"
-            #if DEBUG
-            print("[GoogleSyncEngine] \(name) sync failed: \(error)")
-            #endif
-            return .failure(warning)
-        }
-    }
-
-    // MARK: - Calendar Sync
-
-    private func syncCalendar() async throws -> [CalendarEvent] {
-        // NOTE:
-        // Current calendar sync is day-scoped + multi-calendar full fetch.
-        // Previous token-based incremental sync could return partial changes only
-        // and accidentally replace full local Google event lists.
-        // Keep token cleared until we implement per-calendar incremental merge.
-        if metadata.calendarSyncToken != nil {
-            metadata.calendarSyncToken = nil
-            await persistMetadata(context: "GoogleSyncEngine.syncCalendar")
-        }
-
-        let events = try await calendarAPI.getTodayEvents()
-        #if DEBUG
-        print("[GoogleSyncEngine] Full calendar sync events=\(events.count)")
-        #endif
-        return events
-    }
-
-    // MARK: - Tasks Sync
-
-    public func syncTasks(currentTasks: [TaskItem]) async throws -> [TaskItem] {
-        await flushOutbox()
-
-        // 增量同步(updatedMin)只返回基线之后改动过的任务，无法重建完整集合。断开 Google 会清空本地
-        // Google 任务但不重置 lastTasksSyncTime 基线；重连后若仍走增量，远端存在但近期未改的旧任务会
-        // 永久缺失。本地已无任何 Google 任务（googleTaskId != nil）时回退全量，首次同步(无基线)同理。
-        let hasLocalGoogleTasks = currentTasks.contains { $0.googleTaskId != nil }
-        let remoteTasks: [TaskItem]
-        if let lastSync = metadata.lastTasksSyncTime, hasLocalGoogleTasks {
-            let updatedMin = lastSync.addingTimeInterval(Self.syncOverlapInterval)
-            remoteTasks = try await fetchAllTasksIncremental(updatedMin: updatedMin)
-        } else {
-            remoteTasks = try await tasksAPI.getAllTasks(showCompleted: true)
-        }
-
-        let merged = mergeTasks(local: currentTasks, remote: remoteTasks)
-        metadata.lastTasksSyncTime = Date()
-        await persistMetadata(context: "GoogleSyncEngine.syncTasks")
-
-        return merged
-    }
-
-    /// Fetch tasks from all lists with updatedMin filter for incremental sync
-    private func fetchAllTasksIncremental(updatedMin: Date) async throws -> [TaskItem] {
-        let taskLists = try await tasksAPI.getTaskLists()
-
+        let taskLists = try await api.getTaskLists()
         return try await withThrowingTaskGroup(of: [TaskItem].self) { group in
             for taskList in taskLists {
                 group.addTask {
-                    let tasks = try await self.tasksAPI.getTasks(
+                    let tasks = try await api.getTasks(
                         taskListId: taskList.id,
                         showCompleted: true,
+                        showHidden: false,
                         showDeleted: true,
-                        updatedMin: updatedMin
+                        dueMin: nil,
+                        dueMax: nil,
+                        updatedMin: updatedMin,
+                        maxResults: 100
                     )
-                    return tasks.map { Self.mapRemoteTask($0, taskListId: taskList.id) }
+                    return tasks.map { googleTask in
+                        var task = TaskItem.from(googleTask: googleTask, taskListId: taskList.id)
+                        if googleTask.deleted == true {
+                            task.syncStatus = .deleted
+                        }
+                        return task
+                    }
                 }
             }
 
@@ -197,60 +75,430 @@ public actor GoogleSyncEngine {
         }
     }
 
-    // MARK: - Merge Logic
+    func send(_ entry: OutboxEntry) async throws {
+        switch entry.action {
+        case .updateStatus:
+            try await api.syncTaskCompletion(entry.taskItem)
+        case .updateTask:
+            _ = try await api.syncTaskUpdate(entry.taskItem)
+        case .create:
+            guard let listID = entry.taskItem.googleTaskListId else { return }
+            _ = try await api.createTask(
+                taskListId: listID,
+                title: entry.taskItem.title
+            )
+        case .delete:
+            guard let listID = entry.taskItem.googleTaskListId,
+                  let taskID = entry.taskItem.googleTaskId else { return }
+            try await api.deleteTask(taskListId: listID, taskId: taskID)
+        }
+    }
+}
 
-    /// Merge remote tasks into local list using Last-Writer-Wins by googleTaskId.
-    private func mergeTasks(local: [TaskItem], remote: [TaskItem]) -> [TaskItem] {
-        var localByGoogleId: [String: TaskItem] = [:]
-        var localWithoutGoogleId: [TaskItem] = []
+private struct LiveGoogleSyncStateStore: GoogleSyncStateStoring {
+    let storage: LocalStorage
 
-        for task in local {
-            if let gid = task.googleTaskId {
-                localByGoogleId[gid] = task
-            } else {
-                localWithoutGoogleId.append(task)
+    init(storage: LocalStorage = .shared) {
+        self.storage = storage
+    }
+
+    func loadGoogleSyncMetadata() async throws -> GoogleSyncMetadata? {
+        try await storage.loadGoogleSyncMetadata()
+    }
+
+    func saveGoogleSyncMetadata(_ metadata: GoogleSyncMetadata) async throws {
+        try await storage.saveGoogleSyncMetadata(metadata)
+    }
+
+    func loadOutbox() async throws -> [OutboxEntry] {
+        try await storage.loadOutbox()
+    }
+
+    func saveOutbox(_ entries: [OutboxEntry]) async throws {
+        try await storage.saveOutbox(entries)
+    }
+
+    func resetGoogleSyncState() async throws {
+        try await storage.resetGoogleSyncState()
+    }
+}
+
+private struct GoogleSyncOperationLease: Sendable {
+    let generation: UInt64
+}
+
+// MARK: - Google Sync Engine
+
+/// Orchestrates Google Calendar/Tasks sync. Every operation carries an actor-owned generation
+/// lease so account removal can invalidate suspended network and persistence work before its first
+/// suspension point. The outbox is intentionally reset at every Google account boundary because
+/// the legacy format has no account owner and must never be replayed into a later authorization.
+public actor GoogleSyncEngine {
+    public static let shared = GoogleSyncEngine()
+
+    private let calendarAPI: any GoogleCalendarSyncServing
+    private let tasksAPI: any GoogleTasksSyncServing
+    private let storage: any GoogleSyncStateStoring
+
+    private var operationGeneration: UInt64 = 0
+    private var isEnabled = true
+    private var resetRequiredBeforeActivation = false
+    private var activeTransitionID: UUID?
+    private var activeSyncID: UUID?
+    private var activeFlushID: UUID?
+    private var hasLoadedPersistedState = false
+
+    private var metadata = GoogleSyncMetadata()
+    private var outbox: [OutboxEntry] = []
+    /// The batch currently waiting on Google. Persistence includes this batch until it settles so
+    /// a process kill retries rather than silently losing a user action.
+    private var inFlightOutbox: [OutboxEntry] = []
+
+    private static let maxRetryCount = 5
+    private static let syncOverlapInterval: TimeInterval = -5 * 60
+
+    init(
+        calendarAPI: any GoogleCalendarSyncServing = LiveGoogleCalendarSyncService(),
+        tasksAPI: any GoogleTasksSyncServing = LiveGoogleTasksSyncService(),
+        storage: any GoogleSyncStateStoring = LiveGoogleSyncStateStore()
+    ) {
+        self.calendarAPI = calendarAPI
+        self.tasksAPI = tasksAPI
+        self.storage = storage
+    }
+
+    // MARK: - Account boundary
+
+    /// Invalidates all existing leases before the first await, blocks new work, clears every
+    /// in-memory queue, then atomically asks the storage actor to delete and verify provider state.
+    public func resetAndDisable() async throws {
+        guard activeTransitionID == nil else {
+            throw GoogleSyncEngineError.accountTransitionInProgress
+        }
+
+        let transitionID = UUID()
+        activeTransitionID = transitionID
+        operationGeneration &+= 1
+        isEnabled = false
+        resetRequiredBeforeActivation = true
+        activeSyncID = nil
+        activeFlushID = nil
+        metadata = GoogleSyncMetadata()
+        outbox = []
+        inFlightOutbox = []
+        hasLoadedPersistedState = true
+
+        do {
+            try await storage.resetGoogleSyncState()
+            guard activeTransitionID == transitionID else {
+                throw GoogleSyncEngineError.staleOperation
+            }
+            operationGeneration &+= 1
+            resetRequiredBeforeActivation = false
+            activeTransitionID = nil
+        } catch {
+            if activeTransitionID == transitionID {
+                operationGeneration &+= 1
+                activeTransitionID = nil
+            }
+            if let engineError = error as? GoogleSyncEngineError {
+                throw engineError
+            }
+            throw GoogleSyncEngineError.stateResetFailed(error.localizedDescription)
+        }
+    }
+
+    /// Opens a fresh generation only after the new Google authorization is fully committed.
+    public func activateAfterAuthorization() throws {
+        guard activeTransitionID == nil else {
+            throw GoogleSyncEngineError.accountTransitionInProgress
+        }
+        guard !resetRequiredBeforeActivation else {
+            throw GoogleSyncEngineError.stateResetRequired
+        }
+        operationGeneration &+= 1
+        isEnabled = true
+    }
+
+    // MARK: - Main entry point
+
+    public func performFullSync(
+        currentEvents: [CalendarEvent],
+        currentTasks: [TaskItem],
+        includeCalendar: Bool = true,
+        includeTasks: Bool = true
+    ) async throws -> (events: [CalendarEvent], tasks: [TaskItem], warnings: [String]) {
+        let lease = try captureOperationLease()
+        guard activeSyncID == nil else { return (currentEvents, currentTasks, []) }
+        let syncID = UUID()
+        activeSyncID = syncID
+        defer {
+            if activeSyncID == syncID {
+                activeSyncID = nil
             }
         }
 
-        var result = localWithoutGoogleId
+        try await loadPersistedState(for: lease)
 
+        var events = currentEvents
+        var tasks = currentTasks
+        var warnings: [String] = []
+        var successCount = 0
+        let attemptedCount = (includeCalendar ? 1 : 0) + (includeTasks ? 1 : 0)
+
+        if includeCalendar {
+            switch try await runSyncStep(
+                name: "Calendar",
+                lease: lease,
+                operation: { try await self.syncCalendar(lease: lease) }
+            ) {
+            case .success(let syncedEvents):
+                events = syncedEvents
+                successCount += 1
+            case .failure(let warning):
+                warnings.append(warning)
+            }
+        }
+
+        if includeTasks {
+            switch try await runSyncStep(
+                name: "Tasks",
+                lease: lease,
+                operation: { try await self.syncTasks(currentTasks: currentTasks, lease: lease) }
+            ) {
+            case .success(let syncedTasks):
+                tasks = syncedTasks
+                successCount += 1
+            case .failure(let warning):
+                warnings.append(warning)
+            }
+        }
+
+        try validateOperation(lease)
+        metadata.lastFullSyncTime = Date()
+        try await persistMetadata(
+            lease: lease,
+            context: "GoogleSyncEngine.performFullSync"
+        )
+
+        guard attemptedCount == 0 || successCount > 0 else {
+            throw GoogleSyncEngineError.fullSyncFailed(warnings)
+        }
+        try validateOperation(lease)
+        return (events, tasks, warnings)
+    }
+
+    private func runSyncStep<T>(
+        name: String,
+        lease: GoogleSyncOperationLease,
+        operation: () async throws -> T
+    ) async throws -> SyncStepResult<T> {
+        do {
+            let value = try await operation()
+            try validateOperation(lease)
+            return .success(value)
+        } catch {
+            // If reset happened while either the success or failure response was suspended, this
+            // validation throws staleOperation instead of converting an old-account result into a
+            // warning and committing lastFullSyncTime afterward.
+            try validateOperation(lease)
+            let warning = "\(name) sync failed: \(error.localizedDescription)"
+            #if DEBUG
+            print("[GoogleSyncEngine] \(name) sync failed: \(error)")
+            #endif
+            return .failure(warning)
+        }
+    }
+
+    // MARK: - Persisted state
+
+    private func loadPersistedState(for lease: GoogleSyncOperationLease) async throws {
+        guard !hasLoadedPersistedState else {
+            try validateOperation(lease)
+            return
+        }
+
+        var loadedMetadata = GoogleSyncMetadata()
+        do {
+            let candidate = try await storage.loadGoogleSyncMetadata() ?? GoogleSyncMetadata()
+            try validateOperation(lease)
+            loadedMetadata = candidate
+        } catch {
+            try validateOperation(lease)
+            ErrorReporter.log(
+                .persistence(
+                    operation: "load",
+                    target: "google_sync_metadata.json",
+                    underlying: error.localizedDescription
+                ),
+                context: "GoogleSyncEngine.loadPersistedState"
+            )
+        }
+
+        var loadedOutbox: [OutboxEntry] = []
+        do {
+            let candidate = try await storage.loadOutbox()
+            try validateOperation(lease)
+            loadedOutbox = candidate
+        } catch {
+            try validateOperation(lease)
+            ErrorReporter.log(
+                .persistence(
+                    operation: "load",
+                    target: "outbox.json",
+                    underlying: error.localizedDescription
+                ),
+                context: "GoogleSyncEngine.loadPersistedState"
+            )
+        }
+
+        try validateOperation(lease)
+        metadata = loadedMetadata
+        outbox = loadedOutbox
+        hasLoadedPersistedState = true
+    }
+
+    private func persistMetadata(
+        lease: GoogleSyncOperationLease,
+        context: String
+    ) async throws {
+        try validateOperation(lease)
+        do {
+            try await storage.saveGoogleSyncMetadata(metadata)
+        } catch {
+            try validateOperation(lease)
+            ErrorReporter.log(
+                .persistence(
+                    operation: "save",
+                    target: "google_sync_metadata.json",
+                    underlying: error.localizedDescription
+                ),
+                context: context
+            )
+            throw error
+        }
+        try validateOperation(lease)
+    }
+
+    private func persistOutbox(
+        lease: GoogleSyncOperationLease,
+        context: String
+    ) async throws {
+        try validateOperation(lease)
+        do {
+            try await storage.saveOutbox(inFlightOutbox + outbox)
+        } catch {
+            try validateOperation(lease)
+            ErrorReporter.log(
+                .persistence(
+                    operation: "save",
+                    target: "outbox.json",
+                    underlying: error.localizedDescription
+                ),
+                context: context
+            )
+            throw error
+        }
+        try validateOperation(lease)
+    }
+
+    // MARK: - Calendar sync
+
+    private func syncCalendar(lease: GoogleSyncOperationLease) async throws -> [CalendarEvent] {
+        if metadata.calendarSyncToken != nil {
+            metadata.calendarSyncToken = nil
+            try await persistMetadata(
+                lease: lease,
+                context: "GoogleSyncEngine.syncCalendar"
+            )
+        }
+
+        let events = try await calendarAPI.fetchTodayEvents()
+        try validateOperation(lease)
+        #if DEBUG
+        print("[GoogleSyncEngine] Full calendar sync events=\(events.count)")
+        #endif
+        return events
+    }
+
+    // MARK: - Tasks sync
+
+    public func syncTasks(currentTasks: [TaskItem]) async throws -> [TaskItem] {
+        let lease = try captureOperationLease()
+        try await loadPersistedState(for: lease)
+        return try await syncTasks(currentTasks: currentTasks, lease: lease)
+    }
+
+    private func syncTasks(
+        currentTasks: [TaskItem],
+        lease: GoogleSyncOperationLease
+    ) async throws -> [TaskItem] {
+        try await flushOutbox(lease: lease)
+        try validateOperation(lease)
+
+        let hasLocalGoogleTasks = currentTasks.contains { $0.googleTaskId != nil }
+        let updatedMin = metadata.lastTasksSyncTime.flatMap { lastSync in
+            hasLocalGoogleTasks
+                ? lastSync.addingTimeInterval(Self.syncOverlapInterval)
+                : nil
+        }
+        let remoteTasks = try await tasksAPI.fetchTasks(updatedMin: updatedMin)
+        try validateOperation(lease)
+
+        let merged = mergeTasks(local: currentTasks, remote: remoteTasks)
+        metadata.lastTasksSyncTime = Date()
+        try await persistMetadata(
+            lease: lease,
+            context: "GoogleSyncEngine.syncTasks"
+        )
+        return merged
+    }
+
+    // MARK: - Merge logic
+
+    private func mergeTasks(local: [TaskItem], remote: [TaskItem]) -> [TaskItem] {
+        var localByGoogleID: [String: TaskItem] = [:]
+        var localWithoutGoogleID: [TaskItem] = []
+
+        for task in local {
+            if let googleID = task.googleTaskId {
+                localByGoogleID[googleID] = task
+            } else {
+                localWithoutGoogleID.append(task)
+            }
+        }
+
+        var result = localWithoutGoogleID
         for remoteTask in remote {
-            guard let gid = remoteTask.googleTaskId else { continue }
-            guard let localTask = localByGoogleId.removeValue(forKey: gid) else {
+            guard let googleID = remoteTask.googleTaskId else { continue }
+            guard let localTask = localByGoogleID.removeValue(forKey: googleID) else {
                 if remoteTask.syncStatus != .deleted {
                     result.append(remoteTask)
                 }
                 continue
             }
 
-            if remoteTask.syncStatus == .deleted {
-                continue
-            }
-
+            if remoteTask.syncStatus == .deleted { continue }
             if localTask.syncStatus == .synced {
-                result.append(Self.mergeRemoteTaskPreservingLocalFields(local: localTask, remote: remoteTask))
+                result.append(Self.mergeRemoteTaskPreservingLocalFields(
+                    local: localTask,
+                    remote: remoteTask
+                ))
                 continue
             }
 
-            // Local is dirty - Last-Writer-Wins
-            let localTime = localTask.lastModified
             let remoteTime = remoteTask.remoteUpdatedAt ?? remoteTask.lastModified
             result.append(
-                remoteTime > localTime
+                remoteTime > localTask.lastModified
                     ? Self.mergeRemoteTaskPreservingLocalFields(local: localTask, remote: remoteTask)
                     : localTask
             )
         }
 
-        // Keep remaining local tasks that weren't matched
-        for (_, task) in localByGoogleId {
-            result.append(task)
-        }
-
+        result.append(contentsOf: localByGoogleID.values)
         return result
     }
 
-    /// A remote Google refresh owns provider fields but must not erase Kirole-only state.
     nonisolated static func mergeRemoteTaskPreservingLocalFields(
         local: TaskItem,
         remote: TaskItem
@@ -261,69 +509,80 @@ public actor GoogleSyncEngine {
         return merged
     }
 
-    private static func mapRemoteTask(_ googleTask: GoogleTask, taskListId: String) -> TaskItem {
-        var task = TaskItem.from(googleTask: googleTask, taskListId: taskListId)
-        if googleTask.deleted == true {
-            task.syncStatus = .deleted
-        }
-        return task
-    }
-
     // MARK: - Outbox
 
     public func enqueueChange(task: TaskItem, action: OutboxAction) async {
-        if let existingIndex = outbox.lastIndex(where: { $0.taskItem.id == task.id && $0.action == action }) {
-            let existing = outbox[existingIndex]
-            if existing.taskItem.lastModified >= task.lastModified {
-                return
+        guard let lease = try? captureOperationLease() else { return }
+        do {
+            try await loadPersistedState(for: lease)
+            if let existingIndex = outbox.lastIndex(where: {
+                $0.taskItem.id == task.id && $0.action == action
+            }) {
+                let existing = outbox[existingIndex]
+                if existing.taskItem.lastModified >= task.lastModified { return }
+                outbox.remove(at: existingIndex)
             }
-            outbox.remove(at: existingIndex)
+            outbox.append(OutboxEntry(taskItem: task, action: action))
+            try await persistOutbox(
+                lease: lease,
+                context: "GoogleSyncEngine.enqueueChange"
+            )
+        } catch {
+            if case GoogleSyncEngineError.staleOperation = error { return }
+            ErrorReporter.log(error, context: "GoogleSyncEngine.enqueueChange")
         }
-        let entry = OutboxEntry(taskItem: task, action: action)
-        outbox.append(entry)
-        await persistOutbox(context: "GoogleSyncEngine.enqueueChange")
     }
 
     public func clearQueuedChanges(
-        for taskId: String,
+        for taskID: String,
         action: OutboxAction,
         upToLastModified: Date? = nil
     ) async {
-        let originalCount = outbox.count
-        outbox.removeAll { entry in
-            guard entry.taskItem.id == taskId, entry.action == action else {
-                return false
+        guard let lease = try? captureOperationLease() else { return }
+        do {
+            try await loadPersistedState(for: lease)
+            let originalCount = outbox.count
+            outbox.removeAll { entry in
+                guard entry.taskItem.id == taskID, entry.action == action else {
+                    return false
+                }
+                guard let upToLastModified else { return true }
+                return entry.taskItem.lastModified <= upToLastModified
             }
-            guard let upToLastModified else {
-                return true
-            }
-            return entry.taskItem.lastModified <= upToLastModified
+            guard outbox.count != originalCount else { return }
+            try await persistOutbox(
+                lease: lease,
+                context: "GoogleSyncEngine.clearQueuedChanges"
+            )
+        } catch {
+            if case GoogleSyncEngineError.staleOperation = error { return }
+            ErrorReporter.log(error, context: "GoogleSyncEngine.clearQueuedChanges")
         }
-        guard outbox.count != originalCount else { return }
-        await persistOutbox(context: "GoogleSyncEngine.clearQueuedChanges")
     }
 
-    private func flushOutbox() async {
-        // 防重入：并发第二轮 flush 会重复取批次并互相覆盖 inFlightOutbox。
-        guard !isFlushingOutbox else { return }
-        isFlushingOutbox = true
-        defer { isFlushingOutbox = false }
-
+    private func flushOutbox(lease: GoogleSyncOperationLease) async throws {
+        guard activeFlushID == nil else {
+            try validateOperation(lease)
+            return
+        }
         guard !outbox.isEmpty else { return }
 
-        // Drain 模式：先取走本批次并清空 outbox。网络 await 期间 actor 可重入
-        // （enqueueChange 会 append 新变更），结尾不能整体覆盖 outbox——旧实现
-        // `outbox = remaining` 会把 flush 期间新入队的变更静默吞掉且永不重试。
+        let flushID = UUID()
+        activeFlushID = flushID
+        defer {
+            if activeFlushID == flushID {
+                activeFlushID = nil
+            }
+        }
+
         let batch = outbox
         outbox = []
         inFlightOutbox = batch
-
         var remaining: [OutboxEntry] = []
 
         for var entry in batch {
+            try validateOperation(lease)
             if entry.retryCount > Self.maxRetryCount {
-                // 没有任何机制会重置 retryCount——超限条目留在 outbox 只会让 outbox.json
-                // 无限膨胀。丢弃并留痕（此分支只清理历史遗留的已超限存量）。
                 ErrorReporter.log(
                     .sync(
                         component: "Google Tasks Outbox",
@@ -333,86 +592,66 @@ public actor GoogleSyncEngine {
                 )
                 continue
             }
+
             do {
-                switch entry.action {
-                case .updateStatus:
-                    try await tasksAPI.syncTaskCompletion(entry.taskItem)
-                case .updateTask:
-                    _ = try await tasksAPI.syncTaskUpdate(entry.taskItem)
-                case .create:
-                    guard let listId = entry.taskItem.googleTaskListId else {
-                        continue // Drop entries without a list ID
-                    }
-                    _ = try await tasksAPI.createTask(
-                        taskListId: listId,
-                        title: entry.taskItem.title
-                    )
-                case .delete:
-                    guard let listId = entry.taskItem.googleTaskListId,
-                          let taskId = entry.taskItem.googleTaskId else {
-                        continue
-                    }
-                    try await tasksAPI.deleteTask(taskListId: listId, taskId: taskId)
-                }
-                // Success - entry is consumed
+                try await tasksAPI.send(entry)
+                try validateOperation(lease)
             } catch {
+                // A reset changes the generation before its storage await. Revalidate before
+                // recording a retry so a late success and a late failure have identical stale
+                // semantics and neither can send the next entry.
+                try validateOperation(lease)
                 entry.retryCount += 1
                 let actionName = entry.action.rawValue
-                let taskId = entry.taskItem.id
-                let context = "GoogleSyncEngine.flushOutbox[\(actionName):\(taskId)]"
+                let taskID = entry.taskItem.id
+                let context = "GoogleSyncEngine.flushOutbox[\(actionName):\(taskID)]"
                 if entry.retryCount <= Self.maxRetryCount {
                     remaining.append(entry)
-                    let appError = AppError.sync(
-                        component: "Google Tasks Outbox",
-                        underlying: "Action \(actionName) failed (\(entry.retryCount)/\(Self.maxRetryCount)); will retry. \(error.localizedDescription)"
+                    ErrorReporter.log(
+                        .sync(
+                            component: "Google Tasks Outbox",
+                            underlying: "Action \(actionName) failed (\(entry.retryCount)/\(Self.maxRetryCount)); will retry. \(error.localizedDescription)"
+                        ),
+                        context: context
                     )
-                    ErrorReporter.log(appError, context: context)
                 } else {
-                    // 超过最大重试次数：丢弃。任务本体仍在本地（丢的只是这次推送动作），
-                    // 任务的 syncStatus 已标记 error/conflict，后续整轮同步仍可收敛。
-                    let appError = AppError.sync(
-                        component: "Google Tasks Outbox",
-                        underlying: "Action \(actionName) dropped after \(Self.maxRetryCount) retries. \(error.localizedDescription)"
+                    ErrorReporter.log(
+                        .sync(
+                            component: "Google Tasks Outbox",
+                            underlying: "Action \(actionName) dropped after \(Self.maxRetryCount) retries. \(error.localizedDescription)"
+                        ),
+                        context: context
                     )
-                    ErrorReporter.log(appError, context: context)
                 }
             }
         }
 
-        // 失败重试项放回队首（时间序在前），flush 期间新入队的变更跟在后面。
-        // 先清 inFlightOutbox 再落盘，否则批次会和 remaining 重复写盘。
+        try validateOperation(lease)
         inFlightOutbox = []
         outbox = remaining + outbox
-        await persistOutbox(context: "GoogleSyncEngine.flushOutbox")
+        try await persistOutbox(
+            lease: lease,
+            context: "GoogleSyncEngine.flushOutbox"
+        )
     }
 
-    private func persistMetadata(context: String) async {
-        do {
-            try await storage.saveGoogleSyncMetadata(metadata)
-        } catch {
-            ErrorReporter.log(
-                .persistence(
-                    operation: "save",
-                    target: "google_sync_metadata.json",
-                    underlying: error.localizedDescription
-                ),
-                context: context
-            )
+    // MARK: - Lease validation
+
+    private func captureOperationLease() throws -> GoogleSyncOperationLease {
+        guard isEnabled,
+              activeTransitionID == nil,
+              !resetRequiredBeforeActivation else {
+            throw GoogleSyncEngineError.providerDisabled
         }
+        return GoogleSyncOperationLease(generation: operationGeneration)
     }
 
-    private func persistOutbox(context: String) async {
-        do {
-            try await storage.saveOutbox(inFlightOutbox + outbox)
-        } catch {
-            ErrorReporter.log(
-                .persistence(
-                    operation: "save",
-                    target: "outbox.json",
-                    underlying: error.localizedDescription
-                ),
-                context: context
-            )
+    private func validateOperation(_ lease: GoogleSyncOperationLease) throws {
+        guard isEnabled,
+              activeTransitionID == nil,
+              !resetRequiredBeforeActivation,
+              lease.generation == operationGeneration else {
+            throw GoogleSyncEngineError.staleOperation
         }
     }
 }
@@ -426,14 +665,26 @@ private enum SyncStepResult<T> {
 
 public enum GoogleSyncEngineError: LocalizedError, Sendable {
     case fullSyncFailed([String])
+    case staleOperation
+    case providerDisabled
+    case accountTransitionInProgress
+    case stateResetRequired
+    case stateResetFailed(String)
 
     public var errorDescription: String? {
         switch self {
         case .fullSyncFailed(let warnings):
-            if warnings.isEmpty {
-                return "Google sync failed"
-            }
-            return warnings.joined(separator: " | ")
+            return warnings.isEmpty ? "Google sync failed" : warnings.joined(separator: " | ")
+        case .staleOperation:
+            return "The Google operation belongs to an old account session"
+        case .providerDisabled:
+            return "Google sync is disabled until authorization completes"
+        case .accountTransitionInProgress:
+            return "A Google account transition is already in progress"
+        case .stateResetRequired:
+            return "Google sync state must be cleared before authorization can continue"
+        case .stateResetFailed(let description):
+            return "Google sync state could not be cleared: \(description)"
         }
     }
 }

@@ -73,12 +73,15 @@ public enum BLEDataEncoder {
         data.append(UInt8(min(todayTasks.count, 10)))
 
         for task in todayTasks.prefix(10) {
+            data.appendString(task.hardwareIdentifier, maxLength: 36)
             data.appendString(
                 task.title,
                 maxLength: 30,
                 fallbackIfSanitizedEmpty: HardwareTitleFallback.task
             )
             data.append(task.isCompleted ? 1 : 0)
+            // The firmware contract uses 1...3; the App model is zero-based (low=0...high=2).
+            data.append(UInt8(task.priority.rawValue + 1))
         }
         return data
     }

@@ -15,17 +15,42 @@ import AppKit
 public final class NotionAuthService: NSObject, ASWebAuthenticationPresentationContextProviding {
     public static let shared = NotionAuthService()
 
-    private let keychainService = KeychainService.shared
+    typealias WebAuthorization = @MainActor (URL, String) async throws -> URL
+    typealias TokenExchange = @MainActor (String, String) async throws -> NotionTokenResponse
+
+    private let keychainService: KeychainService
+    private let configuredClientID: String?
+    private let webAuthorization: WebAuthorization?
+    private let tokenExchange: TokenExchange?
+    let credentialGate: OAuthCredentialOperationGate
     private var currentSession: ASWebAuthenticationSession?
 
-    private override init() {
+    private override convenience init() {
+        self.init(keychainService: .shared)
+    }
+
+    init(
+        keychainService: KeychainService,
+        clientID: String? = nil,
+        credentialGate: OAuthCredentialOperationGate = OAuthCredentialOperationGate(),
+        webAuthorization: WebAuthorization? = nil,
+        tokenExchange: TokenExchange? = nil
+    ) {
+        self.keychainService = keychainService
+        configuredClientID = clientID
+        self.credentialGate = credentialGate
+        self.webAuthorization = webAuthorization
+        self.tokenExchange = tokenExchange
         super.init()
     }
 
     // MARK: - OAuth Flow
 
     public func authorize() async throws -> String {
-        guard let clientId = AppSecrets.notionClientId else {
+        let operation = try beginCredentialOperation()
+        defer { endCredentialOperation(operation) }
+
+        guard let clientId = configuredClientID ?? AppSecrets.notionClientId else {
             throw NotionAuthError.missingCredentials
         }
 
@@ -45,20 +70,34 @@ public final class NotionAuthService: NSObject, ASWebAuthenticationPresentationC
             throw NotionAuthError.invalidURL
         }
 
-        let callbackURL = try await performWebAuth(url: url, callbackScheme: "kirole")
+        let callbackURL: URL
+        if let webAuthorization {
+            callbackURL = try await webAuthorization(url, "kirole")
+        } else {
+            callbackURL = try await performWebAuth(url: url, callbackScheme: "kirole")
+        }
+        try validateCredentialOperation(operation)
         try validateState(expected: state, callbackURL: callbackURL)
 
         guard let code = extractCode(from: callbackURL) else {
             throw NotionAuthError.noAuthorizationCode
         }
 
-        let tokenResponse = try await exchangeCodeViaEdgeFunction(code: code, redirectURI: redirectURI)
+        let tokenResponse: NotionTokenResponse
+        if let tokenExchange {
+            tokenResponse = try await tokenExchange(code, redirectURI)
+        } else {
+            tokenResponse = try await exchangeCodeViaEdgeFunction(code: code, redirectURI: redirectURI)
+        }
 
+        try validateCredentialOperation(operation)
         try keychainService.saveNotionAccessToken(tokenResponse.accessToken)
         if let workspaceId = tokenResponse.workspaceId {
+            try validateCredentialOperation(operation)
             try keychainService.saveNotionWorkspaceId(workspaceId)
         }
 
+        try validateCredentialOperation(operation)
         return tokenResponse.accessToken
     }
 
@@ -99,8 +138,62 @@ public final class NotionAuthService: NSObject, ASWebAuthenticationPresentationC
         keychainService.getNotionAccessToken() != nil
     }
 
-    public func disconnect() {
-        keychainService.clearNotionTokens()
+    @discardableResult
+    public func disconnect() -> Bool {
+        let cleanup = invalidateAndBlockCredentialOperations()
+        return disconnect(after: cleanup, completeCleanup: true)
+    }
+
+    @discardableResult
+    func disconnect(
+        after cleanup: OAuthCredentialCleanupTicket,
+        completeCleanup: Bool
+    ) -> Bool {
+        guard credentialGate.accepts(cleanup) else { return false }
+        do {
+            try keychainService.clearNotionTokens()
+        } catch {
+            credentialGate.fail(cleanup)
+            return false
+        }
+        guard credentialsAreCleared else {
+            credentialGate.fail(cleanup)
+            return false
+        }
+        if completeCleanup {
+            credentialGate.complete(cleanup)
+        }
+        return true
+    }
+
+    func beginCredentialOperation() throws -> OAuthCredentialOperationTicket {
+        guard let operation = credentialGate.beginOperation() else {
+            throw NotionAuthError.operationInvalidated
+        }
+        return operation
+    }
+
+    func validateCredentialOperation(_ operation: OAuthCredentialOperationTicket) throws {
+        guard !Task.isCancelled, credentialGate.accepts(operation) else {
+            if Task.isCancelled { throw CancellationError() }
+            throw NotionAuthError.operationInvalidated
+        }
+    }
+
+    func endCredentialOperation(_ operation: OAuthCredentialOperationTicket) {
+        credentialGate.endOperation(operation)
+    }
+
+    func invalidateAndBlockCredentialOperations() -> OAuthCredentialCleanupTicket {
+        let cleanup = credentialGate.invalidateAndBlock()
+        currentSession?.cancel()
+        currentSession = nil
+        return cleanup
+    }
+
+    var credentialsAreCleared: Bool {
+        keychainService.getNotionAccessToken() == nil
+            && keychainService.getNotionWorkspaceId() == nil
     }
 
     // MARK: - Helpers
@@ -167,7 +260,7 @@ public final class NotionAuthService: NSObject, ASWebAuthenticationPresentationC
 
 // MARK: - Token Response
 
-private struct NotionTokenResponse: Decodable {
+struct NotionTokenResponse: Decodable, Sendable {
     let accessToken: String
     let workspaceId: String?
 
@@ -186,6 +279,7 @@ public enum NotionAuthError: LocalizedError, Sendable {
     case tokenExchangeFailed
     case noCallbackURL
     case invalidState
+    case operationInvalidated
 
     public var errorDescription: String? {
         switch self {
@@ -201,6 +295,8 @@ public enum NotionAuthError: LocalizedError, Sendable {
             return "No callback URL received from Notion"
         case .invalidState:
             return "Notion OAuth state validation failed"
+        case .operationInvalidated:
+            return "Notion authorization was cancelled by disconnect or sign out"
         }
     }
 }

@@ -1,0 +1,5 @@
+[functions.ticktick-oauth]
+verify_jwt = true
+
+[functions.ticktick-oauth-callback]
+verify_jwt = false

@@ -42,9 +42,29 @@ public struct EventEditCapabilities: Sendable, Equatable {
 }
 
 extension TaskItem {
+    /// Whether Kirole may change this provider item's completion state.
+    ///
+    /// Content editing and completion are separate capabilities: Todoist and Microsoft To Do
+    /// intentionally allow completion while keeping title/date edits read-only. Providers that
+    /// expose a read-only list set `allowsContentModifications` to false and are rejected by both
+    /// the App checkbox and the hardware operation path.
+    public var allowsCompletionChanges: Bool {
+        externalReference?.allowsContentModifications != false
+    }
+
     public var editCapabilities: TaskEditCapabilities {
         switch source {
         case .apple:
+            guard externalReference?.allowsContentModifications != false else {
+                return TaskEditCapabilities(
+                    isEditable: false,
+                    supportsTitle: false,
+                    supportsPriority: false,
+                    dueDatePrecision: .unsupported,
+                    supportsNotes: false,
+                    guidance: "This reminder list is read-only. Edit it in Apple Reminders."
+                )
+            }
             return TaskEditCapabilities(
                 isEditable: true,
                 supportsTitle: true,
@@ -86,7 +106,34 @@ extension TaskItem {
                 supportsPriority: false,
                 dueDatePrecision: .unsupported,
                 supportsNotes: false,
-                guidance: "Writing back to Todoist isn't supported yet. Edit it in Todoist."
+                guidance: "Kirole can complete this task, but content edits stay in Todoist."
+            )
+        case .microsoftToDo:
+            return TaskEditCapabilities(
+                isEditable: false,
+                supportsTitle: false,
+                supportsPriority: false,
+                dueDatePrecision: .unsupported,
+                supportsNotes: false,
+                guidance: "Kirole can complete this task, but content edits stay in Microsoft To Do."
+            )
+        case .tickTick:
+            return TaskEditCapabilities(
+                isEditable: false,
+                supportsTitle: false,
+                supportsPriority: false,
+                dueDatePrecision: .unsupported,
+                supportsNotes: false,
+                guidance: "TickTick and Dida tasks are read-only in Kirole."
+            )
+        case .outlook:
+            return TaskEditCapabilities(
+                isEditable: false,
+                supportsTitle: false,
+                supportsPriority: false,
+                dueDatePrecision: .unsupported,
+                supportsNotes: false,
+                guidance: "Outlook Calendar items are read-only in Kirole."
             )
         }
     }
@@ -96,6 +143,12 @@ extension CalendarEvent {
     public func editCapabilities(googleCalendarWriteAccess: Bool) -> EventEditCapabilities {
         switch source {
         case .apple:
+            guard externalReference?.allowsContentModifications != false else {
+                return EventEditCapabilities(
+                    isEditable: false,
+                    guidance: "This calendar is read-only. Edit it in the source calendar."
+                )
+            }
             return EventEditCapabilities(isEditable: true)
         case .google:
             guard googleCalendarWriteAccess else {
@@ -105,7 +158,7 @@ extension CalendarEvent {
                 )
             }
             return EventEditCapabilities(isEditable: true)
-        case .todoist, .notion, .taskade:
+        case .outlook, .microsoftToDo, .todoist, .tickTick, .notion, .taskade:
             return EventEditCapabilities(
                 isEditable: false,
                 guidance: "Edit this event in \(source.rawValue) for now."

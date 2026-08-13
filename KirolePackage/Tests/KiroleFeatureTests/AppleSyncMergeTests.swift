@@ -116,4 +116,103 @@ struct AppleSyncMergeTests {
         // Adopting remote must also converge the sync status, not leave the local .pending dirty flag.
         #expect(merged.syncStatus == .synced)
     }
+
+    @Test("provider-scoped reminder IDs keep duplicate external UIDs in separate accounts and lists")
+    func providerScopedReminderIdentity() throws {
+        let firstReference = ProviderItemReference(
+            provider: .appleReminders,
+            accountID: "personal-account",
+            containerID: "personal-list",
+            itemID: "external:shared-uid",
+            allowsContentModifications: true
+        )
+        let secondReference = ProviderItemReference(
+            provider: .appleReminders,
+            accountID: "work-account",
+            containerID: "work-list",
+            itemID: "external:shared-uid",
+            allowsContentModifications: false
+        )
+        var firstLocal = makeTask(
+            id: firstReference.stableLocalID,
+            title: "Old personal",
+            isCompleted: false,
+            syncStatus: .synced,
+            lastModified: .distantPast
+        )
+        firstLocal.appleExternalId = "shared-uid"
+        firstLocal.appleReminderId = "personal-item"
+        firstLocal.externalReference = firstReference
+        var secondLocal = makeTask(
+            id: secondReference.stableLocalID,
+            title: "Old work",
+            isCompleted: false,
+            syncStatus: .synced,
+            lastModified: .distantPast
+        )
+        secondLocal.appleExternalId = "shared-uid"
+        secondLocal.appleReminderId = "work-item"
+        secondLocal.externalReference = secondReference
+
+        var firstRemote = firstLocal
+        firstRemote.title = "Personal remote"
+        firstRemote.lastModified = Date(timeIntervalSince1970: 2_000)
+        var secondRemote = secondLocal
+        secondRemote.title = "Work remote"
+        secondRemote.lastModified = Date(timeIntervalSince1970: 3_000)
+
+        let merged = AppleSyncEngine.mergeReminders(
+            currentTasks: [firstLocal, secondLocal],
+            remoteTasks: [firstRemote, secondRemote]
+        )
+
+        #expect(merged.count == 2)
+        let personal = try #require(merged.first { $0.id == firstReference.stableLocalID })
+        let work = try #require(merged.first { $0.id == secondReference.stableLocalID })
+        #expect(personal.title == "Personal remote")
+        #expect(work.title == "Work remote")
+        #expect(personal.externalReference == firstReference)
+        #expect(work.externalReference == secondReference)
+    }
+
+    @Test("legacy reminders match by calendar item identifier and gain provider metadata")
+    func legacyReminderGetsProviderReference() throws {
+        let reference = ProviderItemReference(
+            provider: .appleReminders,
+            accountID: "account",
+            containerID: "list",
+            itemID: "external:provider-uid",
+            allowsContentModifications: false
+        )
+        var local = makeTask(
+            id: "legacy-local",
+            title: "Legacy",
+            isCompleted: false,
+            syncStatus: .synced,
+            lastModified: .distantPast
+        )
+        local.appleExternalId = "provider-uid"
+        local.appleReminderId = "calendar-item-id"
+        local.externalReference = nil
+
+        var remote = makeTask(
+            id: reference.stableLocalID,
+            title: "Remote",
+            isCompleted: false,
+            syncStatus: .synced,
+            lastModified: Date(timeIntervalSince1970: 2_000)
+        )
+        remote.appleExternalId = "provider-uid"
+        remote.appleReminderId = "calendar-item-id"
+        remote.externalReference = reference
+
+        let merged = AppleSyncEngine.mergeReminders(
+            currentTasks: [local],
+            remoteTasks: [remote]
+        )
+
+        let task = try #require(merged.first)
+        #expect(task.title == "Remote")
+        #expect(task.externalReference == reference)
+    }
 }

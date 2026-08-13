@@ -32,6 +32,14 @@ public enum BLEEventHandler {
         wifiDebugCoordinator: BLEWiFiDebugCoordinator = .shared,
         wifiAvatarSessionCoordinator: WiFiAvatarSessionCoordinator = .shared
     ) async {
+        // OfflineSync is a connection-scoped request/response transaction, not an EventLog.
+        // Route it before 0x21 and generic event parsing so STATE/OP_BATCH/RESULT can resume the
+        // coordinator that owns the current QUERY/COMMIT flow.
+        if message.type == BLEDataType.offlineSync.rawValue {
+            BLESyncCoordinator.shared.handleOfflineSyncPayload(message.payload)
+            return
+        }
+
         // 0x19 是当前连接内的实时控制应答，不属于可离线重放的 Event Log。
         // 必须在 EventLog 解析之前截获，否则可能被误丢弃或将来撞上同字节的新事件。
         if message.type == BLEDataType.wifiDebugMode.rawValue {
@@ -70,6 +78,11 @@ public enum BLEEventHandler {
 
         // Try to parse as an individual device event
         guard let eventLog = EventLog.fromBLEPayload(type: message.type, payload: message.payload) else {
+            return
+        }
+
+        if eventLog.eventType == .deviceWake {
+            await BLESyncCoordinator.shared.performDeviceWakeSync(eventLog, service: service)
             return
         }
 
@@ -146,46 +159,9 @@ public enum BLEEventHandler {
             }
 
         case .deviceWake:
-            Task { @MainActor in
-                // 记录实时上报的固件版本（v2.5.19+），并通知 OTA 协调器判定升级结果。
-                if let firmware = eventLog.firmwareVersion {
-                    service.deviceFirmwareVersion = firmware
-                }
-                BLEOTACoordinator.shared.handleDeviceWake(reportedVersion: eventLog.firmwareVersion)
-                // v2.7: DeviceWake 库存不含 CustomActive，只能提示有待恢复操作；最终状态
-                // 必须由本轮 sync 发 0x22 query 判定，不能在这里提交 App 身份。
-                let avatarNeedsRecovery: Bool
-                if let inventory = eventLog.avatarInventory {
-                    avatarNeedsRecovery = await AppState.shared.reconcileCustomAvatarInventory(
-                        hasImage: inventory.hasImage,
-                        avatarID: inventory.avatarID,
-                        byteLength: inventory.byteLength,
-                        reportedCRC32: inventory.crc32
-                    )
-                } else {
-                    avatarNeedsRecovery = false
-                }
-                do {
-                    try await service.syncTime()
-                } catch {
-                    ErrorReporter.log(
-                        .sync(component: "BLE Sync Time", underlying: error.localizedDescription),
-                        context: "BLEEventHandler.deviceWake"
-                    )
-                }
-                await AppState.shared.handleHardwareWake(now: eventLog.timestamp)
-                // 普通唤醒经退避节流；存在待办头像事务时强制本轮 query 恢复。
-                if !avatarNeedsRecovery {
-                    guard await BLERateLimiter.shared.allowSyncTrigger() else {
-                        ErrorReporter.log(
-                            .sync(component: "BLE DeviceWake", underlying: "throttled"),
-                            context: "BLEEventHandler.deviceWake"
-                        )
-                        return
-                    }
-                }
-                await BLESyncCoordinator.shared.performSync(force: avatarNeedsRecovery)
-            }
+            // Routed before generic event processing so the OfflineSync message boundary is held
+            // before any await. Kept for exhaustive switch coverage only.
+            break
 
         case .deviceSleep:
             await AppState.shared.handleHardwareSleep(now: eventLog.timestamp)
@@ -605,31 +581,6 @@ public enum BLEEventHandler {
 
     private nonisolated static func isVersionedTaskOperation(_ log: EventLog) -> Bool {
         log.operationID != nil && (log.eventType == .completeTask || log.eventType == .skipTask)
-    }
-
-    static func plannedTaskOperationReceipt(
-        _ log: EventLog,
-        tasks: [TaskItem] = AppState.shared.tasks
-    ) -> TaskOperationReceipt? {
-        guard let action = TaskListSnapshotAction(eventType: log.eventType),
-              action == .completeTask || action == .skipTask,
-              let operationID = log.operationID else {
-            return nil
-        }
-        guard operationID != 0 else {
-            return TaskOperationReceipt(action: action, operationID: 0, result: .invalidRequest)
-        }
-
-        guard let taskID = log.taskId, !taskID.isEmpty else {
-            return TaskOperationReceipt(action: action, operationID: operationID, result: .invalidRequest)
-        }
-        guard let task = resolveTask(taskId: taskID, in: tasks) else {
-            return TaskOperationReceipt(action: action, operationID: operationID, result: .taskNotFound)
-        }
-        let result: TaskListSnapshotResultCode = action == .completeTask && task.isCompleted
-            ? .alreadyApplied
-            : .applied
-        return TaskOperationReceipt(action: action, operationID: operationID, result: result)
     }
 
     private static func refreshReceipt(_ log: EventLog) -> TaskOperationReceipt? {

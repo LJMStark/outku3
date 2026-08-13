@@ -26,6 +26,7 @@ import Foundation
 //   0x20 eventLogRequest 请求增量 Event Log
 //   0x21 eventLogBatch   批量回传 Event Log（Device→App，此 type 仅出现在入站方向）
 //   0x22 avatarControl   自定义头像提交、擦除、查询、取消与设备结果
+//   0x25 offlineSync     离线数据事务、状态查询与离线操作补报（双向）
 //   0x7E secureData      安全封装（v2 SecureEnvelope）
 //   0x7F securityHandshake 安全握手（v2）
 //
@@ -47,6 +48,7 @@ import Foundation
 //   0x19 wifiDebugMode          Wi-Fi PC 调试实时应答（不进入 Event Log 批次）
 //   0x20 requestRefresh         请求数据刷新
 //   0x21 eventLogBatch          批量回传事件（含 EventLogType.rawByte 流）
+//   0x25 offlineSync            状态、处理结果与离线操作补报（实时双向帧，不进 Event Log）
 //   0x30 deviceWake             设备唤醒（payload: 电量1B；v2.5.19+ 追加固件版本3B，仅实时帧）
 //   0x31 deviceSleep            设备休眠
 //   0x40 lowBattery             低电量
@@ -94,6 +96,8 @@ public enum BLEDataType: UInt8, Sendable {
     case eventLogBatch = 0x21
     /// 双向实时帧：App 发 commit/erase/query/abort，设备回 staged/committed/erased/state/aborted。
     case avatarControl = 0x22
+    /// 双向事务帧：App 查询状态、补报确认并原子提交 TaskList/Schedule/DayPack。
+    case offlineSync = 0x25
     case secureData = 0x7E
     case securityHandshake = 0x7F
 }

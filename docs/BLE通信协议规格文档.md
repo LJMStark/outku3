@@ -1,10 +1,10 @@
 # Kirole BLE 通信协议规格文档
 
-**版本:** v2.11.0
-**更新日期:** 2026-08-12
-**状态:** v2.11.0 新增工厂运输模式命令 `ShippingMode(0x1C)`：App 发送 1B `0x01`，设备不回业务 ACK，设备主动断开 BLE 即表示生效。App 随后禁止自动重连；设备仅可通过长按电源键 10 秒或持续接入 USB 电源 10 秒唤醒，唤醒后固件自动关闭运输模式。
+**版本:** v2.12.0
+**更新日期:** 2026-08-13
+**状态:** v2.12.0 新增双向 `OfflineSync(0x25)` 事务，固定顺序为 `Time → QUERY/STATE → OP_BATCH/OP_ACK → BEGIN → 0x02/0x03/0x10 → COMMIT/COMMITTED`；同时 `TaskList(0x02)` 每条任务新增 `TaskId` 和 `Priority`。`0x02` 是无 SubVersion 的破坏性格式变更，App 出站编码与固件入站解析必须使用同一版本。
 
-v2.10.1 的在线 Complete/Skip 时序、v2.9.0 的严格请求、OperationID 幂等和 `0x1B` 权威快照仍生效。App 是任务最终状态来源；GATT `.withResponse` 只代表传输确认，不能替代业务确认。`0x1C` 没有业务 ACK，其唯一成功信号是命令开始写入后设备主动断开。
+v2.11.0 的运输模式、v2.10.1 的在线 Complete/Skip 时序、v2.9.0 的严格请求、OperationID 幂等和 `0x1B` 权威快照仍生效。App 是任务最终状态来源；GATT `.withResponse` 只代表传输确认，不能替代业务确认。`0x25 COMMITTED` 只确认三份离线数据已由设备原子提交，不替代任务动作的 `0x1B` 业务确认。
 
 ---
 
@@ -98,6 +98,7 @@ v2.10.1 的在线 Complete/Skip 时序、v2.9.0 的严格请求、OperationID �
 
 | v2.10.1 | 2026-07-30 | **在线任务动作单次刷屏时序（wire 不变）**：Complete/Skip 状态落盘后，App 等当前任务版本的 AI 对话，先发送最终 DayPack，再发送绑定同一任务版本的 `0x1B`。DayPack 失败时不发 `0x1B`；生成/发送期间任务版本变化时废弃旧组合并重新生成。固件在 TaskIn/pending 内收到 DayPack 只换后台缓存、不刷屏；匹配 `0x1B` 到达后一次性退出并刷新。RequestRefresh 与离线批次确认保持原规则。§5.4/§5.5/§5.16/§6.2 |
 | v2.11.0 | 2026-08-12 | **新增工厂运输模式 `ShippingMode(0x1C)`**：App→Device payload 固定为 `0x01`，明文完整帧为 `1C 00 01 01`；无业务 ACK，设备主动断开是唯一成功信号。App 在 GATT 写入完成或报错后等待断连 10 秒，界面超时后再保留 2 秒一次性宽限期；期限内的迟到断连仍确认成功并禁止自动重连，超过期限则不再作为运输模式成功信号。专注或 OTA 期间不发送。长按电源键 10 秒或接入 USB 电源 10 秒唤醒，唤醒后固件自动关闭运输模式。§2.4/§4.1/§4.22/附录 A |
+| v2.12.0 | 2026-08-13 | **新增 `OfflineSync(0x25)` + `TaskList(0x02)` 破坏性升级**：① 双向 `0x25` 提供 `QUERY/STATE`、离线操作 `OP_BATCH/OP_ACK`、`BEGIN/COMMIT/ABORT/RESULT`，App 只在匹配 `COMMITTED` 后确认设备已原子替换 TaskList/Schedule/DayPack；② `0x02` Task 条目由旧 `Title + IsCompleted` 改为 `TaskId + Title + IsCompleted + Priority`，无 SubVersion 兼容窗口，旧解析器会从第一个 TaskId 长度开始整体错位；③ App 对 OP_BATCH 中不支持的 EventType 记日志后跳过并累计 ACK，避免未知类型永久堵住后续合法操作；受支持但格式损坏的操作仍停止 ACK。§2.4/§4.1/§4.3/§4.23/§5.2/§8.4/附录 A |
 
 | 术语 | 定义 |
 |---------------|------------------------------------------------------|
@@ -165,6 +166,7 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 | `0x20` | EventLogRequest | RequestRefresh |
 | `0x21` | 暂无 App 出站业务使用 | EventLogBatch |
 | `0x22` | AvatarControl | AvatarControlResult |
+| `0x25` | OfflineSync 命令（BEGIN/COMMIT/ABORT/QUERY/OP_ACK） | OfflineSync 应答（STATE/RESULT/OP_BATCH） |
 
 ---
 
@@ -316,6 +318,7 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 | `0x1C` | ShippingMode | 工厂运输模式开启命令（payload 固定 `0x01`；无业务 ACK，以设备主动断开确认生效，详见 §4.22） |
 | `0x20` | EventLogRequest | 请求指定时间戳之后的事件日志 |
 | `0x22` | AvatarControl | 提交、精确擦除、全部擦除、查询或取消头像事务，详见 §4.19 |
+| `0x25` | OfflineSync | 离线数据事务、状态查询与离线操作补报，详见 §4.23 |
 | `0x7E` | SecureData | 安全业务封装（v2） |
 | `0x7F` | SecurityHandshake | 安全握手（v2） |
 
@@ -366,7 +369,7 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 
 今日任务列表（最多 10 个任务）。
 
-> **Legacy 边界（v2.9.0）**：`0x02` 保留给旧页面/调试用途，不含 TaskId、OperationID 或快照版本，**不能作为 v2.9 Overview 当前清单的数据源或业务确认**。完成/跳过/刷新后的 Overview 必须以 §4.21 `TaskListSnapshotAck(0x1B)` 为准。
+> **v2.12.0 破坏性边界：** 每条任务由旧 `Title + IsCompleted` 改为 `TaskId + Title + IsCompleted + Priority`。本帧没有 SubVersion，旧固件会把 `TaskIdLength` 当成 `TitleLength`，随后整条列表全部错位。App 已按新布局出站，固件须同步切换入站解析；切换时丢弃旧格式的暂存或缓存 `0x02` 数据，不提供双格式猜测。`0x02` 是 §4.23 OfflineSync 的一份数据集；它仍不承担 Complete/Skip/Refresh 的业务确认，该确认继续只看 §4.21 `TaskListSnapshotAck(0x1B)`。
 
 **Payload 结构：**
 
@@ -377,10 +380,21 @@ Service UUID: 0000FFE0-0000-1000-8000-00805F9B34FB
 
 **Task 条目：**
 
-| Offset | Field       | Size        | Max Length | 描述 |
-|--------|-------------|-------------|------------|--------------------------|
-| 0      | Title       | 1 + N bytes | 30 bytes   | 任务标题 |
-| N+1    | IsCompleted | 1 byte      | -          | 0x00=未完成, 0x01=已完成 |
+```text
+TaskIdLength(1) | TaskId(N1) | TitleLength(1) | Title(N2) |
+IsCompleted(1) | Priority(1)
+```
+
+| Offset | Field | Size | Max Length | 描述 |
+|--------|-------|------|------------|------|
+| 0 | TaskIdLength | 1 byte | - | `TaskId` 的 UTF-8 字节数，当前 App 发送 `1...36` |
+| 1 | TaskId | N1 bytes | 36 bytes | 稳定的硬件任务 ID；固件逐字节保存并在任务动作中原样回传 |
+| 1+N1 | TitleLength | 1 byte | - | `Title` 的 UTF-8 字节数 |
+| 2+N1 | Title | N2 bytes | 30 bytes | 任务标题；按 §3.5 净化为可打印 ASCII |
+| 2+N1+N2 | IsCompleted | 1 byte | - | `0x00`=未完成，`0x01`=已完成，其他值非法 |
+| 3+N1+N2 | Priority | 1 byte | - | `0x01`=Low，`0x02`=Medium，`0x03`=High，其他值非法 |
+
+每条任务总长度是 `4 + N1 + N2` 字节。固件必须按 `TaskCount` 逐条读取两个长度前缀、布尔值和 Priority，并确认最后一条后正好到达 payload 末尾；长度越界、非法布尔值、Priority 不在 `1...3` 或尾部多余字节都应拒绝整帧。App 对原始任务 ID 超过 36 字节或含非 ASCII 的情况生成稳定的 `h-` + 32 位十六进制摘要，因此固件不得再次截断或改写 TaskId。
 
 ---
 
@@ -1089,6 +1103,165 @@ IsCompleted(1) | Priority(1)
 
 ---
 
+### 4.23 OfflineSync (0x25，双向)
+
+`0x25` 把设备离线期间积压的用户操作先补给 App，再把同一时刻冻结的 `TaskList(0x02)`、`Schedule(0x03)`、`DayPack(0x10)` 原子换到设备。`0x25` 只承载事务命令和应答；三份数据仍按各自 Type 单独发送，不能塞进 `0x25` payload。
+
+本节表格只写内层 payload，不含外层 Type/Length，也不含安全模式的 `SecureEnvelope(0x7E)`。App→Device 使用 §3.1 的 2B Length；Device→App 使用 §5.1 的 1B Length。因此 `OP_BATCH` 的完整内层 payload 最多 255 字节。
+
+#### 4.23.1 Opcode 与方向
+
+| 方向 | Opcode | 名称 | Payload 长度 | 用途 |
+|------|--------|------|--------------|------|
+| App→Device | `0x01` | BEGIN | 14 bytes | 开始暂存一组新数据 |
+| App→Device | `0x02` | COMMIT | 5 bytes | 原子提交当前暂存数据 |
+| App→Device | `0x03` | ABORT | 5 bytes | 放弃当前暂存事务 |
+| App→Device | `0x04` | QUERY | 1 byte | 查询设备当前状态和待补操作数 |
+| App→Device | `0x05` | OP_ACK | 9 bytes | 累计确认已处理的离线操作 |
+| Device→App | `0x80` | STATE | 20 bytes | 返回数据、事务和离线队列状态 |
+| Device→App | `0x81` | RESULT | 7 bytes | 返回暂存或提交结果 |
+| Device→App | `0x82` | OP_BATCH | Variable，≤255 bytes | 分批补报离线操作 |
+
+两端只接受本方向定义的 Opcode，并要求固定长度帧长度完全相等。未知 Opcode、错误方向或尾部多余字节都视为坏帧。
+
+#### 4.23.2 App→Device payload
+
+**BEGIN (`0x01`)：**
+
+```text
+Opcode(0x01) | SyncID(4 BE) | Revision(4 BE) |
+ValidUntil(4 BE) | DatasetMask(1)
+```
+
+| Offset | Field | Size | 说明 |
+|--------|-------|------|------|
+| 0 | Opcode | 1 byte | 固定 `0x01` |
+| 1 | SyncID | 4 bytes BE | 本次事务 ID，必须非零 |
+| 5 | Revision | 4 bytes BE | 三份冻结 payload 的内容版本；当前 App 发送非零内容摘要 |
+| 9 | ValidUntil | 4 bytes BE | Unix 秒；当前 App 发送当天 `23:59:59` |
+| 13 | DatasetMask | 1 byte | 本次必须收齐的数据集，见下表；当前 App 固定发送 `0x07` |
+
+| Bit | 值 | 数据集 |
+|-----|----|--------|
+| bit0 | `0x01` | TaskList (`0x02`) |
+| bit1 | `0x02` | Schedule (`0x03`) |
+| bit2 | `0x04` | DayPack (`0x10`) |
+
+`0x03` 表示 TaskList + Schedule，**不表示 DayPack**；DayPack 固定是 `0x04`。bit3...bit7 保留，发送端必须为 0，接收端看到保留位应拒绝 BEGIN。
+
+**COMMIT / ABORT：**
+
+```text
+COMMIT: Opcode(0x02) | SyncID(4 BE)
+ABORT:  Opcode(0x03) | SyncID(4 BE)
+```
+
+SyncID 必须非零并匹配设备当前打开的事务。COMMIT 前，设备要确认 DatasetMask 指定的数据集都已完整暂存；成功后一次性替换三份正式数据并回 `RESULT=committed`。字段缺失、校验失败、断连、掉电或 ABORT 都不得破坏上一份已提交数据。
+
+**QUERY：** payload 只有 `Opcode=0x04`，没有其他字段。设备先回一条 STATE。若该 STATE 的 `transactionOpen=1`，App 会先发 ABORT，再发第二次 QUERY，并以第二条 STATE 为准；第一条 STATE 后提前到达的 OP_BATCH 会被丢弃，设备必须在第二条 STATE 后重新补发。只有最终采用的 STATE 的 `PendingCount>0` 时，App 才处理随后一个或多个 OP_BATCH。
+
+**OP_ACK (`0x05`)：**
+
+```text
+Opcode(0x05) | BootSessionID(4 BE) | AckOperationID(4 BE)
+```
+
+这是累计确认：只对匹配 BootSessionID 的队列生效，表示截至 AckOperationID 的操作都已由 App 处理、幂等识别或明确跳过。固件收到匹配 ACK 后才可删除这些记录；断连或未收到 ACK 时从未确认处重发。
+
+#### 4.23.3 Device→App payload
+
+**STATE (`0x80`)：**
+
+```text
+Opcode(0x80) | ActiveRevision(4 BE) | ValidUntil(4 BE) |
+DatasetMask(1) | StateFlags(1) | PendingCount(1) |
+BootSessionID(4 BE) | CurrentSyncID(4 BE)
+```
+
+| Offset | Field | Size | 说明 |
+|--------|-------|------|------|
+| 0 | Opcode | 1 byte | 固定 `0x80` |
+| 1 | ActiveRevision | 4 bytes BE | 当前已提交数据版本；没有有效数据时填 0 |
+| 5 | ValidUntil | 4 bytes BE | 当前已提交数据有效期 Unix 秒 |
+| 9 | DatasetMask | 1 byte | 当前已提交的数据集；只允许 bit0...bit2 |
+| 10 | StateFlags | 1 byte | 状态位，见下表 |
+| 11 | PendingCount | 1 byte | 本次 BootSession 中等待 App 处理的唯一操作总数，0...255 |
+| 12 | BootSessionID | 4 bytes BE | 离线操作队列所属的设备启动会话 |
+| 16 | CurrentSyncID | 4 bytes BE | 打开的暂存事务 ID；没有打开事务时为 0 |
+
+| Bit | 值 | 名称 | 含义 |
+|-----|----|------|------|
+| bit0 | `0x01` | dataValid | 设备有可用的已提交数据 |
+| bit1 | `0x02` | transactionOpen | 存在尚未 COMMIT/ABORT 的暂存事务 |
+| bit2 | `0x04` | needsFullSync | 设备要求完整数据事务 |
+| bit3 | `0x08` | operationOverflow | 离线队列曾溢出，至少一条操作已经丢失 |
+
+bit4...bit7 保留；固件必须发送 0，App 忽略这些保留位。当前 App 遇到 `transactionOpen=1` 时先按 CurrentSyncID 发 ABORT，再发第二次 QUERY；如果 `transactionOpen=1` 但 CurrentSyncID=0，整轮失败。遇到 `operationOverflow=1` 时，App 仍处理并 ACK 尚存的 OP_BATCH，但不会再发 BEGIN，避免用无法还原的 App 快照覆盖设备状态。`dataValid` 和 `needsFullSync` 当前作为状态信息解析，不单独改变这套固定流程。
+
+**RESULT (`0x81`)：**
+
+```text
+Opcode(0x81) | SyncID(4 BE) | TargetType(1) | ResultCode(1)
+```
+
+| TargetType | 含义 |
+|------------|------|
+| `0x02` | TaskList |
+| `0x03` | Schedule |
+| `0x10` | DayPack |
+| `0x25` | OfflineSync 事务 |
+
+| ResultCode | 名称 | 含义 |
+|------------|------|------|
+| `0x00` | accepted | 命令已接受，非最终提交确认 |
+| `0x01` | staged | 指定数据已暂存，非最终提交确认 |
+| `0x02` | committed | 三份数据已经原子提交 |
+| `0x10` | invalidState | 当前事务状态不允许该操作 |
+| `0x11` | missingDataset | COMMIT 时缺少 DatasetMask 要求的数据 |
+| `0x12` | expired | ValidUntil 已过期 |
+| `0x13` | invalidPayload | payload 或数据集格式不合法 |
+| `0x14` | busy | 设备正在处理另一项互斥事务 |
+| `0xFF` | internalError | 设备内部错误 |
+
+`accepted` / `staged` 可以作为中间状态发送，但不能让 App 结束事务。App 只接受 `SyncID` 完全匹配、`TargetType=0x25`、`ResultCode=0x02` 的 RESULT 作为 COMMIT 成功；其他 SyncID 的迟到结果不影响当前事务。匹配 SyncID 的错误码会立即结束本轮，BEGIN 已发送时 App 再尽力补发 ABORT。
+
+**OP_BATCH (`0x82`)：**
+
+```text
+Opcode(0x82) | BootSessionID(4 BE) | Count(1) | Records[]
+
+Record = OperationID(4 BE) | EventType(1) |
+         OriginalPayloadLength(1) | OriginalPayload(N)
+```
+
+总长度公式是 `6 + Σ(6 + N)`，且不得超过 255 字节。Count 必须与实际 Record 数完全一致，最后一条后不得有尾部字节。OperationID 必须非零，并按新记录严格递增；跨批次原样重发已经出现过的完整 Record 可以被 App 幂等识别，同 OperationID 改 EventType 或 OriginalPayload 会使整轮失败。
+
+当前 App 只执行以下离线 EventType：
+
+| EventType | OriginalPayload | 额外检查 |
+|-----------|-----------------|----------|
+| `0x11` CompleteTask | §5.4 的严格 v1 payload | Record.OperationID 必须等于 payload 内 OperationID |
+| `0x12` SkipTask | §5.5 的严格 v1 payload | Record.OperationID 必须等于 payload 内 OperationID |
+| `0x16` ReminderAcknowledged | §5.12 的 4B Timestamp | 必须刚好 4 字节 |
+| `0x17` ReminderDismissed | §5.13 的 4B Timestamp | 必须刚好 4 字节 |
+
+固件不应把 `RequestRefresh(0x20)`、DeviceWake、旋钮移动等实时或非持久事件放入 OP_BATCH。为了防止一次版本差异永久堵住整个离线队列，App 收到不支持的 EventType 时会记日志、不执行其业务动作，并把该 Record 视为已跳过，允许累计 OP_ACK 继续越过它；后续合法 Record 仍会照常处理。受支持 EventType 的 payload 如果长度、TaskId、内部 OperationID 或其他严格字段损坏，App 不会确认该 Record，只尽力 ACK 它之前已经持久完成的前缀。
+
+#### 4.23.4 固定事务顺序
+
+1. App 独占完整消息写入，先发 `Time(0x05)`。
+2. App 发 `QUERY`，设备回 `STATE`。
+3. 如果这条 STATE 的 `transactionOpen=1`，App 先按 CurrentSyncID 发 ABORT，清空第一轮已缓存的 STATE/OP_BATCH，再发第二次 QUERY；后续流程只使用第二条 STATE。设备必须在第二条 STATE 后重新发送仍待处理的 OP_BATCH，不能等待第一轮 OP_BATCH 的 ACK。
+4. App 按最终 STATE 的 PendingCount 接收 OP_BATCH，并按 OperationID 顺序处理每条操作。每批处理完成后回一条累计 OP_ACK；设备保留未确认记录。
+5. 如果最终 STATE 的 `operationOverflow=1`，App 在处理并 ACK 尚存操作后结束本轮，不发 BEGIN。
+6. App 冻结同一版本的 `0x02`、`0x03`、`0x10` payload，发 `BEGIN`，再按这个顺序发送三份数据。设备只写暂存区，不应在中途替换当前显示数据。
+7. App 发 `COMMIT`。设备校验 SyncID、DatasetMask、Revision、有效期和三份完整 payload；全部通过才原子替换正式数据，并回匹配的 `RESULT(0x25, committed)`。
+8. 任一步超时、断连、坏帧或错误 RESULT 都使本轮失败。BEGIN 之后失败时 App 尽力发送 ABORT；无论 ABORT 是否送达，设备都必须保留上一份已提交数据，下次 QUERY 会恢复未完成事务。
+
+App 对每个等待的 STATE、OP_BATCH 或最终 COMMITTED 使用 8 秒超时。`0x25` 是连接期实时事务，不写入 `EventLogBatch(0x21)`；设备重传 OP_BATCH 时仍使用 `0x25`。
+
+---
+
 ## 5. Device → App 事件
 
 事件通过 Notify characteristic 从设备发送至 App。
@@ -1126,6 +1299,7 @@ IsCompleted(1) | Priority(1)
 | `0x20` | RequestRefresh      | 设备请求数据刷新 |
 | `0x21` | EventLogBatch       | 批量回传事件日志 |
 | `0x22` | AvatarControlResult | 头像暂存、提交、擦除、查询或取消的实时结果，详见 §5.19 |
+| `0x25` | OfflineSync         | STATE、RESULT、OP_BATCH 实时应答，完整格式见 §4.23 |
 | `0x30` | DeviceWake          | 设备上线通知：BLE Notify 建立后固件主动上报（非 App 触发 MCU 唤醒） |
 | `0x31` | DeviceSleep         | 设备进入睡眠模式 |
 | `0x40` | LowBattery          | 设备电量低通知 |
@@ -1878,6 +2052,8 @@ Event: 0x16 (ReminderAcknowledged)
 | v2.9 任务事件 | `0x11/0x12` 只接受严格 v1、非零 OperationID 和精确长度；旧格式拒绝 |
 | v2.9 刷新请求 | `0x20` 只接受严格 v1 + 非零 RequestID；空 payload 拒绝，且不得出现在 EventLogBatch |
 | TaskListSnapshotAck | Action/OperationID 必须匹配 pending；TaskCount、每个长度前缀和 payload 末尾必须精确 |
+| TaskList(0x02) | 按 v2.12 的 TaskId + Title + IsCompleted + Priority 逐条解析；任何长度、布尔值、Priority 或尾部错误都拒绝整帧 |
+| OfflineSync(0x25) | 严格检查方向、Opcode、固定长度、DatasetMask、Batch Count、OperationID 顺序和尾部；坏帧结束当前事务 |
 | 无效事件类型 | 忽略未知事件类型 |
 | 格式错误的数据包 | 丢弃并记录错误 |
 
@@ -1908,6 +2084,8 @@ Event: 0x16 (ReminderAcknowledged)
 | AvatarControl(0x22) | 幂等重发/查询 | 结果超时或 App 重启后先 query；同 OperationID 不重复执行破坏操作 |
 | CompleteTask / SkipTask | 直到收到匹配 `0x1B` | 超时后**原样重发**相同 Action / OperationID / TaskId / Timestamp；不得生成新 ID、不得改变 payload |
 | RequestRefresh | 直到收到匹配 `0x1B` | 超时后原样重发相同 v1 RequestID；不得写入离线 EventLogBatch |
+| OfflineSync STATE / OP_BATCH / COMMITTED | 当前 App 每次等待 8s | 超时即本轮失败并断连；BEGIN 已发送时先尽力 ABORT，下次连接从 QUERY 重查状态 |
+| OfflineSync OP_BATCH | 直到收到匹配累计 OP_ACK | 只删除 AckOperationID 及以前的记录；未确认部分按原 BootSessionID / OperationID / payload 重发 |
 
 > GATT `.withResponse` 只证明分片被特征值写入，不代表业务完成。头像事务以 `0x22` 为准；任务完成/跳过/刷新以匹配且版本更新的 `0x1B` 为准。设备等待 `0x1B` 时可显示 pending，但不能永久提交本地删除。同一 revision 的 App 侧短重试使用完全相同的 `0x1B` 字节；固件侧请求重试则继续复用原 Action/OperationID/payload。
 
@@ -2140,6 +2318,7 @@ public enum BLEDataType: UInt8, Sendable {
     case eventLogRequest = 0x20
     case avatarControl = 0x22      // 双向：提交/擦除/查询/取消及结果
     case eventLogBatch = 0x21
+    case offlineSync = 0x25        // 双向：离线数据事务、状态查询与离线操作补报，见 §4.23
     case secureData = 0x7E
     case securityHandshake = 0x7F
 }

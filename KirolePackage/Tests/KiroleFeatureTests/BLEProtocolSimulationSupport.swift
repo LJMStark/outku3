@@ -313,7 +313,19 @@ struct SimulatedAppPacket {
         let count = Int(try reader.readByte())
         var tasks: [SimulatedTaskList.Task] = []
         for _ in 0..<count {
-            tasks.append(.init(title: try reader.readString(), isCompleted: try reader.readBool()))
+            let id = try reader.readString()
+            let title = try reader.readString()
+            let isCompleted = try reader.readBool()
+            let priority = try reader.readByte()
+            guard (1...3).contains(priority) else {
+                throw SimulationError.invalidEnumValue
+            }
+            tasks.append(.init(
+                id: id,
+                title: title,
+                isCompleted: isCompleted,
+                priority: priority
+            ))
         }
         try reader.requireEnd()
         return SimulatedTaskList(tasks: tasks)
@@ -500,7 +512,7 @@ struct SimulatedAppPacket {
             guard !id.isEmpty, id.utf8.count <= 36,
                   title.utf8.count <= 30,
                   completedByte == 0 || completedByte == 1,
-                  TaskPriority(rawValue: Int(priority)) != nil else {
+                  (1...3).contains(priority) else {
                 throw SimulationError.invalidSnapshotState
             }
             tasks.append(.init(
@@ -608,8 +620,10 @@ struct SimulatedPetStatus {
 
 struct SimulatedTaskList {
     struct Task {
+        let id: String
         let title: String
         let isCompleted: Bool
+        let priority: UInt8
     }
 
     let tasks: [Task]

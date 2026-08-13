@@ -69,6 +69,10 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
     private let deviceIdentityStore = BLEDeviceIdentityStore.shared
     private let rateLimiter = BLERateLimiter.shared
     private let writeGate = BLEWriteGate()
+    /// Serializes complete messages and lets one OfflineSync task hold the boundary from Time
+    /// through COMMITTED. The packet gate still protects each individual GATT write/ACK.
+    private let completeMessageWriteGate = BLEWriteGate()
+    private(set) var isOfflineSyncWriteSessionActive = false
     /// Serializes complete task-state messages. The packet gate below is intentionally finer
     /// grained; without this second gate, a simple 0x1B could land between DayPack chunks.
     private let taskStateMessageGate = BLEWriteGate()
@@ -560,9 +564,43 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
         try await writeData(type: .time, data: data)
     }
 
-    // syncAllData / sendTaskList / sendSchedule（DayPack 之前时代的逐帧同步路径）已删：
-    // 零调用者的死路径，且把 sendWeather 一起"藏死"过（2026-07-04 审计 D2/F1）。
-    // 0x02/0x03 帧仍是协议的一部分，encodeTaskList/encodeSchedule 及其格式测试保留。
+    func syncOfflineTime() async throws {
+        try await writeDataWithinMessageSession(
+            type: .time,
+            data: BLEDataEncoder.encodeCurrentTime()
+        )
+    }
+
+    /// OfflineSync sends already-frozen dataset bytes between BEGIN and COMMIT. These methods do
+    /// not re-read AppState, which prevents one transaction from mixing two task/calendar states.
+    func sendOfflineTaskListPayload(_ payload: Data) async throws {
+        try await writeDataWithinMessageSession(type: .taskList, data: payload)
+    }
+
+    func sendOfflineSchedulePayload(_ payload: Data) async throws {
+        try await writeDataWithinMessageSession(type: .schedule, data: payload)
+    }
+
+    func sendOfflineDayPackPayload(_ payload: Data) async throws {
+        try await writeDataWithinMessageSession(type: .dayPack, data: payload)
+    }
+
+    func sendOfflineSyncCommand(_ command: OfflineSyncOutboundCommand) async throws {
+        try await writeDataWithinMessageSession(
+            type: .offlineSync,
+            data: OfflineSyncCodec.encode(command)
+        )
+    }
+
+    func beginOfflineSyncWriteSession() async throws {
+        try await completeMessageWriteGate.acquire()
+        isOfflineSyncWriteSessionActive = true
+    }
+
+    func endOfflineSyncWriteSession() async {
+        isOfflineSyncWriteSessionActive = false
+        await completeMessageWriteGate.release()
+    }
 
     public func updateLastSyncTime(_ date: Date) {
         lastSyncTime = date
@@ -783,6 +821,29 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
     // MARK: - Private Methods
 
     private func writeData(
+        type: BLEDataType,
+        data: Data,
+        validateBeforeWrite: PacketWriteValidator? = nil,
+        onWillWrite: PacketWillWrite? = nil,
+        progress: (@MainActor @Sendable (_ sentBytes: Int, _ totalBytes: Int) -> Void)? = nil
+    ) async throws {
+        try await completeMessageWriteGate.acquire()
+        do {
+            try await writeDataWithinMessageSession(
+                type: type,
+                data: data,
+                validateBeforeWrite: validateBeforeWrite,
+                onWillWrite: onWillWrite,
+                progress: progress
+            )
+            await completeMessageWriteGate.release()
+        } catch {
+            await completeMessageWriteGate.release()
+            throw error
+        }
+    }
+
+    private func writeDataWithinMessageSession(
         type: BLEDataType,
         data: Data,
         validateBeforeWrite: PacketWriteValidator? = nil,
@@ -1093,7 +1154,6 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
         }
         connectCompletion?(.success(()))
         connectCompletion = nil
-        await requestEventLogsIfNeeded()
         if AppBuildEnvironment.showsHardwareDebugTools {
             await BLEWiFiDebugCoordinator.shared.queryStatus()
         }
@@ -1164,6 +1224,7 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
     private func cleanup() {
         BLEWiFiDebugCoordinator.shared.handleDisconnected()
         WiFiAvatarSessionCoordinator.shared.handleDisconnected()
+        BLESyncCoordinator.shared.handleOfflineSyncDisconnected()
         AppState.shared.handleCustomAvatarDeviceDisconnected()
         handshakeTimeoutTask?.cancel()
         handshakeTimeoutTask = nil

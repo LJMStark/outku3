@@ -15,6 +15,7 @@ public struct TaskItem: Identifiable, Sendable, Codable {
     public var notionDatabaseId: String?
     public var taskadeTaskId: String?
     public var taskadeProjectId: String?
+    public var externalReference: ProviderItemReference?
     public var title: String
     public var isCompleted: Bool
     public var dueDate: Date?
@@ -47,6 +48,7 @@ public struct TaskItem: Identifiable, Sendable, Codable {
         notionDatabaseId: String? = nil,
         taskadeTaskId: String? = nil,
         taskadeProjectId: String? = nil,
+        externalReference: ProviderItemReference? = nil,
         title: String,
         isCompleted: Bool = false,
         dueDate: Date? = nil,
@@ -72,6 +74,7 @@ public struct TaskItem: Identifiable, Sendable, Codable {
         self.notionDatabaseId = notionDatabaseId
         self.taskadeTaskId = taskadeTaskId
         self.taskadeProjectId = taskadeProjectId
+        self.externalReference = externalReference
         self.title = title
         self.isCompleted = isCompleted
         self.dueDate = dueDate

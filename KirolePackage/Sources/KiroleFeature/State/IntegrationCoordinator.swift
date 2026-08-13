@@ -15,6 +15,14 @@ final class IntegrationCoordinator {
         type: IntegrationType,
         isConnected: Bool
     ) -> [Integration] {
+        guard !isConnected || type.isAvailable else {
+            return integrations.map { integration in
+                guard integration.type == type else { return integration }
+                var disconnected = integration
+                disconnected.isConnected = false
+                return disconnected
+            }
+        }
         if let index = integrations.firstIndex(where: { $0.type == type }) {
             var updated = integrations
             var item = updated[index]
@@ -77,6 +85,14 @@ final class IntegrationCoordinator {
             return (events, tasks.filter { $0.source != .notion })
         case .taskade:
             return (events, tasks.filter { $0.source != .taskade })
+        case .outlookCalendar:
+            return (events.filter { $0.source != .outlook }, tasks)
+        case .microsoftToDo:
+            return (events, tasks.filter { $0.source != .microsoftToDo })
+        case .todoist:
+            return (events, tasks.filter { $0.source != .todoist })
+        case .tickTick:
+            return (events, tasks.filter { $0.source != .tickTick })
         default:
             return (events, tasks)
         }

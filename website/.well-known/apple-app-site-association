@@ -1,0 +1,21 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": [
+          "93SL23NPNG.com.kirole.app"
+        ],
+        "components": [
+          {
+            "/": "/oauth/todoist-callback",
+            "comment": "Todoist OAuth callback"
+          },
+          {
+            "/": "/oauth/ticktick-return",
+            "comment": "Kirole TickTick OAuth handoff; contains no provider credential"
+          }
+        ]
+      }
+    ]
+  }
+}

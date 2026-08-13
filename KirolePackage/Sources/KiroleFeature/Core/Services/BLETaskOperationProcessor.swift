@@ -215,6 +215,8 @@ enum BLETaskOperationProcessor {
             return .alreadyApplied
         case .supersededByApp:
             return .supersededByApp
+        case .readOnly:
+            return .invalidRequest
         case .taskNotFound:
             return .taskNotFound
         case .persistenceFailed:

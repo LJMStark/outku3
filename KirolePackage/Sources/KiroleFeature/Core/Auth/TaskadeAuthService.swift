@@ -15,17 +15,42 @@ import AppKit
 public final class TaskadeAuthService: NSObject, ASWebAuthenticationPresentationContextProviding {
     public static let shared = TaskadeAuthService()
 
-    private let keychainService = KeychainService.shared
+    typealias WebAuthorization = @MainActor (URL, String) async throws -> URL
+    typealias TokenRequest = @MainActor ([String: String]) async throws -> TaskadeTokenResponse
+
+    private let keychainService: KeychainService
+    private let configuredClientID: String?
+    private let webAuthorization: WebAuthorization?
+    private let tokenRequest: TokenRequest?
+    let credentialGate: OAuthCredentialOperationGate
     private var currentSession: ASWebAuthenticationSession?
 
-    private override init() {
+    private override convenience init() {
+        self.init(keychainService: .shared)
+    }
+
+    init(
+        keychainService: KeychainService,
+        clientID: String? = nil,
+        credentialGate: OAuthCredentialOperationGate = OAuthCredentialOperationGate(),
+        webAuthorization: WebAuthorization? = nil,
+        tokenRequest: TokenRequest? = nil
+    ) {
+        self.keychainService = keychainService
+        configuredClientID = clientID
+        self.credentialGate = credentialGate
+        self.webAuthorization = webAuthorization
+        self.tokenRequest = tokenRequest
         super.init()
     }
 
     // MARK: - OAuth Flow
 
     public func authorize() async throws -> String {
-        guard let clientId = AppSecrets.taskadeClientId else {
+        let operation = try beginCredentialOperation()
+        defer { endCredentialOperation(operation) }
+
+        guard let clientId = configuredClientID ?? AppSecrets.taskadeClientId else {
             throw TaskadeAuthError.missingCredentials
         }
 
@@ -45,55 +70,76 @@ public final class TaskadeAuthService: NSObject, ASWebAuthenticationPresentation
             throw TaskadeAuthError.invalidURL
         }
 
-        let callbackURL = try await performWebAuth(url: url, callbackScheme: "kirole")
+        let callbackURL: URL
+        if let webAuthorization {
+            callbackURL = try await webAuthorization(url, "kirole")
+        } else {
+            callbackURL = try await performWebAuth(url: url, callbackScheme: "kirole")
+        }
+        try validateCredentialOperation(operation)
         try validateState(expected: state, callbackURL: callbackURL)
 
         guard let code = extractCode(from: callbackURL) else {
             throw TaskadeAuthError.noAuthorizationCode
         }
 
-        let tokenResponse = try await callEdgeFunction(body: [
+        let exchangeBody = [
             "action": "exchange",
             "code": code,
             "redirect_uri": redirectURI,
-        ])
+        ]
+        let tokenResponse = try await requestToken(body: exchangeBody)
 
+        try validateCredentialOperation(operation)
         try keychainService.saveTaskadeTokens(
             accessToken: tokenResponse.accessToken,
             refreshToken: tokenResponse.refreshToken
         )
 
+        try validateCredentialOperation(operation)
         return tokenResponse.accessToken
     }
 
     // MARK: - Token Refresh
 
     public func refreshTokenIfNeeded() async throws -> String {
+        let operation = try beginCredentialOperation()
+        defer { endCredentialOperation(operation) }
+
         if let accessToken = keychainService.getTaskadeAccessToken() {
+            try validateCredentialOperation(operation)
             return accessToken
         }
         guard let refreshToken = keychainService.getTaskadeRefreshToken() else {
             throw TaskadeAuthError.tokenExpired
         }
-        return try await refreshAccessToken(refreshToken: refreshToken)
+        return try await refreshAccessToken(refreshToken: refreshToken, operation: operation)
     }
 
     public func forceRefreshAccessToken() async throws -> String {
+        let operation = try beginCredentialOperation()
+        defer { endCredentialOperation(operation) }
+
         guard let refreshToken = keychainService.getTaskadeRefreshToken() else {
             throw TaskadeAuthError.tokenExpired
         }
-        return try await refreshAccessToken(refreshToken: refreshToken)
+        return try await refreshAccessToken(refreshToken: refreshToken, operation: operation)
     }
 
-    private func refreshAccessToken(refreshToken: String) async throws -> String {
-        let tokenResponse = try await callEdgeFunction(body: [
+    private func refreshAccessToken(
+        refreshToken: String,
+        operation: OAuthCredentialOperationTicket
+    ) async throws -> String {
+        let tokenResponse = try await requestToken(body: [
             "action": "refresh",
             "refresh_token": refreshToken,
         ])
+        try validateCredentialOperation(operation)
         try keychainService.saveTaskadeTokens(
             accessToken: tokenResponse.accessToken,
             refreshToken: tokenResponse.refreshToken
         )
+        try validateCredentialOperation(operation)
         return tokenResponse.accessToken
     }
 
@@ -121,6 +167,13 @@ public final class TaskadeAuthService: NSObject, ASWebAuthenticationPresentation
         return try JSONDecoder().decode(TaskadeTokenResponse.self, from: data)
     }
 
+    private func requestToken(body: [String: String]) async throws -> TaskadeTokenResponse {
+        if let tokenRequest {
+            return try await tokenRequest(body)
+        }
+        return try await callEdgeFunction(body: body)
+    }
+
     // MARK: - Token Access
 
     public func getAccessToken() async throws -> String {
@@ -131,8 +184,62 @@ public final class TaskadeAuthService: NSObject, ASWebAuthenticationPresentation
         keychainService.getTaskadeAccessToken() != nil
     }
 
-    public func disconnect() {
-        keychainService.clearTaskadeTokens()
+    @discardableResult
+    public func disconnect() -> Bool {
+        let cleanup = invalidateAndBlockCredentialOperations()
+        return disconnect(after: cleanup, completeCleanup: true)
+    }
+
+    @discardableResult
+    func disconnect(
+        after cleanup: OAuthCredentialCleanupTicket,
+        completeCleanup: Bool
+    ) -> Bool {
+        guard credentialGate.accepts(cleanup) else { return false }
+        do {
+            try keychainService.clearTaskadeTokens()
+        } catch {
+            credentialGate.fail(cleanup)
+            return false
+        }
+        guard credentialsAreCleared else {
+            credentialGate.fail(cleanup)
+            return false
+        }
+        if completeCleanup {
+            credentialGate.complete(cleanup)
+        }
+        return true
+    }
+
+    func beginCredentialOperation() throws -> OAuthCredentialOperationTicket {
+        guard let operation = credentialGate.beginOperation() else {
+            throw TaskadeAuthError.operationInvalidated
+        }
+        return operation
+    }
+
+    func validateCredentialOperation(_ operation: OAuthCredentialOperationTicket) throws {
+        guard !Task.isCancelled, credentialGate.accepts(operation) else {
+            if Task.isCancelled { throw CancellationError() }
+            throw TaskadeAuthError.operationInvalidated
+        }
+    }
+
+    func endCredentialOperation(_ operation: OAuthCredentialOperationTicket) {
+        credentialGate.endOperation(operation)
+    }
+
+    func invalidateAndBlockCredentialOperations() -> OAuthCredentialCleanupTicket {
+        let cleanup = credentialGate.invalidateAndBlock()
+        currentSession?.cancel()
+        currentSession = nil
+        return cleanup
+    }
+
+    var credentialsAreCleared: Bool {
+        keychainService.getTaskadeAccessToken() == nil
+            && keychainService.getTaskadeRefreshToken() == nil
     }
 
     // MARK: - Helpers
@@ -199,7 +306,7 @@ public final class TaskadeAuthService: NSObject, ASWebAuthenticationPresentation
 
 // MARK: - Token Response
 
-private struct TaskadeTokenResponse: Decodable {
+struct TaskadeTokenResponse: Decodable, Sendable {
     let accessToken: String
     let refreshToken: String?
 
@@ -220,6 +327,7 @@ public enum TaskadeAuthError: LocalizedError, Sendable {
     case tokenRefreshFailed
     case noCallbackURL
     case invalidState
+    case operationInvalidated
 
     public var errorDescription: String? {
         switch self {
@@ -239,6 +347,8 @@ public enum TaskadeAuthError: LocalizedError, Sendable {
             return "No callback URL received from Taskade"
         case .invalidState:
             return "Taskade OAuth state validation failed"
+        case .operationInvalidated:
+            return "Taskade authorization was cancelled by disconnect or sign out"
         }
     }
 }

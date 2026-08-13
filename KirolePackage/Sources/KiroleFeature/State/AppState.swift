@@ -199,8 +199,13 @@ public final class AppState {
     /// Set when the device timezone changes at runtime. UI shows a banner asking the user
     /// whether to re-sync events. Cleared on user action (adjust or keep).
     public var pendingTimezoneChangeName: String? = nil
-    /// Tracks which sync sources are currently in-flight to prevent same-source re-entrancy.
-    var activeSyncs: Set<ExternalSyncTarget> = []
+    /// Tracks the generation that currently owns each provider sync slot. A reconnect may start a
+    /// replacement generation without waiting for an obsolete request, and the obsolete request's
+    /// defer cannot release the replacement slot.
+    @ObservationIgnored var activeExternalSyncGenerations: [ExternalSyncTarget: UInt64] = [:]
+    /// Provider-scoped commit generations. Disconnect, reconnect, or Kirole sign-out advances the
+    /// relevant generation so a network result captured by the previous identity cannot commit.
+    @ObservationIgnored var externalSyncGenerations: [ExternalSyncTarget: UInt64] = [:]
     public var lastGoogleSyncDebug: String = "Not synced yet"
     public var hasCompletedInitialHomeLoad: Bool = false
     /// In-flight shared-dialogue refresh. Re-entrant callers await it instead of returning
@@ -238,6 +243,11 @@ public final class AppState {
     let appleSyncEngine = AppleSyncEngine.shared
     let notionSyncEngine = NotionSyncEngine.shared
     let taskadeSyncEngine = TaskadeSyncEngine.shared
+    let microsoftSyncEngine = MicrosoftSyncEngine.shared
+    let todoistSyncEngine = TodoistSyncEngine.shared
+    let tickTickInternationalSyncEngine = TickTickSyncEngine(region: .international)
+    let didaSyncEngine = TickTickSyncEngine(region: .china)
+    let providerProjectSelectionStore = ProviderProjectSelectionStore.shared
     #if os(iOS)
     let weatherService = WeatherService.shared
     #endif
@@ -254,11 +264,16 @@ public final class AppState {
     /// 抢在集成连接状态恢复之前按 defaultIntegrations(Apple=true) 同步、把已断开/已清掉的数据写回。
     private var initialLoadTask: Task<Void, Never>?
 
-    private init(loadLocalDataOnInit: Bool = true) {
+    init(loadLocalDataOnInit: Bool = true) {
         guard loadLocalDataOnInit else { return }
         installCustomAvatarTransportRouter()
         initialLoadTask = Task { @MainActor in
             await loadLocalData()
+            do {
+                try await purgeDisabledTickTickData()
+            } catch {
+                reportPersistenceError(error, operation: "delete", target: "disabled_ticktick_data")
+            }
             await restorePendingCustomAvatarOperation()
             BLEService.shared.onAvatarControlResult = { [weak self] result in
                 self?.handleAvatarControlResult(result)
@@ -387,7 +402,10 @@ extension Integration {
             Integration(name: "Apple Reminders", iconName: "checklist", isConnected: true, type: .appleReminders),
             Integration(name: "Google Calendar", iconName: "calendar.badge.clock", isConnected: false, type: .googleCalendar),
             Integration(name: "Google Tasks", iconName: "checkmark.circle", isConnected: false, type: .googleTasks),
+            Integration(name: "Outlook Calendar", iconName: "calendar.badge.clock", isConnected: false, type: .outlookCalendar),
+            Integration(name: "Microsoft To Do", iconName: "checkmark.circle", isConnected: false, type: .microsoftToDo),
             Integration(name: "Todoist", iconName: "checklist.checked", isConnected: false, type: .todoist),
+            Integration(name: "TickTick", iconName: "checkmark.circle", isConnected: false, type: .tickTick),
             Integration(name: "Notion", iconName: "doc.text", isConnected: false, type: .notion),
             Integration(name: "Taskade", iconName: "list.bullet.rectangle", isConnected: false, type: .taskade)
         ]

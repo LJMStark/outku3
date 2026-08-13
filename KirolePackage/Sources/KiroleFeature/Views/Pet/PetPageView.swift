@@ -318,7 +318,13 @@ private struct TaskItemRow: View {
                         }
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(task.isCompleted ? "Mark as incomplete" : "Mark as complete")
+                .disabled(!task.allowsCompletionChanges)
+                .opacity(task.allowsCompletionChanges ? 1 : 0.45)
+                .accessibilityLabel(
+                    task.allowsCompletionChanges
+                        ? (task.isCompleted ? "Mark as incomplete" : "Mark as complete")
+                        : "Read-only task"
+                )
                 .accessibilityIdentifier("Pet_TaskCheckbox")
 
                 // Task title

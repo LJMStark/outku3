@@ -31,6 +31,7 @@ enum HardwareTaskCompletionPersistenceResult: Sendable, Equatable {
     case applied
     case alreadyApplied
     case supersededByApp
+    case readOnly
     case taskNotFound
     case persistenceFailed
 }
@@ -64,6 +65,10 @@ extension AppState {
 
     public func toggleTaskCompletion(_ task: TaskItem, source: TaskToggleSource = .user) {
         guard let existingTask = tasks.first(where: { $0.id == task.id }) else { return }
+        guard existingTask.allowsCompletionChanges else {
+            lastError = "This task is read-only. Complete it in \(ExternalSyncDispatcher.componentName(for: existingTask.source))."
+            return
+        }
 
         var updatedTask = existingTask
         updatedTask.isCompleted.toggle()
@@ -131,6 +136,9 @@ extension AppState {
     ) async -> HardwareTaskCompletionPersistenceResult {
         guard let initialTask = tasks.first(where: { $0.id == taskID }) else {
             return .taskNotFound
+        }
+        guard initialTask.allowsCompletionChanges else {
+            return .readOnly
         }
 
         let eventTimestamp = deviceTimestamp
@@ -677,9 +685,9 @@ extension AppState {
         switch action {
         case .updateCompletion:
             switch task.source {
-            case .google, .apple, .notion, .taskade:
+            case .google, .apple, .notion, .taskade, .microsoftToDo, .todoist:
                 return .remote
-            case .todoist:
+            case .outlook, .tickTick:
                 return .localOnly
             }
         case .delete:
@@ -690,7 +698,7 @@ extension AppState {
                 return task.appleReminderId != nil ? .remote : .localOnly
             case .taskade:
                 return (task.taskadeProjectId != nil && task.taskadeTaskId != nil) ? .remote : .localOnly
-            case .notion, .todoist:
+            case .notion, .todoist, .outlook, .microsoftToDo, .tickTick:
                 return .localOnly
             }
         }

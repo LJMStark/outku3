@@ -459,7 +459,7 @@ struct AppStateTests {
             state.updateIntegrationStatus(.googleCalendar, isConnected: false)
         }
 
-        @Test("Update integration status adds new integration if connected")
+        @Test("Unsupported integration cannot be restored as connected")
         @MainActor
         func updateIntegrationAddsNewIfConnected() {
             let state = AppState.makeForTesting()
@@ -471,8 +471,8 @@ struct AppStateTests {
 
             state.updateIntegrationStatus(.tickTick, isConnected: true)
 
-            #expect(state.integrations.count == initialCount + 1)
-            #expect(state.integrations.contains { $0.type == .tickTick })
+            #expect(state.integrations.count == initialCount)
+            #expect(!state.integrations.contains { $0.type == .tickTick })
 
             // Cleanup
             state.integrations.removeAll { $0.type == .tickTick }

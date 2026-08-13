@@ -170,7 +170,11 @@ public final class FocusSessionService {
     }
 
     /// 检测源回报一次打断（打断 = 专注期间使用了自选分心 App）。
-    private func handleDetectedInterruption(startingAt timestamp: Date, duration: TimeInterval) {
+    private func handleDetectedInterruption(
+        startingAt timestamp: Date,
+        duration: TimeInterval,
+        shouldPushHardware: Bool = true
+    ) {
         guard hasCompletedLaunchRecovery else {
             preRecoveryInterruptions.append(
                 ScreenUnlockEvent(timestamp: timestamp, duration: duration)
@@ -185,15 +189,27 @@ public final class FocusSessionService {
         // 与本类其余持久化函数同一守卫策略（防止并行测试污染全局状态）。
         guard persistenceEnabled else { return }
         Task { @MainActor in
-            await AppState.shared.syncFocusHardwareDisplay(session: self.activeSession)
+            if shouldPushHardware {
+                await AppState.shared.syncFocusHardwareDisplay(session: self.activeSession)
+            }
             await self.persistActiveSessionWithInterruptions()
         }
     }
 
     /// 被 BLE 后台唤醒（0x20/0x30）后调用：先补取挂起期间累积到 App Group 的打断，再由调用方
     /// 现算并推 0x14——保证后台推给硬件的瓶子/段位已反映应归零的打断（息屏后台链路）。
-    public func refreshInterruptionsFromAppGroup() {
-        interruptionDetector.drainPendingInterruptions()
+    public func refreshInterruptionsFromAppGroup(suppressHardwarePush: Bool = false) {
+        guard suppressHardwarePush else {
+            interruptionDetector.drainPendingInterruptions()
+            return
+        }
+        for event in interruptionDetector.takePendingInterruptions() {
+            handleDetectedInterruption(
+                startingAt: event.timestamp,
+                duration: event.duration ?? 0,
+                shouldPushHardware: false
+            )
+        }
     }
 
     private func startFocusDisplaySyncLoop() {

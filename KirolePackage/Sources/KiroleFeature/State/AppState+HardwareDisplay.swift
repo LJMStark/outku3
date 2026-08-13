@@ -101,12 +101,27 @@ extension AppState {
     }
 
     func handleHardwareWake(now: Date = Date()) async {
+        await recordHardwareWakeActivity(now: now)
+        await syncHardwareWakeDisplay(now: now)
+    }
+
+    /// DeviceWake has local bookkeeping that must survive a later BLE transaction failure.
+    /// Keep it separate from display writes so OfflineSync can record the wake immediately while
+    /// still holding 0x14/0x17 until RESULT=COMMITTED.
+    func recordHardwareWakeActivity(now: Date = Date()) async {
         await registerUsageActivity(now: now)
+        if FocusSessionService.shared.activeSession != nil {
+            // DeviceWake must send Time(0x05) first. Drain state now so the frozen snapshot sees
+            // the interruption, but suppress the detector's usual immediate 0x14 side effect;
+            // syncHardwareWakeDisplay sends the updated state after COMMITTED.
+            FocusSessionService.shared.refreshInterruptionsFromAppGroup(suppressHardwarePush: true)
+        }
+    }
+
+    func syncHardwareWakeDisplay(now: Date = Date()) async {
         if FocusSessionService.shared.activeSession == nil {
             await syncIdleHardwareDisplay()
         } else {
-            // 后台唤醒先补取挂起期间累积的打断，专注快照才不漏归零（息屏后台链路）。
-            FocusSessionService.shared.refreshInterruptionsFromAppGroup()
             await syncFocusHardwareDisplay(session: FocusSessionService.shared.activeSession, now: now)
         }
     }
@@ -245,8 +260,19 @@ extension AppState {
         newlyUnlocked: [String] = [],
         now: Date = Date()
     ) async {
-        // 0x14(idle) 是"退出专注态"的状态信号，必须立即发（固件靠它离开态 C）。
-        await syncFocusHardwareDisplay(session: nil, now: now)
+        let shouldDeferBLEWrites = BLEService.shared.isOfflineSyncWriteSessionActive
+        if shouldDeferBLEWrites {
+            // OP_BATCH can end the active focus session while OfflineSync owns the complete-message
+            // gate. Awaiting 0x14 here would deadlock settlement -> OP_ACK -> COMMIT against that
+            // same gate. Queue display writes behind the transaction and let durability return.
+            BLESyncCoordinator.shared.deferFocusSessionEndHardwareDisplay(
+                newlyUnlocked: newlyUnlocked,
+                now: now
+            )
+        } else {
+            // 0x14(idle) 是"退出专注态"的状态信号，必须立即发（固件靠它离开态 C）。
+            await syncFocusHardwareDisplay(session: nil, now: now)
+        }
 
         #if DEBUG
         if !SimulatorBridge.shared.isConnected {
@@ -260,7 +286,7 @@ extension AppState {
         // 刷屏——此前无条件推，叠加任务完成路径 1.5s 后的 DayPack 全刷，硬件上"完成聚焦任务"
         // 连刷三次（0x14+0x17+DayPack）。内容更新由下方 requestBLESync 的 DayPack 轮承载
         // （2026-07-04 审计 B1）。
-        if !newlyUnlocked.isEmpty {
+        if !shouldDeferBLEWrites, !newlyUnlocked.isEmpty {
             await syncIdleHardwareDisplay()
         }
 

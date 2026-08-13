@@ -31,12 +31,26 @@ public enum IntegrationType: String, Sendable, Codable, CaseIterable {
     case icalWebcal = "iCal/WebCal"
 
     public var isSupported: Bool {
+        true
+    }
+
+    /// Runtime release gates keep providers hidden until their external OAuth deployment and
+    /// real-account acceptance checks have passed.
+    public var isAvailable: Bool {
         switch self {
-        case .googleCalendar, .googleTasks, .appleCalendar, .appleReminders,
-             .notion, .taskade:
-            return true
+        case .outlookCalendar, .microsoftToDo: AppSecrets.microsoftOAuthEnabled
+        case .todoist: AppSecrets.todoistOAuthEnabled
+        case .tickTick: AppSecrets.tickTickOAuthEnabled
+        default: true
+        }
+    }
+
+    public var connectionMode: IntegrationConnectionMode {
+        switch self {
+        case .caldav, .icalWebcal:
+            return .appleCalendarMediated
         default:
-            return false
+            return .direct
         }
     }
 
@@ -65,4 +79,9 @@ public enum IntegrationType: String, Sendable, Codable, CaseIterable {
         [.googleCalendar, .outlookCalendar, .appleCalendar, .appleReminders,
          .googleTasks, .microsoftToDo, .todoist, .tickTick, .notion, .taskade, .caldav, .icalWebcal]
     }
+}
+
+public enum IntegrationConnectionMode: String, Sendable, Codable {
+    case direct
+    case appleCalendarMediated
 }

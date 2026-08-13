@@ -23,13 +23,40 @@ public final class KeychainService: @unchecked Sendable {
         static let notionWorkspaceId = "notion_workspace_id"
         static let taskadeAccessToken = "taskade_access_token"
         static let taskadeRefreshToken = "taskade_refresh_token"
+        static let microsoftAccountMetadata = "microsoft_account_metadata_v1"
+        static let todoistTokenSet = "todoist_token_set"
+        static let tickTickTokenSets = [
+            "ticktick_token_set_international",
+            "ticktick_token_set_china",
+        ]
+        static let tickTickPendingAuthorizations = [
+            "ticktick_pending_oauth_international",
+            "ticktick_pending_oauth_china",
+        ]
+
+        static let all = [
+            googleAccessToken,
+            googleRefreshToken,
+            googleTokenExpiry,
+            googleGrantedScopes,
+            appleUserIdentifier,
+            supabaseAccessToken,
+            supabaseRefreshToken,
+            openAIAPIKey,
+            notionAccessToken,
+            notionWorkspaceId,
+            taskadeAccessToken,
+            taskadeRefreshToken,
+            microsoftAccountMetadata,
+            todoistTokenSet,
+        ] + tickTickTokenSets + tickTickPendingAuthorizations
     }
 
-    private init() {
+    init(service: String = "com.kirole.app") {
         // 使用 App Bundle ID 作为 Keychain service identifier
         // .afterFirstUnlockThisDeviceOnly: allows BLE BGAppRefreshTask to read tokens
         // while device is locked (after first unlock), and prevents iCloud Keychain backup.
-        self.keychain = Keychain(service: "com.kirole.app")
+        self.keychain = Keychain(service: service)
             .accessibility(.afterFirstUnlockThisDeviceOnly)
     }
 
@@ -293,7 +320,7 @@ public final class KeychainService: @unchecked Sendable {
         }
     }
 
-    public func clearNotionTokens() {
+    public func clearNotionTokens() throws {
         do {
             try keychain.remove(Keys.notionAccessToken)
             try keychain.remove(Keys.notionWorkspaceId)
@@ -302,6 +329,7 @@ public final class KeychainService: @unchecked Sendable {
                 .persistence(operation: "delete", target: "notion_tokens", underlying: error.localizedDescription),
                 context: "KeychainService.clearNotionTokens"
             )
+            throw error
         }
     }
 
@@ -338,7 +366,7 @@ public final class KeychainService: @unchecked Sendable {
         }
     }
 
-    public func clearTaskadeTokens() {
+    public func clearTaskadeTokens() throws {
         do {
             try keychain.remove(Keys.taskadeAccessToken)
             try keychain.remove(Keys.taskadeRefreshToken)
@@ -347,17 +375,53 @@ public final class KeychainService: @unchecked Sendable {
                 .persistence(operation: "delete", target: "taskade_tokens", underlying: error.localizedDescription),
                 context: "KeychainService.clearTaskadeTokens"
             )
+            throw error
         }
+    }
+
+    // MARK: - Microsoft Account Metadata
+
+    func saveMicrosoftAccountMetadata(_ data: Data) throws {
+        try keychain.set(data, key: Keys.microsoftAccountMetadata)
+    }
+
+    func getMicrosoftAccountMetadata() throws -> Data? {
+        try keychain.getData(Keys.microsoftAccountMetadata)
+    }
+
+    func clearMicrosoftAccountMetadata() throws {
+        try keychain.remove(Keys.microsoftAccountMetadata)
     }
 
     // MARK: - Clear All
 
-    public func clearAll() {
-        clearGoogleTokens()
-        clearAppleUserIdentifier()
-        clearSupabaseTokens()
-        clearOpenAIAPIKey()
-        clearNotionTokens()
-        clearTaskadeTokens()
+    public func clearAll() throws {
+        var firstError: Error?
+        for key in Keys.all {
+            do {
+                guard try keychain.getData(key) != nil else { continue }
+                try keychain.remove(key)
+                guard try keychain.getData(key) == nil else {
+                    throw KeychainCleanupError.credentialDeletionFailed
+                }
+            } catch {
+                firstError = firstError ?? error
+                ErrorReporter.log(
+                    .persistence(operation: "delete", target: "all_credentials", underlying: error.localizedDescription),
+                    context: "KeychainService.clearAll"
+                )
+            }
+        }
+        if firstError != nil {
+            throw KeychainCleanupError.credentialDeletionFailed
+        }
+    }
+}
+
+enum KeychainCleanupError: LocalizedError, Sendable {
+    case credentialDeletionFailed
+
+    var errorDescription: String? {
+        "Local credentials could not be removed"
     }
 }

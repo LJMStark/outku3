@@ -199,7 +199,8 @@ public struct TaskSummary: Codable, Sendable, Identifiable {
         self.id = task.hardwareIdentifier
         self.title = task.title
         self.isCompleted = task.isCompleted
-        self.priority = task.priority.rawValue
+        // BLE Task/TopTask records use 1...3 while TaskPriority is zero-based in the App.
+        self.priority = task.priority.rawValue + 1
         if let dueDate = task.dueDate {
             let formatter = DateFormatter()
             formatter.locale = Locale(identifier: "en_US_POSIX")

@@ -156,6 +156,20 @@ public actor SupabaseService {
         )
     }
 
+    /// Returns a valid user JWT for authenticated Edge Functions and persists any refresh
+    /// rotation performed by supabase-swift. Callers must never substitute the public anon key
+    /// for this user credential.
+    public func authenticatedAccessToken(expectedUserID: String) async throws -> String {
+        await restoreSessionIfNeeded()
+        let client = try requireClient()
+        let session = try await client.auth.session
+        guard session.user.id.uuidString.caseInsensitiveCompare(expectedUserID) == .orderedSame else {
+            throw SupabaseError.sessionUserMismatch
+        }
+        try persistSession(session)
+        return session.accessToken
+    }
+
     private func persistSession(_ session: Session) throws {
         try keychainService.saveSupabaseTokens(
             accessToken: session.accessToken,
@@ -306,11 +320,14 @@ public actor SupabaseService {
 
 public enum SupabaseError: Error, LocalizedError {
     case notConfigured
+    case sessionUserMismatch
 
     public var errorDescription: String? {
         switch self {
         case .notConfigured:
             return "Supabase is not configured. Please inject credentials via AppSecrets.configure(...)"
+        case .sessionUserMismatch:
+            return "The active Supabase session belongs to a different Kirole user"
         }
     }
 }

@@ -145,11 +145,16 @@ struct AuthManagerTests {
         await SharedPersistenceTestLock.shared.withLock {
             let manager = AuthManager.shared
             let originalCleanup = manager.customCompanionSignOutCleanup
+            let originalGoogleReset = manager.googleSyncStateResetOverride
             var didRequestCustomCompanionCleanup = false
+            manager.googleSyncStateResetOverride = {}
             manager.customCompanionSignOutCleanup = {
                 didRequestCustomCompanionCleanup = true
             }
-            defer { manager.customCompanionSignOutCleanup = originalCleanup }
+            defer {
+                manager.customCompanionSignOutCleanup = originalCleanup
+                manager.googleSyncStateResetOverride = originalGoogleReset
+            }
 
             await manager.signOut()
 
@@ -159,4 +164,30 @@ struct AuthManagerTests {
             #expect(manager.isGoogleConnected == false)
         }
     }
+
+    @Test("Sign out keeps the Kirole identity when provider credentials cannot be erased")
+    @MainActor
+    func signOutPreservesIdentityAfterProviderCleanupFailure() async throws {
+        let serviceName = "com.kirole.tests.auth-manager.\(UUID().uuidString)"
+        let keychain = KeychainService(service: serviceName)
+        try keychain.saveAppleUserIdentifier("apple-user-1")
+        let manager = AuthManager(keychainService: keychain)
+        manager.restoreLocalIdentityFromKeychain()
+        manager.googleSyncStateResetOverride = {}
+        manager.customCompanionSignOutCleanup = {}
+        manager.taskProviderSignOutCleanupOverride = {
+            throw AuthCleanupTestError.credentialDeletionFailed
+        }
+
+        await manager.signOut()
+
+        #expect(manager.currentUser?.id == "apple-user-1")
+        #expect(manager.authState.isAuthenticated)
+        #expect(keychain.getAppleUserIdentifier() == "apple-user-1")
+        try keychain.clearAll()
+    }
+}
+
+private enum AuthCleanupTestError: Error, Equatable {
+    case credentialDeletionFailed
 }

@@ -13,6 +13,9 @@ public struct SettingsIntegrationSection: View {
     @State private var isConnecting = false
     @State private var isDisconnecting = false
     @State private var disconnectTarget: IntegrationType?
+    @State private var appleCalendarSelectionIntent: AppleCalendarSelectionIntent?
+    @State private var projectSelectionTarget: ProviderProjectSelectionTarget?
+    @State private var showTickTickRegionPicker = false
 
     public init() {}
 
@@ -26,7 +29,9 @@ public struct SettingsIntegrationSection: View {
 
     private var filteredTypes: [IntegrationType] {
         let connectableTypes = IntegrationType.displayOrder.filter {
-            $0.isSupported && !connectedTypes.contains($0)
+            !connectedTypes.contains($0)
+                && !(connectedTypes.contains(.appleCalendar)
+                    && $0.connectionMode == .appleCalendarMediated)
         }
         if searchText.isEmpty { return connectableTypes }
         return connectableTypes.filter { $0.rawValue.localizedCaseInsensitiveContains(searchText) }
@@ -85,8 +90,34 @@ public struct SettingsIntegrationSection: View {
             }
         } message: {
             if let target = disconnectTarget {
-                Text("Are you sure you want to disconnect \(target.rawValue)?")
+                if target == .outlookCalendar || target == .microsoftToDo {
+                    Text("Disconnect Microsoft? Outlook Calendar and Microsoft To Do will both be disconnected and their local sync data will be removed.")
+                } else {
+                    Text("Are you sure you want to disconnect \(target.rawValue)?")
+                }
             }
+        }
+        .sheet(item: $appleCalendarSelectionIntent) { intent in
+            AppleCalendarSelectionSheet(intent: intent)
+                .injectAppEnvironment()
+        }
+        .sheet(item: $projectSelectionTarget) { target in
+            ProviderProjectSelectionSheet(target: target)
+                .injectAppEnvironment()
+        }
+        .confirmationDialog(
+            "Choose TickTick Service",
+            isPresented: $showTickTickRegionPicker,
+            titleVisibility: .visible
+        ) {
+            Button("TickTick International") {
+                Task { await connectTickTick(region: .international) }
+            }
+            Button("TickTick China — Coming Soon") {}
+                .disabled(true)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("TickTick International is available after secure server setup. The China service remains disabled until its separate OAuth registration is verified.")
         }
     }
 
@@ -115,6 +146,29 @@ public struct SettingsIntegrationSection: View {
                     }
                     .disabled(isDisconnecting)
                     .opacity(isDisconnecting ? 0.6 : 1.0)
+
+                    if integration.type == .appleCalendar {
+                        Button("Choose system calendars") {
+                            appleCalendarSelectionIntent = .editExisting
+                        }
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(theme.colors.accent)
+                        .padding(.horizontal, 4)
+                        .accessibilityIdentifier("settings.appleCalendar.choose")
+                    }
+
+                    if integration.type == .todoist {
+                        manageProjectsButton(title: "Choose Todoist projects", target: .todoist)
+                    }
+
+                    if integration.type == .tickTick, let region = authManager.tickTickRegion {
+                        manageProjectsButton(
+                            title: region == .international
+                                ? "Choose TickTick projects"
+                                : "Choose TickTick China projects",
+                            target: .tickTick(region)
+                        )
+                    }
 
                     if let errorMessage = syncErrorMessage(for: integration.type) {
                         HStack(alignment: .top, spacing: 6) {
@@ -179,7 +233,9 @@ public struct SettingsIntegrationSection: View {
     private func syncErrorKey(for type: IntegrationType) -> String {
         switch type {
         case .googleCalendar, .googleTasks: return "Google"
+        case .outlookCalendar, .microsoftToDo: return "Microsoft"
         case .appleCalendar: return "Apple Calendar"
+        case .caldav, .icalWebcal: return "Apple Calendar"
         case .appleReminders: return "Apple Reminders"
         case .notion: return "Notion"
         case .taskade: return "Taskade"
@@ -229,8 +285,8 @@ public struct SettingsIntegrationSection: View {
                     IntegrationAppRow(type: type) {
                         Task { await connectIntegration(type) }
                     }
-                    .disabled(isConnecting || isDisconnecting)
-                    .opacity(isConnecting || isDisconnecting ? 0.5 : 1.0)
+                    .disabled(isConnecting || isDisconnecting || !type.isAvailable)
+                    .opacity((isConnecting || isDisconnecting || !type.isAvailable) ? 0.5 : 1.0)
 
                     if index < types.count - 1 {
                         Divider().padding(.leading, 52)
@@ -243,7 +299,7 @@ public struct SettingsIntegrationSection: View {
     private func connectIntegration(_ type: IntegrationType) async {
         guard !isConnecting else { return }
 
-        guard type.isSupported else {
+        guard type.isAvailable else {
             showComingSoon = true
             return
         }
@@ -262,22 +318,34 @@ public struct SettingsIntegrationSection: View {
             case .appleReminders:
                 await connectAppleRemindersIntegration()
 
+            case .caldav, .icalWebcal:
+                await connectAppleMediatedCalendar()
+
             case .notion:
                 await connectNotionIntegration()
 
             case .taskade:
                 await connectTaskadeIntegration()
 
-            default:
-                showComingSoon = true
+            case .outlookCalendar, .microsoftToDo:
+                try await connectMicrosoftIntegration(type)
+
+            case .todoist:
+                try await connectTodoistIntegration()
+
+            case .tickTick:
+                showTickTickRegionPicker = true
+
             }
         } catch GoogleSignInError.canceled {
             // 用户主动关掉 Google 登录窗：不算错误
+        } catch let error as ASWebAuthenticationSessionError where error.code == .canceledLogin {
+            // 用户主动关掉系统 OAuth 登录窗：不算连接失败，也不留下红色错误横幅。
+        } catch is CancellationError {
+            // MSAL and structured-concurrency cancellation both mean the user left sign-in.
         } catch {
-            // 唯一会抛错的分支是 Google 连接。错误必须进 remoteSyncErrors 才对用户可见
-            // （齿轮红点 + Settings 行内）；只留 DEBUG print 等于静默失败，用户会以为已连上。
             appState.lastError = error.localizedDescription
-            appState.remoteSyncErrors["Google"] = error.localizedDescription
+            appState.remoteSyncErrors[syncErrorKey(for: type)] = error.localizedDescription
             #if DEBUG
             print("Failed to connect \(type.rawValue): \(error)")
             #endif
@@ -300,6 +368,7 @@ public struct SettingsIntegrationSection: View {
     }
 
     private func connectAppleCalendarIntegration() async {
+        await AppleSyncEngine.shared.setEventCalendarSelectionMode(.nativeAppleCalendar)
         let granted = await appState.requestAppleCalendarAccess()
         appState.updateIntegrationStatus(.appleCalendar, isConnected: granted)
         if granted {
@@ -313,6 +382,51 @@ public struct SettingsIntegrationSection: View {
         if granted {
             await appState.syncAppleReminders()
         }
+    }
+
+    private func connectAppleMediatedCalendar() async {
+        let granted = await appState.requestAppleCalendarAccess()
+        guard granted else { return }
+        appleCalendarSelectionIntent = .connectMediated
+    }
+
+    private func connectMicrosoftIntegration(_ type: IntegrationType) async throws {
+        try await authManager.ensureMicrosoftAccess(for: type)
+        appState.updateIntegrationStatus(type, isConnected: true)
+        await appState.syncMicrosoftData()
+    }
+
+    private func connectTodoistIntegration() async throws {
+        try await authManager.connectTodoist()
+        appState.updateIntegrationStatus(.todoist, isConnected: true)
+        projectSelectionTarget = .todoist
+    }
+
+    private func connectTickTick(region: TickTickRegion) async {
+        guard !isConnecting else { return }
+        isConnecting = true
+        defer { isConnecting = false }
+        do {
+            _ = try await authManager.connectTickTick(region: region)
+            appState.updateIntegrationStatus(.tickTick, isConnected: true)
+            projectSelectionTarget = .tickTick(region)
+        } catch {
+            appState.lastError = error.localizedDescription
+            appState.remoteSyncErrors["TickTick"] = error.localizedDescription
+        }
+    }
+
+    @ViewBuilder
+    private func manageProjectsButton(
+        title: String,
+        target: ProviderProjectSelectionTarget
+    ) -> some View {
+        Button(title) {
+            projectSelectionTarget = target
+        }
+        .font(.system(size: 12, weight: .medium))
+        .foregroundStyle(theme.colors.accent)
+        .padding(.horizontal, 4)
     }
 
     private func hasGoogleAccess(for type: IntegrationType) -> Bool {
@@ -342,19 +456,55 @@ public struct SettingsIntegrationSection: View {
         isDisconnecting = true
         defer { isDisconnecting = false }
 
-        appState.updateIntegrationStatus(type, isConnected: false)
-
-        switch type {
-        case .googleCalendar, .googleTasks:
-            if !appState.hasAnyGoogleIntegrationConnected {
-                await authManager.disconnectGoogle()
+        do {
+            switch type {
+            case .googleCalendar, .googleTasks:
+                let otherGoogleType: IntegrationType = type == .googleCalendar
+                    ? .googleTasks
+                    : .googleCalendar
+                if !appState.isIntegrationConnected(otherGoogleType) {
+                    guard await authManager.disconnectGoogle() else {
+                        throw KeychainCleanupError.credentialDeletionFailed
+                    }
+                }
+                appState.updateIntegrationStatus(type, isConnected: false)
+            case .notion:
+                guard authManager.disconnectNotion() else {
+                    throw KeychainCleanupError.credentialDeletionFailed
+                }
+                appState.updateIntegrationStatus(type, isConnected: false)
+            case .taskade:
+                guard authManager.disconnectTaskade() else {
+                    throw KeychainCleanupError.credentialDeletionFailed
+                }
+                appState.updateIntegrationStatus(type, isConnected: false)
+            case .outlookCalendar, .microsoftToDo:
+                // Both capabilities share one MSAL account and token cache. Treat them as one
+                // privacy boundary so a capability cannot retain stale scopes or queued writes.
+                try await authManager.disconnectMicrosoft()
+                appState.updateIntegrationStatus(.outlookCalendar, isConnected: false)
+                appState.updateIntegrationStatus(.microsoftToDo, isConnected: false)
+            case .todoist:
+                try await authManager.disconnectTodoist()
+                appState.updateIntegrationStatus(type, isConnected: false)
+                await appState.saveProjectSelection([], for: .todoist)
+            case .tickTick:
+                let region = authManager.tickTickRegion
+                try await authManager.disconnectTickTick()
+                appState.updateIntegrationStatus(type, isConnected: false)
+                if let region {
+                    await appState.saveProjectSelection([], for: .tickTick(region))
+                }
+            default:
+                appState.updateIntegrationStatus(type, isConnected: false)
             }
-        case .notion:
-            authManager.disconnectNotion()
-        case .taskade:
-            authManager.disconnectTaskade()
-        default:
-            break
+        } catch {
+            if type == .tickTick, authManager.isTickTickConnected == false {
+                appState.updateIntegrationStatus(type, isConnected: false)
+            }
+            let message = "Could not disconnect \(type.rawValue): \(error.localizedDescription)"
+            appState.lastError = message
+            appState.remoteSyncErrors[syncErrorKey(for: type)] = message
         }
     }
 
@@ -413,6 +563,12 @@ private struct IntegrationAppRow: View {
 
                     if type.isExperimental {
                         Text("[Experimental]")
+                            .font(.system(size: 11))
+                            .foregroundStyle(theme.colors.secondaryText)
+                    }
+
+                    if !type.isAvailable {
+                        Text("[Coming Soon]")
                             .font(.system(size: 11))
                             .foregroundStyle(theme.colors.secondaryText)
                     }

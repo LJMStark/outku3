@@ -38,6 +38,7 @@ public actor LocalStorage {
         static let focusSessions = "focus_sessions.json"
         static let eventLogs = "event_logs.json"
         static let taskOperationLedger = "task_operation_ledger.json"
+        static let offlineOperationLedger = "offline_operation_ledger.json"
         static let taskListSnapshotVersion = "task_list_snapshot_version.json"
         static let focusEnergyAwardReceipts = "focus_energy_award_receipts.json"
         static let aiInteractions = "ai_interactions.json"
@@ -69,7 +70,8 @@ public actor LocalStorage {
         static let persisted = [
             pet, tasks, events,
             syncState, haikuCache, userProfile,
-            focusSessions, eventLogs, taskOperationLedger, taskListSnapshotVersion,
+            focusSessions, eventLogs, taskOperationLedger, offlineOperationLedger,
+            taskListSnapshotVersion,
             focusEnergyAwardReceipts, aiInteractions,
             behaviorSummary, onboardingProfile,
             deepFocusSelection, activeFocusSession,
@@ -274,6 +276,14 @@ public actor LocalStorage {
 
     func loadTaskOperationLedger() throws -> [TaskOperationLedgerEntry]? {
         try load([TaskOperationLedgerEntry].self, from: Files.taskOperationLedger)
+    }
+
+    func saveOfflineOperationLedger(_ entries: [OfflineOperationLedgerEntry]) throws {
+        try save(entries, to: Files.offlineOperationLedger)
+    }
+
+    func loadOfflineOperationLedger() throws -> [OfflineOperationLedgerEntry]? {
+        try load([OfflineOperationLedgerEntry].self, from: Files.offlineOperationLedger)
     }
 
     // MARK: - Events

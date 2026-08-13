@@ -1,5 +1,10 @@
 -- Kirole Supabase Database Schema
 -- Run this SQL in your Supabase SQL Editor to create the required tables
+--
+-- Provider OAuth uses transactional SECURITY DEFINER functions and a private schema. Apply the
+-- versioned migration below after this baseline; it is intentionally kept as a migration so its
+-- function signatures, grants, and state transitions are reviewed and deployed atomically:
+--   supabase/migrations/202608130001_ticktick_oauth.sql
 
 -- ==========================================
 -- Pets Table

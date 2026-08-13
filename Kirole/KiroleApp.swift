@@ -1,8 +1,27 @@
 import SwiftUI
 import KiroleFeature
+import UIKit
+
+@MainActor
+private final class KiroleAppDelegate: NSObject, UIApplicationDelegate {
+    func application(
+        _ app: UIApplication,
+        open url: URL,
+        options: [UIApplication.OpenURLOptionsKey: Any] = [:]
+    ) -> Bool {
+        if MicrosoftAuthService.handleRedirectURL(
+            url,
+            sourceApplication: options[.sourceApplication] as? String
+        ) {
+            return true
+        }
+        return AuthManager.shared.handleURL(url)
+    }
+}
 
 @main
 struct KiroleApp: App {
+    @UIApplicationDelegateAdaptor(KiroleAppDelegate.self) private var appDelegate
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -20,6 +39,11 @@ struct KiroleApp: App {
             deepFocusFeatureEnabled: BuildSecrets.deepFocusFeatureEnabled,
             notionClientId: BuildSecrets.notionClientId,
             taskadeClientId: BuildSecrets.taskadeClientId,
+            microsoftClientId: BuildSecrets.microsoftClientId,
+            microsoftOAuthEnabled: BuildSecrets.microsoftOAuthEnabled,
+            todoistClientId: BuildSecrets.todoistClientId,
+            todoistOAuthEnabled: BuildSecrets.todoistOAuthEnabled,
+            tickTickOAuthEnabled: BuildSecrets.tickTickOAuthEnabled,
             openAIBaseURL: BuildSecrets.openAIBaseURL,
             chatModelID: BuildSecrets.chatModelID,
             fallbackAPIKey: BuildSecrets.fallbackAPIKey

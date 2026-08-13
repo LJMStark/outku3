@@ -22,8 +22,35 @@ enum ExternalSyncDispatcher {
             try await syncNotionTask(task, action: action)
         case .taskade:
             try await syncTaskadeTask(task, action: action)
+        case .outlook:
+            throw ExternalEditingError.integrationReadOnly("Outlook Calendar")
+        case .microsoftToDo:
+            switch action {
+            case .updateCompletion:
+                try await MicrosoftSyncEngine.shared.pushTodoCompletion(task)
+            case .delete:
+                throw ExternalEditingError.integrationReadOnly("Microsoft To Do")
+            }
         case .todoist:
-            throw ExternalEditingError.integrationReadOnly("Todoist")
+            switch action {
+            case .updateCompletion:
+                guard let reference = task.externalReference,
+                      reference.provider == .todoist,
+                      !reference.accountID.isEmpty else {
+                    throw ExternalEditingError.missingRemoteIdentifier("Todoist")
+                }
+                let token = try await AuthManager.shared.getTodoistAccessToken()
+                try await TodoistSyncEngine.shared.pushCompletion(
+                    itemID: reference.itemID,
+                    accountID: reference.accountID,
+                    completed: task.isCompleted,
+                    accessToken: token
+                )
+            case .delete:
+                throw ExternalEditingError.integrationReadOnly("Todoist")
+            }
+        case .tickTick:
+            throw ExternalEditingError.integrationReadOnly("TickTick")
         }
     }
 
@@ -51,7 +78,7 @@ enum ExternalSyncDispatcher {
             syncedTask.remoteUpdatedAt = Date()
             syncedTask.syncStatus = .synced
             return syncedTask
-        case .notion, .taskade, .todoist:
+        case .notion, .taskade, .todoist, .outlook, .microsoftToDo, .tickTick:
             throw ExternalEditingError.integrationReadOnly(componentName(for: task.source))
         }
     }
@@ -99,7 +126,7 @@ enum ExternalSyncDispatcher {
             syncedEvent.localId = event.localId
             syncedEvent.syncStatus = .synced
             return syncedEvent
-        case .todoist, .notion, .taskade:
+        case .outlook, .microsoftToDo, .todoist, .tickTick, .notion, .taskade:
             throw ExternalEditingError.integrationReadOnly(componentName(for: event.source))
         }
     }
@@ -118,6 +145,12 @@ enum ExternalSyncDispatcher {
             return "Taskade"
         case .todoist:
             return "Todoist"
+        case .outlook:
+            return "Outlook Calendar"
+        case .microsoftToDo:
+            return "Microsoft To Do"
+        case .tickTick:
+            return "TickTick"
         }
     }
 

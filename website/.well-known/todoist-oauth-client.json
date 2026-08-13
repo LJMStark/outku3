@@ -1,0 +1,17 @@
+{
+  "client_id": "https://kirole.681023.xyz/.well-known/todoist-oauth-client.json",
+  "client_name": "Kirole",
+  "client_uri": "https://kirole.681023.xyz/",
+  "redirect_uris": [
+    "https://kirole.681023.xyz/oauth/todoist-callback"
+  ],
+  "grant_types": [
+    "authorization_code",
+    "refresh_token"
+  ],
+  "response_types": [
+    "code"
+  ],
+  "scope": "data:read_write",
+  "token_endpoint_auth_method": "none"
+}

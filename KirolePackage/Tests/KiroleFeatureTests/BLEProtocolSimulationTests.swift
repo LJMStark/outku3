@@ -28,8 +28,13 @@ struct BLEProtocolSimulationTests {
             payload: BLEDataEncoder.encodeTaskList(fixtures.tasks)
         )
         let taskList = try hardware.receiveSingleAppPacket(taskPacket).parseTaskList()
+        #expect(
+            taskList.tasks.map(\.id)
+                == fixtures.tasks.filter { $0.isInTodayDisplay() }.map(\.hardwareIdentifier)
+        )
         #expect(taskList.tasks.map(\.title) == ["Plan BLE", "Review packet"])
         #expect(taskList.tasks.map(\.isCompleted) == [false, true])
+        #expect(taskList.tasks.map(\.priority) == [3, 2])
 
         let schedulePacket = BLESimpleEncoder.encode(
             type: BLEDataType.schedule.rawValue,

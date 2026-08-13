@@ -4,6 +4,25 @@ import Foundation
 
 @MainActor
 public final class BLESyncCoordinator {
+    private struct DeferredFocusSessionEndDisplay {
+        var newlyUnlocked: [String]
+        var endedAt: Date
+    }
+
+    private enum OfflineSyncIntegrationError: LocalizedError {
+        case missingDeviceIdentity
+        case operationNotDurable(UInt32)
+
+        var errorDescription: String? {
+            switch self {
+            case .missingDeviceIdentity:
+                return "OfflineSync requires a connected device identity"
+            case .operationNotDurable(let operationID):
+                return "Offline operation \(operationID) was not durably applied"
+            }
+        }
+    }
+
     public static let shared = BLESyncCoordinator()
 
     private let bleService = BLEService.shared
@@ -21,6 +40,13 @@ public final class BLESyncCoordinator {
     /// DayPack 被判定过期后可能没有后续轮次发送最新清单。
     private var pendingSync = false
     private var pendingForceSync = false
+    private var pendingHardwareWakeDate: Date?
+    private var deferredFocusSessionEndDisplay: DeferredFocusSessionEndDisplay?
+    /// Set only while the frozen payloads used by the current 0x25 transaction are being built.
+    /// It becomes durable sync metadata only after the device returns RESULT=COMMITTED.
+    private var stagedDayPackFingerprint: String?
+    private var stagedTaskStateVersion: UInt64?
+    private lazy var offlineSyncCoordinator = makeOfflineSyncCoordinator()
     /// Complete/Skip keeps the device on TaskIn until one final DayPack has been sent. Routine
     /// sync requests queue behind this window so no second DayPack can race the later 0x1B.
     private var taskActionPresentationCount = 0
@@ -38,14 +64,210 @@ public final class BLESyncCoordinator {
         return policy.nextSyncTime(now: Date(), lastSync: lastSync)
     }
 
-    public func performSync(force: Bool = false) async {
+    func handleOfflineSyncPayload(_ payload: Data) {
+        offlineSyncCoordinator.handleInbound(payload: payload)
+    }
+
+    func handleOfflineSyncDisconnected() {
+        offlineSyncCoordinator.handleDisconnected()
+    }
+
+    func deferFocusSessionEndHardwareDisplay(newlyUnlocked: [String], now: Date) {
+        let existingUnlocks = deferredFocusSessionEndDisplay?.newlyUnlocked ?? []
+        deferredFocusSessionEndDisplay = DeferredFocusSessionEndDisplay(
+            newlyUnlocked: Array(Set(existingUnlocks + newlyUnlocked)).sorted(),
+            endedAt: now
+        )
+    }
+
+    private func flushDeferredFocusSessionEndHardwareDisplay(appState: AppState) async {
+        guard let deferred = deferredFocusSessionEndDisplay else { return }
+        deferredFocusSessionEndDisplay = nil
+        await appState.syncFocusHardwareDisplay(session: nil, now: deferred.endedAt)
+        if !deferred.newlyUnlocked.isEmpty {
+            await appState.syncIdleHardwareDisplay()
+        }
+    }
+
+    private func makeOfflineSyncCoordinator() -> BLEOfflineSyncCoordinator {
+        BLEOfflineSyncCoordinator(
+            dependencies: .init(
+                synchronizeTime: { [weak self] in
+                    guard let self else { throw BLEError.disconnected }
+                    try await self.bleService.syncOfflineTime()
+                },
+                sendCommand: { [weak self] command in
+                    guard let self else { throw BLEError.disconnected }
+                    try await self.bleService.sendOfflineSyncCommand(command)
+                },
+                makeSnapshot: { [weak self] in
+                    guard let self else { throw BLEError.disconnected }
+                    let frozen = try await self.generateStableDayPack()
+                    let snapshot = OfflineDatasetSnapshot(
+                        tasks: frozen.tasks,
+                        events: frozen.events,
+                        dayPack: frozen.dayPack,
+                        screenSize: self.bleService.hardwareScreenSize
+                    )
+                    self.stagedDayPackFingerprint = frozen.dayPack.stableFingerprint()
+                    self.stagedTaskStateVersion = frozen.taskStateVersion
+                    return snapshot
+                },
+                sendTaskList: { [weak self] payload in
+                    guard let self else { throw BLEError.disconnected }
+                    try await self.bleService.sendOfflineTaskListPayload(payload)
+                },
+                sendSchedule: { [weak self] payload in
+                    guard let self else { throw BLEError.disconnected }
+                    try await self.bleService.sendOfflineSchedulePayload(payload)
+                },
+                sendDayPack: { [weak self] payload in
+                    guard let self else { throw BLEError.disconnected }
+                    try await self.bleService.sendOfflineDayPackPayload(payload)
+                },
+                processOperation: { [weak self] bootSessionID, record in
+                    guard let self,
+                          let deviceID = self.bleService.connectedDeviceID?.uuidString else {
+                        throw OfflineSyncIntegrationError.missingDeviceIdentity
+                    }
+                    let durable = await BLEOfflineOperationProcessor.process(
+                        record,
+                        deviceID: deviceID,
+                        bootSessionID: bootSessionID
+                    )
+                    guard durable else {
+                        throw OfflineSyncIntegrationError.operationNotDurable(record.operationID)
+                    }
+                },
+                makeSyncID: {
+                    UInt32.random(in: 1...UInt32.max)
+                },
+                makeValidUntil: {
+                    let calendar = Calendar.current
+                    let startOfToday = calendar.startOfDay(for: Date())
+                    let startOfTomorrow = calendar.date(
+                        byAdding: .day,
+                        value: 1,
+                        to: startOfToday
+                    ) ?? Date().addingTimeInterval(24 * 60 * 60)
+                    return UInt32(clamping: Int(startOfTomorrow.timeIntervalSince1970) - 1)
+                }
+            )
+        )
+    }
+
+    private func generateStableDayPack() async throws -> (
+        dayPack: DayPack,
+        tasks: [TaskItem],
+        events: [CalendarEvent],
+        taskStateVersion: UInt64
+    ) {
+        let appState = AppState.shared
+        for _ in 0..<3 {
+            await appState.refreshSharedPetDialogueIfNeeded()
+            let sourceTaskStateVersion = appState.taskStateVersion
+            guard appState.currentPetDialogueTaskStateVersion == sourceTaskStateVersion else {
+                continue
+            }
+
+            // Capture every input before the asynchronous generator runs. These values, not a
+            // second AppState read, feed all three dataset encoders in this transaction.
+            let pet = appState.pet
+            let tasks = appState.tasks
+            let events = appState.events
+            let weather = appState.weather
+            let deviceMode = appState.deviceMode
+            let userProfile = appState.userProfile
+            let customCompanions = appState.customCompanions
+            let petDialogue = appState.currentPetDialogue
+            let screenSize = bleService.hardwareScreenSize
+
+            let dayPack = await dayPackGenerator.generateDayPack(
+                pet: pet,
+                tasks: tasks,
+                events: events,
+                weather: weather,
+                deviceMode: deviceMode,
+                userProfile: userProfile,
+                customCompanions: customCompanions,
+                screenSize: screenSize,
+                petDialogue: petDialogue
+            )
+            guard appState.taskStateVersion == sourceTaskStateVersion else { continue }
+            return (dayPack, tasks, events, sourceTaskStateVersion)
+        }
+        throw BLEError.staleTaskSnapshot
+    }
+
+    func performDeviceWakeSync(
+        _ eventLog: EventLog,
+        service: BLEService
+    ) async {
+        // DeviceWake must reserve the message boundary before generic event logging, inventory
+        // reconciliation, or any other await can let a live 0x14/0x17/0x1B write run first.
+        guard !isSyncing, taskActionPresentationCount == 0 else {
+            pendingSync = true
+            pendingForceSync = true
+            pendingHardwareWakeDate = eventLog.timestamp
+            return
+        }
+        isSyncing = true
+        do {
+            try await bleService.beginOfflineSyncWriteSession()
+        } catch {
+            isSyncing = false
+            lastSyncSucceeded = false
+            bleService.lastSyncFailed = true
+            ErrorReporter.log(
+                .sync(component: "BLESyncCoordinator", underlying: error.localizedDescription),
+                context: "BLESyncCoordinator.acquireDeviceWakeWriteSession"
+            )
+            schedulePendingSyncIfPossible()
+            return
+        }
+
+        if let firmware = eventLog.firmwareVersion {
+            service.deviceFirmwareVersion = firmware
+        }
+        BLEOTACoordinator.shared.handleDeviceWake(reportedVersion: eventLog.firmwareVersion)
+        if let inventory = eventLog.avatarInventory {
+            _ = await AppState.shared.reconcileCustomAvatarInventory(
+                hasImage: inventory.hasImage,
+                avatarID: inventory.avatarID,
+                byteLength: inventory.byteLength,
+                reportedCRC32: inventory.crc32
+            )
+        }
+        _ = await BLEEventHandler.processEventLogs([eventLog], service: service)
+        await performSync(
+            force: true,
+            hardwareWakeDate: eventLog.timestamp,
+            preacquiredOfflineWriteSession: true
+        )
+    }
+
+    public func performSync(force: Bool = false, hardwareWakeDate: Date? = nil) async {
+        await performSync(
+            force: force,
+            hardwareWakeDate: hardwareWakeDate,
+            preacquiredOfflineWriteSession: false
+        )
+    }
+
+    private func performSync(
+        force: Bool,
+        hardwareWakeDate: Date?,
+        preacquiredOfflineWriteSession: Bool
+    ) async {
         // 并发守卫：keep-alive 默认开后连接常驻，多触发源（后台刷新 / 硬件 0x20·0x30 / 指纹变化）可能并发进入。
         // 以前靠"已连接→.connectionInProgress"意外串行；连接跳过后需显式守卫，否则会重复发整轮 + 帧交错。
         // @MainActor 下在首个 await 前同步置位，保证原子。被丢弃的 force:true 记下、收尾后补跑一次——
         // 否则在途的 force:false 若随后被 shouldSync 拦下，硬件的强制刷新就丢了。
-        guard !isSyncing, taskActionPresentationCount == 0 else {
+        guard preacquiredOfflineWriteSession
+            || (!isSyncing && taskActionPresentationCount == 0) else {
             pendingSync = true
             if force { pendingForceSync = true }
+            if let hardwareWakeDate { pendingHardwareWakeDate = hardwareWakeDate }
             return
         }
         isSyncing = true
@@ -57,6 +279,24 @@ public final class BLESyncCoordinator {
             schedulePendingSyncIfPossible()
         }
 
+        // Own the complete-message boundary before the first await after accepting this sync.
+        // DeviceWake can otherwise yield to focus/UI/debug writes before Time(0x05).
+        var ownsOfflineWriteSession = preacquiredOfflineWriteSession
+        if !ownsOfflineWriteSession {
+            do {
+                try await bleService.beginOfflineSyncWriteSession()
+                ownsOfflineWriteSession = true
+            } catch {
+                lastSyncSucceeded = false
+                bleService.lastSyncFailed = true
+                ErrorReporter.log(
+                    .sync(component: "BLESyncCoordinator", underlying: error.localizedDescription),
+                    context: "BLESyncCoordinator.acquireOfflineWriteSession"
+                )
+                return
+            }
+        }
+
         let now = Date()
         let lastSync = await localStorage.loadLastBleSyncTime()
 
@@ -65,35 +305,28 @@ public final class BLESyncCoordinator {
         // 空 DayPack 推上硬件（闪一屏空首页）。其余入口（syncConnectedExternalData 等）都已等待，
         // 这里补齐（幂等，加载完成后零开销）。2026-07-04 审计 F3。
         await appState.ensureInitialLoadComplete()
-        // v2.5.0: the hardware bubble shows the SAME line as the App home. Refresh it, then
-        // feed currentPetDialogue into the DayPack so both surfaces stay in sync.
-        await appState.refreshSharedPetDialogueIfNeeded()
-        let sourceTaskStateVersion = appState.taskStateVersion
-        guard appState.currentPetDialogueTaskStateVersion == sourceTaskStateVersion else {
-            pendingSync = true
-            return
+        if let hardwareWakeDate {
+            // Local usage/interruption bookkeeping happens after the transaction boundary is
+            // owned. Its interruption drain suppresses the usual immediate 0x14 side effect.
+            await appState.recordHardwareWakeActivity(now: hardwareWakeDate)
         }
-        let dayPack = await dayPackGenerator.generateDayPack(
-            pet: appState.pet,
-            tasks: appState.tasks,
-            events: appState.events,
-            weather: appState.weather,
-            deviceMode: appState.deviceMode,
-            userProfile: appState.userProfile,
-            customCompanions: appState.customCompanions,
-            screenSize: bleService.hardwareScreenSize,
-            petDialogue: appState.currentPetDialogue
-        )
-        // DayPack generation also awaits event/support/settlement text. If tasks changed during
-        // that work, do not let the old task/dialogue transaction reach the hardware.
-        guard appState.taskStateVersion == sourceTaskStateVersion else {
-            pendingSync = true
-            return
+        let contentChanged: Bool
+        if force {
+            // DeviceWake must reach Time/QUERY immediately. The actual frozen datasets are built
+            // only after pending device operations have been durably applied.
+            contentChanged = true
+        } else {
+            do {
+                let preliminaryDayPack = try await generateStableDayPack().dayPack
+                contentChanged = await localStorage.loadLastDayPackHash()
+                    != preliminaryDayPack.stableFingerprint()
+            } catch {
+                pendingSync = true
+                await bleService.endOfflineSyncWriteSession()
+                ownsOfflineWriteSession = false
+                return
+            }
         }
-
-        let fingerprint = dayPack.stableFingerprint()
-        let lastHash = await localStorage.loadLastDayPackHash()
-        let contentChanged = lastHash != fingerprint
         // 天气单独参与轮次放行（不影响 DayPack 发送判定）：天气已移出 DayPack 指纹，若不在
         // 这里放行，"只有天气变化"时 0x04 要等到点轮（白天 1h/夜间 4h）才能上硬件顶栏。
         // 天气变化放行的轮只发 Time/PetStatus/Weather 小帧——DayPack 指纹未变不会全刷。
@@ -115,6 +348,8 @@ public final class BLESyncCoordinator {
             force: force,
             hasPriorityCustomAvatarOperation: hasPriorityCustomAvatarOperation
         ) else {
+            await bleService.endOfflineSyncWriteSession()
+            ownsOfflineWriteSession = false
             return
         }
 
@@ -134,11 +369,20 @@ public final class BLESyncCoordinator {
             // 硬件调试需要长连接时不因超时主动断连。
             if self.bleService.connectionState.isConnected,
                !self.bleService.shouldKeepConnectionOpenForDebug,
+               !self.offlineSyncCoordinator.requiresBLEConnection,
                self.taskActionPresentationCount == 0 {
                 self.bleService.disconnect()
             }
         }
         defer { timeoutTask.cancel() }
+
+        var transactionCommitted = false
+        stagedDayPackFingerprint = nil
+        stagedTaskStateVersion = nil
+        defer {
+            stagedDayPackFingerprint = nil
+            stagedTaskStateVersion = nil
+        }
 
         do {
             // keep-alive 模式下连接可能仍保持。已连接就跳过连接步骤——否则 connectKnownPeripheral 会因
@@ -166,18 +410,47 @@ public final class BLESyncCoordinator {
                 guard connected else { throw BLEError.connectionFailed(lastConnectError) }
             }
 
-            await appState.flushPriorityCustomAvatarOperationIfNeeded()
-            try await bleService.syncTime()
-            try await bleService.sendPetStatus(
-                appState.pet,
-                companionCharacter: appState.userProfile.companionCharacter,
-                // v2.5.32: 例行 sync 恒重申自定义激活态——0x01 不再把用户图刷回内置。
-                customActive: appState.userProfile.customCompanionId != nil
-            )
-            // 顶栏天气走独立 Weather(0x04) 帧（协议 §4.5），每轮发送。此前 sendWeather 只挂在
-            // 零调用的 syncAllData 上——硬件顶栏天气从未被更新过（2026-07-04 审计 F1）。
-            // 辅助帧单独容错：写失败只记日志、不算轮失败——顶栏装饰不能阻断后面的 DayPack
-            // 重试与离线事件补传（与 DayPack/eventLog 的既有"失败不阻断"哲学一致）。
+            // The session acquired before local preparation owns the complete hardware contract:
+            // 0x05 -> QUERY/STATE -> OP_BATCH/OP_ACK -> BEGIN -> 0x02 -> 0x03 -> 0x10
+            // -> COMMIT -> RESULT=COMMITTED. No other business frame is emitted before it returns.
+            _ = try await offlineSyncCoordinator.synchronize()
+            transactionCommitted = true
+            await bleService.endOfflineSyncWriteSession()
+            ownsOfflineWriteSession = false
+
+            guard let committedFingerprint = stagedDayPackFingerprint else {
+                throw BLEError.staleTaskSnapshot
+            }
+            await localStorage.saveLastDayPackHash(committedFingerprint)
+            if let sourceVersion = stagedTaskStateVersion,
+               appState.taskStateVersion != sourceVersion {
+                pendingSync = true
+            }
+
+            let completedAt = Date()
+            await localStorage.saveLastBleSyncTime(completedAt)
+            bleService.updateLastSyncTime(completedAt)
+            bleService.lastSyncFailed = false
+            lastSyncSucceeded = true
+
+            // The required transaction has finished. Existing live-only display, weather and
+            // avatar messages may now run without splitting the staged datasets.
+            await flushDeferredFocusSessionEndHardwareDisplay(appState: appState)
+            do {
+                try await bleService.sendPetStatus(
+                    appState.pet,
+                    companionCharacter: appState.userProfile.companionCharacter,
+                    customActive: appState.userProfile.customCompanionId != nil
+                )
+            } catch {
+                ErrorReporter.log(
+                    .sync(
+                        component: "BLE PetStatus",
+                        underlying: error.localizedDescription
+                    ),
+                    context: "BLESyncCoordinator.performSync"
+                )
+            }
             if let weatherFingerprint {
                 do {
                     try await bleService.sendWeather(w)
@@ -189,72 +462,30 @@ public final class BLESyncCoordinator {
                     )
                 }
             }
-
-            var dayPackSendFailed = false
-            if contentChanged {
-                // Send DayPack with retry: 2 attempts, 500ms/1s backoff
-                var sent = false
-                var superseded = false
-                var lastWriteError: Error?
-                for attempt in 0..<2 {
-                    do {
-                        try await bleService.sendDayPack(
-                            dayPack,
-                            expectedTaskStateVersion: sourceTaskStateVersion
-                        )
-                        sent = true
-                        break
-                    } catch {
-                        if let bleError = error as? BLEError,
-                           case .staleTaskSnapshot = bleError {
-                            superseded = true
-                            pendingSync = true
-                            break
-                        }
-                        lastWriteError = error
-                        #if DEBUG
-                        print("[BLESyncCoordinator] Write attempt \(attempt + 1)/2 failed: \(error.localizedDescription)")
-                        #endif
-                        if attempt < 1 {
-                            try? await Task.sleep(for: .milliseconds(500 * (attempt + 1)))
-                        }
-                    }
-                }
-                if sent {
-                    await localStorage.saveLastDayPackHash(fingerprint)
-                } else if !superseded {
-                    // DayPack 是 App→硬件最核心的帧；两次写失败必须留痕，否则硬件一直显示旧数据、
-                    // App 端在 Release 下毫无信号（下轮会重试，但失败本身不可见）。
-                    // 不在此处 throw：后面的事件补传（requestEventLogsIfNeeded）是核心功能，
-                    // 不能因显示帧写失败而放弃；整轮成败在末尾按本标志判定。
-                    dayPackSendFailed = true
-                    ErrorReporter.log(
-                        .sync(component: "BLE DayPack", underlying: lastWriteError?.localizedDescription ?? "write failed after 2 attempts"),
-                        context: "BLESyncCoordinator.performSync"
-                    )
-                }
+            if let hardwareWakeDate {
+                await appState.syncHardwareWakeDisplay(now: hardwareWakeDate)
             }
-
+            await appState.flushPriorityCustomAvatarOperationIfNeeded()
             await appState.flushPendingCustomCompanionPushIfNeeded()
-
-            let eventLogRequestSucceeded = await bleService.requestEventLogsIfNeeded()
-            if dayPackSendFailed || !eventLogRequestSucceeded {
-                // 硬件还在显示旧内容，或事件补传请求(0x20)没写出去：这轮不算成功。补传是核心功能，
-                // 0x20 写失败与 DayPack 写失败同等对待——不更新 lastBleSyncTime（避免 Settings 显示
-                // 绿色"刚同步过"），点亮 lastSyncFailed 供用户重试；lastBleSyncTime 不前进
-                // 也让 BLESyncPolicy 更早安排下一轮。
-                bleService.lastSyncFailed = true
-                lastSyncSucceeded = false
-            } else {
-                let completedAt = Date()
-                await localStorage.saveLastBleSyncTime(completedAt)
-                bleService.updateLastSyncTime(completedAt)
-                bleService.lastSyncFailed = false
-                lastSyncSucceeded = true
-            }
         } catch {
             lastSyncSucceeded = false
             bleService.lastSyncFailed = true
+            // STATE has no request ID. After a failed QUERY/transaction, a delayed response on
+            // this connection could satisfy the next run. Reset the BLE generation before any
+            // retry so old notifications cannot cross the boundary, even during Focus/debug.
+            if !transactionCommitted, bleService.connectionState.isConnected {
+                bleService.disconnect()
+            }
+            if !transactionCommitted {
+                // A deferred idle/scene frame belongs only to this transaction's OP_BATCH. The
+                // failed run disconnects, so retaining it could later overwrite a newly-started
+                // focus session after an unrelated successful sync.
+                deferredFocusSessionEndDisplay = nil
+            }
+            if ownsOfflineWriteSession {
+                await bleService.endOfflineSyncWriteSession()
+                ownsOfflineWriteSession = false
+            }
             // 整轮同步失败的最终兜底——必须无条件上报。否则 Release/TestFlight 包（硬件团队拿的就是它）
             // 下 #if DEBUG 被裁剪，sync 失败彻底静默，硬件团队无法区分“没触发同步”和“同步失败了”。
             ErrorReporter.log(
@@ -265,7 +496,9 @@ public final class BLESyncCoordinator {
 
         // 智能提醒在断连前统一投递：硬件可达 → 只推 E-ink（手机保持安静）；硬件离线 → 落 iOS 本地通知，
         // 否则离线用户这条温和提醒就彻底丢了（NotificationService 此前完全没有调用方）。
-        await deliverSmartReminder(appState: appState)
+        if transactionCommitted {
+            await deliverSmartReminder(appState: appState)
+        }
 
         // 同步收尾默认主动断连（省电脉冲式同步）；硬件调试仍需控制通道时保持连接不断。
         // 专注会话进行中也保持连接：硬件靠这条常驻连接的 notify(0x20) 唤醒被 iOS 挂起的 App
@@ -292,7 +525,11 @@ public final class BLESyncCoordinator {
         let shouldForce = pendingForceSync
         pendingSync = false
         pendingForceSync = false
-        Task { @MainActor in await self.performSync(force: shouldForce) }
+        let hardwareWakeDate = pendingHardwareWakeDate
+        pendingHardwareWakeDate = nil
+        Task { @MainActor in
+            await self.performSync(force: shouldForce, hardwareWakeDate: hardwareWakeDate)
+        }
     }
 
     private func waitForActiveSyncToFinish() async {

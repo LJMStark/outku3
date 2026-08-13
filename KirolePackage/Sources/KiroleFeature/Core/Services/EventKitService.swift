@@ -7,8 +7,13 @@ public actor EventKitService {
     public static let shared = EventKitService()
 
     private let eventStore = EKEventStore()
+    private let calendarSelectionStore: any AppleCalendarSelectionPersisting
 
-    private init() {}
+    private init(
+        calendarSelectionStore: any AppleCalendarSelectionPersisting = AppleCalendarSelectionStore.shared
+    ) {
+        self.calendarSelectionStore = calendarSelectionStore
+    }
 
     // MARK: - Authorization
 
@@ -47,7 +52,7 @@ public actor EventKitService {
         let startOfDay = calendar.startOfDay(for: Date())
         let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
 
-        return try queryEvents(from: startOfDay, to: endOfDay)
+        return try await queryEvents(from: startOfDay, to: endOfDay)
     }
 
     public func fetchWeekEvents() async throws -> [CalendarEvent] {
@@ -59,11 +64,22 @@ public actor EventKitService {
         let startOfWeek = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!
         let endOfWeek = calendar.date(byAdding: .day, value: 7, to: startOfWeek)!
 
-        return try queryEvents(from: startOfWeek, to: endOfWeek)
+        return try await queryEvents(from: startOfWeek, to: endOfWeek)
     }
 
-    private func queryEvents(from startDate: Date, to endDate: Date) throws -> [CalendarEvent] {
-        let calendars = eventStore.calendars(for: .event)
+    private func queryEvents(from startDate: Date, to endDate: Date) async throws -> [CalendarEvent] {
+        let storedSelection = await calendarSelectionStore.loadSelectedCalendarIdentifiers()
+        let selectionMode = await calendarSelectionStore.loadSelectionMode()
+        let availableCalendars = eventStore.calendars(for: .event)
+        let descriptors = availableCalendars.map(Self.makeCalendarDescriptor)
+        let selectedIdentifiers = AppleCalendarSelectionStore.resolveSelection(
+            storedIdentifiers: storedSelection,
+            availableCalendars: descriptors,
+            selectionMode: selectionMode
+        )
+        let calendars = availableCalendars.filter {
+            selectedIdentifiers.contains($0.calendarIdentifier)
+        }
         guard !calendars.isEmpty else { return [] }
         let predicate = eventStore.predicateForEvents(withStart: startDate, end: endDate, calendars: calendars)
         let ekEvents = eventStore.events(matching: predicate)
@@ -78,18 +94,36 @@ public actor EventKitService {
                 return nil
             }
             let eventIdentifier = event.eventIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
-            let safeEventId: String
-            if !eventIdentifier.isEmpty {
-                safeEventId = eventIdentifier
-            } else {
-                safeEventId = UUID().uuidString
+            let calendarItemIdentifier = event.calendarItemIdentifier
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let externalIdentifier = event.calendarItemExternalIdentifier?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let stableProviderIdentifier = Self.stableProviderIdentifier(
+                externalIdentifier: externalIdentifier,
+                eventIdentifier: eventIdentifier,
+                calendarItemIdentifier: calendarItemIdentifier,
+                startDate: event.startDate,
+                endDate: event.endDate
+            ) else {
+                return nil
             }
+            let externalReference = ProviderItemReference(
+                provider: .appleCalendar,
+                accountID: event.calendar.source.sourceIdentifier,
+                containerID: event.calendar.calendarIdentifier,
+                itemID: stableProviderIdentifier,
+                allowsContentModifications: Self.canModifyCalendar(
+                    Self.makeCalendarDescriptor(event.calendar),
+                    selectionMode: selectionMode
+                )
+            )
             let videoURL = VideoMeetingURLDetector.detect(description: event.notes, location: event.location)
                 ?? event.url.flatMap { VideoMeetingURLDetector.isVideoMeetingURL($0) ? $0 : nil }
             return CalendarEvent(
-                id: safeEventId,
+                id: externalReference.stableLocalID,
                 appleEventId: eventIdentifier.isEmpty ? nil : eventIdentifier,
                 appleCalendarId: event.calendar?.calendarIdentifier,
+                externalReference: externalReference,
                 title: event.title ?? "Untitled Event",
                 startTime: event.startDate,
                 endTime: event.endDate,
@@ -105,6 +139,30 @@ public actor EventKitService {
                 videoMeetingURL: videoURL
             )
         }
+    }
+
+    /// EventKit identifiers can be replaced after a full account sync. Prefer the provider's
+    /// external identifier and add the occurrence window because recurring events may share it.
+    /// Local EventKit identifiers remain deterministic fallbacks; never mint a UUID while reading.
+    nonisolated static func stableProviderIdentifier(
+        externalIdentifier: String?,
+        eventIdentifier: String,
+        calendarItemIdentifier: String,
+        startDate: Date,
+        endDate: Date
+    ) -> String? {
+        if let externalIdentifier, !externalIdentifier.isEmpty {
+            let startMilliseconds = Int64(startDate.timeIntervalSince1970 * 1_000)
+            let endMilliseconds = Int64(endDate.timeIntervalSince1970 * 1_000)
+            return "external:\(externalIdentifier)|start:\(startMilliseconds)|end:\(endMilliseconds)"
+        }
+        if !eventIdentifier.isEmpty {
+            return "event:\(eventIdentifier)"
+        }
+        if !calendarItemIdentifier.isEmpty {
+            return "item:\(calendarItemIdentifier)"
+        }
+        return nil
     }
 
     /// Excludes Apple reference data while retaining useful subscribed calendars such as
@@ -148,7 +206,7 @@ public actor EventKitService {
         guard calendarAuthorizationStatus == .fullAccess else {
             throw EventKitError.notAuthorized
         }
-        return try queryEvents(from: startDate, to: endDate)
+        return try await queryEvents(from: startDate, to: endDate)
     }
 
     // MARK: - Update Event
@@ -167,6 +225,11 @@ public actor EventKitService {
 
         guard let ekEvent = eventStore.event(withIdentifier: identifier) else {
             throw EventKitError.eventNotFound
+        }
+        let descriptor = Self.makeCalendarDescriptor(ekEvent.calendar)
+        let selectionMode = await calendarSelectionStore.loadSelectionMode()
+        guard Self.canModifyCalendar(descriptor, selectionMode: selectionMode) else {
+            throw EventKitError.calendarReadOnly
         }
 
         if let title { ekEvent.title = title }
@@ -222,22 +285,30 @@ public actor EventKitService {
     private nonisolated static func mapReminderToTask(_ reminder: EKReminder) -> TaskItem? {
         let reminderIdentifier = reminder.calendarItemIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
         let externalIdentifier = reminder.calendarItemExternalIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let fallbackIdentifier = UUID().uuidString
-        let localId = {
-            if !reminderIdentifier.isEmpty {
-                return reminderIdentifier
-            }
-            if let externalIdentifier, !externalIdentifier.isEmpty {
-                return externalIdentifier
-            }
-            return fallbackIdentifier
-        }()
+        guard let calendar = reminder.calendar,
+              let providerIdentifier = stableReminderIdentifier(
+                externalIdentifier: externalIdentifier,
+                calendarItemIdentifier: reminderIdentifier
+              ) else {
+            return nil
+        }
+        let reference = ProviderItemReference(
+            provider: .appleReminders,
+            accountID: calendar.source.sourceIdentifier,
+            containerID: calendar.calendarIdentifier,
+            itemID: providerIdentifier,
+            remoteStatus: reminder.isCompleted ? "completed" : "incomplete",
+            allowsContentModifications: calendar.allowsContentModifications
+                && !calendar.isSubscribed
+                && calendar.type != .subscription
+        )
 
         return TaskItem(
-            id: localId,
+            id: reference.stableLocalID,
             appleReminderId: reminderIdentifier.isEmpty ? nil : reminderIdentifier,
             appleExternalId: externalIdentifier,
-            appleListId: reminder.calendar?.calendarIdentifier,
+            appleListId: calendar.calendarIdentifier,
+            externalReference: reference,
             title: reminder.title ?? "Untitled Reminder",
             isCompleted: reminder.isCompleted,
             dueDate: reminder.dueDateComponents?.date,
@@ -249,6 +320,19 @@ public actor EventKitService {
         )
     }
 
+    nonisolated static func stableReminderIdentifier(
+        externalIdentifier: String?,
+        calendarItemIdentifier: String
+    ) -> String? {
+        if let externalIdentifier, !externalIdentifier.isEmpty {
+            return "external:\(externalIdentifier)"
+        }
+        if !calendarItemIdentifier.isEmpty {
+            return "item:\(calendarItemIdentifier)"
+        }
+        return nil
+    }
+
     // MARK: - Update Reminder
 
     public func updateReminderCompletion(identifier: String, isCompleted: Bool) async throws {
@@ -258,6 +342,12 @@ public actor EventKitService {
 
         guard let reminder = eventStore.calendarItem(withIdentifier: identifier) as? EKReminder else {
             throw EventKitError.reminderNotFound
+        }
+        guard let calendar = reminder.calendar,
+              calendar.allowsContentModifications,
+              !calendar.isSubscribed,
+              calendar.type != .subscription else {
+            throw EventKitError.calendarReadOnly
         }
 
         reminder.isCompleted = isCompleted
@@ -274,7 +364,7 @@ public actor EventKitService {
         priority: TaskPriority,
         notes: String?,
         listId: String?
-    ) async throws -> (identifier: String, externalIdentifier: String) {
+    ) async throws -> CreatedAppleReminderIdentity {
         guard remindersAuthorizationStatus == .fullAccess else {
             throw EventKitError.notAuthorized
         }
@@ -297,17 +387,37 @@ public actor EventKitService {
         } else {
             reminder.calendar = eventStore.defaultCalendarForNewReminders()
         }
+        guard let calendar = reminder.calendar,
+              calendar.allowsContentModifications,
+              !calendar.isSubscribed,
+              calendar.type != .subscription else {
+            throw EventKitError.calendarReadOnly
+        }
 
         try eventStore.save(reminder, commit: true)
         let identifier = reminder.calendarItemIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
         let externalIdentifier = reminder.calendarItemExternalIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let safeIdentifier: String
-        if !identifier.isEmpty {
-            safeIdentifier = identifier
-        } else {
-            safeIdentifier = UUID().uuidString
+        guard !identifier.isEmpty,
+              let providerIdentifier = Self.stableReminderIdentifier(
+                externalIdentifier: externalIdentifier,
+                calendarItemIdentifier: identifier
+              ) else {
+            throw EventKitError.saveFailed
         }
-        return (safeIdentifier, externalIdentifier ?? "")
+        let reference = ProviderItemReference(
+            provider: .appleReminders,
+            accountID: calendar.source.sourceIdentifier,
+            containerID: calendar.calendarIdentifier,
+            itemID: providerIdentifier,
+            remoteStatus: "incomplete",
+            allowsContentModifications: true
+        )
+        return CreatedAppleReminderIdentity(
+            calendarItemIdentifier: identifier,
+            externalIdentifier: externalIdentifier,
+            listIdentifier: calendar.calendarIdentifier,
+            reference: reference
+        )
     }
 
     // MARK: - Update Reminder Fields
@@ -326,6 +436,12 @@ public actor EventKitService {
 
         guard let reminder = eventStore.calendarItem(withIdentifier: identifier) as? EKReminder else {
             throw EventKitError.reminderNotFound
+        }
+        guard let calendar = reminder.calendar,
+              calendar.allowsContentModifications,
+              !calendar.isSubscribed,
+              calendar.type != .subscription else {
+            throw EventKitError.calendarReadOnly
         }
 
         reminder.title = title
@@ -355,6 +471,12 @@ public actor EventKitService {
 
         guard let reminder = eventStore.calendarItem(withIdentifier: identifier) as? EKReminder else {
             throw EventKitError.reminderNotFound
+        }
+        guard let calendar = reminder.calendar,
+              calendar.allowsContentModifications,
+              !calendar.isSubscribed,
+              calendar.type != .subscription else {
+            throw EventKitError.calendarReadOnly
         }
 
         try eventStore.remove(reminder, commit: true)
@@ -397,7 +519,43 @@ public actor EventKitService {
     }
 
     public func getAvailableCalendars() -> [(id: String, title: String)] {
-        eventStore.calendars(for: .event).map { ($0.calendarIdentifier, $0.title) }
+        availableEventCalendars().map { ($0.id, $0.title) }
+    }
+
+    public func availableEventCalendars() -> [AppleCalendarDescriptor] {
+        eventStore.calendars(for: .event).map(Self.makeCalendarDescriptor)
+    }
+
+    public func selectedEventCalendarIdentifiers(
+        selectionMode overrideSelectionMode: AppleCalendarSelectionMode? = nil
+    ) async -> Set<String> {
+        let storedSelection = await calendarSelectionStore.loadSelectedCalendarIdentifiers()
+        let selectionMode = if let overrideSelectionMode {
+            overrideSelectionMode
+        } else {
+            await calendarSelectionStore.loadSelectionMode()
+        }
+        let calendars = availableEventCalendars()
+        return AppleCalendarSelectionStore.resolveSelection(
+            storedIdentifiers: storedSelection,
+            availableCalendars: calendars,
+            selectionMode: selectionMode
+        )
+    }
+
+    public func setSelectedEventCalendarIdentifiers(_ identifiers: Set<String>) async {
+        let availableIdentifiers = Set(availableEventCalendars().filter(\.isSelectable).map(\.id))
+        await calendarSelectionStore.saveSelectedCalendarIdentifiers(
+            identifiers.intersection(availableIdentifiers)
+        )
+    }
+
+    public func eventCalendarSelectionMode() async -> AppleCalendarSelectionMode {
+        await calendarSelectionStore.loadSelectionMode()
+    }
+
+    public func setEventCalendarSelectionMode(_ mode: AppleCalendarSelectionMode) async {
+        await calendarSelectionStore.saveSelectionMode(mode)
     }
 
     // MARK: - Helpers
@@ -418,6 +576,46 @@ public actor EventKitService {
         case .low: return 9
         }
     }
+
+    nonisolated static func canModifyCalendar(
+        _ calendar: AppleCalendarDescriptor,
+        selectionMode: AppleCalendarSelectionMode = .nativeAppleCalendar
+    ) -> Bool {
+        selectionMode == .nativeAppleCalendar && !calendar.isReadOnly
+    }
+
+    private nonisolated static func makeCalendarDescriptor(
+        _ calendar: EKCalendar
+    ) -> AppleCalendarDescriptor {
+        AppleCalendarDescriptor(
+            id: calendar.calendarIdentifier,
+            title: calendar.title,
+            accountIdentifier: calendar.source.sourceIdentifier,
+            accountTitle: calendar.source.title,
+            sourceKind: AppleCalendarSourceKind(calendarType: calendar.type),
+            isSubscribed: calendar.isSubscribed,
+            allowsContentModifications: calendar.allowsContentModifications
+        )
+    }
+}
+
+public struct CreatedAppleReminderIdentity: Sendable, Equatable {
+    public let calendarItemIdentifier: String
+    public let externalIdentifier: String?
+    public let listIdentifier: String
+    public let reference: ProviderItemReference
+
+    public init(
+        calendarItemIdentifier: String,
+        externalIdentifier: String?,
+        listIdentifier: String,
+        reference: ProviderItemReference
+    ) {
+        self.calendarItemIdentifier = calendarItemIdentifier
+        self.externalIdentifier = externalIdentifier
+        self.listIdentifier = listIdentifier
+        self.reference = reference
+    }
 }
 
 // MARK: - EventKit Error
@@ -426,6 +624,7 @@ public enum EventKitError: LocalizedError, Sendable {
     case notAuthorized
     case reminderNotFound
     case eventNotFound
+    case calendarReadOnly
     case saveFailed
 
     public var errorDescription: String? {
@@ -436,6 +635,8 @@ public enum EventKitError: LocalizedError, Sendable {
             return "Reminder not found"
         case .eventNotFound:
             return "Event not found"
+        case .calendarReadOnly:
+            return "This calendar is read-only"
         case .saveFailed:
             return "Failed to save changes"
         }

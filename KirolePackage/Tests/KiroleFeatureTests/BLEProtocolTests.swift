@@ -671,23 +671,39 @@ struct BLEProtocolTests {
         #expect(data[0] == 10)
     }
 
-    @Test("BLEDataEncoder encodeTaskList encodes task title and completion")
+    @Test("BLEDataEncoder encodeTaskList encodes ID, title, completion and 1-based priority")
     func encodeTaskListFormat() {
         let today = Date()
         let tasks = [
-            TaskItem(title: "Buy milk", isCompleted: true, dueDate: today),
-            TaskItem(title: "Read book", isCompleted: false, dueDate: today),
+            TaskItem(
+                id: "task-buy-milk",
+                title: "Buy milk",
+                isCompleted: true,
+                dueDate: today,
+                priority: .high
+            ),
+            TaskItem(id: "task-read-book", title: "Read book", isCompleted: false, dueDate: today),
         ]
         let data = BLEDataEncoder.encodeTaskList(tasks)
         #expect(data[0] == 2)
 
+        let id1 = "task-buy-milk"
+        let id1Data = id1.data(using: .utf8)!
+        #expect(data[1] == UInt8(id1Data.count))
+        let id1Bytes = data.subdata(in: 2..<(2 + Int(data[1])))
+        #expect(String(data: id1Bytes, encoding: .utf8) == id1)
+
         let title1 = "Buy milk"
         let title1Data = title1.data(using: .utf8)!
-        #expect(data[1] == UInt8(title1Data.count))
-        let title1Bytes = data.subdata(in: 2..<(2 + Int(data[1])))
+        let titleLengthOffset = 2 + Int(data[1])
+        #expect(data[titleLengthOffset] == UInt8(title1Data.count))
+        let title1Bytes = data.subdata(
+            in: (titleLengthOffset + 1)..<(titleLengthOffset + 1 + Int(data[titleLengthOffset]))
+        )
         #expect(String(data: title1Bytes, encoding: .utf8) == title1)
-        let completionOffset1 = 2 + Int(data[1])
+        let completionOffset1 = titleLengthOffset + 1 + Int(data[titleLengthOffset])
         #expect(data[completionOffset1] == 1)
+        #expect(data[completionOffset1 + 1] == 3)
     }
 
     @Test("BLEDataEncoder encodeTaskList filters non-today tasks")

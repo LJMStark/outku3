@@ -9,6 +9,7 @@ public struct CalendarEvent: Identifiable, Sendable, Codable {
     public var googleCalendarId: String?
     public var appleEventId: String?
     public var appleCalendarId: String?
+    public var externalReference: ProviderItemReference?
     public var title: String
     public var startTime: Date
     public var endTime: Date
@@ -30,6 +31,7 @@ public struct CalendarEvent: Identifiable, Sendable, Codable {
         googleCalendarId: String? = nil,
         appleEventId: String? = nil,
         appleCalendarId: String? = nil,
+        externalReference: ProviderItemReference? = nil,
         title: String,
         startTime: Date,
         endTime: Date,
@@ -48,6 +50,7 @@ public struct CalendarEvent: Identifiable, Sendable, Codable {
         self.googleCalendarId = googleCalendarId
         self.appleEventId = appleEventId
         self.appleCalendarId = appleCalendarId
+        self.externalReference = externalReference
         self.title = title
         self.startTime = startTime
         self.endTime = endTime
@@ -121,7 +124,10 @@ public struct CalendarEvent: Identifiable, Sendable, Codable {
 public enum EventSource: String, Sendable, Codable {
     case apple = "Apple Calendar"
     case google = "Google Calendar"
+    case outlook = "Outlook Calendar"
+    case microsoftToDo = "Microsoft To Do"
     case todoist = "Todoist"
+    case tickTick = "TickTick"
     case notion = "Notion"
     case taskade = "Taskade"
 
@@ -129,7 +135,10 @@ public enum EventSource: String, Sendable, Codable {
         switch self {
         case .apple: return "apple.logo"
         case .google: return "g.circle.fill"
+        case .outlook: return "calendar.badge.clock"
+        case .microsoftToDo: return "checkmark.circle"
         case .todoist: return "checkmark.circle.fill"
+        case .tickTick: return "checkmark.circle"
         case .notion: return "doc.text"
         case .taskade: return "list.bullet.rectangle"
         }
