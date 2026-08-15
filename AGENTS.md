@@ -257,7 +257,7 @@ The companion text system is event-reactive companion writing for the Kirole tas
   - `SmartReminderService` — context-aware reminder triggers.
   - `FocusSessionService` — see Focus Mode section below.
   - (Removed 2026-05-07: `TaskDehydrationService` and `MicroAction` model — "AI 任务拆解" was deleted as off-product-positioning. See CLAUDE.md "Product Identity": tasks are prompt context, not actionable todos to be broken down.)
-- **Data flow**: `DayPackGenerator` -> `CompanionTextService` -> `OpenAIService.generateCompanionText` -> `chatCompletion` -> `DayPack { morningGreeting, dailySummary, companionPhrase }` -> `HaikuSectionView` / `TimelineView`. Tests go through `PromptDebuggerView` and `CompanionCharacterMappingTests`.
+- **Data flow**: `DayPackGenerator` -> `CompanionTextService` -> `OpenAIService.generateCompanionText` -> `chatCompletion` -> `DayPack { currentPetDialogue, daySummary, firstUp }`（v2.5.0 起旧的 `morningGreeting / dailySummary / companionPhrase` 已收敛为单句宠物对话 + 中性面板文本）-> `HaikuSectionView` / `TimelineView`. Tests go through `PromptDebuggerView` and `CompanionCharacterMappingTests`.
 
 ### Home Companion Presentation
 - `AppState.refreshHomeCompanionPresentation()` decides between daily haiku or shared pet dialogue.
@@ -270,15 +270,15 @@ The companion text system is event-reactive companion writing for the Kirole tas
   - Packetized (v2.5.24, ≤65535 chunks): `type(1B) | messageId(2B BE) | seq(2B BE) | totalChunks(2B BE) | chunkLength(2B BE) | chunkCRC(2B BE) | payload`.
   - Simple App→Device: `type(1B) | length(2B BE) | payload`.
   - Simple Device→App: `type(1B) | length(1B) | payload`.
-- **App→Device 出站帧类型** (`BLEProtocol.swift` — `BLEDataType` enum): `0x01=petStatus`, `0x02=taskList`, `0x03=schedule`, `0x04=weather`, `0x05=time`, `0x10=dayPack`, `0x11=taskInPage`, `0x12=deviceMode`, `0x13=smartReminder`, `0x14=focusStatus`（实时专注状态+能量瓶子数，`BLEService.sendFocusStatus()`）, `0x19=wifiDebugMode`（开启/关闭/查询 SoftAP，设备用同 type 实时应答）, `0x1C=shippingMode`（工厂运输模式开启命令，无业务 ACK，以设备主动断连确认生效）, `0x20=eventLogRequest`, `0x7E=secureData`, `0x7F=securityHandshake`. 注：`0x21 eventLogBatch` 虽然挂在 `BLEDataType` enum 里（命名空间归类），实际方向是 Device→App 入站，参见入站事件清单。
-- **Device→App 入站事件关键字节** (`EventLog.swift` — `EventLogType.rawByte`): `0x19=wifiDebugMode`（实时返回 `Enabled+StatusCode`，不进入 `0x21` 批次）; `0x21=eventLogBatch`（设备批量回传事件，`BLEEventHandler.swift:19` 入站分支）; `0x30=deviceWake`（payload[0] = battery level 0-100，v2.3.0+，更新 `BLEService.deviceBatteryLevel`）; `0x40=lowBattery`（payload 含电量字节，同样更新 `BLEService.deviceBatteryLevel`）.
+- **App→Device 出站帧类型** (`BLEProtocol.swift` — `BLEDataType` enum): `0x01=petStatus`, `0x02=taskList`, `0x03=schedule`, `0x04=weather`, `0x05=time`, `0x10=dayPack`, `0x11=taskInPage`, `0x12=deviceMode`, `0x13=smartReminder`, `0x14=focusStatus`（实时专注状态+能量瓶子数，`BLEService.sendFocusStatus()`）, `0x15=customAvatarFrame`（v2.7 自定义头像暂存，SubVersion 0x04 + KRI）, `0x16=screensaver`（屏保金句/明信片业务帧）, `0x17=sceneUnlock`（场景解锁业务帧）, `0x18=otaReboot`（触发固件升级重启，零 payload）, `0x19=wifiDebugMode`（开启/关闭/查询 SoftAP，设备用同 type 实时应答）, `0x1A=wifiAvatarSession`（SoftAP 头像快传会话握手，双向回显 command+OpID）, `0x1B=taskListSnapshotAck`（设备任务操作业务确认 + Overview 任务全量快照）, `0x1C=shippingMode`（工厂运输模式开启命令，无业务 ACK，以设备主动断连确认生效）, `0x20=eventLogRequest`, `0x22=avatarControl`（头像 commit/erase/query/abort，双向实时帧）, `0x25=offlineSync`（离线数据事务：状态查询、离线操作补报 ACK、TaskList/Schedule/DayPack 原子提交，双向）, `0x7E=secureData`, `0x7F=securityHandshake`. 注：`0x21 eventLogBatch` 虽然挂在 `BLEDataType` enum 里（命名空间归类），实际方向是 Device→App 入站，参见入站事件清单。
+- **Device→App 入站事件关键字节** (`EventLog.swift` — `EventLogType.rawByte`): `0x19=wifiDebugMode`（实时返回 `Enabled+StatusCode`，不进入 `0x21` 批次）; `0x21=eventLogBatch`（设备批量回传事件，`BLEEventHandler` 入站分支，高水位去重）; `0x25=offlineSync`（STATE/OP_BATCH/RESULT 实时事务帧，路由早于 `0x21`，不进 Event Log；App 侧由 `BLEOfflineSyncCoordinator` 处理）; `0x30=deviceWake`（payload[0] = battery level 0-100，v2.3.0+；v2.5.19+ 追加固件版本 3B，更新 `BLEService.deviceBatteryLevel`）; `0x31=deviceSleep`; `0x40=lowBattery`（payload 含电量字节，同样更新 `BLEService.deviceBatteryLevel`）.
 - **Security Mode** (`BLEService.swift` — `configuredSecurityMode` / `securityMode` / `requiresSecureChannel`): `AppSecrets.bleSharedSecret` empty → development (unsigned). Non-empty → secure (HMAC-SHA256 envelope: 16B header + 32B signature). Ordinary payloads use one envelope; the v2.7 custom-avatar transfer is packetized with the existing 11-byte chunk header first, then every complete chunk is placed in its own envelope with an independent timestamp, nonce, and HMAC.
 - **Defenses**:
   - `BLEWriteGate` (`BLEWriteGate.swift:8-29`) — actor-serialized writes.
   - `BLERateLimiter` (`BLERateLimiter.swift:12-28`) — 20 writes/sec; refresh ≥ 2s interval.
   - Timeouts: write 5s (`BLEService.swift:545`) / scan 10s default (`BLEService.swift:281` `scanForDevices(timeout:)` 默认参数) / connect 15s 硬编码 (`BLEService.swift:262` `Task.sleep(for: .seconds(15))`) / handshake 5s (`BLEService.swift:585`).
   - `BLEDeviceIdentityStore` (`BLEDeviceIdentityStore.swift:17-35`) — trust/block lists in UserDefaults; enforced in secure mode at `BLEService.swift:229-234` (scan filter) and `:715-720` (post-connect gate).
-- **Sync**: `BLESyncCoordinator` (background sync via `com.kirole.app.ble.sync`).
+- **Sync**: `BLESyncCoordinator` (background sync via `com.kirole.app.ble.sync`); wake-triggered `0x25` offline transactions (dataset atomic commit + offline operation backfill ACK) go through `BLEOfflineSyncCoordinator` + `BLEOfflineOperationProcessor`.
 - **Supabase**: Keys injected via `AppSecrets.configure(...)` using build-time constants (`Config/Secrets.xcconfig`). Keep RLS enabled and sync schema changes with `Config/supabase-schema.sql`. Current schema source is aligned with the post-IP/post-streak code path: no legacy pet-form column and no old streak table.
 
 ### Focus Mode State Machine
@@ -318,7 +318,7 @@ The single most useful reference when debugging "which event produces which outp
 | BLE disconnect | `BLE:761` | see Focus interrupted | same |
 | Sync complete (Google) | `syncGoogleData` (`+Sync:64`) | `events`, `tasks` (merge), `lastGoogleSyncDebug` | `updatePetState` → `refreshSharedPetDialogueIfNeeded` → `refreshHomeCompanionPresentation` |
 | Sync complete (Apple) | `syncAppleData` (`+Sync:175`) | same subset | same path as Google |
-| Sync complete (Notion / Taskade) | `+Sync:231` / `+Sync:262` | basic fields only | same path as Google (via shared `applyPostSyncHooks()` since 2026-05-07) |
+| Sync complete (Notion / Taskade / Microsoft / Todoist / TickTick) | `syncNotionData` / `syncTaskadeData` / `syncMicrosoftData` / `syncTodoistData` / `syncTickTickData` in `+Sync` | basic fields only | same path as Google (via shared `applyPostSyncHooks()`; line numbers drift — grep the function name) |
 
 ### Environment Values Keys (Wave 3 DI Infrastructure, 2026-05-08)
 Four typed `EnvironmentKey` types enable compile-safe `.environment(\.keyName, value)` syntax:
@@ -358,7 +358,9 @@ GOOGLE_CLIENT_ID = ...
 GOOGLE_REVERSED_CLIENT_ID = ...
 SUPABASE_URL = ...
 SUPABASE_ANON_KEY = ...
+OPENROUTER_API_KEY = ...
 ```
+Full commented reference (incl. optional provider `*_OAUTH_CLIENT_ID` / `*_OAUTH_ENABLED` gate pairs for Notion / Taskade / Microsoft / Todoist / TickTick): `Config/Secrets.xcconfig.template`.
 
 ## 8. Development Workflow
 1. Read `.cursor/rules/` for domain-specific rules.

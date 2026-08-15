@@ -16,7 +16,7 @@ Kirole 是 **硬件优先的宠物陪伴产品**：硬件 E-ink 设备是用户�
 
 **Pet 页面布局是设计内容（客户需求，勿动）**：上半部分显示宠物形象，下半部分是任务列表 UI（Tasks Today / Upcoming / No Due Dates，含 checkbox / Edit / Delete）。这是刻意的产品设计，不是"待办增强"。
 
-**硬件优先意味着**：硬件离线时用户操作不能丢——硬件本地缓存事件，BLE 重连后通过 `0x21 eventLogBatch` 帧批量回推给 App，App 必须把每条事件应用到 AppState（任务完成状态、专注会话等）。"补传"是核心功能而非可选项。
+**硬件优先意味着**：硬件离线时用户操作不能丢——硬件本地缓存事件，BLE 重连后通过 `0x21 eventLogBatch` 帧批量回推给 App（高水位去重），App 必须把每条事件应用到 AppState（任务完成状态、专注会话等）。此外唤醒触发的 `0x25 offlineSync` 事务通道（`BLEOfflineSyncCoordinator`）承担离线操作补报 ACK + TaskList/Schedule/DayPack 数据集原子提交。"补传"是核心功能而非可选项。
 
 **一账号 = 一活跃设备（单设备模型，READ）**：Supabase 数据按登录账号（`userId`）存，但产品是"一台手机配一台硬件"。同一账号**不预期同时在多台设备上活跃**——换机 / 重装是**顺序**事件（旧机退役 → 新机登录拉云端、`max` 合并恢复），不是并发。因此跨设备同步（能量瓶子、宠物状态）**不存在多写者并发**：分布式多写竞态（如"远端写非单调 / 较低值覆盖较高值"）**不适用本产品，勿当 bug 报**。与"不做 Watch / Mac / 家庭共享"定位一致。将来若真做多设备陪伴端，再引入 DB 端 `max` / 条件更新。
 
@@ -46,12 +46,12 @@ Kirole 是 **硬件优先的宠物陪伴产品**：硬件 E-ink 设备是用户�
 KiroleFeature/
 ├── Core/
 │   ├── AppEnvironmentValues.swift   # EnvironmentKey definitions for all 4 singletons
-│   ├── Auth/                        # Google/Apple sign-in + KeychainService
-│   ├── BLE/                         # BLEProtocol.swift + TaskListSnapshotProtocol.swift — byte definitions and 0x1B task-snapshot ACK protocol
+│   ├── Auth/                        # Google/Apple sign-in + provider OAuth (Microsoft, TickTick, Todoist, Notion, Taskade) + KeychainService
+│   ├── BLE/                         # BLEProtocol.swift (byte definitions) + TaskListSnapshotProtocol.swift (0x1B task-snapshot ACK) + OfflineSyncProtocol.swift / OfflineDatasetSnapshot.swift (0x25 offline-sync transaction wire format)
 │   ├── Config/                      # AppSecrets (xcconfig-injected secrets), AppBuildEnvironment (debug-tool gating)
 │   ├── Error/                       # ErrorReporter
-│   ├── Network/                     # OpenAIService, CompanionTextService, PromptSanitizer, SimulatorBridge, PromptSpec.generated.swift
-│   ├── Services/                    # BLE runtime (BLEService, BLESyncCoordinator, BLEEventHandler, BLEDataEncoder, BLEPacketizer, BLESecurityManager, BLEOTACoordinator…) + FocusSessionService, FocusInterruptionDetector, DayPackGenerator, WiFiAvatarTransfer/…
+│   ├── Network/                     # OpenAIService, CompanionTextService, PromptSanitizer, SimulatorBridge, PromptSpec.generated.swift + provider API clients (MicrosoftGraphClient, TickTickAPI, TodoistAPI)
+│   ├── Services/                    # BLE runtime (BLEService, BLESyncCoordinator, BLEOfflineSyncCoordinator, BLEEventHandler, BLEDataEncoder, BLEPacketizer, BLESecurityManager, BLEOTACoordinator…) + FocusSessionService, FocusInterruptionDetector, DayPackGenerator, WiFiAvatarTransfer/… + provider sync engines (GoogleSyncEngine, AppleSyncEngine, MicrosoftSyncEngine, TickTickSyncEngine, TodoistSyncEngine)
 │   └── Storage/                     # LocalStorage, SupabaseClient, SyncManager
 ├── Models/                          # Value types only: CompanionCharacter, Pet, TaskItem, CalendarEvent, FocusSession, EventLog, DayPack, DisplayScene…
 ├── State/                           # @Observable singletons: AppState + all AppState+*.swift extensions, ThemeManager, TaskManager, PetManager, TimelineDataSource, IntegrationCoordinator…
@@ -75,11 +75,13 @@ Four `@Observable` singletons injected at `ContentView` via `.environment()`:
 
 **Persistence & secrets (the two most-connected non-UI nodes — touch them carefully):**
 - `LocalStorage` (`Core/Storage/`) — the JSON + `UserDefaults` persistence hub for tasks, pet, focus & gamify state. Mutations through its *resettable* keys are exactly what the parallel-test lock below guards.
-- `KeychainService` (`Core/Auth/`) — stores ALL credentials: OAuth tokens (Google / Notion / Taskade), the Apple user identifier, and the OpenAI/OpenRouter API key. Never persist a credential anywhere else.
+- `KeychainService` (`Core/Auth/`) — stores ALL credentials: OAuth tokens (Google / Microsoft / TickTick / Todoist / Notion / Taskade), the Apple user identifier, and the OpenAI/OpenRouter API key. Never persist a credential anywhere else.
 
 **AppState extension map** — where to put code:
 - User-triggered mutations → `AppState+Actions.swift`
-- Remote sync (Google/Apple/Notion/Taskade) → `AppState+Sync.swift`
+- Remote sync (Google/Apple/Outlook/Microsoft To Do/Todoist/TickTick/Notion/Taskade) → `AppState+Sync.swift`
+- Provider sync generation guard (stale-sync-commit prevention) → `AppState+ExternalSyncGeneration.swift`
+- Sign-out provider data cleanup → `AppState+SignOut.swift`
 - Initial data loading → `AppState+Loading.swift`
 - BLE / DisplayScene / hardware push → `AppState+HardwareDisplay.swift`
 - Profile and companion text → `AppState+Profile.swift` / `AppState+Companion.swift`
@@ -171,7 +173,7 @@ xcodebuild -workspace Kirole.xcworkspace -scheme Kirole \
 ```
 
 ### Test Suite Notes
-- **89 test files (115+ suites, ~957 tests)** in `KirolePackage/Tests/KiroleFeatureTests/`. BLE is the most heavily covered surface (`BLEProtocolTests`, `BLESecurityTests`, `BLESyncPolicyTests`, `BLEWriteGateTests`, `BLEConnectionPolicyTests`, `BLEEventHandlerTests`, `BLEProtocolSimulationTests`, `BLEOTACoordinatorTests`), followed by focus/sync/companion logic.
+- **127 test files (~148 suites, ~1263 tests)** in `KirolePackage/Tests/KiroleFeatureTests/`. BLE is the most heavily covered surface (`BLEProtocolTests`, `BLESecurityTests`, `BLESyncPolicyTests`, `BLEWriteGateTests`, `BLEConnectionPolicyTests`, `BLEEventHandlerTests`, `BLEProtocolSimulationTests`, `BLEOTACoordinatorTests`), followed by focus/sync/companion logic.
 - **`BLEDataEncoder` has a strict mirror decoder in the test layer.** `BLEProtocolSimulationSupport.swift`'s `parseDayPack` / `parseWeather` re-parse the exact wire bytes and call `requireEnd()` (any trailing byte throws `trailingBytes`). So **any field added to `encodeDayPack` / `encodeWeather` MUST be read back in the matching `parse*` before `requireEnd()`** — even an empty length-prefixed string appends a byte and trips it — and the fixture + `Simulated*` struct + round-trip assertion updated. `BLEProtocolTests` walks the cursor by hand and will *not* catch a desync; run the **full** `swift test` (which includes `BLEProtocolSimulationTests`) after any wire-format change, not just `BLEProtocolTests`.
 - **Parallel-test isolation (CRITICAL):** Swift Testing runs suites concurrently. Any test that mutates global `UserDefaults.standard` — i.e. anything going through `LocalStorage` resettable keys, focus energy bottles, or gamify storage — MUST wrap its body in `await SharedPersistenceTestLock.shared.withLock { ... }` (`Tests/.../SharedPersistenceTestLock.swift`) or it flakes intermittently. Suites that assert state on shared singletons (e.g. `BLEService.shared.isPendingOTAReboot` in `BLEOTACoordinatorTests`) must be `@Suite(..., .serialized)` — in-suite parallel tests interleave at `await` points and clobber the flag. **Adding a new key to `LocalStorage.resettableUserDefaultKeys` can make previously-green tests flaky.** If a suite flakes, run it alone first (`swift test --filter SuiteName`) to confirm an isolation problem before changing production code.
 - **Which runner:** `swift test` (package-only, fast) for logic/services; the simulator host (`xcodebuild ... test`, or XcodeBuildMCP `test_sim`) only when the test exercises app-shell / UI lifecycle. `Kirole.xctestplan` coordinates the full run.
@@ -226,16 +228,17 @@ xcrun devicectl device install app --device <DEVICE_ID> \
 ```
 
 ## Config / Secrets Setup
-Create `Config/Secrets.xcconfig` (git-ignored) with:
+Create `Config/Secrets.xcconfig` (git-ignored) — full commented reference: `Config/Secrets.xcconfig.template`. Core keys:
 ```
 DEVELOPMENT_TEAM = 93SL23NPNG
 GOOGLE_CLIENT_ID = ...
 GOOGLE_REVERSED_CLIENT_ID = ...
 SUPABASE_URL = ...
 SUPABASE_ANON_KEY = ...
-BLE_SHARED_SECRET =         # leave empty for dev (unsigned frames)
-OPENAI_API_KEY = ...        # OpenRouter key used by OpenAIService
+BLE_SHARED_SECRET =            # leave empty for dev (unsigned frames)
+OPENROUTER_API_KEY = ...       # OpenRouter key used by OpenAIService (was OPENAI_API_KEY)
 ```
+Optional provider integrations each pair a `*_OAUTH_CLIENT_ID` with a `*_OAUTH_ENABLED` release gate (`NOTION` / `TASKADE` / `MICROSOFT` / `TODOIST` / `TICKTICK`). Gates default to `0`; enable one only after its server-side dependency (Supabase Edge Function, Azure registration, metadata document…) is deployed and real-account OAuth acceptance passes — a client ID alone still fails every connect attempt.
 
 For TestFlight automation, copy `fastlane/.env.template` → `fastlane/.env` and fill in `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_PATH`.
 
