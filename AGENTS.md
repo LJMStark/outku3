@@ -39,6 +39,52 @@ This file provides guidance to Antigravity, Claude Code, Cursor and other AI cod
 - **Capabilities**: Can publish to TestFlight and App Store
 - **Family Controls**: Distribution version application submitted
 
+### Release Channel Policy (2026-08-15 Decision)
+
+Kirole has exactly **two distributed channels**. Local `Debug` builds are development tools, not a third distribution channel.
+
+| Channel | Purpose | Required build behavior |
+|---------|---------|-------------------------|
+| **Internal TestFlight** | Product acceptance and hardware/firmware debugging by the internal team | Release-optimized build with all internal/debug tools enabled; upload as **TestFlight Internal Only** |
+| **App Store** | Customer distribution | Release-optimized production build with internal/debug UI, behavior, logging, factory commands, and test shortcuts compiled out |
+
+#### Source and Branching Rules
+
+- Maintain **one codebase and one long-lived `main` branch**. Do not create permanent `internal`, `develop`, or App Store branches that accumulate separate fixes and features.
+- Use small, short-lived feature branches. Merge through a reviewed PR after tests pass, then delete the branch.
+- A temporary release or hotfix branch is allowed only for short stabilization work. Merge every fix back to `main` promptly and delete the temporary branch after release.
+- Prefer one app target with two distribution configurations/schemes: `InternalRelease` / `Kirole-Internal` and `AppStoreRelease` / `Kirole-AppStore`. Because feature code lives in `KirolePackage`, implementation must prove that the internal compilation condition reaches the package target and that excluded symbols are absent from the App Store archive. If Xcode/SPM cannot guarantee that boundary, isolate internal tools in a separate package product or app target instead of falling back to a runtime-only gate. A separate bundle ID or App Store Connect app still requires an explicit product decision and is only justified by needs such as side-by-side installation or complete data/environment isolation.
+- After a feature is approved for production, generate the Internal verification build and App Store candidate from the same tagged source commit when practical. They are separate binaries because their compilation conditions differ; never promote an Internal TestFlight binary directly to App Store.
+
+#### Compile-Time Debug Boundary
+
+- `InternalRelease` defines one explicit compilation condition such as `KIROLE_INTERNAL`; `AppStoreRelease` must not define it. Do not use `DEBUG` to identify Internal TestFlight because the internal archive is still a Release-optimized build.
+- Internal-only capabilities must be protected at the implementation boundary with `#if KIROLE_INTERNAL` or an equivalent build-time exclusion. Hiding a SwiftUI row is insufficient if services, logging, timers, BLE commands, or mutable test behavior remain active.
+- Internal-only scope includes Wi-Fi PC Debug, BLE Keep Alive, Focus Debug and virtual time, test focus sessions, raw BLE diagnostic summaries, Shipping Mode and other factory commands, engineering OTA flows, environment/source diagnostics, and future hardware bring-up tools.
+- Internal diagnostics are **never promoted** to App Store. Keep their implementation available to the hardware team through Internal TestFlight, but keep them absent from the App Store binary.
+- Never embed secrets in either binary or diagnostic output. Production security configuration, including BLE secure-channel inputs, must come from the production build configuration and must fail closed when required values are missing.
+- Add paired gate tests: Internal builds must prove required diagnostics are present; App Store builds must prove the same UI, behavior, logs, commands, and side effects are absent. A receipt-based runtime check may be used only as a temporary defense-in-depth signal, never as the primary release boundary.
+
+#### Feature Promotion Workflow
+
+1. Implement a customer feature on a short-lived branch with tests.
+2. Merge it into `main` in small batches. Until product acceptance, compile it only into `InternalRelease`; it must remain absent from `AppStoreRelease`.
+3. Upload the internal archive using **TestFlight Internal Only** and record the build number, commit, test scope, and hardware/firmware versions used for acceptance.
+4. Only the user's explicit confirmation promotes a product feature to App Store. Approval of a product feature does not approve any adjacent debug or factory capability.
+5. Promote the accepted feature with a small reviewed change that enables it for `AppStoreRelease`; do not copy code between branches.
+6. Build and test a fresh App Store candidate from a tagged commit. Internal TestFlight acceptance is product evidence, but it is not proof that the differently compiled App Store binary works; run the production gate tests and real-device smoke test separately.
+7. Describe every new customer-visible feature specifically in App Review notes and make it accessible to review. Do not ship hidden, dormant, remotely activated, or undocumented internal functionality in the App Store binary.
+8. Runtime feature flags are reserved for staged rollout or emergency disablement of functionality already included in, disclosed to, and accessible during App Review. They must not be used to smuggle unreviewed internal/debug functionality through review.
+9. Prefer App Store phased release for a gradual customer rollout after approval; do not use a hidden remote switch as a substitute for App Review.
+
+#### Current Migration Status
+
+- As of 2026-08-15, the project still has only `Debug` / `Release` configurations and one shared `Kirole` scheme. The two distribution configurations above are the required target state, not the current implementation.
+- `AppBuildEnvironment.showsHardwareDebugTools` is temporarily hardcoded to `true`, so current Release/App Store builds are not safe to submit until the compile-time boundary and negative tests are implemented.
+- The current Fastlane flow archives the shared Release configuration for TestFlight. Split the lanes before relying on this policy for distribution: one Internal-Only TestFlight archive and one App Store archive/submission path.
+
+Primary references: [Apple build configurations](https://developer.apple.com/documentation/xcode/adding-a-build-configuration-file-to-your-project), [Apple schemes](https://developer.apple.com/documentation/xcode/customizing-the-build-schemes-for-a-project), [Apple Internal TestFlight](https://developer.apple.com/help/app-store-connect/test-a-beta-version/add-internal-testers), [Apple App Review Guidelines](https://developer.apple.com/app-store/review/guidelines/), [Apple phased release](https://developer.apple.com/help/app-store-connect/update-your-app/release-a-version-update-in-phases), [DORA trunk-based development](https://dora.dev/capabilities/trunk-based-development/), and [GitHub Flow](https://docs.github.com/en/get-started/using-github/github-flow).
+
 ### Current Phase Policy
 - The project is in a rapid development phase. Prefer clean iteration over preserving local caches, local JSON files, or provisional interfaces.
 - `LocalStorage`, `UserDefaults`, and on-device JSON are disposable development state. When their shape/schema changes, reset local data instead of adding migration code.
