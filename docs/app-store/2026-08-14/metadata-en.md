@@ -65,12 +65,12 @@ PRIVACY BY DESIGN
 • No ads
 • No third-party analytics or tracking SDKs
 • Custom companion photos are processed on your iPhone and are not uploaded to our servers
-• Relevant schedule, task, focus, goal, work-profile, and companion-setting information may be sent to the AI provider when Kirole generates companion dialogue, day summaries, event categories, and short support text
+• Relevant calendar, task, focus, goal, work preference, and companion setting information may be sent to the AI provider when Kirole generates companion dialogue, day summaries, event categories, and short support text
 • Kirole does not sell your personal data
 
 COMPATIBILITY
 
-Requires iOS 17 or later. The desk display, device-started focus, scene application, and custom avatar transfer require a compatible Kirole device and supported firmware.
+Requires iOS 17 or later. The desk display, focus display, scene application, and custom avatar transfer require a compatible Kirole device and supported firmware.
 ```
 
 ## What’s New — only if 2.0 updates an existing public version

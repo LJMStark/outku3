@@ -20,8 +20,8 @@
   --dusk: oklch(25% 0.035 275);
   --dusk-paper: oklch(91% 0.018 85);
 
-  --font-display: "Fraunces", Georgia, "Times New Roman", serif;
-  --font-body: "Space Grotesk", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-display: ui-serif, Georgia, "Times New Roman", serif;
+  --font-body: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 
   --text-body: clamp(1rem, 0.95rem + 0.3vw, 1.15rem);
   --text-hero: clamp(2.7rem, 0.9rem + 7.4vw, 7.4rem);
@@ -255,7 +255,7 @@ html.js .hero .w {
   margin-top: 2.3rem;
 }
 
-.beta-pill {
+.availability-pill {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
@@ -266,7 +266,7 @@ html.js .hero .w {
   border-radius: 999px;
   color: var(--ink-soft);
 }
-.beta-pill::before {
+.availability-pill::before {
   content: "";
   width: 8px; height: 8px;
   border-radius: 50%;
@@ -633,15 +633,15 @@ html.js .hero-copy > .cta-row { animation-delay: 1.05s; }
 .trust .g-note strong { font-weight: 700; }
 .trust .g-note a { color: oklch(80% 0.12 40); text-underline-offset: 0.2em; }
 
-/* ---------- 11. Beta + footer ---------- */
-.beta {
+/* ---------- 11. Support + footer ---------- */
+.support {
   text-align: center;
   display: grid;
   justify-items: center;
   gap: 1.4rem;
 }
-.beta h2 { font-size: var(--text-h2); max-width: 20ch; }
-.beta p { color: var(--ink-soft); max-width: 48ch; }
+.support h2 { font-size: var(--text-h2); max-width: 20ch; }
+.support p { color: var(--ink-soft); max-width: 48ch; }
 
 .site-foot {
   border-top: 1px solid var(--line);
