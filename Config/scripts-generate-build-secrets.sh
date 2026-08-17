@@ -40,6 +40,16 @@ fi
 SUPABASE_URL_VALUE="$(escape_swift "${SUPABASE_URL_RAW}")"
 SUPABASE_ANON_KEY_VALUE="$(escape_swift "${SUPABASE_ANON_KEY:-$(recover_from_xcconfig SUPABASE_ANON_KEY)}")"
 OPENROUTER_API_KEY_VALUE="$(escape_swift "${OPENROUTER_API_KEY:-}")"
+if [[ -z "${BLE_SHARED_SECRET:-}" ]]; then
+  BLE_SHARED_SECRET="$(recover_from_xcconfig BLE_SHARED_SECRET)"
+fi
+# Device / archive AppStoreRelease must fail closed. Simulator builds stay
+# allowed so scripts/verify-release-boundary.sh and local Settings smoke
+# can still run with an empty development secret.
+if [[ "${CONFIGURATION:-}" == "AppStoreRelease" && "${PLATFORM_NAME:-}" == "iphoneos" && -z "${BLE_SHARED_SECRET:-}" ]]; then
+  echo "error: AppStoreRelease device/archive builds require BLE_SHARED_SECRET (empty would ship an unsigned BLE channel)." >&2
+  exit 1
+fi
 BLE_SHARED_SECRET_VALUE="$(escape_swift "${BLE_SHARED_SECRET:-}")"
 DEEP_FOCUS_FEATURE_ENABLED_VALUE="$(escape_swift "${DEEP_FOCUS_FEATURE_ENABLED:-0}")"
 NOTION_OAUTH_CLIENT_ID_VALUE="$(escape_swift "${NOTION_OAUTH_CLIENT_ID:-}")"

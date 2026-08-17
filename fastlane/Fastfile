@@ -61,6 +61,10 @@ platform :ios do
 
   desc "App Store candidate pipeline: verify release-channel boundary → increment build → archive Kirole-AppStore (AppStoreRelease, no KIROLE_INTERNAL) → upload binary to App Store Connect. No TestFlight groups, no notes, no beta review. Attaching the build to an App Store version and submitting stays manual, gated on validate-assets.sh submission passing and SUBMISSION-RECORD.md being READY."
   lane :appstore do
+    # Fail closed before any build-number bump: an empty BLE_SHARED_SECRET
+    # would ship the unsigned development channel in the customer binary.
+    require_appstore_ble_secret
+
     # Paired compile-out gate: fails the lane before archiving if the
     # KIROLE_INTERNAL marker leaks into the App Store configuration.
     # Fastlane `sh` runs with cwd = fastlane/; resolve from the Fastfile
@@ -143,6 +147,31 @@ platform :ios do
 end
 
 # ── helpers ──────────────────────────────────────────────────────────────────
+
+def require_appstore_ble_secret
+  secret = ENV["BLE_SHARED_SECRET"].to_s.strip
+  if secret.empty?
+    secrets_path = File.expand_path(
+      "../Config/Secrets.xcconfig",
+      File.dirname(FastlaneCore::FastlaneFolder.fastfile_path)
+    )
+    if File.file?(secrets_path)
+      File.foreach(secrets_path) do |line|
+        next if line.strip.start_with?("//")
+        if line =~ /^\s*BLE_SHARED_SECRET\s*=\s*(.*)$/
+          secret = Regexp.last_match(1).to_s.strip.gsub("$()", "")
+        end
+      end
+    end
+  end
+  return unless secret.empty?
+
+  UI.user_error!(
+    "App Store builds require BLE_SHARED_SECRET. " \
+    "Set it in Config/Secrets.xcconfig or the environment. " \
+    "An empty value ships the unsigned BLE development channel."
+  )
+end
 
 def resolve_notes(options)
   if options[:file]

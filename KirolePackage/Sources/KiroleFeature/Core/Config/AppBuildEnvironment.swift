@@ -1,15 +1,13 @@
 import Foundation
+import os
 
 // MARK: - App Build Environment
 
 /// 构建环境判定。
 ///
-/// 用途：把"仅联调可见"的硬件 / 固件调试开关，**同时**暴露给 DEBUG 包和 TestFlight 包，
-/// 但对 App Store 正式上架包隐藏。
-///
-/// 动机：硬件团队拿到的"测试版本"通常是 **TestFlight 包（Release 配置）**，不是 Xcode 直连的
-/// DEBUG 包。如果调试开关只用 `#if DEBUG` 包裹，TestFlight 包里根本不会出现，硬件团队找不到。
-/// 因此这里提供 `showsHardwareDebugTools`，用 `DEBUG || isTestFlight` 作为门控真相源。
+/// 联调行为闸 `showsHardwareDebugTools` 默认关闭。InternalRelease 的 app shell
+/// 在 `InternalBuildBoundary.activate()` 里打开内部硬件通道；App Store 包从不调用。
+/// 联调 UI 不靠这个旗，而靠 app target 注入的 `InternalToolsViews`。
 public enum AppBuildEnvironment {
 
     /// 是否为 TestFlight 安装。
@@ -51,16 +49,38 @@ public enum AppBuildEnvironment {
         return arguments.contains { $0.contains(".xctest") }
     }
 
-    /// 是否应暴露面向硬件 / 固件联调的开发者开关。
-    ///
-    /// **测试阶段：恒 `true`、全包可见。** 尚无 App Store 正式包，硬件 / 固件调试工具应随时可用。
-    /// 原先用 `DEBUG || isTestFlight` 门控，但 `isTestFlight` 在真机 TestFlight 上不可靠——
-    /// 新版 iOS 的 `appStoreReceiptURL` 收据文件常不落地（StoreKit 2 不再写旧收据），导致门控
-    /// 误判为 false、把调试开关与 keep-alive 默认值一并藏掉。联调阶段不值得纠结。
-    /// **上架 App Store 前恢复门控**：改回 `#if DEBUG return true #else return isTestFlight #endif`。
+    /// 联调行为闸（连接后查 Wi-Fi Debug、BLE 收发日志、专注虚拟时间）。
+    /// 正式包从不打开。InternalRelease 由 app shell `activate()` 打开。
+    /// 联调 UI 不靠这个旗，而靠 app target 注入的 `InternalToolsViews`。
+    /// Keep Alive 不走这扇闸：MVP 阶段两套包都保持 BLE 长连接。
     public static var showsHardwareDebugTools: Bool {
-        true
+        isInternalHardwareChannelEnabled
     }
+
+    /// MVP：顾客包和内部包都默认保持 BLE 长连接。
+    /// 内部 Settings 仍可关掉；正式包没有开关，一律开着。
+    public static func keepAliveEnabled(storedPreference: Bool?) -> Bool {
+        if showsHardwareDebugTools {
+            return storedPreference ?? true
+        }
+        return true
+    }
+
+    /// 仅 InternalRelease 的 app shell 在 `activate()` 时打开。正式包从不调用。
+    public static var isInternalHardwareChannelEnabled: Bool {
+        internalHardwareChannel.withLock { $0 }
+    }
+
+    public static func enableInternalHardwareChannel() {
+        internalHardwareChannel.withLock { $0 = true }
+    }
+
+    /// 测试复位。生产路径不得调用。
+    static func resetInternalHardwareChannelForTesting() {
+        internalHardwareChannel.withLock { $0 = false }
+    }
+
+    private static let internalHardwareChannel = OSAllocatedUnfairLock(initialState: false)
 
     /// 是否显示会改变设备出厂状态的工厂工具。
     ///

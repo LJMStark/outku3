@@ -4,6 +4,8 @@
 # Builds both distribution configurations for the iOS simulator and asserts:
 #   - InternalRelease  contains the KIROLE_INTERNAL boundary marker
 #   - AppStoreRelease  does NOT contain it
+#   - InternalRelease  contains the internal-tool UI strings
+#   - AppStoreRelease  does NOT contain those strings
 #
 # The marker lives in Kirole/InternalBuildBoundary.swift; keep the string
 # below in sync with it. Run before producing any App Store candidate:
@@ -39,26 +41,61 @@ build Kirole-AppStore AppStoreRelease
 INTERNAL_BIN="$DERIVED/Build/Products/InternalRelease-iphonesimulator/Kirole.app/Kirole"
 APPSTORE_BIN="$DERIVED/Build/Products/AppStoreRelease-iphonesimulator/Kirole.app/Kirole"
 
-# Dump strings to files first: piping `strings` straight into `grep -q` under
-# pipefail turns an early match into SIGPIPE(141) for strings and flips the
-# pipeline status — a found marker would be reported as missing.
-strings "$INTERNAL_BIN" > "$DERIVED/internal.strings"
-strings "$APPSTORE_BIN" > "$DERIVED/appstore.strings"
+# Search the Mach-O for UTF-8 or UTF-16LE. `strings` misses Swift small-string
+# immediates (<=15 UTF-8 bytes) and UTF-16 literals. InternalBuildBoundary
+# keeps a longer `toolPhrases` table so short UI titles remain findable.
+binary_contains() {
+  local bin="$1"
+  local phrase="$2"
+  python3 - "$bin" "$phrase" <<'PY'
+import sys
+path, phrase = sys.argv[1], sys.argv[2]
+data = open(path, "rb").read()
+if phrase.encode("utf-8") in data or phrase.encode("utf-16le") in data:
+    raise SystemExit(0)
+raise SystemExit(1)
+PY
+}
 
 fail=0
-if grep -q "$MARKER" "$DERIVED/internal.strings"; then
+if binary_contains "$INTERNAL_BIN" "$MARKER"; then
   echo "PASS  InternalRelease binary contains the boundary marker"
 else
   echo "FAIL  InternalRelease binary is missing the boundary marker"
   fail=1
 fi
 
-if grep -q "$MARKER" "$DERIVED/appstore.strings"; then
+if binary_contains "$APPSTORE_BIN" "$MARKER"; then
   echo "FAIL  AppStoreRelease binary contains the boundary marker"
   fail=1
 else
   echo "PASS  AppStoreRelease binary has no boundary marker"
 fi
+
+# Exact UI phrases that must compile only into InternalRelease. Keep these
+# case-sensitive and in sync with Kirole/Internal/*.swift.
+INTERNAL_ONLY_STRINGS=(
+  "Wi-Fi PC Debug"
+  "Focus Debug"
+  "Shipping Mode"
+  "Start Test Focus Session"
+  "1 second = 1 minute"
+)
+
+for phrase in "${INTERNAL_ONLY_STRINGS[@]}"; do
+  if binary_contains "$INTERNAL_BIN" "$phrase"; then
+    echo "PASS  InternalRelease binary contains '$phrase'"
+  else
+    echo "FAIL  InternalRelease binary is missing '$phrase'"
+    fail=1
+  fi
+  if binary_contains "$APPSTORE_BIN" "$phrase"; then
+    echo "FAIL  AppStoreRelease binary contains '$phrase'"
+    fail=1
+  else
+    echo "PASS  AppStoreRelease binary has no '$phrase'"
+  fi
+done
 
 if [ "$fail" -eq 0 ]; then
   echo "Release-channel boundary verified."

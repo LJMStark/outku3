@@ -32,6 +32,7 @@ private extension View {
 struct SettingsView: View {
     @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
+    @Environment(\.internalToolsViews) private var internalToolsViews
     @State private var appeared = false
 
     private var viewportWidth: CGFloat? {
@@ -64,6 +65,11 @@ struct SettingsView: View {
                 SettingsBLESection()
                     .appearAnimation(delay: 0.3, appeared: appeared)
 
+                if let internalSettings = internalToolsViews.settingsSection {
+                    internalSettings
+                        .appearAnimation(delay: 0.32, appeared: appeared)
+                }
+
                 SettingsFocusSection()
                     .appearAnimation(delay: 0.35, appeared: appeared)
 
@@ -93,11 +99,15 @@ struct SettingsView: View {
 
 // MARK: - Section Header (shared across settings files)
 
-struct SettingsSectionHeader: View {
+public struct SettingsSectionHeader: View {
     let title: String
     @Environment(ThemeManager.self) private var theme
 
-    var body: some View {
+    public init(title: String) {
+        self.title = title
+    }
+
+    public var body: some View {
         Text(title)
             .font(.system(size: 12, weight: .bold))
             .foregroundStyle(theme.colors.secondaryText)

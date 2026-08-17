@@ -35,7 +35,7 @@ public enum BLEWiFiDebugStatus: Sendable, Equatable {
         case .success:
             return "Success"
         case .unsupported:
-            return "This firmware does not support Wi-Fi PC Debug."
+            return "This firmware does not support the PC debug access point."
         case .busy:
             return "The device is busy. Try again in a moment."
         case .wifiInitializationFailed:

@@ -61,13 +61,19 @@ public enum BLEConnectionPolicy {
         autoReconnectEnabled && !isIntentional && !suppressForShippingMode
     }
 
-    /// 固件联调是否仍依赖当前 BLE 控制通道。
+    /// 是否应保持当前 BLE 控制通道。
+    ///
+    /// MVP：顾客包没有 Keep Alive 开关，默认强制长连接。内部包仍尊重 Settings 开关。
     public static func shouldKeepConnectionOpenForDebug(
         keepAliveEnabled: Bool,
         wifiDebugRequiresConnection: Bool,
-        shippingModeRequiresConnection: Bool = false
+        shippingModeRequiresConnection: Bool = false,
+        customerKeepAliveForcedOn: Bool = !AppBuildEnvironment.showsHardwareDebugTools
     ) -> Bool {
-        keepAliveEnabled || wifiDebugRequiresConnection || shippingModeRequiresConnection
+        keepAliveEnabled
+            || wifiDebugRequiresConnection
+            || shippingModeRequiresConnection
+            || customerKeepAliveForcedOn
     }
 
     /// 迟到 delegate 回调的准入判定（代次门 + 外设身份，两道都过才处理）。

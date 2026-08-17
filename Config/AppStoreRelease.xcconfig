@@ -4,6 +4,8 @@
 // MUST NOT define KIROLE_INTERNAL. Internal/debug UI, behavior, logging,
 // factory commands, and test shortcuts are compiled out at the app-target
 // boundary. Do not add compilation conditions here without a product decision.
+// Device/archive builds fail closed if BLE_SHARED_SECRET is empty
+// (Config/scripts-generate-build-secrets.sh + fastlane ios appstore).
 // Paired gate: scripts/verify-release-boundary.sh
 
 #include "Release.xcconfig"

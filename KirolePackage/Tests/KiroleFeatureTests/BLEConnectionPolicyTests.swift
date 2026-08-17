@@ -93,7 +93,13 @@ struct BLEConnectionPolicyTests {
         ))
         #expect(!BLEConnectionPolicy.shouldKeepConnectionOpenForDebug(
             keepAliveEnabled: false,
-            wifiDebugRequiresConnection: false
+            wifiDebugRequiresConnection: false,
+            customerKeepAliveForcedOn: false
+        ))
+        #expect(BLEConnectionPolicy.shouldKeepConnectionOpenForDebug(
+            keepAliveEnabled: false,
+            wifiDebugRequiresConnection: false,
+            customerKeepAliveForcedOn: true
         ))
     }
 

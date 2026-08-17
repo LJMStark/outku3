@@ -198,13 +198,13 @@ fastlane ios appstore
 
 Pipeline steps (automated): `increment_build_number` → `gym` (archive ~3 min) → `upload_to_testflight` (processing ~5 min) → set en-US + zh-Hans notes → distribute to external group **kirole**.
 
-**Release channels are split (2026-08-15, AGENTS.md "Release Channel Policy")**: `release` archives the `Kirole-Internal` scheme (`InternalRelease` configuration, defines `KIROLE_INTERNAL`) — the hardware/firmware acceptance channel. `appstore` archives `Kirole-AppStore` (`AppStoreRelease`, no `KIROLE_INTERNAL`) after `scripts/verify-release-boundary.sh` proves the boundary marker is compiled out. `KIROLE_INTERNAL` is only visible to app-shell (`Kirole/`) sources — Xcode does not forward custom-configuration compilation conditions into SwiftPM packages, so never gate package code with it.
+**Release channels are split (2026-08-15, AGENTS.md "Release Channel Policy")**: `release` archives the `Kirole-Internal` scheme (`InternalRelease` configuration, defines `KIROLE_INTERNAL`) — the hardware/firmware acceptance channel. `appstore` requires a non-empty `BLE_SHARED_SECRET`, then archives `Kirole-AppStore` (`AppStoreRelease`, no `KIROLE_INTERNAL`) after `scripts/verify-release-boundary.sh` proves the boundary marker and internal-tool strings are compiled out. `KIROLE_INTERNAL` is only visible to app-shell (`Kirole/`) sources — Xcode does not forward custom-configuration compilation conditions into SwiftPM packages, so never gate package code with it.
 
 Credentials: `fastlane/.env` (git-ignored) — copy from `fastlane/.env.template` and fill `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_PATH`.
 
 **Verify the build actually landed.** `upload_to_testflight` can be killed mid-upload (process timeout / transient `SSL_read` EOF), leaving the build number bumped locally + an archive on disk but **nothing on App Store Connect** — a "Done" line or local archive is not proof. Confirm via the ASC API (latest build number + `processing_state` + beta-review state). Run the release detached/in background so one timeout can't kill the upload; transient SSL errors are retryable.
 
-**Before App Store submission (TestFlight is fine as-is):** internal tools are still compiled into every configuration and `AppBuildEnvironment.showsHardwareDebugTools` is still hardcoded `true` (build 573 decision for firmware integration). Each tool must migrate behind the app-target `KIROLE_INTERNAL` boundary (`Kirole/InternalBuildBoundary.swift` sets the pattern) with paired gate tests before an `AppStoreRelease` archive is submittable.
+**Before App Store submission:** internal Settings / Focus Debug UI is compiled only into `InternalRelease` (`Kirole/Internal/`, `#if KIROLE_INTERNAL`). `showsHardwareDebugTools` stays off unless the Internal app shell enables the hardware channel. `fastlane ios appstore` fails closed if `BLE_SHARED_SECRET` is empty. Remaining blockers are screenshots, store copy, privacy questionnaire, WeatherKit attribution on weather-display pages, and hardware-claim evidence — not the debug-tool wash.
 
 ### E-ink Simulator (hardware-free UI preview)
 ```bash

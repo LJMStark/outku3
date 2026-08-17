@@ -1,7 +1,7 @@
 import Foundation
 
 @MainActor
-protocol FocusTestSessionServing: AnyObject {
+public protocol FocusTestSessionServing: AnyObject {
     var activeSession: FocusSession? { get }
     var focusEnforcementMode: FocusEnforcementMode { get }
 
@@ -29,7 +29,7 @@ enum FocusTestSessionLaunchState: Equatable {
 /// Coordinates the explicit Settings test flow without mixing permission state into the View.
 @Observable
 @MainActor
-final class FocusTestSessionCoordinator {
+public final class FocusTestSessionCoordinator {
     private static let testTaskID = "debug-focus-session"
     private static let testTaskTitle = "Debug Focus Session"
 
@@ -39,7 +39,7 @@ final class FocusTestSessionCoordinator {
     private(set) var state: FocusTestSessionLaunchState = .idle
     private var shouldResumeAfterPickerDismissal = false
 
-    init(
+    public init(
         focusGuard: any FocusGuardService = ScreenTimeFocusGuardService.shared,
         focusService: any FocusTestSessionServing = FocusSessionService.shared
     ) {
@@ -47,7 +47,7 @@ final class FocusTestSessionCoordinator {
         self.focusService = focusService
     }
 
-    var failureMessage: String? {
+    public var failureMessage: String? {
         guard case .failed(let message) = state else { return nil }
         return message
     }
@@ -56,7 +56,7 @@ final class FocusTestSessionCoordinator {
         state == .awaitingSelection
     }
 
-    var isBusy: Bool {
+    public var isBusy: Bool {
         switch state {
         case .requestingAuthorization, .starting:
             return true
@@ -65,7 +65,7 @@ final class FocusTestSessionCoordinator {
         }
     }
 
-    func toggleTestSession() async {
+    public func toggleTestSession() async {
         guard !isBusy else { return }
         state = .idle
 
@@ -83,7 +83,7 @@ final class FocusTestSessionCoordinator {
         await prepareDeepFocus()
     }
 
-    func resumeAfterPickerDismissal() async {
+    public func resumeAfterPickerDismissal() async {
         guard shouldResumeAfterPickerDismissal else { return }
         shouldResumeAfterPickerDismissal = false
 
@@ -95,7 +95,7 @@ final class FocusTestSessionCoordinator {
         await startSession(mode: .deepFocus, fallbackPolicy: .reject)
     }
 
-    func dismissFailure() {
+    public func dismissFailure() {
         if case .failed = state {
             state = .idle
         }

@@ -41,7 +41,7 @@
 ## 当前上架阻断项
 
 1. ~~工程仍只有 `Debug` / `Release` 和一个 `Kirole` Scheme；`InternalRelease` / `AppStoreRelease` 尚未实现。~~ **已实现 2026-08-15**：双配置（项目 + 全部 target）+ `Kirole-Internal` / `Kirole-AppStore` 共享 scheme + fastlane `release`（Internal 渠道）/ `appstore`（候选包）双 lane。
-2. `AppBuildEnvironment.showsHardwareDebugTools` 在 Build 644 恒为 `true`。Wi-Fi PC Debug、BLE Keep Alive、测试专注会话、Focus Debug 及相关后台行为会进入当前 Release 包。**仍阻断**：内部工具尚未迁到 `KIROLE_INTERNAL` 边界后面。
+2. ~~`AppBuildEnvironment.showsHardwareDebugTools` 在 Build 644 恒为 `true`。Wi-Fi PC Debug、BLE Keep Alive、测试专注会话、Focus Debug 及相关后台行为会进入当前 Release 包。~~ **已洗 2026-08-17**：联调 UI 在 `Kirole/Internal/`（`#if KIROLE_INTERNAL`）；正式包行为闸默认关；`verify-release-boundary.sh` 扫内部文案；`appstore` lane / AppStoreRelease 真机归档在 `BLE_SHARED_SECRET` 为空时失败关闭。
 3. ~~必须证明 App Store 编译条件已传入 `KirolePackage`。~~ **已裁定 2026-08-15**：实测 Xcode 不会把自定义配置的编译条件传入 SwiftPM 包目标，按政策回退规则边界放在 app target（`Kirole/InternalBuildBoundary.swift`）；`scripts/verify-release-boundary.sh` 做成对符号门控（Internal 有标记 / App Store 无标记）。**仍需**：每个内部工具迁移后补成对存在/缺失测试。
 4. App Store 安全配置必须失败关闭；BLE 安全输入缺失时不得生成可提交候选包，也不能靠隐藏诊断文案掩盖未签名传输。
 5. 当前没有可上传截图。只能从同一 release tag 的 `AppStoreRelease` 归档、`AppStoreRelease` 模拟器构建和必要的真机页面重新取图。

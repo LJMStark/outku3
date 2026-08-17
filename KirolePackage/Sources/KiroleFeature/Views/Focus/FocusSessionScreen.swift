@@ -9,6 +9,7 @@ public struct FocusSessionScreen: View {
     @Environment(\.focusService) private var focusService
     @Environment(\.themeManager) private var theme
     @Environment(\.appState) private var appState
+    @Environment(\.internalToolsViews) private var internalToolsViews
     @State private var showEndEarlyConfirmation = false
 
     /// 每 30 分钟一个能量瓶（协议 §9 / FocusEnergyCalculator 同一常量）。
@@ -131,12 +132,10 @@ public struct FocusSessionScreen: View {
 
                     detectionNotice
                         .padding(.horizontal, 24)
-                        .padding(.bottom, AppBuildEnvironment.showsHardwareDebugTools ? 0 : 28)
+                        .padding(.bottom, internalToolsViews.focusDebugControls == nil ? 28 : 0)
 
-                    // Debug 卡放最底：即便折叠到首屏外也只影响调试者，
-                    // 用户内容（宠物→End Early→检测卡）保持一屏内不滚动。
-                    if AppBuildEnvironment.showsHardwareDebugTools {
-                        debugControls
+                    if let focusDebug = internalToolsViews.focusDebugControls {
+                        focusDebug
                             .padding(.horizontal, 24)
                             .padding(.bottom, 28)
                     }
@@ -262,52 +261,6 @@ public struct FocusSessionScreen: View {
             return "\(hours)h \(minutes)m"
         }
         return "\(minutes)m"
-    }
-
-    private var debugControls: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Focus Debug")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(theme.colors.primaryText)
-
-            Toggle(
-                "1 second = 1 minute",
-                isOn: Binding(
-                    get: { focusService.isFocusTimeAccelerated },
-                    set: { focusService.setFocusTimeAcceleration($0) }
-                )
-            )
-            .font(.system(size: 13, weight: .medium))
-            .tint(theme.colors.accent)
-            .accessibilityLabel("Accelerate focus time")
-            .accessibilityHint("Makes one real second count as one focus minute")
-            .accessibilityIdentifier("focus.debug.accelerationToggle")
-
-            Button {
-                focusService.advanceFocusTime(by: 30 * 60)
-            } label: {
-                Label("Add 30 minutes", systemImage: "goforward.30")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(theme.colors.accent)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 9)
-                    .background(theme.colors.accentLight)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Add 30 focus minutes")
-            .accessibilityHint("Advances this focus session by 30 virtual minutes")
-            .accessibilityIdentifier("focus.debug.addThirtyMinutes")
-        }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(theme.colors.cardBackground)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 14)
-                .stroke(theme.colors.border, lineWidth: 1)
-        )
     }
 
     private var detectionNotice: some View {

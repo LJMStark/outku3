@@ -41,6 +41,31 @@ struct AppBuildEnvironmentTests {
         ))
     }
 
+    @Test("hardware debug tools stay off until the internal channel is enabled")
+    func hardwareDebugToolsDefaultOff() async {
+        await SharedPersistenceTestLock.shared.withLock {
+            AppBuildEnvironment.resetInternalHardwareChannelForTesting()
+            #expect(!AppBuildEnvironment.showsHardwareDebugTools)
+            AppBuildEnvironment.enableInternalHardwareChannel()
+            #expect(AppBuildEnvironment.showsHardwareDebugTools)
+            AppBuildEnvironment.resetInternalHardwareChannelForTesting()
+            #expect(!AppBuildEnvironment.showsHardwareDebugTools)
+        }
+    }
+
+    @Test("MVP keep-alive stays on for customer builds and honors the internal toggle")
+    func keepAliveStaysOnForCustomerBuilds() async {
+        await SharedPersistenceTestLock.shared.withLock {
+            AppBuildEnvironment.resetInternalHardwareChannelForTesting()
+            #expect(AppBuildEnvironment.keepAliveEnabled(storedPreference: nil))
+            #expect(AppBuildEnvironment.keepAliveEnabled(storedPreference: false))
+            AppBuildEnvironment.enableInternalHardwareChannel()
+            #expect(AppBuildEnvironment.keepAliveEnabled(storedPreference: nil))
+            #expect(!AppBuildEnvironment.keepAliveEnabled(storedPreference: false))
+            AppBuildEnvironment.resetInternalHardwareChannelForTesting()
+        }
+    }
+
     @Test("factory tools are hidden from App Store builds")
     func factoryToolVisibility() {
         #expect(AppBuildEnvironment.shouldShowFactoryDebugTools(

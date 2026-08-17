@@ -57,6 +57,7 @@ struct KiroleApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .internalToolsViews(InternalBuildBoundary.toolsViews)
                 .task {
                     BLEBackgroundSyncScheduler.shared.schedule()
                     await NotificationService.shared.refreshAuthorizationStatus()

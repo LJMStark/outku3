@@ -1,5 +1,7 @@
 import Foundation
 import os
+import SwiftUI
+import KiroleFeature
 
 /// Release-channel compile-time boundary (AGENTS.md "Release Channel Policy").
 ///
@@ -20,11 +22,26 @@ enum InternalBuildBoundary {
     /// 符号扫描锚点。改动此字符串必须同步更新 scripts/verify-release-boundary.sh。
     static let marker = "KIROLE-INTERNAL-CHANNEL-ACTIVE-3F9C"
 
+    /// Longer than Swift's 15-byte small-string optimization so the paired
+    /// gate can find these exact UI phrases in the Internal Mach-O.
+    static let toolPhrases =
+        "Wi-Fi PC Debug | Focus Debug | Shipping Mode | Start Test Focus Session | 1 second = 1 minute"
+
     static func activate() {
         Logger(subsystem: "com.kirole.app", category: "release-channel")
-            .info("Internal distribution channel active: \(marker, privacy: .public)")
+            .info("Internal distribution channel active: \(marker, privacy: .public) tools: \(toolPhrases, privacy: .public)")
+        AppBuildEnvironment.enableInternalHardwareChannel()
+    }
+
+    static var toolsViews: InternalToolsViews {
+        InternalToolsViews(
+            settingsSection: AnyView(InternalSettingsSection()),
+            focusDebugControls: AnyView(InternalFocusDebugControls())
+        )
     }
     #else
     static func activate() {}
+
+    static var toolsViews: InternalToolsViews { .empty }
     #endif
 }

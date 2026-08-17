@@ -5,6 +5,7 @@ private struct AppEnvironmentInjector: ViewModifier {
     @Environment(\.themeManager) private var themeManager
     @Environment(\.authManager) private var authManager
     @Environment(\.focusService) private var focusService
+    @Environment(\.internalToolsViews) private var internalToolsViews
 
     func body(content: Content) -> some View {
         content
@@ -18,6 +19,7 @@ private struct AppEnvironmentInjector: ViewModifier {
             .environment(\.themeManager, themeManager)
             .environment(\.authManager, authManager)
             .environment(\.focusService, focusService)
+            .environment(\.internalToolsViews, internalToolsViews)
     }
 }
 

@@ -9,14 +9,12 @@ import FamilyControls
 public struct SettingsFocusSection: View {
     @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
-    @Environment(\.focusService) private var focusService
     @State private var guardService = ScreenTimeFocusGuardService.shared
-    @State private var testSessionCoordinator = FocusTestSessionCoordinator()
 
     public init() {}
 
     public var body: some View {
-        if shouldShowSection || AppBuildEnvironment.showsHardwareDebugTools {
+        if shouldShowSection {
             sectionContent
                 .task {
                     await guardService.refreshAuthorizationStatus()
@@ -25,31 +23,9 @@ public struct SettingsFocusSection: View {
                     isPresented: Binding(
                         get: { guardService.isPickerPresented },
                         set: { guardService.isPickerPresented = $0 }
-                    ),
-                    onDismiss: {
-                        Task {
-                            await testSessionCoordinator.resumeAfterPickerDismissal()
-                        }
-                    }
-                ) {
-                    pickerSheet.injectAppEnvironment()
-                }
-                .alert(
-                    "Couldn't Start Focus",
-                    isPresented: Binding(
-                        get: { testSessionCoordinator.failureMessage != nil },
-                        set: { isPresented in
-                            if !isPresented {
-                                testSessionCoordinator.dismissFailure()
-                            }
-                        }
                     )
                 ) {
-                    Button("OK") {
-                        testSessionCoordinator.dismissFailure()
-                    }
-                } message: {
-                    Text(testSessionCoordinator.failureMessage ?? "")
+                    pickerSheet.injectAppEnvironment()
                 }
         }
     }
@@ -59,55 +35,15 @@ public struct SettingsFocusSection: View {
             SettingsSectionHeader(title: "Focus Protection")
 
             VStack(alignment: .leading, spacing: 12) {
-                if shouldShowSection {
-                    modeSelector
-                    statusCard
-                    actionArea
-                }
-
-                if AppBuildEnvironment.showsHardwareDebugTools {
-                    if shouldShowSection {
-                        Divider()
-                            .padding(.vertical, 4)
-                    }
-                    debugSessionButton
-                }
+                modeSelector
+                statusCard
+                actionArea
             }
             .padding(16)
             .background(theme.colors.cardBackground)
             .clipShape(RoundedRectangle(cornerRadius: 24))
             .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
         }
-    }
-
-    private var debugSessionButton: some View {
-        Button {
-            Task { @MainActor in
-                await testSessionCoordinator.toggleTestSession()
-            }
-        } label: {
-            HStack {
-                Image(systemName: "timer")
-                Text(
-                    focusService.activeSession == nil
-                    ? testSessionCoordinator.isBusy
-                        ? "Preparing Focus..."
-                        : "Start Test Focus Session"
-                    : "End Test Focus Session"
-                )
-            }
-            .font(.system(size: 14, weight: .medium))
-            .foregroundStyle(.white)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background(theme.colors.accent)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-        }
-        .buttonStyle(.plain)
-        .disabled(testSessionCoordinator.isBusy)
-        .accessibilityLabel("Start or end a real test focus session")
-        .accessibilityHint("Opens the real focus screen with debugging controls")
-        .accessibilityIdentifier("Debug_TestFocusSession")
     }
 
     private var shouldShowSection: Bool {
