@@ -2,14 +2,12 @@ import Foundation
 import Supabase
 
 enum AccountDeletionRemotePolicy {
+    /// Local wipe is allowed only when the cloud account is already gone.
+    /// Client-local failures (`notConfigured`, `noSession`) and expired/invalid
+    /// credentials fail closed so a still-living account is not abandoned.
     static func canFinishLocallyAfterRemoteError(_ error: Error) -> Bool {
-        if let supabase = error as? SupabaseError {
-            switch supabase {
-            case .notConfigured, .noSession:
-                return true
-            case .sessionUserMismatch:
-                return false
-            }
+        if error is SupabaseError {
+            return false
         }
         return isDeletedCloudSession(error)
     }
@@ -18,6 +16,7 @@ enum AccountDeletionRemotePolicy {
         statusCode == 401
     }
 
+    /// True after a delete RPC against a live session comes back as "user already gone".
     static func isDeletedCloudSession(_ error: Error) -> Bool {
         if let auth = error as? AuthError {
             return isDeletedCloudAuthError(auth)
@@ -44,9 +43,35 @@ enum AccountDeletionRemotePolicy {
         )
     }
 
+    static func authAPIError(code: String, statusCode: Int) -> Error {
+        AuthError.api(
+            message: code,
+            errorCode: ErrorCode(code),
+            underlyingData: Data(),
+            underlyingResponse: HTTPURLResponse(
+                url: URL(string: "https://outku3.zeabur.app/auth/v1/user")!,
+                statusCode: statusCode,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+        )
+    }
+
+    static func jwtVerificationFailedError() -> Error {
+        AuthError.jwtVerificationFailed(message: "invalid jwt")
+    }
+
+    static func sessionMissingError() -> Error {
+        AuthError.sessionMissing
+    }
+
+    static func postgrestError(code: String?, message: String) -> Error {
+        PostgrestError(code: code, message: message)
+    }
+
     private static func isDeletedCloudAuthError(_ error: AuthError) -> Bool {
         switch error {
-        case .sessionMissing, .jwtVerificationFailed:
+        case .sessionMissing:
             return true
         case let .api(_, errorCode, _, response):
             if isDeletedCloudStatus(response.statusCode) {
@@ -59,23 +84,14 @@ enum AccountDeletionRemotePolicy {
     }
 
     private static func isDeletedCloudPostgrest(_ error: PostgrestError) -> Bool {
-        if let code = error.code?.lowercased(),
-           code == "pgrst301" || code.contains("jwt") {
+        if let code = error.code?.lowercased(), code == "user_not_found" {
             return true
         }
-        let message = error.message.lowercased()
-        return message.contains("jwt")
-            || message.contains("not authenticated")
-            || message.contains("user not found")
+        return error.message.lowercased().contains("user not found")
     }
 
     private static let deletedAccountAuthCodes: Set<ErrorCode> = [
-        .badJWT,
-        .invalidJWT,
-        .noAuthorization,
         .userNotFound,
-        .sessionNotFound,
-        .sessionExpired,
-        .invalidCredentials
+        .sessionNotFound
     ]
 }

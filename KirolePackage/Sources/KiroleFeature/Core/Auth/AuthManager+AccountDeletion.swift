@@ -19,7 +19,7 @@ public enum AccountDeletionError: Error, LocalizedError, Equatable, Sendable {
 
 extension AuthManager {
     /// Deletes the cloud account when a session exists, then signs out and wipes local data.
-    /// Missing/unconfigured cloud sessions skip the RPC. Retryable remote failures keep the session.
+    /// Pending local identity with no JWT skips the RPC. Unconfirmed remote failures keep the session.
     public func deleteAccount() async throws {
         guard authState.isAuthenticated else {
             throw AccountDeletionError.notAuthenticated

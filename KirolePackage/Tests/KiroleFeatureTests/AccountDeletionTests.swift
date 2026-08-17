@@ -4,13 +4,42 @@ import Testing
 
 @Suite("Account deletion remote policy")
 struct AccountDeletionRemotePolicyTests {
-    @Test("Missing or unconfigured cloud sessions can finish locally")
-    func missingCloudSessionCanFinishLocally() {
-        #expect(AccountDeletionRemotePolicy.canFinishLocallyAfterRemoteError(SupabaseError.notConfigured))
-        #expect(AccountDeletionRemotePolicy.canFinishLocallyAfterRemoteError(SupabaseError.noSession))
+    @Test("Missing or unconfigured cloud sessions fail closed")
+    func missingCloudSessionFailsClosed() {
+        #expect(!AccountDeletionRemotePolicy.canFinishLocallyAfterRemoteError(SupabaseError.notConfigured))
+        #expect(!AccountDeletionRemotePolicy.canFinishLocallyAfterRemoteError(SupabaseError.noSession))
         #expect(!AccountDeletionRemotePolicy.canFinishLocallyAfterRemoteError(SupabaseError.sessionUserMismatch))
         #expect(!AccountDeletionRemotePolicy.canFinishLocallyAfterRemoteError(AccountDeletionError.remoteDeletionFailed))
         #expect(!AccountDeletionRemotePolicy.canFinishLocallyAfterRemoteError(URLError(.notConnectedToInternet)))
+    }
+
+    @Test("Expired or invalid credentials fail closed")
+    func expiredOrInvalidCredentialsFailClosed() {
+        #expect(
+            !AccountDeletionRemotePolicy.canFinishLocallyAfterRemoteError(
+                AccountDeletionRemotePolicy.authAPIError(code: "session_expired", statusCode: 400)
+            )
+        )
+        #expect(
+            !AccountDeletionRemotePolicy.canFinishLocallyAfterRemoteError(
+                AccountDeletionRemotePolicy.authAPIError(code: "invalid_credentials", statusCode: 400)
+            )
+        )
+        #expect(
+            !AccountDeletionRemotePolicy.canFinishLocallyAfterRemoteError(
+                AccountDeletionRemotePolicy.authAPIError(code: "bad_jwt", statusCode: 400)
+            )
+        )
+        #expect(
+            !AccountDeletionRemotePolicy.canFinishLocallyAfterRemoteError(
+                AccountDeletionRemotePolicy.jwtVerificationFailedError()
+            )
+        )
+        #expect(
+            !AccountDeletionRemotePolicy.canFinishLocallyAfterRemoteError(
+                AccountDeletionRemotePolicy.postgrestError(code: "PGRST301", message: "JWT expired")
+            )
+        )
     }
 
     @Test("HTTP 401 after delete is treated as the cloud account already being gone")
@@ -21,6 +50,21 @@ struct AccountDeletionRemotePolicyTests {
         #expect(
             AccountDeletionRemotePolicy.canFinishLocallyAfterRemoteError(
                 AccountDeletionRemotePolicy.httpError(statusCode: 401)
+            )
+        )
+        #expect(
+            AccountDeletionRemotePolicy.canFinishLocallyAfterRemoteError(
+                AccountDeletionRemotePolicy.sessionMissingError()
+            )
+        )
+        #expect(
+            AccountDeletionRemotePolicy.canFinishLocallyAfterRemoteError(
+                AccountDeletionRemotePolicy.authAPIError(code: "user_not_found", statusCode: 400)
+            )
+        )
+        #expect(
+            AccountDeletionRemotePolicy.canFinishLocallyAfterRemoteError(
+                AccountDeletionRemotePolicy.postgrestError(code: nil, message: "User not found")
             )
         )
         #expect(
@@ -88,6 +132,55 @@ struct AccountDeletionTests {
             }
             #expect(manager.authState.isAuthenticated)
             #expect(keychain.getAppleUserIdentifier() == "apple-user-delete-fail")
+            try keychain.clearAll()
+        }
+    }
+
+    @Test("Missing cloud session keeps the local account")
+    @MainActor
+    func deleteAccountKeepsSessionWhenCloudSessionMissing() async throws {
+        try await SharedPersistenceTestLock.shared.withLock {
+            let serviceName = "com.kirole.tests.account-deletion-nosession.\(UUID().uuidString)"
+            let keychain = KeychainService(service: serviceName)
+            try keychain.saveAppleUserIdentifier("apple-user-delete-nosession")
+            let manager = AuthManager(keychainService: keychain)
+            manager.restoreLocalIdentityFromKeychain()
+            manager.accountDeletionRemoteOverride = {
+                throw SupabaseError.noSession
+            }
+            manager.accountDeletionLocalResetOverride = {}
+
+            await #expect(throws: AccountDeletionError.remoteDeletionFailed) {
+                try await manager.deleteAccount()
+            }
+            #expect(manager.authState.isAuthenticated)
+            #expect(keychain.getAppleUserIdentifier() == "apple-user-delete-nosession")
+            try keychain.clearAll()
+        }
+    }
+
+    @Test("Expired cloud credentials keep the local account")
+    @MainActor
+    func deleteAccountKeepsSessionWhenCredentialsExpired() async throws {
+        try await SharedPersistenceTestLock.shared.withLock {
+            let serviceName = "com.kirole.tests.account-deletion-expired.\(UUID().uuidString)"
+            let keychain = KeychainService(service: serviceName)
+            try keychain.saveAppleUserIdentifier("apple-user-delete-expired")
+            let manager = AuthManager(keychainService: keychain)
+            manager.restoreLocalIdentityFromKeychain()
+            manager.accountDeletionRemoteOverride = {
+                throw AccountDeletionRemotePolicy.authAPIError(
+                    code: "session_expired",
+                    statusCode: 400
+                )
+            }
+            manager.accountDeletionLocalResetOverride = {}
+
+            await #expect(throws: AccountDeletionError.remoteDeletionFailed) {
+                try await manager.deleteAccount()
+            }
+            #expect(manager.authState.isAuthenticated)
+            #expect(keychain.getAppleUserIdentifier() == "apple-user-delete-expired")
             try keychain.clearAll()
         }
     }
