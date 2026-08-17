@@ -73,11 +73,8 @@ struct SettingsView: View {
                 SettingsFocusSection()
                     .appearAnimation(delay: 0.35, appeared: appeared)
 
-                SoundSettingsSection()
-                    .appearAnimation(delay: 0.4, appeared: appeared)
-
                 SettingsAboutSection()
-                    .appearAnimation(delay: 0.42, appeared: appeared)
+                    .appearAnimation(delay: 0.4, appeared: appeared)
 
                 #if DEBUG
                 DebugSection()
@@ -137,101 +134,6 @@ struct SettingsToggleSwitch: View {
                 .padding(4)
         }
         .animation(.kiroleGentle, value: isOn)
-    }
-}
-
-// MARK: - Sound Settings Section
-
-private struct SoundSettingsSection: View {
-    @Environment(ThemeManager.self) private var theme
-    @State private var soundEnabled: Bool = true
-    @State private var volume: Double = 0.7
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SettingsSectionHeader(title: "Sound & Haptics")
-
-            VStack(spacing: 16) {
-                // Sound toggle
-                HStack {
-                    Image(systemName: "speaker.wave.2.fill")
-                        .font(.system(size: 16))
-                        .foregroundStyle(theme.colors.accent)
-                        .frame(width: 24)
-
-                    Text("Sound Effects")
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(theme.colors.primaryText)
-
-                    Spacer()
-
-                    Button {
-                        withAnimation(.kiroleGentle) {
-                            soundEnabled.toggle()
-                            SoundService.shared.isSoundEnabled = soundEnabled
-                        }
-                    } label: {
-                        SettingsToggleSwitch(isOn: soundEnabled)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(soundEnabled ? "Mute sound" : "Unmute sound")
-                    .accessibilityIdentifier("Settings_SoundToggle")
-                }
-
-                if soundEnabled {
-                    // Volume slider
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("Volume")
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(theme.colors.secondaryText)
-
-                            Spacer()
-
-                            Text("\(Int(volume * 100))%")
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(theme.colors.secondaryText)
-                        }
-
-                        Slider(value: $volume, in: 0...1) { _ in
-                            SoundService.shared.volume = Float(volume)
-                        }
-                        .tint(theme.colors.accent)
-                        .accessibilityLabel("Volume")
-                        .accessibilityIdentifier("Settings_VolumeSlider")
-                    }
-                }
-
-                // Test sound button
-                Button {
-                    SoundService.shared.playWithHaptic(.taskComplete, haptic: .success)
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "play.circle.fill")
-                            .font(.system(size: 14))
-
-                        Text("Test Sound")
-                            .font(.system(size: 14, weight: .medium))
-                    }
-                    .foregroundStyle(theme.colors.accent)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(theme.colors.accentLight)
-                    .clipShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Test sound")
-                .accessibilityIdentifier("Settings_TestSound")
-            }
-            .padding(16)
-            .background(Color.white)
-            .clipShape(RoundedRectangle(cornerRadius: 24))
-            .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
-        }
-        .onAppear {
-            soundEnabled = SoundService.shared.isSoundEnabled
-            volume = Double(SoundService.shared.volume)
-        }
     }
 }
 

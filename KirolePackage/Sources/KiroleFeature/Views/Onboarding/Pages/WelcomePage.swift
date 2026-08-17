@@ -15,16 +15,6 @@ public struct WelcomePage: View {
             theme.colors.primary.ignoresSafeArea()
 
             VStack(spacing: 0) {
-                HStack {
-                    SoundToggleButton(isEnabled: Binding(
-                        get: { onboardingState.soundEnabled },
-                        set: { onboardingState.soundEnabled = $0 }
-                    ))
-                    Spacer()
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-
                 FloatingIconRing()
                     .frame(maxHeight: .infinity)
 

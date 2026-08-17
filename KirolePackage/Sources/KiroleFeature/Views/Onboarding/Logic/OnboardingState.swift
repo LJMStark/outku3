@@ -8,7 +8,6 @@ public final class OnboardingState {
     public var currentPage: Int = 0
     public var direction: Int = 1
     public var profile: OnboardingProfile = OnboardingProfile()
-    public var soundEnabled: Bool = true
 
     private let maxPage = 12
 

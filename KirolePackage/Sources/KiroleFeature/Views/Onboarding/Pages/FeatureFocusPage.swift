@@ -26,18 +26,8 @@ public struct FeatureFocusPage: View {
             .padding(.top, 80)
 
             VStack(spacing: 0) {
-                HStack {
-                    SoundToggleButton(isEnabled: Binding(
-                        get: { onboardingState.soundEnabled },
-                        set: { onboardingState.soundEnabled = $0 }
-                    ))
-                    Spacer()
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-
                 ProgressDots(activeIndex: 1)
-                    .padding(.top, 8)
+                    .padding(.top, 16)
 
                 VStack(spacing: 8) {
                     Text("Focus, not frenzy \u{2728}")

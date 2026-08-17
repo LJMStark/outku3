@@ -25,18 +25,8 @@ public struct PersonalizationPage: View {
             themeManager.colors.primary.ignoresSafeArea()
 
             VStack(spacing: 0) {
-                HStack {
-                    SoundToggleButton(isEnabled: Binding(
-                        get: { onboardingState.soundEnabled },
-                        set: { onboardingState.soundEnabled = $0 }
-                    ))
-                    Spacer()
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-
                 ProgressDots(activeIndex: 3)
-                    .padding(.top, 8)
+                    .padding(.top, 16)
 
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 24) {

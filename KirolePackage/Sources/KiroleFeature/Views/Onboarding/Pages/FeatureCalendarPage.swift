@@ -21,18 +21,8 @@ public struct FeatureCalendarPage: View {
             theme.colors.primary.ignoresSafeArea()
 
             VStack(spacing: 0) {
-                HStack {
-                    SoundToggleButton(isEnabled: Binding(
-                        get: { onboardingState.soundEnabled },
-                        set: { onboardingState.soundEnabled = $0 }
-                    ))
-                    Spacer()
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-
                 ProgressDots(activeIndex: 0)
-                    .padding(.top, 8)
+                    .padding(.top, 16)
 
                 VStack(spacing: 8) {
                     Text("Pet who knows your day")
