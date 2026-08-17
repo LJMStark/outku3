@@ -172,6 +172,14 @@ xcodebuild -workspace Kirole.xcworkspace -scheme Kirole -destination 'platform=i
 xcrun devicectl device install app --device <DEVICE_ID> ~/Library/Developer/Xcode/DerivedData/Kirole-*/Build/Products/Debug-iphoneos/Kirole.app
 ```
 
+The only supported simulator is **iPhone 17 Pro**. Do not boot, install to, or reuse whatever device happens to be `Booted`. `open -a Simulator` without `-CurrentDeviceUDID` opens Simulator.app's last device (on this machine that is often iPhone 16e), not the one you just booted — that is how a second window appears. Shut other simulators down first:
+
+```bash
+xcrun simctl shutdown all
+xcrun simctl boot "iPhone 17 Pro"
+open -a Simulator --args -CurrentDeviceUDID "$(xcrun simctl list devices booted | awk -F '[()]' '/iPhone 17 Pro/ {print $2; exit}')"
+```
+
 ### Testing
 **Run All Tests (Simulator via MCP/CLI):**
 ```javascript
