@@ -5,7 +5,7 @@ default_platform(:ios)
 BUNDLE_ID = "com.kirole.app"
 
 platform :ios do
-  desc "Full pipeline: increment build → archive → upload → set notes → distribute to external groups"
+  desc "Internal TestFlight pipeline (hardware/firmware acceptance channel): increment build → archive Kirole-Internal (InternalRelease, KIROLE_INTERNAL defined) → upload → set notes → distribute to external groups. NEVER promote this binary to App Store — use the appstore lane from a tagged commit instead (AGENTS.md Release Channel Policy)."
   lane :release do |options|
     en_text = resolve_notes(options)
 
@@ -19,7 +19,8 @@ platform :ios do
     # of silently falling back to a Development profile (which breaks app-store export).
     gym(
       workspace:     "Kirole.xcworkspace",
-      scheme:        "Kirole",
+      scheme:        "Kirole-Internal",
+      configuration: "InternalRelease",
       export_method: "app-store",
       xcargs:        "-allowProvisioningUpdates"
     )
@@ -56,6 +57,43 @@ platform :ios do
 
     distribute_to_external_groups(app, build)
     UI.success("Done — build #{new_build} released to external testers")
+  end
+
+  desc "App Store candidate pipeline: verify release-channel boundary → increment build → archive Kirole-AppStore (AppStoreRelease, no KIROLE_INTERNAL) → upload binary to App Store Connect. No TestFlight groups, no notes, no beta review. Attaching the build to an App Store version and submitting stays manual, gated on validate-assets.sh submission passing and SUBMISSION-RECORD.md being READY."
+  lane :appstore do
+    # Paired compile-out gate: fails the lane before archiving if the
+    # KIROLE_INTERNAL marker leaks into the App Store configuration.
+    # Fastlane `sh` runs with cwd = fastlane/; resolve from the Fastfile
+    # so this always hits repo scripts/verify-release-boundary.sh.
+    boundary_script = File.expand_path(
+      "../scripts/verify-release-boundary.sh",
+      File.dirname(FastlaneCore::FastlaneFolder.fastfile_path)
+    )
+    UI.user_error!("Missing #{boundary_script}") unless File.file?(boundary_script)
+    sh(boundary_script)
+
+    new_build = increment_build_number(xcodeproj: "Kirole.xcodeproj")
+    UI.message("▶ App Store candidate build number → #{new_build}")
+
+    gym(
+      workspace:     "Kirole.xcworkspace",
+      scheme:        "Kirole-AppStore",
+      configuration: "AppStoreRelease",
+      export_method: "app-store",
+      xcargs:        "-allowProvisioningUpdates"
+    )
+
+    api_key = app_store_connect_api_key(
+      key_id:       ENV.fetch("ASC_KEY_ID")   { UI.user_error!("ASC_KEY_ID not set") },
+      issuer_id:    ENV.fetch("ASC_ISSUER_ID") { UI.user_error!("ASC_ISSUER_ID not set") },
+      key_filepath: ENV.fetch("ASC_KEY_PATH")  { UI.user_error!("ASC_KEY_PATH not set") }
+    )
+    upload_to_testflight(
+      api_key:                           api_key,
+      skip_waiting_for_build_processing: false,
+      distribute_external:               false
+    )
+    UI.success("Done — App Store candidate #{new_build} uploaded to App Store Connect. Attach it to a version manually after the submission gates pass.")
   end
 
   desc "Update TestFlight What to Test notes only (zh-Hans)"

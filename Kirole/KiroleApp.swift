@@ -51,6 +51,7 @@ struct KiroleApp: App {
             fallbackAPIKey: BuildSecrets.fallbackAPIKey
         )
         BLEBackgroundSyncScheduler.shared.register()
+        InternalBuildBoundary.activate()
     }
 
     var body: some Scene {

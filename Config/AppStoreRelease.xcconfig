@@ -1,0 +1,9 @@
+// AppStoreRelease.xcconfig
+// App Store customer distribution configuration (AGENTS.md "Release Channel Policy").
+//
+// MUST NOT define KIROLE_INTERNAL. Internal/debug UI, behavior, logging,
+// factory commands, and test shortcuts are compiled out at the app-target
+// boundary. Do not add compilation conditions here without a product decision.
+// Paired gate: scripts/verify-release-boundary.sh
+
+#include "Release.xcconfig"

@@ -1,0 +1,18 @@
+// InternalRelease.xcconfig
+// Internal TestFlight distribution configuration (AGENTS.md "Release Channel Policy").
+//
+// Release-optimized build that keeps every hardware/firmware debug capability
+// compiled in. Upload as TestFlight Internal Only. Never promote this binary
+// (or this configuration) to App Store.
+//
+// KIROLE_INTERNAL is the single compile-time boundary for internal-only code.
+// Xcode intentionally does NOT forward SWIFT_ACTIVE_COMPILATION_CONDITIONS of
+// custom configurations into SwiftPM package targets, so the condition is only
+// visible to app-shell (Kirole/) sources. Internal-only implementations must
+// therefore live at the app-target level (or a separately linked package
+// product), never behind an #if inside KirolePackage.
+// Paired gate: scripts/verify-release-boundary.sh
+
+#include "Release.xcconfig"
+
+SWIFT_ACTIVE_COMPILATION_CONDITIONS = $(inherited) KIROLE_INTERNAL

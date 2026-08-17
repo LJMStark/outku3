@@ -6,12 +6,12 @@
 
 当前状态：**BLOCKED — 不是可上传的 App Store 提交包**
 
-这个目录保留 Build 644 的上架诊断、已核对的英文元数据和下一次候选包的操作模板。不要把目录日期或历史检查点改写成新的候选版本；双构建实现后，应新建 `docs/app-store/YYYY-MM-DD/`，复制仍适用的模板，并记录实际 release tag、构建号和验收证据。
+这个目录保留 Build 644 的上架诊断、已核对的英文元数据和下一次候选包的操作模板。不要把目录日期或历史检查点改写成新的候选版本。双配置（`InternalRelease` / `AppStoreRelease`）已于 2026-08-15 落地；真正出候选包时应新建 `docs/app-store/YYYY-MM-DD/`，复制仍适用的模板，并记录实际 release tag、构建号和验收证据。
 
 ## 当前可用内容
 
 - `metadata-en.md`：已核对的英文元数据草稿。
-- `CAPTURE.md`：面向未来 `AppStoreRelease` 的归档和截图流程；所需 Scheme/Configuration 尚未实现，因此当前不能执行正式归档。
+- `CAPTURE.md`：面向 `Kirole-AppStore` / `AppStoreRelease` 的归档和截图流程。双配置与 scheme 已于 2026-08-15 落地，但内部工具尚未迁出 App Store 二进制，且本目录没有可上传截图，因此当前仍不能执行正式归档。
 - `SUBMISSION-RECORD.md`：候选包验收记录模板，目前保持 `BLOCKED`。
 - `validate-assets.sh`：素材包和正式提交两种校验模式。
 
@@ -40,9 +40,9 @@
 
 ## 当前上架阻断项
 
-1. 工程仍只有 `Debug` / `Release` 和一个 `Kirole` Scheme；`InternalRelease` / `AppStoreRelease` 尚未实现。
-2. `AppBuildEnvironment.showsHardwareDebugTools` 在 Build 644 恒为 `true`。Wi-Fi PC Debug、BLE Keep Alive、测试专注会话、Focus Debug 及相关后台行为会进入当前 Release 包。
-3. 必须证明 App Store 编译条件已传入 `KirolePackage`，并通过成对测试证明内部能力在 Internal 包存在、在 App Store 包不存在。
+1. ~~工程仍只有 `Debug` / `Release` 和一个 `Kirole` Scheme；`InternalRelease` / `AppStoreRelease` 尚未实现。~~ **已实现 2026-08-15**：双配置（项目 + 全部 target）+ `Kirole-Internal` / `Kirole-AppStore` 共享 scheme + fastlane `release`（Internal 渠道）/ `appstore`（候选包）双 lane。
+2. `AppBuildEnvironment.showsHardwareDebugTools` 在 Build 644 恒为 `true`。Wi-Fi PC Debug、BLE Keep Alive、测试专注会话、Focus Debug 及相关后台行为会进入当前 Release 包。**仍阻断**：内部工具尚未迁到 `KIROLE_INTERNAL` 边界后面。
+3. ~~必须证明 App Store 编译条件已传入 `KirolePackage`。~~ **已裁定 2026-08-15**：实测 Xcode 不会把自定义配置的编译条件传入 SwiftPM 包目标，按政策回退规则边界放在 app target（`Kirole/InternalBuildBoundary.swift`）；`scripts/verify-release-boundary.sh` 做成对符号门控（Internal 有标记 / App Store 无标记）。**仍需**：每个内部工具迁移后补成对存在/缺失测试。
 4. App Store 安全配置必须失败关闭；BLE 安全输入缺失时不得生成可提交候选包，也不能靠隐藏诊断文案掩盖未签名传输。
 5. 当前没有可上传截图。只能从同一 release tag 的 `AppStoreRelease` 归档、`AppStoreRelease` 模拟器构建和必要的真机页面重新取图。
 6. 仓库内官网和隐私政策源文件已按正式版范围修正，但线上网址必须部署后重新读取验证；本地修改不等于线上生效。

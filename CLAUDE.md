@@ -191,15 +191,20 @@ fastlane ios release text:"English notes" zh_text:"中文说明"
 
 # Notes-only update (no build, no distribution)
 fastlane ios notes text:"说明内容"
+
+# App Store candidate (2026-08-15+): boundary gate → archive Kirole-AppStore → upload binary only
+fastlane ios appstore
 ```
 
 Pipeline steps (automated): `increment_build_number` → `gym` (archive ~3 min) → `upload_to_testflight` (processing ~5 min) → set en-US + zh-Hans notes → distribute to external group **kirole**.
+
+**Release channels are split (2026-08-15, AGENTS.md "Release Channel Policy")**: `release` archives the `Kirole-Internal` scheme (`InternalRelease` configuration, defines `KIROLE_INTERNAL`) — the hardware/firmware acceptance channel. `appstore` archives `Kirole-AppStore` (`AppStoreRelease`, no `KIROLE_INTERNAL`) after `scripts/verify-release-boundary.sh` proves the boundary marker is compiled out. `KIROLE_INTERNAL` is only visible to app-shell (`Kirole/`) sources — Xcode does not forward custom-configuration compilation conditions into SwiftPM packages, so never gate package code with it.
 
 Credentials: `fastlane/.env` (git-ignored) — copy from `fastlane/.env.template` and fill `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_PATH`.
 
 **Verify the build actually landed.** `upload_to_testflight` can be killed mid-upload (process timeout / transient `SSL_read` EOF), leaving the build number bumped locally + an archive on disk but **nothing on App Store Connect** — a "Done" line or local archive is not proof. Confirm via the ASC API (latest build number + `processing_state` + beta-review state). Run the release detached/in background so one timeout can't kill the upload; transient SSL errors are retryable.
 
-**Before App Store submission (TestFlight is fine as-is):** restore the hardware-debug gating — build 573 deliberately loosened `AppBuildEnvironment.showsHardwareDebugTools` to all-builds-visible + keep-alive default-on for firmware integration; the production gate must come back before a store release.
+**Before App Store submission (TestFlight is fine as-is):** internal tools are still compiled into every configuration and `AppBuildEnvironment.showsHardwareDebugTools` is still hardcoded `true` (build 573 decision for firmware integration). Each tool must migrate behind the app-target `KIROLE_INTERNAL` boundary (`Kirole/InternalBuildBoundary.swift` sets the pattern) with paired gate tests before an `AppStoreRelease` archive is submittable.
 
 ### E-ink Simulator (hardware-free UI preview)
 ```bash

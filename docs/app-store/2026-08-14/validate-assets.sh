@@ -140,11 +140,11 @@ scheme_root="$repo_root/Kirole.xcodeproj/xcshareddata/xcschemes"
 app_store_scheme_file="$scheme_root/Kirole-AppStore.xcscheme"
 internal_scheme_file="$scheme_root/Kirole-Internal.xcscheme"
 project_file="$repo_root/Kirole.xcodeproj/project.pbxproj"
-release_gate_script="$repo_root/scripts/validate-release-channels.sh"
+release_gate_script="$repo_root/scripts/verify-release-boundary.sh"
 [[ -f "$app_store_scheme_file" ]] || fail "Kirole-AppStore scheme is missing"
 [[ -f "$internal_scheme_file" ]] || fail "Kirole-Internal scheme is missing"
 [[ -x "$release_gate_script" ]] || \
-  fail "scripts/validate-release-channels.sh is missing or not executable"
+  fail "scripts/verify-release-boundary.sh is missing or not executable"
 grep -q 'name = AppStoreRelease;' "$project_file" || fail "AppStoreRelease configuration is missing"
 grep -q 'name = InternalRelease;' "$project_file" || fail "InternalRelease configuration is missing"
 
