@@ -9,6 +9,10 @@ public struct Weather: Sendable, Codable {
     /// True only when populated from a successful WeatherKit fetch.
     /// Drives whether the home header renders the weather chip + Apple Weather attribution (Guideline 5.2.5).
     public var hasData: Bool
+    /// Legal attribution URL from WeatherKit, or Apple's published fallback.
+    public var attributionLegalURLString: String
+
+    public static let appleWeatherLegalURLString = "https://weatherkit.apple.com/legal-attribution.html"
 
     public init(
         temperature: Int = 22,
@@ -16,7 +20,8 @@ public struct Weather: Sendable, Codable {
         lowTemp: Int = 18,
         condition: WeatherCondition = .sunny,
         location: String = "San Francisco",
-        hasData: Bool = false
+        hasData: Bool = false,
+        attributionLegalURLString: String = Weather.appleWeatherLegalURLString
     ) {
         self.temperature = temperature
         self.highTemp = highTemp
@@ -24,10 +29,11 @@ public struct Weather: Sendable, Codable {
         self.condition = condition
         self.location = location
         self.hasData = hasData
+        self.attributionLegalURLString = attributionLegalURLString
     }
 
     private enum CodingKeys: String, CodingKey {
-        case temperature, highTemp, lowTemp, condition, location, hasData
+        case temperature, highTemp, lowTemp, condition, location, hasData, attributionLegalURLString
     }
 
     public init(from decoder: Decoder) throws {
@@ -38,6 +44,10 @@ public struct Weather: Sendable, Codable {
         self.condition = try c.decodeIfPresent(WeatherCondition.self, forKey: .condition) ?? .sunny
         self.location = try c.decodeIfPresent(String.self, forKey: .location) ?? "San Francisco"
         self.hasData = try c.decodeIfPresent(Bool.self, forKey: .hasData) ?? false
+        self.attributionLegalURLString = try c.decodeIfPresent(
+            String.self,
+            forKey: .attributionLegalURLString
+        ) ?? Weather.appleWeatherLegalURLString
     }
 }
 

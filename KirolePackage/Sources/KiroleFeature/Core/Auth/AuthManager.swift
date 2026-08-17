@@ -54,7 +54,7 @@ public final class AuthManager {
     let microsoftAuthService = MicrosoftAuthService.shared
     @ObservationIgnored let microsoftAvailability: @MainActor (IntegrationType) -> Bool
     private let keychainService: KeychainService
-    private let supabaseService = SupabaseService.shared
+    let supabaseService = SupabaseService.shared
     @ObservationIgnored var todoistAuthService: TodoistAuthService?
     @ObservationIgnored var todoistCredentialManager: TodoistCredentialManager?
     @ObservationIgnored let todoistCredentialOperationGate = OAuthCredentialOperationGate()
@@ -67,6 +67,8 @@ public final class AuthManager {
     @ObservationIgnored var providerDataSignOutCleanupOverride: (@MainActor () async throws -> Void)?
     @ObservationIgnored var localCredentialSignOutCleanupOverride: (@MainActor () throws -> Void)?
     @ObservationIgnored var supabaseSignOutOverride: (@Sendable () async throws -> Void)?
+    @ObservationIgnored var accountDeletionRemoteOverride: (@Sendable () async throws -> Void)?
+    @ObservationIgnored var accountDeletionLocalResetOverride: (@MainActor () async -> Void)?
     @ObservationIgnored var googleSyncStateResetOverride: (@MainActor () async throws -> Void)?
     @ObservationIgnored var googleSyncActivationOverride: (@MainActor () async throws -> Void)?
     @ObservationIgnored var googleDisconnectOverride: (@MainActor () async -> Void)?
@@ -696,6 +698,28 @@ public final class AuthManager {
         appleSignInService.clearCredentials()
         isNotionConnected = false
         isTaskadeConnected = false
+    }
+
+    var hasLocalSupabaseAccessToken: Bool {
+        keychainService.getSupabaseAccessToken() != nil
+    }
+
+    /// Used after a successful remote account delete if `signOut()` aborted mid-cleanup.
+    func abandonLocalSessionAfterRemoteAccountDeletion() throws {
+        if let localCredentialSignOutCleanupOverride {
+            try localCredentialSignOutCleanupOverride()
+        } else {
+            try keychainService.clearAll()
+        }
+        clearLocalProviderSessionState()
+        isMicrosoftConnected = false
+        hasMicrosoftCalendarAccess = false
+        hasMicrosoftTodoAccess = false
+        isTodoistConnected = false
+        isTickTickConnected = false
+        tickTickRegion = nil
+        currentUser = nil
+        authState = .unauthenticated
     }
 
     /// Reserved for a future account-deletion surface. No backend deletion is introduced here;

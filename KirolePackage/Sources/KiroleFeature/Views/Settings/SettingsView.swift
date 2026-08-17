@@ -55,6 +55,9 @@ struct SettingsView: View {
                 SettingsAccountSection()
                     .appearAnimation(delay: 0.1, appeared: appeared)
 
+                SettingsSessionSection()
+                    .appearAnimation(delay: 0.15, appeared: appeared)
+
                 SettingsIntegrationSection()
                     .appearAnimation(delay: 0.2, appeared: appeared)
 
@@ -142,10 +145,43 @@ struct SettingsToggleSwitch: View {
 private struct SettingsAboutSection: View {
     @Environment(ThemeManager.self) private var theme
     private static let appleWeatherLegalURL = URL(string: "https://weatherkit.apple.com/legal-attribution.html")!
+    private static let privacyPolicyURL = URL(string: "https://kirole.681023.xyz/privacy.html")!
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             SettingsSectionHeader(title: "Data Sources")
+
+            Link(destination: Self.privacyPolicyURL) {
+                HStack(spacing: 12) {
+                    Image(systemName: "hand.raised.fill")
+                        .font(.system(size: 16))
+                        .foregroundStyle(theme.colors.accent)
+                        .frame(width: 24)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Privacy Policy")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(theme.colors.primaryText)
+                        Text("How Kirole uses your account, calendar, and weather data")
+                            .font(.system(size: 12))
+                            .foregroundStyle(theme.colors.secondaryText)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "arrow.up.right.square")
+                        .font(.system(size: 14))
+                        .foregroundStyle(theme.colors.secondaryText)
+                }
+                .padding(16)
+                .background(Color.white)
+                .clipShape(RoundedRectangle(cornerRadius: 24))
+                .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Privacy Policy")
+            .accessibilityHint("Opens the Kirole privacy policy")
+            .accessibilityIdentifier("Settings_PrivacyPolicy")
 
             Link(destination: Self.appleWeatherLegalURL) {
                 HStack(spacing: 12) {

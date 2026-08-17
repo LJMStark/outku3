@@ -67,7 +67,14 @@ public final class DemoModeService {
     }
 
     public func generateDemoWeather() -> Weather {
-        Weather(temperature: 22, highTemp: 26, lowTemp: 18, condition: .partlyCloudy, location: "San Francisco")
+        Weather(
+            temperature: 22,
+            highTemp: 26,
+            lowTemp: 18,
+            condition: .partlyCloudy,
+            location: "San Francisco",
+            hasData: true
+        )
     }
 
     public func simulateEventLog(type: EventLogType, taskId: String? = nil, value: Int = 0) -> EventLog {

@@ -81,6 +81,12 @@ public enum IntegrationType: String, Sendable, Codable, CaseIterable {
         [.googleCalendar, .outlookCalendar, .appleCalendar, .appleReminders,
          .googleTasks, .microsoftToDo, .todoist, .tickTick, .notion, .taskade, .caldav, .icalWebcal]
     }
+
+    /// Customer Settings only lists providers that passed their release gate.
+    /// Gated sources stay out of the list instead of showing Coming Soon.
+    public static var availableDisplayOrder: [IntegrationType] {
+        displayOrder.filter(\.isAvailable)
+    }
 }
 
 public enum IntegrationConnectionMode: String, Sendable, Codable {

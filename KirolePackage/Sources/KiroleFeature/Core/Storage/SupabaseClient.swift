@@ -130,6 +130,26 @@ public actor SupabaseService {
         )
     }
 
+    /// Deletes the signed-in auth user and cascaded server rows.
+    public func deleteOwnAccount() async throws {
+        let client = try requireClient()
+        await restoreSessionIfNeeded()
+        guard client.auth.currentSession != nil else {
+            throw SupabaseError.noSession
+        }
+
+        do {
+            try await client.rpc("delete_own_account").execute()
+        } catch {
+            guard AccountDeletionRemotePolicy.isDeletedCloudSession(error) else {
+                throw error
+            }
+        }
+
+        keychainService.clearSupabaseTokens()
+        didAttemptSessionRestore = false
+    }
+
     /// 登出
     public func signOut() async throws {
         let client = try requireClient()
@@ -321,6 +341,7 @@ public actor SupabaseService {
 public enum SupabaseError: Error, LocalizedError {
     case notConfigured
     case sessionUserMismatch
+    case noSession
 
     public var errorDescription: String? {
         switch self {
@@ -328,6 +349,8 @@ public enum SupabaseError: Error, LocalizedError {
             return "Supabase is not configured. Please inject credentials via AppSecrets.configure(...)"
         case .sessionUserMismatch:
             return "The active Supabase session belongs to a different Kirole user"
+        case .noSession:
+            return "No Supabase session is available on this device"
         }
     }
 }

@@ -21,8 +21,9 @@ struct IntegrationSettingsSourcePolicyTests {
         #expect(ProviderProjectSelectionTarget.tickTick(.china).title == "Choose TickTick China Projects")
 
         let source = try settingsIntegrationSource()
-        #expect(source.contains("TickTick China — Coming Soon"))
+        #expect(source.contains("TickTick International"))
         #expect(source.contains("Choose TickTick China projects"))
+        #expect(!source.contains("TickTick China — Coming Soon"))
         #expect(!source.contains("滴答清单（中国）— Coming Soon"))
         #expect(!source.contains("选择滴答清单项目"))
     }
@@ -53,15 +54,17 @@ struct IntegrationSettingsSourcePolicyTests {
         #expect(source.contains("case .taskade: AppSecrets.taskadeOAuthEnabled"))
     }
 
-    @Test("A gated integration row shows Coming Soon instead of Experimental")
-    func gatedRowsDropTheExperimentalTag() throws {
-        let source = try settingsIntegrationSource()
+    @Test("Customer Settings omit gated providers instead of showing Coming Soon")
+    func gatedProvidersAreOmittedFromCustomerSettings() throws {
+        let settings = try settingsIntegrationSource()
+        let model = try integrationTypeSource()
 
-        #expect(source.contains(
-            "if !type.isAvailable {\n                        Text(\"[Coming Soon]\")"
-        ))
-        #expect(source.contains(
-            "} else if type.isExperimental {\n                        Text(\"[Experimental]\")"
+        #expect(model.contains("availableDisplayOrder"))
+        #expect(settings.contains("IntegrationType.availableDisplayOrder"))
+        #expect(!settings.contains("[Coming Soon]"))
+        #expect(!settings.contains("showComingSoon"))
+        #expect(settings.contains(
+            "if type.isExperimental {\n                        Text(\"[Experimental]\")"
         ))
     }
 

@@ -60,7 +60,8 @@ public final class WeatherService: NSObject {
                 lowTemp: dailyForecast.map { Int($0.lowTemperature.converted(to: .celsius).value) } ?? 0,
                 condition: mapCondition(current.condition),
                 location: await reverseGeocode(location),
-                hasData: true
+                hasData: true,
+                attributionLegalURLString: await resolvedAttributionURLString()
             )
 
             cachedWeather = weather
@@ -94,6 +95,15 @@ public final class WeatherService: NSObject {
         return await withCheckedContinuation { continuation in
             locationContinuation = continuation
             locationManager.requestLocation()
+        }
+    }
+
+    private func resolvedAttributionURLString() async -> String {
+        do {
+            let attribution = try await weatherService.attribution
+            return attribution.legalPageURL.absoluteString
+        } catch {
+            return Weather.appleWeatherLegalURLString
         }
     }
 

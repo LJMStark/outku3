@@ -9,7 +9,6 @@ public struct SettingsIntegrationSection: View {
     @Environment(ThemeManager.self) private var theme
 
     @State private var searchText = ""
-    @State private var showComingSoon = false
     @State private var isConnecting = false
     @State private var isDisconnecting = false
     @State private var disconnectTarget: IntegrationType?
@@ -28,7 +27,7 @@ public struct SettingsIntegrationSection: View {
     }
 
     private var filteredTypes: [IntegrationType] {
-        let connectableTypes = IntegrationType.displayOrder.filter {
+        let connectableTypes = IntegrationType.availableDisplayOrder.filter {
             !connectedTypes.contains($0)
                 && !(connectedTypes.contains(.appleCalendar)
                     && $0.connectionMode == .appleCalendarMediated)
@@ -70,11 +69,6 @@ public struct SettingsIntegrationSection: View {
             .clipShape(RoundedRectangle(cornerRadius: 24))
             .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
         }
-        .alert("Coming Soon", isPresented: $showComingSoon) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text("This integration will be available in a future update.")
-        }
         .alert("Disconnect Integration", isPresented: Binding(
             get: { disconnectTarget != nil },
             set: { if !$0 { disconnectTarget = nil } }
@@ -113,8 +107,6 @@ public struct SettingsIntegrationSection: View {
             Button("TickTick International") {
                 Task { await connectTickTick(region: .international) }
             }
-            Button("TickTick China — Coming Soon") {}
-                .disabled(true)
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("TickTick International is available after secure server setup. The China service remains disabled until its separate OAuth registration is verified.")
@@ -285,8 +277,8 @@ public struct SettingsIntegrationSection: View {
                     IntegrationAppRow(type: type) {
                         Task { await connectIntegration(type) }
                     }
-                    .disabled(isConnecting || isDisconnecting || !type.isAvailable)
-                    .opacity((isConnecting || isDisconnecting || !type.isAvailable) ? 0.5 : 1.0)
+                    .disabled(isConnecting || isDisconnecting)
+                    .opacity((isConnecting || isDisconnecting) ? 0.5 : 1.0)
 
                     if index < types.count - 1 {
                         Divider().padding(.leading, 52)
@@ -299,10 +291,7 @@ public struct SettingsIntegrationSection: View {
     private func connectIntegration(_ type: IntegrationType) async {
         guard !isConnecting else { return }
 
-        guard type.isAvailable else {
-            showComingSoon = true
-            return
-        }
+        guard type.isAvailable else { return }
 
         isConnecting = true
         defer { isConnecting = false }
@@ -561,13 +550,7 @@ private struct IntegrationAppRow: View {
                         .font(.system(size: 15))
                         .foregroundStyle(theme.colors.primaryText)
 
-                    // Gated providers read as "Coming Soon" only: an unreachable row cannot
-                    // also be an experiment the user is invited to try.
-                    if !type.isAvailable {
-                        Text("[Coming Soon]")
-                            .font(.system(size: 11))
-                            .foregroundStyle(theme.colors.secondaryText)
-                    } else if type.isExperimental {
+                    if type.isExperimental {
                         Text("[Experimental]")
                             .font(.system(size: 11))
                             .foregroundStyle(theme.colors.secondaryText)
