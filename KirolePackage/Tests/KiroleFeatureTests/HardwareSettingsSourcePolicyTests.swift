@@ -14,6 +14,17 @@ struct HardwareSettingsSourcePolicyTests {
         #expect(source.contains("bleService.hardwareScreenSize = newValue"))
     }
 
+    @Test("Customer hardware settings hide the Display Scene status card")
+    func customerHardwareSettingsOmitDisplaySceneStatusCard() throws {
+        let source = try sourceFile(
+            path: "KirolePackage/Sources/KiroleFeature/Views/Settings/SettingsBLESection.swift"
+        )
+
+        #expect(!source.contains("currentSceneCard"))
+        #expect(!source.contains("Text(\"Display Scene\")"))
+        #expect(!source.contains("scenes unlocked"))
+    }
+
     @Test("Customer hardware settings can forget a paired device")
     func customerCanForgetPairedDevice() throws {
         let source = try sourceFile(
@@ -23,6 +34,9 @@ struct HardwareSettingsSourcePolicyTests {
         #expect(source.contains("Forget Kirole Device"))
         #expect(source.contains("await bleService.clearTrustedDevices()"))
         #expect(source.contains("Settings_ForgetKiroleDevice"))
+        #expect(source.contains("if hasStoredIdentity"))
+        #expect(!source.contains("No Kirole device is remembered."))
+        #expect(!source.contains(".disabled(!hasStoredIdentity)"))
     }
 
     @Test("Customer hardware settings refresh identity state after pairing")

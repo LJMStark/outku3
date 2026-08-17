@@ -4,7 +4,6 @@ import SwiftUI
 
 public struct SettingsBLESection: View {
     @Environment(ThemeManager.self) private var theme
-    @State private var energyBottles: Int = 0
     @State private var bleService = BLEService.shared
     @State private var trustedDeviceCount: Int = 0
     @State private var blockedDeviceCount: Int = 0
@@ -13,13 +12,19 @@ public struct SettingsBLESection: View {
 
     public init() {}
 
+    private var hasStoredIdentity: Bool {
+        bleService.connectionState.isConnected || trustedDeviceCount > 0
+            || blockedDeviceCount > 0
+    }
+
     public var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             SettingsSectionHeader(title: "Hardware Details")
 
             syncStatusCard
-            pairedDeviceCard
-            currentSceneCard
+            if hasStoredIdentity {
+                pairedDeviceCard
+            }
             screenSizeCard
 
             #if DEBUG
@@ -27,7 +32,6 @@ public struct SettingsBLESection: View {
             #endif
         }
         .task {
-            energyBottles = await LocalStorage.shared.loadEnergyBottles()
             screenSize = bleService.hardwareScreenSize
             await refreshIdentityCounts()
         }
@@ -49,10 +53,7 @@ public struct SettingsBLESection: View {
     }
 
     private var pairedDeviceCard: some View {
-        let hasStoredIdentity = bleService.connectionState.isConnected || trustedDeviceCount > 0
-            || blockedDeviceCount > 0
-
-        return VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
                 Image(systemName: "antenna.radiowaves.left.and.right")
                     .font(.system(size: 14, weight: .semibold))
@@ -66,14 +67,10 @@ public struct SettingsBLESection: View {
                 Spacer()
             }
 
-            Text(
-                hasStoredIdentity
-                ? "Forget this device before pairing a replacement Kirole."
-                : "No Kirole device is remembered."
-            )
-            .font(.system(size: 12))
-            .foregroundStyle(theme.colors.secondaryText)
-            .fixedSize(horizontal: false, vertical: true)
+            Text("Forget this device before pairing a replacement Kirole.")
+                .font(.system(size: 12))
+                .foregroundStyle(theme.colors.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
 
             Button {
                 showForgetDeviceConfirmation = true
@@ -92,66 +89,9 @@ public struct SettingsBLESection: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12))
             }
             .buttonStyle(.plain)
-            .disabled(!hasStoredIdentity)
-            .opacity(hasStoredIdentity ? 1 : 0.45)
             .accessibilityLabel("Forget Kirole device")
-            .accessibilityHint(
-                hasStoredIdentity
-                ? "Disconnects this device and allows a replacement Kirole to be paired."
-                : "No Kirole device is remembered."
-            )
+            .accessibilityHint("Disconnects this device and allows a replacement Kirole to be paired.")
             .accessibilityIdentifier("Settings_ForgetKiroleDevice")
-        }
-        .padding(16)
-        .background(theme.colors.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 24))
-        .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
-    }
-
-    @MainActor
-    private var currentSceneCard: some View {
-        let sceneService = SceneUnlockService.shared
-        let currentScene = sceneService.currentSceneId(energyBottles: energyBottles)
-        let availableScenes = sceneService.fetchAvailableScenes(energyBottles: energyBottles)
-
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                Image(systemName: "photo.artframe")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(theme.colors.accent)
-
-                Text("Display Scene")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(theme.colors.primaryText)
-
-                Spacer()
-
-                Text(currentScene)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(theme.colors.accent)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(theme.colors.accent.opacity(0.12))
-                    .clipShape(Capsule())
-            }
-
-            HStack(spacing: 6) {
-                Image(systemName: "bolt.fill")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.orange)
-
-                Text("\(energyBottles) energy bottles")
-                    .font(.system(size: 12))
-                    .foregroundStyle(theme.colors.secondaryText)
-
-                Text(" | ")
-                    .font(.system(size: 12))
-                    .foregroundStyle(theme.colors.secondaryText.opacity(0.4))
-
-                Text("\(availableScenes.count)/\(DisplayScene.allCases.count) scenes unlocked")
-                    .font(.system(size: 12))
-                    .foregroundStyle(theme.colors.secondaryText)
-            }
         }
         .padding(16)
         .background(theme.colors.cardBackground)
