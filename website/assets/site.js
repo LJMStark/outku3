@@ -60,9 +60,9 @@
     });
   });
 
-  /* --- Hero device: one boot refresh after load --- */
+  /* --- Hero device: one boot refresh after the device settles in --- */
   const heroScreen = document.querySelector(".hero .screen");
-  if (heroScreen) setTimeout(() => pulse(heroScreen), 420);
+  if (heroScreen) setTimeout(() => pulse(heroScreen), 1600);
 
   /* --- Story device: scene follows the step being read --- */
   const device = document.querySelector("[data-story-device]");
@@ -75,7 +75,16 @@
     const show = (name) => {
       if (name === current) return;
       current = name;
-      scenes.forEach((s) => s.toggleAttribute("hidden", s.dataset.scene !== name));
+      scenes.forEach((s) => {
+        const active = s.dataset.scene === name;
+        s.toggleAttribute("hidden", !active);
+        if (active) {
+          /* replay the region-by-region redraw for the newly shown scene */
+          s.classList.remove("ink-in");
+          void s.offsetWidth;
+          s.classList.add("ink-in");
+        }
+      });
       pulse(screen);
     };
 

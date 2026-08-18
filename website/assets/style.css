@@ -86,6 +86,9 @@ a { color: inherit; }
 
 .wrap { width: var(--wrap); margin-inline: auto; }
 
+/* anchor targets clear the sticky header */
+#how, #companions, #support { scroll-margin-top: 4.6rem; }
+
 .kicker {
   font-size: 0.78rem;
   font-weight: 500;
@@ -113,6 +116,13 @@ a { color: inherit; }
   translate: -2px -2px;
   box-shadow: 4px 4px 0 var(--ink);
 }
+
+.btn .arr {
+  display: inline-block;
+  translate: 0 0;
+  transition: translate 0.25s var(--ease-out);
+}
+.btn:hover .arr, .btn:focus-visible .arr { translate: 4px 0; }
 
 .btn:active { translate: 0 0; box-shadow: 0 0 0 var(--ink); }
 
@@ -217,6 +227,7 @@ body::after {
 .hero h1 {
   font-size: var(--text-hero);
   font-variation-settings: "opsz" 144;
+  margin-top: 1.3rem;
 }
 
 .hero .line { display: block; overflow: clip; padding-block: 0.04em; }
@@ -284,6 +295,32 @@ html.js .hero-copy > .kicker { animation-delay: 0.05s; }
 html.js .hero-copy > .no-phone { animation-delay: 0.75s; }
 html.js .hero-copy > .lede { animation-delay: 0.9s; }
 html.js .hero-copy > .cta-row { animation-delay: 1.05s; }
+
+/* Hero device: settles in after the copy, like being set down on the desk */
+html.js .hero .device {
+  animation: device-in 0.9s var(--ease-out) 1s both;
+}
+
+@keyframes device-in {
+  from { opacity: 0; translate: 0 54px; rotate: -10deg; }
+  to { opacity: 1; translate: 0 0; rotate: -3.5deg; }
+}
+
+/* Boot sequence: the E-ink panel draws its regions one after another,
+   right after the refresh pulse fires (site.js times the pulse). */
+html.js .hero .scene .bubble { opacity: 0; animation: ink-in 0.7s var(--ease-out) 1.7s both; }
+html.js .hero .scene .pet {
+  opacity: 0;
+  animation:
+    ink-in 0.7s var(--ease-out) 1.85s both,
+    pet-float 5.5s ease-in-out 2.8s infinite alternate;
+}
+html.js .hero .scene .tasks { opacity: 0; animation: ink-in 0.7s var(--ease-out) 2s both; }
+
+@keyframes ink-in {
+  from { opacity: 0; translate: 0 10px; }
+  to { opacity: 1; translate: 0 0; }
+}
 
 @keyframes fade-up {
   from { opacity: 0; translate: 0 22px; }
@@ -373,6 +410,19 @@ html.js .hero-copy > .cta-row { animation-delay: 1.05s; }
 }
 .scene[hidden] { display: none; }
 
+/* Scene change: new regions redraw top-to-bottom after the e-ink flash.
+   The JS adds `.ink-in` on every scene switch. */
+.scene.ink-in > * { animation: ink-in 0.55s var(--ease-out) both; }
+.scene.ink-in > *:nth-child(2) { animation-delay: 0.1s; }
+.scene.ink-in > *:nth-child(3) { animation-delay: 0.2s; }
+.scene.ink-in > *:nth-child(4) { animation-delay: 0.3s; }
+.scene.ink-in > *:nth-child(5) { animation-delay: 0.4s; }
+.scene.ink-in .pet {
+  animation:
+    ink-in 0.55s var(--ease-out) 0.1s both,
+    pet-float 5.5s ease-in-out 0.9s infinite alternate;
+}
+
 .scene .bubble {
   font: italic 500 clamp(0.95rem, 2.8vw, 1.08rem)/1.4 var(--font-display);
   padding: 0.7rem 0.9rem;
@@ -381,7 +431,19 @@ html.js .hero-copy > .cta-row { animation-delay: 1.05s; }
   background: oklch(97% 0.008 90);
 }
 
-.scene .pet { width: 44%; max-width: 150px; margin-inline: auto; image-rendering: auto; }
+.scene .pet {
+  width: 44%;
+  max-width: 150px;
+  margin-inline: auto;
+  image-rendering: auto;
+  animation: pet-float 5.5s ease-in-out infinite alternate;
+}
+
+/* the faintest life on the panel: an E-ink companion breathes */
+@keyframes pet-float {
+  from { translate: 0 0; }
+  to { translate: 0 -4px; }
+}
 
 .scene .tasks {
   list-style: none;
@@ -422,6 +484,9 @@ html.js .hero-copy > .cta-row { animation-delay: 1.05s; }
   margin-top: 0.6rem;
   font-variant-numeric: tabular-nums;
 }
+.scene .timer .colon { animation: colon-blink 2.4s steps(1, end) infinite; }
+
+@keyframes colon-blink { 50% { opacity: 0.18; } }
 .scene .focus-label {
   text-align: center;
   font-size: 0.82rem;
@@ -573,9 +638,9 @@ html.js .hero-copy > .cta-row { animation-delay: 1.05s; }
   border: 1.5px solid var(--line);
   background: var(--paper);
   padding: 8px;
-  transition: scale 0.35s var(--ease-spring);
+  transition: scale 0.35s var(--ease-spring), rotate 0.35s var(--ease-spring);
 }
-.card:hover img { scale: 1.07; }
+.card:hover img { scale: 1.07; rotate: 2deg; }
 
 .card h3 { font-size: 1.6rem; }
 .card .voice { font: italic 450 1rem/1.5 var(--font-display); color: var(--ink-soft); }
@@ -710,6 +775,35 @@ html.js .hero-copy > .cta-row { animation-delay: 1.05s; }
   .dayarc .arc-dusk { animation: arc-in linear 1ms both; animation-timeline: scroll(root); animation-range: 52% 82%; }
 }
 
+/* The day's ink line: a vermilion thread under the header, drawn as you scroll.
+   And the header settles onto the page once you leave the top. */
+@supports (animation-timeline: scroll()) {
+  .site-head::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    bottom: -2px;
+    width: 100%;
+    height: 2px;
+    background: var(--accent);
+    transform-origin: left;
+    scale: 0 1;
+    animation: progress-ink linear 1ms both;
+    animation-timeline: scroll(root);
+  }
+
+  .site-head {
+    animation: head-settle linear 1ms both;
+    animation-timeline: scroll(root);
+    animation-range: 0 12%;
+  }
+}
+
+@keyframes progress-ink { to { scale: 1 1; } }
+@keyframes head-settle {
+  to { box-shadow: 0 16px 34px -22px color-mix(in oklch, var(--ink) 45%, transparent); }
+}
+
 @keyframes reveal-up {
   from { opacity: 0; translate: 0 34px; }
   to { opacity: 1; translate: 0 0; }
@@ -751,12 +845,21 @@ html.io .companions-grid .card:nth-child(3) { --stagger: 0.3s; }
   }
   html.js .hero .w,
   html.js .hero-copy > * { translate: 0 0; rotate: 0deg; opacity: 1; animation: none; }
+  html.js .hero .device { animation: none; opacity: 1; translate: 0 0; rotate: -3.5deg; }
+  html.js .hero .scene .bubble,
+  html.js .hero .scene .pet,
+  html.js .hero .scene .tasks { opacity: 1; animation: none; }
+  .scene .pet,
+  .scene.ink-in > * { animation: none; opacity: 1; translate: 0 0; }
+  .scene .timer .colon { animation: none; opacity: 1; }
   html.io [data-reveal] { opacity: 1; translate: 0 0; }
   .marquee-track { animation: none; }
   .screen.flash::before { animation: none; }
   [data-reveal] { animation: none !important; opacity: 1; translate: 0 0; }
   .dayarc span { animation: none !important; }
   .dither { animation: none !important; }
+  .site-head::after { display: none; }
+  .site-head { animation: none !important; box-shadow: none; }
 }
 
 /* ---------- 15. Responsive ---------- */
