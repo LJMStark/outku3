@@ -1,0 +1,50 @@
+[
+  {
+    "id": "b1dd30b3-d28e-44df-9ebd-00758f27334e",
+    "localId": "fddc0ee2-2bb2-441d-bef4-c040e2e7f054",
+    "title": "Review project proposal",
+    "isCompleted": true,
+    "dueDate": "2026-08-18T01:00:00Z",
+    "source": "Apple Calendar",
+    "priority": 2,
+    "syncStatus": "synced",
+    "pendingDeletion": false,
+    "lastModified": "2026-08-18T01:41:00Z"
+  },
+  {
+    "id": "9a355b60-6fe1-471e-aa9a-8e878a8e3bb0",
+    "localId": "ad98244b-adba-48dc-8bcc-6f4b7c538c88",
+    "title": "Send weekly report",
+    "isCompleted": false,
+    "dueDate": "2026-08-18T08:00:00Z",
+    "source": "Google Calendar",
+    "priority": 2,
+    "syncStatus": "synced",
+    "pendingDeletion": false,
+    "lastModified": "2026-08-18T01:41:00Z"
+  },
+  {
+    "id": "0e705bc9-c47a-47c6-b0fd-0dab9f230acb",
+    "localId": "9fd6d049-0630-4a23-8272-022c2ab60548",
+    "title": "Update documentation",
+    "isCompleted": false,
+    "dueDate": "2026-08-18T03:00:00Z",
+    "source": "Apple Calendar",
+    "priority": 1,
+    "syncStatus": "synced",
+    "pendingDeletion": false,
+    "lastModified": "2026-08-18T01:41:00Z"
+  },
+  {
+    "id": "74faa220-0b3a-45e3-a277-6700da627aed",
+    "localId": "6b940642-e0c4-495e-a5dc-fe548e71eccf",
+    "title": "Evening walk",
+    "isCompleted": false,
+    "dueDate": "2026-08-18T10:00:00Z",
+    "source": "Google Calendar",
+    "priority": 0,
+    "syncStatus": "synced",
+    "pendingDeletion": false,
+    "lastModified": "2026-08-18T01:41:00Z"
+  }
+]
