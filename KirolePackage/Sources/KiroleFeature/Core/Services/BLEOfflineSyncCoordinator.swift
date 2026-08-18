@@ -77,22 +77,29 @@ public final class BLEOfflineSyncCoordinator {
         public let syncID: UInt32
         public let revision: UInt32
         public let processedOperationCount: Int
+        public let didCommitDatasets: Bool
 
         public init(
             state: OfflineSyncState,
             syncID: UInt32,
             revision: UInt32,
-            processedOperationCount: Int
+            processedOperationCount: Int,
+            didCommitDatasets: Bool = true
         ) {
             self.state = state
             self.syncID = syncID
             self.revision = revision
             self.processedOperationCount = processedOperationCount
+            self.didCommitDatasets = didCommitDatasets
         }
     }
 
     public private(set) var isRunning = false
     public var requiresBLEConnection: Bool { isRunning }
+    /// Tests replace this to prove focus blocks COMMIT without starting a real session.
+    var hasActiveFocusSession: () -> Bool = {
+        FocusSessionService.shared.activeSession != nil
+    }
 
     private enum Expectation: Equatable {
         case state
@@ -128,7 +135,9 @@ public final class BLEOfflineSyncCoordinator {
         self.dependencies = dependencies
     }
 
-    public func synchronize() async throws -> Completion {
+    public func synchronize(
+        shouldCommitDatasets: @escaping @MainActor (OfflineSyncState) async -> Bool = { _ in true }
+    ) async throws -> Completion {
         try Task.checkCancellation()
         guard !isRunning else { throw BLEOfflineSyncCoordinatorError.busy }
 
@@ -166,6 +175,31 @@ public final class BLEOfflineSyncCoordinator {
             // safely before BEGIN and preserve the device's current committed datasets.
             guard !state.stateFlags.contains(.operationOverflow) else {
                 throw BLEOfflineSyncCoordinatorError.operationOverflowRequiresRecovery
+            }
+
+            let allowCommit = await shouldCommitDatasets(state)
+            let deviceRequiresCommit = state.stateFlags.contains(.needsFullSync)
+                || !state.stateFlags.contains(.dataValid)
+                || Self.datasetValidityExpired(state.validUntil)
+            // Focus must not COMMIT TaskList/Schedule/DayPack: firmware treats COMMIT as an
+            // atomic dataset switch and leaves TaskIn. Device wipe / expired ValidUntil still
+            // force a full snapshot. The caller decides idle commits (task/schedule/agenda
+            // change or a physical 0x20); dialogue-only refresh is never a reason.
+            let wantsCommit = DayPackRefreshArbiter.shouldCommitDatasets(
+                structuralChanged: false,
+                force: allowCommit,
+                hasActiveFocusSession: hasActiveFocusSession()
+            )
+            if !wantsCommit && !deviceRequiresCommit {
+                let completion = Completion(
+                    state: state,
+                    syncID: 0,
+                    revision: state.activeRevision,
+                    processedOperationCount: processedCount,
+                    didCommitDatasets: false
+                )
+                finishRun(runID)
+                return completion
             }
 
             let snapshot = try await dependencies.makeSnapshot()
@@ -700,5 +734,11 @@ public final class BLEOfflineSyncCoordinator {
         await Task { @MainActor in
             try? await sendCommand(.abort(syncID: syncID))
         }.value
+    }
+
+    /// `ValidUntil` is a Unix timestamp. Zero or a time that has already passed means the
+    /// device can no longer run from the last committed datasets and needs a new COMMIT.
+    static func datasetValidityExpired(_ validUntil: UInt32, now: Date = Date()) -> Bool {
+        validUntil == 0 || TimeInterval(validUntil) <= now.timeIntervalSince1970
     }
 }

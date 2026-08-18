@@ -297,7 +297,7 @@ extension AppState {
         // 会话结束改变结算数据（focusMinutes/sessionCount/longestFocus/interruptions，均在
         // DayPack wire+指纹），请求一轮同步让硬件结算面板跟上；任务完成路径上
         // toggleTaskCompletion 也会请求，debounce 合并为同一轮（2026-07-04 审计 F4 顺手修）。
-        requestBLESync(reason: "focusSessionEnd")
+        requestBLESync(reason: "focusSessionEnd", force: true)
     }
 
     /// 触发跨阈值庆祝：触觉 + 庆祝音效 + 通过 @Observable 信号唤醒 HomeView。

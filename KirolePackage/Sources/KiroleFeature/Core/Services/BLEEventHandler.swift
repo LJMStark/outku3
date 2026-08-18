@@ -136,14 +136,19 @@ public enum BLEEventHandler {
             guard eventLog.operationID != 0 else { break }
             Task { @MainActor in
                 // 息屏后台链路：专注会话进行中，硬件周期性发 0x20（notify）唤醒被 iOS 挂起的 App。
-                // 先在合并闸之前推一帧最新专注状态，让瓶子/段位按 30 分钟递增不被 60s 去抖饿死；
-                // 整轮 sync 仍走下方 60s 合并闸。协议见 §5.7 / §8.5。
-                // 专注推送自带短闸（20s，actor 原子）：0x20 触发的 0x14 回推放在下方 60s sync 合并窗
-                // 之前（要按时更新瓶子/段位），故需独立限流——否则固件把 0x20 当 ~2s 心跳狂发时，每个
-                // 0x20 各起 Task、可在首个 BLE 写完成前并发通过去重、无界排入写队列（codex 复审发现1）。
-                if FocusSessionService.shared.activeSession != nil,
-                   await BLERateLimiter.shared.allowFocusRefreshTrigger() {
+                // 先在合并闸之前推一帧最新专注状态，让瓶子/段位按 30 分钟递增不被 60s 去抖饿死。
+                // 专注中不得再 force 一整轮 0x25 COMMIT：COMMIT 会原子切换 TaskList/Schedule/DayPack，
+                // 现网固件会因此退出 TaskIn（客户现象：专注不到 3 分钟被刷回概览）。
+                let inFocus = FocusSessionService.shared.activeSession != nil
+                if inFocus, await BLERateLimiter.shared.allowFocusRefreshTrigger() {
                     await AppState.shared.handleFocusRefreshRequest()
+                }
+                guard DayPackRefreshArbiter.shouldCommitDatasets(
+                    structuralChanged: false,
+                    force: true,
+                    hasActiveFocusSession: inFocus
+                ) else {
+                    return
                 }
                 // 0x20 用独立的 refresh 闸（非 deviceWake 的 10s 闸），不被频繁唤醒饿死。
                 // 0x1B 业务确认已在本 Task 之外立即返回；这里的 60s 合并窗只约束附加的完整

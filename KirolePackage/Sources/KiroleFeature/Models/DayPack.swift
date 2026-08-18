@@ -83,11 +83,13 @@ public struct DayPack: Codable, Sendable {
         // Weather 刻意不进指纹：encodeDayPack 不编码任何天气字节（顶栏天气走独立 0x04 帧，
         // performSync 每轮无条件发）。留在指纹只会让天气变化触发一次"没有天气字节的 DayPack
         // 全刷"——硬件白刷屏、新天气还是没送到（2026-07-04 审计 F1 的连带修复）。
+        //
+        // PetDialogue 仍进 wire 指纹（0x1B 去重要用完整包）。是否 COMMIT 由
+        // DayPackRefreshArbiter + 专注态门控决定，不再让对话框单独刷屏。
 
         parts.append("petDialogue=\(petDialogue)")
         parts.append("daySummary=\(daySummary)")
         parts.append("firstUp=\(firstUp)")
-        // v2.5.30 上 wire 的字段必进指纹，否则内容变化会被去重掉、硬件永远收不到新文案。
         parts.append("settlementReview=\(settlementReview)")
         parts.append("settlementQuote=\(settlementQuote)")
         parts.append("events.count=\(events.count)")
@@ -96,11 +98,7 @@ public struct DayPack: Codable, Sendable {
             parts.append("event.endTime=\(event.endTime)")
             parts.append("event.title=\(event.title)")
             parts.append("event.desc=\(event.description)")
-            // Category joins the fingerprint so an async classification landing later (cache miss →
-            // AI result on the next generate) re-pushes the DayPack instead of being deduped away.
             parts.append("event.category=\(event.category.rawValue)")
-            // supportText joins the fingerprint so a late-arriving support-text generation triggers
-            // a re-push rather than being silently deduped away (same rationale as category above).
             parts.append("event.supportText=\(event.supportText)")
         }
 
@@ -123,6 +121,11 @@ public struct DayPack: Codable, Sendable {
         parts.append("settlement.interruptionCount=\(settlementData.interruptionCount)")
         parts.append("settlement.totalEnergyBottles=\(settlementData.totalEnergyBottles)")
 
+        return Self.framedFingerprint(parts)
+    }
+
+    /// Length-prefixed SHA-256 so user text cannot collide across `|` / `=` field boundaries.
+    static func framedFingerprint(_ parts: [String]) -> String {
         var framedParts = Data()
         for part in parts {
             let bytes = Data(part.utf8)

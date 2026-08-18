@@ -157,11 +157,12 @@ struct BLEOfflineSyncCoordinatorTests {
         pendingCount: UInt8 = 0,
         bootSessionID: UInt32 = 7,
         stateFlags: OfflineSyncStateFlags = [.dataValid],
-        currentSyncID: UInt32 = 0
+        currentSyncID: UInt32 = 0,
+        validUntil: UInt32 = 12
     ) -> OfflineSyncState {
         OfflineSyncState(
             activeRevision: 11,
-            validUntil: 12,
+            validUntil: validUntil,
             datasetMask: .all,
             stateFlags: stateFlags,
             pendingCount: pendingCount,
@@ -221,6 +222,68 @@ struct BLEOfflineSyncCoordinatorTests {
             }
             try await Task.sleep(for: .milliseconds(1))
         }
+    }
+
+    @Test("Focus session drains ops but skips BEGIN so TaskIn is not ejected")
+    func focusSessionSkipsDatasetCommit() async throws {
+        let recorder = Recorder()
+        let coordinator = recorder.makeCoordinator()
+        coordinator.hasActiveFocusSession = { true }
+
+        let task = Task { try await coordinator.synchronize() }
+        try await waitUntil("QUERY") { recorder.events.contains(.command(.query)) }
+        coordinator.handleInbound(.state(Self.state(validUntil: 2_000_000_000)))
+
+        let completion = try await task.value
+        #expect(completion.didCommitDatasets == false)
+        #expect(completion.processedOperationCount == 0)
+        #expect(recorder.events.contains(.time))
+        #expect(recorder.events.contains(.command(.query)))
+        #expect(!recorder.events.contains(.snapshot))
+        #expect(!recorder.events.contains { event in
+            if case .command(.begin) = event { return true }
+            if case .command(.commit) = event { return true }
+            return false
+        })
+    }
+
+    @Test("NeedsFullSync still commits during focus")
+    func focusSessionStillCommitsWhenDeviceRequiresFullSync() async throws {
+        let recorder = Recorder()
+        let coordinator = recorder.makeCoordinator()
+        coordinator.hasActiveFocusSession = { true }
+
+        let task = Task { try await coordinator.synchronize() }
+        try await waitUntil("QUERY") { recorder.events.contains(.command(.query)) }
+        coordinator.handleInbound(.state(Self.state(
+            stateFlags: [.needsFullSync],
+            validUntil: 2_000_000_000
+        )))
+
+        try await waitUntil("COMMIT") {
+            recorder.events.contains(.command(.commit(syncID: 0x0102_0304)))
+        }
+        coordinator.handleInbound(.result(Self.result()))
+
+        let completion = try await task.value
+        #expect(completion.didCommitDatasets)
+        #expect(recorder.events.contains(.snapshot))
+    }
+
+    @Test("Caller can skip COMMIT when tasks and schedule did not change")
+    func callerCanSkipDatasetCommit() async throws {
+        let recorder = Recorder()
+        let coordinator = recorder.makeCoordinator()
+
+        let task = Task {
+            try await coordinator.synchronize(shouldCommitDatasets: { _ in false })
+        }
+        try await waitUntil("QUERY") { recorder.events.contains(.command(.query)) }
+        coordinator.handleInbound(.state(Self.state(validUntil: 2_000_000_000)))
+
+        let completion = try await task.value
+        #expect(completion.didCommitDatasets == false)
+        #expect(!recorder.events.contains(.snapshot))
     }
 
     @Test("Runs Time, QUERY, BEGIN, all datasets, COMMIT and matching COMMITTED in order")

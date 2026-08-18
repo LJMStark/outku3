@@ -48,6 +48,27 @@ struct LocalStoragePersistenceTests {
         }
     }
 
+    @Test("last committed structural hash round-trips through save/load")
+    func lastCommittedStructuralHashRoundTrip() async throws {
+        try await SharedPersistenceTestLock.shared.withLock {
+            let storage = LocalStorage.shared
+            let original = await storage.loadLastCommittedStructuralHash()
+
+            await storage.saveLastCommittedStructuralHash("structural-a")
+            #expect(await storage.loadLastCommittedStructuralHash() == "structural-a")
+            await storage.saveLastCommittedStructuralHash("structural-b")
+            #expect(await storage.loadLastCommittedStructuralHash() == "structural-b")
+
+            // The key is deliberately outside resettableUserDefaultKeys — restore by hand so
+            // this test cannot leak state into a later relaunch-simulation suite.
+            if let original {
+                await storage.saveLastCommittedStructuralHash(original)
+            } else {
+                UserDefaults.standard.removeObject(forKey: "lastCommittedStructuralHash")
+            }
+        }
+    }
+
     @Test("quarantine moves a corrupt file aside so a subsequent load returns nil")
     func quarantineMovesCorruptFileAside() async throws {
         try await SharedPersistenceTestLock.shared.withLock {

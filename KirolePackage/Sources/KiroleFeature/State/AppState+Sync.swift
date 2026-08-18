@@ -714,22 +714,29 @@ extension AppState {
     /// to request a BLE push. Multiple calls within `debounce` are coalesced
     /// to one `BLESyncCoordinator.performSync()` invocation.
     ///
-    /// `BLESyncPolicy.shouldSync` already returns `true` whenever the
-    /// DayPack fingerprint changed, so we never need `force: true` here.
-    func requestBLESync(reason: String, debounce: Duration = .seconds(1.5)) {
+    /// Structural changes are detected by `HardwareContentFingerprint`, so most callers pass
+    /// no `force`. `force: true` is for changes deliberately outside the structural hash
+    /// (e.g. focus-end settlement data). Coalescing ORs the force flags — a later plain
+    /// request must not swallow a pending forced one, or the settlement refresh is lost.
+    func requestBLESync(reason: String, debounce: Duration = .seconds(1.5), force: Bool = false) {
         pendingBLESyncTask?.cancel()
+        pendingBLESyncForce = pendingBLESyncForce || force
         pendingBLESyncTask = Task { @MainActor in
             try? await Task.sleep(for: debounce)
             guard !Task.isCancelled else { return }
+            let effectiveForce = pendingBLESyncForce
+            pendingBLESyncForce = false
             #if DEBUG
-            print("[AppState.requestBLESync] firing performSync (reason=\(reason))")
+            print("[AppState.requestBLESync] firing performSync (reason=\(reason), force=\(effectiveForce))")
             #endif
-            await BLESyncCoordinator.shared.performSync()
+            await BLESyncCoordinator.shared.performSync(force: effectiveForce)
         }
     }
 
     /// A live Complete/Skip response sends its final DayPack before 0x1B. Cancel the ordinary
     /// debounced request created by the same mutation so it cannot race and send the same DayPack.
+    /// `pendingBLESyncForce` is intentionally NOT cleared: the 0x1B path does not commit
+    /// settlement datasets, so a pending forced round must survive to the next request.
     func cancelPendingBLESyncForTaskActionPresentation() {
         pendingBLESyncTask?.cancel()
         pendingBLESyncTask = nil

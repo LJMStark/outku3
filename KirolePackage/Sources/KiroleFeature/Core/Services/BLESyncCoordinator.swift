@@ -25,18 +25,18 @@ public final class BLESyncCoordinator {
 
     public static let shared = BLESyncCoordinator()
 
-    private let bleService = BLEService.shared
-    private let dayPackGenerator = DayPackGenerator.shared
-    private let localStorage = LocalStorage.shared
-    private let policy = BLESyncPolicy()
+    let bleService = BLEService.shared
+    let dayPackGenerator = DayPackGenerator.shared
+    let localStorage = LocalStorage.shared
+    let policy = BLESyncPolicy()
 
-    private var lastSyncSucceeded = true
+    var lastSyncSucceeded = true
     /// 上次成功发出的 Weather(0x04) 指纹（上 wire 的四个量化值）。内存态即可：重启后首轮
     /// 多发一次 ~10B 小帧，无害；不入 LocalStorage 以避开 resettable key 的测试隔离成本。
     private var lastSentWeatherFingerprint: String?
     /// Owns both the active slot and any coalesced follow-up request. Reserving the next slot before
     /// scheduling its Task prevents another DeviceWake from starting a competing transaction.
-    private var syncState = BLEDeviceWakeSyncState()
+    var syncState = BLEDeviceWakeSyncState()
     /// DeviceWake bookkeeping contains awaits. The snapshot closes the merge window, then waits for
     /// every wake admitted before that close so focus/interruption state cannot miss the transaction.
     private var deviceWakeProcessingCount = 0
@@ -46,11 +46,21 @@ public final class BLESyncCoordinator {
     /// It becomes durable sync metadata only after the device returns RESULT=COMMITTED.
     private var stagedDayPackFingerprint: String?
     private var stagedTaskStateVersion: UInt64?
+    /// Last TaskList/Schedule/agenda identity that was actually COMMITted. Dialogue-only
+    /// refreshes must not write this, or a focus skip would hide a later real change.
+    /// Persisted (LocalStorage) so an app relaunch does not force a no-change full refresh.
+    private var lastCommittedStructuralHash: String?
+    private var hasLoadedPersistedStructuralHash = false
+    /// Structural hash of the frozen snapshot the current 0x25 transaction is sending. Only
+    /// this value may become `lastCommittedStructuralHash`: recomputing from live AppState
+    /// after COMMIT would record a mid-transaction task change as already committed and the
+    /// follow-up round could never see the difference.
+    private var stagedStructuralHash: String?
     private lazy var offlineSyncCoordinator = makeOfflineSyncCoordinator()
     /// Complete/Skip keeps the device on TaskIn until one final DayPack has been sent. Routine
     /// sync requests queue behind this window so no second DayPack can race the later 0x1B.
-    private var taskActionPresentationCount = 0
-    private let taskActionPresentationGate = BLEWriteGate()
+    var taskActionPresentationCount = 0
+    let taskActionPresentationGate = BLEWriteGate()
     private var syncCompletionWaiters: [CheckedContinuation<Void, Never>] = []
 
     /// Connection timeout in seconds. Configurable for larger screen sizes
@@ -113,6 +123,7 @@ public final class BLESyncCoordinator {
                     )
                     self.stagedDayPackFingerprint = frozen.dayPack.stableFingerprint()
                     self.stagedTaskStateVersion = frozen.taskStateVersion
+                    self.stagedStructuralHash = frozen.structuralHash
                     return snapshot
                 },
                 sendTaskList: { [weak self] payload in
@@ -162,7 +173,8 @@ public final class BLESyncCoordinator {
         dayPack: DayPack,
         tasks: [TaskItem],
         events: [CalendarEvent],
-        taskStateVersion: UInt64
+        taskStateVersion: UInt64,
+        structuralHash: String
     ) {
         let appState = AppState.shared
         for _ in 0..<3 {
@@ -196,7 +208,17 @@ public final class BLESyncCoordinator {
                 petDialogue: petDialogue
             )
             guard appState.taskStateVersion == sourceTaskStateVersion else { continue }
-            return (dayPack, tasks, events, sourceTaskStateVersion)
+            // Hash the same captured inputs the datasets are built from, never a fresh
+            // AppState read: this is what "committed" will mean if the transaction lands.
+            let structuralHash = HardwareContentFingerprint.structural(
+                tasks: tasks,
+                events: events,
+                now: Date(),
+                screenSize: screenSize,
+                deviceMode: deviceMode,
+                companionKey: HardwareContentFingerprint.companionKey(from: userProfile)
+            )
+            return (dayPack, tasks, events, sourceTaskStateVersion, structuralHash)
         }
         throw BLEError.staleTaskSnapshot
     }
@@ -315,23 +337,22 @@ public final class BLESyncCoordinator {
         // 空 DayPack 推上硬件（闪一屏空首页）。其余入口（syncConnectedExternalData 等）都已等待，
         // 这里补齐（幂等，加载完成后零开销）。2026-07-04 审计 F3。
         await appState.ensureInitialLoadComplete()
-        let contentChanged: Bool
-        if force {
-            // DeviceWake must reach Time/QUERY immediately. The actual frozen datasets are built
-            // only after pending device operations have been durably applied.
-            contentChanged = true
-        } else {
-            do {
-                let preliminaryDayPack = try await generateStableDayPack().dayPack
-                contentChanged = await localStorage.loadLastDayPackHash()
-                    != preliminaryDayPack.stableFingerprint()
-            } catch {
-                syncState.enqueue(force: false, hardwareWakeDate: nil)
-                await bleService.endOfflineSyncWriteSession()
-                ownsOfflineWriteSession = false
-                return
-            }
+        if !hasLoadedPersistedStructuralHash {
+            hasLoadedPersistedStructuralHash = true
+            lastCommittedStructuralHash = await localStorage.loadLastCommittedStructuralHash()
         }
+        // Dialogue is not a refresh condition. Task-bar / schedule / agenda / companion
+        // identity decide whether the screen should receive a new 0x25 COMMIT.
+        let structuralHash = HardwareContentFingerprint.structural(
+            from: appState,
+            now: now,
+            screenSize: bleService.hardwareScreenSize
+        )
+        let contentChanged = lastCommittedStructuralHash != structuralHash
+        let commitForce = DayPackRefreshArbiter.shouldForceCommit(
+            force: force,
+            isHardwareWake: hardwareWakeDate != nil
+        )
         // 天气单独参与轮次放行（不影响 DayPack 发送判定）：天气已移出 DayPack 指纹，若不在
         // 这里放行，"只有天气变化"时 0x04 要等到点轮（白天 1h/夜间 4h）才能上硬件顶栏。
         // 天气变化放行的轮只发 Time/PetStatus/Weather 小帧——DayPack 指纹未变不会全刷。
@@ -384,9 +405,11 @@ public final class BLESyncCoordinator {
 
         stagedDayPackFingerprint = nil
         stagedTaskStateVersion = nil
+        stagedStructuralHash = nil
         defer {
             stagedDayPackFingerprint = nil
             stagedTaskStateVersion = nil
+            stagedStructuralHash = nil
         }
 
         do {
@@ -418,18 +441,38 @@ public final class BLESyncCoordinator {
             // The session acquired before local preparation owns the complete hardware contract:
             // 0x05 -> QUERY/STATE -> OP_BATCH/OP_ACK -> BEGIN -> 0x02 -> 0x03 -> 0x10
             // -> COMMIT -> RESULT=COMMITTED. No other business frame is emitted before it returns.
-            _ = try await offlineSyncCoordinator.synchronize()
+            let completion = try await offlineSyncCoordinator.synchronize { [weak self] _ in
+                guard let self else { return false }
+                let afterOpsHash = HardwareContentFingerprint.structural(
+                    from: AppState.shared,
+                    now: Date(),
+                    screenSize: self.bleService.hardwareScreenSize
+                )
+                return DayPackRefreshArbiter.shouldCommitDatasets(
+                    structuralChanged: self.lastCommittedStructuralHash != afterOpsHash,
+                    force: commitForce,
+                    hasActiveFocusSession: FocusSessionService.shared.activeSession != nil
+                )
+            }
             transactionCommitted = true
             await bleService.endOfflineSyncWriteSession()
             ownsOfflineWriteSession = false
 
-            guard let committedFingerprint = stagedDayPackFingerprint else {
-                throw BLEError.staleTaskSnapshot
-            }
-            await localStorage.saveLastDayPackHash(committedFingerprint)
-            if let sourceVersion = stagedTaskStateVersion,
-               appState.taskStateVersion != sourceVersion {
-                syncState.enqueue(force: false, hardwareWakeDate: nil)
+            if completion.didCommitDatasets {
+                guard let committedFingerprint = stagedDayPackFingerprint,
+                      let committedStructuralHash = stagedStructuralHash else {
+                    throw BLEError.staleTaskSnapshot
+                }
+                // Record the frozen snapshot's hash, not live state: a task completed while
+                // the datasets were on the air must remain an uncommitted difference so the
+                // version-mismatch follow-up below can actually fire a re-commit.
+                lastCommittedStructuralHash = committedStructuralHash
+                await localStorage.saveLastCommittedStructuralHash(committedStructuralHash)
+                await localStorage.saveLastDayPackHash(committedFingerprint)
+                if let sourceVersion = stagedTaskStateVersion,
+                   appState.taskStateVersion != sourceVersion {
+                    syncState.enqueue(force: false, hardwareWakeDate: nil)
+                }
             }
 
             let completedAt = Date()
@@ -525,7 +568,7 @@ public final class BLESyncCoordinator {
         }
     }
 
-    private func schedulePendingSyncIfPossible() {
+    func schedulePendingSyncIfPossible() {
         guard let request = syncState.reservePendingSyncIfPossible(
             taskActionBlocked: taskActionPresentationCount > 0
         ) else { return }
@@ -586,250 +629,10 @@ public final class BLESyncCoordinator {
         await appState.recordHardwareWakeActivity(now: eventLog.timestamp)
     }
 
-    private func waitForActiveSyncToFinish() async {
+    func waitForActiveSyncToFinish() async {
         guard syncState.isSyncing else { return }
         await withCheckedContinuation { continuation in
             syncCompletionWaiters.append(continuation)
         }
     }
-
-    private func sendFinalTaskActionDayPack() async -> UInt64? {
-        let appState = AppState.shared
-        await appState.ensureInitialLoadComplete()
-
-        for _ in 0..<3 {
-            await appState.refreshSharedPetDialogueIfNeeded()
-            let sourceTaskStateVersion = appState.taskStateVersion
-            guard appState.currentPetDialogueTaskStateVersion == sourceTaskStateVersion else {
-                continue
-            }
-
-            let dayPack = await dayPackGenerator.generateDayPack(
-                pet: appState.pet,
-                tasks: appState.tasks,
-                events: appState.events,
-                weather: appState.weather,
-                deviceMode: appState.deviceMode,
-                userProfile: appState.userProfile,
-                customCompanions: appState.customCompanions,
-                screenSize: bleService.hardwareScreenSize,
-                petDialogue: appState.currentPetDialogue
-            )
-            guard appState.taskStateVersion == sourceTaskStateVersion else { continue }
-
-            let fingerprint = dayPack.stableFingerprint()
-            if await localStorage.loadLastDayPackHash() == fingerprint {
-                // A routine sync that was already in flight successfully sent this exact final
-                // state. Reuse it instead of emitting a duplicate 0x10 before the same 0x1B.
-                return sourceTaskStateVersion
-            }
-
-            if !bleService.connectionState.isConnected {
-                do {
-                    try await bleService.connectToPreferredDevice(timeout: 10)
-                } catch {
-                    syncState.enqueue(force: false, hardwareWakeDate: nil)
-                    ErrorReporter.log(
-                        .sync(
-                            component: "BLE Task Action DayPack",
-                            underlying: error.localizedDescription
-                        ),
-                        context: "BLESyncCoordinator.sendFinalTaskActionDayPack"
-                    )
-                    return nil
-                }
-            }
-
-            var taskStateChanged = false
-            var lastWriteError: Error?
-            for attempt in 0..<2 {
-                do {
-                    try await bleService.sendDayPack(
-                        dayPack,
-                        expectedTaskStateVersion: sourceTaskStateVersion
-                    )
-                    await localStorage.saveLastDayPackHash(fingerprint)
-                    return sourceTaskStateVersion
-                } catch let error as BLEError {
-                    if case .staleTaskSnapshot = error {
-                        taskStateChanged = true
-                        break
-                    }
-                    lastWriteError = error
-                } catch {
-                    lastWriteError = error
-                }
-
-                if attempt == 0 {
-                    try? await Task.sleep(for: .milliseconds(500))
-                }
-            }
-            if taskStateChanged { continue }
-
-            ErrorReporter.log(
-                .sync(
-                    component: "BLE Task Action DayPack",
-                    underlying: lastWriteError?.localizedDescription ?? "write failed after 2 attempts"
-                ),
-                context: "BLESyncCoordinator.sendFinalTaskActionDayPack"
-            )
-            syncState.enqueue(force: false, hardwareWakeDate: nil)
-            return nil
-        }
-
-        syncState.enqueue(force: false, hardwareWakeDate: nil)
-        ErrorReporter.log(
-            .sync(
-                component: "BLE Task Action DayPack",
-                underlying: "task state changed during 3 consecutive generation attempts"
-            ),
-            context: "BLESyncCoordinator.sendFinalTaskActionDayPack"
-        )
-        return nil
-    }
-
-    static func completeTaskActionPresentation(
-        maximumAttempts: Int = 3,
-        sendFinalDayPack: @MainActor () async -> UInt64?,
-        acknowledge: @MainActor (UInt64) async -> TaskListSnapshotResponder.Outcome
-    ) async -> Bool {
-        for _ in 0..<maximumAttempts {
-            guard let taskStateVersion = await sendFinalDayPack() else { return false }
-            switch await acknowledge(taskStateVersion) {
-            case .sent:
-                return true
-            case .staleTaskState:
-                continue
-            case .failed:
-                return false
-            }
-        }
-        return false
-    }
-
-    /// 路由一条到期的智能提醒：硬件可达就推设备，否则落本地通知，让离线用户也收得到。
-    /// 每轮同步只评估一次（限流逻辑在 SmartReminderService 内）。
-    private func deliverSmartReminder(appState: AppState) async {
-        guard let reminder = await SmartReminderService.shared.evaluateAndPushReminder(
-            tasks: appState.tasks,
-            pet: appState.pet
-        ) else { return }
-
-        if bleService.connectionState.isConnected {
-            do {
-                try await bleService.sendSmartReminder(
-                    text: reminder.text,
-                    urgency: reminder.urgency,
-                    petMood: appState.pet.mood
-                )
-                SmartReminderService.shared.markReminderSent()
-                return
-            } catch {
-                ErrorReporter.log(
-                    .sync(component: "BLE SmartReminder", underlying: error.localizedDescription),
-                    context: "BLESyncCoordinator.deliverSmartReminder"
-                )
-                // 已连接却写失败：落本地通知兜底，别让提醒丢了。
-            }
-        }
-
-        // 硬件离线（或 BLE 写失败）：E-ink 显示不了，回退到 iOS 本地通知。
-        await NotificationService.shared.refreshAuthorizationStatus()
-        let delivered = await NotificationService.shared.scheduleLocalNotification(from: reminder)
-        // 只有确实投递了才消耗 30 分钟冷却；BLE 与通知都失败时留待下轮重试。
-        if delivered {
-            SmartReminderService.shared.markReminderSent()
-        }
-    }
 }
-
-extension BLESyncCoordinator: TaskActionPresentationCoordinating {
-    func sendFinalDayPackBeforeAcknowledgement(
-        _ acknowledgement: @MainActor @Sendable (
-            _ expectedTaskStateVersion: UInt64
-        ) async -> TaskListSnapshotResponder.Outcome
-    ) async {
-        taskActionPresentationCount += 1
-        AppState.shared.cancelPendingBLESyncForTaskActionPresentation()
-
-        do {
-            try await taskActionPresentationGate.acquire()
-        } catch {
-            // Firmware keeps the operation pending and retries the same OperationID. Sending
-            // 0x1B here would exit TaskIn without the final DayPack and recreate the double refresh.
-            taskActionPresentationCount -= 1
-            schedulePendingSyncIfPossible()
-            return
-        }
-
-        await waitForActiveSyncToFinish()
-        AppState.shared.cancelPendingBLESyncForTaskActionPresentation()
-        let completed = await Self.completeTaskActionPresentation(
-            sendFinalDayPack: { await self.sendFinalTaskActionDayPack() },
-            acknowledge: acknowledgement
-        )
-        if !completed {
-            syncState.enqueue(force: false, hardwareWakeDate: nil)
-            ErrorReporter.log(
-                .sync(
-                    component: "BLE Task Action Presentation",
-                    underlying: "final DayPack and acknowledgement did not complete as one task version"
-                ),
-                context: "BLESyncCoordinator.sendFinalDayPackBeforeAcknowledgement"
-            )
-        }
-
-        await taskActionPresentationGate.release()
-        taskActionPresentationCount -= 1
-        schedulePendingSyncIfPossible()
-    }
-}
-
-#if os(iOS)
-// @preconcurrency: BGAppRefreshTask 未标注 Sendable，但 setTaskCompleted 可跨线程调用（Apple 的
-// OperationQueue 范式即在 completionBlock off-main 调用），到期 handler 需同步结案故必须捕获 task。
-@preconcurrency import BackgroundTasks
-import os
-
-@MainActor
-public extension BLESyncCoordinator {
-    func performBackgroundSync(task: BGAppRefreshTask) async {
-        // 本次任务局部的线程安全幂等结案器：到期(可能在非主线程)与正常路径都调 complete，
-        // unfair lock 保证 setTaskCompleted 只发生一次（重复调用会 crash，漏调会被 watchdog 强杀）。
-        let completed = OSAllocatedUnfairLock(initialState: false)
-        @Sendable func complete(success: Bool) {
-            let firstTime = completed.withLock { done -> Bool in
-                guard !done else { return false }
-                done = true
-                return true
-            }
-            if firstTime {
-                task.setTaskCompleted(success: success)
-            }
-        }
-
-        task.expirationHandler = { [weak self] in
-            // 到期必须【同步】结案，不能排队等 MainActor（系统可能马上挂起进程，晚一步即被 watchdog
-            // 强杀并削减后台预算）。断连优先级更低，丢到 MainActor 即可。专注会话或
-            // Wi-Fi 联调进行中保持连接，供硬件 notify 和热点关闭/查询继续使用。
-            complete(success: false)
-            Task { @MainActor in
-                guard let self,
-                      FocusSessionService.shared.activeSession == nil,
-                      !self.bleService.shouldKeepConnectionOpenForDebug,
-                      !self.policy.shouldHoldConnectionForCustomAvatar(
-                        chunkedTransferInFlight: self.bleService.isChunkedTransferInFlight,
-                        operationState: AppState.shared.customAvatarOperationState
-                      ) else { return }
-                self.bleService.disconnect()
-            }
-        }
-
-        await AuthManager.shared.initialize()
-        await AppState.shared.syncConnectedExternalData()
-        await performSync()
-        BLEBackgroundSyncScheduler.shared.schedule()
-        complete(success: lastSyncSucceeded)
-    }
-}
-#endif
