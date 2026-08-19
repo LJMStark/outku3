@@ -5,14 +5,15 @@ import Testing
 @Suite("TaskListSnapshotProtocolTests", .serialized)
 struct TaskListSnapshotProtocolTests {
     @MainActor private static let appState = AppState.makeForTesting()
-    @Test("CompleteTask v1 carries an operation ID and exact task payload")
-    func completeTaskV1Parsing() {
+    @Test("CompleteTask v2 carries session id, elapsed seconds and exact task payload")
+    func completeTaskV2Parsing() {
         let taskID = "task-123"
-        var payload = Data([0x01])
-        payload.appendBigEndian(UInt32(0x1020_3040))
-        payload.append(UInt8(taskID.utf8.count))
-        payload.append(contentsOf: taskID.utf8)
-        payload.appendBigEndian(UInt32(1_700_000_000))
+        let payload = FocusWireFixtures.endPayload(
+            operationID: 0x1020_3040,
+            taskID: taskID,
+            end: 1_700_000_000,
+            elapsed: 90
+        )
 
         let event = EventLog.fromBLEPayload(
             type: EventLogType.completeTask.rawByte,
@@ -24,6 +25,8 @@ struct TaskListSnapshotProtocolTests {
         #expect(event?.taskId == taskID)
         #expect(event?.timestamp == Date(timeIntervalSince1970: 1_700_000_000))
         #expect(event?.hasDeviceTimestamp == true)
+        #expect(event?.focusSessionId == FocusWireFixtures.sessionId)
+        #expect(event?.elapsedSeconds == 90)
     }
 
     @Test("CompleteTask rejects the legacy payload without an operation ID")
@@ -38,11 +41,7 @@ struct TaskListSnapshotProtocolTests {
 
     @Test("CompleteTask rejects trailing bytes so firmware and App cannot parse different records")
     func completeTaskRejectsTrailingBytes() {
-        var payload = Data([0x01])
-        payload.appendBigEndian(UInt32(7))
-        payload.append(1)
-        payload.append(contentsOf: Data("a".utf8))
-        payload.appendBigEndian(UInt32(10))
+        var payload = FocusWireFixtures.endPayload(taskID: "a", end: 10, elapsed: 0)
         payload.append(0xFF)
 
         #expect(EventLog.fromBLEPayload(type: EventLogType.completeTask.rawByte, payload: payload) == nil)
@@ -51,12 +50,12 @@ struct TaskListSnapshotProtocolTests {
     @Test("CompleteTask rejects zero operation IDs and invalid task ID lengths")
     func completeTaskRejectsInvalidIdentityFields() {
         func payload(operationID: UInt32, taskID: String) -> Data {
-            var data = Data([0x01])
-            data.appendBigEndian(operationID)
-            data.append(UInt8(taskID.utf8.count))
-            data.append(contentsOf: taskID.utf8)
-            data.appendBigEndian(UInt32(10))
-            return data
+            FocusWireFixtures.endPayload(
+                operationID: operationID,
+                taskID: taskID,
+                end: 10,
+                elapsed: 0
+            )
         }
 
         #expect(EventLog.fromBLEPayload(
@@ -283,11 +282,12 @@ struct TaskListSnapshotProtocolTests {
     @MainActor
     func versionedBatchParsing() {
         let taskID = "offline-task"
-        var operation = Data([0x01])
-        operation.appendBigEndian(UInt32(91))
-        operation.append(UInt8(taskID.utf8.count))
-        operation.append(contentsOf: taskID.utf8)
-        operation.appendBigEndian(UInt32(1_700_000_100))
+        let operation = FocusWireFixtures.endPayload(
+            operationID: 91,
+            taskID: taskID,
+            end: 1_700_000_100,
+            elapsed: 0
+        )
 
         var batch = Data([0x01, EventLogType.completeTask.rawByte])
         batch.append(operation)

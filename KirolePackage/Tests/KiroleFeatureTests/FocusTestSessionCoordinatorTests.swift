@@ -73,7 +73,8 @@ private final class CoordinatorFocusSessionService: FocusTestSessionServing {
         taskTitle: String,
         mode: FocusEnforcementMode,
         startTime: Date,
-        fallbackPolicy: FocusSessionFallbackPolicy
+        fallbackPolicy: FocusSessionFallbackPolicy,
+        focusSessionId: FocusSessionId? = nil
     ) async -> FocusSessionStartResult {
         startedModes.append(mode)
         if fallbackPolicy == .reject, protectionResult == .fallback {

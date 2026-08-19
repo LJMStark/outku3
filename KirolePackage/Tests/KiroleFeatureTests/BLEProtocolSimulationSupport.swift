@@ -334,15 +334,27 @@ struct SimulatedAppPacket {
     func parseSchedule() throws -> SimulatedSchedule {
         try requireType(BLEDataType.schedule)
         var reader = PayloadReader(data: payload)
+        let subVersion = try reader.readByte()
+        guard subVersion == 0x02 else {
+            throw SimulationError.invalidEnumValue
+        }
+        let year = 2000 + Int(try reader.readByte())
+        let month = try reader.readByte()
+        let day = try reader.readByte()
         let count = Int(try reader.readByte())
         var events: [SimulatedSchedule.Event] = []
         for _ in 0..<count {
-            let title = try reader.readString()
-            let startTime = try reader.readFixedUTF8(length: 5)
-            events.append(.init(title: title, startTime: startTime))
+            events.append(.init(
+                time: try reader.readString(),
+                title: try reader.readString(),
+                description: try reader.readString(),
+                category: try reader.readByte(),
+                endTime: try reader.readString(),
+                supportText: try reader.readString()
+            ))
         }
         try reader.requireEnd()
-        return SimulatedSchedule(events: events)
+        return SimulatedSchedule(year: year, month: month, day: day, events: events)
     }
 
     func parseWeather() throws -> SimulatedWeather {
@@ -631,10 +643,17 @@ struct SimulatedTaskList {
 
 struct SimulatedSchedule {
     struct Event {
+        let time: String
         let title: String
-        let startTime: String
+        let description: String
+        let category: UInt8
+        let endTime: String
+        let supportText: String
     }
 
+    let year: Int
+    let month: UInt8
+    let day: UInt8
     let events: [Event]
 }
 

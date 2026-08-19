@@ -19,6 +19,15 @@ public struct FocusSession: Identifiable, Codable, Sendable {
     /// Present only on sessions ended by versions that use the crash-safe energy award receipt.
     /// The receipt ID makes the history write and energy increment idempotent across relaunches.
     var energyAwardReceiptID: UUID?
+    /// Hardware session key (`BootSessionId + StartOperationID`). Nil on pre-v2.13 sessions.
+    public var focusSessionId: FocusSessionId?
+    /// Last App-authored focus revision applied to this session.
+    public var focusRevision: UInt32
+    /// Paired hardware identity from FOCUS_STATE. Optional on pre-v2.13 sessions.
+    public var deviceId: String?
+    public var bootSessionId: UInt32?
+    public var startSource: FocusStartSource?
+    public var lastOperationId: UInt32?
 
     public init(
         id: UUID = UUID(),
@@ -33,7 +42,13 @@ public struct FocusSession: Identifiable, Codable, Sendable {
         protectionState: FocusProtectionState = .unprotected,
         interruptionSource: FocusInterruptionSource? = nil,
         earnedEnergyBottles: Int = 0,
-        energyAwardReceiptID: UUID? = nil
+        energyAwardReceiptID: UUID? = nil,
+        focusSessionId: FocusSessionId? = nil,
+        focusRevision: UInt32 = 0,
+        deviceId: String? = nil,
+        bootSessionId: UInt32? = nil,
+        startSource: FocusStartSource? = nil,
+        lastOperationId: UInt32? = nil
     ) {
         self.id = id
         self.taskId = taskId
@@ -48,6 +63,12 @@ public struct FocusSession: Identifiable, Codable, Sendable {
         self.interruptionSource = interruptionSource
         self.earnedEnergyBottles = earnedEnergyBottles
         self.energyAwardReceiptID = energyAwardReceiptID
+        self.focusSessionId = focusSessionId
+        self.focusRevision = focusRevision
+        self.deviceId = deviceId
+        self.bootSessionId = bootSessionId
+        self.startSource = startSource
+        self.lastOperationId = lastOperationId
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -64,6 +85,12 @@ public struct FocusSession: Identifiable, Codable, Sendable {
         case interruptionSource
         case earnedEnergyBottles
         case energyAwardReceiptID
+        case focusSessionId
+        case focusRevision
+        case deviceId
+        case bootSessionId
+        case startSource
+        case lastOperationId
     }
 
     public init(from decoder: any Decoder) throws {
@@ -81,6 +108,12 @@ public struct FocusSession: Identifiable, Codable, Sendable {
         interruptionSource = try container.decodeIfPresent(FocusInterruptionSource.self, forKey: .interruptionSource)
         earnedEnergyBottles = try container.decodeIfPresent(Int.self, forKey: .earnedEnergyBottles) ?? 0
         energyAwardReceiptID = try container.decodeIfPresent(UUID.self, forKey: .energyAwardReceiptID)
+        focusSessionId = try container.decodeIfPresent(FocusSessionId.self, forKey: .focusSessionId)
+        focusRevision = try container.decodeIfPresent(UInt32.self, forKey: .focusRevision) ?? 0
+        deviceId = try container.decodeIfPresent(String.self, forKey: .deviceId)
+        bootSessionId = try container.decodeIfPresent(UInt32.self, forKey: .bootSessionId)
+        startSource = try container.decodeIfPresent(FocusStartSource.self, forKey: .startSource)
+        lastOperationId = try container.decodeIfPresent(UInt32.self, forKey: .lastOperationId)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -98,6 +131,12 @@ public struct FocusSession: Identifiable, Codable, Sendable {
         try container.encodeIfPresent(interruptionSource, forKey: .interruptionSource)
         try container.encode(earnedEnergyBottles, forKey: .earnedEnergyBottles)
         try container.encodeIfPresent(energyAwardReceiptID, forKey: .energyAwardReceiptID)
+        try container.encodeIfPresent(focusSessionId, forKey: .focusSessionId)
+        try container.encode(focusRevision, forKey: .focusRevision)
+        try container.encodeIfPresent(deviceId, forKey: .deviceId)
+        try container.encodeIfPresent(bootSessionId, forKey: .bootSessionId)
+        try container.encodeIfPresent(startSource, forKey: .startSource)
+        try container.encodeIfPresent(lastOperationId, forKey: .lastOperationId)
     }
 
     /// 会话总时长（从进入到退出）

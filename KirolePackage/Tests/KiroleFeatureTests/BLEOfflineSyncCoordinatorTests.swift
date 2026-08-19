@@ -24,6 +24,10 @@ struct BLEOfflineSyncCoordinatorTests {
         var taskListFailure: (any Error)?
         var suspendQueryWrite = false
         var queryWriteContinuation: CheckedContinuation<Void, Never>?
+        var freezeCount = 0
+        var unfreezeCount = 0
+        var previewed: [OfflineFocusState] = []
+        var restored: [(OfflineFocusState, OfflineFocusResolve)] = []
 
         let snapshot = OfflineDatasetSnapshot(
             taskListPayload: Data([0x02]),
@@ -73,7 +77,13 @@ struct BLEOfflineSyncCoordinatorTests {
                     sendDayPack: { self.events.append(.dayPack($0)) },
                     processOperation: operationProcessor,
                     makeSyncID: { syncID },
-                    makeValidUntil: { 0x0506_0708 }
+                    makeValidUntil: { 0x0506_0708 },
+                    freezeFocusStatus: { self.freezeCount += 1 },
+                    unfreezeFocusStatus: { self.unfreezeCount += 1 },
+                    previewFocusState: { self.previewed.append($0) },
+                    restoreOrdinaryFocusSync: { snapshot, resolve in
+                        self.restored.append((snapshot, resolve))
+                    }
                 )
             )
             self.coordinator = coordinator
@@ -126,20 +136,16 @@ struct BLEOfflineSyncCoordinatorTests {
         try await waitUntil("QUERY") { recorder.events.contains(.command(.query)) }
         coordinator.handleInbound(.state(Self.state(
             pendingCount: 1,
-            stateFlags: [.dataValid, .operationOverflow]
+            stateFlags: [.dataValid, .operationOverflow],
+            validUntil: 2_000_000_000
         )))
         coordinator.handleInbound(.operationBatch(.init(
             bootSessionID: 7,
             records: [Self.record(1)]
         )))
 
-        do {
-            _ = try await task.value
-            Issue.record("Expected overflow recovery to stop the transaction")
-        } catch let error as BLEOfflineSyncCoordinatorError {
-            #expect(error == .operationOverflowRequiresRecovery)
-        }
-
+        let completion = try await task.value
+        #expect(completion.didCommitDatasets == false)
         #expect(recorder.events.contains(.operation(bootSessionID: 7, operationID: 1)))
         #expect(recorder.events.contains(.command(.opAck(.init(
             bootSessionID: 7,
@@ -151,6 +157,33 @@ struct BLEOfflineSyncCoordinatorTests {
             return false
         })
         #expect(!recorder.events.contains(.snapshot))
+    }
+
+    @Test("Overflow plus NeedsFullSync still performs the firmware full-state COMMIT")
+    func operationOverflowWithNeedsFullSyncCommits() async throws {
+        let recorder = Recorder()
+        let coordinator = recorder.makeCoordinator()
+        let task = Task { try await coordinator.synchronize() }
+
+        try await waitUntil("QUERY") { recorder.events.contains(.command(.query)) }
+        coordinator.handleInbound(.state(Self.state(
+            pendingCount: 1,
+            stateFlags: [.operationOverflow, .needsFullSync],
+            validUntil: 2_000_000_000
+        )))
+        coordinator.handleInbound(.operationBatch(.init(
+            bootSessionID: 7,
+            records: [Self.record(1)]
+        )))
+
+        try await waitUntil("COMMIT") {
+            recorder.events.contains(.command(.commit(syncID: 0x0102_0304)))
+        }
+        coordinator.handleInbound(.result(Self.result()))
+
+        let completion = try await task.value
+        #expect(completion.didCommitDatasets)
+        #expect(recorder.events.contains(.snapshot))
     }
 
     private static func state(
@@ -194,16 +227,15 @@ struct BLEOfflineSyncCoordinatorTests {
     }
 
     private static func completeRecord(_ operationID: UInt32) -> OfflineSyncOperationRecord {
-        let taskID = "task-1"
-        var payload = Data([0x01])
-        payload.appendBigEndian(operationID)
-        payload.append(UInt8(taskID.utf8.count))
-        payload.append(Data(taskID.utf8))
-        payload.appendBigEndian(UInt32(1_786_396_800))
-        return OfflineSyncOperationRecord(
+        OfflineSyncOperationRecord(
             operationID: operationID,
             eventType: EventLogType.completeTask.rawByte,
-            originalPayload: payload
+            originalPayload: FocusWireFixtures.endPayload(
+                operationID: operationID,
+                taskID: "task-1",
+                end: 1_786_396_800,
+                elapsed: 0
+            )
         )
     }
 
@@ -221,6 +253,77 @@ struct BLEOfflineSyncCoordinatorTests {
                 return
             }
             try await Task.sleep(for: .milliseconds(1))
+        }
+    }
+
+    @Test("FocusSyncPending freezes 0x14, resolves, then restores ordinary sync without forcing COMMIT")
+    func focusSyncPendingHandshake() async throws {
+        let recorder = Recorder()
+        let coordinator = recorder.makeCoordinator()
+        coordinator.hasActiveFocusSession = { true }
+        let snapshot = FocusWireFixtures.focusState(bootSessionID: 7)
+
+        let task = Task {
+            try await coordinator.synchronize(shouldCommitDatasets: { _ in false })
+        }
+        try await waitUntil("QUERY") { recorder.events.contains(.command(.query)) }
+        #expect(recorder.freezeCount == 1)
+        coordinator.handleInbound(.state(Self.state(
+            stateFlags: [.dataValid, .focusSyncPending],
+            validUntil: 2_000_000_000
+        )))
+        coordinator.handleInbound(.focusState(snapshot))
+
+        try await waitUntil("FOCUS_RESOLVE") {
+            recorder.events.contains { event in
+                if case .command(.focusResolve(let resolve)) = event {
+                    return resolve.resolveID == 1 && resolve.sessionId == snapshot.sessionId
+                }
+                return false
+            }
+        }
+        #expect(recorder.previewed == [snapshot])
+
+        let completion = try await task.value
+        #expect(completion.didCommitDatasets == false)
+        #expect(completion.didResolveFocus)
+        #expect(recorder.restored.count == 1)
+        #expect(recorder.unfreezeCount >= 1)
+        #expect(!recorder.events.contains { event in
+            if case .command(.begin) = event { return true }
+            if case .command(.commit) = event { return true }
+            return false
+        })
+    }
+
+    @Test("NeedsFullSync after FOCUS_RESOLVE still COMMITs DayPack before Schedule")
+    func focusResolveThenFullSyncCommitsDayPackBeforeSchedule() async throws {
+        let recorder = Recorder()
+        let coordinator = recorder.makeCoordinator()
+        coordinator.hasActiveFocusSession = { true }
+        let snapshot = FocusWireFixtures.focusState(bootSessionID: 7)
+
+        let task = Task { try await coordinator.synchronize() }
+        try await waitUntil("QUERY") { recorder.events.contains(.command(.query)) }
+        coordinator.handleInbound(.state(Self.state(
+            stateFlags: [.needsFullSync, .focusSyncPending],
+            validUntil: 2_000_000_000
+        )))
+        coordinator.handleInbound(.focusState(snapshot))
+
+        try await waitUntil("COMMIT") {
+            recorder.events.contains(.command(.commit(syncID: 0x0102_0304)))
+        }
+        coordinator.handleInbound(.result(Self.result()))
+
+        let completion = try await task.value
+        #expect(completion.didCommitDatasets)
+        #expect(completion.didResolveFocus)
+        let dayPackIndex = recorder.events.firstIndex(of: .dayPack(Data([0x10])))
+        let scheduleIndex = recorder.events.firstIndex(of: .schedule(Data([0x03])))
+        #expect(dayPackIndex != nil && scheduleIndex != nil)
+        if let dayPackIndex, let scheduleIndex {
+            #expect(dayPackIndex < scheduleIndex)
         }
     }
 
@@ -303,6 +406,8 @@ struct BLEOfflineSyncCoordinatorTests {
         coordinator.handleInbound(.result(Self.result()))
 
         let completion = try await task.value
+        #expect(recorder.freezeCount == 1)
+        #expect(recorder.unfreezeCount == 1)
         #expect(completion.syncID == 0x0102_0304)
         #expect(completion.processedOperationCount == 0)
         #expect(
@@ -321,8 +426,8 @@ struct BLEOfflineSyncCoordinatorTests {
                     )
                 ),
                 .taskList(Data([0x02])),
-                .schedule(Data([0x03])),
                 .dayPack(Data([0x10])),
+                .schedule(Data([0x03])),
                 .command(.commit(syncID: 0x0102_0304)),
             ]
         )

@@ -10,7 +10,8 @@ public protocol FocusTestSessionServing: AnyObject {
         taskTitle: String,
         mode: FocusEnforcementMode,
         startTime: Date,
-        fallbackPolicy: FocusSessionFallbackPolicy
+        fallbackPolicy: FocusSessionFallbackPolicy,
+        focusSessionId: FocusSessionId?
     ) async -> FocusSessionStartResult
 
     func endSession(reason: FocusEndReason, endTime: Date)
@@ -152,7 +153,8 @@ public final class FocusTestSessionCoordinator {
             taskTitle: Self.testTaskTitle,
             mode: mode,
             startTime: Date(),
-            fallbackPolicy: fallbackPolicy
+            fallbackPolicy: fallbackPolicy,
+            focusSessionId: nil
         )
 
         switch result {

@@ -19,8 +19,7 @@ public struct OfflineSyncDatasetMask: OptionSet, Sendable, Equatable {
     }
 }
 
-/// Flags reported by `STATE`. Bits 4...7 are reserved; receivers ignore them as required by the
-/// v1.1 workbook, while senders must not set them.
+/// Flags reported by `STATE`. Bits 5...7 are reserved; receivers ignore them.
 public struct OfflineSyncStateFlags: OptionSet, Sendable, Equatable {
     public let rawValue: UInt8
 
@@ -32,8 +31,9 @@ public struct OfflineSyncStateFlags: OptionSet, Sendable, Equatable {
     public static let transactionOpen = Self(rawValue: 0x02)
     public static let needsFullSync = Self(rawValue: 0x04)
     public static let operationOverflow = Self(rawValue: 0x08)
+    public static let focusSyncPending = Self(rawValue: 0x10)
     public static let definedBits: Self = [
-        .dataValid, .transactionOpen, .needsFullSync, .operationOverflow,
+        .dataValid, .transactionOpen, .needsFullSync, .operationOverflow, .focusSyncPending,
     ]
 }
 
@@ -157,12 +157,14 @@ public enum OfflineSyncOutboundCommand: Sendable, Equatable {
     case abort(syncID: UInt32)
     case query
     case opAck(OfflineSyncOperationAck)
+    case focusResolve(OfflineFocusResolve)
 }
 
 public enum OfflineSyncInboundMessage: Sendable, Equatable {
     case state(OfflineSyncState)
     case result(OfflineSyncResult)
     case operationBatch(OfflineSyncOperationBatch)
+    case focusState(OfflineFocusState)
 }
 
 public enum OfflineSyncProtocolError: Error, Sendable, Equatable {
@@ -177,6 +179,8 @@ public enum OfflineSyncProtocolError: Error, Sendable, Equatable {
     case truncatedOperationRecord(index: Int)
     case nonIncreasingOperationID(previous: UInt32, current: UInt32)
     case trailingBytes(Int)
+    case invalidFocusSnapshot
+    case zeroResolveID
 }
 
 /// Strict payload codec for BLE type `0x25`. It accepts only the direction-specific opcodes and
@@ -189,9 +193,11 @@ public enum OfflineSyncCodec {
         case abort = 0x03
         case query = 0x04
         case opAck = 0x05
+        case focusResolve = 0x06
         case state = 0x80
         case result = 0x81
         case operationBatch = 0x82
+        case focusState = 0x83
     }
 
     public static func encode(_ command: OfflineSyncOutboundCommand) throws -> Data {
@@ -226,6 +232,13 @@ public enum OfflineSyncCodec {
             payload.appendBigEndian(acknowledgement.bootSessionID)
             payload.appendBigEndian(acknowledgement.ackOperationID)
             return payload
+
+        case .focusResolve(let resolve):
+            do {
+                return try FocusReconnectCodec.encode(resolve)
+            } catch FocusReconnectProtocolError.zeroResolveID {
+                throw OfflineSyncProtocolError.zeroResolveID
+            }
         }
     }
 
@@ -242,7 +255,13 @@ public enum OfflineSyncCodec {
             return .result(try decodeResult(payload))
         case .operationBatch:
             return .operationBatch(try decodeOperationBatch(payload))
-        case .begin, .commit, .abort, .query, .opAck:
+        case .focusState:
+            do {
+                return .focusState(try FocusReconnectCodec.decodeFocusState(payload))
+            } catch {
+                throw OfflineSyncProtocolError.invalidFocusSnapshot
+            }
+        case .begin, .commit, .abort, .query, .opAck, .focusResolve:
             throw OfflineSyncProtocolError.invalidOpcode(opcodeByte)
         }
     }

@@ -11,12 +11,12 @@ struct BLEOfflineOperationProcessorTests {
     }
 
     private func completePayload(operationID: UInt32, taskID: String = "task-1") -> Data {
-        var payload = Data([0x01])
-        payload.appendBigEndian(operationID)
-        payload.append(UInt8(taskID.utf8.count))
-        payload.append(Data(taskID.utf8))
-        payload.appendBigEndian(UInt32(1_786_396_800))
-        return payload
+        return FocusWireFixtures.endPayload(
+            operationID: operationID,
+            taskID: taskID,
+            end: 1_786_396_800,
+            elapsed: 0
+        )
     }
 
     @Test("Exact retry is applied once but remains acknowledgement-safe")

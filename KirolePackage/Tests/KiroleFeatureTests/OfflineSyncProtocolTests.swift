@@ -15,6 +15,7 @@ struct OfflineSyncProtocolTests {
         #expect(OfflineSyncStateFlags.transactionOpen.rawValue == 0x02)
         #expect(OfflineSyncStateFlags.needsFullSync.rawValue == 0x04)
         #expect(OfflineSyncStateFlags.operationOverflow.rawValue == 0x08)
+        #expect(OfflineSyncStateFlags.focusSyncPending.rawValue == 0x10)
         #expect(OfflineSyncTargetType.taskList.rawValue == 0x02)
         #expect(OfflineSyncTargetType.schedule.rawValue == 0x03)
         #expect(OfflineSyncTargetType.dayPack.rawValue == 0x10)
@@ -60,6 +61,20 @@ struct OfflineSyncProtocolTests {
             0x31, 0x32, 0x33, 0x34,
             0x41, 0x42, 0x43, 0x44,
         ]))
+        let resolve = try OfflineSyncCodec.encode(.focusResolve(OfflineFocusResolve(
+            resolveID: 0x0A0B_0C0D,
+            sessionId: FocusSessionId(bootSessionID: 1, startOperationID: 2),
+            focusState: .idle,
+            result: .closed,
+            startTimestamp: 3,
+            endTimestamp: 4,
+            elapsedSeconds: 5,
+            focusRevision: 6,
+            phase: .idle,
+            bottles: 0
+        )))
+        #expect(resolve.count == 33)
+        #expect(resolve[0] == 0x06)
     }
 
     @Test("Transaction commands reject zero SyncId and BEGIN rejects reserved DatasetMask bits")
@@ -105,7 +120,7 @@ struct OfflineSyncProtocolTests {
             activeRevision: 0x0102_0304,
             validUntil: 0x1112_1314,
             datasetMask: .all,
-            stateFlags: [.dataValid, .needsFullSync],
+            stateFlags: [.dataValid, .needsFullSync, .focusSyncPending],
             pendingCount: 0x40,
             bootSessionID: 0x2122_2324,
             currentSyncID: 0x3132_3334

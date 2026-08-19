@@ -100,7 +100,10 @@ public final class BLESyncCoordinator {
     }
 
     private func makeOfflineSyncCoordinator() -> BLEOfflineSyncCoordinator {
-        BLEOfflineSyncCoordinator(
+        let makeResolveID: @MainActor @Sendable () -> UInt32 = {
+            UInt32.random(in: 1...UInt32.max)
+        }
+        return BLEOfflineSyncCoordinator(
             dependencies: .init(
                 synchronizeTime: { [weak self] in
                     guard let self else { throw BLEError.disconnected }
@@ -164,9 +167,53 @@ public final class BLESyncCoordinator {
                         to: startOfToday
                     ) ?? Date().addingTimeInterval(24 * 60 * 60)
                     return UInt32(clamping: Int(startOfTomorrow.timeIntervalSince1970) - 1)
+                },
+                makeResolveID: makeResolveID,
+                freezeFocusStatus: {
+                    FocusSessionService.shared.isFocusStatusPushFrozen = true
+                },
+                unfreezeFocusStatus: {
+                    FocusSessionService.shared.isFocusStatusPushFrozen = false
+                },
+                previewFocusState: { state in
+                    await FocusSessionService.shared.applyReconnectPreview(state)
+                },
+                resolveFocus: { state in
+                    await FocusSessionService.shared.resolveReconnect(
+                        state,
+                        resolveID: makeResolveID()
+                    )
+                },
+                restoreOrdinaryFocusSync: { snapshot, resolve in
+                    await FocusSessionService.shared.restoreOrdinaryFocusSyncAfterResolve(
+                        snapshot,
+                        resolve: resolve
+                    )
                 }
             )
         )
+    }
+
+    /// Firmware step 6: after FOCUS_RESOLVE, restore ordinary DayPack/Schedule
+    /// frames. These are live 0x10/0x03 writes, not a 0x25 COMMIT.
+    private func sendOrdinaryDatasetsAfterFocusResolve() async {
+        do {
+            let frozen = try await generateStableDayPack()
+            try await bleService.sendOfflineDayPackPayload(
+                BLEDataEncoder.encodeDayPack(frozen.dayPack, screenSize: bleService.hardwareScreenSize)
+            )
+            try await bleService.sendOfflineSchedulePayload(
+                BLEDataEncoder.encodeSchedule(frozen.events)
+            )
+        } catch {
+            ErrorReporter.log(
+                .sync(
+                    component: "FocusReconnect ordinary datasets",
+                    underlying: error.localizedDescription
+                ),
+                context: "BLESyncCoordinator.sendOrdinaryDatasetsAfterFocusResolve"
+            )
+        }
     }
 
     private func generateStableDayPack() async throws -> (
@@ -227,6 +274,8 @@ public final class BLESyncCoordinator {
         _ eventLog: EventLog,
         service: BLEService
     ) async {
+        // WeChat 1.3.0 §4: lock ordinary 0x14 on DeviceWake, before any other write path.
+        FocusSessionService.shared.isFocusStatusPushFrozen = true
         let decision = syncState.handleDeviceWake(
             at: eventLog.timestamp,
             taskActionBlocked: taskActionPresentationCount > 0
@@ -319,6 +368,7 @@ public final class BLESyncCoordinator {
                 try await bleService.beginOfflineSyncWriteSession()
                 ownsOfflineWriteSession = true
             } catch {
+                FocusSessionService.shared.isFocusStatusPushFrozen = false
                 lastSyncSucceeded = false
                 bleService.lastSyncFailed = true
                 ErrorReporter.log(
@@ -375,6 +425,7 @@ public final class BLESyncCoordinator {
             force: effectiveForce,
             hasPriorityCustomAvatarOperation: hasPriorityCustomAvatarOperation
         ) else {
+            FocusSessionService.shared.isFocusStatusPushFrozen = false
             await bleService.endOfflineSyncWriteSession()
             ownsOfflineWriteSession = false
             return
@@ -439,8 +490,9 @@ public final class BLESyncCoordinator {
             }
 
             // The session acquired before local preparation owns the complete hardware contract:
-            // 0x05 -> QUERY/STATE -> OP_BATCH/OP_ACK -> BEGIN -> 0x02 -> 0x03 -> 0x10
-            // -> COMMIT -> RESULT=COMMITTED. No other business frame is emitted before it returns.
+            // 0x05 -> QUERY/STATE -> FOCUS_STATE/OP_BATCH -> FOCUS_RESOLVE ->
+            // BEGIN -> 0x02 -> 0x10 -> 0x03 -> COMMIT -> RESULT=COMMITTED.
+            // No other business frame is emitted before it returns.
             let completion = try await offlineSyncCoordinator.synchronize { [weak self] _ in
                 guard let self else { return false }
                 let afterOpsHash = HardwareContentFingerprint.structural(
@@ -453,6 +505,9 @@ public final class BLESyncCoordinator {
                     force: commitForce,
                     hasActiveFocusSession: FocusSessionService.shared.activeSession != nil
                 )
+            }
+            if completion.didResolveFocus && !completion.didCommitDatasets {
+                await sendOrdinaryDatasetsAfterFocusResolve()
             }
             transactionCommitted = true
             await bleService.endOfflineSyncWriteSession()

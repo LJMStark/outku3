@@ -12,9 +12,9 @@ enum DayPackRefreshArbiter {
         force: Bool,
         hasActiveFocusSession: Bool
     ) -> Bool {
-        // COMMIT is an atomic TaskList/Schedule/DayPack switch. Current firmware leaves
-        // TaskIn when that happens, so focus may only COMMIT when the device itself
-        // reports NeedsFullSync / invalid / expired ValidUntil (handled by the coordinator).
+        // Live connected focus must not COMMIT: firmware treats COMMIT as an atomic
+        // TaskList/Schedule/DayPack switch and leaves TaskIn. FOCUS_RESOLVE restores
+        // ordinary 0x14/0x11/0x10/0x03 instead of punching this gate.
         if hasActiveFocusSession { return false }
         if structuralChanged { return true }
         return force

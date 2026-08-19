@@ -1,8 +1,8 @@
 # Kirole BLE 通信协议规格文档
 
-**版本:** v2.12.0
-**更新日期:** 2026-08-13
-**状态:** v2.12.0 新增双向 `OfflineSync(0x25)` 事务，固定顺序为 `Time → QUERY/STATE → OP_BATCH/OP_ACK → BEGIN → 0x02/0x03/0x10 → COMMIT/COMMITTED`；同时 `TaskList(0x02)` 每条任务新增 `TaskId` 和 `Priority`。`0x02` 是无 SubVersion 的破坏性格式变更，App 出站编码与固件入站解析必须使用同一版本。
+**版本:** v2.13.0
+**更新日期:** 2026-08-18
+**状态:** v2.13.0 对齐硬件 Ver 1.3.0：BLE 断连不再结束专注；`0x25` 增加 `FocusSyncPending` / `FOCUS_STATE` / `FOCUS_RESOLVE`；`0x14` FocusStatus、Enter/Complete/Skip 与 `0x03` Schedule 全部切到 v2。与固件必须同日切换，不兼容旧帧。v2.12.0 的 OfflineSync 底盘与 `TaskList(0x02)` 破坏性布局仍生效。
 
 v2.11.0 的运输模式、v2.10.1 的在线 Complete/Skip 时序、v2.9.0 的严格请求、OperationID 幂等和 `0x1B` 权威快照仍生效。App 是任务最终状态来源；GATT `.withResponse` 只代表传输确认，不能替代业务确认。`0x25 COMMITTED` 只确认三份离线数据已由设备原子提交，不替代任务动作的 `0x1B` 业务确认。
 
@@ -99,6 +99,7 @@ v2.11.0 的运输模式、v2.10.1 的在线 Complete/Skip 时序、v2.9.0 的严
 | v2.10.1 | 2026-07-30 | **在线任务动作单次刷屏时序（wire 不变）**：Complete/Skip 状态落盘后，App 等当前任务版本的 AI 对话，先发送最终 DayPack，再发送绑定同一任务版本的 `0x1B`。DayPack 失败时不发 `0x1B`；生成/发送期间任务版本变化时废弃旧组合并重新生成。固件在 TaskIn/pending 内收到 DayPack 只换后台缓存、不刷屏；匹配 `0x1B` 到达后一次性退出并刷新。RequestRefresh 与离线批次确认保持原规则。§5.4/§5.5/§5.16/§6.2 |
 | v2.11.0 | 2026-08-12 | **新增工厂运输模式 `ShippingMode(0x1C)`**：App→Device payload 固定为 `0x01`，明文完整帧为 `1C 00 01 01`；无业务 ACK，设备主动断开是唯一成功信号。App 在 GATT 写入完成或报错后等待断连 10 秒，界面超时后再保留 2 秒一次性宽限期；期限内的迟到断连仍确认成功并禁止自动重连，超过期限则不再作为运输模式成功信号。专注或 OTA 期间不发送。长按电源键 10 秒或接入 USB 电源 10 秒唤醒，唤醒后固件自动关闭运输模式。§2.4/§4.1/§4.22/附录 A |
 | v2.12.0 | 2026-08-13 | **新增 `OfflineSync(0x25)` + `TaskList(0x02)` 破坏性升级**：① 双向 `0x25` 提供 `QUERY/STATE`、离线操作 `OP_BATCH/OP_ACK`、`BEGIN/COMMIT/ABORT/RESULT`，App 只在匹配 `COMMITTED` 后确认设备已原子替换 TaskList/Schedule/DayPack；② `0x02` Task 条目由旧 `Title + IsCompleted` 改为 `TaskId + Title + IsCompleted + Priority`，无 SubVersion 兼容窗口，旧解析器会从第一个 TaskId 长度开始整体错位；③ App 对 OP_BATCH 中不支持的 EventType 记日志后跳过并累计 ACK，避免未知类型永久堵住后续合法操作；受支持但格式损坏的操作仍停止 ACK。§2.4/§4.1/§4.3/§4.23/§5.2/§8.4/附录 A |
+| v2.13.0 | 2026-08-18 | **专注重连 + Schedule v2（硬件 Ver 1.3.0，flag-day）**：① BLE 断连不再结束专注；重连顺序 `DeviceWake → STATE → FOCUS_STATE → OP_BATCH → OP_ACK + FOCUS_RESOLVE`，裁决完成前禁止普通 `0x14`。② STATE bit4=`FocusSyncPending(0x10)`；App→Dev `0x25/0x06 FOCUS_RESOLVE` 正好 33B；Dev→App `0x25/0x83 FOCUS_STATE` 为 37+N。FOCUS_RESOLVE 的 RESULT 用 ResolveID 当 SyncID、TargetType=`0x25`、ResultCode=`accepted`。③ `0x14` 改为 SubVersion `0x02` + Revision + SessionId(8) + FocusState + Phase + Bottles + ElapsedSeconds(4) + TaskTitle + SegmentSeconds(4)。④ Enter/Complete/Skip 只收 v2：`0x02 | OpID(4) | SessionId(8) | TaskId(1+N) | Ts(4)`，Complete/Skip 再加 ElapsedSeconds(4)。⑤ Schedule `0x03` 改为日期头 + 六字段行；Description 不得空；旧 title+固定 HH:mm 整包拒。零事件金样 `02 1A 08 12 00`。§4.4/§4.11/§4.23/§5.3–5.5/§8.7 |
 
 | 术语 | 定义 |
 |---------------|------------------------------------------------------|
@@ -400,21 +401,30 @@ IsCompleted(1) | Priority(1)
 
 ### 4.4 Schedule (0x03)
 
-今日日历事件（最多 8 个事件）。
+今日日历事件（最多 8 条）。v2.13.0 起为破坏性 v2：旧「Count + Title + 固定 5B `HH:mm`」整包拒绝。
 
-**Payload 结构：**
+**Payload 头（5 bytes）：**
 
-| Offset | Field       | Size        | 描述 |
-|--------|-------------|-------------|--------------------------------|
-| 0      | EventCount  | 1 byte      | 事件数量（0-8） |
-| 1+     | Events[]    | Variable    | 事件条目数组 |
+| Offset | Field | Size | 描述 |
+|--------|-------|------|------|
+| 0 | SubVersion | 1 byte | 固定 `0x02` |
+| 1 | Year | 1 byte | 公历年 − 2000 |
+| 2 | Month | 1 byte | 1–12 |
+| 3 | Day | 1 byte | 1–31 |
+| 4 | EventCount | 1 byte | 0–8 |
 
-**Event 条目：**
+**Event 条目（每条变长）：**
 
-| Offset | Field     | Size        | Max Length | 描述 |
-|--------|-----------|-------------|------------|--------------------------|
-| 0      | Title     | 1 + N bytes | 25 bytes   | 事件标题 |
-| N+1    | StartTime | 5 bytes     | -          | "HH:mm" 格式（原始 UTF-8） |
+| Field | Size | Max | 描述 |
+|-------|------|-----|------|
+| Time | 1 + N | 5 | `"HH:mm"`；全天事件为空 |
+| Title | 1 + N | 40 | 事件标题 |
+| Description | 1 + N | 120 | **不得空**；源为空时填 `"Details forthcoming."` |
+| Category | 1 byte | — | `EventCategory` 原始字节 |
+| EndTime | 1 + N | 5 | `"HH:mm"`；全天事件为空 |
+| SupportText | 1 + N | 120 | 中性辅助句，可空 |
+
+零事件金样：`02 1A 08 12 00` = 2026-08-18，无事件。
 
 ---
 
@@ -642,15 +652,19 @@ App→Device 实时推送当前专注状态与能量瓶子数。在所有构建�
 
 `BLEDataType` enum 现已移至 `Core/BLE/BLEProtocol.swift`，该文件为出站协议字节的单一真相源。
 
-**Payload 结构：**
+**Payload 结构（v2.13.0，`25+N`，拒旧分钟布局）：**
 
-| Offset | Field        | Size        | 描述 |
-|--------|--------------|-------------|------------------------------------------------------|
-| 0      | Phase        | 1 byte      | 专注阶段（按**当前未打断段**计，打断后退回 warmup）。**v2.6.0：会话活跃时恒 ≥1**——会话第 0 分钟与打断清零瞬间按 warmup 发送，`0`=idle 仅表示**无会话**（固件以 Phase≠0 判会话活跃，§8.7 问题 5 口径）：0=idle, 1=warmup(0-5m), 2=building(6-15m), 3=deep(16m+) |
-| 1      | Bottles      | 1 byte      | 本会话已收集的能量瓶子数（**显示值**）：按未打断段各自 floor(段÷30) 累计，打断重置正在装填的进度、零头不跨打断合并。**App 侧显示封顶 5**（满 5 后本字段恒发 5，见下方说明），字节仍 clamp 0-255 |
-| 2      | ElapsedTime  | 2 bytes BE  | 本会话累计已专注分钟数（自进入任务，墙钟，**不**随打断归零；Big Endian UInt16，clamp 0-65535） |
-| 4      | TaskTitle    | 1 + N bytes | 当前任务标题（长度前缀 UTF-8，最多 40 字节） |
-| 4+1+N  | SegmentMinutes | 2 bytes BE | **当前未打断连续段**分钟数：被手机打断即归零重计，驱动端上「装填进度」。追加在 TaskTitle 之后，旧固件读到 TaskTitle 即止、忽略尾部字节（前向兼容）。Big Endian UInt16，clamp 0-65535 |
+| Offset | Field | Size | 描述 |
+|--------|-------|------|------|
+| 0 | SubVersion | 1 byte | 固定 `0x02` |
+| 1 | FocusRevision | 4 bytes BE | 本次裁决后的专注修订号 |
+| 5 | FocusSessionId | 8 bytes | `BootSessionId(4) + StartOperationID(4)`；idle 时全 0 |
+| 13 | FocusState | 1 byte | `0x00=idle` / `0x01=active` / `0x02=endedPending` |
+| 14 | Phase | 1 byte | 按**当前未打断段**计。会话活跃时恒 ≥1：0=idle（无会话）, 1=warmup(0-5m), 2=building(6-15m), 3=deep(16m+) |
+| 15 | Bottles | 1 byte | 显示瓶数，App 封顶 5 |
+| 16 | ElapsedSeconds | 4 bytes BE | 本会话累计已专注秒数（墙钟，不随打断归零） |
+| 20 | TaskTitle | 1 + N | UTF-8，最多 40 字节；idle 可空 |
+| 21+N | SegmentSeconds | 4 bytes BE | 当前未打断连续段秒数，打断归零 |
 
 **Phase 值：**
 
@@ -950,7 +964,7 @@ Command(1) | OperationID(4 BE)
 3. **收到 HTTP 上传、整块 KRI 落盘且 CRC-32/IEEE 与 header 声明一致后，必须照 BLE `0x15` 路径主动发一帧 `0x22 staged`（§5.19），字节完全相同。** App 侧不区分头像是经 WiFi 还是 BLE 到达，一律 `awaitAvatarControlResult(.staged)` 后 `commit`。
 4. `0x1A` 与 `0x19 WiFiDebugMode` **共用 SoftAP 硬件、逻辑互斥**：另一个正开启时，`open` 回 `Status=0x02`（busy），不启新会话。
 5. SoftAP 期间必须保持 BLE 可用（继续接收 `close`/`query`/`0x22` 及其他业务命令），**不得因开启 SoftAP 主动断开 BLE**（同 §4.18）。
-6. 会话状态不持久化；设备重启默认关闭。App 断连即视会话结束，重连后按需重开。
+6. 会话状态不持久化；设备重启默认关闭。App 断连即视 Wi-Fi 调试/头像快传会话结束，重连后按需重开。与专注会话无关。
 7. 未知命令值、payload 长度不等于 5 时不执行状态变更，回 `Status=0x04`（非法命令）。
 
 #### HTTP 收图端点
@@ -1118,9 +1132,11 @@ IsCompleted(1) | Priority(1)
 | App→Device | `0x03` | ABORT | 5 bytes | 放弃当前暂存事务 |
 | App→Device | `0x04` | QUERY | 1 byte | 查询设备当前状态和待补操作数 |
 | App→Device | `0x05` | OP_ACK | 9 bytes | 累计确认已处理的离线操作 |
+| App→Device | `0x06` | FOCUS_RESOLVE | 33 bytes | 专注重连裁决；ResolveID 必须非零 |
 | Device→App | `0x80` | STATE | 20 bytes | 返回数据、事务和离线队列状态 |
-| Device→App | `0x81` | RESULT | 7 bytes | 返回暂存或提交结果 |
+| Device→App | `0x81` | RESULT | 7 bytes | 返回暂存、提交或 FOCUS_RESOLVE 结果 |
 | Device→App | `0x82` | OP_BATCH | Variable，≤255 bytes | 分批补报离线操作 |
+| Device→App | `0x83` | FOCUS_STATE | 37+N | 设备当前/待结算专注快照 |
 
 两端只接受本方向定义的 Opcode，并要求固定长度帧长度完全相等。未知 Opcode、错误方向或尾部多余字节都视为坏帧。
 
@@ -1168,7 +1184,30 @@ Opcode(0x05) | BootSessionID(4 BE) | AckOperationID(4 BE)
 
 这是累计确认：只对匹配 BootSessionID 的队列生效，表示截至 AckOperationID 的操作都已由 App 处理、幂等识别或明确跳过。固件收到匹配 ACK 后才可删除这些记录；断连或未收到 ACK 时从未确认处重发。
 
+**FOCUS_RESOLVE (`0x06`)：** 正好 33 字节。
+
+```text
+Opcode(0x06) | ResolveID(4 BE) | FocusSessionId(8) |
+FocusState(1) | ResolveResult(1) |
+StartTimestamp(4 BE) | EndTimestamp(4 BE) | ElapsedSeconds(4 BE) |
+FocusRevision(4 BE) | Phase(1) | Bottles(1)
+```
+
+ResolveID 必须非零。设备用 `RESULT(TargetType=0x25, ResultCode=accepted, SyncID=ResolveID)` 确认。ResolveResult：`0x00=accepted` / `0x01=closed` / `0x02=conflictResolved` / `0x03=rejected` / `0xFF=internalError`。瓶子与阶段只按权威 elapsed 重算，禁止两边相加；显示瓶封顶 5。
+
 #### 4.23.3 Device→App payload
+
+**FOCUS_STATE (`0x83`)：** `37+N`。仅当 STATE 含 `focusSyncPending` 时发送，且必须在 OP_BATCH 之前到达。
+
+```text
+Opcode(0x83) | FocusRevision(4 BE) | BootSessionID(4 BE) |
+FocusSessionId(8) | FocusState(1) | StartSource(1) |
+TaskIdLength(1) + TaskId(N) |
+StartTimestamp(4 BE) | EndTimestamp(4 BE) | ElapsedSeconds(4 BE) |
+LastOperationID(4 BE) | EndReason(1)
+```
+
+StartSource：`0x00=appEstablished` / `0x01=deviceOffline`。EndReason：`0x00=none` / `0x01=complete` / `0x02=skip` / `0x03=appEnd`。idle 快照允许空 TaskId。
 
 **STATE (`0x80`)：**
 
@@ -1195,8 +1234,9 @@ BootSessionID(4 BE) | CurrentSyncID(4 BE)
 | bit1 | `0x02` | transactionOpen | 存在尚未 COMMIT/ABORT 的暂存事务 |
 | bit2 | `0x04` | needsFullSync | 设备要求完整数据事务 |
 | bit3 | `0x08` | operationOverflow | 离线队列曾溢出，至少一条操作已经丢失 |
+| bit4 | `0x10` | focusSyncPending | 设备有待裁决的专注快照，随后必发 `FOCUS_STATE` |
 
-bit4...bit7 保留；固件必须发送 0，App 忽略这些保留位。当前 App 遇到 `transactionOpen=1` 时先按 CurrentSyncID 发 ABORT，再发第二次 QUERY；如果 `transactionOpen=1` 但 CurrentSyncID=0，整轮失败。遇到 `operationOverflow=1` 时，App 仍处理并 ACK 尚存的 OP_BATCH，但不会再发 BEGIN，避免用无法还原的 App 快照覆盖设备状态。`dataValid` 和 `needsFullSync` 当前作为状态信息解析，不单独改变这套固定流程。
+bit5...bit7 保留；固件必须发送 0，App 忽略这些保留位。当前 App 遇到 `transactionOpen=1` 时先按 CurrentSyncID 发 ABORT，再发第二次 QUERY；如果 `transactionOpen=1` 但 CurrentSyncID=0，整轮失败。遇到 `operationOverflow=1` 时，App 仍处理并 ACK 尚存的 OP_BATCH，但不会再发 BEGIN，避免用无法还原的 App 快照覆盖设备状态。`dataValid` 和 `needsFullSync` 当前作为状态信息解析，不单独改变这套固定流程。
 
 **RESULT (`0x81`)：**
 
@@ -1240,8 +1280,9 @@ Record = OperationID(4 BE) | EventType(1) |
 
 | EventType | OriginalPayload | 额外检查 |
 |-----------|-----------------|----------|
-| `0x11` CompleteTask | §5.4 的严格 v1 payload | Record.OperationID 必须等于 payload 内 OperationID |
-| `0x12` SkipTask | §5.5 的严格 v1 payload | Record.OperationID 必须等于 payload 内 OperationID |
+| `0x10` EnterTaskIn | §5.3 的严格 v2 payload | Record.OperationID 必须等于 payload 内 OperationID |
+| `0x11` CompleteTask | §5.4 的严格 v2 payload | Record.OperationID 必须等于 payload 内 OperationID |
+| `0x12` SkipTask | §5.5 的严格 v2 payload | Record.OperationID 必须等于 payload 内 OperationID |
 | `0x16` ReminderAcknowledged | §5.12 的 4B Timestamp | 必须刚好 4 字节 |
 | `0x17` ReminderDismissed | §5.13 的 4B Timestamp | 必须刚好 4 字节 |
 
@@ -1252,11 +1293,13 @@ Record = OperationID(4 BE) | EventType(1) |
 1. App 独占完整消息写入，先发 `Time(0x05)`。
 2. App 发 `QUERY`，设备回 `STATE`。
 3. 如果这条 STATE 的 `transactionOpen=1`，App 先按 CurrentSyncID 发 ABORT，清空第一轮已缓存的 STATE/OP_BATCH，再发第二次 QUERY；后续流程只使用第二条 STATE。设备必须在第二条 STATE 后重新发送仍待处理的 OP_BATCH，不能等待第一轮 OP_BATCH 的 ACK。
-4. App 按最终 STATE 的 PendingCount 接收 OP_BATCH，并按 OperationID 顺序处理每条操作。每批处理完成后回一条累计 OP_ACK；设备保留未确认记录。
-5. 如果最终 STATE 的 `operationOverflow=1`，App 在处理并 ACK 尚存操作后结束本轮，不发 BEGIN。
-6. App 冻结同一版本的 `0x02`、`0x03`、`0x10` payload，发 `BEGIN`，再按这个顺序发送三份数据。设备只写暂存区，不应在中途替换当前显示数据。
-7. App 发 `COMMIT`。设备校验 SyncID、DatasetMask、Revision、有效期和三份完整 payload；全部通过才原子替换正式数据，并回匹配的 `RESULT(0x25, committed)`。
-8. 任一步超时、断连、坏帧或错误 RESULT 都使本轮失败。BEGIN 之后失败时 App 尽力发送 ABORT；无论 ABORT 是否送达，设备都必须保留上一份已提交数据，下次 QUERY 会恢复未完成事务。
+4. 若最终 STATE 含 `focusSyncPending`，设备在 STATE 之后、OP_BATCH 之前发 `FOCUS_STATE`。App 立即冻结普通 `0x14`，按快照做 preview（`endedPending` 时抑制可见进入），再继续后面步骤。
+5. App 按最终 STATE 的 PendingCount 接收 OP_BATCH，并按 OperationID 顺序处理每条操作。每批处理完成后回一条累计 OP_ACK；设备保留未确认记录。
+6. 若本轮收过 `FOCUS_STATE`，App 在 OP_ACK 之后发 `FOCUS_RESOLVE`（33B）。设备回 `RESULT(TargetType=0x25, ResultCode=accepted, SyncID=ResolveID)` 后，App 才解除 `0x14` 冻结。
+7. 如果最终 STATE 的 `operationOverflow=1`，App 在处理并 ACK 尚存操作（以及必要的 FOCUS_RESOLVE）后结束本轮，不发 BEGIN。
+8. App 冻结同一版本的 `0x02`、`0x03`、`0x10` payload，发 `BEGIN`，再按这个顺序发送三份数据。设备只写暂存区，不应在中途替换当前显示数据。
+9. App 发 `COMMIT`。设备校验 SyncID、DatasetMask、Revision、有效期和三份完整 payload；全部通过才原子替换正式数据，并回匹配的 `RESULT(0x25, committed)`。
+10. 任一步超时、断连、坏帧或错误 RESULT 都使本轮失败。BEGIN 之后失败时 App 尽力发送 ABORT；无论 ABORT 是否送达，设备都必须保留上一份已提交数据，下次 QUERY 会恢复未完成事务。
 
 App 对每个等待的 STATE、OP_BATCH 或最终 COMMITTED 使用 8 秒超时。`0x25` 是连接期实时事务，不写入 `EventLogBatch(0x21)`；设备重传 OP_BATCH 时仍使用 `0x25`。
 
@@ -1308,22 +1351,22 @@ App 对每个等待的 STATE、OP_BATCH 或最终 COMMITTED 使用 8 秒超时�
 
 ### 5.3 EnterTaskIn (0x10)
 
-用户进入任务详情页（专注模式开始）。
+用户进入任务详情页（专注模式开始）。v2.13.0 只收 v2，拒 `0x01` 及其他版本。
 
-**Payload：**
+**Payload（`18+N`）：**
 
-| Offset | Field  | Size        | 描述 |
-|--------|--------|-------------|--------------------------|
-| 0      | Length | 1 byte      | TaskId 长度 |
-| 1      | TaskId | N bytes     | 当前 Overview 条目的硬件任务 ID（UTF-8） |
-| 1+N    | Timestamp | 4 bytes  | Unix Timestamp（Big Endian）（UInt32） |
+| Offset | Field | Size | 描述 |
+|--------|-------|------|------|
+| 0 | SubVersion | 1 byte | 固定 `0x02` |
+| 1 | OperationID | 4 bytes BE | 必须非零；此值同时成为 FocusSessionId 的 StartOperationID |
+| 5 | FocusSessionId | 8 bytes | `BootSessionId(4) + StartOperationID(4)` |
+| 13 | TaskIdLength | 1 byte | 1–36 |
+| 14 | TaskId | N bytes | UTF-8 硬件任务 ID |
+| 14+N | StartTimestamp | 4 bytes BE | Unix 秒 |
 
 **App 响应：**
-- 回发 TaskInPage (0x11) 包含任务详情
-- 记录该任务的专注会话开始时间戳
-
-**专注时间追踪：**
-此事件标记专注会话的开始。App 记录提供的时间戳，在收到 CompleteTask 或 SkipTask 时计算专注时长。
+- 在线时回发 TaskInPage (0x11) 并开/续专注会话
+- 离线批次重放同样开会话，除非 `FOCUS_STATE` 为 `endedPending`（避免闪专注页）
 
 ---
 
@@ -1331,17 +1374,19 @@ App 对每个等待的 STATE、OP_BATCH 或最终 COMMITTED 使用 8 秒超时�
 
 用户在设备上标记任务为已完成（短按旋钮）。
 
-**Payload（v2.9.0，严格 v1）：**
+**Payload（v2.13.0，严格 v2，`22+N`）：**
 
-| Offset | Field  | Size        | 描述 |
-|--------|--------|-------------|--------------------------|
-| 0 | SubVersion | 1 byte | 固定 `0x01` |
-| 1 | OperationID | 4 bytes | UInt32 Big Endian，必须非零 |
-| 5 | TaskIdLength | 1 byte | TaskId UTF-8 字节数 |
-| 6 | TaskId | N bytes | 当前 DayPack/`0x1B` 中收到的硬件任务 ID（UTF-8，N≤36） |
-| 6+N | Timestamp | 4 bytes | Unix Timestamp（UInt32 Big Endian） |
+| Offset | Field | Size | 描述 |
+|--------|-------|------|------|
+| 0 | SubVersion | 1 byte | 固定 `0x02` |
+| 1 | OperationID | 4 bytes BE | 必须非零 |
+| 5 | FocusSessionId | 8 bytes | 对应进入时的会话键 |
+| 13 | TaskIdLength | 1 byte | 1–36 |
+| 14 | TaskId | N bytes | UTF-8 硬件任务 ID |
+| 14+N | EndTimestamp | 4 bytes BE | Unix 秒 |
+| 18+N | ElapsedSeconds | 4 bytes BE | 设备权威累计秒数；App 不得与本地相加 |
 
-总 payload 长度必须**严格等于** `10 + N`。旧 `Length + TaskId + Timestamp` 格式、OperationID=0、非法 UTF-8、空 TaskId 或尾部多余字节一律拒绝。
+总 payload 长度必须**严格等于** `22 + N`。v1 `0x01`、旧无 SessionId 格式、OperationID=0、非法 UTF-8、空 TaskId 或尾部多余字节一律拒绝。
 
 **App 响应：**
 - 先把「设备 + Action + OperationID + payload 指纹 + 首次 Result」以 `pending` 写入持久账本，再执行任务/专注状态变更；相关状态落盘成功后才把账本改为 `committed` 并允许回 `applied/alreadyApplied`
@@ -1361,17 +1406,19 @@ App 对每个等待的 STATE、OP_BATCH 或最终 COMMITTED 使用 8 秒超时�
 
 用户跳过任务（长按旋钮 >1 秒）。
 
-**Payload（v2.9.0，严格 v1）：**
+**Payload（v2.13.0，严格 v2，与 CompleteTask 同布局 `22+N`）：**
 
-| Offset | Field  | Size        | 描述 |
-|--------|--------|-------------|--------------------------|
-| 0 | SubVersion | 1 byte | 固定 `0x01` |
-| 1 | OperationID | 4 bytes | UInt32 Big Endian，必须非零 |
-| 5 | TaskIdLength | 1 byte | TaskId UTF-8 字节数 |
-| 6 | TaskId | N bytes | 当前 DayPack/`0x1B` 中收到的硬件任务 ID（UTF-8，N≤36） |
-| 6+N | Timestamp | 4 bytes | Unix Timestamp（UInt32 Big Endian） |
+| Offset | Field | Size | 描述 |
+|--------|-------|------|------|
+| 0 | SubVersion | 1 byte | 固定 `0x02` |
+| 1 | OperationID | 4 bytes BE | 必须非零 |
+| 5 | FocusSessionId | 8 bytes | 对应进入时的会话键 |
+| 13 | TaskIdLength | 1 byte | 1–36 |
+| 14 | TaskId | N bytes | UTF-8 硬件任务 ID |
+| 14+N | EndTimestamp | 4 bytes BE | Unix 秒 |
+| 18+N | ElapsedSeconds | 4 bytes BE | 设备权威累计秒数 |
 
-总 payload 长度必须**严格等于** `10 + N`；旧格式、OperationID=0、非法 UTF-8、空 TaskId 或尾部多余字节一律拒绝。
+总 payload 长度必须**严格等于** `22 + N`；v1 及其他版本一律拒绝。
 
 **App 响应：**
 - 用持久 OperationID 账本保证重试幂等
@@ -1413,7 +1460,7 @@ App 对每个等待的 STATE、OP_BATCH 或最终 COMMITTED 使用 8 秒超时�
 
 **App 响应：** 立即发送 `TaskListSnapshotAck(0x1B)`，Action=`0x20`、OperationID=本次 RequestID；随后按需触发完整同步。DayPack 内容无变化时可能因指纹去重而不重发，因此不得等待 DayPack 作为刷新确认。
 
-> **专注会话期间的用途（v2.5.23）：** 专注态（态 C，设备显示 TaskInPage）进行中，固件应**周期性**发送本帧（建议 ~每 5 分钟一次）以驱动 `FocusStatus(0x14)` 持续更新——这是 **iOS 息屏后台链路的唤醒触发**：iPhone 息屏后系统挂起 App 进程，App 内部的 0x14 定时推送随之冻结（能量瓶子/段位停在息屏那一刻，直到亮屏才补推）。由于专注期间 BLE 连接保持、App 已订阅 Notify 特征，本帧 Notify 会被 iOS 用来**唤醒被挂起的 App**，App 随即现算并回推一帧最新 `0x14`。App 收到 0x20 且有活跃专注会话时，会在 §8.5 的 60s 合并窗**之前**先单独回推 `0x14`（不被 sync 去抖饿死，仅 2s 同内容去重）；整轮 DayPack sync 仍受 60s 合并窗约束。会话结束（CompleteTask/SkipTask）后固件应停止周期发送。周期发送的生命周期**只绑设备本地会话上下文与连接存活**：收到 `0x11 TaskInPage` 建立任务上下文、进入专注页 → 启动；完成/跳过、**连接断开、本地状态丢失或设备重启** → 停止——**不得**用 DayPack(0x10) 偏移 3 的 DeviceMode 字节（设置类快照，App 当前实现恒发 0x00）或其他数据帧字段门控本心跳，专注中收到 DayPack 属正常内容轮换、心跳应继续。断连即会话结束（App 侧同步以 `reason=disconnected` 结束会话），重连后不得凭旧 `0x14`/缓存 DayPack 恢复专注页，应退回概览等待用户重新进入（新 `0x10 EnterTaskIn` → 新 `0x11`）（v2.5.25，§8.7 问题 5）。能量瓶子的「30 分钟递增 / 打断归零」由 App 侧判定并经 0x14 下发、固件无法自算，故此周期唤醒是瓶子在息屏期间按时递增的**必要条件**。
+> **专注会话期间的用途（v2.5.23）：** 专注态（态 C，设备显示 TaskInPage）进行中，固件应**周期性**发送本帧（建议 ~每 5 分钟一次）以驱动 `FocusStatus(0x14)` 持续更新——这是 **iOS 息屏后台链路的唤醒触发**：iPhone 息屏后系统挂起 App 进程，App 内部的 0x14 定时推送随之冻结（能量瓶子/段位停在息屏那一刻，直到亮屏才补推）。由于专注期间 BLE 连接保持、App 已订阅 Notify 特征，本帧 Notify 会被 iOS 用来**唤醒被挂起的 App**，App 随即现算并回推一帧最新 `0x14`。App 收到 0x20 且有活跃专注会话时，会在 §8.5 的 60s 合并窗**之前**先单独回推 `0x14`（不被 sync 去抖饿死，仅 2s 同内容去重）；整轮 DayPack sync 仍受 60s 合并窗约束。会话结束（CompleteTask/SkipTask）后固件应停止周期发送。周期发送的生命周期**只绑设备本地会话上下文与连接存活**：收到 `0x11 TaskInPage` 建立任务上下文、进入专注页 → 启动；完成/跳过、**连接断开、本地状态丢失或设备重启** → 停止——**不得**用 DayPack(0x10) 偏移 3 的 DeviceMode 字节（设置类快照，App 当前实现恒发 0x00）或其他数据帧字段门控本心跳，专注中收到 DayPack 属正常内容轮换、心跳应继续。v2.13.0 起断连不再结束专注；重连后必须以 `FOCUS_STATE` / `FOCUS_RESOLVE` 裁决，不得在裁决前用旧 `0x14` 覆盖设备本地页（§8.7）。能量瓶子的「30 分钟递增 / 打断归零」由 App 侧判定并经 0x14 下发、固件无法自算，故此周期唤醒是瓶子在息屏期间按时递增的**必要条件**。
 
 > **v2.9 RequestID 规则：** 每次新的物理刷新或 5 分钟周期刷新生成新的非零 RequestID；只有同一次请求因 `0x1B` 丢失而超时重试时，才原样复用该 RequestID。不得把固定 RequestID 当作长期心跳编号。
 
@@ -2049,7 +2096,7 @@ Event: 0x16 (ReminderAcknowledged)
 | 简单包长度 | 必须正好等于头部长度 + Payload 长度，不允许尾部多余字节 |
 | SecureEnvelope 长度 | 必须正好等于固定头 + payloadLen + 32B signature，不允许尾部多余字节 |
 | EventLogBatch | 必须整批完整解析，否则整批丢弃 |
-| v2.9 任务事件 | `0x11/0x12` 只接受严格 v1、非零 OperationID 和精确长度；旧格式拒绝 |
+| v2.13 任务事件 | `0x10/0x11/0x12` 只接受严格 v2（SubVersion `0x02` + SessionId + 精确长度）；v1 拒绝 |
 | v2.9 刷新请求 | `0x20` 只接受严格 v1 + 非零 RequestID；空 payload 拒绝，且不得出现在 EventLogBatch |
 | TaskListSnapshotAck | Action/OperationID 必须匹配 pending；TaskCount、每个长度前缀和 payload 末尾必须精确 |
 | TaskList(0x02) | 按 v2.12 的 TaskId + Title + IsCompleted + Priority 逐条解析；任何长度、布尔值、Priority 或尾部错误都拒绝整帧 |
@@ -2169,7 +2216,7 @@ App 采用 **首次连接即信任（Trust On First Use）** 策略：
 
 配套边界（照做可避免次生 bug）：
 - **专注中收到 DayPack 属正常**（任务变更/内容轮换都会触发整轮 sync）：仅作后台缓冲，不驱动任何态切换、不动心跳；
-- **断连即会话结束**：App 在 BLE 断开时立即结束专注会话（`reason=disconnected`），重连后**不存在可恢复的旧会话**——不得凭缓存 DayPack 或旧 `0x14` 复活态 C，应退回概览、等待用户重新进入（新 `0x10 EnterTaskIn` → 新 `0x11`）；
+- **断连不再结束专注（v2.13.0）**：App 在 BLE 断开时保持会话与手机屏蔽；设备离线按权威 elapsed 加瓶子。重连必须先走 `FOCUS_STATE` / `FOCUS_RESOLVE`，裁决完成前不得用普通 `0x14` 覆盖设备本地页。连着时：按键结束 → BLE 解 App 屏蔽；手机主动结束 → 发指令让硬件退专注。断了时：屏蔽继续，按键结束因发不出 BLE，用户自己解屏蔽；手机解了屏蔽则用户在硬件上按键退出。
 - **退出专注后（v2.10.1）**：先缓存 App 发来的最终 DayPack（不刷新），再等待匹配且版本更新的 `0x1B`；两者到齐后原子替换 Overview 任务清单并只刷新一次。专注期间旧任务缓存只能作 pending 占位。
 
 （与 `0x12 DeviceMode=Interactive` 解卡信号的区分：`0x12` 是 App 主动下发的**指令帧**，仅在异常解卡场景发送、要求设备退回概览——见问题 4；DayPack 内的同名字节只是随包携带的快照，两者语义不同，不可混用。）

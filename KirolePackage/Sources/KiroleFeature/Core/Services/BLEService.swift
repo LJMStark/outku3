@@ -400,10 +400,7 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
         isIntentionalDisconnect = true
         reconnectTask?.cancel()
         reconnectTask = nil
-        // 断连结束专注必须在意图点直接触发：cleanup() 清空 connectedPeripheral 后，
-        // 随后到达的合法 didDisconnect 会被 shouldProcessCallback 身份门拒绝，
-        // 回调里的 handleDeviceDisconnected 永远不跑（2a7bf26 引入的回归，联审 2026-07-16 F7）。
-        // 双结算无风险：回调被门拒；即使放行，endSession 的 activeSession guard 也会挡住第二次。
+        // v2.13: 断连不再结束专注。仍通知 FocusSessionService，该方法现为空操作。
         FocusSessionService.shared.handleDeviceDisconnected()
         if isPendingShippingModeActivation {
             BLEShippingModeCoordinator.shared.handleUnconfirmedDisconnect()
@@ -694,20 +691,26 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
         try await writeData(type: .smartReminder, data: data)
     }
 
-    /// 推送专注状态和能量瓶子数到 E-ink 设备（所有构建均执行）
+    /// FocusStatus v2. Callers must not invoke this while `isFocusStatusPushFrozen` is set.
     public func sendFocusStatus(
         phase: FocusPhase,
         energyBottles: Int,
-        elapsedMinutes: Int,
+        elapsedSeconds: UInt32,
         taskTitle: String?,
-        segmentMinutes: Int
+        segmentSeconds: UInt32,
+        focusRevision: UInt32 = 0,
+        focusSessionId: FocusSessionId = .idle,
+        focusState: FocusWireState = .idle
     ) async throws {
         let payload = BLEDataEncoder.encodeFocusStatus(
             phase: phase,
             energyBottles: energyBottles,
-            elapsedMinutes: elapsedMinutes,
+            elapsedSeconds: elapsedSeconds,
             taskTitle: taskTitle,
-            segmentMinutes: segmentMinutes
+            segmentSeconds: segmentSeconds,
+            focusRevision: focusRevision,
+            focusSessionId: focusSessionId,
+            focusState: focusState
         )
         try await writeData(type: .focusStatus, data: payload)
     }
@@ -1358,7 +1361,7 @@ extension BLEService: CBCentralManagerDelegate {
             // 错误完成它的 connectCompletion，自动重连也会与在飞的新尝试打架——整体跳过。
             // 身份不符（含 cleanup 已跑完、connectedPeripheral 已空）同理。
             guard shouldProcessCallback(generationAtDelivery: generation, peripheralID: peripheral.identifier) else { return }
-            // 设备断开时结束活跃的专注会话
+            // v2.13: 断连不再结束专注；handleDeviceDisconnected 为空操作。
             FocusSessionService.shared.handleDeviceDisconnected()
 
             // cleanup 会把 Wi-Fi 调试协调器重置为 unknown，故重连判定也必须先快照。

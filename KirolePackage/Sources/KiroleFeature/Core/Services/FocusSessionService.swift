@@ -36,7 +36,8 @@ public final class FocusSessionService {
     public internal(set) var todaySessions: [FocusSession] = []
 
     /// 专注统计数据
-    public private(set) var statistics: FocusStatistics = FocusStatistics()
+    public internal(set) var statistics: FocusStatistics = FocusStatistics()
+    var statisticsReferenceDay: Date?
 
     /// 当前会话是否按 60 倍虚拟时间运行。仅保存在内存中，新会话与 App 重启都会恢复正常速度。
     public private(set) var isFocusTimeAccelerated = false
@@ -298,7 +299,8 @@ public final class FocusSessionService {
         taskTitle: String,
         mode requestedMode: FocusEnforcementMode = .standard,
         startTime: Date = Date(),
-        fallbackPolicy: FocusSessionFallbackPolicy = .allowStandard
+        fallbackPolicy: FocusSessionFallbackPolicy = .allowStandard,
+        focusSessionId: FocusSessionId? = nil
     ) async -> FocusSessionStartResult {
         guard canStartSession() else { return .blockedByDeviceOperation }
         sessionStartRequestsInFlight += 1
@@ -325,8 +327,9 @@ public final class FocusSessionService {
         // 实时事件路径不再做高水位去重（见 BLEEventHandler.handleEventLogs），故这里必须自带幂等。
         // 仅当切换到“不同”任务时才结束旧会话。
         if let active = activeSession {
-            if active.taskId == taskId {
-                return .alreadyActive(active)
+            if active.taskId == taskId,
+               let retained = retainActiveSessionIfSameFocus(active, incomingSessionId: focusSessionId) {
+                return .alreadyActive(retained)
             }
             if fallbackPolicy == .reject {
                 return .blockedByActiveSession(active)
@@ -356,8 +359,9 @@ public final class FocusSessionService {
                 )
                 return .blockedByActiveSession(active)
             }
-            if active.taskId == taskId {
-                return .alreadyActive(active)
+            if active.taskId == taskId,
+               let retained = retainActiveSessionIfSameFocus(active, incomingSessionId: focusSessionId) {
+                return .alreadyActive(retained)
             }
             endSession(reason: .timeout, endTime: startTime)
         }
@@ -367,7 +371,8 @@ public final class FocusSessionService {
             startTime: startTime,
             mode: protectionContext.mode,
             protectionState: protectionContext.protectionState,
-            interruptionSource: protectionContext.interruptionSource
+            interruptionSource: protectionContext.interruptionSource,
+            focusSessionId: focusSessionId
         )
 
         advanceSessionStartGeneration(for: taskId)
@@ -407,10 +412,11 @@ public final class FocusSessionService {
     }
 
     @discardableResult
-    private func endActiveSession(
+    func endActiveSession(
         reason: FocusEndReason,
         endTime: Date,
-        operationKey: String?
+        operationKey: String?,
+        authoritativeElapsedSeconds: UInt32? = nil
     ) -> Bool {
         guard var session = activeSession else { return false }
         // 结束时间不得早于会话开始：固件 RTC 错乱时 completeTask/skipTask 可能携带远古时间戳
@@ -443,8 +449,12 @@ public final class FocusSessionService {
             now: settlementEvaluationDate,
             screenUnlockEvents: unlockEvents
         )
-        session.calculatedFocusTime = progress.countableFocusTime
-        session.earnedEnergyBottles = progress.earnedEnergyBottles
+        if let authoritativeElapsedSeconds {
+            Self.applyAuthoritativeElapsed(&session, elapsedSeconds: authoritativeElapsedSeconds)
+        } else {
+            session.calculatedFocusTime = progress.countableFocusTime
+            session.earnedEnergyBottles = progress.earnedEnergyBottles
+        }
         completeSession(
             session,
             endTime: endTime,
@@ -464,17 +474,35 @@ public final class FocusSessionService {
 
     /// 完成任务（短按滚轮）
     @discardableResult
-    public func completeTask(taskId: String, endTime: Date = Date()) -> Bool {
+    public func completeTask(
+        taskId: String,
+        endTime: Date = Date(),
+        authoritativeElapsedSeconds: UInt32? = nil
+    ) -> Bool {
         guard let session = activeSession, session.taskId == taskId else { return false }
-        endSession(reason: .completed, endTime: endTime)
+        _ = endActiveSession(
+            reason: .completed,
+            endTime: endTime,
+            operationKey: nil,
+            authoritativeElapsedSeconds: authoritativeElapsedSeconds
+        )
         return true
     }
 
     /// 跳过任务（长按滚轮）
     @discardableResult
-    public func skipTask(taskId: String, endTime: Date = Date()) -> Bool {
+    public func skipTask(
+        taskId: String,
+        endTime: Date = Date(),
+        authoritativeElapsedSeconds: UInt32? = nil
+    ) -> Bool {
         guard let session = activeSession, session.taskId == taskId else { return false }
-        endSession(reason: .skipped, endTime: endTime)
+        _ = endActiveSession(
+            reason: .skipped,
+            endTime: endTime,
+            operationKey: nil,
+            authoritativeElapsedSeconds: authoritativeElapsedSeconds
+        )
         return true
     }
 
@@ -483,7 +511,8 @@ public final class FocusSessionService {
     /// memory but history persistence failed.
     func settleHardwareTaskOperation(
         _ entry: TaskOperationLedgerEntry,
-        expectedSessionStartGeneration: UInt64? = nil
+        expectedSessionStartGeneration: UInt64? = nil,
+        authoritativeElapsedSeconds: UInt32? = nil
     ) async -> HardwareFocusSettlementResult {
         await launchRecoveryTask?.value
         if !hasCompletedLaunchRecovery {
@@ -533,7 +562,8 @@ public final class FocusSessionService {
         guard endActiveSession(
             reason: reason,
             endTime: endTime,
-            operationKey: entry.operationKey
+            operationKey: entry.operationKey,
+            authoritativeElapsedSeconds: authoritativeElapsedSeconds
         ) else {
             return .durable
         }
@@ -570,12 +600,8 @@ public final class FocusSessionService {
         }
     }
 
-    /// 设备断开连接时结束会话
-    public func handleDeviceDisconnected() {
-        if activeSession != nil {
-            endSession(reason: .disconnected)
-        }
-    }
+    /// 断连不再结束会话：设备继续本地计时，App 保持挡板，重连后由 FOCUS_RESOLVE 裁决。
+    public func handleDeviceDisconnected() {}
 
     /// 应用回到前台时，刷新深度专注权限并在必要时降级
     public func refreshProtectionStatus() async {
@@ -597,146 +623,6 @@ public final class FocusSessionService {
         current.interruptionSource = .authorizationRevoked
         activeSession = current
         await persistActiveSessionIfNeeded(current)
-    }
-
-    // MARK: - Statistics
-
-    /// 上次统计计算所属自然日（startOfDay）。统计只在加载/结算时重算，App 跨午夜后
-    /// 缓存的 todayFocusTime 仍是昨日值——回前台时据此判断换日重算（联审 2026-07-16
-    /// F10 相邻缺陷：口径不变，只修缓存不换日）。
-    private var statisticsReferenceDay: Date?
-
-    /// 换日后重算统计缓存；同日或从未计算过为 no-op。只应在非渲染时机调用（回前台等），
-    /// 渲染路径读 Today 用 `todayFocusTimeIncludingActive(now:)`（纯读不改缓存）。
-    public func refreshStatisticsIfDayChanged(now: Date = Date()) {
-        guard let referenceDay = statisticsReferenceDay,
-              !Calendar.current.isDate(now, inSameDayAs: referenceDay) else { return }
-        updateStatistics(now: now)
-    }
-
-    /// 专注页 Today 行口径：按 now 判日的今日已结算时长 + 当前活跃会话整段可计时长。
-    /// 整段按 endTime 归属（与 updateStatistics 口径一致）：若现在结束即整体归今天，
-    /// 因此不做午夜切分，避免结算瞬间总数跳变。纯函数，渲染路径安全。
-    public func todayFocusTimeIncludingActive(now: Date = Date()) -> TimeInterval {
-        let calendar = Calendar.current
-        let settledToday = todaySessions
-            .filter { session in
-                guard let endTime = session.endTime else { return false }
-                return calendar.isDate(endTime, inSameDayAs: now)
-            }
-            .compactMap(\.calculatedFocusTime)
-            .reduce(0, +)
-        return settledToday + progressSnapshot(now: now).countableFocusTime
-    }
-
-    func updateStatistics(now: Date = Date()) {
-        let calendar = Calendar.current
-        let today = calendar.startOfDay(for: now)
-        statisticsReferenceDay = today
-
-        let todayCompletedSessions = todaySessions.filter { session in
-            guard let endTime = session.endTime else { return false }
-            return calendar.isDate(endTime, inSameDayAs: today)
-        }
-
-        let focusTimes = todayCompletedSessions.compactMap { $0.calculatedFocusTime }
-        let todayFocusTime = focusTimes.reduce(0, +)
-        let protectedSessionCount = todayCompletedSessions.filter { $0.protectionState == .protected }.count
-
-        let averageMinutes = focusTimes.isEmpty ? 0 : Int(focusTimes.reduce(0, +) / Double(focusTimes.count) / 60)
-        let longestMinutes = Int((focusTimes.max() ?? 0) / 60)
-        let interruptions = todayCompletedSessions.reduce(0) { $0 + $1.screenUnlockEvents.count }
-        let peakHour = computePeakFocusHour(sessions: todayCompletedSessions, calendar: calendar)
-
-        statistics = FocusStatistics(
-            todayFocusTime: todayFocusTime,
-            todaySessions: todayCompletedSessions.count,
-            protectedSessionCount: protectedSessionCount,
-            averageSessionMinutes: averageMinutes,
-            longestSessionMinutes: longestMinutes,
-            interruptionCount: interruptions,
-            peakFocusHour: peakHour,
-            focusTrendDirection: .stable
-        )
-
-        Task {
-            async let trend = computeTrendDirection()
-            async let historicalTimes = computeHistoricalFocusTimes()
-            let (resolvedTrend, (week, month)) = await (trend, historicalTimes)
-            statistics.focusTrendDirection = resolvedTrend
-            statistics.pastWeekFocusTime = week
-            statistics.last30DaysFocusTime = month
-        }
-    }
-
-    private func computeHistoricalFocusTimes() async -> (week: TimeInterval, month: TimeInterval) {
-        guard persistenceEnabled else { return (0, 0) }
-        do {
-            let monthSessions = try await localStorage.loadFocusSessionsForPastDays(30)
-            let cutoff7 = Calendar.current.date(byAdding: .day, value: -7, to: Calendar.current.startOfDay(for: Date())) ?? .distantPast
-            let week = monthSessions
-                .filter { $0.startTime >= cutoff7 }
-                .compactMap(\.calculatedFocusTime)
-                .reduce(0, +)
-            let month = monthSessions
-                .compactMap(\.calculatedFocusTime)
-                .reduce(0, +)
-            return (week, month)
-        } catch {
-            return (0, 0)
-        }
-    }
-
-    private func computePeakFocusHour(sessions: [FocusSession], calendar: Calendar) -> Int? {
-        guard !sessions.isEmpty else { return nil }
-
-        var hourBuckets: [Int: TimeInterval] = [:]
-        for session in sessions {
-            guard let focusTime = session.calculatedFocusTime, focusTime > 0 else { continue }
-            let hour = calendar.component(.hour, from: session.startTime)
-            hourBuckets[hour, default: 0] += focusTime
-        }
-
-        return hourBuckets.max(by: { $0.value < $1.value })?.key
-    }
-
-    private func computeTrendDirection() async -> TrendDirection {
-        guard persistenceEnabled else { return .stable }
-
-        let calendar = Calendar.current
-        guard let yesterday = calendar.date(byAdding: .day, value: -1, to: calendar.startOfDay(for: Date())) else {
-            return .stable
-        }
-
-        do {
-            let yesterdaySessions = try await localStorage.loadFocusSessionsForDate(yesterday) ?? []
-            let yesterdayFocusTime = yesterdaySessions.compactMap { $0.calculatedFocusTime }.reduce(0, +)
-
-            guard yesterdayFocusTime > 0 else {
-                return statistics.todayFocusTime > 0 ? .up : .stable
-            }
-
-            let ratio = statistics.todayFocusTime / yesterdayFocusTime
-            if ratio > 1.1 { return .up }
-            if ratio < 0.9 { return .down }
-            return .stable
-        } catch {
-            return .stable
-        }
-    }
-
-    // MARK: - Attention Summary
-
-    /// 生成注意力镜像摘要
-    public func generateAttentionSummary() -> AttentionSummary {
-        AttentionSummary(
-            totalFocusMinutes: Int(statistics.todayFocusTime / 60),
-            sessionCount: statistics.todaySessions,
-            longestSessionMinutes: statistics.longestSessionMinutes,
-            interruptionCount: statistics.interruptionCount,
-            peakHour: statistics.peakFocusHour,
-            trend: statistics.focusTrendDirection
-        )
     }
 
     // MARK: - Protection Resolution

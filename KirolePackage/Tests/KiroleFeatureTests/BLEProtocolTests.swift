@@ -757,20 +757,23 @@ struct BLEProtocolTests {
         #expect(data.count == 4 + condLen)                   // no trailing bytes
     }
 
-    @Test("BLEDataEncoder encodeSchedule emits StartTime as exactly 5 ASCII bytes (locale-pinned)")
+    @Test("BLEDataEncoder encodeSchedule emits Schedule v2 with locale-pinned HH:mm")
     func encodeScheduleStartTimeIsAscii() {
-        // A today event at 09:30 — passes the isDateInToday filter inside encodeSchedule.
         let start = Calendar.current.date(bySettingHour: 9, minute: 30, second: 0, of: Date())!
-        let event = CalendarEvent(title: "Sync", startTime: start, endTime: start.addingTimeInterval(1800))
-        let data = BLEDataEncoder.encodeSchedule([event])
+        let event = CalendarEvent(
+            title: "Sync",
+            startTime: start,
+            endTime: start.addingTimeInterval(1800),
+            description: "Daily sync"
+        )
+        let data = BLEDataEncoder.encodeSchedule([event], now: start)
 
-        // Layout: [count:1][titleLen:1][title:N][StartTime: fixed 5 bytes "HH:mm" (§4.4)]
-        #expect(data[0] == 1)
-        let titleLen = Int(data[1])
-        let timeBytes = data.subdata(in: (2 + titleLen)..<data.count)
-        #expect(timeBytes.count == 5)                                 // fixed 5-byte field, not length-prefixed
-        #expect(timeBytes == Data("09:30".utf8))                      // ASCII digits — en_US_POSIX, not user locale
-        #expect(timeBytes.allSatisfy { $0 >= 0x20 && $0 <= 0x7E })    // never tofu on the wire
+        #expect(data[0] == 0x02)
+        #expect(data[4] == 1)
+        let timeLen = Int(data[5])
+        let timeBytes = data.subdata(in: 6..<(6 + timeLen))
+        #expect(timeBytes == Data("09:30".utf8))
+        #expect(timeBytes.allSatisfy { $0 >= 0x20 && $0 <= 0x7E })
     }
 
     @Test("BLEDataEncoder encodeCurrentTime uses year-2000 offset")
@@ -944,21 +947,21 @@ struct BLEProtocolTests {
         let focus = BLEDataEncoder.encodeFocusStatus(
             phase: .warmup,
             energyBottles: 0,
-            elapsedMinutes: 1,
+            elapsedSeconds: 60,
             taskTitle: "写报告",
-            segmentMinutes: 1
+            segmentSeconds: 60
         )
-        var focusCursor = 4
+        var focusCursor = 20
         #expect(readString(from: focus, cursor: &focusCursor) == "Task")
 
         let idle = BLEDataEncoder.encodeFocusStatus(
             phase: .idle,
             energyBottles: 0,
-            elapsedMinutes: 0,
+            elapsedSeconds: 0,
             taskTitle: nil,
-            segmentMinutes: 0
+            segmentSeconds: 0
         )
-        var idleCursor = 4
+        var idleCursor = 20
         #expect(readString(from: idle, cursor: &idleCursor) == "")
     }
 
@@ -1132,11 +1135,12 @@ struct BLEProtocolTests {
         let taskIdData = Data(taskIdString.utf8)
         let timestamp: UInt32 = 1_700_000_100
 
-        var payload = Data([0x01])
-        payload.appendBigEndian(UInt32(0x1020_3040))
-        payload.append(UInt8(taskIdData.count))
-        payload.append(taskIdData)
-        payload.appendBigEndian(timestamp)
+        let payload = FocusWireFixtures.endPayload(
+            operationID: 0x1020_3040,
+            taskID: taskIdString,
+            end: timestamp,
+            elapsed: 0
+        )
 
         let log = EventLog.fromBLEPayload(type: EventLogType.completeTask.rawByte, payload: payload)
         #expect(log?.eventType == .completeTask)
@@ -1186,9 +1190,7 @@ struct BLEProtocolTests {
         payload.append(0x40) // lowBattery
         payload.append(15)
         payload.append(0x10) // enterTaskIn
-        payload.append(UInt8(taskId.count))
-        payload.append(taskId)
-        payload.appendBigEndian(timestamp)
+        payload.append(FocusWireFixtures.enterPayload(taskID: "abc", start: timestamp))
 
         let logs = BLEEventHandler.parseEventLogBatchPayload(payload)
         #expect(logs.count == 3)
@@ -1218,18 +1220,14 @@ struct BLEProtocolTests {
 
     @Test("fromBLEPayload enterTaskIn with taskId and timestamp")
     func fromBLEPayloadEnterTaskIn() {
-        let taskId = "test-task-123"
-        let taskIdData = taskId.data(using: .utf8)!
-        var payload = Data()
-        payload.append(UInt8(taskIdData.count))
-        payload.append(taskIdData)
         let timestamp: UInt32 = 1_700_000_000
-        payload.appendBigEndian(timestamp)
+        let payload = FocusWireFixtures.enterPayload(taskID: "test-task-123", start: timestamp)
 
         let event = EventLog.fromBLEPayload(type: 0x10, payload: payload)
         #expect(event != nil)
         #expect(event?.eventType == .enterTaskIn)
         #expect(event?.taskId == "test-task-123")
+        #expect(event?.operationID == 7)
         #expect(Int(event?.timestamp.timeIntervalSince1970 ?? 0) == Int(timestamp))
     }
 
@@ -1286,13 +1284,13 @@ struct BLEProtocolTests {
     @Test("fromBLEPayload skipTask with taskId")
     func fromBLEPayloadSkipTask() {
         let taskId = "skip-me"
-        let taskIdData = taskId.data(using: .utf8)!
-        var payload = Data([0x01])
-        payload.appendBigEndian(UInt32(9))
-        payload.append(UInt8(taskIdData.count))
-        payload.append(taskIdData)
         let timestamp: UInt32 = 1_700_001_000
-        payload.appendBigEndian(timestamp)
+        let payload = FocusWireFixtures.endPayload(
+            operationID: 9,
+            taskID: taskId,
+            end: timestamp,
+            elapsed: 0
+        )
 
         let event = EventLog.fromBLEPayload(type: 0x12, payload: payload)
         #expect(event != nil)
@@ -1544,13 +1542,13 @@ struct BLEProtocolTests {
         }
     }
 
-    @Test("Batch replay: enterTaskIn does NOT start a focus session")
+    @Test("Batch replay: enterTaskIn starts a focus session for an offline device start")
     @MainActor
-    func batchReplayEnterTaskInSkipsFocusSession() async {
+    func batchReplayEnterTaskInStartsFocusSession() async {
         let taskId = "ble-replay-enter-\(UUID().uuidString)"
         let event = EventLog(
             eventType: .enterTaskIn, taskId: taskId,
-            timestamp: Date().addingTimeInterval(-7200)  // 2 hours ago
+            timestamp: Date().addingTimeInterval(-7200)
         )
         let focusService = FocusSessionService.makeForTesting(
             focusGuardService: BLEProtocolMockFocusGuardService(),
@@ -1559,10 +1557,11 @@ struct BLEProtocolTests {
         await BLEEventHandler.handleEventLogs(
             [event], service: BLEService.shared,
             focusService: focusService, isReplay: true,
+            tasksOverride: [TaskItem(id: taskId, title: "Replay Enter Task")],
             persistLogs: false
         )
 
-        #expect(focusService.activeSession == nil)
+        #expect(focusService.activeSession?.taskId == taskId)
     }
 
     @Test("Live (non-replay) enterTaskIn starts a focus session")
@@ -1746,20 +1745,15 @@ struct BLEProtocolTests {
         let data = BLEDataEncoder.encodeFocusStatus(
             phase: .building,
             energyBottles: -3,
-            elapsedMinutes: -20,
+            elapsedSeconds: 0,
             taskTitle: "Task",
-            segmentMinutes: -5
+            segmentSeconds: 0
         )
 
-        #expect(data[0] == 2)
-        #expect(data[1] == 0)
-        #expect(data[2] == 0)
-        #expect(data[3] == 0)
-        // SegmentMinutes (2B BE) is appended after the 1-byte length + "Task" (offsets 9-10)
-        // and clamps the negative value to zero.
-        #expect(data.count == 11)
-        #expect(data[9] == 0)
-        #expect(data[10] == 0)
+        #expect(data[0] == 0x02)
+        #expect(data[15] == 0)
+        #expect(data.count == 29)
+        #expect(data.suffix(4) == Data([0, 0, 0, 0]))
     }
 
     // MARK: - OTA Protocol Tests

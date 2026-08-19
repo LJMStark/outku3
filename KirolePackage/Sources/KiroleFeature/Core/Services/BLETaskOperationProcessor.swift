@@ -179,7 +179,8 @@ enum BLETaskOperationProcessor {
         if entry.result != .invalidRequest {
             switch await focusService.settleHardwareTaskOperation(
                 entry,
-                expectedSessionStartGeneration: expectedFocusStartGeneration
+                expectedSessionStartGeneration: expectedFocusStartGeneration,
+                authoritativeElapsedSeconds: log.elapsedSeconds
             ) {
             case .durable:
                 break

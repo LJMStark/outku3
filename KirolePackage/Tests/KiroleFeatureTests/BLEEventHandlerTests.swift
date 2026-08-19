@@ -98,17 +98,15 @@ struct BLEEventHandlerTests {
     // MARK: - hasDeviceTimestamp parsing (A1)
 
     private func taskPayload(taskId: String, deviceTimestamp ts: UInt32?) -> Data {
-        var data = Data([0x01])
-        data.appendBigEndian(UInt32(7))
-        data.append(UInt8(taskId.utf8.count))
-        data.append(contentsOf: Array(taskId.utf8))
-        if let ts {
-            data.append(contentsOf: [
-                UInt8((ts >> 24) & 0xFF), UInt8((ts >> 16) & 0xFF),
-                UInt8((ts >> 8) & 0xFF), UInt8(ts & 0xFF),
-            ])
+        guard let ts else {
+            var data = Data([FocusReconnectCodec.taskOperationSubVersion])
+            data.appendBigEndian(UInt32(7))
+            data.append(FocusWireFixtures.sessionId.bytes)
+            data.append(UInt8(taskId.utf8.count))
+            data.append(contentsOf: Array(taskId.utf8))
+            return data
         }
-        return data
+        return FocusWireFixtures.endPayload(taskID: taskId, end: ts, elapsed: 0)
     }
 
     @Test("given completeTask payload with 4-byte device timestamp, when parsed, then hasDeviceTimestamp is true")
@@ -119,7 +117,7 @@ struct BLEEventHandlerTests {
         #expect(log?.timestamp == Date(timeIntervalSince1970: 1_700_000_000))
     }
 
-    @Test("given completeTask payload without timestamp bytes, when parsed, then the strict v1 record is rejected")
+    @Test("given completeTask payload without timestamp bytes, when parsed, then the strict v2 record is rejected")
     func givenCompleteTaskWithoutTimestamp_whenParsed_thenRejected() {
         let payload = taskPayload(taskId: "t1", deviceTimestamp: nil)
         let log = EventLog.fromBLEPayload(type: EventLogType.completeTask.rawByte, payload: payload)

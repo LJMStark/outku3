@@ -131,6 +131,7 @@ extension AppState {
     /// 只在有活跃会话时做事：抽取挂起期间的打断 → 现算并推 0x14。整轮 sync 与本方法解耦，
     /// 仍走 BLEEventHandler 里的 60s 合并闸。
     func handleFocusRefreshRequest(now: Date = Date()) async {
+        guard !FocusSessionService.shared.isFocusStatusPushFrozen else { return }
         guard let session = FocusSessionService.shared.activeSession else { return }
         FocusSessionService.shared.refreshInterruptionsFromAppGroup()
         await syncFocusHardwareDisplay(session: session, now: now)
@@ -177,19 +178,23 @@ extension AppState {
     }
 
     func syncFocusHardwareDisplay(session: FocusSession?, now: Date = Date()) async {
+        guard !FocusSessionService.shared.isFocusStatusPushFrozen else { return }
         // 专注页、硬件帧和结束结算读同一个快照，调试倍率与手动快进因此不会只作用在界面上。
         // session == nil 时服务返回 idle 快照，保留原有的空闲状态推送。
         let progress = FocusSessionService.shared.progressSnapshot(for: session, now: now)
-        let elapsedMinutes = progress.elapsedMinutes
-        let segmentMinutes = progress.segmentMinutes
+        let elapsedSeconds = UInt32(clamping: Int(progress.elapsedSeconds))
+        let segmentSeconds = UInt32(clamping: Int(progress.segmentSeconds))
         let focusPhase = progress.phase
         // 硬件专注页能量瓶显示封顶 5（客户 2026-07）：满 5 后不再增显，但积分按真实值累计
         // （会话结束 session.earnedEnergyBottles 累加，见 FocusSessionService，不读这里的显示值）。
         let focusBottles = FocusEnergyCalculator.displayBottles(forEarned: progress.earnedEnergyBottles)
+        let focusState: FocusWireState = session == nil ? .idle : .active
+        let sessionId = session?.focusSessionId ?? .idle
+        let revision = session?.focusRevision ?? FocusSessionService.shared.lastAppliedFocusRevision
 
         // Real BLE push (all builds)
         // 短窗同内容去重，防前台化双观察者背靠背推同帧：见 AppState.lastFocusStatusDedupKey。
-        let dedupKey = "\(focusPhase)|\(focusBottles)|\(elapsedMinutes)|\(segmentMinutes)|\(session?.taskTitle ?? "")"
+        let dedupKey = "\(focusState)|\(revision)|\(sessionId.bootSessionID)|\(focusPhase)|\(focusBottles)|\(elapsedSeconds)|\(segmentSeconds)|\(session?.taskTitle ?? "")"
         let isDuplicateWithinWindow = dedupKey == lastFocusStatusDedupKey
             && lastFocusStatusSentAt.map { now.timeIntervalSince($0) < 2.0 } == true
         if BLEService.shared.connectionState.isConnected, !isDuplicateWithinWindow {
@@ -201,9 +206,12 @@ extension AppState {
                 try await BLEService.shared.sendFocusStatus(
                     phase: focusPhase,
                     energyBottles: focusBottles,
-                    elapsedMinutes: elapsedMinutes,
+                    elapsedSeconds: elapsedSeconds,
                     taskTitle: session?.taskTitle,
-                    segmentMinutes: segmentMinutes
+                    segmentSeconds: segmentSeconds,
+                    focusRevision: revision,
+                    focusSessionId: sessionId,
+                    focusState: focusState
                 )
             } catch {
                 lastFocusStatusDedupKey = nil
@@ -222,7 +230,7 @@ extension AppState {
             session: session,
             energyBottles: focusBottles,
             focusPhase: focusPhase,
-            elapsedMinutes: elapsedMinutes,
+            elapsedMinutes: progress.elapsedMinutes,
             taskTitle: session?.taskTitle
         )
         #endif

@@ -37,6 +37,12 @@ public final class BLEOfflineSyncCoordinator {
         _ operation: OfflineSyncOperationRecord
     ) async throws -> Void
     public typealias MakeUInt32 = @MainActor @Sendable () -> UInt32
+    public typealias PreviewFocus = @MainActor @Sendable (OfflineFocusState) async -> Void
+    public typealias ResolveFocus = @MainActor @Sendable (OfflineFocusState) async -> OfflineFocusResolve
+    public typealias RestoreOrdinaryFocusSync = @MainActor @Sendable (
+        OfflineFocusState,
+        OfflineFocusResolve
+    ) async -> Void
 
     public struct Dependencies: Sendable {
         public let synchronizeTime: SynchronizeTime
@@ -48,6 +54,12 @@ public final class BLEOfflineSyncCoordinator {
         public let processOperation: ProcessOperation
         public let makeSyncID: MakeUInt32
         public let makeValidUntil: MakeUInt32
+        public let makeResolveID: MakeUInt32
+        public let freezeFocusStatus: @MainActor @Sendable () -> Void
+        public let unfreezeFocusStatus: @MainActor @Sendable () -> Void
+        public let previewFocusState: PreviewFocus
+        public let resolveFocus: ResolveFocus
+        public let restoreOrdinaryFocusSync: RestoreOrdinaryFocusSync
 
         public init(
             synchronizeTime: @escaping SynchronizeTime,
@@ -58,7 +70,26 @@ public final class BLEOfflineSyncCoordinator {
             sendDayPack: @escaping SendDataset,
             processOperation: @escaping ProcessOperation,
             makeSyncID: @escaping MakeUInt32,
-            makeValidUntil: @escaping MakeUInt32
+            makeValidUntil: @escaping MakeUInt32,
+            makeResolveID: @escaping MakeUInt32 = { 1 },
+            freezeFocusStatus: @escaping @MainActor @Sendable () -> Void = {},
+            unfreezeFocusStatus: @escaping @MainActor @Sendable () -> Void = {},
+            previewFocusState: @escaping PreviewFocus = { _ in },
+            resolveFocus: @escaping ResolveFocus = { state in
+                OfflineFocusResolve(
+                    resolveID: 1,
+                    sessionId: state.sessionId,
+                    focusState: state.focusState == .active ? .active : .idle,
+                    result: state.focusState == .active ? .accepted : .closed,
+                    startTimestamp: state.startTimestamp,
+                    endTimestamp: state.endTimestamp,
+                    elapsedSeconds: state.elapsedSeconds,
+                    focusRevision: max(state.focusRevision, 1),
+                    phase: .idle,
+                    bottles: 0
+                )
+            },
+            restoreOrdinaryFocusSync: @escaping RestoreOrdinaryFocusSync = { _, _ in }
         ) {
             self.synchronizeTime = synchronizeTime
             self.sendCommand = sendCommand
@@ -69,6 +100,12 @@ public final class BLEOfflineSyncCoordinator {
             self.processOperation = processOperation
             self.makeSyncID = makeSyncID
             self.makeValidUntil = makeValidUntil
+            self.makeResolveID = makeResolveID
+            self.freezeFocusStatus = freezeFocusStatus
+            self.unfreezeFocusStatus = unfreezeFocusStatus
+            self.previewFocusState = previewFocusState
+            self.resolveFocus = resolveFocus
+            self.restoreOrdinaryFocusSync = restoreOrdinaryFocusSync
         }
     }
 
@@ -78,19 +115,22 @@ public final class BLEOfflineSyncCoordinator {
         public let revision: UInt32
         public let processedOperationCount: Int
         public let didCommitDatasets: Bool
+        public let didResolveFocus: Bool
 
         public init(
             state: OfflineSyncState,
             syncID: UInt32,
             revision: UInt32,
             processedOperationCount: Int,
-            didCommitDatasets: Bool = true
+            didCommitDatasets: Bool = true,
+            didResolveFocus: Bool = false
         ) {
             self.state = state
             self.syncID = syncID
             self.revision = revision
             self.processedOperationCount = processedOperationCount
             self.didCommitDatasets = didCommitDatasets
+            self.didResolveFocus = didResolveFocus
         }
     }
 
@@ -101,10 +141,11 @@ public final class BLEOfflineSyncCoordinator {
         FocusSessionService.shared.activeSession != nil
     }
 
-    private enum Expectation: Equatable {
+    enum Expectation: Equatable {
         case state
         case operationBatch(bootSessionID: UInt32)
         case committed(syncID: UInt32)
+        case focusState(bootSessionID: UInt32)
     }
 
     private struct PendingWaiter {
@@ -115,14 +156,15 @@ public final class BLEOfflineSyncCoordinator {
     }
 
     private let responseTimeout: Duration
-    private let dependencies: Dependencies
+    let dependencies: Dependencies
     private let mailboxLimit = 128
 
     private var activeRunID: UUID?
     private var terminalError: BLEOfflineSyncCoordinatorError?
-    private var expectedBootSessionID: UInt32?
+    var expectedBootSessionID: UInt32?
     private var expectedSyncID: UInt32?
-    private var mailbox: [OfflineSyncInboundMessage] = []
+    var mailbox: [OfflineSyncInboundMessage] = []
+    var didFreezeFocusStatus = false
     private var waiter: PendingWaiter?
     private var timeoutTask: Task<Void, Never>?
     private var requestSendTask: Task<Void, Never>?
@@ -146,6 +188,11 @@ public final class BLEOfflineSyncCoordinator {
         var begunSyncID: UInt32?
 
         do {
+            // WeChat 1.3.0 §4: lock ordinary 0x14 as soon as this wake transaction starts,
+            // before Time/QUERY, so a cached idle/active snapshot cannot race FOCUS_STATE.
+            dependencies.freezeFocusStatus()
+            didFreezeFocusStatus = true
+
             try await dependencies.synchronizeTime()
             try ensureRunIsActive(runID)
 
@@ -163,40 +210,56 @@ public final class BLEOfflineSyncCoordinator {
                 runID: runID
             )
 
+            let focusSnapshot = try await receiveFocusStateIfNeeded(state: state, runID: runID)
+            if let focusSnapshot {
+                await dependencies.previewFocusState(focusSnapshot)
+            }
+
             let processedCount = try await drainOperations(
                 state: state,
                 runID: runID
             )
+            let didResolveFocus = try await sendFocusResolveIfNeeded(
+                state: state,
+                snapshot: focusSnapshot,
+                runID: runID
+            )
             try ensureRunIsActive(runID)
-            // Overflow means firmware has already discarded at least one offline operation. The
-            // remaining batch can still be durably replayed and ACKed, but pushing the App's stale
-            // snapshot would overwrite device state that can no longer be reconstructed. The v1.1
-            // contract asks for business compensation without defining that algorithm, so fail
-            // safely before BEGIN and preserve the device's current committed datasets.
-            guard !state.stateFlags.contains(.operationOverflow) else {
-                throw BLEOfflineSyncCoordinatorError.operationOverflowRequiresRecovery
-            }
 
             let allowCommit = await shouldCommitDatasets(state)
             let deviceRequiresCommit = state.stateFlags.contains(.needsFullSync)
                 || !state.stateFlags.contains(.dataValid)
                 || Self.datasetValidityExpired(state.validUntil)
-            // Focus must not COMMIT TaskList/Schedule/DayPack: firmware treats COMMIT as an
-            // atomic dataset switch and leaves TaskIn. Device wipe / expired ValidUntil still
-            // force a full snapshot. The caller decides idle commits (task/schedule/agenda
-            // change or a physical 0x20); dialogue-only refresh is never a reason.
+            let overflow = state.stateFlags.contains(.operationOverflow)
+            // Firmware: restore ordinary 0x14/0x11/0x10/0x03 after FOCUS_RESOLVE.
+            // Do not punch a COMMIT hole just because a session stayed active.
+            // Overflow alone must not overwrite device datasets. Overflow+NeedsFullSync
+            // is the documented full-state check and still COMMITs.
             let wantsCommit = DayPackRefreshArbiter.shouldCommitDatasets(
                 structuralChanged: false,
                 force: allowCommit,
                 hasActiveFocusSession: hasActiveFocusSession()
             )
+            if overflow && !deviceRequiresCommit {
+                let completion = Completion(
+                    state: state,
+                    syncID: 0,
+                    revision: state.activeRevision,
+                    processedOperationCount: processedCount,
+                    didCommitDatasets: false,
+                    didResolveFocus: didResolveFocus
+                )
+                finishRun(runID)
+                return completion
+            }
             if !wantsCommit && !deviceRequiresCommit {
                 let completion = Completion(
                     state: state,
                     syncID: 0,
                     revision: state.activeRevision,
                     processedOperationCount: processedCount,
-                    didCommitDatasets: false
+                    didCommitDatasets: false,
+                    didResolveFocus: didResolveFocus
                 )
                 finishRun(runID)
                 return completion
@@ -232,13 +295,13 @@ public final class BLEOfflineSyncCoordinator {
                 runID: runID
             )
             try await sendDataset(
-                snapshot.schedulePayload,
-                using: dependencies.sendSchedule,
+                snapshot.dayPackPayload,
+                using: dependencies.sendDayPack,
                 runID: runID
             )
             try await sendDataset(
-                snapshot.dayPackPayload,
-                using: dependencies.sendDayPack,
+                snapshot.schedulePayload,
+                using: dependencies.sendSchedule,
                 runID: runID
             )
 
@@ -259,7 +322,8 @@ public final class BLEOfflineSyncCoordinator {
                 state: state,
                 syncID: syncID,
                 revision: snapshot.revision,
-                processedOperationCount: processedCount
+                processedOperationCount: processedCount,
+                didResolveFocus: didResolveFocus
             )
             finishRun(runID)
             return completion
@@ -329,6 +393,7 @@ public final class BLEOfflineSyncCoordinator {
         terminalError = nil
         expectedBootSessionID = nil
         expectedSyncID = nil
+        didFreezeFocusStatus = false
         mailbox.removeAll(keepingCapacity: true)
     }
 
@@ -342,12 +407,16 @@ public final class BLEOfflineSyncCoordinator {
         mailbox.removeAll(keepingCapacity: true)
         expectedBootSessionID = nil
         expectedSyncID = nil
+        if didFreezeFocusStatus {
+            dependencies.unfreezeFocusStatus()
+            didFreezeFocusStatus = false
+        }
         terminalError = nil
         activeRunID = nil
         isRunning = false
     }
 
-    private func ensureRunIsActive(_ runID: UUID) throws {
+    func ensureRunIsActive(_ runID: UUID) throws {
         try Task.checkCancellation()
         if let terminalError { throw terminalError }
         guard activeRunID == runID else {
@@ -355,157 +424,7 @@ public final class BLEOfflineSyncCoordinator {
         }
     }
 
-    private func drainOperations(
-        state: OfflineSyncState,
-        runID: UUID
-    ) async throws -> Int {
-        let expectedCount = Int(state.pendingCount)
-        guard expectedCount > 0 else { return 0 }
-
-        var acceptedRecords: [UInt32: OfflineSyncOperationRecord] = [:]
-        var lastProcessedID: UInt32?
-
-        while acceptedRecords.count < expectedCount {
-            let inbound = try await waitForMessage(
-                expecting: .operationBatch(bootSessionID: state.bootSessionID),
-                runID: runID
-            )
-            guard case .operationBatch(let batch) = inbound else {
-                throw BLEOfflineSyncCoordinatorError.invalidInbound
-            }
-            guard !batch.records.isEmpty else {
-                throw BLEOfflineSyncCoordinatorError.emptyOperationBatch
-            }
-
-            let newRecords = try validate(
-                batch.records,
-                acceptedRecords: acceptedRecords,
-                lastProcessedID: lastProcessedID,
-                expectedCount: expectedCount
-            )
-
-            do {
-                for record in newRecords {
-                    try ensureRunIsActive(runID)
-                    try await dependencies.processOperation(state.bootSessionID, record)
-                    try ensureRunIsActive(runID)
-                    acceptedRecords[record.operationID] = record
-                    lastProcessedID = record.operationID
-                }
-            } catch {
-                if let lastProcessedID {
-                    try? await dependencies.sendCommand(
-                        .opAck(
-                            OfflineSyncOperationAck(
-                                bootSessionID: state.bootSessionID,
-                                ackOperationID: lastProcessedID
-                            )
-                        )
-                    )
-                }
-                throw error
-            }
-
-            guard let cumulativeAckID = lastProcessedID else {
-                throw BLEOfflineSyncCoordinatorError.emptyOperationBatch
-            }
-            try await sendCommand(
-                .opAck(
-                    OfflineSyncOperationAck(
-                        bootSessionID: state.bootSessionID,
-                        ackOperationID: cumulativeAckID
-                    )
-                ),
-                runID: runID
-            )
-        }
-
-        return acceptedRecords.count
-    }
-
-    private func recoverOpenTransactionIfNeeded(
-        _ state: OfflineSyncState,
-        runID: UUID
-    ) async throws -> OfflineSyncState {
-        guard state.stateFlags.contains(.transactionOpen) else { return state }
-        guard state.currentSyncID != 0 else {
-            throw BLEOfflineSyncCoordinatorError.inconsistentOpenTransaction
-        }
-
-        try await sendCommand(.abort(syncID: state.currentSyncID), runID: runID)
-        // The second QUERY defines a fresh STATE/OP_BATCH boundary. Do not let batches or results
-        // emitted for the abandoned transaction satisfy the refreshed state.
-        expectedBootSessionID = nil
-        mailbox.removeAll(keepingCapacity: true)
-        let refreshedMessage = try await request(
-            .query,
-            expecting: .state,
-            runID: runID
-        )
-        guard case .state(let refreshed) = refreshedMessage else {
-            throw BLEOfflineSyncCoordinatorError.invalidInbound
-        }
-        guard !refreshed.stateFlags.contains(.transactionOpen),
-              refreshed.currentSyncID == 0 else {
-            throw BLEOfflineSyncCoordinatorError.transactionRecoveryFailed(
-                refreshed.currentSyncID
-            )
-        }
-        return refreshed
-    }
-
-    private func validate(
-        _ records: [OfflineSyncOperationRecord],
-        acceptedRecords: [UInt32: OfflineSyncOperationRecord],
-        lastProcessedID: UInt32?,
-        expectedCount: Int
-    ) throws -> [OfflineSyncOperationRecord] {
-        var newRecords: [OfflineSyncOperationRecord] = []
-        var candidateLastID = lastProcessedID
-
-        for record in records {
-            guard record.operationID != 0 else {
-                throw BLEOfflineSyncCoordinatorError.invalidOperationID
-            }
-            if let previous = acceptedRecords[record.operationID] {
-                guard previous == record else {
-                    throw BLEOfflineSyncCoordinatorError.conflictingDuplicateOperation(
-                        record.operationID
-                    )
-                }
-                continue
-            }
-            if let duplicateInBatch = newRecords.first(where: {
-                $0.operationID == record.operationID
-            }) {
-                guard duplicateInBatch == record else {
-                    throw BLEOfflineSyncCoordinatorError.conflictingDuplicateOperation(
-                        record.operationID
-                    )
-                }
-                continue
-            }
-            if let candidateLastID, record.operationID <= candidateLastID {
-                throw BLEOfflineSyncCoordinatorError.nonIncreasingOperationID(
-                    previous: candidateLastID,
-                    current: record.operationID
-                )
-            }
-            newRecords.append(record)
-            candidateLastID = record.operationID
-        }
-
-        let resultingCount = acceptedRecords.count + newRecords.count
-        guard resultingCount <= expectedCount else {
-            throw BLEOfflineSyncCoordinatorError.operationCountExceeded(
-                expected: expectedCount,
-                actual: resultingCount
-            )
-        }
-        return newRecords
-    }
-
-    private func sendCommand(
+    func sendCommand(
         _ command: OfflineSyncOutboundCommand,
         runID: UUID
     ) async throws {
@@ -524,7 +443,7 @@ public final class BLEOfflineSyncCoordinator {
         try ensureRunIsActive(runID)
     }
 
-    private func request(
+    func request(
         _ command: OfflineSyncOutboundCommand,
         expecting expectation: Expectation,
         runID: UUID
@@ -536,7 +455,7 @@ public final class BLEOfflineSyncCoordinator {
         )
     }
 
-    private func waitForMessage(
+    func waitForMessage(
         expecting expectation: Expectation,
         runID: UUID,
         command: OfflineSyncOutboundCommand? = nil
@@ -644,6 +563,8 @@ public final class BLEOfflineSyncCoordinator {
             return result.syncID == expectedSync
                 && result.targetType == .offlineSync
                 && result.resultCode == .committed
+        case (.focusState(let expectedBoot), .focusState(let state)):
+            return state.bootSessionID == expectedBoot
         default:
             return false
         }
@@ -661,7 +582,7 @@ public final class BLEOfflineSyncCoordinator {
             }
         case .result(let result):
             expectedSyncID = result.syncID
-        case .operationBatch:
+        case .operationBatch, .focusState:
             break
         }
     }
@@ -686,6 +607,15 @@ public final class BLEOfflineSyncCoordinator {
             return mailbox.contains { buffered in
                 guard case .state(let state) = buffered else { return false }
                 return state.bootSessionID == batch.bootSessionID
+            }
+        case .focusState(let snapshot):
+            if let expectedBootSessionID {
+                return snapshot.bootSessionID == expectedBootSessionID
+            }
+            guard let waiter, waiter.expectation == .state else { return false }
+            return mailbox.contains { buffered in
+                guard case .state(let state) = buffered else { return false }
+                return state.bootSessionID == snapshot.bootSessionID
             }
         case .result(let result):
             guard let expectedSyncID else { return false }

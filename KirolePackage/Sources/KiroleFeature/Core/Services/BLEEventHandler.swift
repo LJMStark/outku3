@@ -241,25 +241,19 @@ public enum BLEEventHandler {
     private static func handleEnterTaskIn(_ eventLog: EventLog, service: BLEService) {
         guard let taskId = eventLog.taskId,
               let task = resolveTask(taskId: taskId) else {
-            // 设备已进入任务详情页、正等 TaskInPage。App 找不到该 task（clean install / 任务被删 /
-            // 本地数据被 reset，而硬件仍持旧 DayPack 缓存）时不能静默——设备会永久卡在详情页“像死机”。
-            // 记日志 + 发 DeviceMode(.interactive) 把设备退回交互概览解卡。
+            // Firmware 1.3.0: DeviceMode 0x12 must not enter, exit, or arbitrate focus.
+            // Unknown TaskId has no dedicated opcode; send idle FocusStatus on the focus channel.
             ErrorReporter.log(
                 .sync(
                     component: "BLE EnterTaskIn",
-                    underlying: "task not found (taskId=\(eventLog.taskId ?? "nil"), \(AppState.shared.tasks.count) local tasks) — recovering device to interactive mode"
+                    underlying: "task not found (taskId=\(eventLog.taskId ?? "nil"), \(AppState.shared.tasks.count) local tasks) — sending idle FocusStatus"
                 ),
                 context: "BLEEventHandler.handleEnterTaskIn"
             )
             Task { @MainActor in
-                do {
-                    try await service.sendDeviceMode(.interactive)
-                } catch {
-                    ErrorReporter.log(
-                        .sync(component: "BLE EnterTaskIn recovery", underlying: error.localizedDescription),
-                        context: "BLEEventHandler.handleEnterTaskIn"
-                    )
-                }
+                guard FocusSessionService.shared.activeSession == nil else { return }
+                FocusSessionService.shared.lastAppliedFocusRevision &+= 1
+                await AppState.shared.syncFocusHardwareDisplay(session: nil)
             }
             return
         }
@@ -322,7 +316,9 @@ public enum BLEEventHandler {
             .batteryLevel {
             service.deviceBatteryLevel = latestBattery
         }
-        if logs.contains(where: { $0.eventType == .completeTask || $0.eventType == .skipTask }) {
+        if logs.contains(where: {
+            $0.eventType == .completeTask || $0.eventType == .skipTask || $0.eventType == .enterTaskIn
+        }) {
             await AppState.shared.ensureInitialLoadComplete()
         }
         let processing = await processEventLogs(logs, service: service, isReplay: true)
@@ -374,16 +370,21 @@ public enum BLEEventHandler {
         case 0x16, 0x17:
             return 5
         case 0x10:
-            guard offset + 1 < payload.count else { return nil }
-            let idLength = Int(payload[offset + 1])
-            return 2 + idLength + 4
-        case 0x11, 0x12:
-            // type | SubVersion(1) | OperationID(4) | TaskIdLength(1) | TaskId | Timestamp(4)
-            guard offset + 6 < payload.count, payload[offset + 1] == 0x01 else { return nil }
-            let idLength = Int(payload[offset + 6])
+            // type | SubVersion(0x02) | OperationID(4) | FocusSessionId(8) | TaskIdLen | TaskId | Start(4)
+            guard offset + 14 < payload.count,
+                  payload[offset + 1] == FocusReconnectCodec.taskOperationSubVersion else { return nil }
+            let idLength = Int(payload[offset + 14])
             guard payload.bigEndianUInt32(at: offset + 2) != 0,
                   (1...36).contains(idLength) else { return nil }
-            return 11 + idLength
+            return 19 + idLength
+        case 0x11, 0x12:
+            // type | SubVersion(0x02) | OperationID(4) | FocusSessionId(8) | TaskIdLen | TaskId | End(4) | Elapsed(4)
+            guard offset + 14 < payload.count,
+                  payload[offset + 1] == FocusReconnectCodec.taskOperationSubVersion else { return nil }
+            let idLength = Int(payload[offset + 14])
+            guard payload.bigEndianUInt32(at: offset + 2) != 0,
+                  (1...36).contains(idLength) else { return nil }
+            return 23 + idLength
         case 0x13...0x15:
             guard offset + 1 < payload.count else { return nil }
             let idLength = Int(payload[offset + 1])
@@ -403,10 +404,9 @@ public enum BLEEventHandler {
     /// in `handleSingleEvent`'s switch — they are intentionally skipped during
     /// batch replay because those responses are stale by the time logs arrive.
     ///
-    /// `isReplay: true` skips `enterTaskIn` focus session starts: App has no
-    /// screen-activity data for the offline period, so focus time cannot be
-    /// measured correctly. completeTask/skipTask still run to close any
-    /// currently-active session.
+    /// `isReplay: true` still starts `enterTaskIn` when the device created the
+    /// session offline. `endedPending` snapshots set `suppressVisibleFocusStart`
+    /// so a start-then-end batch does not flash the focus UI.
     @discardableResult
     static func handleEventLogs(
         _ logs: [EventLog],
@@ -585,7 +585,10 @@ public enum BLEEventHandler {
     }
 
     private nonisolated static func isVersionedTaskOperation(_ log: EventLog) -> Bool {
-        log.operationID != nil && (log.eventType == .completeTask || log.eventType == .skipTask)
+        log.operationID != nil
+            && (log.eventType == .completeTask
+                || log.eventType == .skipTask
+                || log.eventType == .enterTaskIn)
     }
 
     private static func refreshReceipt(_ log: EventLog) -> TaskOperationReceipt? {
@@ -656,31 +659,28 @@ public enum BLEEventHandler {
         let sessionTimestamp = focusEventTimestamp(eventLog.timestamp, now: Date())
         switch eventLog.eventType {
         case .enterTaskIn:
-            // INTENTIONAL — do not "fix" this into a back-fill. Product requirement:
-            // focus must be judged live inside the App, never reconstructed from
-            // hardware timestamps. During replay there is no App-side screen-activity
-            // data for the offline period, so focus time cannot be measured and we do
-            // NOT fabricate it. Skipping also avoids a stale activeSession. The Inku
-            // competitive review's "back-fill offline focus" suggestion was rejected
-            // for this reason. (See memory: project_focus_app_authoritative.)
-            guard !isReplay else { return false }
+            // Offline enter is a first-class session now. An endedPending snapshot suppresses
+            // the visible start so a start-then-end batch settles once without flashing focus UI.
+            if isReplay, focusService.suppressVisibleFocusStart { return false }
             // 与 handleEnterTaskIn 的 guard 对称：任务解析失败不得开会话。联调实测（2026-07-04）：
             // 固件 EnterTaskIn payload 未按 §5.3 带 UUID 时，首字节 0x00 解析成空 taskId + 错位读出
             // 1970 时间戳——旧逻辑仍以 "Unknown Task" 开会话，0x14 推出 elapsed=65535/bottles=255
             // 怪帧。解卡帧（DeviceMode.interactive）由 handleEnterTaskIn 分支负责，这里只跳过。
             if let taskId = eventLog.taskId,
                let task = resolveTask(taskId: taskId, in: tasksOverride ?? AppState.shared.tasks) {
-                // 开新会话的起始时间过去向夹取（2 小时容忍）：固件 RTC 在 Time(0x05) 同步前是
-                // 远古值（1970 级），合法 UUID + 远古时间戳同样会铸造溢出时长。只夹这里、不动
-                // 全局 focusEventTimestamp——补传的历史事件时间戳合法地在过去。
-                let startTime = max(sessionTimestamp, Date().addingTimeInterval(-7200))
+                // Live enter still clamps ancient RTC timestamps. Replay/offline enter keeps the
+                // device start time (future-clamped only by focusEventTimestamp).
+                let startTime = isReplay
+                    ? sessionTimestamp
+                    : max(sessionTimestamp, Date().addingTimeInterval(-7200))
                 await focusService.startSession(
                     taskId: taskId,
                     taskTitle: task.title,
                     // 用注入实例的模式，别读 shared——测试/非 shared 调用会拿错
                     // （Codex review P2, 2026-07-04）。
                     mode: focusService.focusEnforcementMode,
-                    startTime: startTime
+                    startTime: startTime,
+                    focusSessionId: eventLog.focusSessionId
                 )
                 return false
             } else {
@@ -696,13 +696,21 @@ public enum BLEEventHandler {
 
         case .completeTask:
             if let taskId = eventLog.taskId {
-                return focusService.completeTask(taskId: taskId, endTime: sessionTimestamp)
+                return focusService.completeTask(
+                    taskId: taskId,
+                    endTime: sessionTimestamp,
+                    authoritativeElapsedSeconds: eventLog.elapsedSeconds
+                )
             }
             return false
 
         case .skipTask:
             if let taskId = eventLog.taskId {
-                return focusService.skipTask(taskId: taskId, endTime: sessionTimestamp)
+                return focusService.skipTask(
+                    taskId: taskId,
+                    endTime: sessionTimestamp,
+                    authoritativeElapsedSeconds: eventLog.elapsedSeconds
+                )
             }
             return false
 
@@ -724,7 +732,7 @@ public enum BLEEventHandler {
             }
     }
 
-    private nonisolated static func resolvingTaskIdentifier(
+    nonisolated static func resolvingTaskIdentifier(
         in event: EventLog,
         tasks: [TaskItem]
     ) -> EventLog {
@@ -745,7 +753,9 @@ public enum BLEEventHandler {
             value: event.value,
             hasDeviceTimestamp: event.hasDeviceTimestamp,
             firmwareVersion: event.firmwareVersion,
-            avatarInventory: event.avatarInventory
+            avatarInventory: event.avatarInventory,
+            focusSessionId: event.focusSessionId,
+            elapsedSeconds: event.elapsedSeconds
         )
     }
 

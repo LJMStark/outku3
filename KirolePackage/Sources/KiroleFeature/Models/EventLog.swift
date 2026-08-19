@@ -24,6 +24,10 @@ public struct EventLog: Codable, Sendable, Identifiable {
     /// 设备侧自定义头像库存（v2.7，仅实时 DeviceWake ≥29B payload）。AvatarID 避免
     /// 两个内容相同（CRC 相同）的伴侣被误认为同一身份；长度+CRC 用于断线后的库存对账。
     public let avatarInventory: AvatarInventory?
+    /// v2 focus operation session key. Nil on pre-v2.13 logs.
+    public let focusSessionId: FocusSessionId?
+    /// Device-reported elapsed seconds on Complete/Skip v2.
+    public let elapsedSeconds: UInt32?
 
     public struct AvatarInventory: Codable, Sendable, Equatable {
         public let hasImage: Bool
@@ -48,7 +52,9 @@ public struct EventLog: Codable, Sendable, Identifiable {
         value: Int = 0,
         hasDeviceTimestamp: Bool = false,
         firmwareVersion: FirmwareVersion? = nil,
-        avatarInventory: AvatarInventory? = nil
+        avatarInventory: AvatarInventory? = nil,
+        focusSessionId: FocusSessionId? = nil,
+        elapsedSeconds: UInt32? = nil
     ) {
         self.id = id
         self.eventType = eventType
@@ -59,6 +65,8 @@ public struct EventLog: Codable, Sendable, Identifiable {
         self.hasDeviceTimestamp = hasDeviceTimestamp
         self.firmwareVersion = firmwareVersion
         self.avatarInventory = avatarInventory
+        self.focusSessionId = focusSessionId
+        self.elapsedSeconds = elapsedSeconds
     }
 
     // 向后兼容：旧 event_logs.json 没有 hasDeviceTimestamp 字段，缺失时默认 false，
@@ -74,6 +82,8 @@ public struct EventLog: Codable, Sendable, Identifiable {
         self.hasDeviceTimestamp = try container.decodeIfPresent(Bool.self, forKey: .hasDeviceTimestamp) ?? false
         self.firmwareVersion = try container.decodeIfPresent(FirmwareVersion.self, forKey: .firmwareVersion)
         self.avatarInventory = try container.decodeIfPresent(AvatarInventory.self, forKey: .avatarInventory)
+        self.focusSessionId = try container.decodeIfPresent(FocusSessionId.self, forKey: .focusSessionId)
+        self.elapsedSeconds = try container.decodeIfPresent(UInt32.self, forKey: .elapsedSeconds)
     }
 }
 
@@ -259,56 +269,57 @@ public extension EventLog {
     }
 
     private static func parseEnterTaskEvent(payload: Data) -> EventLog? {
-        guard payload.count >= 1 else { return nil }
-        let taskIdLength = Int(payload[0])
-        guard payload.count >= 1 + taskIdLength else { return nil }
-
-        let taskIdData = payload.subdata(in: 1..<(1 + taskIdLength))
-        let taskId = String(data: taskIdData, encoding: .utf8)
-
-        var timestamp = Date()
-        var hasDeviceTimestamp = false
-        let timestampOffset = 1 + taskIdLength
-        if payload.count >= timestampOffset + 4 {
-            let ts = UInt32(payload[timestampOffset]) << 24
-                | UInt32(payload[timestampOffset + 1]) << 16
-                | UInt32(payload[timestampOffset + 2]) << 8
-                | UInt32(payload[timestampOffset + 3])
-            timestamp = Date(timeIntervalSince1970: TimeInterval(ts))
-            hasDeviceTimestamp = true
+        guard payload.count >= 18, payload[0] == FocusReconnectCodec.taskOperationSubVersion else {
+            return nil
         }
+        let operationID = payload.bigEndianUInt32(at: 1)
+        let sessionId = FocusSessionId.read(from: payload, at: 5)
+        let taskIDLength = Int(payload[13])
+        guard operationID != 0, (1...36).contains(taskIDLength) else { return nil }
+        let expectedLength = 18 + taskIDLength
+        guard payload.count == expectedLength else { return nil }
 
+        let taskIDData = payload.subdata(in: 14..<(14 + taskIDLength))
+        guard let taskID = String(data: taskIDData, encoding: .utf8) else { return nil }
+        let timestamp = payload.bigEndianUInt32(at: 14 + taskIDLength)
         return EventLog(
             eventType: .enterTaskIn,
-            taskId: taskId,
-            timestamp: timestamp,
-            hasDeviceTimestamp: hasDeviceTimestamp
+            taskId: taskID,
+            operationID: operationID,
+            timestamp: Date(timeIntervalSince1970: TimeInterval(timestamp)),
+            hasDeviceTimestamp: true,
+            focusSessionId: sessionId
         )
     }
 
-    /// v1 payload: `SubVersion(0x01) | OperationID(4B BE) | TaskIdLength(1B) |
-    /// TaskId(NB UTF-8) | Timestamp(4B BE)`. Strict total length prevents App and firmware
-    /// from accepting different interpretations of one operation record.
+    /// v2 payload: `SubVersion(0x02) | OperationID(4) | FocusSessionId(8) |
+    /// TaskId(1+N) | EndTimestamp(4) | ElapsedSeconds(4)`. Other versions are rejected.
     private static func parseVersionedTaskOperation(
         eventType: EventLogType,
         payload: Data
     ) -> EventLog? {
-        guard payload.count >= 10, payload[0] == 0x01 else { return nil }
+        guard payload.count >= 22, payload[0] == FocusReconnectCodec.taskOperationSubVersion else {
+            return nil
+        }
         let operationID = payload.bigEndianUInt32(at: 1)
-        let taskIDLength = Int(payload[5])
+        let sessionId = FocusSessionId.read(from: payload, at: 5)
+        let taskIDLength = Int(payload[13])
         guard operationID != 0, (1...36).contains(taskIDLength) else { return nil }
-        let expectedLength = 1 + 4 + 1 + taskIDLength + 4
+        let expectedLength = 22 + taskIDLength
         guard payload.count == expectedLength else { return nil }
 
-        let taskIDData = payload.subdata(in: 6..<(6 + taskIDLength))
+        let taskIDData = payload.subdata(in: 14..<(14 + taskIDLength))
         guard let taskID = String(data: taskIDData, encoding: .utf8) else { return nil }
-        let timestamp = payload.bigEndianUInt32(at: 6 + taskIDLength)
+        let timestamp = payload.bigEndianUInt32(at: 14 + taskIDLength)
+        let elapsed = payload.bigEndianUInt32(at: 18 + taskIDLength)
         return EventLog(
             eventType: eventType,
             taskId: taskID,
             operationID: operationID,
             timestamp: Date(timeIntervalSince1970: TimeInterval(timestamp)),
-            hasDeviceTimestamp: true
+            hasDeviceTimestamp: true,
+            focusSessionId: sessionId,
+            elapsedSeconds: elapsed
         )
     }
 

@@ -42,7 +42,9 @@ struct BLEProtocolSimulationTests {
         )
         let schedule = try hardware.receiveSingleAppPacket(schedulePacket).parseSchedule()
         #expect(schedule.events.map(\.title) == ["HW Sync"])
-        #expect(schedule.events.map(\.startTime) == ["09:30"])
+        #expect(schedule.events.map(\.time) == ["09:30"])
+        #expect(schedule.events.map(\.endTime) == ["10:00"])
+        #expect(!schedule.events[0].description.isEmpty)
 
         let weatherPacket = BLESimpleEncoder.encode(
             type: BLEDataType.weather.rawValue,
@@ -713,9 +715,7 @@ struct BLEProtocolSimulationTests {
     }
 
     private static func enterTaskPayload(id: String, timestamp: UInt32) -> Data {
-        var data = idOnlyPayload(id: id)
-        data.append(timestampPayload(timestamp))
-        return data
+        FocusWireFixtures.enterPayload(taskID: id, start: timestamp)
     }
 
     private static func taskOperationPayload(
@@ -723,11 +723,12 @@ struct BLEProtocolSimulationTests {
         operationID: UInt32,
         timestamp: UInt32
     ) -> Data {
-        var data = Data([0x01])
-        data.appendBigEndian(operationID)
-        data.append(idOnlyPayload(id: id))
-        data.append(timestampPayload(timestamp))
-        return data
+        FocusWireFixtures.endPayload(
+            operationID: operationID,
+            taskID: id,
+            end: timestamp,
+            elapsed: 0
+        )
     }
 
     private static func refreshRequestPayload(requestID: UInt32) -> Data {

@@ -37,7 +37,9 @@ enum BLEOfflineOperationProcessor {
             return false
         }
 
-        if event.eventType == .completeTask || event.eventType == .skipTask {
+        if event.eventType == .completeTask
+            || event.eventType == .skipTask
+            || event.eventType == .enterTaskIn {
             guard event.operationID == record.operationID else { return false }
         }
 
@@ -76,7 +78,7 @@ enum BLEOfflineOperationProcessor {
 
     private static func isSupportedOfflineEvent(_ eventType: UInt8) -> Bool {
         switch EventLogType(rawByte: eventType) {
-        case .completeTask, .skipTask, .reminderAcknowledged, .reminderDismissed:
+        case .enterTaskIn, .completeTask, .skipTask, .reminderAcknowledged, .reminderDismissed:
             return true
         default:
             return false
@@ -96,7 +98,9 @@ enum BLEOfflineOperationProcessor {
         _ event: EventLog,
         scopedDeviceID: String
     ) async -> Bool {
-        if event.eventType == .completeTask || event.eventType == .skipTask {
+        if event.eventType == .completeTask
+            || event.eventType == .skipTask
+            || event.eventType == .enterTaskIn {
             await AppState.shared.ensureInitialLoadComplete()
         }
         let processing = await BLEEventHandler.processEventLogs(

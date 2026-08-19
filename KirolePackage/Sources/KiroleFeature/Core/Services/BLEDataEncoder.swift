@@ -88,30 +88,9 @@ public enum BLEDataEncoder {
 
     // MARK: - Schedule
 
-    /// 编码日程数据
-    public static func encodeSchedule(_ events: [CalendarEvent]) -> Data {
-        var data = Data()
-        let todayEvents = events.filter { Calendar.current.isDateInToday($0.startTime) }
-        data.append(UInt8(min(todayEvents.count, 8)))
-
-        let formatter = DateFormatter()
-        // en_US_POSIX pins ASCII digits: without it a Persian/Arabic number region would emit
-        // e.g. "۰۹:۳۰" (multi-byte, non-ASCII), which both renders as tofu on the E-ink panel
-        // AND desyncs the fixed 5-byte StartTime field (§4.4). This raw write bypasses the
-        // appendString ASCII choke point (StartTime is a fixed 5-byte field, not length-prefixed),
-        // so the locale is the guarantee here. All other time formatters already pin en_US_POSIX.
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "HH:mm"
-
-        for event in todayEvents.prefix(8) {
-            data.appendString(
-                event.title,
-                maxLength: 25,
-                fallbackIfSanitizedEmpty: HardwareTitleFallback.event
-            )
-            data.append(formatter.string(from: event.startTime).data(using: .utf8) ?? Data())
-        }
-        return data
+    /// 编码日程数据（Schedule v2：日期头 + 完整六字段事件行）。
+    public static func encodeSchedule(_ events: [CalendarEvent], now: Date = Date()) -> Data {
+        ScheduleV2Codec.encode(events, now: now)
     }
 
     // MARK: - Weather
@@ -349,31 +328,27 @@ public enum BLEDataEncoder {
 
     // MARK: - Focus Status (0x14)
 
-    /// 编码专注状态，用于实时推送当前专注状态和能量瓶子数给硬件。
+    /// 编码专注状态 v2。裁决完成前不得发送本帧覆盖设备本地页。
     ///
-    /// Payload 格式：
-    /// - phase      1B  专注阶段（0=idle, 1=warmup, 2=building, 3=deep）
-    /// - bottles    1B  本会话已收集的能量瓶子数（按未打断段计、打断重置在装填进度；clamp 0-255）
-    /// - elapsed    2B  本会话累计已专注分钟数（自进入任务，墙钟，不随打断归零；Big Endian，clamp 0-65535）
-    /// - taskTitle  变长 长度前缀 UTF-8，最多 40 字节
-    /// - segment    2B  当前未打断连续段分钟数（打断即归零重计，驱动装填进度；追加在 taskTitle 后，Big Endian，clamp 0-65535）
+    /// Payload：`SubVersion | FocusRevision | FocusSessionId | FocusState | Phase |
+    /// Bottles | ElapsedSeconds | TaskTitle | SegmentSeconds`（25+N）。
     public static func encodeFocusStatus(
         phase: FocusPhase,
         energyBottles: Int,
-        elapsedMinutes: Int,
+        elapsedSeconds: UInt32,
         taskTitle: String?,
-        segmentMinutes: Int
+        segmentSeconds: UInt32,
+        focusRevision: UInt32 = 0,
+        focusSessionId: FocusSessionId = .idle,
+        focusState: FocusWireState = .idle
     ) -> Data {
-        var data = Data()
-        let phaseByte: UInt8 = switch phase {
-        case .idle:     0
-        case .warmup:   1
-        case .building: 2
-        case .deep:     3
-        }
-        data.append(phaseByte)
+        var data = Data([FocusReconnectCodec.focusStatusSubVersion])
+        data.appendBigEndian(focusRevision)
+        data.append(focusSessionId.bytes)
+        data.append(focusState.rawValue)
+        data.append(phase.wireByte)
         data.appendClampedUInt8(energyBottles)
-        data.appendBigEndian(UInt16(clamping: elapsedMinutes))
+        data.appendBigEndian(elapsedSeconds)
         if let taskTitle {
             data.appendString(
                 taskTitle,
@@ -383,9 +358,7 @@ public enum BLEDataEncoder {
         } else {
             data.appendString("", maxLength: 40)
         }
-        // SegmentMinutes appended after the variable-length TaskTitle so older firmware that
-        // stops at TaskTitle simply ignores the trailing bytes (forward-compatible).
-        data.appendBigEndian(UInt16(clamping: segmentMinutes))
+        data.appendBigEndian(segmentSeconds)
         return data
     }
 
