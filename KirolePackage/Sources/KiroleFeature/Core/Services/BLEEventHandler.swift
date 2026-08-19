@@ -241,7 +241,7 @@ public enum BLEEventHandler {
     private static func handleEnterTaskIn(_ eventLog: EventLog, service: BLEService) {
         guard let taskId = eventLog.taskId,
               let task = resolveTask(taskId: taskId) else {
-            // Firmware 1.3.0: DeviceMode 0x12 must not enter, exit, or arbitrate focus.
+            // Firmware 1.3.1: DeviceMode 0x12 must not enter, exit, or arbitrate focus.
             // Unknown TaskId has no dedicated opcode; send idle FocusStatus on the focus channel.
             ErrorReporter.log(
                 .sync(

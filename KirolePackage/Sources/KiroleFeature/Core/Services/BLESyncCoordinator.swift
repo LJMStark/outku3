@@ -194,8 +194,8 @@ public final class BLESyncCoordinator {
         )
     }
 
-    /// Firmware step 6: after FOCUS_RESOLVE, restore ordinary DayPack/Schedule
-    /// frames. These are live 0x10/0x03 writes, not a 0x25 COMMIT.
+    /// Firmware 1.3.1: after RESULT/COMMITTED, restore ordinary DayPack/Schedule.
+    /// Ordinary 0x10 does not leave TaskIn. Dataset COMMIT is never a reconnect step.
     private func sendOrdinaryDatasetsAfterFocusResolve() async {
         do {
             let frozen = try await generateStableDayPack()
@@ -489,10 +489,9 @@ public final class BLESyncCoordinator {
                 guard connected else { throw BLEError.connectionFailed(lastConnectError) }
             }
 
-            // The session acquired before local preparation owns the complete hardware contract:
-            // 0x05 -> QUERY/STATE -> FOCUS_STATE/OP_BATCH -> FOCUS_RESOLVE ->
-            // BEGIN -> 0x02 -> 0x10 -> 0x03 -> COMMIT -> RESULT=COMMITTED.
-            // No other business frame is emitted before it returns.
+            // Firmware 1.3.1: Time -> QUERY/STATE -> FOCUS_STATE -> OP_BATCH ->
+            // OP_ACK -> FOCUS_RESOLVE -> RESULT/COMMITTED -> unlock. Dataset
+            // COMMIT is deferred while a focus session is still active.
             let completion = try await offlineSyncCoordinator.synchronize { [weak self] _ in
                 guard let self else { return false }
                 let afterOpsHash = HardwareContentFingerprint.structural(

@@ -162,9 +162,11 @@ public final class BLEOfflineSyncCoordinator {
     private var activeRunID: UUID?
     private var terminalError: BLEOfflineSyncCoordinatorError?
     var expectedBootSessionID: UInt32?
-    private var expectedSyncID: UInt32?
+    var expectedSyncID: UInt32?
     var mailbox: [OfflineSyncInboundMessage] = []
     var didFreezeFocusStatus = false
+    /// Firmware 1.3.1: keep `0x14` frozen until FOCUS_RESOLVE gets RESULT/COMMITTED.
+    var awaitingFocusResolveResult = false
     private var waiter: PendingWaiter?
     private var timeoutTask: Task<Void, Never>?
     private var requestSendTask: Task<Void, Never>?
@@ -188,7 +190,7 @@ public final class BLEOfflineSyncCoordinator {
         var begunSyncID: UInt32?
 
         do {
-            // WeChat 1.3.0 §4: lock ordinary 0x14 as soon as this wake transaction starts,
+            // Firmware 1.3.1: lock ordinary 0x14 as soon as this wake transaction starts,
             // before Time/QUERY, so a cached idle/active snapshot cannot race FOCUS_STATE.
             dependencies.freezeFocusStatus()
             didFreezeFocusStatus = true
@@ -231,14 +233,25 @@ public final class BLEOfflineSyncCoordinator {
                 || !state.stateFlags.contains(.dataValid)
                 || Self.datasetValidityExpired(state.validUntil)
             let overflow = state.stateFlags.contains(.operationOverflow)
-            // Firmware: restore ordinary 0x14/0x11/0x10/0x03 after FOCUS_RESOLVE.
-            // Do not punch a COMMIT hole just because a session stayed active.
-            // Overflow alone must not overwrite device datasets. Overflow+NeedsFullSync
-            // is the documented full-state check and still COMMITs.
+            // Firmware 1.3.1: never send OfflineSync COMMIT while focus is still
+            // active. Ordinary DayPack/Schedule may resume after RESULT/COMMITTED;
+            // dataset COMMIT waits until the session ends.
+            if hasActiveFocusSession() {
+                let completion = Completion(
+                    state: state,
+                    syncID: 0,
+                    revision: state.activeRevision,
+                    processedOperationCount: processedCount,
+                    didCommitDatasets: false,
+                    didResolveFocus: didResolveFocus
+                )
+                finishRun(runID)
+                return completion
+            }
             let wantsCommit = DayPackRefreshArbiter.shouldCommitDatasets(
                 structuralChanged: false,
                 force: allowCommit,
-                hasActiveFocusSession: hasActiveFocusSession()
+                hasActiveFocusSession: false
             )
             if overflow && !deviceRequiresCommit {
                 let completion = Completion(
@@ -345,8 +358,8 @@ public final class BLEOfflineSyncCoordinator {
            result.syncID == expectedSyncID {
             switch result.resultCode {
             case .accepted, .staged:
-                // BEGIN and individual datasets may acknowledge their staging progress with the
-                // same SyncID. They are not the terminal COMMIT response.
+                // BEGIN / FOCUS_RESOLVE may ACK with ACCEPTED. That is not COMMITTED
+                // and must not unlock focus or finish a dataset COMMIT.
                 return
             case .committed:
                 guard result.targetType == .offlineSync else { return }
@@ -394,6 +407,7 @@ public final class BLEOfflineSyncCoordinator {
         expectedBootSessionID = nil
         expectedSyncID = nil
         didFreezeFocusStatus = false
+        awaitingFocusResolveResult = false
         mailbox.removeAll(keepingCapacity: true)
     }
 
@@ -407,10 +421,11 @@ public final class BLEOfflineSyncCoordinator {
         mailbox.removeAll(keepingCapacity: true)
         expectedBootSessionID = nil
         expectedSyncID = nil
-        if didFreezeFocusStatus {
+        if didFreezeFocusStatus && !awaitingFocusResolveResult {
             dependencies.unfreezeFocusStatus()
             didFreezeFocusStatus = false
         }
+        awaitingFocusResolveResult = false
         terminalError = nil
         activeRunID = nil
         isRunning = false

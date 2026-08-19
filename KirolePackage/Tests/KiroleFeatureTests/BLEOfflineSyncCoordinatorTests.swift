@@ -256,77 +256,6 @@ struct BLEOfflineSyncCoordinatorTests {
         }
     }
 
-    @Test("FocusSyncPending freezes 0x14, resolves, then restores ordinary sync without forcing COMMIT")
-    func focusSyncPendingHandshake() async throws {
-        let recorder = Recorder()
-        let coordinator = recorder.makeCoordinator()
-        coordinator.hasActiveFocusSession = { true }
-        let snapshot = FocusWireFixtures.focusState(bootSessionID: 7)
-
-        let task = Task {
-            try await coordinator.synchronize(shouldCommitDatasets: { _ in false })
-        }
-        try await waitUntil("QUERY") { recorder.events.contains(.command(.query)) }
-        #expect(recorder.freezeCount == 1)
-        coordinator.handleInbound(.state(Self.state(
-            stateFlags: [.dataValid, .focusSyncPending],
-            validUntil: 2_000_000_000
-        )))
-        coordinator.handleInbound(.focusState(snapshot))
-
-        try await waitUntil("FOCUS_RESOLVE") {
-            recorder.events.contains { event in
-                if case .command(.focusResolve(let resolve)) = event {
-                    return resolve.resolveID == 1 && resolve.sessionId == snapshot.sessionId
-                }
-                return false
-            }
-        }
-        #expect(recorder.previewed == [snapshot])
-
-        let completion = try await task.value
-        #expect(completion.didCommitDatasets == false)
-        #expect(completion.didResolveFocus)
-        #expect(recorder.restored.count == 1)
-        #expect(recorder.unfreezeCount >= 1)
-        #expect(!recorder.events.contains { event in
-            if case .command(.begin) = event { return true }
-            if case .command(.commit) = event { return true }
-            return false
-        })
-    }
-
-    @Test("NeedsFullSync after FOCUS_RESOLVE still COMMITs DayPack before Schedule")
-    func focusResolveThenFullSyncCommitsDayPackBeforeSchedule() async throws {
-        let recorder = Recorder()
-        let coordinator = recorder.makeCoordinator()
-        coordinator.hasActiveFocusSession = { true }
-        let snapshot = FocusWireFixtures.focusState(bootSessionID: 7)
-
-        let task = Task { try await coordinator.synchronize() }
-        try await waitUntil("QUERY") { recorder.events.contains(.command(.query)) }
-        coordinator.handleInbound(.state(Self.state(
-            stateFlags: [.needsFullSync, .focusSyncPending],
-            validUntil: 2_000_000_000
-        )))
-        coordinator.handleInbound(.focusState(snapshot))
-
-        try await waitUntil("COMMIT") {
-            recorder.events.contains(.command(.commit(syncID: 0x0102_0304)))
-        }
-        coordinator.handleInbound(.result(Self.result()))
-
-        let completion = try await task.value
-        #expect(completion.didCommitDatasets)
-        #expect(completion.didResolveFocus)
-        let dayPackIndex = recorder.events.firstIndex(of: .dayPack(Data([0x10])))
-        let scheduleIndex = recorder.events.firstIndex(of: .schedule(Data([0x03])))
-        #expect(dayPackIndex != nil && scheduleIndex != nil)
-        if let dayPackIndex, let scheduleIndex {
-            #expect(dayPackIndex < scheduleIndex)
-        }
-    }
-
     @Test("Focus session drains ops but skips BEGIN so TaskIn is not ejected")
     func focusSessionSkipsDatasetCommit() async throws {
         let recorder = Recorder()
@@ -348,29 +277,6 @@ struct BLEOfflineSyncCoordinatorTests {
             if case .command(.commit) = event { return true }
             return false
         })
-    }
-
-    @Test("NeedsFullSync still commits during focus")
-    func focusSessionStillCommitsWhenDeviceRequiresFullSync() async throws {
-        let recorder = Recorder()
-        let coordinator = recorder.makeCoordinator()
-        coordinator.hasActiveFocusSession = { true }
-
-        let task = Task { try await coordinator.synchronize() }
-        try await waitUntil("QUERY") { recorder.events.contains(.command(.query)) }
-        coordinator.handleInbound(.state(Self.state(
-            stateFlags: [.needsFullSync],
-            validUntil: 2_000_000_000
-        )))
-
-        try await waitUntil("COMMIT") {
-            recorder.events.contains(.command(.commit(syncID: 0x0102_0304)))
-        }
-        coordinator.handleInbound(.result(Self.result()))
-
-        let completion = try await task.value
-        #expect(completion.didCommitDatasets)
-        #expect(recorder.events.contains(.snapshot))
     }
 
     @Test("Caller can skip COMMIT when tasks and schedule did not change")

@@ -1,7 +1,7 @@
 import Foundation
 
 extension FocusSessionService {
-    /// Frozen from DeviceWake until `FOCUS_RESOLVE` is sent (or the 0x25 run ends).
+    /// Frozen from DeviceWake until FOCUS_RESOLVE receives RESULT/COMMITTED.
     public var isFocusStatusPushFrozen: Bool {
         get { FocusReconnectFlagStore.flags(for: self).isFocusStatusPushFrozen }
         set { FocusReconnectFlagStore.flags(for: self).isFocusStatusPushFrozen = newValue }

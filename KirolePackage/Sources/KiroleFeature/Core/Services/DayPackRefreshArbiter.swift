@@ -12,9 +12,8 @@ enum DayPackRefreshArbiter {
         force: Bool,
         hasActiveFocusSession: Bool
     ) -> Bool {
-        // Live connected focus must not COMMIT: firmware treats COMMIT as an atomic
-        // TaskList/Schedule/DayPack switch and leaves TaskIn. FOCUS_RESOLVE restores
-        // ordinary 0x14/0x11/0x10/0x03 instead of punching this gate.
+        // Firmware 1.3.1: keep OfflineSync COMMIT out of an active focus session
+        // so older firmware cannot leave TaskIn. Ordinary DayPack is allowed.
         if hasActiveFocusSession { return false }
         if structuralChanged { return true }
         return force

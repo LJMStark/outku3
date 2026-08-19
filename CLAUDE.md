@@ -19,9 +19,9 @@ Kirole 是 **硬件优先的宠物陪伴产品**：硬件 E-ink 设备是用户�
 **硬件优先意味着**：硬件离线时用户操作不能丢。两条补传通道都是核心功能，不是可选项：
 
 1. `0x21 eventLogBatch`：设备批量回推事件（高水位去重），`BLEEventHandler` 必须把每条应用到 AppState（任务完成状态、专注会话等）。
-2. `0x25 offlineSync`（`BLEOfflineSyncCoordinator`）：离线操作补报 ACK，以及 TaskList / Schedule / DayPack 的原子提交。Ver 1.3.0 起还承担专注重连：`FOCUS_STATE` → `OP_BATCH` → `OP_ACK` + `FOCUS_RESOLVE`，裁决完成前禁止普通 `0x14`。BLE 断连**不再结束**专注；挡板保持，重连后再裁决。
+2. `0x25 offlineSync`（`BLEOfflineSyncCoordinator`）：离线操作补报 ACK，以及 TaskList / Schedule / DayPack 的原子提交。Ver 1.3.1 起专注重连顺序是 `FOCUS_STATE` → `OP_BATCH` → `OP_ACK` → `FOCUS_RESOLVE` → `RESULT/COMMITTED`，只有匹配的 `COMMITTED` 才解除普通 `0x14`。活动专注期间禁止 dataset `COMMIT`。BLE 断连**不再结束**专注；挡板保持，重连后再裁决。
 
-专注重连 / Schedule v2 以硬件 Ver 1.3.0 原文为准，不要用旧流程图或「断连就撤挡板」覆盖协议。阅读顺序见文末 `docs/`。
+专注重连 / Schedule v2 以硬件 Ver 1.3.1 原文为准，不要用旧流程图或「断连就撤挡板」覆盖协议。阅读顺序见文末 `docs/`。
 
 **一账号 = 一活跃设备（单设备模型，READ）**：Supabase 数据按登录账号（`userId`）存，但产品是"一台手机配一台硬件"。同一账号**不预期同时在多台设备上活跃**——换机 / 重装是**顺序**事件（旧机退役 → 新机登录拉云端、`max` 合并恢复），不是并发。因此跨设备同步（能量瓶子、宠物状态）**不存在多写者并发**：分布式多写竞态（如"远端写非单调 / 较低值覆盖较高值"）**不适用本产品，勿当 bug 报**。与"不做 Watch / Mac / 家庭共享"定位一致。将来若真做多设备陪伴端，再引入 DB 端 `max` / 条件更新。
 
@@ -260,6 +260,6 @@ For TestFlight automation, copy `fastlane/.env.template` → `fastlane/.env` and
 
 ## Where to Look Next
 - `AGENTS.md` — full rules, BLE protocol *rules/summary*, companion IP prompt architecture, onboarding detail, Focus Mode state machine, Event→Output dispatch map.
-- `docs/` — **hardware-facing source of truth** (AGENTS.md defers here). Ver 1.3.0 专注重连 / Schedule v2 阅读顺序：`Kirole_专注状态重连_App对接说明_Ver_1_3_0.md`（语义）→ `Kirole_BLE协议命令字节表_专注重连协议更新_Ver_1_3_0.md`（字节；由同名 `.xlsx` 转写）→ `BLE通信协议规格文档-v2.13.1补记.md`（覆盖主规格里已过时的 RESULT / 强制 COMMIT / `0x12` 解卡写法）→ `BLE通信协议规格文档.md` 其余未改章节。冲突时 **固件 1.3.0 原文优先**。未决项：`专注重连-与硬件协商项_Ver_1_3_0.md`。`BLE初次联调指南.md` / `BLE联调前全协议模拟报告.md` 是联调指南；`硬件需求文档-Hardware-Requirements-Document.md` 与 `固件功能规格文档.md` 是硬件需求；`Kirole显示屏页面（游戏机制2）.pdf` 与 `positioning-narrative.md` 是产品机制；`2026-07-09-spec.md` 是专注打断 D-1/D-2/D-3。改 BLE/固件文档时字节表和 § 号必须与硬件合同一致。
+- `docs/` — **hardware-facing source of truth** (AGENTS.md defers here). Ver 1.3.1 专注重连 / Schedule v2 阅读顺序：`专注状态重连协议变更_Ver_1_3_1.md`（语义）→ `Kirole_BLE协议命令字节表_专注重连协议更新_Ver_1_3_1.md`（字节；由同名 `.xlsx` 转写）→ `BLE通信协议规格文档-v2.13.2补记.md`（覆盖主规格与 v2.13.1 补记里已过时的 RESULT / COMMIT 写法）→ `Kirole_专注状态重连_App对接说明_Ver_1_3_0.md` §9 裁决表 → `BLE通信协议规格文档.md` 其余未改章节。冲突时 **固件 1.3.1 原文优先**。未决项：`专注重连-与硬件协商项_Ver_1_3_1.md`。`BLE初次联调指南.md` / `BLE联调前全协议模拟报告.md` 是联调指南；`硬件需求文档-Hardware-Requirements-Document.md` 与 `固件功能规格文档.md` 是硬件需求；`Kirole显示屏页面（游戏机制2）.pdf` 与 `positioning-narrative.md` 是产品机制；`2026-07-09-spec.md` 是专注打断 D-1/D-2/D-3。改 BLE/固件文档时字节表和 § 号必须与硬件合同一致。
 - `.cursor/rules/*.mdc` — Swift / SwiftUI / Testing / Concurrency / Foundation Models / XcodeBuildMCP guidance.
 - `TESTFLIGHT_GUIDE.md`, `TESTFLIGHT_PROGRESS.md` — release workflow state.

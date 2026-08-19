@@ -26,13 +26,50 @@ extension BLEOfflineSyncCoordinator {
             throw BLEOfflineSyncCoordinatorError.invalidInbound
         }
         let resolve = await dependencies.resolveFocus(snapshot)
-        // Firmware 1.3.0: FOCUS_RESOLVE is a 33-byte command with no RESULT row.
-        try await sendCommand(.focusResolve(resolve), runID: runID)
+        awaitingFocusResolveResult = true
+        expectedSyncID = resolve.resolveID
+
+        let inbound = try await requestFocusResolveCommitted(
+            resolve,
+            runID: runID
+        )
+        guard case .result(let result) = inbound else {
+            throw BLEOfflineSyncCoordinatorError.invalidInbound
+        }
+        guard result.syncID == resolve.resolveID,
+              result.targetType == .offlineSync,
+              result.resultCode == .committed else {
+            throw BLEOfflineSyncCoordinatorError.deviceRejected(result.resultCode)
+        }
+
+        awaitingFocusResolveResult = false
         if didFreezeFocusStatus {
             dependencies.unfreezeFocusStatus()
             didFreezeFocusStatus = false
         }
         await dependencies.restoreOrdinaryFocusSync(snapshot, resolve)
         return true
+    }
+
+    /// Firmware 1.3.1: wait for RESULT/COMMITTED. Timeout retries reuse the same
+    /// ResolveID and payload. ACCEPTED keeps the waiter parked.
+    private func requestFocusResolveCommitted(
+        _ resolve: OfflineFocusResolve,
+        runID: UUID
+    ) async throws -> OfflineSyncInboundMessage {
+        do {
+            return try await request(
+                .focusResolve(resolve),
+                expecting: .committed(syncID: resolve.resolveID),
+                runID: runID
+            )
+        } catch BLEOfflineSyncCoordinatorError.timedOut {
+            expectedSyncID = resolve.resolveID
+            return try await request(
+                .focusResolve(resolve),
+                expecting: .committed(syncID: resolve.resolveID),
+                runID: runID
+            )
+        }
     }
 }
