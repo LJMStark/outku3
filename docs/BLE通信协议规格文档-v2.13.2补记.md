@@ -20,7 +20,9 @@
 | 主规格 §4.23.2 / 步骤 6 | 等 `RESULT=accepted` 或发出即继续 | `ResolveResult` 是 App 裁决结论；`RESULT.ResultCode` 是设备执行应答。两者不能混用。解锁三条件：`SyncId==ResolveID` 且 `TargetType==0x25` 且 `ResultCode==COMMITTED` |
 | 补记 v2.13.1 COMMIT 行 | 裁决后不因专注仍在而强制 COMMIT；`NeedsFullSync` 仍可 COMMIT | 专注重连不要求发 DayPack。普通 `0x10` 只更新业务数据，**不会**退出 TaskIn。活动专注期间**禁止** OfflineSync `COMMIT`，需要提交的数据延后到退出专注后。`COMMIT` 不能代替专注裁决 |
 | 主规格 §4.23.4 步骤 8 | 设备要求全量同步时除外，active 也可 COMMIT | 与上同：active 期间一律不 COMMIT |
+| 主规格 §5.15 批内 `0x10/0x11/0x12` | 正文仍写旧 `6+N` / v2.9 `11+N`（主规格超行数上限，不在原文上改） | 以本补记为准。与实时事件同一 v2：`0x10` 记录 `19+N`，`0x11/0x12` 记录 `23+N`（`SubVersion 0x02` + `FocusSessionId` 8B）。旧格式整批丢弃 |
+| 硬件字节表 1.3.1 §5.15 批内表 | 仍抄 v2.9：`0x10`=`6+N`，`0x11/0x12`=`11+N` | **不要改硬件原文。** 同表 §5.3–5.5 已是 v2。入批与 OP_BATCH 跟 §5.3–5.5 与本补记，不跟 §5.15 那两行旧字 |
 
 ## 未改的主规格内容
 
-`0x14` / Enter / Complete / Skip / Schedule v2 线格式、OfflineSync 底盘、`0x1B`、安全封装仍以主规格对应章节为准，并与 1.3.1 字节表核对偏移。`0x12 DeviceMode` 仍不得进入、退出或裁决专注。
+`0x14` / Enter / Complete / Skip / Schedule v2 线格式、OfflineSync 底盘、`0x1B`、安全封装仍以主规格对应章节为准，并与 1.3.1 字节表核对偏移。`0x12 DeviceMode` 仍不得进入、退出或裁决专注。硬件 1.3.1 字节表 §5.15 批内 `0x10/0x11/0x12` 两行除外，见上表。
