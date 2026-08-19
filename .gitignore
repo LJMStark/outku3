@@ -92,6 +92,8 @@ docs/*.pdf
 docs/*.docx
 docs/*.xls
 docs/Outku 硬件产品规格文档*.md
+docs/Kirole 设备离线运行协议改动方案_Ver_1_0_0.md
+docs/Kirole_BLE协议命令字节表_离线运行协议更新_Ver_1_1_0.xlsx
 硬件需求文档-Hardware Requirements Document v0-1_*.pdf
 
 # Secrets (API keys, credentials)
