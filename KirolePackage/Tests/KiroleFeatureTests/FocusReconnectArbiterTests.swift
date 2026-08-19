@@ -82,6 +82,8 @@ struct FocusReconnectArbiterTests {
         #expect(decision.command.result == .accepted)
         #expect(decision.command.startTimestamp == UInt32(start.timeIntervalSince1970))
         #expect(decision.command.elapsedSeconds == 1600)
+        #expect(decision.command.phase == .deep)
+        #expect(decision.command.bottles == 0)
         #expect(decision.action == .keepExisting)
     }
 

@@ -5,7 +5,8 @@ extension BLEOfflineSyncCoordinator {
         state: OfflineSyncState,
         runID: UUID
     ) async throws -> OfflineFocusState? {
-        guard state.stateFlags.contains(.focusSyncPending) else { return nil }
+        guard shouldAwaitFocusSnapshot(state) else { return nil }
+        awaitingFocusResolveResult = true
         let inbound = try await waitForMessage(
             expecting: .focusState(bootSessionID: state.bootSessionID),
             runID: runID
@@ -16,14 +17,25 @@ extension BLEOfflineSyncCoordinator {
         return snapshot
     }
 
+    func shouldAwaitFocusSnapshot(_ state: OfflineSyncState) -> Bool {
+        if state.stateFlags.contains(.focusSyncPending) { return true }
+        if hasActiveFocusSession() { return true }
+        return mailbox.contains { message in
+            guard case .focusState(let snapshot) = message else { return false }
+            return snapshot.bootSessionID == state.bootSessionID
+        }
+    }
+
     func sendFocusResolveIfNeeded(
         state: OfflineSyncState,
         snapshot: OfflineFocusState?,
         runID: UUID
     ) async throws -> Bool {
-        guard state.stateFlags.contains(.focusSyncPending) else { return false }
         guard let snapshot else {
-            throw BLEOfflineSyncCoordinatorError.invalidInbound
+            if state.stateFlags.contains(.focusSyncPending) {
+                throw BLEOfflineSyncCoordinatorError.invalidInbound
+            }
+            return false
         }
         let resolve = await dependencies.resolveFocus(snapshot)
         awaitingFocusResolveResult = true

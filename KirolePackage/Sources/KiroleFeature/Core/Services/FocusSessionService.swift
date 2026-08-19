@@ -472,47 +472,14 @@ public final class FocusSessionService {
         return sessionInterruptions.filter { $0.timestamp >= session.startTime && $0.timestamp <= end }
     }
 
-    /// 完成任务（短按滚轮）
-    @discardableResult
-    public func completeTask(
-        taskId: String,
-        endTime: Date = Date(),
-        authoritativeElapsedSeconds: UInt32? = nil
-    ) -> Bool {
-        guard let session = activeSession, session.taskId == taskId else { return false }
-        _ = endActiveSession(
-            reason: .completed,
-            endTime: endTime,
-            operationKey: nil,
-            authoritativeElapsedSeconds: authoritativeElapsedSeconds
-        )
-        return true
-    }
-
-    /// 跳过任务（长按滚轮）
-    @discardableResult
-    public func skipTask(
-        taskId: String,
-        endTime: Date = Date(),
-        authoritativeElapsedSeconds: UInt32? = nil
-    ) -> Bool {
-        guard let session = activeSession, session.taskId == taskId else { return false }
-        _ = endActiveSession(
-            reason: .skipped,
-            endTime: endTime,
-            operationKey: nil,
-            authoritativeElapsedSeconds: authoritativeElapsedSeconds
-        )
-        return true
-    }
-
     /// Settles the focus portion of a versioned hardware task operation. This is called for both
     /// first delivery and exact retries, including retries after `activeSession` was cleared in
     /// memory but history persistence failed.
     func settleHardwareTaskOperation(
         _ entry: TaskOperationLedgerEntry,
         expectedSessionStartGeneration: UInt64? = nil,
-        authoritativeElapsedSeconds: UInt32? = nil
+        authoritativeElapsedSeconds: UInt32? = nil,
+        focusSessionId: FocusSessionId? = nil
     ) async -> HardwareFocusSettlementResult {
         await launchRecoveryTask?.value
         if !hasCompletedLaunchRecovery {
@@ -539,7 +506,7 @@ public final class FocusSessionService {
             return .supersededByApp
         }
 
-        guard let active = activeSession, active.taskId == entry.taskID else {
+        guard bindAndMatchActiveSession(taskId: entry.taskID, focusSessionId: focusSessionId) else {
             return .durable
         }
         // The recovery and persistence waits above yield MainActor. A new focus for the same task
@@ -555,6 +522,7 @@ public final class FocusSessionService {
         // Time(0x05) is applied; using that stale value would reject a fresh press as superseded
         // or settle a real session at zero seconds. Offline replay keeps the device timestamp
         // because it is the only ordering signal for an operation received after the fact.
+        guard let active = activeSession else { return .durable }
         let operationTime = entry.timestampAuthority == .deviceClock
             ? eventTime
             : entry.recordedAt

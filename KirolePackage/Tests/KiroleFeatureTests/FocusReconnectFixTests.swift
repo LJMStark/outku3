@@ -85,6 +85,32 @@ struct FocusReconnectFixTests {
         #expect(settled?.earnedEnergyBottles == 2)
     }
 
+    @Test("Complete and Skip require a matching FocusSessionId when the frame carries one")
+    @MainActor
+    func completeAndSkipMatchFocusSessionId() async {
+        let service = FocusSessionService.makeForTesting(
+            focusGuardService: ReconnectFixFocusGuard(),
+            persistenceEnabled: false
+        )
+        let activeId = FocusSessionId(bootSessionID: 7, startOperationID: 3)
+        let otherId = FocusSessionId(bootSessionID: 7, startOperationID: 4)
+        await service.startSession(
+            taskId: "session-task",
+            taskTitle: "Session",
+            startTime: Date(timeIntervalSince1970: 1_700_000_000),
+            focusSessionId: activeId
+        )
+
+        #expect(service.completeTask(taskId: "session-task", focusSessionId: otherId) == false)
+        #expect(service.activeSession?.focusSessionId == activeId)
+        #expect(service.skipTask(taskId: "session-task", focusSessionId: otherId) == false)
+        #expect(service.activeSession?.focusSessionId == activeId)
+
+        #expect(service.completeTask(taskId: "other-task", focusSessionId: activeId))
+        #expect(service.activeSession == nil)
+        #expect(service.todaySessions.contains { $0.focusSessionId == activeId && $0.endReason == .completed })
+    }
+
     @Test("The same FocusSessionId reuses ResolveID and a new session gets a fresh one")
     @MainActor
     func resolveIDIsReusedForTheSameSession() async {

@@ -15,6 +15,7 @@ public enum BLEOfflineSyncCoordinatorError: Error, Sendable, Equatable {
     case invalidOperationID
     case conflictingDuplicateOperation(UInt32)
     case nonIncreasingOperationID(previous: UInt32, current: UInt32)
+    case operationIDGap(previous: UInt32, current: UInt32)
     case operationCountExceeded(expected: Int, actual: Int)
     case deviceRejected(OfflineSyncResultCode)
 }
@@ -627,11 +628,16 @@ public final class BLEOfflineSyncCoordinator {
             if let expectedBootSessionID {
                 return snapshot.bootSessionID == expectedBootSessionID
             }
+            // FOCUS_STATE may race ahead of STATE during QUERY. Buffer it so a missing
+            // FocusSyncPending bit cannot drop the snapshot and unlock a stale 0x14.
             guard let waiter, waiter.expectation == .state else { return false }
-            return mailbox.contains { buffered in
-                guard case .state(let state) = buffered else { return false }
-                return state.bootSessionID == snapshot.bootSessionID
+            if let bufferedState = mailbox.compactMap({ message -> OfflineSyncState? in
+                guard case .state(let state) = message else { return nil }
+                return state
+            }).first {
+                return snapshot.bootSessionID == bufferedState.bootSessionID
             }
+            return true
         case .result(let result):
             guard let expectedSyncID else { return false }
             guard let waiter,

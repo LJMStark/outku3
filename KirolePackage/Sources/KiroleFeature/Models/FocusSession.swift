@@ -149,6 +149,16 @@ public struct FocusSession: Identifiable, Codable, Sendable {
     public var isActive: Bool {
         endTime == nil
     }
+
+    /// Complete/Skip bind to `FocusSessionId` when the frame carries a live session.
+    /// A missing or idle id falls back to `taskId` for App-side and pre-v2 callers.
+    func matchesHardwareCompletion(taskId: String, focusSessionId: FocusSessionId?) -> Bool {
+        if let incoming = focusSessionId, !incoming.isIdle,
+           let existing = self.focusSessionId, !existing.isIdle {
+            return existing == incoming
+        }
+        return self.taskId == taskId
+    }
 }
 
 // MARK: - Focus Enforcement Mode

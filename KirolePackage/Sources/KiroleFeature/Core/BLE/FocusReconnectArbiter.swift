@@ -89,8 +89,8 @@ public enum FocusReconnectArbiter {
                     end: 0,
                     elapsed: app.activeElapsedSeconds,
                     revision: revision,
-                    phase: app.activePhase == .idle ? .warmup : app.activePhase,
-                    bottles: app.activeBottles,
+                    phase: phase(fromElapsed: app.activeElapsedSeconds),
+                    bottles: displayBottles(app.activeElapsedSeconds),
                     action: .keepExisting
                 )
             }

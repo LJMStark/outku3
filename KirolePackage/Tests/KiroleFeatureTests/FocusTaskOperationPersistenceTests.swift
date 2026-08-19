@@ -4,6 +4,37 @@ import Testing
 
 @Suite("Hardware task focus persistence", .serialized)
 struct FocusTaskOperationPersistenceTests {
+    @Test("Mismatched FocusSessionId does not end the active session")
+    @MainActor
+    func mismatchedFocusSessionIdDoesNotEndActiveSession() async {
+        let persistence = FocusPersistenceFailureStub()
+        let service = makeService(persistence: persistence)
+        let start = Date().addingTimeInterval(-60)
+        let activeId = FocusSessionId(bootSessionID: 7, startOperationID: 3)
+        await service.startSession(
+            taskId: "focus-session-mismatch",
+            taskTitle: "Mismatch",
+            startTime: start,
+            focusSessionId: activeId
+        )
+        let entry = operationEntry(
+            taskID: "focus-session-mismatch",
+            operationID: 800,
+            action: .completeTask,
+            start: start
+        )
+
+        let result = await service.settleHardwareTaskOperation(
+            entry,
+            focusSessionId: FocusSessionId(bootSessionID: 7, startOperationID: 4)
+        )
+
+        #expect(result == .durable)
+        #expect(service.activeSession?.focusSessionId == activeId)
+        #expect(await persistence.activeSession()?.focusSessionId == activeId)
+        #expect(service.todaySessions.isEmpty)
+    }
+
     @Test("History failure keeps the active marker and exact retry finishes once")
     @MainActor
     func historyFailureRetries() async {

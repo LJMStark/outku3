@@ -86,6 +86,7 @@ struct BLEOfflineSyncCoordinatorTests {
                     }
                 )
             )
+            coordinator.hasActiveFocusSession = { false }
             self.coordinator = coordinator
             return coordinator
         }
@@ -265,9 +266,22 @@ struct BLEOfflineSyncCoordinatorTests {
         let task = Task { try await coordinator.synchronize() }
         try await waitUntil("QUERY") { recorder.events.contains(.command(.query)) }
         coordinator.handleInbound(.state(Self.state(validUntil: 2_000_000_000)))
+        coordinator.handleInbound(.focusState(FocusWireFixtures.focusState(bootSessionID: 7)))
+        try await waitUntil("FOCUS_RESOLVE") {
+            recorder.events.contains { event in
+                if case .command(.focusResolve) = event { return true }
+                return false
+            }
+        }
+        coordinator.handleInbound(.result(OfflineSyncResult(
+            syncID: 1,
+            targetType: .offlineSync,
+            resultCode: .committed
+        )))
 
         let completion = try await task.value
         #expect(completion.didCommitDatasets == false)
+        #expect(completion.didResolveFocus)
         #expect(completion.processedOperationCount == 0)
         #expect(recorder.events.contains(.time))
         #expect(recorder.events.contains(.command(.query)))
@@ -484,6 +498,43 @@ struct BLEOfflineSyncCoordinatorTests {
                 .command(.opAck(.init(bootSessionID: 7, ackOperationID: 12))),
             ]
         )
+    }
+
+    @Test("An OperationID gap stops ACK before the missing record")
+    func operationIDGapStopsAck() async throws {
+        let recorder = Recorder()
+        let coordinator = recorder.makeCoordinator()
+        let task = Task { try await coordinator.synchronize() }
+
+        try await waitUntil("QUERY") { recorder.events.contains(.command(.query)) }
+        coordinator.handleInbound(.state(Self.state(pendingCount: 2)))
+        coordinator.handleInbound(
+            .operationBatch(
+                OfflineSyncOperationBatch(
+                    bootSessionID: 7,
+                    records: [Self.record(10), Self.record(12)]
+                )
+            )
+        )
+
+        await #expect(throws: BLEOfflineSyncCoordinatorError.operationIDGap(
+            previous: 10,
+            current: 12
+        )) {
+            _ = try await task.value
+        }
+        #expect(
+            recorder.events.filter {
+                if case .operation = $0 { return true }
+                return false
+            } == [.operation(bootSessionID: 7, operationID: 10)]
+        )
+        #expect(recorder.events.contains(
+            .command(.opAck(.init(bootSessionID: 7, ackOperationID: 10)))
+        ))
+        #expect(!recorder.events.contains(
+            .command(.opAck(.init(bootSessionID: 7, ackOperationID: 12)))
+        ))
     }
 
     @Test("Unsupported record in one batch does not block a later supported record or cumulative ACK")

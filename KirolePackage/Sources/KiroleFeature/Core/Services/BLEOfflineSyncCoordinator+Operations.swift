@@ -33,6 +33,12 @@ extension BLEOfflineSyncCoordinator {
             do {
                 for record in newRecords {
                     try ensureRunIsActive(runID)
+                    if let lastProcessedID, record.operationID != lastProcessedID + 1 {
+                        throw BLEOfflineSyncCoordinatorError.operationIDGap(
+                            previous: lastProcessedID,
+                            current: record.operationID
+                        )
+                    }
                     try await dependencies.processOperation(state.bootSessionID, record)
                     try ensureRunIsActive(runID)
                     acceptedRecords[record.operationID] = record

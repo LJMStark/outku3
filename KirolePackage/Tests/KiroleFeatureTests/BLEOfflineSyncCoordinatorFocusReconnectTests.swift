@@ -194,7 +194,7 @@ struct BLEOfflineSyncCoordinatorFocusReconnectTests {
         }.count == 2)
     }
 
-    @Test("NeedsFullSync without focus pending still defers COMMIT while a session is live")
+    @Test("NeedsFullSync without FocusSyncPending still waits for FOCUS_STATE and defers COMMIT")
     func liveSessionDefersFullSyncCommit() async throws {
         let recorder = Recorder()
         let coordinator = recorder.makeCoordinator()
@@ -205,10 +205,72 @@ struct BLEOfflineSyncCoordinatorFocusReconnectTests {
             recorder.events.contains(.command(.query))
         }
         coordinator.handleInbound(.state(Self.state(stateFlags: [.needsFullSync])))
+        coordinator.handleInbound(.focusState(FocusWireFixtures.focusState(bootSessionID: 7)))
+
+        try await waitUntil("FOCUS_RESOLVE") {
+            recorder.events.contains { event in
+                if case .command(.focusResolve) = event { return true }
+                return false
+            }
+        }
+        coordinator.handleInbound(.result(Self.focusResult()))
 
         let completion = try await task.value
+        #expect(completion.didResolveFocus)
         #expect(completion.didCommitDatasets == false)
         #expect(!recorder.events.contains(.snapshot))
+    }
+
+    @Test("FOCUS_STATE without FocusSyncPending still resolves before ordinary 0x14 unlocks")
+    func snapshotWithoutPendingFlagStillResolves() async throws {
+        let recorder = Recorder()
+        let coordinator = recorder.makeCoordinator()
+        coordinator.hasActiveFocusSession = { false }
+
+        let task = Task {
+            try await coordinator.synchronize(shouldCommitDatasets: { _ in false })
+        }
+        try await waitUntil("QUERY") {
+            recorder.events.contains(.command(.query))
+        }
+        coordinator.handleInbound(.focusState(FocusWireFixtures.focusState(bootSessionID: 7)))
+        coordinator.handleInbound(.state(Self.state(stateFlags: [.dataValid])))
+
+        try await waitUntil("FOCUS_RESOLVE") {
+            recorder.events.contains { event in
+                if case .command(.focusResolve) = event { return true }
+                return false
+            }
+        }
+        coordinator.handleInbound(.result(Self.focusResult()))
+
+        let completion = try await task.value
+        #expect(completion.didResolveFocus)
+        #expect(recorder.unfreezeCount == 1)
+        #expect(recorder.restored.count == 1)
+    }
+
+    @Test("Active session without FOCUS_STATE keeps 0x14 frozen")
+    func activeSessionWithoutSnapshotKeepsFreeze() async throws {
+        let recorder = Recorder()
+        let coordinator = recorder.makeCoordinator(responseTimeout: .milliseconds(40))
+        coordinator.hasActiveFocusSession = { true }
+
+        let task = Task { try await coordinator.synchronize() }
+        try await waitUntil("QUERY") {
+            recorder.events.contains(.command(.query))
+        }
+        coordinator.handleInbound(.state(Self.state(stateFlags: [.dataValid])))
+
+        await #expect(throws: BLEOfflineSyncCoordinatorError.timedOut) {
+            _ = try await task.value
+        }
+        #expect(recorder.unfreezeCount == 0)
+        #expect(recorder.restored.isEmpty)
+        #expect(!recorder.events.contains { event in
+            if case .command(.focusResolve) = event { return true }
+            return false
+        })
     }
 
     private static func state(

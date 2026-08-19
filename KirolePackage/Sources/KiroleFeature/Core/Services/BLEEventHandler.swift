@@ -699,7 +699,8 @@ public enum BLEEventHandler {
                 return focusService.completeTask(
                     taskId: taskId,
                     endTime: sessionTimestamp,
-                    authoritativeElapsedSeconds: eventLog.elapsedSeconds
+                    authoritativeElapsedSeconds: eventLog.elapsedSeconds,
+                    focusSessionId: eventLog.focusSessionId
                 )
             }
             return false
@@ -709,7 +710,8 @@ public enum BLEEventHandler {
                 return focusService.skipTask(
                     taskId: taskId,
                     endTime: sessionTimestamp,
-                    authoritativeElapsedSeconds: eventLog.elapsedSeconds
+                    authoritativeElapsedSeconds: eventLog.elapsedSeconds,
+                    focusSessionId: eventLog.focusSessionId
                 )
             }
             return false
