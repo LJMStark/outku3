@@ -18,7 +18,7 @@ This file provides guidance to Antigravity, Claude Code, Cursor and other AI cod
 - Small, focused commits.
 
 ## 2. Project Context
-- **Hardware BLE 1.3.0 source of truth**: `docs/Kirole_专注状态重连_App对接说明_Ver_1_3_0.md` + `docs/Kirole_BLE协议命令字节表_专注重连协议更新_Ver_1_3_0.md` (from the sibling `.xlsx`). Repo-wide spec is `docs/BLE通信协议规格文档.md`; 1.3.0 overrides live in `docs/BLE通信协议规格文档-v2.13.1补记.md`. Open hardware questions: `docs/专注重连-与硬件协商项_Ver_1_3_0.md`.
+- **Hardware BLE 1.3.0 source of truth (flag-day with firmware)**: read `docs/Kirole_专注状态重连_App对接说明_Ver_1_3_0.md` then `docs/Kirole_BLE协议命令字节表_专注重连协议更新_Ver_1_3_0.md` (from the sibling `.xlsx`). Repo-wide spec is `docs/BLE通信协议规格文档.md`; sentences it still has about waiting for `FOCUS_RESOLVE` RESULT, forcing COMMIT after resolve, or using `0x12` to unstick TaskIn are superseded by `docs/BLE通信协议规格文档-v2.13.1补记.md`. Open hardware questions: `docs/专注重连-与硬件协商项_Ver_1_3_0.md`. Do not “fix” disconnect-keeps-focus or fire-and-forget `FOCUS_RESOLVE` against an old flowchart.
 - **Name**: Kirole (iOS Companion App for E-ink Device)
 - **Platform**: iOS 17.0+ (iPhone only)
 - **Architecture**: Workspace + SPM Package (`Kirole.xcworkspace` + `KirolePackage`)
@@ -91,7 +91,7 @@ Primary references: [Apple build configurations](https://developer.apple.com/doc
 ### Current Phase Policy
 - The project is in a rapid development phase. Prefer clean iteration over preserving local caches, local JSON files, or provisional interfaces.
 - `LocalStorage`, `UserDefaults`, and on-device JSON are disposable development state. When their shape/schema changes, reset local data instead of adding migration code.
-- BLE payloads, event formats, and firmware-facing interfaces are not frozen until real hardware integration begins. Do not add compatibility branches for hypothetical old firmware.
+- Most BLE payloads are still iterable, but Ver 1.3.0 专注重连 + Schedule v2 is the live firmware contract: `0x14` / Enter / Complete / Skip / `FOCUS_STATE` / `FOCUS_RESOLVE` / `0x03` are flag-day. Do not add compatibility branches for pre-v2 frames, and do not invent extra RESULT or COMMIT steps the byte table does not list.
 - Remove obsolete compatibility shims, migration comments, and migration tests when changing models or payloads.
 - Only start preserving formats once hardware integration, shared staging data, TestFlight, or external users depend on them. Provide documentation boundaries explicitly.
 
@@ -281,24 +281,27 @@ The companion text system is event-reactive companion writing for the Kirole tas
   - Packetized (v2.5.24, ≤65535 chunks): `type(1B) | messageId(2B BE) | seq(2B BE) | totalChunks(2B BE) | chunkLength(2B BE) | chunkCRC(2B BE) | payload`.
   - Simple App→Device: `type(1B) | length(2B BE) | payload`.
   - Simple Device→App: `type(1B) | length(1B) | payload`.
-- **App→Device 出站帧类型** (`BLEProtocol.swift` — `BLEDataType` enum): `0x01=petStatus`, `0x02=taskList`, `0x03=schedule`（v2：日期头 + Time/Title/Description/Category/EndTime/SupportText）, `0x04=weather`, `0x05=time`, `0x10=dayPack`, `0x11=taskInPage`, `0x12=deviceMode`, `0x13=smartReminder`, `0x14=focusStatus`（v2：`SubVersion 0x02` + Revision + SessionId + FocusState + Phase + Bottles + ElapsedSeconds + TaskTitle + SegmentSeconds；裁决完成前冻结）, `0x15=customAvatarFrame`（v2.7 自定义头像暂存，SubVersion 0x04 + KRI）, `0x16=screensaver`（屏保金句/明信片业务帧）, `0x17=sceneUnlock`（场景解锁业务帧）, `0x18=otaReboot`（触发固件升级重启，零 payload）, `0x19=wifiDebugMode`（开启/关闭/查询 SoftAP，设备用同 type 实时应答）, `0x1A=wifiAvatarSession`（SoftAP 头像快传会话握手，双向回显 command+OpID）, `0x1B=taskListSnapshotAck`（设备任务操作业务确认 + Overview 任务全量快照）, `0x1C=shippingMode`（工厂运输模式开启命令，无业务 ACK，以设备主动断连确认生效）, `0x20=eventLogRequest`, `0x22=avatarControl`（头像 commit/erase/query/abort，双向实时帧）, `0x25=offlineSync`（离线数据事务：状态查询、离线操作补报 ACK、FOCUS_STATE/FOCUS_RESOLVE、TaskList/Schedule/DayPack 原子提交，双向）, `0x7E=secureData`, `0x7F=securityHandshake`. 注：`0x21 eventLogBatch` 虽然挂在 `BLEDataType` enum 里（命名空间归类），实际方向是 Device→App 入站，参见入站事件清单。
-- **Device→App 入站事件关键字节** (`EventLog.swift` — `EventLogType.rawByte`): `0x10=enterTaskIn` / `0x11=completeTask` / `0x12=skipTask`（v2：`0x02 | OpID | SessionId(8) | TaskId | Ts`，Complete/Skip 再加 ElapsedSeconds）；`0x19=wifiDebugMode`（实时返回 `Enabled+StatusCode`，不进入 `0x21` 批次）; `0x21=eventLogBatch`（设备批量回传事件，`BLEEventHandler` 入站分支，高水位去重）; `0x25=offlineSync`（STATE/FOCUS_STATE/OP_BATCH/RESULT 实时事务帧，路由早于 `0x21`，不进 Event Log；App 侧由 `BLEOfflineSyncCoordinator` 处理）; `0x30=deviceWake`（payload[0] = battery level 0-100，v2.3.0+；v2.5.19+ 追加固件版本 3B，更新 `BLEService.deviceBatteryLevel`）; `0x31=deviceSleep`; `0x40=lowBattery`（payload 含电量字节，同样更新 `BLEService.deviceBatteryLevel`）.
+- **App→Device 出站帧类型** (`BLEProtocol.swift` — `BLEDataType` enum): `0x01=petStatus`, `0x02=taskList`, `0x03=schedule`（v2：`ScheduleV2Codec`，日期头 + Time/Title/Description/Category/EndTime/SupportText；跨午夜按日切开或不发；空描述填 `Details forthcoming.`，见协商项 H4）, `0x04=weather`, `0x05=time`, `0x10=dayPack`, `0x11=taskInPage`, `0x12=deviceMode`（**不得**用来进入、退出或裁决专注）, `0x13=smartReminder`, `0x14=focusStatus`（v2：`SubVersion 0x02` + Revision + SessionId + FocusState + Phase + Bottles + ElapsedSeconds + TaskTitle + SegmentSeconds；`FOCUS_RESOLVE` 发出前冻结）, `0x15=customAvatarFrame`（v2.7 自定义头像暂存，SubVersion 0x04 + KRI）, `0x16=screensaver`（屏保金句/明信片业务帧）, `0x17=sceneUnlock`（场景解锁业务帧）, `0x18=otaReboot`（触发固件升级重启，零 payload）, `0x19=wifiDebugMode`（开启/关闭/查询 SoftAP，设备用同 type 实时应答）, `0x1A=wifiAvatarSession`（SoftAP 头像快传会话握手，双向回显 command+OpID）, `0x1B=taskListSnapshotAck`（设备任务操作业务确认 + Overview 任务全量快照）, `0x1C=shippingMode`（工厂运输模式开启命令，无业务 ACK，以设备主动断连确认生效）, `0x20=eventLogRequest`, `0x22=avatarControl`（头像 commit/erase/query/abort，双向实时帧）, `0x25=offlineSync`（QUERY/STATE/OP_BATCH/OP_ACK、`FOCUS_STATE 0x83`、`FOCUS_RESOLVE 0x06` 33B、可选 BEGIN→TaskList→DayPack→Schedule→COMMIT，双向）, `0x7E=secureData`, `0x7F=securityHandshake`. 注：`0x21 eventLogBatch` 虽然挂在 `BLEDataType` enum 里（命名空间归类），实际方向是 Device→App 入站，参见入站事件清单。
+- **Device→App 入站事件关键字节** (`EventLog.swift` — `EventLogType.rawByte`): `0x10=enterTaskIn` / `0x11=completeTask` / `0x12=skipTask`（只收 v2：`0x02 | OpID | SessionId(8) | TaskId | Ts`，Complete/Skip 再加 ElapsedSeconds；旧 payload 拒绝）; `0x19=wifiDebugMode`（实时返回 `Enabled+StatusCode`，不进入 `0x21` 批次）; `0x21=eventLogBatch`（设备批量回传事件，`BLEEventHandler` 入站分支，高水位去重）; `0x25=offlineSync`（STATE / FOCUS_STATE / OP_BATCH / RESULT 实时事务帧，路由早于 `0x21`，不进 Event Log；App 侧由 `BLEOfflineSyncCoordinator` 处理。`RESULT 0x81` 只确认 BEGIN/COMMIT/ABORT，**不是** `FOCUS_RESOLVE` 应答）; `0x30=deviceWake`（payload[0] = battery level 0-100，v2.3.0+；v2.5.19+ 追加固件版本 3B，更新 `BLEService.deviceBatteryLevel`；收到后立刻冻 `0x14`）; `0x31=deviceSleep`; `0x40=lowBattery`（payload 含电量字节，同样更新 `BLEService.deviceBatteryLevel`）.
 - **Security Mode** (`BLEService.swift` — `configuredSecurityMode` / `securityMode` / `requiresSecureChannel`): `AppSecrets.bleSharedSecret` empty → development (unsigned). Non-empty → secure (HMAC-SHA256 envelope: 16B header + 32B signature). Ordinary payloads use one envelope; the v2.7 custom-avatar transfer is packetized with the existing 11-byte chunk header first, then every complete chunk is placed in its own envelope with an independent timestamp, nonce, and HMAC.
 - **Defenses**:
   - `BLEWriteGate` (`BLEWriteGate.swift:8-29`) — actor-serialized writes.
   - `BLERateLimiter` (`BLERateLimiter.swift:12-28`) — 20 writes/sec; refresh ≥ 2s interval.
   - Timeouts: write 5s (`BLEService.swift:545`) / scan 10s default (`BLEService.swift:281` `scanForDevices(timeout:)` 默认参数) / connect 15s 硬编码 (`BLEService.swift:262` `Task.sleep(for: .seconds(15))`) / handshake 5s (`BLEService.swift:585`).
   - `BLEDeviceIdentityStore` (`BLEDeviceIdentityStore.swift:17-35`) — trust/block lists in UserDefaults; enforced in secure mode at `BLEService.swift:229-234` (scan filter) and `:715-720` (post-connect gate).
-- **Sync**: `BLESyncCoordinator` (background sync via `com.kirole.app.ble.sync`); wake-triggered `0x25` offline transactions (dataset atomic commit + offline operation backfill ACK) go through `BLEOfflineSyncCoordinator` + `BLEOfflineOperationProcessor`.
+- **Sync**: `BLESyncCoordinator` (background sync via `com.kirole.app.ble.sync`); wake-triggered `0x25` goes through `BLEOfflineSyncCoordinator` + `BLEOfflineOperationProcessor`. Reconnect order: freeze `0x14` → STATE → `FOCUS_STATE` → `OP_BATCH` → `OP_ACK` + `FOCUS_RESOLVE`（发出即继续，不等 RESULT）→ 普通 `0x11` / `0x14` / `0x10` / `0x03`. Live focus still skips dataset COMMIT（现网 COMMIT 会离开 TaskIn）. `NeedsFullSync` / 数据无效 / `ValidUntil` 过期仍 COMMIT；仅 `OperationOverflow` 时 ACK 后不 BEGIN，两旗同在才做完整核对 COMMIT. OfflineSync 同批固定先 DayPack 再 Schedule。
 - **Supabase**: Keys injected via `AppSecrets.configure(...)` using build-time constants (`Config/Secrets.xcconfig`). Keep RLS enabled and sync schema changes with `Config/supabase-schema.sql`. Current schema source is aligned with the post-IP/post-streak code path: no legacy pet-form column and no old streak table.
 
 ### Focus Mode State Machine
-- **Source**: `FocusSessionService.swift` (~681 lines), `FocusSession.swift`, `DisplayScene.swift`.
+- **Source**: `FocusSessionService.swift` + `FocusSessionService+Reconnect.swift` / `+Statistics.swift`, `FocusReconnectArbiter.swift`, `FocusReconnectProtocol.swift`, `FocusSession.swift`, `DisplayScene.swift`.
 - **`FocusSessionService` properties**: 
   - `focusEnforcementMode`: Persistent Focus Enforcement mode (moved from `AppState` in Wave 3 refactor, 2026-05-08). Loaded via `loadFocusEnforcementMode()` at init; persisted via `setFocusEnforcementMode(_:)`. `AppState.focusEnforcementMode` is now a computed forwarding property.
-- **`FocusSession` mutable fields**: `endTime`, `endReason`, `calculatedFocusTime`, `screenUnlockEvents`, `mode`, `protectionState`, `interruptionSource`, `earnedEnergyBottles`. Immutable: `id`, `taskId`, `taskTitle`, `startTime`.
-- **End reasons** (7): `completed`, `skipped`, `timeout`, `disconnected`, `interrupted`, `permissionDenied`, `recoveredOnLaunch`.
+  - `isFocusStatusPushFrozen` / `lastAppliedFocusRevision` / `suppressVisibleFocusStart` live in `FocusReconnectFlagStore` (DeviceWake 起到 `FOCUS_RESOLVE` 写出后解冻).
+- **`FocusSession` fields**: Immutable `id`, `taskId`, `taskTitle`, `startTime`. Mutable: `endTime`, `endReason`, `calculatedFocusTime`, `screenUnlockEvents`, `mode`, `protectionState`, `interruptionSource`, `earnedEnergyBottles`, plus 1.3.0 identity `focusSessionId`, `focusRevision`, `deviceId`, `bootSessionId`, `startSource`, `lastOperationId`.
+- **End reasons** (7): `completed`, `skipped`, `timeout`, `disconnected`, `interrupted`, `permissionDenied`, `recoveredOnLaunch`. BLE 断连**不再**走 `disconnected` 结束会话；`handleDeviceDisconnected()` 是空操作，挡板保持。
 - **Modes** (2): `standard`, `deepFocus`. **Protection states** (3): `unprotected`, `protected`, `fallback`.
+- **Reconnect arbitration** (`FocusReconnectArbiter.decide`，对接说明 §9)：只认 `FocusSessionId`（`BootSessionId + StartOperationID`），不用 `taskId` 兜底。结束优先；离线新进入则 adopt；历史结算不闪 UI；不同会话 `replaceWithDevice` + `conflictResolved`。`StartSource=appEstablished` 用 App start，`deviceOffline` 用设备 start；elapsed 差 >120s 只记日志，不新建会话。同一 `FocusSessionId` 重试复用 `ResolveID`。
+- **Unknown live EnterTaskIn**: send `0x14 idle`（专注通道），never `0x12`.
 
 **Focus-time formula** (counterintuitive — read carefully):
 ```
@@ -326,7 +329,9 @@ The single most useful reference when debugging "which event produces which outp
 | Focus interrupted (phone / Screen Time) | `FocusInterruptionDetector` → `FSS` | session stays active; segment resets | `0x14` push unless `isFocusStatusPushFrozen` |
 | **Scene unlock celebration** | `celebrateSceneUnlock` (`+HardwareDisplay:177`) | `pendingSceneCelebration = SceneCelebration(sceneId, now)` | `SoundService.playWithHaptic(.sceneMilestone, .success)`; `SceneUnlockBanner` 3s; confetti via `ContentView:141 onChange`; auto-clear |
 | BLE connect | `BLEService.didConnect` (`BLE:739`) | `connectionState=.connected` (in BLEService, not AppState) | SettingsBLESection observes BLEService directly |
-| BLE disconnect | `BLEService.disconnect` / `didDisconnect` → `FSS.handleDeviceDisconnected` (no-op) | focus session and shield stay | no `0x14` until `0x25` FOCUS_RESOLVE finishes |
+| BLE disconnect | `BLEService.disconnect` / `didDisconnect` → `FSS.handleDeviceDisconnected`（空操作） | 会话与挡板保持 | 冻 `0x14`，等重连 `FOCUS_RESOLVE` 后再恢复普通心跳 |
+| DeviceWake / OfflineSync | `BLESyncCoordinator.performDeviceWakeSync` → `BLEOfflineSyncCoordinator.synchronize` | 可能 adopt / end / settleHistorical | `FOCUS_RESOLVE` 发出后解冻；补 `0x11`+`0x14`；未 COMMIT 时再发普通 DayPack/Schedule |
+| EnterTaskIn 找不到任务 | `BLEEventHandler.handleEnterTaskIn` | 不改会话（已有 active 则不动） | `0x14 idle`，不用 `0x12` |
 | Sync complete (Google) | `syncGoogleData` (`+Sync:64`) | `events`, `tasks` (merge), `lastGoogleSyncDebug` | `updatePetState` → `refreshSharedPetDialogueIfNeeded` → `refreshHomeCompanionPresentation` |
 | Sync complete (Apple) | `syncAppleData` (`+Sync:175`) | same subset | same path as Google |
 | Sync complete (Notion / Taskade / Microsoft / Todoist / TickTick) | `syncNotionData` / `syncTaskadeData` / `syncMicrosoftData` / `syncTodoistData` / `syncTickTickData` in `+Sync` | basic fields only | same path as Google (via shared `applyPostSyncHooks()`; line numbers drift — grep the function name) |
@@ -374,9 +379,9 @@ OPENROUTER_API_KEY = ...
 Full commented reference (incl. optional provider `*_OAUTH_CLIENT_ID` / `*_OAUTH_ENABLED` gate pairs for Notion / Taskade / Microsoft / Todoist / TickTick): `Config/Secrets.xcconfig.template`.
 
 ## 8. Development Workflow
-1. Read `.cursor/rules/` for domain-specific rules.
+1. Read `.cursor/rules/` for domain-specific rules. BLE / focus reconnect changes start from the 1.3.0 docs listed in §2, not from memory or old flowcharts.
 2. Develop in `KirolePackage/Sources/KiroleFeature/`.
-3. Verify via tests, strict concurrency check, and regression coverage (`HomeCompanionPresentationTests`, `PromptDebuggerView`).
+3. Verify via tests, strict concurrency check, and regression coverage (`HomeCompanionPresentationTests`, `PromptDebuggerView`). After wire or reconnect edits run `FocusReconnect*`, `BLEOfflineSyncCoordinatorTests`, `ScheduleV2CodecTests`, and `BLEProtocolSimulationTests`.
 4. Follow secret config logic (via build-generated constants, not info.plist). Local dev uses `.env` logic. 
 5. **Always rebuild and open the simulator after modifying frontend/UI code to verify the changes** (每次修改完前端/UI代码后，必须使用相应命令重新构建并打开模拟器进行验证).
 

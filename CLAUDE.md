@@ -16,7 +16,12 @@ Kirole 是 **硬件优先的宠物陪伴产品**：硬件 E-ink 设备是用户�
 
 **Pet 页面布局是设计内容（客户需求，勿动）**：上半部分显示宠物形象，下半部分是任务列表 UI（Tasks Today / Upcoming / No Due Dates，含 checkbox / Edit / Delete）。这是刻意的产品设计，不是"待办增强"。
 
-**硬件优先意味着**：硬件离线时用户操作不能丢——硬件本地缓存事件，BLE 重连后通过 `0x21 eventLogBatch` 帧批量回推给 App（高水位去重），App 必须把每条事件应用到 AppState（任务完成状态、专注会话等）。此外唤醒触发的 `0x25 offlineSync` 事务通道（`BLEOfflineSyncCoordinator`）承担离线操作补报 ACK + TaskList/Schedule/DayPack 数据集原子提交。"补传"是核心功能而非可选项。
+**硬件优先意味着**：硬件离线时用户操作不能丢。两条补传通道都是核心功能，不是可选项：
+
+1. `0x21 eventLogBatch`：设备批量回推事件（高水位去重），`BLEEventHandler` 必须把每条应用到 AppState（任务完成状态、专注会话等）。
+2. `0x25 offlineSync`（`BLEOfflineSyncCoordinator`）：离线操作补报 ACK，以及 TaskList / Schedule / DayPack 的原子提交。Ver 1.3.0 起还承担专注重连：`FOCUS_STATE` → `OP_BATCH` → `OP_ACK` + `FOCUS_RESOLVE`，裁决完成前禁止普通 `0x14`。BLE 断连**不再结束**专注；挡板保持，重连后再裁决。
+
+专注重连 / Schedule v2 以硬件 Ver 1.3.0 原文为准，不要用旧流程图或「断连就撤挡板」覆盖协议。阅读顺序见文末 `docs/`。
 
 **一账号 = 一活跃设备（单设备模型，READ）**：Supabase 数据按登录账号（`userId`）存，但产品是"一台手机配一台硬件"。同一账号**不预期同时在多台设备上活跃**——换机 / 重装是**顺序**事件（旧机退役 → 新机登录拉云端、`max` 合并恢复），不是并发。因此跨设备同步（能量瓶子、宠物状态）**不存在多写者并发**：分布式多写竞态（如"远端写非单调 / 较低值覆盖较高值"）**不适用本产品，勿当 bug 报**。与"不做 Watch / Mac / 家庭共享"定位一致。将来若真做多设备陪伴端，再引入 DB 端 `max` / 条件更新。
 
@@ -29,7 +34,8 @@ Kirole 是 **硬件优先的宠物陪伴产品**：硬件 E-ink 设备是用户�
    `BLESyncCoordinator.performSync()` + `BLESyncPolicy`：白天 08-23 每 1 小时；夜间 23-08 每 4 小时。触发时机：iOS `BGAppRefreshTask`、硬件主动发 `0x20`/`0x30`、DayPack 指纹变化或 `force: true`。**用户加任务后硬件不会立刻显示**，要等下一个 sync。
 
 3. **硬件 → App 反向触发专注模式**
-   硬件点击任务 → `0x10 enterTaskIn` → `BLEEventHandler` → `FocusSessionService.startSession(...)` → 整套专注链路自动启动。
+   在线：硬件点击任务 → `0x10 enterTaskIn`（v2）→ `BLEEventHandler` → `FocusSessionService.startSession(...)` → 专注链路启动。找不到任务时发 `0x14 idle`，**不要**用 `0x12 DeviceMode` 进出专注。
+   离线：设备本地立即进入/退出并入队；重连走 `0x25` 裁决（`FocusReconnectArbiter`），不要用 App 缓存的 `idle` 盖掉设备 `active`。
 
 ## Development Rules
 1. After any frontend / UI change, rebuild and launch the simulator to visually verify. Do not mark UI work complete without this check.
@@ -47,11 +53,11 @@ KiroleFeature/
 ├── Core/
 │   ├── AppEnvironmentValues.swift   # EnvironmentKey definitions for all 4 singletons
 │   ├── Auth/                        # Google/Apple sign-in + provider OAuth (Microsoft, TickTick, Todoist, Notion, Taskade) + KeychainService
-│   ├── BLE/                         # BLEProtocol.swift (byte definitions) + TaskListSnapshotProtocol.swift (0x1B task-snapshot ACK) + OfflineSyncProtocol.swift / OfflineDatasetSnapshot.swift (0x25 offline-sync transaction wire format)
+│   ├── BLE/                         # BLEProtocol.swift + TaskListSnapshotProtocol.swift (0x1B) + OfflineSyncProtocol.swift / OfflineDatasetSnapshot.swift (0x25) + FocusReconnectProtocol.swift / FocusReconnectArbiter.swift (FOCUS_STATE 0x83 / FOCUS_RESOLVE 0x06) + ScheduleV2Codec.swift (0x03 v2)
 │   ├── Config/                      # AppSecrets (xcconfig-injected secrets), AppBuildEnvironment (debug-tool gating)
 │   ├── Error/                       # ErrorReporter
 │   ├── Network/                     # OpenAIService, CompanionTextService, PromptSanitizer, SimulatorBridge, PromptSpec.generated.swift + provider API clients (MicrosoftGraphClient, TickTickAPI, TodoistAPI)
-│   ├── Services/                    # BLE runtime (BLEService, BLESyncCoordinator, BLEOfflineSyncCoordinator, BLEEventHandler, BLEDataEncoder, BLEPacketizer, BLESecurityManager, BLEOTACoordinator…) + FocusSessionService, FocusInterruptionDetector, DayPackGenerator, WiFiAvatarTransfer/… + provider sync engines (GoogleSyncEngine, AppleSyncEngine, MicrosoftSyncEngine, TickTickSyncEngine, TodoistSyncEngine)
+│   ├── Services/                    # BLE runtime (BLEService, BLESyncCoordinator, BLEOfflineSyncCoordinator[+FocusReconnect/+Operations], BLEEventHandler, BLEDataEncoder, BLEPacketizer, BLESecurityManager, BLEOTACoordinator…) + FocusSessionService[+Reconnect/+Statistics], FocusReconnectFlagStore, FocusInterruptionDetector, DayPackGenerator, WiFiAvatarTransfer/… + provider sync engines
 │   └── Storage/                     # LocalStorage, SupabaseClient, SyncManager
 ├── Models/                          # Value types only: CompanionCharacter, Pet, TaskItem, CalendarEvent, FocusSession, EventLog, DayPack, DisplayScene…
 ├── State/                           # @Observable singletons: AppState + all AppState+*.swift extensions, ThemeManager, TaskManager, PetManager, TimelineDataSource, IntegrationCoordinator…
@@ -173,7 +179,7 @@ xcodebuild -workspace Kirole.xcworkspace -scheme Kirole \
 ```
 
 ### Test Suite Notes
-- **127 test files (~148 suites, ~1263 tests)** in `KirolePackage/Tests/KiroleFeatureTests/`. BLE is the most heavily covered surface (`BLEProtocolTests`, `BLESecurityTests`, `BLESyncPolicyTests`, `BLEWriteGateTests`, `BLEConnectionPolicyTests`, `BLEEventHandlerTests`, `BLEProtocolSimulationTests`, `BLEOTACoordinatorTests`), followed by focus/sync/companion logic.
+- **127+ test files** in `KirolePackage/Tests/KiroleFeatureTests/`. BLE is the most heavily covered surface (`BLEProtocolTests`, `BLESecurityTests`, `BLESyncPolicyTests`, `BLEWriteGateTests`, `BLEConnectionPolicyTests`, `BLEEventHandlerTests`, `BLEProtocolSimulationTests`, `BLEOTACoordinatorTests`, `BLEOfflineSyncCoordinatorTests`, `FocusReconnectArbiterTests` / `FocusReconnectProtocolTests` / `FocusReconnectFixTests`, `ScheduleV2CodecTests`), followed by focus/sync/companion logic. Wire-format or reconnect changes must run the reconnect + OfflineSync + Schedule v2 suites, not only `BLEProtocolTests`.
 - **`BLEDataEncoder` has a strict mirror decoder in the test layer.** `BLEProtocolSimulationSupport.swift`'s `parseDayPack` / `parseWeather` re-parse the exact wire bytes and call `requireEnd()` (any trailing byte throws `trailingBytes`). So **any field added to `encodeDayPack` / `encodeWeather` MUST be read back in the matching `parse*` before `requireEnd()`** — even an empty length-prefixed string appends a byte and trips it — and the fixture + `Simulated*` struct + round-trip assertion updated. `BLEProtocolTests` walks the cursor by hand and will *not* catch a desync; run the **full** `swift test` (which includes `BLEProtocolSimulationTests`) after any wire-format change, not just `BLEProtocolTests`.
 - **Parallel-test isolation (CRITICAL):** Swift Testing runs suites concurrently. Any test that mutates global `UserDefaults.standard` — i.e. anything going through `LocalStorage` resettable keys, focus energy bottles, or gamify storage — MUST wrap its body in `await SharedPersistenceTestLock.shared.withLock { ... }` (`Tests/.../SharedPersistenceTestLock.swift`) or it flakes intermittently. Suites that assert state on shared singletons (e.g. `BLEService.shared.isPendingOTAReboot` in `BLEOTACoordinatorTests`) must be `@Suite(..., .serialized)` — in-suite parallel tests interleave at `await` points and clobber the flag. **Adding a new key to `LocalStorage.resettableUserDefaultKeys` can make previously-green tests flaky.** If a suite flakes, run it alone first (`swift test --filter SuiteName`) to confirm an isolation problem before changing production code.
 - **Which runner:** `swift test` (package-only, fast) for logic/services; the simulator host (`xcodebuild ... test`, or XcodeBuildMCP `test_sim`) only when the test exercises app-shell / UI lifecycle. `Kirole.xctestplan` coordinates the full run.
@@ -254,6 +260,6 @@ For TestFlight automation, copy `fastlane/.env.template` → `fastlane/.env` and
 
 ## Where to Look Next
 - `AGENTS.md` — full rules, BLE protocol *rules/summary*, companion IP prompt architecture, onboarding detail, Focus Mode state machine, Event→Output dispatch map.
-- `docs/` — **hardware-facing source of truth** (AGENTS.md defers here). For Ver 1.3.0 专注重连 / Schedule v2, read these three together: `Kirole_专注状态重连_App对接说明_Ver_1_3_0.md` (firmware semantics), `Kirole_BLE协议命令字节表_专注重连协议更新_Ver_1_3_0.md` (byte table; generated from the sibling `.xlsx`), and `BLE通信协议规格文档.md` (repo-wide spec, currently v2.13.1). If they conflict, the firmware 1.3.0 md + byte table win, then back-port into the spec. Open items for the hardware team live in `专注重连-与硬件协商项_Ver_1_3_0.md`. `BLE初次联调指南.md` / `BLE联调前全协议模拟报告.md` are the integration + dry-run guides; `硬件需求文档-Hardware-Requirements-Document.md` and `固件功能规格文档.md` are the hardware/firmware requirement specs; `Kirole显示屏页面（游戏机制2）.pdf` and `positioning-narrative.md` are the product mechanism / positioning source of truth (e.g. why the streak system was deleted); `2026-07-09-spec.md` is the executed spec for the focus-interruption redesign (D-1/D-2/D-3 decisions + "don't fix as bug" list). When you change a BLE/firmware doc here, the protocol byte tables and §-numbers are what the hardware team builds against — keep them exact.
+- `docs/` — **hardware-facing source of truth** (AGENTS.md defers here). Ver 1.3.0 专注重连 / Schedule v2 阅读顺序：`Kirole_专注状态重连_App对接说明_Ver_1_3_0.md`（语义）→ `Kirole_BLE协议命令字节表_专注重连协议更新_Ver_1_3_0.md`（字节；由同名 `.xlsx` 转写）→ `BLE通信协议规格文档-v2.13.1补记.md`（覆盖主规格里已过时的 RESULT / 强制 COMMIT / `0x12` 解卡写法）→ `BLE通信协议规格文档.md` 其余未改章节。冲突时 **固件 1.3.0 原文优先**。未决项：`专注重连-与硬件协商项_Ver_1_3_0.md`。`BLE初次联调指南.md` / `BLE联调前全协议模拟报告.md` 是联调指南；`硬件需求文档-Hardware-Requirements-Document.md` 与 `固件功能规格文档.md` 是硬件需求；`Kirole显示屏页面（游戏机制2）.pdf` 与 `positioning-narrative.md` 是产品机制；`2026-07-09-spec.md` 是专注打断 D-1/D-2/D-3。改 BLE/固件文档时字节表和 § 号必须与硬件合同一致。
 - `.cursor/rules/*.mdc` — Swift / SwiftUI / Testing / Concurrency / Foundation Models / XcodeBuildMCP guidance.
 - `TESTFLIGHT_GUIDE.md`, `TESTFLIGHT_PROGRESS.md` — release workflow state.
