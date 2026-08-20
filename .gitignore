@@ -85,6 +85,9 @@ fastlane/test_output
 fastlane/.env
 fastlane/.env.*
 !fastlane/.env.template
+# Local TestFlight release notes and run logs
+fastlane/notes-*.txt
+fastlane/release-*.log
 
 # Reference files
 页面一比一还原*/
