@@ -21,7 +21,15 @@ For _fastlane_ installation instructions, see [Installing _fastlane_](https://do
 [bundle exec] fastlane ios release
 ```
 
-Full pipeline: increment build → archive → upload → set notes → distribute to external groups
+Internal TestFlight pipeline (hardware/firmware acceptance channel): increment build → archive Kirole-Internal (InternalRelease, KIROLE_INTERNAL defined) → upload → set notes → distribute to external groups. NEVER promote this binary to App Store — use the appstore lane from a tagged commit instead (AGENTS.md Release Channel Policy).
+
+### ios appstore
+
+```sh
+[bundle exec] fastlane ios appstore
+```
+
+App Store candidate pipeline: verify release-channel boundary → increment build → archive Kirole-AppStore (AppStoreRelease, no KIROLE_INTERNAL) → upload binary to App Store Connect. No TestFlight groups, no notes, no beta review. Attaching the build to an App Store version and submitting stays manual, gated on validate-assets.sh submission passing and SUBMISSION-RECORD.md being READY.
 
 ### ios notes
 
