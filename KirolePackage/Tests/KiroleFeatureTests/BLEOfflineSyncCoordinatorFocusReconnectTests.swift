@@ -64,7 +64,10 @@ struct BLEOfflineSyncCoordinatorFocusReconnectTests {
                     },
                     previewFocusState: { self.previewed.append($0) },
                     resolveFocus: resolveFocus ?? { state in
-                        OfflineFocusResolve(
+                        guard state.focusRevision < UInt32.max else {
+                            fatalError("Focus revision exhausted in test fixture")
+                        }
+                        return OfflineFocusResolve(
                             resolveID: 1,
                             sessionId: state.sessionId,
                             focusState: state.focusState == .active ? .active : .idle,
@@ -72,7 +75,7 @@ struct BLEOfflineSyncCoordinatorFocusReconnectTests {
                             startTimestamp: state.startTimestamp,
                             endTimestamp: state.endTimestamp,
                             elapsedSeconds: state.elapsedSeconds,
-                            focusRevision: max(state.focusRevision, 1),
+                            focusRevision: state.focusRevision + 1,
                             phase: .idle,
                             bottles: 0
                         )
@@ -312,6 +315,9 @@ struct BLEOfflineSyncCoordinatorFocusReconnectTests {
         let coordinator = recorder.makeCoordinator(
             responseTimeout: .milliseconds(40),
             resolveFocus: { state in
+                guard state.focusRevision < UInt32.max else {
+                    fatalError("Focus revision exhausted in test fixture")
+                }
                 let resolveID = nextResolveID
                 nextResolveID += 1
                 return OfflineFocusResolve(
@@ -322,7 +328,7 @@ struct BLEOfflineSyncCoordinatorFocusReconnectTests {
                     startTimestamp: state.startTimestamp,
                     endTimestamp: state.endTimestamp,
                     elapsedSeconds: state.elapsedSeconds,
-                    focusRevision: max(state.focusRevision, 1),
+                    focusRevision: state.focusRevision + 1,
                     phase: .idle,
                     bottles: 0
                 )

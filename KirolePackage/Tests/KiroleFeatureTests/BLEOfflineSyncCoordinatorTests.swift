@@ -81,6 +81,23 @@ struct BLEOfflineSyncCoordinatorTests {
                     freezeFocusStatus: { self.freezeCount += 1 },
                     unfreezeFocusStatus: { self.unfreezeCount += 1 },
                     previewFocusState: { self.previewed.append($0) },
+                    resolveFocus: { state in
+                        guard state.focusRevision < UInt32.max else {
+                            fatalError("Focus revision exhausted in test fixture")
+                        }
+                        return OfflineFocusResolve(
+                            resolveID: 1,
+                            sessionId: state.sessionId,
+                            focusState: state.focusState == .active ? .active : .idle,
+                            result: state.focusState == .active ? .accepted : .closed,
+                            startTimestamp: state.startTimestamp,
+                            endTimestamp: state.endTimestamp,
+                            elapsedSeconds: state.elapsedSeconds,
+                            focusRevision: state.focusRevision + 1,
+                            phase: .idle,
+                            bottles: 0
+                        )
+                    },
                     restoreOrdinaryFocusSync: { snapshot, resolve in
                         self.restored.append((snapshot, resolve))
                     }
@@ -378,7 +395,8 @@ struct BLEOfflineSyncCoordinatorTests {
                     ))
                 },
                 makeSyncID: { 0x0102_0304 },
-                makeValidUntil: { 0x0506_0708 }
+                makeValidUntil: { 0x0506_0708 },
+                resolveFocus: { _ in fatalError("Unexpected focus resolution") }
             )
         )
         let task = Task { try await coordinator.synchronize() }
@@ -703,7 +721,8 @@ struct BLEOfflineSyncCoordinatorTests {
                 sendDayPack: { recorder.events.append(.dayPack($0)) },
                 processOperation: { _, _ in },
                 makeSyncID: { 0x0102_0304 },
-                makeValidUntil: { 0x0506_0708 }
+                makeValidUntil: { 0x0506_0708 },
+                resolveFocus: { _ in fatalError("Unexpected focus resolution") }
             )
         )
         let task = Task { try await coordinator.synchronize() }

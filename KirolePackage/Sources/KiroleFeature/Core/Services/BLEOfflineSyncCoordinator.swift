@@ -80,20 +80,7 @@ public final class BLEOfflineSyncCoordinator {
             freezeFocusStatus: @escaping @MainActor @Sendable () -> Void = {},
             unfreezeFocusStatus: @escaping @MainActor @Sendable () -> Void = {},
             previewFocusState: @escaping PreviewFocus = { _ in },
-            resolveFocus: @escaping ResolveFocus = { state in
-                OfflineFocusResolve(
-                    resolveID: 1,
-                    sessionId: state.sessionId,
-                    focusState: state.focusState == .active ? .active : .idle,
-                    result: state.focusState == .active ? .accepted : .closed,
-                    startTimestamp: state.startTimestamp,
-                    endTimestamp: state.endTimestamp,
-                    elapsedSeconds: state.elapsedSeconds,
-                    focusRevision: max(state.focusRevision, 1),
-                    phase: .idle,
-                    bottles: 0
-                )
-            },
+            resolveFocus: @escaping ResolveFocus,
             restoreOrdinaryFocusSync: @escaping RestoreOrdinaryFocusSync = { _, _ in },
             abandonPendingFocusResolve: @escaping AbandonPendingFocusResolve = {},
             invalidatePendingFocusResolve: @escaping InvalidatePendingFocusResolve = {}

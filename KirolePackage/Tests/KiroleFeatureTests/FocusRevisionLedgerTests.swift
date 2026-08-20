@@ -34,6 +34,83 @@ struct FocusRevisionLedgerTests {
         #expect(await persistence.saveCount() == 2)
     }
 
+    @Test("First active FocusStatus writes revision one on the wire")
+    func firstActiveFocusStatusWireRevisionIsOne() async throws {
+        let persistence = FocusRevisionMemoryPersistence()
+        let ledger = FocusRevisionLedger(persistence: persistence)
+        let deviceID = UUID()
+        let sessionID = FocusSessionId(
+            bootSessionID: 0x0102_0304,
+            startOperationID: 0x0506_0708
+        )
+        let fingerprint = BLEDataEncoder.encodeFocusStatus(
+            phase: .warmup,
+            energyBottles: 3,
+            elapsedSeconds: 15,
+            taskTitle: "First active",
+            segmentSeconds: 1_500,
+            focusRevision: 1,
+            focusSessionId: sessionID,
+            focusState: .active
+        )
+
+        let revision = try await ledger.prepare(
+            deviceID: deviceID,
+            fingerprint: fingerprint,
+            floor: 0
+        )
+        let payload = BLEDataEncoder.encodeFocusStatus(
+            phase: .warmup,
+            energyBottles: 3,
+            elapsedSeconds: 15,
+            taskTitle: "First active",
+            segmentSeconds: 1_500,
+            focusRevision: revision,
+            focusSessionId: sessionID,
+            focusState: .active
+        )
+
+        #expect(payload[0] == FocusReconnectCodec.focusStatusSubVersion)
+        #expect(payload.bigEndianUInt32(at: 1) == 1)
+    }
+
+    @Test("Changed FocusStatus content advances the encoded revision")
+    func changedFocusStatusWireRevisionAdvances() async throws {
+        let persistence = FocusRevisionMemoryPersistence()
+        let ledger = FocusRevisionLedger(persistence: persistence)
+        let deviceID = UUID()
+        let sessionID = FocusSessionId(bootSessionID: 1, startOperationID: 7)
+
+        func payload(elapsed: UInt32, revision: UInt32) -> Data {
+            BLEDataEncoder.encodeFocusStatus(
+                phase: .warmup,
+                energyBottles: 2,
+                elapsedSeconds: elapsed,
+                taskTitle: "Monotonic",
+                segmentSeconds: 1_500,
+                focusRevision: revision,
+                focusSessionId: sessionID,
+                focusState: .active
+            )
+        }
+
+        let firstFingerprint = payload(elapsed: 10, revision: 1)
+        let firstRevision = try await ledger.prepare(
+            deviceID: deviceID,
+            fingerprint: firstFingerprint,
+            floor: 0
+        )
+        let secondFingerprint = payload(elapsed: 11, revision: 1)
+        let secondRevision = try await ledger.prepare(
+            deviceID: deviceID,
+            fingerprint: secondFingerprint,
+            floor: firstRevision
+        )
+
+        #expect(payload(elapsed: 10, revision: firstRevision).bigEndianUInt32(at: 1) == 1)
+        #expect(payload(elapsed: 11, revision: secondRevision).bigEndianUInt32(at: 1) == 2)
+    }
+
     @Test("A legacy zero entry is upgraded instead of reused")
     func legacyZeroEntryStartsAtOne() async throws {
         let deviceID = UUID()
