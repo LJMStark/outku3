@@ -34,7 +34,7 @@ struct SyncSchedulerTests {
 
     @Suite("External Sync Targets")
     struct ExternalSyncTargetsTests {
-        @Test("Connected targets include all supported external sources")
+        @Test("Connected targets include the supported Apple and Google sources")
         @MainActor
         func includesAllSupportedSources() {
             let state = AppState.makeForTesting()
@@ -42,10 +42,10 @@ struct SyncSchedulerTests {
             defer { state.integrations = originalIntegrations }
 
             state.integrations = configuredIntegrations(
-                connected: [.googleCalendar, .appleReminders, .notion, .taskade]
+                connected: [.googleCalendar, .appleReminders]
             )
 
-            #expect(state.connectedExternalSyncTargets() == [.google, .apple, .notion, .taskade])
+            #expect(state.connectedExternalSyncTargets() == [.google, .apple])
         }
 
         @Test("Google and Apple targets are de-duplicated by provider")

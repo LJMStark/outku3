@@ -12,6 +12,99 @@ struct LocalStoragePersistenceTests {
 
     private static let connectionsFile = "integration_connections.json"
 
+    @Test("retired provider artifacts are removed from every old storage location")
+    func retiredProviderArtifactsAreRemoved() throws {
+        let fileManager = FileManager.default
+        let root = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let documents = root.appendingPathComponent("Documents", isDirectory: true)
+        let support = root.appendingPathComponent("Application Support", isDirectory: true)
+        let providerDirectory = support
+            .appendingPathComponent("com.kirole.app", isDirectory: true)
+            .appendingPathComponent("ProviderSync", isDirectory: true)
+        let defaultsName = "com.kirole.tests.retired-provider-artifacts.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: defaultsName))
+        defer {
+            defaults.removePersistentDomain(forName: defaultsName)
+            try? fileManager.removeItem(at: root)
+        }
+        try fileManager.createDirectory(at: documents, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: providerDirectory, withIntermediateDirectories: true)
+        for filename in ["microsoft_sync_state.json", "microsoft_todo_outbox.json"] {
+            try Data("retired".utf8).write(to: documents.appendingPathComponent(filename))
+        }
+        for filename in [
+            "todoist-sync-state.json",
+            "ticktick-international-sync-state.json",
+            "ticktick-china-sync-state.json",
+        ] {
+            try Data("retired".utf8).write(to: providerDirectory.appendingPathComponent(filename))
+        }
+        defaults.set(["project"], forKey: "integrations.selectedProjects.todoist")
+        defaults.set("china", forKey: "integrations.ticktick.region")
+
+        try LocalStorage.removeRetiredProviderArtifacts(
+            fileManager: fileManager,
+            documentsDirectory: documents,
+            applicationSupportDirectory: support,
+            userDefaults: defaults
+        )
+
+        #expect(!fileManager.fileExists(atPath: documents.appendingPathComponent("microsoft_sync_state.json").path))
+        #expect(!fileManager.fileExists(atPath: providerDirectory.path))
+        #expect(defaults.object(forKey: "integrations.selectedProjects.todoist") == nil)
+        #expect(defaults.object(forKey: "integrations.ticktick.region") == nil)
+    }
+
+    @Test("retired provider records are removed without dropping Apple and Google data")
+    func retiredProviderRecordsAreRemovedSelectively() throws {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let appleTask = TaskItem(id: "apple", title: "Apple", source: .apple)
+        let googleTask = TaskItem(id: "google", title: "Google", source: .google)
+        let currentData = try encoder.encode([appleTask, googleTask])
+        var records = try #require(JSONSerialization.jsonObject(with: currentData) as? [[String: Any]])
+
+        var retiredSource = records[0]
+        retiredSource["id"] = "todoist"
+        retiredSource["source"] = "Todoist"
+        records.append(retiredSource)
+
+        var retiredReference = records[0]
+        retiredReference["id"] = "notion"
+        retiredReference["externalReference"] = [
+            "provider": "notion",
+            "accountID": "old-account",
+            "itemID": "old-item",
+            "allowsContentModifications": false,
+        ]
+        records.append(retiredReference)
+
+        let oldData = try JSONSerialization.data(withJSONObject: records)
+        let filtered = try LocalStorage.removingRetiredProviderRecords(from: oldData)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let loaded = try decoder.decode([TaskItem].self, from: filtered.data)
+
+        #expect(filtered.removedCount == 2)
+        #expect(loaded.map(\.id) == ["apple", "google"])
+    }
+
+    @Test("malformed current-provider records are not silently discarded")
+    func malformedCurrentProviderRecordsStillFailDecode() throws {
+        let malformed = try JSONSerialization.data(withJSONObject: [[
+            "id": "broken",
+            "source": "Apple Calendar",
+        ]])
+        let filtered = try LocalStorage.removingRetiredProviderRecords(from: malformed)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        #expect(filtered.removedCount == 0)
+        #expect(throws: DecodingError.self) {
+            _ = try decoder.decode([TaskItem].self, from: filtered.data)
+        }
+    }
+
     @Test("focus history date keys use the timezone supplied at call time")
     func focusHistoryDateKeyUsesCurrentTimeZone() throws {
         let utc = try #require(TimeZone(secondsFromGMT: 0))
@@ -26,7 +119,7 @@ struct LocalStoragePersistenceTests {
     func integrationConnectionsRoundTrip() async throws {
         try await SharedPersistenceTestLock.shared.withLock {
             let storage = LocalStorage.shared
-            let states = ["Apple Calendar": false, "Apple Reminders": true, "Google": true]
+            let states = ["Apple Calendar": false, "Apple Reminders": true, "Google Calendar": true]
             try await storage.saveIntegrationConnections(states)
 
             let loaded = try await storage.loadIntegrationConnections()

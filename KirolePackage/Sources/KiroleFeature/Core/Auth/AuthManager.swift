@@ -17,14 +17,6 @@ public final class AuthManager {
     public private(set) var isGoogleConnected: Bool = false
     public private(set) var googleCalendarAccessLevel: GoogleCalendarAccessLevel = .none
     public private(set) var hasTasksAccess: Bool = false
-    public private(set) var isNotionConnected: Bool = false
-    public private(set) var isTaskadeConnected: Bool = false
-    public internal(set) var isMicrosoftConnected: Bool = false
-    public internal(set) var hasMicrosoftCalendarAccess: Bool = false
-    public internal(set) var hasMicrosoftTodoAccess: Bool = false
-    public internal(set) var isTodoistConnected: Bool = false
-    public internal(set) var isTickTickConnected: Bool = false
-    public internal(set) var tickTickRegion: TickTickRegion?
 
     public var hasCalendarAccess: Bool {
         googleCalendarAccessLevel.canRead
@@ -49,21 +41,8 @@ public final class AuthManager {
 
     private let appleSignInService = AppleSignInService.shared
     private let googleSignInService = GoogleSignInService.shared
-    private let notionAuthService: NotionAuthService
-    private let taskadeAuthService: TaskadeAuthService
-    let microsoftAuthService = MicrosoftAuthService.shared
-    @ObservationIgnored let microsoftAvailability: @MainActor (IntegrationType) -> Bool
     private let keychainService: KeychainService
     let supabaseService = SupabaseService.shared
-    @ObservationIgnored var todoistAuthService: TodoistAuthService?
-    @ObservationIgnored var todoistCredentialManager: TodoistCredentialManager?
-    @ObservationIgnored let todoistCredentialOperationGate = OAuthCredentialOperationGate()
-    @ObservationIgnored var tickTickAuthService: TickTickAuthService?
-    @ObservationIgnored var tickTickCredentialManager: TickTickCredentialManager?
-    @ObservationIgnored var tickTickCredentialOwnerUserID: String?
-    @ObservationIgnored let tickTickCredentialOperationGate = OAuthCredentialOperationGate()
-    @ObservationIgnored var tickTickLocalStateCleaner = TickTickLocalStateCleaner.live
-    @ObservationIgnored var taskProviderSignOutCleanupOverride: (@MainActor () async throws -> Void)?
     @ObservationIgnored var providerDataSignOutCleanupOverride: (@MainActor () async throws -> Void)?
     @ObservationIgnored var localCredentialSignOutCleanupOverride: (@MainActor () throws -> Void)?
     @ObservationIgnored var supabaseSignOutOverride: (@Sendable () async throws -> Void)?
@@ -72,36 +51,12 @@ public final class AuthManager {
     @ObservationIgnored var googleSyncStateResetOverride: (@MainActor () async throws -> Void)?
     @ObservationIgnored var googleSyncActivationOverride: (@MainActor () async throws -> Void)?
     @ObservationIgnored var googleDisconnectOverride: (@MainActor () async -> Void)?
-    @ObservationIgnored var todoistDisconnectSyncResetOverride: (@MainActor () async throws -> Void)?
-    @ObservationIgnored var todoistDisconnectProjectCleanupOverride: (@MainActor () async throws -> Void)?
-    @ObservationIgnored var todoistComponentFactoryOverride: (@MainActor () throws -> (
-        auth: TodoistAuthService,
-        credentials: TodoistCredentialManager
-    ))?
-    @ObservationIgnored var todoistPreparedSignOutCleanup: OAuthCredentialCleanupTicket?
-    @ObservationIgnored var todoistPreparedSignOutCleanupCompleted = false
     @ObservationIgnored var customCompanionSignOutCleanup: @MainActor () async throws -> Void = {
         try await AppState.shared.prepareCustomCompanionDataForSignOut()
     }
 
-    static let tickTickRegionKey = "integrations.ticktick.region"
-
-    init(
-        keychainService: KeychainService = .shared,
-        notionAuthService: NotionAuthService? = nil,
-        taskadeAuthService: TaskadeAuthService? = nil,
-        microsoftAvailability: @escaping @MainActor (IntegrationType) -> Bool = { $0.isAvailable }
-    ) {
+    init(keychainService: KeychainService = .shared) {
         self.keychainService = keychainService
-        self.microsoftAvailability = microsoftAvailability
-        self.notionAuthService = notionAuthService
-            ?? (keychainService === KeychainService.shared
-                ? .shared
-                : NotionAuthService(keychainService: keychainService))
-        self.taskadeAuthService = taskadeAuthService
-            ?? (keychainService === KeychainService.shared
-                ? .shared
-                : TaskadeAuthService(keychainService: keychainService))
     }
 
     // MARK: - Initialization
@@ -116,6 +71,12 @@ public final class AuthManager {
     ///     失败时静默——currentUser 维持 pending 状态，下一次有网时自然会再升级。
     public func initialize() async {
         googleSignInService.configure()
+
+        do {
+            try keychainService.clearRetiredProviderCredentials()
+        } catch {
+            ErrorReporter.log(error, context: "AuthManager.initialize.clearRetiredProviderCredentials")
+        }
 
         // Step A: synchronous Keychain restore — works offline.
         restoreLocalIdentityFromKeychain()
@@ -138,17 +99,6 @@ public final class AuthManager {
             promoteCurrentUser(with: supabaseUser, googleResult: restoredGoogleResult)
         }
 
-        isNotionConnected = notionAuthService.isConnected
-        isTaskadeConnected = taskadeAuthService.isConnected
-        isMicrosoftConnected = await microsoftAuthService.isConnected()
-        hasMicrosoftCalendarAccess = await microsoftAuthService.hasAccess(to: .outlookCalendar)
-        hasMicrosoftTodoAccess = await microsoftAuthService.hasAccess(to: .todo)
-        do {
-            try await restoreTaskProviderConnections()
-        } catch {
-            AppState.shared.lastError = error.localizedDescription
-            ErrorReporter.log(error, context: "AuthManager.initialize.restoreTaskProviderConnections")
-        }
     }
 
     /// Step A: hydrate `currentUser` from Keychain so the UI can show an
@@ -477,151 +427,25 @@ public final class AuthManager {
         applyGoogleSignInResult(result, isRestore: false)
     }
 
-    // MARK: - Notion Sign In
-
-    /// 使用 Notion 连接
-    public func signInWithNotion() async throws {
-        let operation = try notionAuthService.beginCredentialOperation()
-        defer { notionAuthService.endCredentialOperation(operation) }
-        _ = try await notionAuthService.authorize()
-        try notionAuthService.validateCredentialOperation(operation)
-        isNotionConnected = true
-    }
-
-    /// 获取 Notion access token
-    public func getNotionAccessToken() -> String? {
-        notionAuthService.getAccessToken()
-    }
-
-    /// 断开 Notion 连接
-    @discardableResult
-    public func disconnectNotion() -> Bool {
-        guard notionAuthService.disconnect() else { return false }
-        isNotionConnected = false
-        return true
-    }
-
-    // MARK: - Taskade Sign In
-
-    /// 使用 Taskade 连接
-    public func signInWithTaskade() async throws {
-        let operation = try taskadeAuthService.beginCredentialOperation()
-        defer { taskadeAuthService.endCredentialOperation(operation) }
-        _ = try await taskadeAuthService.authorize()
-        try taskadeAuthService.validateCredentialOperation(operation)
-        isTaskadeConnected = true
-    }
-
-    /// 获取 Taskade access token
-    public func getTaskadeAccessToken() async throws -> String {
-        try await taskadeAuthService.getAccessToken()
-    }
-
-    /// 断开 Taskade 连接
-    @discardableResult
-    public func disconnectTaskade() -> Bool {
-        guard taskadeAuthService.disconnect() else { return false }
-        isTaskadeConnected = false
-        return true
-    }
-
     // MARK: - Sign Out
 
-    /// 完全登出
+    /// 完全登出。先阻止旧同步提交，再删除本地数据和凭据，最后撤销云端会话。
     public func signOut() async {
         AppState.shared.invalidateAllExternalSyncResults()
-        let notionCleanup = notionAuthService.invalidateAndBlockCredentialOperations()
-        let taskadeCleanup = taskadeAuthService.invalidateAndBlockCredentialOperations()
-        let todoistCredentialGate: OAuthCredentialOperationGate
-        let todoistCleanup: OAuthCredentialCleanupTicket
-        if let todoistAuthService {
-            todoistCredentialGate = todoistAuthService.credentialGate
-            todoistCleanup = todoistAuthService.invalidateAndBlockCredentialOperations()
-        } else {
-            todoistCredentialGate = todoistCredentialOperationGate
-            todoistCleanup = todoistCredentialGate.invalidateAndBlock()
-        }
-        let tickTickSignOutHold = beginTickTickCredentialCleanupForSignOut()
-        todoistPreparedSignOutCleanup = todoistCleanup
-        todoistPreparedSignOutCleanupCompleted = false
-        var shouldCompleteNotionCleanup = true
-        var shouldCompleteTaskadeCleanup = true
-        var shouldReopenTodoist = true
-        defer {
-            if shouldCompleteNotionCleanup {
-                notionAuthService.credentialGate.complete(notionCleanup)
-            }
-            if shouldCompleteTaskadeCleanup {
-                taskadeAuthService.credentialGate.complete(taskadeCleanup)
-            }
-            let didClearTodoist = todoistPreparedSignOutCleanupCompleted
-            if shouldReopenTodoist || todoistPreparedSignOutCleanupCompleted {
-                todoistCredentialGate.complete(todoistCleanup)
-            }
-            if didClearTodoist {
-                todoistAuthService = nil
-                todoistCredentialManager = nil
-            }
-            if todoistPreparedSignOutCleanup == todoistCleanup {
-                todoistPreparedSignOutCleanup = nil
-                todoistPreparedSignOutCleanupCompleted = false
-            }
-            completeTickTickCredentialCleanupForSignOut(tickTickSignOutHold)
-        }
 
-        func finishCredentialCleanupAfterEarlyAbort() async {
-            do {
-                try await finishAbortedTodoistSignOut(
-                    todoistCleanup,
-                    credentialGate: todoistCredentialGate
-                )
-            } catch {
-                ErrorReporter.log(
-                    error,
-                    context: "AuthManager.signOut.finishAbortedTodoistCleanup"
-                )
-            }
-            do {
-                try await finishAbortedTickTickSignOut(tickTickSignOutHold)
-            } catch {
-                ErrorReporter.log(
-                    error,
-                    context: "AuthManager.signOut.finishAbortedTickTickCleanup"
-                )
-            }
-        }
-
-        // This is deliberately the first suspension in global sign-out. The engine invalidates
-        // its generation before awaiting storage deletion, so provider cleanup later in this
-        // method cannot race an old Google sync or outbox flush.
         do {
             try await resetGoogleSyncStateForAccountTransition()
         } catch {
-            await finishCredentialCleanupAfterEarlyAbort()
             AppState.shared.lastError = error.localizedDescription
             ErrorReporter.log(error, context: "AuthManager.signOut.resetGoogleSyncState")
             return
         }
 
-        // Custom photos are user data. Online we wait for firmware erase confirmation; offline
-        // AppState removes local bytes immediately and keeps only an eraseAll marker.
         do {
             try await customCompanionSignOutCleanup()
         } catch {
-            await finishCredentialCleanupAfterEarlyAbort()
             AppState.shared.lastError = error.localizedDescription
             ErrorReporter.log(error, context: "AuthManager.signOut.eraseCustomAvatar")
-            return
-        }
-
-        do {
-            if taskProviderSignOutCleanupOverride == nil {
-                shouldReopenTodoist = false
-            }
-            try await cleanupTaskProvidersForSignOut()
-        } catch {
-            AppState.shared.lastError = error.localizedDescription
-            ErrorReporter.log(error, context: "AuthManager.signOut.cleanupTaskProviders")
             return
         }
 
@@ -637,26 +461,7 @@ public final class AuthManager {
             return
         }
 
-        // Credential deletion is the local security boundary. It must finish before the remote
-        // Supabase session is revoked; otherwise a Keychain failure would leave authenticated UI
-        // backed by credentials that no longer have a usable cloud session.
         do {
-            guard notionAuthService.disconnect(
-                after: notionCleanup,
-                completeCleanup: false
-            ) else {
-                shouldCompleteNotionCleanup = false
-                throw KeychainCleanupError.credentialDeletionFailed
-            }
-            isNotionConnected = false
-            guard taskadeAuthService.disconnect(
-                after: taskadeCleanup,
-                completeCleanup: false
-            ) else {
-                shouldCompleteTaskadeCleanup = false
-                throw KeychainCleanupError.credentialDeletionFailed
-            }
-            isTaskadeConnected = false
             if let localCredentialSignOutCleanupOverride {
                 try localCredentialSignOutCleanupOverride()
             } else {
@@ -668,9 +473,6 @@ public final class AuthManager {
             return
         }
 
-        // These services keep SDK or in-memory auth state outside KeychainService. Clear them
-        // before the network await below so a process exit cannot let launch restore the old
-        // provider after its Keychain credentials were already deleted.
         clearLocalProviderSessionState()
 
         do {
@@ -680,12 +482,9 @@ public final class AuthManager {
                 try await supabaseService.signOut()
             }
         } catch {
-            // Local credentials are already verified absent. Do not restore authenticated UI for
-            // a remote revocation failure; Supabase's local session cannot survive relaunch.
             ErrorReporter.log(error, context: "AuthManager.signOut.supabase")
         }
 
-        // 重置状态
         currentUser = nil
         authState = .unauthenticated
     }
@@ -696,8 +495,6 @@ public final class AuthManager {
         googleCalendarAccessLevel = .none
         hasTasksAccess = false
         appleSignInService.clearCredentials()
-        isNotionConnected = false
-        isTaskadeConnected = false
     }
 
     var hasLocalSupabaseAccessToken: Bool {
@@ -712,12 +509,6 @@ public final class AuthManager {
             try keychainService.clearAll()
         }
         clearLocalProviderSessionState()
-        isMicrosoftConnected = false
-        hasMicrosoftCalendarAccess = false
-        hasMicrosoftTodoAccess = false
-        isTodoistConnected = false
-        isTickTickConnected = false
-        tickTickRegion = nil
         currentUser = nil
         authState = .unauthenticated
     }

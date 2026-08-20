@@ -130,28 +130,6 @@ struct TaskEditCapabilityTests {
         #expect(capabilities.dueDatePrecision == .dateOnly)
     }
 
-    @Test("Notion tasks stay read-only until full field sync exists")
-    func notionTaskStaysReadOnly() {
-        let task = TaskItem(
-            notionPageId: "page-1",
-            title: "Notion Task",
-            source: .notion
-        )
-
-        #expect(task.editCapabilities.isEditable == false)
-    }
-
-    @Test("Taskade tasks stay read-only until full field sync exists")
-    func taskadeTaskStaysReadOnly() {
-        let task = TaskItem(
-            taskadeTaskId: "task-1",
-            taskadeProjectId: "project-1",
-            title: "Taskade Task",
-            source: .taskade
-        )
-
-        #expect(task.editCapabilities.isEditable == false)
-    }
 }
 
 @Suite("Event Edit Capability Tests")

@@ -128,7 +128,7 @@ public final class AppState {
     // Loading State
     public var isLoading: Bool = false
     public var lastError: String?
-    /// Remote sync error per provider ("Google", "Notion", "Taskade", "Apple Calendar", "Apple Reminders").
+    /// Remote sync error per provider (Google, Apple Calendar, Apple Reminders).
     /// Set on failure, cleared on next successful sync for that provider.
     public var remoteSyncErrors: [String: String] = [:]
     /// 部分失败/降级提示（黄色）。红色阻塞错误在 remoteSyncErrors；本字典不点亮齿轮红点。
@@ -241,13 +241,6 @@ public final class AppState {
     let googleSyncEngine = GoogleSyncEngine.shared
     let eventKitService = EventKitService.shared
     let appleSyncEngine = AppleSyncEngine.shared
-    let notionSyncEngine = NotionSyncEngine.shared
-    let taskadeSyncEngine = TaskadeSyncEngine.shared
-    let microsoftSyncEngine = MicrosoftSyncEngine.shared
-    let todoistSyncEngine = TodoistSyncEngine.shared
-    let tickTickInternationalSyncEngine = TickTickSyncEngine(region: .international)
-    let didaSyncEngine = TickTickSyncEngine(region: .china)
-    let providerProjectSelectionStore = ProviderProjectSelectionStore.shared
     #if os(iOS)
     let weatherService = WeatherService.shared
     #endif
@@ -273,11 +266,6 @@ public final class AppState {
         installCustomAvatarTransportRouter()
         initialLoadTask = Task { @MainActor in
             await loadLocalData()
-            do {
-                try await purgeDisabledTickTickData()
-            } catch {
-                reportPersistenceError(error, operation: "delete", target: "disabled_ticktick_data")
-            }
             await restorePendingCustomAvatarOperation()
             BLEService.shared.onAvatarControlResult = { [weak self] result in
                 self?.handleAvatarControlResult(result)
@@ -406,12 +394,6 @@ extension Integration {
             Integration(name: "Apple Reminders", iconName: "checklist", isConnected: true, type: .appleReminders),
             Integration(name: "Google Calendar", iconName: "calendar.badge.clock", isConnected: false, type: .googleCalendar),
             Integration(name: "Google Tasks", iconName: "checkmark.circle", isConnected: false, type: .googleTasks),
-            Integration(name: "Outlook Calendar", iconName: "calendar.badge.clock", isConnected: false, type: .outlookCalendar),
-            Integration(name: "Microsoft To Do", iconName: "checkmark.circle", isConnected: false, type: .microsoftToDo),
-            Integration(name: "Todoist", iconName: "checklist.checked", isConnected: false, type: .todoist),
-            Integration(name: "TickTick", iconName: "checkmark.circle", isConnected: false, type: .tickTick),
-            Integration(name: "Notion", iconName: "doc.text", isConnected: false, type: .notion),
-            Integration(name: "Taskade", iconName: "list.bullet.rectangle", isConnected: false, type: .taskade)
         ]
     }
 }

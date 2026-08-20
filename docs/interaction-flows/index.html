@@ -737,7 +737,7 @@ const BIGMAP = {
   external: {
     emoji: "☁️",
     title: { zh: "外部日历 / 任务", en: "External calendars & tasks" },
-    body: { zh: "Google · Apple · Notion · Taskade", en: "Google · Apple · Notion · Taskade" }
+    body: { zh: "Google · Apple", en: "Google · Apple" }
   },
   app: {
     emoji: "📱",
@@ -932,9 +932,9 @@ const FLOWS = [
   {
     id: "external",
     title: { zh: "外部日历 / 任务怎么到达设备", en: "How external calendars & tasks reach the device" },
-    desc: { zh: "你在 Google 日历、Apple 日历、Notion、Taskade 里的改动，经过两步到达设备屏幕。", en: "Changes you make in Google Calendar, Apple Calendar, Notion, or Taskade reach the device screen in two steps." },
+    desc: { zh: "你在 Google 日历/任务、Apple 日历/提醒事项里的改动，经过两步到达设备屏幕。", en: "Changes you make in Google Calendar/Tasks or Apple Calendar/Reminders reach the device screen in two steps." },
     chart: [
-      { t: "n", actor: "external", text: { zh: "你在 Google / Apple / Notion / Taskade 里新增或修改了日程、任务", en: "You add or edit an event or task in Google / Apple / Notion / Taskade" } },
+      { t: "n", actor: "external", text: { zh: "你在 Google / Apple 里新增或修改了日程、任务", en: "You add or edit an event or task in Google / Apple" } },
       { t: "a", label: { zh: "手机在这些时机获取：打开 App 时 · 下拉刷新时 · 每 5 分钟自动一次 · Apple 日历一有变化立即", en: "The phone fetches: on App open · on pull-to-refresh · automatically every 5 minutes · instantly when Apple Calendar changes" } },
       { t: "n", actor: "app", text: { zh: "手机合并新数据：同一条以最近修改的为准；你在手机上补充的备注、优先级尽量保留", en: "The phone merges the new data: for the same item the most recent edit wins; notes and priority you added on the phone are preserved where possible" } },
       { t: "a", tone: "instant", label: { zh: "内容变化 → 立即触发一次同步", en: "Content changed → an immediate sync is triggered" } },
@@ -943,7 +943,7 @@ const FLOWS = [
       { t: "n", actor: "device", text: { zh: "设备显示新的日程和任务", en: "The device shows the new events and tasks" } }
     ],
     notes: [
-      { zh: "范围说明：Notion 和 Taskade 目前只同步任务、不同步日历事件——这是当前版本的设计范围，不是遗漏。", en: "Scope note: Notion and Taskade currently sync tasks only, not calendar events — the current version's intended scope, not an omission.", warn: false },
+      { zh: "当前只支持 Apple 日历、Apple 提醒事项、Google 日历和 Google Tasks。其他账号来源会在后续逐个实现和验收。", en: "The current version supports Apple Calendar, Apple Reminders, Google Calendar, and Google Tasks. Other account sources will be implemented and accepted one at a time later.", warn: false },
       { zh: "同步失败不丢数据：手机继续使用上一次获取的数据，仅在设置页显示一个不打扰的状态提示。", en: "A failed sync loses nothing: the phone keeps using the last fetched data and shows only a quiet status indicator in Settings.", warn: false }
     ]
   },

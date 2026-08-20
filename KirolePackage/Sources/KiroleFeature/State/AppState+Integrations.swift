@@ -9,12 +9,6 @@ extension AppState {
         let authMappings: [(isAuthenticated: Bool, type: IntegrationType)] = [
             (AuthManager.shared.isGoogleConnected && AuthManager.shared.hasCalendarAccess, .googleCalendar),
             (AuthManager.shared.isGoogleConnected && AuthManager.shared.hasTasksAccess, .googleTasks),
-            (AuthManager.shared.isNotionConnected, .notion),
-            (AuthManager.shared.isTaskadeConnected, .taskade),
-            (AuthManager.shared.isMicrosoftConnected && AuthManager.shared.hasMicrosoftCalendarAccess, .outlookCalendar),
-            (AuthManager.shared.isMicrosoftConnected && AuthManager.shared.hasMicrosoftTodoAccess, .microsoftToDo),
-            (AuthManager.shared.isTodoistConnected, .todoist),
-            (AuthManager.shared.isTickTickConnected, .tickTick)
         ]
         let authenticatedTypes = authMappings.compactMap { mapping in
             mapping.isAuthenticated ? mapping.type : nil
@@ -50,22 +44,6 @@ extension AppState {
         syncIntegrationStatusFromAuth()
     }
 
-    /// Release-gated providers must not leave another Kirole user's remote data visible after
-    /// startup. The initial-load task calls this immediately after `loadLocalData()`, before
-    /// `ensureInitialLoadComplete()` can return, so tasks.json cannot restore removed rows later.
-    public func purgeDisabledTickTickData(
-        tickTickIsAvailable: Bool = IntegrationType.tickTick.isAvailable
-    ) async throws {
-        guard !tickTickIsAvailable else { return }
-
-        tasks.removeAll { task in
-            task.source == .tickTick || task.externalReference?.provider == .tickTick
-        }
-        setIntegrationStatus(.tickTick, isConnected: false)
-        try await localStorage.saveTasks(tasks)
-        updateStatistics()
-    }
-
     public func updateIntegrationStatus(_ type: IntegrationType, isConnected: Bool) {
         hasExplicitIntegrationConnectionPreferences = true
         invalidateExternalSyncResults(for: type)
@@ -84,10 +62,6 @@ extension AppState {
 
     var hasAnyGoogleIntegrationConnected: Bool {
         integrationCoordinator.hasAnyGoogleIntegrationConnected(integrations: integrations)
-    }
-
-    var hasAnyMicrosoftIntegrationConnected: Bool {
-        isIntegrationConnected(.outlookCalendar) || isIntegrationConnected(.microsoftToDo)
     }
 
     func setIntegrationStatus(_ type: IntegrationType, isConnected: Bool) {

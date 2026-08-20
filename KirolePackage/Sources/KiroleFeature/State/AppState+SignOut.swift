@@ -22,9 +22,6 @@ extension AppState {
         try await localStorage.saveEvents(retainedEvents)
         try await localStorage.saveIntegrationConnections(connectionStates)
         try await localStorage.saveIntegrationSyncTimes([:])
-        await providerProjectSelectionStore.clear(.todoist)
-        await providerProjectSelectionStore.clear(.tickTickInternational)
-        await providerProjectSelectionStore.clear(.didaChina)
 
         tasks = retainedTasks
         events = retainedEvents
@@ -45,7 +42,7 @@ private extension TaskItem {
         switch source {
         case .apple:
             return appleReminderId != nil || appleExternalId != nil || appleListId != nil
-        case .google, .outlook, .microsoftToDo, .todoist, .tickTick, .notion, .taskade:
+        case .google:
             return true
         }
     }
@@ -58,7 +55,7 @@ private extension CalendarEvent {
         switch source {
         case .apple:
             return appleEventId != nil || appleCalendarId != nil
-        case .google, .outlook, .microsoftToDo, .todoist, .tickTick, .notion, .taskade:
+        case .google:
             return true
         }
     }

@@ -294,7 +294,6 @@ struct AccountDeletionTests {
     private func stubSuccessfulLocalSignOut(on manager: AuthManager) {
         manager.googleSyncStateResetOverride = {}
         manager.customCompanionSignOutCleanup = {}
-        manager.taskProviderSignOutCleanupOverride = {}
         manager.providerDataSignOutCleanupOverride = {}
         manager.localCredentialSignOutCleanupOverride = {}
         manager.supabaseSignOutOverride = {}
@@ -325,24 +324,14 @@ struct CustomerSettingsAccountPolicyTests {
         #expect(header.contains("\\u{F8FF} Weather"))
     }
 
-    @Test("Gated integrations stay out of the customer picker")
-    func availableDisplayOrderHidesGatedProviders() {
-        let available = IntegrationType.availableDisplayOrder
-        #expect(available == IntegrationType.displayOrder.filter(\.isAvailable))
-        #expect(available.contains(.googleCalendar))
-        #expect(available.contains(.appleCalendar))
-        #expect(available.contains(.appleReminders))
-        #expect(available.contains(.googleTasks))
-        for gated in [
-            IntegrationType.notion,
-            .taskade,
-            .todoist,
-            .tickTick,
-            .outlookCalendar,
-            .microsoftToDo
-        ] where !gated.isAvailable {
-            #expect(!available.contains(gated))
-        }
+    @Test("Settings expose only the four supported integrations")
+    func displayOrderContainsOnlySupportedIntegrations() {
+        #expect(IntegrationType.displayOrder == [
+            .googleCalendar,
+            .appleCalendar,
+            .appleReminders,
+            .googleTasks,
+        ])
     }
 
     private func sourceFile(path: String) throws -> String {

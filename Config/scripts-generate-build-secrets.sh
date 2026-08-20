@@ -52,25 +52,6 @@ if [[ "${CONFIGURATION:-}" == "AppStoreRelease" && "${PLATFORM_NAME:-}" == "ipho
 fi
 BLE_SHARED_SECRET_VALUE="$(escape_swift "${BLE_SHARED_SECRET:-}")"
 DEEP_FOCUS_FEATURE_ENABLED_VALUE="$(escape_swift "${DEEP_FOCUS_FEATURE_ENABLED:-0}")"
-NOTION_OAUTH_CLIENT_ID_VALUE="$(escape_swift "${NOTION_OAUTH_CLIENT_ID:-}")"
-NOTION_OAUTH_ENABLED_VALUE="$(escape_swift "${NOTION_OAUTH_ENABLED:-0}")"
-TASKADE_OAUTH_CLIENT_ID_VALUE="$(escape_swift "${TASKADE_OAUTH_CLIENT_ID:-}")"
-TASKADE_OAUTH_ENABLED_VALUE="$(escape_swift "${TASKADE_OAUTH_ENABLED:-0}")"
-MICROSOFT_OAUTH_CLIENT_ID_VALUE="$(escape_swift "${MICROSOFT_OAUTH_CLIENT_ID:-}")"
-MICROSOFT_OAUTH_ENABLED_VALUE="$(escape_swift "${MICROSOFT_OAUTH_ENABLED:-0}")"
-TODOIST_OAUTH_ENABLED_VALUE="$(escape_swift "${TODOIST_OAUTH_ENABLED:-0}")"
-TICKTICK_OAUTH_ENABLED_VALUE="$(escape_swift "${TICKTICK_OAUTH_ENABLED:-0}")"
-
-# Todoist's public-client ID is itself an HTTPS metadata-document URL, so Xcode can truncate it
-# at `//` just like the other URL settings above.
-TODOIST_OAUTH_CLIENT_ID_RAW="${TODOIST_OAUTH_CLIENT_ID:-}"
-if [[ "${TODOIST_OAUTH_CLIENT_ID_RAW}" == "https:" || "${TODOIST_OAUTH_CLIENT_ID_RAW}" == "http:" || -z "${TODOIST_OAUTH_CLIENT_ID_RAW}" ]]; then
-  RECOVERED="$(recover_from_xcconfig TODOIST_OAUTH_CLIENT_ID)"
-  if [[ -n "${RECOVERED}" && "${RECOVERED}" != "https:" && "${RECOVERED}" != "http:" ]]; then
-    TODOIST_OAUTH_CLIENT_ID_RAW="${RECOVERED}"
-  fi
-fi
-TODOIST_OAUTH_CLIENT_ID_VALUE="$(escape_swift "${TODOIST_OAUTH_CLIENT_ID_RAW}")"
 
 # AI provider base URL — contains `//`, so it hits the same xcconfig comment-pass
 # truncation as SUPABASE_URL; recover from the raw xcconfig line when truncated.
@@ -94,15 +75,6 @@ enum BuildSecrets {
     static let openRouterAPIKey = "${OPENROUTER_API_KEY_VALUE}"
     static let bleSharedSecret = "${BLE_SHARED_SECRET_VALUE}"
     static let deepFocusFeatureEnabled = "${DEEP_FOCUS_FEATURE_ENABLED_VALUE}" == "1"
-    static let notionClientId = "${NOTION_OAUTH_CLIENT_ID_VALUE}"
-    static let notionOAuthEnabled = "${NOTION_OAUTH_ENABLED_VALUE}" == "1"
-    static let taskadeClientId = "${TASKADE_OAUTH_CLIENT_ID_VALUE}"
-    static let taskadeOAuthEnabled = "${TASKADE_OAUTH_ENABLED_VALUE}" == "1"
-    static let microsoftClientId = "${MICROSOFT_OAUTH_CLIENT_ID_VALUE}"
-    static let microsoftOAuthEnabled = "${MICROSOFT_OAUTH_ENABLED_VALUE}" == "1"
-    static let todoistClientId = "${TODOIST_OAUTH_CLIENT_ID_VALUE}"
-    static let todoistOAuthEnabled = "${TODOIST_OAUTH_ENABLED_VALUE}" == "1"
-    static let tickTickOAuthEnabled = "${TICKTICK_OAUTH_ENABLED_VALUE}" == "1"
     static let openAIBaseURL = "${OPENAI_BASE_URL_VALUE}"
     static let chatModelID = "${OPENAI_MODEL_VALUE}"
     static let fallbackAPIKey = "${FALLBACK_API_KEY_VALUE}"

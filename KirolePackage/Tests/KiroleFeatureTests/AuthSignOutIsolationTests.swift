@@ -14,18 +14,11 @@ struct AuthSignOutIsolationTests {
         await state.ensureInitialLoadComplete()
         let oldGoogleGeneration = state.externalSyncGeneration(for: .google)
         let oldAppleGeneration = state.externalSyncGeneration(for: .apple)
-        let oldTickTickOperation = try #require(
-            manager.tickTickCredentialOperationGate.beginOperation()
-        )
-        let oldTodoistOperation = try #require(
-            manager.todoistCredentialOperationGate.beginOperation()
-        )
         let resetEntered = SignOutSuspensionGate()
         manager.googleSyncStateResetOverride = {
             await resetEntered.suspend()
         }
         manager.customCompanionSignOutCleanup = {}
-        manager.taskProviderSignOutCleanupOverride = {}
         manager.providerDataSignOutCleanupOverride = {}
         manager.localCredentialSignOutCleanupOverride = {}
         manager.supabaseSignOutOverride = {}
@@ -35,23 +28,8 @@ struct AuthSignOutIsolationTests {
 
         #expect(!state.canCommitExternalSync(.google, generation: oldGoogleGeneration))
         #expect(!state.canCommitExternalSync(.apple, generation: oldAppleGeneration))
-        #expect(!manager.tickTickCredentialOperationGate.accepts(oldTickTickOperation))
-        #expect(manager.tickTickCredentialOperationGate.beginOperation() == nil)
-        #expect(!manager.todoistCredentialOperationGate.accepts(oldTodoistOperation))
-        #expect(manager.todoistCredentialOperationGate.beginOperation() == nil)
-
         await resetEntered.resume()
         await signOut.value
-        #expect(manager.tickTickCredentialOperationGate.beginOperation() == nil)
-        #expect(manager.todoistCredentialOperationGate.beginOperation() == nil)
-        manager.tickTickCredentialOperationGate.endOperation(oldTickTickOperation)
-        manager.todoistCredentialOperationGate.endOperation(oldTodoistOperation)
-        let replacement = try #require(manager.tickTickCredentialOperationGate.beginOperation())
-        manager.tickTickCredentialOperationGate.endOperation(replacement)
-        let todoistReplacement = try #require(
-            manager.todoistCredentialOperationGate.beginOperation()
-        )
-        manager.todoistCredentialOperationGate.endOperation(todoistReplacement)
     }
 
     @Test("Sign out removes provider snapshots and persisted connection choices")
@@ -79,12 +57,14 @@ struct AuthSignOutIsolationTests {
                     startTime: Date(),
                     endTime: Date().addingTimeInterval(60)
                 )
-                let outlookEvent = CalendarEvent(
-                    id: "outlook-event",
-                    title: "Outlook event",
+                let googleEvent = CalendarEvent(
+                    id: "google-event",
+                    googleEventId: "event-1",
+                    googleCalendarId: "calendar-1",
+                    title: "Google event",
                     startTime: Date(),
                     endTime: Date().addingTimeInterval(60),
-                    source: .outlook
+                    source: .google
                 )
                 let connectedIntegrations = Integration.defaultIntegrations.map { integration in
                     var connected = integration
@@ -96,17 +76,13 @@ struct AuthSignOutIsolationTests {
                 )
 
                 try await storage.saveTasks([localTask, appleReminder, googleTask])
-                try await storage.saveEvents([localEvent, outlookEvent])
+                try await storage.saveEvents([localEvent, googleEvent])
                 try await storage.saveIntegrationConnections(connectionSnapshot)
                 try await storage.saveIntegrationSyncTimes(["google": Date()])
-                let projectStore = ProviderProjectSelectionStore.shared
-                await projectStore.save(["todoist-project"], for: .todoist)
-                await projectStore.save(["ticktick-project"], for: .tickTickInternational)
-                await projectStore.save(["dida-project"], for: .didaChina)
 
                 let state = AppState.makeForTesting()
                 state.tasks = [localTask, appleReminder, googleTask]
-                state.events = [localEvent, outlookEvent]
+                state.events = [localEvent, googleEvent]
                 state.integrations = connectedIntegrations
                 state.integrationLastSyncedAt = ["google": Date()]
 
@@ -120,13 +96,7 @@ struct AuthSignOutIsolationTests {
                 #expect(try await storage.loadEvents()?.map(\.id) == ["local-event"])
                 #expect(try await storage.loadIntegrationConnections()?.values.allSatisfy { !$0 } == true)
                 #expect(try await storage.loadIntegrationSyncTimes().isEmpty)
-                #expect(await projectStore.selectedProjectIDs(for: .todoist).isEmpty)
-                #expect(await projectStore.selectedProjectIDs(for: .tickTickInternational).isEmpty)
-                #expect(await projectStore.selectedProjectIDs(for: .didaChina).isEmpty)
             } catch {
-                await ProviderProjectSelectionStore.shared.clear(.todoist)
-                await ProviderProjectSelectionStore.shared.clear(.tickTickInternational)
-                await ProviderProjectSelectionStore.shared.clear(.didaChina)
                 try await Self.restore(
                     tasks: originalTasks,
                     events: originalEvents,
@@ -144,9 +114,6 @@ struct AuthSignOutIsolationTests {
                 syncTimes: originalSyncTimes,
                 storage: storage
             )
-            await ProviderProjectSelectionStore.shared.clear(.todoist)
-            await ProviderProjectSelectionStore.shared.clear(.tickTickInternational)
-            await ProviderProjectSelectionStore.shared.clear(.didaChina)
         }
     }
 
@@ -160,7 +127,6 @@ struct AuthSignOutIsolationTests {
         manager.restoreLocalIdentityFromKeychain()
         manager.googleSyncStateResetOverride = {}
         manager.customCompanionSignOutCleanup = {}
-        manager.taskProviderSignOutCleanupOverride = {}
         manager.providerDataSignOutCleanupOverride = {}
         manager.localCredentialSignOutCleanupOverride = {
             throw AuthSignOutIsolationError.credentialDeletionFailed
@@ -189,7 +155,6 @@ struct AuthSignOutIsolationTests {
         manager.restoreLocalIdentityFromKeychain()
         manager.googleSyncStateResetOverride = {}
         manager.customCompanionSignOutCleanup = {}
-        manager.taskProviderSignOutCleanupOverride = {}
         manager.providerDataSignOutCleanupOverride = {
             throw AuthSignOutIsolationError.providerPersistenceFailed
         }
@@ -224,14 +189,10 @@ struct AuthSignOutIsolationTests {
             expiresIn: 3_600
         )
         try keychain.saveGoogleScopes([GoogleOAuthScope.calendarReadOnly])
-        try keychain.saveNotionAccessToken("notion-token")
-        try keychain.saveNotionWorkspaceId("notion-workspace")
-        try keychain.saveTaskadeTokens(accessToken: "taskade-access", refreshToken: "taskade-refresh")
         let manager = AuthManager(keychainService: keychain)
         manager.restoreLocalIdentityFromKeychain()
         manager.googleSyncStateResetOverride = {}
         manager.customCompanionSignOutCleanup = {}
-        manager.taskProviderSignOutCleanupOverride = {}
         manager.providerDataSignOutCleanupOverride = {}
         manager.supabaseSignOutOverride = {
             throw AuthSignOutIsolationError.supabaseSignOutFailed
@@ -244,10 +205,6 @@ struct AuthSignOutIsolationTests {
         #expect(keychain.getAppleUserIdentifier() == nil)
         #expect(keychain.getGoogleAccessToken() == nil)
         #expect(keychain.getGoogleRefreshToken() == nil)
-        #expect(keychain.getNotionAccessToken() == nil)
-        #expect(keychain.getNotionWorkspaceId() == nil)
-        #expect(keychain.getTaskadeAccessToken() == nil)
-        #expect(keychain.getTaskadeRefreshToken() == nil)
     }
 
     private static func restore(

@@ -175,7 +175,7 @@ struct AuthManagerTests {
         manager.restoreLocalIdentityFromKeychain()
         manager.googleSyncStateResetOverride = {}
         manager.customCompanionSignOutCleanup = {}
-        manager.taskProviderSignOutCleanupOverride = {
+        manager.providerDataSignOutCleanupOverride = {
             throw AuthCleanupTestError.credentialDeletionFailed
         }
 

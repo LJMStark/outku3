@@ -4,30 +4,35 @@ import Testing
 
 @Suite("Integration provider routing")
 struct IntegrationProviderRoutingTests {
-    @Test("Direct providers and Apple-mediated calendars are connectable")
+    @Test("Only the four accepted Apple and Google sources are exposed")
     func supportedIntegrations() {
-        #expect(IntegrationType.outlookCalendar.isSupported)
-        #expect(IntegrationType.microsoftToDo.isSupported)
-        #expect(IntegrationType.todoist.isSupported)
-        #expect(IntegrationType.tickTick.isSupported)
-        #expect(IntegrationType.caldav.isSupported)
-        #expect(IntegrationType.icalWebcal.isSupported)
-        #expect(IntegrationType.caldav.connectionMode == .appleCalendarMediated)
-        #expect(IntegrationType.icalWebcal.connectionMode == .appleCalendarMediated)
-        #expect(IntegrationType.todoist.connectionMode == .direct)
+        #expect(IntegrationType.allCases == [
+            .googleCalendar,
+            .appleCalendar,
+            .appleReminders,
+            .googleTasks,
+        ])
+        #expect(IntegrationType.displayOrder == IntegrationType.allCases)
+        #expect(ExternalSyncTarget.allCases == [.google, .apple])
+        #expect(ExternalProvider.allCases == [
+            .appleCalendar,
+            .appleReminders,
+            .googleCalendar,
+            .googleTasks,
+        ])
     }
 
-    @Test("Disconnect removes only the selected provider data")
+    @Test("Disconnect removes only the selected Apple source data")
     @MainActor
     func scopedCleanup() {
         let coordinator = IntegrationCoordinator()
         let events = [
             CalendarEvent(
-                id: "outlook",
-                title: "Outlook",
+                id: "google",
+                title: "Google",
                 startTime: .now,
                 endTime: .now,
-                source: .outlook
+                source: .google
             ),
             CalendarEvent(
                 id: "apple",
@@ -38,47 +43,17 @@ struct IntegrationProviderRoutingTests {
             ),
         ]
         let tasks = [
-            TaskItem(id: "todo", title: "Microsoft", source: .microsoftToDo),
-            TaskItem(id: "todoist", title: "Todoist", source: .todoist),
-            TaskItem(id: "ticktick", title: "TickTick", source: .tickTick),
+            TaskItem(id: "google-task", title: "Google", source: .google),
+            TaskItem(id: "apple-reminder", title: "Apple", source: .apple),
         ]
 
         let cleaned = coordinator.cleanupDisconnectedData(
-            for: .microsoftToDo,
+            for: .appleReminders,
             events: events,
             tasks: tasks
         )
 
-        #expect(cleaned.events.map(\.id) == ["outlook", "apple"])
-        #expect(cleaned.tasks.map(\.id) == ["todoist", "ticktick"])
-    }
-
-    @Test("Read-only provider tasks reject both App and hardware completion")
-    @MainActor
-    func readOnlyCompletionCapability() {
-        let reference = ProviderItemReference(
-            provider: .tickTick,
-            accountID: "account",
-            containerID: "project",
-            itemID: "task",
-            region: .international,
-            allowsContentModifications: false
-        )
-        let task = TaskItem(
-            id: reference.stableLocalID,
-            externalReference: reference,
-            title: "Read only",
-            source: .tickTick
-        )
-        let event = EventLog(
-            eventType: .completeTask,
-            taskId: task.hardwareIdentifier,
-            operationID: 42,
-            timestamp: .now,
-            hasDeviceTimestamp: true
-        )
-
-        #expect(!task.allowsCompletionChanges)
-        #expect(BLEEventHandler.plannedTaskOperationReceipt(event, tasks: [task])?.result == .invalidRequest)
+        #expect(cleaned.events.map(\.id) == ["google", "apple"])
+        #expect(cleaned.tasks.map(\.id) == ["google-task"])
     }
 }

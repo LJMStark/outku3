@@ -11,6 +11,12 @@ extension AppState {
 
     func loadLocalData() async {
         do {
+            try await localStorage.removeRetiredProviderArtifacts()
+        } catch {
+            reportPersistenceError(error, operation: "delete", target: "retired_provider_data")
+        }
+
+        do {
             if let savedPet = try await localStorage.loadPet() {
                 pet = savedPet
             } else {

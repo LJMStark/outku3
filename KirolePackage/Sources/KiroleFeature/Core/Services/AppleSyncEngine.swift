@@ -112,8 +112,8 @@ public actor AppleSyncEngine {
 
     /// 合并匹配上的本地与远端 Reminder。本地有未推送成功的修改（syncStatus != .synced，如硬件 0x21
     /// 回推的完成、或 push 失败标记的 .pending/.error）时走 Last-Writer-Wins，不无条件用远端旧值覆盖——
-    /// 否则 push 失败的下一轮 syncReminders 会把本地修改（含离线/硬件操作）静默回滚丢失。与 Google/Notion
-    /// 引擎的脏检查策略对齐。纯函数（无实例依赖），便于单测。
+    /// 否则 push 失败的下一轮 syncReminders 会把本地修改（含离线/硬件操作）静默回滚丢失。与 Google
+    /// 同步的脏检查策略一致。纯函数（无实例依赖），便于单测。
     nonisolated static func mergeLocalWithRemote(local: TaskItem, remote: TaskItem) -> TaskItem {
         if local.syncStatus != .synced {
             let localTime = local.lastModified

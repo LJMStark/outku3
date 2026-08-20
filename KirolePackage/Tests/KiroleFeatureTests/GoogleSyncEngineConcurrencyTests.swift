@@ -4,6 +4,35 @@ import Testing
 
 @Suite("Google sync account isolation")
 struct GoogleSyncEngineConcurrencyTests {
+    @Test("Google remote refresh keeps local today display selection")
+    func googleRemoteKeepsLocalTodayDisplaySelection() {
+        let selectedDate = Date(timeIntervalSince1970: 1_700_020_000)
+        let local = TaskItem(
+            id: "google-1",
+            googleTaskId: "google-1",
+            googleTaskListId: "list-1",
+            title: "Local",
+            source: .google,
+            todayDisplayDate: selectedDate
+        )
+        let remote = TaskItem(
+            id: "google-1",
+            googleTaskId: "google-1",
+            googleTaskListId: "list-1",
+            title: "Remote",
+            source: .google
+        )
+
+        let merged = GoogleSyncEngine.mergeRemoteTaskPreservingLocalFields(
+            local: local,
+            remote: remote
+        )
+
+        #expect(merged.title == "Remote")
+        #expect(merged.todayDisplayDate == selectedDate)
+        #expect(merged.localId == local.localId)
+    }
+
     @Test("A successful suspended pull cannot recreate metadata after reset")
     func successfulPullCannotCommitAfterReset() async throws {
         let calendar = SuspendedGoogleCalendarSyncStub()

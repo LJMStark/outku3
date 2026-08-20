@@ -52,12 +52,12 @@ Kirole 是 **硬件优先的宠物陪伴产品**：硬件 E-ink 设备是用户�
 KiroleFeature/
 ├── Core/
 │   ├── AppEnvironmentValues.swift   # EnvironmentKey definitions for all 4 singletons
-│   ├── Auth/                        # Google/Apple sign-in + provider OAuth (Microsoft, TickTick, Todoist, Notion, Taskade) + KeychainService
+│   ├── Auth/                        # Google/Apple sign-in + KeychainService
 │   ├── BLE/                         # BLEProtocol.swift + TaskListSnapshotProtocol.swift (0x1B) + OfflineSyncProtocol.swift / OfflineDatasetSnapshot.swift (0x25) + FocusReconnectProtocol.swift / FocusReconnectArbiter.swift (FOCUS_STATE 0x83 / FOCUS_RESOLVE 0x06) + ScheduleV2Codec.swift (0x03 v2)
 │   ├── Config/                      # AppSecrets (xcconfig-injected secrets), AppBuildEnvironment (debug-tool gating)
 │   ├── Error/                       # ErrorReporter
-│   ├── Network/                     # OpenAIService, CompanionTextService, PromptSanitizer, SimulatorBridge, PromptSpec.generated.swift + provider API clients (MicrosoftGraphClient, TickTickAPI, TodoistAPI)
-│   ├── Services/                    # BLE runtime (BLEService, BLESyncCoordinator, BLEOfflineSyncCoordinator[+FocusReconnect/+Operations], BLEEventHandler, BLEDataEncoder, BLEPacketizer, BLESecurityManager, BLEOTACoordinator…) + FocusSessionService[+Reconnect/+Statistics], FocusReconnectFlagStore, FocusInterruptionDetector, DayPackGenerator, WiFiAvatarTransfer/… + provider sync engines
+│   ├── Network/                     # OpenAIService, CompanionTextService, PromptSanitizer, SimulatorBridge, PromptSpec.generated.swift + Google API clients
+│   ├── Services/                    # BLE runtime (BLEService, BLESyncCoordinator, BLEOfflineSyncCoordinator[+FocusReconnect/+Operations], BLEEventHandler, BLEDataEncoder, BLEPacketizer, BLESecurityManager, BLEOTACoordinator…) + FocusSessionService[+Reconnect/+Statistics], FocusReconnectFlagStore, FocusInterruptionDetector, DayPackGenerator, WiFiAvatarTransfer/… + Apple/Google sync engines
 │   └── Storage/                     # LocalStorage, SupabaseClient, SyncManager
 ├── Models/                          # Value types only: CompanionCharacter, Pet, TaskItem, CalendarEvent, FocusSession, EventLog, DayPack, DisplayScene…
 ├── State/                           # @Observable singletons: AppState + all AppState+*.swift extensions, ThemeManager, TaskManager, PetManager, TimelineDataSource, IntegrationCoordinator…
@@ -81,11 +81,11 @@ Four `@Observable` singletons injected at `ContentView` via `.environment()`:
 
 **Persistence & secrets (the two most-connected non-UI nodes — touch them carefully):**
 - `LocalStorage` (`Core/Storage/`) — the JSON + `UserDefaults` persistence hub for tasks, pet, focus & gamify state. Mutations through its *resettable* keys are exactly what the parallel-test lock below guards.
-- `KeychainService` (`Core/Auth/`) — stores ALL credentials: OAuth tokens (Google / Microsoft / TickTick / Todoist / Notion / Taskade), the Apple user identifier, and the OpenAI/OpenRouter API key. Never persist a credential anywhere else.
+- `KeychainService` (`Core/Auth/`) — stores Google OAuth tokens, the Apple user identifier, and the OpenAI/OpenRouter API key. Never persist a credential anywhere else.
 
 **AppState extension map** — where to put code:
 - User-triggered mutations → `AppState+Actions.swift`
-- Remote sync (Google/Apple/Outlook/Microsoft To Do/Todoist/TickTick/Notion/Taskade) → `AppState+Sync.swift`
+- Remote sync (Google/Apple) → `AppState+Sync.swift`
 - Provider sync generation guard (stale-sync-commit prevention) → `AppState+ExternalSyncGeneration.swift`
 - Sign-out provider data cleanup → `AppState+SignOut.swift`
 - Initial data loading → `AppState+Loading.swift`
@@ -148,7 +148,6 @@ All user-controlled text (task titles, event names, pet names, learn content) **
 - **API gateway (Kong)**: `https://outku3.zeabur.app`
 - **REST**: `/rest/v1` — tables: `pets`, `sync_state`
 - **Schema source of truth**: `Config/supabase-schema.sql` — apply manually to Zeabur PostgreSQL when schema changes.
-- **OAuth proxy**: Notion / Taskade token exchange via Supabase Edge Functions (`supabase/functions/`). `client_secret` is server-side only.
 
 ## Common Commands
 
@@ -249,8 +248,6 @@ SUPABASE_ANON_KEY = ...
 BLE_SHARED_SECRET =            # leave empty for dev (unsigned frames)
 OPENROUTER_API_KEY = ...       # OpenRouter key used by OpenAIService (was OPENAI_API_KEY)
 ```
-Optional provider integrations each pair a `*_OAUTH_CLIENT_ID` with a `*_OAUTH_ENABLED` release gate (`NOTION` / `TASKADE` / `MICROSOFT` / `TODOIST` / `TICKTICK`). Gates default to `0`; enable one only after its server-side dependency (Supabase Edge Function, Azure registration, metadata document…) is deployed and real-account OAuth acceptance passes — a client ID alone still fails every connect attempt.
-
 For TestFlight automation, copy `fastlane/.env.template` → `fastlane/.env` and fill in `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_PATH`.
 
 **Build settings & entitlements (separate from `Secrets.xcconfig`):**

@@ -1,9 +1,27 @@
 import Foundation
+import KeychainAccess
 import Testing
 @testable import KiroleFeature
 
 @Suite("Google provider cleanup")
 struct GoogleProviderCleanupTests {
+    @Test("launch cleanup removes retired credentials without touching Google")
+    func retiredCredentialCleanupPreservesGoogle() throws {
+        let serviceName = "com.kirole.tests.retired-credentials.\(UUID().uuidString)"
+        let rawKeychain = Keychain(service: serviceName)
+        let keychain = KeychainService(service: serviceName)
+        try keychain.saveGoogleTokens(accessToken: "google", refreshToken: "refresh", expiresIn: 3_600)
+        try rawKeychain.set("retired", key: "notion_access_token")
+        try rawKeychain.set("retired", key: "todoist_token_set")
+
+        try keychain.clearRetiredProviderCredentials(microsoftAccessGroup: nil)
+
+        #expect(keychain.getGoogleAccessToken() == "google")
+        #expect(try rawKeychain.get("notion_access_token") == nil)
+        #expect(try rawKeychain.get("todoist_token_set") == nil)
+        try keychain.clearAll()
+    }
+
     @Test("A failed pre-authorization reset preserves the existing Google connection")
     @MainActor
     func authorizationResetFailurePreservesExistingConnection() async throws {
@@ -111,7 +129,6 @@ struct GoogleProviderCleanupTests {
         manager.customCompanionSignOutCleanup = {
             await audit.recordLaterCleanup()
         }
-        manager.taskProviderSignOutCleanupOverride = {}
         manager.providerDataSignOutCleanupOverride = {}
         manager.supabaseSignOutOverride = {
             await audit.recordSupabaseSignOut()

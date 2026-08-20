@@ -11,10 +11,6 @@ public struct TaskItem: Identifiable, Sendable, Codable {
     public var appleReminderId: String?
     public var appleExternalId: String?
     public var appleListId: String?
-    public var notionPageId: String?
-    public var notionDatabaseId: String?
-    public var taskadeTaskId: String?
-    public var taskadeProjectId: String?
     public var externalReference: ProviderItemReference?
     public var title: String
     public var isCompleted: Bool
@@ -44,10 +40,6 @@ public struct TaskItem: Identifiable, Sendable, Codable {
         appleReminderId: String? = nil,
         appleExternalId: String? = nil,
         appleListId: String? = nil,
-        notionPageId: String? = nil,
-        notionDatabaseId: String? = nil,
-        taskadeTaskId: String? = nil,
-        taskadeProjectId: String? = nil,
         externalReference: ProviderItemReference? = nil,
         title: String,
         isCompleted: Bool = false,
@@ -70,10 +62,6 @@ public struct TaskItem: Identifiable, Sendable, Codable {
         self.appleReminderId = appleReminderId
         self.appleExternalId = appleExternalId
         self.appleListId = appleListId
-        self.notionPageId = notionPageId
-        self.notionDatabaseId = notionDatabaseId
-        self.taskadeTaskId = taskadeTaskId
-        self.taskadeProjectId = taskadeProjectId
         self.externalReference = externalReference
         self.title = title
         self.isCompleted = isCompleted

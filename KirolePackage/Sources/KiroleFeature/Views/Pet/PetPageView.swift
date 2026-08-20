@@ -460,8 +460,7 @@ private struct TaskItemRow: View {
         // pinned. Due-today rows already carry the yellow "today" date capsule, so nothing
         // renders there.
         if !isDueToday, task.isManuallySelectedForToday() {
-            // Icon-only state badge (Microsoft To Do's My Day sun / Things 3's Today star
-            // pattern): the row's only textual date stays the real due date, so the pin
+            // Icon-only state badge: the row's only textual date stays the real due date, so the pin
             // marker can never read as a second "today".
             Image(systemName: "sun.max.fill")
                 .font(.system(size: 12, weight: .semibold))

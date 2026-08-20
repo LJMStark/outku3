@@ -346,30 +346,6 @@ private struct EventSourceIconView: View {
                 Image(systemName: "apple.logo")
                     .font(.system(size: size * 0.85))
                     .foregroundStyle(Color.black.opacity(0.75))
-            case .outlook:
-                Image(systemName: "calendar.badge.clock")
-                    .font(.system(size: size * 0.9))
-                    .foregroundStyle(Color(hex: "0078D4"))
-            case .microsoftToDo:
-                Image(systemName: "checkmark.circle")
-                    .font(.system(size: size * 0.95))
-                    .foregroundStyle(Color(hex: "2564CF"))
-            case .todoist:
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: size * 0.95))
-                    .foregroundStyle(Color(hex: "DC4C3E"))
-            case .tickTick:
-                Image(systemName: "checkmark.circle")
-                    .font(.system(size: size * 0.95))
-                    .foregroundStyle(Color(hex: "4772FA"))
-            case .notion:
-                Image(systemName: "doc.text")
-                    .font(.system(size: size * 0.85))
-                    .foregroundStyle(Color.black.opacity(0.75))
-            case .taskade:
-                Image(systemName: "list.bullet.rectangle")
-                    .font(.system(size: size * 0.85))
-                    .foregroundStyle(Color(hex: "7B68EE"))
             }
         }
         .frame(width: size, height: size)

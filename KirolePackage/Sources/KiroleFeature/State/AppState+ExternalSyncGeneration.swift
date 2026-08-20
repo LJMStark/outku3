@@ -48,18 +48,8 @@ private extension ExternalSyncTarget {
         switch integrationType {
         case .googleCalendar, .googleTasks:
             self = .google
-        case .appleCalendar, .appleReminders, .caldav, .icalWebcal:
+        case .appleCalendar, .appleReminders:
             self = .apple
-        case .notion:
-            self = .notion
-        case .taskade:
-            self = .taskade
-        case .outlookCalendar, .microsoftToDo:
-            self = .microsoft
-        case .todoist:
-            self = .todoist
-        case .tickTick:
-            self = .tickTick
         }
     }
 }

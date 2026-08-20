@@ -251,6 +251,110 @@ public actor LocalStorage {
         return try decoder.decode(T.self, from: data)
     }
 
+    /// Removes records owned by integrations that are no longer part of the product. The JSON
+    /// shape is inspected before decoding so an old enum raw value cannot quarantine the whole
+    /// file and take valid Apple, Google, or local records with it. All other malformed records
+    /// stay in place and still fail normal decoding.
+    nonisolated static func removingRetiredProviderRecords(
+        from data: Data
+    ) throws -> (data: Data, removedCount: Int) {
+        guard let records = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+            return (data, 0)
+        }
+
+        let retiredSources: Set<String> = [
+            "Outlook Calendar", "Microsoft To Do", "Todoist", "TickTick", "Notion", "Taskade",
+        ]
+        let retiredProviders: Set<String> = [
+            "outlook", "microsoftToDo", "todoist", "tickTick", "notion", "taskade",
+        ]
+        let retained = records.filter { record in
+            if let source = record["source"] as? String, retiredSources.contains(source) {
+                return false
+            }
+            if let reference = record["externalReference"] as? [String: Any],
+               let provider = reference["provider"] as? String,
+               retiredProviders.contains(provider) {
+                return false
+            }
+            return true
+        }
+        let removedCount = records.count - retained.count
+        guard removedCount > 0 else { return (data, 0) }
+        return (try JSONSerialization.data(withJSONObject: retained), removedCount)
+    }
+
+    nonisolated static func removeRetiredProviderArtifacts(
+        fileManager: FileManager = .default,
+        documentsDirectory: URL,
+        applicationSupportDirectory: URL,
+        userDefaults: UserDefaults = .standard
+    ) throws {
+        let documentFiles = ["microsoft_sync_state.json", "microsoft_todo_outbox.json"]
+        for filename in documentFiles {
+            let url = documentsDirectory.appendingPathComponent(filename, isDirectory: false)
+            if fileManager.fileExists(atPath: url.path) {
+                try fileManager.removeItem(at: url)
+            }
+        }
+
+        let providerDirectory = applicationSupportDirectory
+            .appendingPathComponent("com.kirole.app", isDirectory: true)
+            .appendingPathComponent("ProviderSync", isDirectory: true)
+        let providerFiles = [
+            "todoist-sync-state.json",
+            "ticktick-international-sync-state.json",
+            "ticktick-china-sync-state.json",
+        ]
+        for filename in providerFiles {
+            let url = providerDirectory.appendingPathComponent(filename, isDirectory: false)
+            if fileManager.fileExists(atPath: url.path) {
+                try fileManager.removeItem(at: url)
+            }
+        }
+        if fileManager.fileExists(atPath: providerDirectory.path),
+           (try fileManager.contentsOfDirectory(atPath: providerDirectory.path)).isEmpty {
+            try fileManager.removeItem(at: providerDirectory)
+        }
+
+        for key in [
+            "integrations.selectedProjects.todoist",
+            "integrations.selectedProjects.tickTickInternational",
+            "integrations.selectedProjects.didaChina",
+            "integrations.ticktick.region",
+        ] {
+            userDefaults.removeObject(forKey: key)
+        }
+    }
+
+    func removeRetiredProviderArtifacts() throws {
+        let applicationSupportDirectory = fileManager.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        ).first ?? fileManager.temporaryDirectory
+        try Self.removeRetiredProviderArtifacts(
+            fileManager: fileManager,
+            documentsDirectory: documentsDirectory,
+            applicationSupportDirectory: applicationSupportDirectory,
+            userDefaults: userDefaults
+        )
+    }
+
+    private func loadCurrentProviderRecords<T: Decodable>(
+        _ type: T.Type,
+        from filename: String
+    ) throws -> T? {
+        let url = documentsDirectory.appendingPathComponent(filename)
+        guard fileManager.fileExists(atPath: url.path) else { return nil }
+        let storedData = try Data(contentsOf: url)
+        let filtered = try Self.removingRetiredProviderRecords(from: storedData)
+        let value = try decoder.decode(type, from: filtered.data)
+        if filtered.removedCount > 0 {
+            try filtered.data.write(to: url, options: .atomic)
+        }
+        return value
+    }
+
     // MARK: - Pet Data
 
     public func savePet(_ pet: Pet) throws {
@@ -268,7 +372,7 @@ public actor LocalStorage {
     }
 
     public func loadTasks() throws -> [TaskItem]? {
-        try load([TaskItem].self, from: Files.tasks)
+        try loadCurrentProviderRecords([TaskItem].self, from: Files.tasks)
     }
 
     func saveTaskOperationLedger(_ entries: [TaskOperationLedgerEntry]) throws {
@@ -294,7 +398,7 @@ public actor LocalStorage {
     }
 
     public func loadEvents() throws -> [CalendarEvent]? {
-        try load([CalendarEvent].self, from: Files.events)
+        try loadCurrentProviderRecords([CalendarEvent].self, from: Files.events)
     }
 
     // MARK: - Integration Connection State
@@ -306,7 +410,14 @@ public actor LocalStorage {
     }
 
     public func loadIntegrationConnections() throws -> [String: Bool]? {
-        try load([String: Bool].self, from: Files.integrationConnections)
+        guard let stored = try load([String: Bool].self, from: Files.integrationConnections) else {
+            return nil
+        }
+        let retained = stored.filter { IntegrationType(rawValue: $0.key) != nil }
+        if retained.count != stored.count {
+            try save(retained, to: Files.integrationConnections)
+        }
+        return retained
     }
 
     // MARK: - Integration Sync Times
@@ -316,7 +427,12 @@ public actor LocalStorage {
     }
 
     public func loadIntegrationSyncTimes() throws -> [String: Date] {
-        try load([String: Date].self, from: Files.integrationSyncTimes) ?? [:]
+        let stored = try load([String: Date].self, from: Files.integrationSyncTimes) ?? [:]
+        let retained = stored.filter { IntegrationType(rawValue: $0.key) != nil }
+        if retained.count != stored.count {
+            try save(retained, to: Files.integrationSyncTimes)
+        }
+        return retained
     }
 
     // MARK: - User Profile

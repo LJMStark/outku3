@@ -1,5 +1,6 @@
 import Foundation
 @preconcurrency import KeychainAccess
+import Security
 
 // MARK: - Keychain Service
 
@@ -43,6 +44,15 @@ public final class KeychainService: @unchecked Sendable {
             supabaseAccessToken,
             supabaseRefreshToken,
             openAIAPIKey,
+            notionAccessToken,
+            notionWorkspaceId,
+            taskadeAccessToken,
+            taskadeRefreshToken,
+            microsoftAccountMetadata,
+            todoistTokenSet,
+        ] + tickTickTokenSets + tickTickPendingAuthorizations
+
+        static let retiredProviderCredentials = [
             notionAccessToken,
             notionWorkspaceId,
             taskadeAccessToken,
@@ -286,111 +296,50 @@ public final class KeychainService: @unchecked Sendable {
         getOpenAIAPIKey() != nil
     }
 
-    // MARK: - Notion Tokens
-
-    public func saveNotionAccessToken(_ token: String) throws {
-        try keychain.set(token, key: Keys.notionAccessToken)
-    }
-
-    public func saveNotionWorkspaceId(_ id: String) throws {
-        try keychain.set(id, key: Keys.notionWorkspaceId)
-    }
-
-    public func getNotionAccessToken() -> String? {
-        do {
-            return try keychain.get(Keys.notionAccessToken)
-        } catch {
-            ErrorReporter.log(
-                .persistence(operation: "read", target: "notion_access_token", underlying: error.localizedDescription),
-                context: "KeychainService.getNotionAccessToken"
-            )
-            return nil
+    // Removed providers keep their old key names only for upgrade cleanup. This is idempotent and
+    // runs before any current provider is restored, so a retired OAuth token cannot linger just
+    // because its old Settings row no longer exists.
+    func clearRetiredProviderCredentials(
+        microsoftAccessGroup: String? = "93SL23NPNG.com.microsoft.adalcache"
+    ) throws {
+        var firstError: Error?
+        for key in Keys.retiredProviderCredentials {
+            do {
+                guard try keychain.getData(key) != nil else { continue }
+                try keychain.remove(key)
+                guard try keychain.getData(key) == nil else {
+                    throw KeychainCleanupError.credentialDeletionFailed
+                }
+            } catch {
+                firstError = firstError ?? error
+                ErrorReporter.log(
+                    .persistence(operation: "delete", target: "retired_provider_credentials", underlying: error.localizedDescription),
+                    context: "KeychainService.clearRetiredProviderCredentials"
+                )
+            }
         }
-    }
 
-    public func getNotionWorkspaceId() -> String? {
-        do {
-            return try keychain.get(Keys.notionWorkspaceId)
-        } catch {
-            ErrorReporter.log(
-                .persistence(operation: "read", target: "notion_workspace_id", underlying: error.localizedDescription),
-                context: "KeychainService.getNotionWorkspaceId"
-            )
-            return nil
+        if let microsoftAccessGroup {
+            let status = SecItemDelete([
+                kSecClass: kSecClassGenericPassword,
+                kSecAttrAccessGroup: microsoftAccessGroup,
+            ] as CFDictionary)
+            if status != errSecSuccess, status != errSecItemNotFound {
+                firstError = firstError ?? KeychainCleanupError.credentialDeletionFailed
+                ErrorReporter.log(
+                    .persistence(
+                        operation: "delete",
+                        target: "retired_microsoft_credentials",
+                        underlying: "OSStatus \(status)"
+                    ),
+                    context: "KeychainService.clearRetiredProviderCredentials"
+                )
+            }
         }
-    }
 
-    public func clearNotionTokens() throws {
-        do {
-            try keychain.remove(Keys.notionAccessToken)
-            try keychain.remove(Keys.notionWorkspaceId)
-        } catch {
-            ErrorReporter.log(
-                .persistence(operation: "delete", target: "notion_tokens", underlying: error.localizedDescription),
-                context: "KeychainService.clearNotionTokens"
-            )
-            throw error
+        if firstError != nil {
+            throw KeychainCleanupError.credentialDeletionFailed
         }
-    }
-
-    // MARK: - Taskade Tokens
-
-    public func saveTaskadeTokens(accessToken: String, refreshToken: String?) throws {
-        try keychain.set(accessToken, key: Keys.taskadeAccessToken)
-        if let refreshToken {
-            try keychain.set(refreshToken, key: Keys.taskadeRefreshToken)
-        }
-    }
-
-    public func getTaskadeAccessToken() -> String? {
-        do {
-            return try keychain.get(Keys.taskadeAccessToken)
-        } catch {
-            ErrorReporter.log(
-                .persistence(operation: "read", target: "taskade_access_token", underlying: error.localizedDescription),
-                context: "KeychainService.getTaskadeAccessToken"
-            )
-            return nil
-        }
-    }
-
-    public func getTaskadeRefreshToken() -> String? {
-        do {
-            return try keychain.get(Keys.taskadeRefreshToken)
-        } catch {
-            ErrorReporter.log(
-                .persistence(operation: "read", target: "taskade_refresh_token", underlying: error.localizedDescription),
-                context: "KeychainService.getTaskadeRefreshToken"
-            )
-            return nil
-        }
-    }
-
-    public func clearTaskadeTokens() throws {
-        do {
-            try keychain.remove(Keys.taskadeAccessToken)
-            try keychain.remove(Keys.taskadeRefreshToken)
-        } catch {
-            ErrorReporter.log(
-                .persistence(operation: "delete", target: "taskade_tokens", underlying: error.localizedDescription),
-                context: "KeychainService.clearTaskadeTokens"
-            )
-            throw error
-        }
-    }
-
-    // MARK: - Microsoft Account Metadata
-
-    func saveMicrosoftAccountMetadata(_ data: Data) throws {
-        try keychain.set(data, key: Keys.microsoftAccountMetadata)
-    }
-
-    func getMicrosoftAccountMetadata() throws -> Data? {
-        try keychain.getData(Keys.microsoftAccountMetadata)
-    }
-
-    func clearMicrosoftAccountMetadata() throws {
-        try keychain.remove(Keys.microsoftAccountMetadata)
     }
 
     // MARK: - Clear All

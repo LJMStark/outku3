@@ -4,68 +4,31 @@ import Testing
 
 @Suite("Integration settings source policy")
 struct IntegrationSettingsSourcePolicyTests {
-    @Test("Presented integration sheets explicitly receive the app environment")
-    func integrationSheetsInjectAppEnvironment() throws {
+    @Test("Apple calendar selection explicitly receives the app environment")
+    func appleCalendarSheetInjectsAppEnvironment() throws {
         let source = try settingsIntegrationSource()
 
         #expect(source.contains(
             "AppleCalendarSelectionSheet(intent: intent)\n                .injectAppEnvironment()"
         ))
-        #expect(source.contains(
-            "ProviderProjectSelectionSheet(target: target)\n                .injectAppEnvironment()"
-        ))
     }
 
-    @Test("TickTick China settings copy remains English-only")
-    func tickTickChinaCopyIsEnglishOnly() throws {
-        #expect(ProviderProjectSelectionTarget.tickTick(.china).title == "Choose TickTick China Projects")
-
-        let source = try settingsIntegrationSource()
-        #expect(source.contains("TickTick International"))
-        #expect(source.contains("Choose TickTick China projects"))
-        #expect(!source.contains("TickTick China — Coming Soon"))
-        #expect(!source.contains("滴答清单（中国）— Coming Soon"))
-        #expect(!source.contains("选择滴答清单项目"))
-    }
-
-    @Test("Todoist remains unavailable until its release gate is enabled")
-    func todoistHasAReleaseGate() throws {
-        let source = try integrationTypeSource()
-
-        #expect(source.contains("case .todoist: AppSecrets.todoistOAuthEnabled"))
-    }
-
-    @Test("Microsoft integrations remain unavailable until their release gate is enabled")
-    func microsoftHasAReleaseGate() throws {
-        let source = try integrationTypeSource()
-
-        #expect(source.contains(
-            "case .outlookCalendar, .microsoftToDo: AppSecrets.microsoftOAuthEnabled"
-        ))
-    }
-
-    /// Notion and Taskade exchange their OAuth code through Supabase Edge Functions that are not
-    /// deployed, so a present client ID would still fail every connect. The gate must be explicit.
-    @Test("Notion and Taskade remain unavailable until their release gates are enabled")
-    func notionAndTaskadeHaveReleaseGates() throws {
-        let source = try integrationTypeSource()
-
-        #expect(source.contains("case .notion: AppSecrets.notionOAuthEnabled"))
-        #expect(source.contains("case .taskade: AppSecrets.taskadeOAuthEnabled"))
-    }
-
-    @Test("Customer Settings omit gated providers instead of showing Coming Soon")
-    func gatedProvidersAreOmittedFromCustomerSettings() throws {
+    @Test("Customer Settings is generated from the four-source model")
+    func settingsUseTheSupportedSourceList() throws {
         let settings = try settingsIntegrationSource()
         let model = try integrationTypeSource()
 
-        #expect(model.contains("availableDisplayOrder"))
-        #expect(settings.contains("IntegrationType.availableDisplayOrder"))
-        #expect(!settings.contains("[Coming Soon]"))
-        #expect(!settings.contains("showComingSoon"))
-        #expect(settings.contains(
-            "if type.isExperimental {\n                        Text(\"[Experimental]\")"
-        ))
+        #expect(model.contains("case googleCalendar"))
+        #expect(model.contains("case appleCalendar"))
+        #expect(model.contains("case appleReminders"))
+        #expect(model.contains("case googleTasks"))
+        #expect(!model.contains("case notion"))
+        #expect(!model.contains("case taskade"))
+        #expect(!model.contains("case microsoftToDo"))
+        #expect(!model.contains("case todoist"))
+        #expect(!model.contains("case tickTick"))
+        #expect(settings.contains("IntegrationType.displayOrder"))
+        #expect(!settings.contains("ProviderProjectSelectionSheet"))
     }
 
     private func settingsIntegrationSource() throws -> String {

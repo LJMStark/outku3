@@ -685,10 +685,8 @@ extension AppState {
         switch action {
         case .updateCompletion:
             switch task.source {
-            case .google, .apple, .notion, .taskade, .microsoftToDo, .todoist:
+            case .google, .apple:
                 return .remote
-            case .outlook, .tickTick:
-                return .localOnly
             }
         case .delete:
             switch task.source {
@@ -696,10 +694,6 @@ extension AppState {
                 return (task.googleTaskListId != nil && task.googleTaskId != nil) ? .remote : .localOnly
             case .apple:
                 return task.appleReminderId != nil ? .remote : .localOnly
-            case .taskade:
-                return (task.taskadeProjectId != nil && task.taskadeTaskId != nil) ? .remote : .localOnly
-            case .notion, .todoist, .outlook, .microsoftToDo, .tickTick:
-                return .localOnly
             }
         }
     }

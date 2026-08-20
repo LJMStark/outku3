@@ -32,15 +32,15 @@ struct RemoteSyncErrorsTests {
         #expect(AppState.shared.remoteSyncErrors.isEmpty)
     }
 
-    @Test("given Google error and Notion error, when Google sync succeeds, then only Notion error remains")
-    func givenTwoErrors_whenGoogleSucceeds_thenOnlyNotionRemains() {
+    @Test("given Google error and Apple error, when Google sync succeeds, then only Apple error remains")
+    func givenTwoErrors_whenGoogleSucceeds_thenOnlyAppleRemains() {
         AppState.shared.remoteSyncErrors["Google"] = "Google failed"
-        AppState.shared.remoteSyncErrors["Notion"] = "Notion failed"
+        AppState.shared.remoteSyncErrors["Apple"] = "Apple failed"
 
         AppState.shared.applyGoogleSyncOutcome(eventsCount: 1, tasksCount: 0, warnings: [], durationMs: 20)
 
         #expect(AppState.shared.remoteSyncErrors["Google"] == nil)
-        #expect(AppState.shared.remoteSyncErrors["Notion"] != nil)
+        #expect(AppState.shared.remoteSyncErrors["Apple"] != nil)
         AppState.shared.remoteSyncErrors = [:]
     }
 

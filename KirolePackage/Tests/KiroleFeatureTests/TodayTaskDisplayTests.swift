@@ -110,9 +110,9 @@ struct TodayTaskDisplayTests {
     func taskManagerIncludesManualSelections() {
         let today = Date()
         let task = TaskItem(
-            title: "Read-only Notion task",
+            title: "Google task selected for today",
             dueDate: nil,
-            source: .notion,
+            source: .google,
             todayDisplayDate: today
         )
 

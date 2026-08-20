@@ -8,12 +8,12 @@ struct ExternalSyncGenerationTests {
     func providerInvalidationIsScoped() {
         let state = AppState.makeForTesting()
         let google = state.externalSyncGeneration(for: .google)
-        let notion = state.externalSyncGeneration(for: .notion)
+        let apple = state.externalSyncGeneration(for: .apple)
 
         state.invalidateExternalSyncResults(for: [.google])
 
         #expect(!state.canCommitExternalSync(.google, generation: google))
-        #expect(state.canCommitExternalSync(.notion, generation: notion))
+        #expect(state.canCommitExternalSync(.apple, generation: apple))
     }
 
     @Test("Sign out invalidates every provider result before persistence awaits")
@@ -37,25 +37,25 @@ struct ExternalSyncGenerationTests {
     @MainActor
     func newGenerationCanCommit() {
         let state = AppState.makeForTesting()
-        let old = state.externalSyncGeneration(for: .taskade)
+        let old = state.externalSyncGeneration(for: .apple)
 
-        state.invalidateExternalSyncResults(for: [.taskade])
-        let current = state.externalSyncGeneration(for: .taskade)
+        state.invalidateExternalSyncResults(for: [.apple])
+        let current = state.externalSyncGeneration(for: .apple)
 
-        #expect(!state.canCommitExternalSync(.taskade, generation: old))
-        #expect(state.canCommitExternalSync(.taskade, generation: current))
+        #expect(!state.canCommitExternalSync(.apple, generation: old))
+        #expect(state.canCommitExternalSync(.apple, generation: current))
     }
 
     @Test("A new generation is not blocked by an older in-flight sync")
     @MainActor
     func invalidationAllowsAReplacementSync() throws {
         let state = AppState.makeForTesting()
-        let old = try #require(state.beginExternalSync(.notion))
+        let old = try #require(state.beginExternalSync(.google))
 
-        #expect(state.beginExternalSync(.notion) == nil)
+        #expect(state.beginExternalSync(.google) == nil)
 
-        state.invalidateExternalSyncResults(for: [.notion])
-        let replacement = try #require(state.beginExternalSync(.notion))
+        state.invalidateExternalSyncResults(for: [.google])
+        let replacement = try #require(state.beginExternalSync(.google))
 
         #expect(replacement != old)
     }
@@ -64,14 +64,14 @@ struct ExternalSyncGenerationTests {
     @MainActor
     func staleCompletionDoesNotReleaseReplacement() throws {
         let state = AppState.makeForTesting()
-        let old = try #require(state.beginExternalSync(.todoist))
-        state.invalidateExternalSyncResults(for: [.todoist])
-        let replacement = try #require(state.beginExternalSync(.todoist))
+        let old = try #require(state.beginExternalSync(.apple))
+        state.invalidateExternalSyncResults(for: [.apple])
+        let replacement = try #require(state.beginExternalSync(.apple))
 
-        state.finishExternalSync(.todoist, generation: old)
-        #expect(state.beginExternalSync(.todoist) == nil)
+        state.finishExternalSync(.apple, generation: old)
+        #expect(state.beginExternalSync(.apple) == nil)
 
-        state.finishExternalSync(.todoist, generation: replacement)
-        #expect(state.beginExternalSync(.todoist) != nil)
+        state.finishExternalSync(.apple, generation: replacement)
+        #expect(state.beginExternalSync(.apple) != nil)
     }
 }
