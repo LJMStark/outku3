@@ -109,19 +109,6 @@ public final class BLESyncCoordinator {
         deviceWakeBarrier.observe(generation: generation)
     }
 
-    func connectionDidBecomeReady(generation: UInt64, service: BLEService) {
-        guard service.isReadyConnectionGeneration(generation) else { return }
-        deviceWakeBarrier.armWatchdog(generation: generation, timeout: .seconds(5)) { [weak service] in
-            guard let service,
-                  service.isReadyConnectionGeneration(generation) else { return }
-            service.disconnectAndRetryAfterDeviceWakeTimeout()
-        }
-    }
-
-    func cancelDeviceWakeReadinessWatchdog(generation: UInt64) {
-        deviceWakeBarrier.cancelWatchdog(generation: generation)
-    }
-
     func isFocusReconciled(generation: UInt64) -> Bool {
         focusReconciledConnectionGeneration == generation
     }
@@ -644,10 +631,26 @@ public final class BLESyncCoordinator {
                 return
             }
             guard didObserveDeviceWake else {
-                if deviceWakeBarrier.claimTimeoutRecovery(generation: generation) {
-                    bleService.disconnectAndRetryAfterDeviceWakeTimeout()
-                }
-                throw BLEError.deviceWakeTimeout
+                // Notify 已建立，BLE 连接本身是健康的。DeviceWake 是固件发起业务同步的
+                // 第一条消息，不是连接健康证明。暂时没收到时只结束本次同步等待；保持连接，
+                // 由同 generation 的迟到 DeviceWake 重新发起一轮，绝不主动断开硬件。
+                retryMergedWakeOnFailure = false
+                await BLEDeviceWakeDeferredSyncExit.finish(
+                    closeDeviceWakeMergeWindow: {
+                        self.syncState.closeDeviceWakeMergeWindow()
+                    },
+                    ownsOfflineWriteSession: ownsOfflineWriteSession,
+                    endOfflineWriteSession: {
+                        await self.bleService.endOfflineSyncWriteSession()
+                    },
+                    releaseOfflineFocusFreezeLease: {
+                        // 若 DeviceWake 恰在上面的 await 期间到达，它持有独立 lease，并会在
+                        // 随后专用同步完成时释放。这里不能释放那份 lease。
+                        self.releaseOfflineFocusFreezeLease()
+                    }
+                )
+                ownsOfflineWriteSession = false
+                return
             }
 
             // The 30-second sync watchdog starts only after link, GATT, Notify and DeviceWake are
@@ -792,10 +795,7 @@ public final class BLESyncCoordinator {
             // this connection could satisfy the next run. Reset the BLE generation before any
             // retry so old notifications cannot cross the boundary, even during Focus/debug.
             if !transactionCommitted, bleService.connectionState.isConnected {
-                if case BLEError.deviceWakeTimeout = error {
-                    // Recovery was claimed exactly once by the DeviceWake barrier, either by the
-                    // ready watchdog or by the waiter that reached the same deadline first.
-                } else if let transactionGeneration {
+                if let transactionGeneration {
                     bleService.disconnectIfCurrentGeneration(transactionGeneration)
                 }
             }

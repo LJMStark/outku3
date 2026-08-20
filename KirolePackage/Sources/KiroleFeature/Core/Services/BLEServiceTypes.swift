@@ -71,7 +71,6 @@ public enum BLEError: LocalizedError, Sendable {
     case characteristicNotFound
     case notificationSetupFailed(String)
     case inboundMessageBufferOverflow
-    case deviceWakeTimeout
     case writeFailed(Error?)
     case securityHandshakeFailed(String)
     case disconnected
@@ -106,8 +105,6 @@ public enum BLEError: LocalizedError, Sendable {
             return "BLE notification setup failed: \(reason)"
         case .inboundMessageBufferOverflow:
             return "BLE pre-ready message buffer overflowed"
-        case .deviceWakeTimeout:
-            return "DeviceWake was not received after the BLE connection became ready"
         case .writeFailed(let error):
             return "Write failed: \(error?.localizedDescription ?? "Unknown error")"
         case .securityHandshakeFailed(let reason):

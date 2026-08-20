@@ -63,12 +63,9 @@ struct BLEConnectionAttempt: Equatable, Sendable {
         phase == .ready
     }
 
-    /// A normal setup cancellation finishes through the attempt continuation. DeviceWake timeout
-    /// cancellation is different: didDisconnect must continue into the known-peripheral recovery
-    /// branch that owns the next retry round.
-    func shouldFinishAsSetupFailure(hasDeviceWakeRecovery: Bool) -> Bool {
-        phase != .ready && !hasDeviceWakeRecovery
-    }
+    /// Any disconnect before the attempt reached a stable ready phase finishes the setup
+    /// continuation. Stable connections use the normal disconnect/recovery policy instead.
+    var shouldFinishAsSetupFailure: Bool { phase != .ready }
 
     func accepts(
         generation: UInt64,
@@ -132,23 +129,6 @@ enum BLEConnectionRetryPublicationPolicy {
         isIntentionalDisconnect: Bool
     ) -> Bool {
         ownsRound && !isIntentionalDisconnect
-    }
-}
-
-enum BLEPostDisconnectRecoveryOwner: Equatable, Sendable {
-    case none
-    case bluetoothPowerCycle
-    case deviceWakeTimeout
-}
-
-enum BLEPostDisconnectRecoveryPolicy {
-    static func owner(
-        shouldResumeAfterBluetoothPowerCycle: Bool,
-        hasDeviceWakeRecoveryPeripheral: Bool
-    ) -> BLEPostDisconnectRecoveryOwner {
-        if shouldResumeAfterBluetoothPowerCycle { return .bluetoothPowerCycle }
-        if hasDeviceWakeRecoveryPeripheral { return .deviceWakeTimeout }
-        return .none
     }
 }
 

@@ -189,22 +189,6 @@ struct BLEConnectionLifecycleTests {
         ))
     }
 
-    @Test("Bluetooth power recovery supersedes a DeviceWake timeout retry")
-    func bluetoothPowerRecoveryOwnsTheDisconnect() {
-        #expect(BLEPostDisconnectRecoveryPolicy.owner(
-            shouldResumeAfterBluetoothPowerCycle: true,
-            hasDeviceWakeRecoveryPeripheral: true
-        ) == .bluetoothPowerCycle)
-        #expect(BLEPostDisconnectRecoveryPolicy.owner(
-            shouldResumeAfterBluetoothPowerCycle: false,
-            hasDeviceWakeRecoveryPeripheral: true
-        ) == .deviceWakeTimeout)
-        #expect(BLEPostDisconnectRecoveryPolicy.owner(
-            shouldResumeAfterBluetoothPowerCycle: false,
-            hasDeviceWakeRecoveryPeripheral: false
-        ) == .none)
-    }
-
     @Test("setup failures stay internal while ready transport failures are visible")
     func preReadyFailureDoesNotExposeFindEarly() {
         var attempt = BLEConnectionAttempt(
@@ -443,35 +427,7 @@ struct BLEConnectionLifecycleTests {
 
         attempt.phase = .cancelling
         #expect(!attempt.accepts(generation: 33, peripheralID: peripheralID, phase: .ready))
-        #expect(attempt.shouldFinishAsSetupFailure(hasDeviceWakeRecovery: false))
-        #expect(!attempt.shouldFinishAsSetupFailure(hasDeviceWakeRecovery: true))
-    }
-
-    @Test("ready DeviceWake watchdog fires only for an unobserved current generation")
-    @MainActor
-    func deviceWakeWatchdogIsGenerationBound() async {
-        let barrier = BLEDeviceWakeBarrier()
-        var timedOutGenerations: [UInt64] = []
-
-        barrier.prepare(generation: 40)
-        barrier.armWatchdog(generation: 40, timeout: .seconds(30)) {
-            timedOutGenerations.append(40)
-        }
-        barrier.expireWatchdog(generation: 40)
-        #expect(timedOutGenerations == [40])
-
-        barrier.prepare(generation: 41)
-        barrier.armWatchdog(generation: 41, timeout: .seconds(30)) {
-            timedOutGenerations.append(41)
-        }
-        barrier.observe(generation: 41)
-        barrier.prepare(generation: 42)
-        barrier.armWatchdog(generation: 41, timeout: .zero) {
-            timedOutGenerations.append(41)
-        }
-        barrier.expireWatchdog(generation: 41)
-
-        #expect(timedOutGenerations == [40])
+        #expect(attempt.shouldFinishAsSetupFailure)
     }
 
     @Test("cancelling a DeviceWake wait exits without spinning or reporting a timeout")
@@ -494,37 +450,72 @@ struct BLEConnectionLifecycleTests {
         }
     }
 
-    @Test("DeviceWake wait and watchdog can claim timeout recovery only once")
+    @Test("missing DeviceWake defers sync without disconnecting a ready BLE link")
     @MainActor
-    func deviceWakeTimeoutRecoveryIsClaimedOnce() async throws {
+    func missingDeviceWakeKeepsReadyConnection() async throws {
         let barrier = BLEDeviceWakeBarrier()
-        var recoveryCount = 0
+        barrier.prepare(generation: 62)
 
-        barrier.prepare(generation: 60)
-        barrier.armWatchdog(generation: 60, timeout: .seconds(30)) {
-            recoveryCount += 1
-        }
-        let didObserve = try await barrier.wait(generation: 60, timeout: .zero)
-        if !didObserve, barrier.claimTimeoutRecovery(generation: 60) {
-            recoveryCount += 1
-        }
-        barrier.observe(generation: 60)
-        barrier.expireWatchdog(generation: 60)
+        #expect(try await !barrier.wait(generation: 62, timeout: .zero))
+        barrier.observe(generation: 62)
+        #expect(try await barrier.wait(generation: 62, timeout: .zero))
 
-        #expect(recoveryCount == 1)
-        #expect(!barrier.hasObserved(generation: 60))
+        var syncState = BLEDeviceWakeSyncState()
+        let didBeginSync = syncState.beginSync(
+            force: false,
+            hardwareWakeDate: nil,
+            taskActionBlocked: false
+        )
+        #expect(didBeginSync)
+        var heldLeases: Set<String> = ["offline"]
+        var events: [String] = []
 
-        barrier.prepare(generation: 61)
-        barrier.armWatchdog(generation: 61, timeout: .seconds(30)) {
-            recoveryCount += 1
-        }
-        barrier.expireWatchdog(generation: 61)
-        let secondDidObserve = try await barrier.wait(generation: 61, timeout: .zero)
-        if !secondDidObserve, barrier.claimTimeoutRecovery(generation: 61) {
-            recoveryCount += 1
-        }
+        await BLEDeviceWakeDeferredSyncExit.finish(
+            closeDeviceWakeMergeWindow: {
+                events.append("closeMergeWindow")
+                syncState.closeDeviceWakeMergeWindow()
+            },
+            ownsOfflineWriteSession: true,
+            endOfflineWriteSession: {
+                events.append("endWriteSession")
+                heldLeases.insert("deviceWake")
+                #expect(syncState.handleDeviceWake(
+                    at: Date(timeIntervalSince1970: 62),
+                    taskActionBlocked: false
+                ) == .enqueueForcedSync)
+            },
+            releaseOfflineFocusFreezeLease: {
+                events.append("releaseOfflineLease")
+                heldLeases.remove("offline")
+            }
+        )
 
-        #expect(recoveryCount == 2)
+        syncState.finishActiveSync(transactionCommitted: false, retryMergedWake: false)
+        let pendingRequest = syncState.reservePendingSyncIfPossible(
+            taskActionBlocked: false
+        )
+        let pending = try #require(pendingRequest)
+
+        #expect(events == ["closeMergeWindow", "endWriteSession", "releaseOfflineLease"])
+        #expect(heldLeases == ["deviceWake"])
+        #expect(pending.force)
+        #expect(syncState.reservePendingSyncIfPossible(taskActionBlocked: false) == nil)
+
+        syncState.finishActiveSync(transactionCommitted: true)
+        heldLeases.remove("deviceWake")
+        #expect(heldLeases.isEmpty)
+
+        // The wrapper around the exercised exit is deliberately thin. Keep the transport
+        // invariant explicit without introducing a CoreBluetooth mock solely for a negative call.
+        let coordinator = try Self.loadSource("BLESyncCoordinator.swift")
+        let missingWakeBranch = try #require(Self.slice(
+            coordinator,
+            from: "guard didObserveDeviceWake else {",
+            to: "// The 30-second sync watchdog"
+        ))
+        #expect(!missingWakeBranch.contains("disconnect"))
+        #expect(!missingWakeBranch.contains("cancelPeripheralConnection"))
+        #expect(!missingWakeBranch.contains("throw BLEError"))
     }
 
     @Test("pre-ready messages preserve order and drain only once")

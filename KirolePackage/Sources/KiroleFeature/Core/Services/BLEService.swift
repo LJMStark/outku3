@@ -125,7 +125,6 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
     /// 意外断开后的延迟重连任务，便于在主动断开 / 重新连接时取消。
     private var reconnectTask: Task<Void, Never>?
     private var activeConnectionRetryRoundID: UUID?
-    private var retryPeripheralAfterDisconnect: CBPeripheral?
     private var reconnectAfterBluetoothPowerCycle = false
     /// 扫描代次。每次发起扫描自增；扫描超时任务只在仍是本轮扫描时才结束扫描，
     /// 避免上一轮已提前结束的超时任务误停下一轮扫描。
@@ -638,20 +637,7 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
     /// 断开当前连接 / 取消在途的 pending 连接。
     /// 标记为主动断开，使 didDisconnect 回调不触发自动重连。
     public func disconnect() {
-        retryPeripheralAfterDisconnect = nil
         reconnectAfterBluetoothPowerCycle = false
-        disconnectPreservingRecoveryIntent()
-    }
-
-    /// DeviceWake is part of connection readiness for protocol 1.3.1. If it never arrives, tear
-    /// down this generation and start a fresh known-peripheral retry round after didDisconnect.
-    func disconnectAndRetryAfterDeviceWakeTimeout() {
-        guard let peripheral = connectedPeripheral,
-              connectionAttempt?.phase == .ready else {
-            disconnect()
-            return
-        }
-        retryPeripheralAfterDisconnect = peripheral
         disconnectPreservingRecoveryIntent()
     }
 
@@ -669,9 +655,6 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
 
     private func disconnectPreservingRecoveryIntent() {
         activeConnectionRetryRoundID = nil
-        BLESyncCoordinator.shared.cancelDeviceWakeReadinessWatchdog(
-            generation: connectGeneration
-        )
         isIntentionalDisconnect = true
         reconnectTask?.cancel()
         reconnectTask = nil
@@ -1528,10 +1511,6 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
             rssi: 0,
             isConnected: true
         )
-        BLESyncCoordinator.shared.connectionDidBecomeReady(
-            generation: generation,
-            service: self
-        )
         BLEShippingModeCoordinator.shared.handleDeviceReconnected()
         lastConnectedDeviceID = peripheralID
         finishConnectionAttempt(.success(()))
@@ -1740,14 +1719,12 @@ extension BLEService: CBCentralManagerDelegate {
                 reconnectTask?.cancel()
                 reconnectTask = nil
                 reconnectAfterBluetoothPowerCycle = false
-                retryPeripheralAfterDisconnect = nil
                 connectionState = .error("Bluetooth permission denied")
             case .unsupported:
                 activeConnectionRetryRoundID = nil
                 reconnectTask?.cancel()
                 reconnectTask = nil
                 reconnectAfterBluetoothPowerCycle = false
-                retryPeripheralAfterDisconnect = nil
                 connectionState = .error("Bluetooth not supported")
             default:
                 break
@@ -1843,12 +1820,8 @@ extension BLEService: CBCentralManagerDelegate {
             // 错误完成它的 connectCompletion，自动重连也会与在飞的新尝试打架——整体跳过。
             // 身份不符（含 cleanup 已跑完、connectedPeripheral 已空）同理。
             guard shouldProcessCallback(generationAtDelivery: generation, peripheralID: peripheral.identifier) else { return }
-            let ownsDeviceWakeRecovery = retryPeripheralAfterDisconnect?.identifier
-                == peripheral.identifier
             if let attempt = connectionAttempt,
-               attempt.shouldFinishAsSetupFailure(
-                hasDeviceWakeRecovery: ownsDeviceWakeRecovery
-               ) {
+               attempt.shouldFinishAsSetupFailure {
                 let failure = pendingAttemptFailure ?? .connectionFailed(error)
                 finishFailedConnectionAttempt(failure, peripheral: peripheral)
                 scheduleBluetoothPowerCycleReconnectIfPossible()
@@ -1862,9 +1835,6 @@ extension BLEService: CBCentralManagerDelegate {
             let shouldAutoReconnect = autoReconnectEffective
             let wasShippingModeActivation = isPendingShippingModeActivation
             let wasOTAReboot = isPendingOTAReboot
-            let recoveryPeripheral = retryPeripheralAfterDisconnect.flatMap {
-                $0.identifier == peripheral.identifier ? $0 : nil
-            }
             let shouldResumeAfterBluetoothPowerCycle = reconnectAfterBluetoothPowerCycle
 
             // Notify OTA coordinator so it can transition to awaitingReboot
@@ -1882,48 +1852,9 @@ extension BLEService: CBCentralManagerDelegate {
 
             cleanup()
 
-            switch BLEPostDisconnectRecoveryPolicy.owner(
-                shouldResumeAfterBluetoothPowerCycle: shouldResumeAfterBluetoothPowerCycle,
-                hasDeviceWakeRecoveryPeripheral: recoveryPeripheral != nil
-            ) {
-            case .bluetoothPowerCycle:
-                // Bluetooth power recovery supersedes the DeviceWake retry. Keep the power-cycle
-                // flag for poweredOn, but clear the one-shot peripheral so it cannot hijack a
-                // later disconnect after the pending connection succeeds.
-                retryPeripheralAfterDisconnect = nil
+            if shouldResumeAfterBluetoothPowerCycle {
                 scheduleBluetoothPowerCycleReconnectIfPossible()
                 return
-            case .deviceWakeTimeout:
-                guard let recoveryPeripheral else { return }
-                retryPeripheralAfterDisconnect = nil
-                isIntentionalDisconnect = false
-                reconnectTask?.cancel()
-                connectionState = .connecting
-                reconnectTask = Task { @MainActor in
-                    try? await Task.sleep(for: BLEConnectionRetryPolicy.delay(afterFailedAttempt: 1) ?? .seconds(1))
-                    guard !Task.isCancelled,
-                          !self.isIntentionalDisconnect,
-                          self.connectionState == .connecting,
-                          !BLEShippingModeCoordinator.shared.blocksAutomaticBLEWork,
-                          let manager = self.centralManager,
-                          manager.state == .poweredOn else { return }
-                    self.connectionState = .disconnected
-                    do {
-                        try await self.connectKnownPeripheralWithRetry(
-                            recoveryPeripheral,
-                            manager: manager
-                        )
-                    } catch is CancellationError {
-                        return
-                    } catch BLEError.disconnected {
-                        return
-                    } catch {
-                        ErrorReporter.log(error, context: "BLEService.deviceWakeRecovery")
-                    }
-                }
-                return
-            case .none:
-                break
             }
 
             guard BLEConnectionPolicy.automaticRecoveryAction(
