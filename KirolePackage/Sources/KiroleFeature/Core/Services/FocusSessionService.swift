@@ -53,6 +53,8 @@ public final class FocusSessionService {
     let localStorage: LocalStorage
     let focusPersistence: any FocusSessionPersisting
     let taskOperationLedger: TaskOperationLedger
+    let focusRevisionLedger: FocusRevisionLedger
+    let focusRevisionDeviceID: @MainActor @Sendable () -> UUID?
     private let canStartSession: CanStartSession
     let focusGuardService: any FocusGuardService
     let interruptionDetector: any FocusInterruptionDetecting
@@ -97,6 +99,10 @@ public final class FocusSessionService {
         localStorage: LocalStorage = .shared,
         focusPersistence: (any FocusSessionPersisting)? = nil,
         taskOperationLedger: TaskOperationLedger = .shared,
+        focusRevisionLedger: FocusRevisionLedger = .shared,
+        focusRevisionDeviceID: @escaping @MainActor @Sendable () -> UUID? = {
+            BLEService.shared.connectedDeviceID
+        },
         canStartSession: CanStartSession? = nil,
         focusGuardService: any FocusGuardService = ScreenTimeFocusGuardService.shared,
         interruptionDetector: (any FocusInterruptionDetecting)? = nil,
@@ -107,6 +113,8 @@ public final class FocusSessionService {
         self.localStorage = localStorage
         self.focusPersistence = focusPersistence ?? LocalFocusSessionPersistence(storage: localStorage)
         self.taskOperationLedger = taskOperationLedger
+        self.focusRevisionLedger = focusRevisionLedger
+        self.focusRevisionDeviceID = focusRevisionDeviceID
         self.canStartSession = canStartSession ?? {
             !BLEShippingModeCoordinator.shared.blocksAutomaticBLEWork
         }
@@ -137,12 +145,20 @@ public final class FocusSessionService {
         launchRecoveryCompleted: Bool = true,
         focusPersistence: (any FocusSessionPersisting)? = nil,
         taskOperationLedger: TaskOperationLedger = .shared,
+        focusRevisionLedger: FocusRevisionLedger? = nil,
+        focusRevisionDeviceID: @escaping @MainActor @Sendable () -> UUID? = {
+            UUID(uuidString: "00000000-0000-0000-0000-000000000001")
+        },
         canStartSession: @escaping CanStartSession = { true }
     ) -> FocusSessionService {
         FocusSessionService(
             localStorage: .shared,
             focusPersistence: focusPersistence,
             taskOperationLedger: taskOperationLedger,
+            focusRevisionLedger: focusRevisionLedger ?? FocusRevisionLedger(
+                persistence: VolatileFocusRevisionLedgerPersistence()
+            ),
+            focusRevisionDeviceID: focusRevisionDeviceID,
             canStartSession: canStartSession,
             focusGuardService: focusGuardService,
             interruptionDetector: interruptionDetector,

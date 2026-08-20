@@ -38,13 +38,14 @@ public final class BLEOfflineSyncCoordinator {
         _ operation: OfflineSyncOperationRecord
     ) async throws -> Void
     public typealias MakeUInt32 = @MainActor @Sendable () -> UInt32
-    public typealias PreviewFocus = @MainActor @Sendable (OfflineFocusState) async -> Void
-    public typealias ResolveFocus = @MainActor @Sendable (OfflineFocusState) async -> OfflineFocusResolve
+    public typealias PreviewFocus = @MainActor @Sendable (OfflineFocusState) async throws -> Void
+    public typealias ResolveFocus = @MainActor @Sendable (OfflineFocusState) async throws -> OfflineFocusResolve
     public typealias RestoreOrdinaryFocusSync = @MainActor @Sendable (
         OfflineFocusState,
         OfflineFocusResolve
-    ) async -> Void
+    ) async throws -> Void
     public typealias AbandonPendingFocusResolve = @MainActor @Sendable () -> Void
+    public typealias InvalidatePendingFocusResolve = @MainActor @Sendable () -> Void
 
     public struct Dependencies: Sendable {
         public let synchronizeTime: SynchronizeTime
@@ -63,6 +64,7 @@ public final class BLEOfflineSyncCoordinator {
         public let resolveFocus: ResolveFocus
         public let restoreOrdinaryFocusSync: RestoreOrdinaryFocusSync
         public let abandonPendingFocusResolve: AbandonPendingFocusResolve
+        public let invalidatePendingFocusResolve: InvalidatePendingFocusResolve
 
         public init(
             synchronizeTime: @escaping SynchronizeTime,
@@ -93,7 +95,8 @@ public final class BLEOfflineSyncCoordinator {
                 )
             },
             restoreOrdinaryFocusSync: @escaping RestoreOrdinaryFocusSync = { _, _ in },
-            abandonPendingFocusResolve: @escaping AbandonPendingFocusResolve = {}
+            abandonPendingFocusResolve: @escaping AbandonPendingFocusResolve = {},
+            invalidatePendingFocusResolve: @escaping InvalidatePendingFocusResolve = {}
         ) {
             self.synchronizeTime = synchronizeTime
             self.sendCommand = sendCommand
@@ -111,6 +114,7 @@ public final class BLEOfflineSyncCoordinator {
             self.resolveFocus = resolveFocus
             self.restoreOrdinaryFocusSync = restoreOrdinaryFocusSync
             self.abandonPendingFocusResolve = abandonPendingFocusResolve
+            self.invalidatePendingFocusResolve = invalidatePendingFocusResolve
         }
     }
 
@@ -170,6 +174,9 @@ public final class BLEOfflineSyncCoordinator {
     var expectedBootSessionID: UInt32?
     var expectedSyncID: UInt32?
     var mailbox: [OfflineSyncInboundMessage] = []
+    private var acceptsPreRunInbound = false
+    private var preRunMailbox: [OfflineSyncInboundMessage] = []
+    private var preRunTerminalError: BLEOfflineSyncCoordinatorError?
     var didFreezeFocusStatus = false
     /// Firmware 1.3.1: keep `0x14` frozen until FOCUS_RESOLVE gets RESULT/COMMITTED.
     var awaitingFocusResolveResult = false
@@ -196,6 +203,7 @@ public final class BLEOfflineSyncCoordinator {
         var begunSyncID: UInt32?
 
         do {
+            try ensureRunIsActive(runID)
             // Firmware 1.3.1: lock ordinary 0x14 as soon as this wake transaction starts,
             // before Time/QUERY, so a cached idle/active snapshot cannot race FOCUS_STATE.
             dependencies.freezeFocusStatus()
@@ -347,7 +355,16 @@ public final class BLEOfflineSyncCoordinator {
     /// Accepts a decoded 0x25 inbound message. Messages for another boot or sync remain inert in
     /// the bounded mailbox and can never satisfy the current phase.
     public func handleInbound(_ inbound: OfflineSyncInboundMessage) {
-        guard activeRunID != nil, terminalError == nil else { return }
+        guard activeRunID != nil else {
+            guard acceptsPreRunInbound, preRunTerminalError == nil else { return }
+            guard preRunMailbox.count < mailboxLimit else {
+                preRunTerminalError = .mailboxOverflow
+                return
+            }
+            preRunMailbox.append(inbound)
+            return
+        }
+        guard terminalError == nil else { return }
 
         if case .result(let result) = inbound,
            result.syncID == expectedSyncID {
@@ -393,12 +410,27 @@ public final class BLEOfflineSyncCoordinator {
         do {
             handleInbound(try OfflineSyncCodec.decodeInbound(payload))
         } catch {
-            guard activeRunID != nil else { return }
-            failRun(with: .invalidInbound)
+            if activeRunID != nil {
+                failRun(with: .invalidInbound)
+            } else if acceptsPreRunInbound {
+                preRunTerminalError = .invalidInbound
+            }
         }
     }
 
+    /// Notify may deliver STATE immediately after DeviceWake, before the DeviceWake task has
+    /// entered `synchronize`. Capture that bounded prefix for this connection generation.
+    func preparePreRunInboundCapture() {
+        guard !isRunning else { return }
+        acceptsPreRunInbound = true
+        preRunMailbox.removeAll(keepingCapacity: true)
+        preRunTerminalError = nil
+    }
+
     public func handleDisconnected() {
+        acceptsPreRunInbound = false
+        preRunMailbox.removeAll(keepingCapacity: true)
+        preRunTerminalError = nil
         guard activeRunID != nil else { return }
         failRun(with: .disconnected)
     }
@@ -406,12 +438,15 @@ public final class BLEOfflineSyncCoordinator {
     private func beginRun(_ runID: UUID) {
         isRunning = true
         activeRunID = runID
-        terminalError = nil
+        terminalError = preRunTerminalError
         expectedBootSessionID = nil
         expectedSyncID = nil
         didFreezeFocusStatus = false
         awaitingFocusResolveResult = false
-        mailbox.removeAll(keepingCapacity: true)
+        mailbox = preRunMailbox
+        acceptsPreRunInbound = false
+        preRunMailbox.removeAll(keepingCapacity: true)
+        preRunTerminalError = nil
     }
 
     private func finishRun(_ runID: UUID) {

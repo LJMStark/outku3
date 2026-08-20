@@ -64,10 +64,14 @@ public enum BLEError: LocalizedError, Sendable {
     case deviceNotFound
     case unauthorizedDevice
     case connectionTimeout
+    case connectionReadinessTimeout
     case connectionFailed(Error?)
     case notConnected
     case serviceNotFound
     case characteristicNotFound
+    case notificationSetupFailed(String)
+    case inboundMessageBufferOverflow
+    case deviceWakeTimeout
     case writeFailed(Error?)
     case securityHandshakeFailed(String)
     case disconnected
@@ -76,6 +80,7 @@ public enum BLEError: LocalizedError, Sendable {
     case connectionInProgress
     case shippingModeActive
     case staleTaskSnapshot
+    case staleFocusStatus
 
     public var errorDescription: String? {
         switch self {
@@ -87,6 +92,8 @@ public enum BLEError: LocalizedError, Sendable {
             return "Unauthorized BLE device"
         case .connectionTimeout:
             return "Connection timed out"
+        case .connectionReadinessTimeout:
+            return "BLE services and notifications did not become ready in time"
         case .connectionFailed(let error):
             return "Connection failed: \(error?.localizedDescription ?? "Unknown error")"
         case .notConnected:
@@ -95,6 +102,12 @@ public enum BLEError: LocalizedError, Sendable {
             return "BLE service not found"
         case .characteristicNotFound:
             return "BLE characteristic not found"
+        case .notificationSetupFailed(let reason):
+            return "BLE notification setup failed: \(reason)"
+        case .inboundMessageBufferOverflow:
+            return "BLE pre-ready message buffer overflowed"
+        case .deviceWakeTimeout:
+            return "DeviceWake was not received after the BLE connection became ready"
         case .writeFailed(let error):
             return "Write failed: \(error?.localizedDescription ?? "Unknown error")"
         case .securityHandshakeFailed(let reason):
@@ -111,6 +124,8 @@ public enum BLEError: LocalizedError, Sendable {
             return "Automatic BLE work is paused while shipping mode is active"
         case .staleTaskSnapshot:
             return "Task snapshot was superseded before transmission"
+        case .staleFocusStatus:
+            return "Focus status was superseded before transmission"
         }
     }
 }

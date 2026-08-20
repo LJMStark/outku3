@@ -1,5 +1,10 @@
 import Foundation
 
+enum BLEAutomaticRecoveryAction: Equatable, Sendable {
+    case none
+    case pendingKnownPeripheral
+}
+
 // MARK: - BLE Connection Policy
 
 /// BLE 连接状态机的纯决策逻辑。
@@ -39,6 +44,36 @@ public enum BLEConnectionPolicy {
         isIdle(state)
     }
 
+    /// A requested connection performs secure-identity actor reads before it installs the
+    /// CoreBluetooth attempt. User cancellation or a newer generation may win during that await;
+    /// only the original, still-active owner may publish the attempt afterwards.
+    static func canInstallRequestedAttempt(
+        startingGeneration: UInt64,
+        currentGeneration: UInt64,
+        state: BLEConnectionState,
+        isIntentionalDisconnect: Bool,
+        taskCancelled: Bool
+    ) -> Bool {
+        guard case .connecting = state else { return false }
+        return startingGeneration == currentGeneration
+            && !isIntentionalDisconnect
+            && !taskCancelled
+    }
+
+    /// Pending reconnect performs actor reads before issuing CoreBluetooth work. Revalidate every
+    /// mutable prerequisite after the last await, especially central power state.
+    static func canBeginPendingReconnectAfterAwait(
+        state: BLEConnectionState,
+        managerPoweredOn: Bool,
+        isIntentionalDisconnect: Bool,
+        taskCancelled: Bool
+    ) -> Bool {
+        managerPoweredOn
+            && canBeginConnect(state: state)
+            && !isIntentionalDisconnect
+            && !taskCancelled
+    }
+
     /// Only a completed connection may replace the durable single-device identity.
     public static func lastKnownDeviceID(
         state: BLEConnectionState,
@@ -58,7 +93,27 @@ public enum BLEConnectionPolicy {
         autoReconnectEnabled: Bool,
         suppressForShippingMode: Bool = false
     ) -> Bool {
-        autoReconnectEnabled && !isIntentional && !suppressForShippingMode
+        automaticRecoveryAction(
+            isIntentional: isIntentional,
+            autoReconnectEnabled: autoReconnectEnabled,
+            suppressForShippingMode: suppressForShippingMode,
+            isOTAReboot: false
+        ) != .none
+    }
+
+    /// Every automatic recovery uses CoreBluetooth's unbounded pending connection for the one
+    /// known device. OTA reboot deliberately keeps this same path because DeviceWake is its reboot
+    /// confirmation; it must not fall back to scanning or the bounded setup loop.
+    static func automaticRecoveryAction(
+        isIntentional: Bool,
+        autoReconnectEnabled: Bool,
+        suppressForShippingMode: Bool,
+        isOTAReboot: Bool
+    ) -> BLEAutomaticRecoveryAction {
+        guard autoReconnectEnabled,
+              !isIntentional,
+              !suppressForShippingMode else { return .none }
+        return .pendingKnownPeripheral
     }
 
     /// 是否应保持当前 BLE 控制通道。

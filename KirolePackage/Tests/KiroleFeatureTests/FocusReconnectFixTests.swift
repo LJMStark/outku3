@@ -4,20 +4,70 @@ import Testing
 
 @Suite("Focus reconnect Bugbot fixes")
 struct FocusReconnectFixTests {
-    @Test("Preview only suppresses a visible start and does not mutate the session")
+    @Test("Focus freeze leases release only their own ownership")
     @MainActor
-    func previewDoesNotAdoptOrEnd() async {
+    func focusFreezeLeasesDoNotPrematurelyUnlock() {
         let service = FocusSessionService.makeForTesting(
             focusGuardService: ReconnectFixFocusGuard(),
             persistenceEnabled: false
         )
 
-        await service.applyReconnectPreview(FocusWireFixtures.focusState())
+        let initialEpoch = service.focusStatusFreezeEpoch
+        let deviceWakeLease = service.acquireFocusStatusFreeze()
+        let deviceWakeEpoch = service.focusStatusFreezeEpoch
+        let offlineSyncLease = service.acquireFocusStatusFreeze()
+        #expect(service.isFocusStatusPushFrozen)
+        #expect(deviceWakeEpoch > initialEpoch)
+        #expect(service.focusStatusFreezeEpoch > deviceWakeEpoch)
+
+        service.releaseFocusStatusFreeze(deviceWakeLease)
+        #expect(service.isFocusStatusPushFrozen)
+
+        service.releaseFocusStatusFreeze(deviceWakeLease)
+        #expect(service.isFocusStatusPushFrozen)
+
+        service.releaseFocusStatusFreeze(offlineSyncLease)
+        #expect(service.isFocusStatusPushFrozen == false)
+
+        let lateDeviceWakeLease = service.acquireFocusStatusFreeze()
+        let cancelledOfflineSyncLease = service.acquireFocusStatusFreeze()
+        service.releaseFocusStatusFreeze(cancelledOfflineSyncLease)
+        #expect(service.isFocusStatusPushFrozen)
+        service.releaseFocusStatusFreeze(lateDeviceWakeLease)
+        #expect(service.isFocusStatusPushFrozen == false)
+    }
+
+    @Test("Legacy boolean unlock cannot release an explicit Focus freeze lease")
+    @MainActor
+    func legacyUnlockPreservesExplicitLease() {
+        let service = FocusSessionService.makeForTesting(
+            focusGuardService: ReconnectFixFocusGuard(),
+            persistenceEnabled: false
+        )
+
+        let lease = service.acquireFocusStatusFreeze()
+        service.isFocusStatusPushFrozen = true
+        service.isFocusStatusPushFrozen = false
+
+        #expect(service.isFocusStatusPushFrozen)
+        service.releaseFocusStatusFreeze(lease)
+        #expect(service.isFocusStatusPushFrozen == false)
+    }
+
+    @Test("Preview only suppresses a visible start and does not mutate the session")
+    @MainActor
+    func previewDoesNotAdoptOrEnd() async throws {
+        let service = FocusSessionService.makeForTesting(
+            focusGuardService: ReconnectFixFocusGuard(),
+            persistenceEnabled: false
+        )
+
+        try await service.applyReconnectPreview(FocusWireFixtures.focusState())
         #expect(service.activeSession == nil)
         #expect(service.suppressVisibleFocusStart == false)
         #expect(service.todaySessions.isEmpty)
 
-        await service.applyReconnectPreview(
+        try await service.applyReconnectPreview(
             FocusWireFixtures.focusState(
                 focusState: .endedPending,
                 end: FocusWireFixtures.timestamp + 400,
@@ -113,7 +163,7 @@ struct FocusReconnectFixTests {
 
     @Test("Same payload reuses ResolveID; a changed verdict or session gets a new one")
     @MainActor
-    func resolveIDFollowsPayloadNotJustSession() async {
+    func resolveIDFollowsPayloadNotJustSession() async throws {
         let service = FocusSessionService.makeForTesting(
             focusGuardService: ReconnectFixFocusGuard(),
             persistenceEnabled: false
@@ -152,15 +202,15 @@ struct FocusReconnectFixTests {
             focusGuardService: ReconnectFixFocusGuard(),
             persistenceEnabled: false
         )
-        let firstCommand = await reconnecting.resolveReconnect(
+        let firstCommand = try await reconnecting.resolveReconnect(
             FocusWireFixtures.focusState(),
             resolveID: 22
         )
-        let sameSnapshotRetry = await reconnecting.resolveReconnect(
+        let sameSnapshotRetry = try await reconnecting.resolveReconnect(
             FocusWireFixtures.focusState(),
             resolveID: 33
         )
-        let changedSnapshot = await reconnecting.resolveReconnect(
+        let changedSnapshot = try await reconnecting.resolveReconnect(
             FocusWireFixtures.focusState(elapsed: 180),
             resolveID: 44
         )
@@ -168,13 +218,61 @@ struct FocusReconnectFixTests {
         #expect(sameSnapshotRetry.resolveID == 22)
         #expect(sameSnapshotRetry.matchesPayload(of: firstCommand))
         #expect(changedSnapshot.resolveID == 44)
+        #expect(firstCommand.focusRevision == 4)
+        #expect(sameSnapshotRetry.focusRevision == 4)
+        #expect(changedSnapshot.focusRevision == 5)
         #expect(changedSnapshot.matchesPayload(of: firstCommand) == false)
         #expect(reconnecting.activeSession == nil)
     }
 
+    @Test("A new ResolveID after restart receives a new durable revision")
+    @MainActor
+    func restartedResolveAttemptDoesNotReuseRevisionWithDifferentBytes() async throws {
+        let persistence = VolatileFocusRevisionLedgerPersistence()
+        let ledger = FocusRevisionLedger(persistence: persistence)
+        let firstService = FocusSessionService.makeForTesting(
+            focusGuardService: ReconnectFixFocusGuard(),
+            focusRevisionLedger: ledger
+        )
+        let first = try await firstService.resolveReconnect(
+            FocusWireFixtures.focusState(),
+            resolveID: 22
+        )
+
+        let restartedService = FocusSessionService.makeForTesting(
+            focusGuardService: ReconnectFixFocusGuard(),
+            focusRevisionLedger: ledger
+        )
+        let restarted = try await restartedService.resolveReconnect(
+            FocusWireFixtures.focusState(),
+            resolveID: 33
+        )
+
+        #expect(first.resolveID == 22)
+        #expect(restarted.resolveID == 33)
+        #expect(restarted.focusRevision == first.focusRevision + 1)
+    }
+
+    @Test("INVALID_STATE invalidates the frozen attempt even when the semantic verdict is unchanged")
+    @MainActor
+    func invalidStateForcesNewResolveRevision() async throws {
+        let service = FocusSessionService.makeForTesting(
+            focusGuardService: ReconnectFixFocusGuard()
+        )
+        let snapshot = FocusWireFixtures.focusState()
+        let first = try await service.resolveReconnect(snapshot, resolveID: 10)
+
+        service.invalidatePendingReconnectAfterInvalidState()
+        let second = try await service.resolveReconnect(snapshot, resolveID: 20)
+
+        #expect(first.resolveID == 10)
+        #expect(second.resolveID == 20)
+        #expect(second.focusRevision == first.focusRevision + 1)
+    }
+
     @Test("FOCUS_STATE identity fields are stamped only after RESULT/COMMITTED")
     @MainActor
-    func resolveStampsFirmwareIdentity() async {
+    func resolveStampsFirmwareIdentity() async throws {
         let service = FocusSessionService.makeForTesting(
             focusGuardService: ReconnectFixFocusGuard(),
             persistenceEnabled: false
@@ -183,16 +281,57 @@ struct FocusReconnectFixTests {
             startSource: .deviceOffline,
             lastOperationID: 9
         )
-        let command = await service.resolveReconnect(snapshot, resolveID: 1)
+        let command = try await service.resolveReconnect(snapshot, resolveID: 1)
         #expect(service.activeSession == nil)
 
-        await service.commitPendingReconnect(from: snapshot, resolve: command)
+        try await service.commitReconnectAfterResolve(from: snapshot, resolve: command)
 
         #expect(service.activeSession?.focusSessionId == snapshot.sessionId)
         #expect(service.activeSession?.bootSessionId == snapshot.bootSessionID)
         #expect(service.activeSession?.startSource == .deviceOffline)
         #expect(service.activeSession?.lastOperationId == 9)
-        #expect(service.activeSession?.focusRevision == snapshot.focusRevision &+ 1)
+        #expect(service.activeSession?.focusRevision == snapshot.focusRevision + 1)
+    }
+
+    @Test("Post-gate BLE restore is separate from the durable reconnect commit")
+    @MainActor
+    func durableCommitDoesNotRequireBLEPostRestore() async throws {
+        let service = FocusSessionService.makeForTesting(
+            focusGuardService: ReconnectFixFocusGuard(),
+            persistenceEnabled: false
+        )
+        let snapshot = FocusWireFixtures.focusState()
+        let command = try await service.resolveReconnect(snapshot, resolveID: 1)
+        let freezeLease = service.acquireFocusStatusFreeze()
+        defer { service.releaseFocusStatusFreeze(freezeLease) }
+
+        try await service.commitReconnectAfterResolve(from: snapshot, resolve: command)
+
+        #expect(service.activeSession?.focusRevision == command.focusRevision)
+        #expect(service.activeSession?.focusSessionId == command.sessionId)
+    }
+
+    @Test("Committed reconnect identity is persisted before durable commit returns")
+    @MainActor
+    func committedReconnectIdentityIsPersisted() async throws {
+        let persistence = ReconnectPersistenceRecorder()
+        let service = FocusSessionService.makeForTesting(
+            focusGuardService: ReconnectFixFocusGuard(),
+            interruptionDetector: ReconnectNoopInterruptionDetector(),
+            persistenceEnabled: true,
+            focusPersistence: persistence
+        )
+        let snapshot = FocusWireFixtures.focusState()
+        let command = try await service.resolveReconnect(snapshot, resolveID: 1)
+        let freezeLease = service.acquireFocusStatusFreeze()
+        defer { service.releaseFocusStatusFreeze(freezeLease) }
+
+        try await service.commitReconnectAfterResolve(from: snapshot, resolve: command)
+
+        let saved = await persistence.savedActiveSessions()
+        #expect(saved.last?.focusRevision == command.focusRevision)
+        #expect(saved.last?.focusSessionId == command.sessionId)
+        #expect(saved.last?.bootSessionId == snapshot.bootSessionID)
     }
 
     @Test("Hardware task id remap keeps the v2 session fields")
@@ -228,6 +367,44 @@ struct FocusReconnectFixTests {
         #expect(resolved.focusSessionId == FocusWireFixtures.sessionId)
         #expect(resolved.elapsedSeconds == 3_600)
     }
+}
+
+private actor ReconnectPersistenceRecorder: FocusSessionPersisting {
+    private var activeSessions: [FocusSession] = []
+    private var sessions: [FocusSession] = []
+
+    func loadSessions() async throws -> [FocusSession]? { sessions }
+
+    func saveSessions(_ sessions: [FocusSession], date: Date) async throws {
+        self.sessions = sessions
+    }
+
+    func loadActiveSession() async throws -> FocusSession? {
+        activeSessions.last
+    }
+
+    func saveActiveSession(_ session: FocusSession) async throws {
+        activeSessions.append(session)
+    }
+
+    func clearActiveSession() async throws {}
+
+    func applyEnergyReward(receiptID: UUID, bottles: Int) async throws -> Int {
+        bottles
+    }
+
+    func savedActiveSessions() -> [FocusSession] {
+        activeSessions
+    }
+}
+
+@MainActor
+private final class ReconnectNoopInterruptionDetector: FocusInterruptionDetecting {
+    var detectionState: FocusInterruptionDetectionState = .selectionEmpty
+    var onInterruption: ((Date, TimeInterval) -> Void)?
+
+    func startMonitoring() {}
+    func stopMonitoring() {}
 }
 
 private func dummyResolve(

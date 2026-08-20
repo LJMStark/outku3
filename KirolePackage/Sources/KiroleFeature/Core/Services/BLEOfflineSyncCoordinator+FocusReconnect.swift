@@ -58,7 +58,7 @@ extension BLEOfflineSyncCoordinator {
         )
         let focusSnapshot = try await receiveFocusStateIfNeeded(state: state, runID: runID)
         if let focusSnapshot {
-            await dependencies.previewFocusState(focusSnapshot)
+            try await dependencies.previewFocusState(focusSnapshot)
         }
         let processedCount = try await drainOperations(
             state: state,
@@ -136,7 +136,7 @@ extension BLEOfflineSyncCoordinator {
         allowInvalidStateRetry: Bool,
         runID: UUID
     ) async throws -> FocusResolveStepResult {
-        let resolve = await dependencies.resolveFocus(snapshot)
+        let resolve = try await dependencies.resolveFocus(snapshot)
         awaitingFocusResolveResult = true
         expectedSyncID = resolve.resolveID
 
@@ -147,12 +147,14 @@ extension BLEOfflineSyncCoordinator {
         if result.syncID == resolve.resolveID,
            result.targetType == .offlineSync,
            result.resultCode == .committed {
+            // Applying and durably storing the committed identity is part of the barrier. If it
+            // fails, keep ordinary 0x14 frozen and let the outer transaction disconnect/reconcile.
+            try await dependencies.restoreOrdinaryFocusSync(snapshot, resolve)
             awaitingFocusResolveResult = false
             if didFreezeFocusStatus {
                 dependencies.unfreezeFocusStatus()
                 didFreezeFocusStatus = false
             }
-            await dependencies.restoreOrdinaryFocusSync(snapshot, resolve)
             return .resolved(true)
         }
         if result.resultCode == .invalidState, allowInvalidStateRetry {
@@ -163,7 +165,7 @@ extension BLEOfflineSyncCoordinator {
     }
 
     private func recoverAfterInvalidFocusResolve(runID: UUID) async throws -> PostQueryPhase {
-        dependencies.abandonPendingFocusResolve()
+        dependencies.invalidatePendingFocusResolve()
         mailbox.removeAll(keepingCapacity: true)
         // STATE has no request ID. Drop the previous QUERY's boot and ResolveID
         // so this re-query is a fresh STATE → FOCUS_STATE → OP_BATCH → RESOLVE.

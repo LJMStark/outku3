@@ -24,6 +24,11 @@ struct FocusReconnectProtocolTests {
             lastOperationID: 0
         )
         #expect(try FocusReconnectCodec.decodeFocusState(FocusWireFixtures.encodeFocusState(state)) == state)
+        let sentinel = FocusWireFixtures.idleZeroFocusState()
+        #expect(
+            try FocusReconnectCodec.decodeFocusState(FocusWireFixtures.encodeFocusState(sentinel))
+                == sentinel
+        )
     }
 
     @Test("FOCUS_STATE rejects unknown enums and wrong lengths")
@@ -38,6 +43,13 @@ struct FocusReconnectProtocolTests {
         badState[17] = 0x09
         #expect(throws: FocusReconnectProtocolError.invalidFocusState(0x09)) {
             _ = try FocusReconnectCodec.decodeFocusState(badState)
+        }
+
+        let activeZeroRevision = FocusWireFixtures.encodeFocusState(
+            FocusWireFixtures.focusState(revision: 0)
+        )
+        #expect(throws: FocusReconnectProtocolError.zeroFocusRevision) {
+            _ = try FocusReconnectCodec.decodeFocusState(activeZeroRevision)
         }
     }
 
@@ -130,6 +142,25 @@ struct FocusReconnectProtocolTests {
             bottles: 0
         )
         #expect(throws: FocusReconnectProtocolError.zeroResolveID) {
+            _ = try FocusReconnectCodec.encode(resolve)
+        }
+    }
+
+    @Test("FOCUS_RESOLVE rejects FocusRevision zero")
+    func focusResolveRejectsZeroRevision() {
+        let resolve = OfflineFocusResolve(
+            resolveID: 1,
+            sessionId: .idle,
+            focusState: .idle,
+            result: .accepted,
+            startTimestamp: 0,
+            endTimestamp: 0,
+            elapsedSeconds: 0,
+            focusRevision: 0,
+            phase: .idle,
+            bottles: 0
+        )
+        #expect(throws: FocusReconnectProtocolError.zeroFocusRevision) {
             _ = try FocusReconnectCodec.encode(resolve)
         }
     }

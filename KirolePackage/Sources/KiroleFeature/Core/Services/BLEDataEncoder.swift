@@ -338,10 +338,11 @@ public enum BLEDataEncoder {
         elapsedSeconds: UInt32,
         taskTitle: String?,
         segmentSeconds: UInt32,
-        focusRevision: UInt32 = 0,
+        focusRevision: UInt32,
         focusSessionId: FocusSessionId = .idle,
         focusState: FocusWireState = .idle
     ) -> Data {
+        precondition(focusRevision != 0, "FocusRevision 0 is not a valid outbound FocusStatus")
         var data = Data([FocusReconnectCodec.focusStatusSubVersion])
         data.appendBigEndian(focusRevision)
         data.append(focusSessionId.bytes)

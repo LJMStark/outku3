@@ -352,12 +352,12 @@
 
 ### §4.11  FocusStatus（0x14，SubVersion 0x02）
 
-**方向：App → Device（FFE1 Write）｜传输：简单包｜用途：同步完成后的权威专注状态；同步裁决完成前不得覆盖设备离线状态；详见「专注重连-1.2」页**
+**方向：App → Device（FFE1 Write）｜传输：简单包｜用途：同步完成后的权威专注状态；同步裁决完成前不得覆盖设备离线状态；FocusRevision=0 仅表示无有效版本，首个有效版本从 1 开始；详见「专注重连-1.2」页**
 
 | 偏移(字节) | 字段 | 大小(字节) | 上限(字节) | 取值/枚举 | 说明 |
 | --- | --- | --- | --- | --- | --- |
 | 0 | SubVersion | 1 | - | 固定 0x02 | 旧版 0x14 仅用于不支持 v2 的固件 |
-| 1..4 | FocusRevision | 4 | - | UInt32 BE | 小于设备已应用版本时必须拒绝 |
+| 1..4 | FocusRevision | 4 | - | UInt32 BE | 0 仅表示无有效版本，首个有效版本为 1；每个不同的完整 0x14 内容必须严格递增；相同 revision 只允许原字节重试同一冻结内容；不得回绕到 0；小于设备已应用版本时必须拒绝 |
 | 5..12 | FocusSessionId | 8 | - | 8B 原始会话 ID | BootSessionId(4B)+StartOperationID(4B) |
 | 13..19 | StatusBlock | 7 | - | State(1)+Phase(1)+Bottles(1)+ElapsedSeconds(4) | 阶段和瓶子按权威时长派生，不做双方累加 |
 | 20.. | TaskTitle + SegmentSeconds | 1+N+4 | N≤40 | TaskTitleLength(1)+TaskTitle(N)+SegmentSeconds(4) | 秒级同步；当前未打断连续时长 |
@@ -1117,12 +1117,12 @@
 
 ### 三、FocusStatus（0x14，SubVersion 0x02）
 
-**App → Device｜同步完成后的权威状态心跳；FocusRevision 旧于设备已应用版本时拒绝**
+**App → Device｜同步完成后的权威状态心跳；FocusRevision=0 仅表示无有效版本，首个有效版本从 1 开始；旧于设备已应用版本时拒绝**
 
 | 偏移 | 字段 | 大小 | 取值 | 说明 | 约束 |
 | --- | --- | --- | --- | --- | --- |
 | 0 | SubVersion | 1 | 固定 0x02 | FocusStatus v2 | 旧固件继续使用旧版结构 |
-| 1..4 | FocusRevision | 4 | UInt32 BE | App 权威专注版本 | 状态变化严格递增 |
+| 1..4 | FocusRevision | 4 | UInt32 BE | App 权威专注版本 | 0 仅表示无有效版本，首个有效版本为 1；每个不同的完整 0x14 内容严格递增；同 revision 只重试同一冻结内容的原字节；不得回绕到 0 |
 | 5..12 | FocusSessionId | 8 | 原始 8B | BootSessionId + StartOperationID | idle 时全 0 |
 | 13 | FocusState | 1 | 0x00..0x02 | idle / active / endedPending | 见枚举页 |
 | 14 | Phase | 1 | 0..3 | 显示阶段 | 按权威 elapsed 派生 |
@@ -1173,7 +1173,7 @@
 | 15..18 | StartTimestamp | 4 | UInt32 BE | 权威开始时间 | 离线创建采用设备时间 |
 | 19..22 | EndTimestamp | 4 | UInt32 BE | 权威结束时间 | 活动会话为 0 |
 | 23..26 | ElapsedSeconds | 4 | UInt32 BE | 权威累计秒数 | 用于设备立即校准 |
-| 27..30 | FocusRevision | 4 | UInt32 BE | 裁决后的权威版本 | 后续 0x14 不得小于此值 |
+| 27..30 | FocusRevision | 4 | UInt32 BE | 裁决后的权威版本 | 有效裁决必须非 0；后续 0x14 不得小于此值；重试同一裁决时复用原 revision 和完整 payload |
 | 31 | Phase | 1 | 0..3 | 裁决后显示阶段 | 按 elapsed 派生 |
 | 32 | Bottles | 1 | 0..255 | 裁决后显示瓶子 | 不得累加双方值 |
 | Payload 总长 | 33 | 完整帧长 | 36 | 传输 | 简单包：Type(1)+Length(2)+Payload |
@@ -1185,7 +1185,7 @@
 | 偏移 | 字段 | 大小 | 取值 | 说明 | 约束 |
 | --- | --- | --- | --- | --- | --- |
 | 0 | Opcode | 1 | 固定 0x83 | FOCUS_STATE | 首字节 |
-| 1..4 | FocusRevision | 4 | UInt32 BE | 设备已应用版本 | 本地离线变化也递增 |
+| 1..4 | FocusRevision | 4 | UInt32 BE | 设备已应用版本 | 仅 FocusState=idle，且 FocusSessionId/TaskId/StartTimestamp/EndTimestamp/ElapsedSeconds/LastOperationID 全零或空、EndReason=none 的空闲哨兵允许为 0；BootSessionId 仍填当前启动会话；其他 FOCUS_STATE 必须非 0，本地每个不同状态也严格递增且不得回绕到 0 |
 | 5..8 | BootSessionId | 4 | UInt32 BE | 设备启动会话 ID | 与 OperationID 组成幂等键 |
 | 9..16 | FocusSessionId | 8 | 原始 8B | 当前或待裁决会话 | idle 且无待裁决会话时全 0 |
 | 17 | FocusState | 1 | 0x00..0x02 | 本地当前状态 | 见枚举页 |
@@ -1330,4 +1330,3 @@
 **5 | Schedule 替换日程后，DayPack 的 PetDialogue、TopTasks、SettlementData、DaySummary、FirstUp 等保持不变**
 
 **6 | 简单包与 11B 分包重组后的业务结果一致；失败时保留原有日程**
-

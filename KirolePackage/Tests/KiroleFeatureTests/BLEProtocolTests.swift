@@ -949,7 +949,8 @@ struct BLEProtocolTests {
             energyBottles: 0,
             elapsedSeconds: 60,
             taskTitle: "写报告",
-            segmentSeconds: 60
+            segmentSeconds: 60,
+            focusRevision: 1
         )
         var focusCursor = 20
         #expect(readString(from: focus, cursor: &focusCursor) == "Task")
@@ -959,7 +960,8 @@ struct BLEProtocolTests {
             energyBottles: 0,
             elapsedSeconds: 0,
             taskTitle: nil,
-            segmentSeconds: 0
+            segmentSeconds: 0,
+            focusRevision: 1
         )
         var idleCursor = 20
         #expect(readString(from: idle, cursor: &idleCursor) == "")
@@ -1747,7 +1749,8 @@ struct BLEProtocolTests {
             energyBottles: -3,
             elapsedSeconds: 0,
             taskTitle: "Task",
-            segmentSeconds: 0
+            segmentSeconds: 0,
+            focusRevision: 1
         )
 
         #expect(data[0] == 0x02)

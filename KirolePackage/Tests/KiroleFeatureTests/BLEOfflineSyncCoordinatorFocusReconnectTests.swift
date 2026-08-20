@@ -18,6 +18,7 @@ struct BLEOfflineSyncCoordinatorFocusReconnectTests {
         var events: [Event] = []
         var freezeCount = 0
         var unfreezeCount = 0
+        var focusLifecycle: [String] = []
         var previewed: [OfflineFocusState] = []
         var restored: [(OfflineFocusState, OfflineFocusResolve)] = []
         var processedOperations: [(bootSessionID: UInt32, operationID: UInt32)] = []
@@ -31,7 +32,8 @@ struct BLEOfflineSyncCoordinatorFocusReconnectTests {
             responseTimeout: Duration = .seconds(1),
             resolveFocus: BLEOfflineSyncCoordinator.ResolveFocus? = nil,
             restoreOrdinaryFocusSync: BLEOfflineSyncCoordinator.RestoreOrdinaryFocusSync? = nil,
-            abandonPendingFocusResolve: @escaping BLEOfflineSyncCoordinator.AbandonPendingFocusResolve = {}
+            abandonPendingFocusResolve: @escaping BLEOfflineSyncCoordinator.AbandonPendingFocusResolve = {},
+            invalidatePendingFocusResolve: @escaping BLEOfflineSyncCoordinator.InvalidatePendingFocusResolve = {}
         ) -> BLEOfflineSyncCoordinator {
             BLEOfflineSyncCoordinator(
                 responseTimeout: responseTimeout,
@@ -52,8 +54,14 @@ struct BLEOfflineSyncCoordinatorFocusReconnectTests {
                     },
                     makeSyncID: { 0x0102_0304 },
                     makeValidUntil: { 0x0506_0708 },
-                    freezeFocusStatus: { self.freezeCount += 1 },
-                    unfreezeFocusStatus: { self.unfreezeCount += 1 },
+                    freezeFocusStatus: {
+                        self.freezeCount += 1
+                        self.focusLifecycle.append("freeze")
+                    },
+                    unfreezeFocusStatus: {
+                        self.unfreezeCount += 1
+                        self.focusLifecycle.append("unfreeze")
+                    },
                     previewFocusState: { self.previewed.append($0) },
                     resolveFocus: resolveFocus ?? { state in
                         OfflineFocusResolve(
@@ -72,7 +80,8 @@ struct BLEOfflineSyncCoordinatorFocusReconnectTests {
                     restoreOrdinaryFocusSync: restoreOrdinaryFocusSync ?? { snapshot, resolve in
                         self.restored.append((snapshot, resolve))
                     },
-                    abandonPendingFocusResolve: abandonPendingFocusResolve
+                    abandonPendingFocusResolve: abandonPendingFocusResolve,
+                    invalidatePendingFocusResolve: invalidatePendingFocusResolve
                 )
             )
         }
@@ -85,6 +94,26 @@ struct BLEOfflineSyncCoordinatorFocusReconnectTests {
                 return nil
             }
         }
+    }
+
+    private enum RestoreFailure: Error, Equatable {
+        case persistenceUnavailable
+    }
+
+    @Test("STATE received immediately after DeviceWake is retained until the run begins")
+    func preRunStateIsRetainedForTheQuery() async throws {
+        let recorder = Recorder()
+        let coordinator = recorder.makeCoordinator()
+        coordinator.hasActiveFocusSession = { false }
+        coordinator.preparePreRunInboundCapture()
+        coordinator.handleInbound(.state(Self.state(stateFlags: [.dataValid])))
+
+        let completion = try await coordinator.synchronize(shouldCommitDatasets: { _ in false })
+
+        #expect(recorder.events.contains(.command(.query)))
+        #expect(completion.didResolveFocus == false)
+        #expect(completion.didCommitDatasets == false)
+        #expect(completion.state.stateFlags == [.dataValid])
     }
 
     @Test("FOCUS_RESOLVE waits for RESULT/COMMITTED before unlocking")
@@ -133,6 +162,82 @@ struct BLEOfflineSyncCoordinatorFocusReconnectTests {
         #expect(completion.didCommitDatasets == false)
         #expect(recorder.restored.count == 1)
         #expect(recorder.unfreezeCount == 1)
+    }
+
+    @Test("COMMITTED keeps 0x14 frozen until durable Focus restore finishes")
+    func committedWaitsForDurableRestoreBeforeUnlocking() async throws {
+        let recorder = Recorder()
+        var resumeRestore: CheckedContinuation<Void, Never>?
+        let coordinator = recorder.makeCoordinator(
+            restoreOrdinaryFocusSync: { snapshot, resolve in
+                recorder.focusLifecycle.append("restore-start")
+                await withCheckedContinuation { continuation in
+                    resumeRestore = continuation
+                }
+                recorder.restored.append((snapshot, resolve))
+                recorder.focusLifecycle.append("restore-end")
+            }
+        )
+        coordinator.hasActiveFocusSession = { true }
+
+        let task = Task {
+            try await coordinator.synchronize(shouldCommitDatasets: { _ in false })
+        }
+        try await waitUntil("QUERY") {
+            recorder.events.contains(.command(.query))
+        }
+        coordinator.handleInbound(.state(Self.state(
+            stateFlags: [.dataValid, .focusSyncPending]
+        )))
+        coordinator.handleInbound(.focusState(FocusWireFixtures.focusState(bootSessionID: 7)))
+        try await waitUntil("FOCUS_RESOLVE") {
+            recorder.focusResolves.count == 1
+        }
+        coordinator.handleInbound(.result(Self.focusResult()))
+
+        try await waitUntil("durable restore start") {
+            recorder.focusLifecycle.contains("restore-start")
+        }
+        #expect(recorder.unfreezeCount == 0)
+        #expect(recorder.focusLifecycle == ["freeze", "restore-start"])
+
+        resumeRestore?.resume()
+        _ = try await task.value
+
+        #expect(recorder.focusLifecycle == ["freeze", "restore-start", "restore-end", "unfreeze"])
+        #expect(recorder.unfreezeCount == 1)
+    }
+
+    @Test("A failed durable Focus restore does not unlock ordinary 0x14")
+    func failedDurableRestoreKeepsFreeze() async throws {
+        let recorder = Recorder()
+        let coordinator = recorder.makeCoordinator(
+            restoreOrdinaryFocusSync: { _, _ in
+                throw RestoreFailure.persistenceUnavailable
+            }
+        )
+        coordinator.hasActiveFocusSession = { true }
+
+        let task = Task {
+            try await coordinator.synchronize(shouldCommitDatasets: { _ in false })
+        }
+        try await waitUntil("QUERY") {
+            recorder.events.contains(.command(.query))
+        }
+        coordinator.handleInbound(.state(Self.state(
+            stateFlags: [.dataValid, .focusSyncPending]
+        )))
+        coordinator.handleInbound(.focusState(FocusWireFixtures.focusState(bootSessionID: 7)))
+        try await waitUntil("FOCUS_RESOLVE") {
+            recorder.focusResolves.count == 1
+        }
+        coordinator.handleInbound(.result(Self.focusResult()))
+
+        await #expect(throws: RestoreFailure.persistenceUnavailable) {
+            _ = try await task.value
+        }
+        #expect(recorder.unfreezeCount == 0)
+        #expect(recorder.focusLifecycle == ["freeze"])
     }
 
     @Test("Active focus defers COMMIT even when NeedsFullSync is set")
@@ -538,14 +643,17 @@ struct BLEOfflineSyncCoordinatorFocusReconnectTests {
             resolveFocus: { state in
                 let id = nextID
                 nextID += 10
-                return await service.resolveReconnect(state, resolveID: id)
+                return try await service.resolveReconnect(state, resolveID: id)
             },
             restoreOrdinaryFocusSync: { snapshot, resolve in
-                await service.commitPendingReconnect(from: snapshot, resolve: resolve)
+                try await service.commitReconnectAfterResolve(from: snapshot, resolve: resolve)
                 recorder.restored.append((snapshot, resolve))
             },
             abandonPendingFocusResolve: {
                 service.abandonPendingReconnect()
+            },
+            invalidatePendingFocusResolve: {
+                service.invalidatePendingReconnectAfterInvalidState()
             }
         )
         coordinator.hasActiveFocusSession = { false }

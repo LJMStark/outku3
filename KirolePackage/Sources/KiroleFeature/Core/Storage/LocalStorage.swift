@@ -40,6 +40,7 @@ public actor LocalStorage {
         static let taskOperationLedger = "task_operation_ledger.json"
         static let offlineOperationLedger = "offline_operation_ledger.json"
         static let taskListSnapshotVersion = "task_list_snapshot_version.json"
+        static let focusRevisionLedger = "focus_revision_ledger.json"
         static let focusEnergyAwardReceipts = "focus_energy_award_receipts.json"
         static let aiInteractions = "ai_interactions.json"
         static let behaviorSummary = "behavior_summary.json"
@@ -71,7 +72,7 @@ public actor LocalStorage {
             pet, tasks, events,
             syncState, haikuCache, userProfile,
             focusSessions, eventLogs, taskOperationLedger, offlineOperationLedger,
-            taskListSnapshotVersion,
+            taskListSnapshotVersion, focusRevisionLedger,
             focusEnergyAwardReceipts, aiInteractions,
             behaviorSummary, onboardingProfile,
             deepFocusSelection, activeFocusSession,
@@ -646,6 +647,14 @@ public actor LocalStorage {
         try load(TaskListSnapshotVersion.self, from: Files.taskListSnapshotVersion)
     }
 
+    func saveFocusRevisionLedger(_ snapshot: FocusRevisionLedgerSnapshot) throws {
+        try save(snapshot, to: Files.focusRevisionLedger)
+    }
+
+    func loadFocusRevisionLedger() throws -> FocusRevisionLedgerSnapshot? {
+        try load(FocusRevisionLedgerSnapshot.self, from: Files.focusRevisionLedger)
+    }
+
     public func saveLastBleSyncTime(_ date: Date) {
         userDefaults.set(date, forKey: Keys.lastBleSyncTime)
     }
@@ -879,6 +888,7 @@ public actor LocalStorage {
 }
 
 extension LocalStorage: TaskListSnapshotVersionProviding {}
+extension LocalStorage: FocusRevisionLedgerPersisting {}
 
 // MARK: - Haiku Cache
 

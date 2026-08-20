@@ -1,0 +1,37 @@
+{
+  "observedRegression": {
+    "firstAttempt": {
+      "connectedAtMilliseconds": 6251236,
+      "mtuExchangedAtMilliseconds": 6251536,
+      "connectionParametersUpdatedAtMilliseconds": 6251836,
+      "disconnectedAtMilliseconds": 6255806,
+      "connectedDurationMilliseconds": 4570,
+      "disconnectReason": "0x13",
+      "notifyEnabledObserved": false,
+      "deviceWakeObserved": false
+    },
+    "secondAttempt": {
+      "connectedAtMilliseconds": 6289046,
+      "mtuExchangedAtMilliseconds": 6289366,
+      "connectionParametersUpdatedAtMilliseconds": 6289666,
+      "cccdWriteObservedAtMilliseconds": 6294946,
+      "notifyEnabledAtMilliseconds": 6294956,
+      "deviceWakeAtMilliseconds": 6294956,
+      "offlineSyncStateAtMilliseconds": 6294956,
+      "connectedToNotifyEnabledMilliseconds": 5910
+    }
+  },
+  "fixedExpected": {
+    "firstAttemptDisconnectsBeforeNotifyEnabled": false,
+    "firstAttemptSequence": [
+      "connected",
+      "cccdWrite",
+      "notifyEnabled",
+      "deviceWake",
+      "offlineSyncState"
+    ],
+    "businessFramesBeforeDeviceWake": [],
+    "maximumConnectAttemptsPerRound": 10,
+    "disconnectReasonMeansRemoteUserTerminatedConnection": true
+  }
+}

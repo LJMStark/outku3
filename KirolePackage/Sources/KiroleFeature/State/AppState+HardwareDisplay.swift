@@ -209,7 +209,7 @@ extension AppState {
                     elapsedSeconds: elapsedSeconds,
                     taskTitle: session?.taskTitle,
                     segmentSeconds: segmentSeconds,
-                    focusRevision: revision,
+                    focusRevisionFloor: revision,
                     focusSessionId: sessionId,
                     focusState: focusState
                 )

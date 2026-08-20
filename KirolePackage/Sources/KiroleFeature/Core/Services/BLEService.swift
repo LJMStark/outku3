@@ -30,6 +30,13 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
     /// 当前连接外设的系统标识（未连接为 nil）。v2.5.33 用于"换硬件后自动重推 0x15 头像"：
     /// 固件持久化只救同一台重启，连上**另一台**设备时 App 侧要能察觉并重推。
     public var connectedDeviceID: UUID? { connectedPeripheral?.identifier }
+    var currentConnectionGeneration: UInt64 { connectGeneration }
+
+    func isReadyConnectionGeneration(_ generation: UInt64) -> Bool {
+        connectionAttempt?.generation == generation
+            && connectionAttempt?.phase == .ready
+            && connectionState.isConnected
+    }
     /// Connected device, or the last device selected by this single-device account.
     /// Durable avatar operations use it to avoid replaying device A's transaction on device B.
     public var lastKnownDeviceID: UUID? {
@@ -67,6 +74,7 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
     private let localStorage = LocalStorage.shared
     private let securityManager = BLESecurityManager()
     private let deviceIdentityStore = BLEDeviceIdentityStore.shared
+    private let focusRevisionLedger = FocusRevisionLedger.shared
     private let rateLimiter = BLERateLimiter.shared
     private let writeGate = BLEWriteGate()
     /// Serializes complete messages and lets one OfflineSync task hold the boundary from Time
@@ -78,7 +86,7 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
     private let taskStateMessageGate = BLEWriteGate()
 
     private var scanCompletion: (([BLEDevice]) -> Void)?
-    private var connectCompletion: ((Result<Void, BLEError>) -> Void)?
+    private var connectCompletionLatch = BLEConnectionCompletionLatch()
     private var writeCompletion: ((Result<Void, BLEError>) -> Void)?
     private var activeWriteID: UUID?
     private var staleWriteAckFilter = BLEStaleWriteAckFilter()
@@ -93,7 +101,15 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
     private var hasLoggedLegacyChunkHeader = false
     private var pendingConnectedPeripheralID: UUID?
     private var pendingConnectedPeripheralName: String?
+    private var connectionAttempt: BLEConnectionAttempt?
+    private var pendingAttemptFailure: BLEError?
+    private var linkTimeoutTask: Task<Void, Never>?
+    private var readinessTimeoutTask: Task<Void, Never>?
     private var handshakeTimeoutTask: Task<Void, Never>?
+    private var preReadyInboundBuffer = BLEPreReadyMessageBuffer()
+    private var inboundDeliveryQueue: [(generation: UInt64, message: BLEReceivedMessage)] = []
+    private var inboundDeliveryTask: Task<Void, Never>?
+    private var inboundDeliveryTaskID: UUID?
 
     /// 标记最近一次断开是否由 App 主动发起（sync 收尾 / 用户点击断开 / 后台到期）。
     /// 主动断开不应触发自动重连。生命周期：`disconnect()` 置 true，发起新连接时归零；
@@ -108,6 +124,9 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
     var isPendingShippingModeActivation = false
     /// 意外断开后的延迟重连任务，便于在主动断开 / 重新连接时取消。
     private var reconnectTask: Task<Void, Never>?
+    private var activeConnectionRetryRoundID: UUID?
+    private var retryPeripheralAfterDisconnect: CBPeripheral?
+    private var reconnectAfterBluetoothPowerCycle = false
     /// 扫描代次。每次发起扫描自增；扫描超时任务只在仍是本轮扫描时才结束扫描，
     /// 避免上一轮已提前结束的超时任务误停下一轮扫描。
     private var scanGeneration: UInt64 = 0
@@ -129,8 +148,9 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
         /// 会让蓝牙框架卡在 bad state（state=connecting 但 pending connection 未真正建立）。
         /// 官方建议至少等 ~20ms，这里用 50ms 留余量。
         static let reconnectDelay: Duration = .milliseconds(50)
-        /// 主动连接（UI / sync）的连接超时。
-        static let connectTimeout: Duration = .seconds(15)
+        static let connectTimeout = BLEConnectionAttemptTimeout.link
+        static let readinessTimeout = BLEConnectionAttemptTimeout.readiness
+        static let handshakeTimeout = BLEConnectionAttemptTimeout.handshake
     }
 
     // MARK: - Settings
@@ -320,7 +340,7 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
         guard let peripheral = peripheralCache[device.id] else {
             throw BLEError.deviceNotFound
         }
-        try await connectKnownPeripheral(peripheral, manager: manager)
+        try await connectKnownPeripheralWithRetry(peripheral, manager: manager)
     }
 
     /// 连接一个已知的 CBPeripheral（来自缓存 / retrievePeripherals / retrieveConnectedPeripherals）。
@@ -340,46 +360,267 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
             do {
                 try await ensurePeripheralTrusted(peripheral.identifier)
             } catch {
-                if connectionState == .connecting { connectionState = .disconnected }
+                if connectGeneration == generation, connectionState == .connecting {
+                    connectionState = .disconnected
+                }
                 throw error
             }
+        }
+
+        guard BLEConnectionPolicy.canInstallRequestedAttempt(
+            startingGeneration: generation,
+            currentGeneration: connectGeneration,
+            state: connectionState,
+            isIntentionalDisconnect: isIntentionalDisconnect,
+            taskCancelled: Task.isCancelled
+        ) else {
+            // This async caller no longer owns the connection round. Cancellation is terminal in
+            // BLEConnectionRetryRunner, so the stale runner cannot sleep and later mutate or
+            // reconnect over the generation that replaced it.
+            throw CancellationError()
         }
 
         securityManager.resetSession()
         pendingConnectedPeripheralID = nil
         pendingConnectedPeripheralName = nil
+        pendingAttemptFailure = nil
+        preReadyInboundBuffer.removeAll()
         connectedPeripheral = peripheral
+        connectionAttempt = BLEConnectionAttempt(
+            generation: generation,
+            peripheralID: peripheral.identifier,
+            origin: .requested,
+            phase: .awaitingLink
+        )
+        BLESyncCoordinator.shared.prepareForConnectionGeneration(generation)
 
-        try await withCheckedThrowingContinuation { continuation in
-            connectCompletion = { result in
-                switch result {
-                case .success:
-                    continuation.resume()
-                case .failure(let error):
-                    continuation.resume(throwing: error)
+        let peripheralID = peripheral.identifier
+        do {
+            try await withTaskCancellationHandler {
+                try Task.checkCancellation()
+                try await withCheckedThrowingContinuation { continuation in
+                    connectCompletionLatch.install { result in
+                        switch result {
+                        case .success:
+                            continuation.resume()
+                        case .failure(let error):
+                            continuation.resume(throwing: error)
+                        }
+                    }
+
+                    manager.connect(peripheral, options: nil)
+                    armLinkTimeout(generation: generation, peripheral: peripheral)
+                }
+                try Task.checkCancellation()
+            } onCancel: { [weak self] in
+                Task { @MainActor [weak self] in
+                    self?.cancelRequestedConnectionIfOwned(
+                        generation: generation,
+                        peripheralID: peripheralID
+                    )
                 }
             }
+        } catch is CancellationError {
+            // Cancellation can arrive after the attempt was installed but before CoreBluetooth's
+            // connect request/continuation was installed. That path has no delegate callback to
+            // finish local state, so close it synchronously here. The cancellation-handler task is
+            // still needed while the continuation is suspended; this helper is idempotent.
+            cancelRequestedConnectionIfOwned(
+                generation: generation,
+                peripheralID: peripheralID
+            )
+            throw CancellationError()
+        } catch {
+            throw error
+        }
+    }
 
-            manager.connect(peripheral, options: nil)
+    private func cancelRequestedConnectionIfOwned(generation: UInt64, peripheralID: UUID) {
+        guard let attempt = connectionAttempt,
+              attempt.generation == generation,
+              attempt.peripheralID == peripheralID,
+              let peripheral = connectedPeripheral,
+              peripheral.identifier == peripheralID else { return }
+        switch attempt.requestedCancellationDisposition(
+            completionPending: connectCompletionLatch.isPending
+        ) {
+        case .ignore:
+            return
+        case .finishLocally:
+            isIntentionalDisconnect = true
+            cleanup()
+            return
+        case .cancelPeripheral:
+            break
+        }
+        cancelConnectionAttempt(
+            .disconnected,
+            peripheral: peripheral,
+            suppressAutomaticRecovery: true
+        )
+    }
 
-            // 连接超时
-            Task { @MainActor in
-                try? await Task.sleep(for: Timing.connectTimeout)
-                guard self.connectGeneration == generation else { return }
-                if self.connectionState == .connecting {
-                    // 本次尝试作废时，同时拆掉它已挂的 5s 握手残表——否则残表存活到
-                    // 下一次尝试的握手窗口，会误杀新尝试的 connectCompletion。
-                    self.handshakeTimeoutTask?.cancel()
-                    self.handshakeTimeoutTask = nil
-                    self.connectCompletion?(.failure(.connectionTimeout))
-                    self.connectCompletion = nil
-                    // 主动取消 pending 连接：打标记，避免 didDisconnect 回调误判为意外断开而重连。
-                    self.isIntentionalDisconnect = true
-                    manager.cancelPeripheralConnection(peripheral)
-                    self.connectedPeripheral = nil
-                    self.connectionState = .disconnected
+    private func armLinkTimeout(generation: UInt64, peripheral: CBPeripheral) {
+        linkTimeoutTask?.cancel()
+        linkTimeoutTask = Task { @MainActor in
+            try? await Task.sleep(for: Timing.connectTimeout)
+            guard !Task.isCancelled,
+                  self.connectionAttempt?.accepts(
+                    generation: generation,
+                    peripheralID: peripheral.identifier,
+                    phase: .awaitingLink
+                  ) == true else { return }
+            self.cancelConnectionAttempt(.connectionTimeout, peripheral: peripheral)
+        }
+    }
+
+    private func armReadinessTimeout(generation: UInt64, peripheral: CBPeripheral) {
+        readinessTimeoutTask?.cancel()
+        readinessTimeoutTask = Task { @MainActor in
+            try? await Task.sleep(for: Timing.readinessTimeout)
+            guard !Task.isCancelled,
+                  let attempt = self.connectionAttempt,
+                  attempt.generation == generation,
+                  attempt.peripheralID == peripheral.identifier,
+                  attempt.phase != .ready,
+                  attempt.phase != .cancelling,
+                  attempt.phase != .awaitingLink else { return }
+            self.cancelConnectionAttempt(.connectionReadinessTimeout, peripheral: peripheral)
+        }
+    }
+
+    private func cancelConnectionAttempt(
+        _ error: BLEError,
+        peripheral: CBPeripheral,
+        suppressAutomaticRecovery: Bool = false
+    ) {
+        guard var attempt = connectionAttempt,
+              attempt.peripheralID == peripheral.identifier,
+              attempt.phase != .cancelling else { return }
+        linkTimeoutTask?.cancel()
+        readinessTimeoutTask?.cancel()
+        handshakeTimeoutTask?.cancel()
+        attempt.phase = .cancelling
+        attempt.suppressesAutomaticRecovery = suppressAutomaticRecovery
+        connectionAttempt = attempt
+        pendingAttemptFailure = error
+        isIntentionalDisconnect = true
+        centralManager?.cancelPeripheralConnection(peripheral)
+    }
+
+    private func finishConnectionAttempt(_ result: Result<Void, BLEError>) {
+        connectCompletionLatch.resolve(result)
+    }
+
+    private func finishFailedConnectionAttempt(
+        _ error: BLEError,
+        peripheral: CBPeripheral
+    ) {
+        guard let attempt = connectionAttempt,
+              attempt.peripheralID == peripheral.identifier else { return }
+        let didEstablishLink = attempt.didEstablishLink
+        let shouldStartSetupRetryRound = attempt.shouldStartSetupRetryRound
+        let suppressesAutomaticRecovery = attempt.suppressesAutomaticRecovery
+        let keepsRetryRoundActive = attempt.keepsRetryRoundActiveAfterFailure
+        cleanup()
+
+        if !suppressesAutomaticRecovery {
+            isIntentionalDisconnect = false
+        }
+        connectionState = keepsRetryRoundActive ? .connecting : .disconnected
+        finishConnectionAttempt(.failure(error))
+
+        guard shouldStartSetupRetryRound else { return }
+        isIntentionalDisconnect = false
+        reconnectTask?.cancel()
+        reconnectTask = Task { @MainActor in
+            let initialDelay: Duration = didEstablishLink
+                ? (BLEConnectionRetryPolicy.delay(afterFailedAttempt: 1) ?? Timing.reconnectDelay)
+                : Timing.reconnectDelay
+            try? await Task.sleep(for: initialDelay)
+            guard !Task.isCancelled,
+                  !self.isIntentionalDisconnect,
+                  self.connectionState == .connecting,
+                  !BLEShippingModeCoordinator.shared.blocksAutomaticBLEWork else { return }
+            self.connectionState = .disconnected
+
+            if didEstablishLink, let manager = self.centralManager {
+                do {
+                    try await self.connectKnownPeripheralWithRetry(
+                        peripheral,
+                        manager: manager,
+                        startingAttempt: 2
+                    )
+                } catch is CancellationError {
+                    return
+                } catch BLEError.disconnected {
+                    return
+                } catch {
+                    ErrorReporter.log(error, context: "BLEService.pendingSetupRetry")
                 }
+            } else {
+                _ = await self.beginPendingReconnect()
             }
+        }
+    }
+
+    private func connectKnownPeripheralWithRetry(
+        _ peripheral: CBPeripheral,
+        manager: CBCentralManager,
+        startingAttempt: Int = 1
+    ) async throws {
+        let retryRoundID = UUID()
+        activeConnectionRetryRoundID = retryRoundID
+        defer {
+            if activeConnectionRetryRoundID == retryRoundID {
+                activeConnectionRetryRoundID = nil
+            }
+        }
+        do {
+            try await BLEConnectionRetryRunner.run(
+                startingAttempt: startingAttempt,
+                connect: { [self] in
+                    guard activeConnectionRetryRoundID == retryRoundID else {
+                        throw CancellationError()
+                    }
+                    try await connectKnownPeripheral(peripheral, manager: manager)
+                },
+                wait: { delay in
+                    try await Task.sleep(for: delay)
+                },
+                willWait: { [self] _ in
+                    // Keep Find/error UI closed while this round owns attempts 2...10.
+                    connectionState = .connecting
+                },
+                didWait: { [self] in
+                    connectionState = .disconnected
+                },
+                didCancel: { [self] in
+                    if activeConnectionRetryRoundID == retryRoundID,
+                       connectionAttempt == nil {
+                        connectionState = .disconnected
+                    }
+                },
+                shouldStop: { [self] in
+                    isIntentionalDisconnect || activeConnectionRetryRoundID != retryRoundID
+                }
+            )
+        } catch let error as BLEError {
+            switch error {
+            case .unauthorizedDevice, .connectionInProgress, .bluetoothNotAvailable,
+                 .shippingModeActive, .disconnected:
+                throw error
+            default:
+                if BLEConnectionRetryPublicationPolicy.shouldPublishFinalError(
+                    ownsRound: activeConnectionRetryRoundID == retryRoundID,
+                    isIntentionalDisconnect: isIntentionalDisconnect
+                ) {
+                    connectionState = .error(error.localizedDescription)
+                }
+                throw error
+            }
+        } catch {
+            throw error
         }
     }
 
@@ -397,6 +638,40 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
     /// 断开当前连接 / 取消在途的 pending 连接。
     /// 标记为主动断开，使 didDisconnect 回调不触发自动重连。
     public func disconnect() {
+        retryPeripheralAfterDisconnect = nil
+        reconnectAfterBluetoothPowerCycle = false
+        disconnectPreservingRecoveryIntent()
+    }
+
+    /// DeviceWake is part of connection readiness for protocol 1.3.1. If it never arrives, tear
+    /// down this generation and start a fresh known-peripheral retry round after didDisconnect.
+    func disconnectAndRetryAfterDeviceWakeTimeout() {
+        guard let peripheral = connectedPeripheral,
+              connectionAttempt?.phase == .ready else {
+            disconnect()
+            return
+        }
+        retryPeripheralAfterDisconnect = peripheral
+        disconnectPreservingRecoveryIntent()
+    }
+
+    /// A sync task may outlive the connection generation on which it started. Only that exact
+    /// ready generation may tear down the link during timeout or failure recovery.
+    func disconnectIfCurrentGeneration(_ generation: UInt64) {
+        guard let peripheralID = connectedPeripheral?.identifier,
+              connectionAttempt?.accepts(
+                generation: generation,
+                peripheralID: peripheralID,
+                phase: .ready
+              ) == true else { return }
+        disconnect()
+    }
+
+    private func disconnectPreservingRecoveryIntent() {
+        activeConnectionRetryRoundID = nil
+        BLESyncCoordinator.shared.cancelDeviceWakeReadinessWatchdog(
+            generation: connectGeneration
+        )
         isIntentionalDisconnect = true
         reconnectTask?.cancel()
         reconnectTask = nil
@@ -406,9 +681,22 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
             BLEShippingModeCoordinator.shared.handleUnconfirmedDisconnect()
         }
         if let peripheral = connectedPeripheral {
+            if var attempt = connectionAttempt {
+                attempt.suppressesAutomaticRecovery = true
+                if attempt.phase != .cancelling {
+                    attempt.phase = .cancelling
+                }
+                connectionAttempt = attempt
+                pendingAttemptFailure = .disconnected
+            }
+            linkTimeoutTask?.cancel()
+            readinessTimeoutTask?.cancel()
+            handshakeTimeoutTask?.cancel()
             centralManager?.cancelPeripheralConnection(peripheral)
+        } else {
+            finishConnectionAttempt(.failure(.disconnected))
+            cleanup()
         }
-        cleanup()
     }
 
     public func clearTrustedDevices() async {
@@ -418,22 +706,6 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
         discoveredDevices = []
         peripheralCache = [:]
         packetAssembler = BLEPacketAssembler()
-    }
-
-    /// 尝试连接一个已知外设。成功返回 true；连接超时 / 失败返回 false（允许调用方继续兜底）；
-    /// 安全拒绝（unauthorizedDevice）或并发冲突（connectionInProgress）等致命错误向上抛出，
-    /// 不应被兜底掩盖。
-    private func tryConnectKnown(_ peripheral: CBPeripheral, manager: CBCentralManager) async throws -> Bool {
-        do {
-            try await connectKnownPeripheral(peripheral, manager: manager)
-            return true
-        } catch BLEError.unauthorizedDevice {
-            throw BLEError.unauthorizedDevice
-        } catch BLEError.connectionInProgress {
-            throw BLEError.connectionInProgress
-        } catch {
-            return false
-        }
     }
 
     /// 连接上次连接的设备。优先用已知 identifier 直连（Apple 推荐，避免扫描），
@@ -449,7 +721,8 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
         if let knownID = lastConnectedDeviceID,
            let peripheral = manager.retrievePeripherals(withIdentifiers: [knownID]).first {
             peripheralCache[peripheral.identifier] = peripheral
-            if try await tryConnectKnown(peripheral, manager: manager) { return }
+            try await connectKnownPeripheralWithRetry(peripheral, manager: manager)
+            return
         }
 
         // 2. 系统当前已连接的同服务设备。
@@ -457,7 +730,8 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
             withServices: [KiroleBLEUUIDs.serviceUUID]
         ).first {
             peripheralCache[peripheral.identifier] = peripheral
-            if try await tryConnectKnown(peripheral, manager: manager) { return }
+            try await connectKnownPeripheralWithRetry(peripheral, manager: manager)
+            return
         }
 
         // 3. 兜底：扫描发现后连接。
@@ -466,9 +740,10 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
             throw BLEError.deviceNotFound
         }
         let device = devices.first(where: { $0.id == lastConnectedDeviceID }) ?? devices.first
-        if let device {
-            try await connect(to: device)
+        guard let device, let peripheral = peripheralCache[device.id] else {
+            throw BLEError.deviceNotFound
         }
+        try await connectKnownPeripheralWithRetry(peripheral, manager: manager)
     }
 
     /// 意外断开后的后台自动重连：用 CoreBluetooth 的 pending connection（不超时）等待设备
@@ -500,7 +775,12 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
 
         // await 期间用户可能主动断开（disconnect 会置位 isIntentionalDisconnect 并取消 reconnectTask）：
         // 真正发起连接前再确认一次，避免主动断开后仍发起 pending 重连。
-        guard !isIntentionalDisconnect, !Task.isCancelled else { return false }
+        guard BLEConnectionPolicy.canBeginPendingReconnectAfterAwait(
+            state: connectionState,
+            managerPoweredOn: manager.state == .poweredOn,
+            isIntentionalDisconnect: isIntentionalDisconnect,
+            taskCancelled: Task.isCancelled
+        ) else { return false }
 
         connectionState = .connecting
         isIntentionalDisconnect = false
@@ -508,11 +788,36 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
         securityManager.resetSession()
         pendingConnectedPeripheralID = nil
         pendingConnectedPeripheralName = nil
+        pendingAttemptFailure = nil
+        preReadyInboundBuffer.removeAll()
         connectedPeripheral = peripheral
+        connectionAttempt = BLEConnectionAttempt(
+            generation: connectGeneration,
+            peripheralID: peripheral.identifier,
+            origin: .pendingReconnect,
+            phase: .awaitingLink
+        )
+        BLESyncCoordinator.shared.prepareForConnectionGeneration(connectGeneration)
 
         // pending connection：不设超时、不 await。设备进入范围后 didConnect 自动推进握手链路。
         manager.connect(peripheral, options: nil)
         return true
+    }
+
+    private func scheduleBluetoothPowerCycleReconnectIfPossible() {
+        guard reconnectAfterBluetoothPowerCycle,
+              centralManager?.state == .poweredOn,
+              connectionAttempt == nil,
+              BLEConnectionPolicy.canBeginConnect(state: connectionState),
+              !BLEShippingModeCoordinator.shared.blocksAutomaticBLEWork else { return }
+        reconnectAfterBluetoothPowerCycle = false
+        isIntentionalDisconnect = false
+        reconnectTask?.cancel()
+        reconnectTask = Task { @MainActor in
+            try? await Task.sleep(for: Timing.reconnectDelay)
+            guard !Task.isCancelled, !self.isIntentionalDisconnect else { return }
+            _ = await self.attemptAutoReconnect()
+        }
     }
 
     private func poweredOnCentralManager(timeout: TimeInterval) async throws -> CBCentralManager {
@@ -698,21 +1003,62 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
         elapsedSeconds: UInt32,
         taskTitle: String?,
         segmentSeconds: UInt32,
-        focusRevision: UInt32 = 0,
+        focusRevisionFloor: UInt32,
         focusSessionId: FocusSessionId = .idle,
         focusState: FocusWireState = .idle
     ) async throws {
-        let payload = BLEDataEncoder.encodeFocusStatus(
+        guard let deviceID = connectedDeviceID else { throw BLEError.notConnected }
+        let generation = connectGeneration
+        let freezeEpoch = FocusSessionService.shared.focusStatusFreezeEpoch
+        let fingerprint = BLEDataEncoder.encodeFocusStatus(
             phase: phase,
             energyBottles: energyBottles,
             elapsedSeconds: elapsedSeconds,
             taskTitle: taskTitle,
             segmentSeconds: segmentSeconds,
-            focusRevision: focusRevision,
+            focusRevision: 1,
             focusSessionId: focusSessionId,
             focusState: focusState
         )
-        try await writeData(type: .focusStatus, data: payload)
+        try await completeMessageWriteGate.acquire()
+        do {
+            let revision = try await focusRevisionLedger.prepare(
+                deviceID: deviceID,
+                fingerprint: fingerprint,
+                floor: focusRevisionFloor
+            )
+            let payload = BLEDataEncoder.encodeFocusStatus(
+                phase: phase,
+                energyBottles: energyBottles,
+                elapsedSeconds: elapsedSeconds,
+                taskTitle: taskTitle,
+                segmentSeconds: segmentSeconds,
+                focusRevision: revision,
+                focusSessionId: focusSessionId,
+                focusState: focusState
+            )
+            let validateFocusStatus: PacketWriteValidator = {
+                let focusService = FocusSessionService.shared
+                let currentSessionID = focusService.activeSession?.focusSessionId ?? .idle
+                guard self.connectGeneration == generation,
+                      BLESyncCoordinator.shared.isFocusReconciled(generation: generation),
+                      !focusService.isFocusStatusPushFrozen,
+                      focusService.focusStatusFreezeEpoch == freezeEpoch,
+                      currentSessionID == focusSessionId else {
+                    throw BLEError.staleFocusStatus
+                }
+            }
+            try await writeDataWithinMessageSession(
+                type: .focusStatus,
+                data: payload,
+                validateBeforeWrite: validateFocusStatus
+            )
+            FocusSessionService.shared.lastAppliedFocusRevision = revision
+            await completeMessageWriteGate.release()
+        } catch {
+            await completeMessageWriteGate.release()
+            throw error
+        }
     }
 
     /// 请求设备回传 Event Log（增量）
@@ -1094,8 +1440,7 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
         let generation = connectGeneration
 
         guard let characteristic = writeCharacteristic else {
-            connectCompletion?(.failure(.characteristicNotFound))
-            connectCompletion = nil
+            cancelConnectionAttempt(.characteristicNotFound, peripheral: peripheral)
             return
         }
 
@@ -1104,26 +1449,36 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
             let packet = BLESimpleEncoder.encode(type: BLEDataType.securityHandshake.rawValue, payload: payload)
             try await writePacket(packet, peripheral: peripheral, characteristic: characteristic)
 
-            guard connectGeneration == generation else { return }
+            guard connectionAttempt?.accepts(
+                generation: generation,
+                peripheralID: peripheral.identifier,
+                phase: .handshaking
+            ) == true else { return }
 
             handshakeTimeoutTask?.cancel()
             handshakeTimeoutTask = Task { @MainActor in
-                try? await Task.sleep(for: .seconds(5))
+                try? await Task.sleep(for: Timing.handshakeTimeout)
                 guard !Task.isCancelled else { return }
-                guard self.connectGeneration == generation else { return }
-                if !self.securityManager.isSessionEstablished {
-                    self.connectCompletion?(.failure(.securityHandshakeFailed("Handshake timeout")))
-                    self.connectCompletion = nil
-                    self.connectionState = .disconnected
-                    self.centralManager?.cancelPeripheralConnection(peripheral)
-                }
+                guard self.connectionAttempt?.accepts(
+                    generation: generation,
+                    peripheralID: peripheral.identifier,
+                    phase: .handshaking
+                ) == true else { return }
+                self.cancelConnectionAttempt(
+                    .securityHandshakeFailed("Handshake timeout"),
+                    peripheral: peripheral
+                )
             }
         } catch {
-            guard connectGeneration == generation else { return }
-            connectCompletion?(.failure(.securityHandshakeFailed(error.localizedDescription)))
-            connectCompletion = nil
-            connectionState = .disconnected
-            centralManager?.cancelPeripheralConnection(peripheral)
+            guard connectionAttempt?.accepts(
+                generation: generation,
+                peripheralID: peripheral.identifier,
+                phase: .handshaking
+            ) == true else { return }
+            cancelConnectionAttempt(
+                .securityHandshakeFailed(error.localizedDescription),
+                peripheral: peripheral
+            )
         }
     }
 
@@ -1131,15 +1486,41 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
         let generation = connectGeneration
         handshakeTimeoutTask?.cancel()
         handshakeTimeoutTask = nil
+        readinessTimeoutTask?.cancel()
+        readinessTimeoutTask = nil
 
-        guard let peripheralID = pendingConnectedPeripheralID else {
-            connectCompletion?(.failure(.securityHandshakeFailed("Missing connected device identity")))
-            connectCompletion = nil
-            connectionState = .disconnected
+        guard let peripheral = connectedPeripheral,
+              let peripheralID = pendingConnectedPeripheralID,
+              var attempt = connectionAttempt,
+              attempt.generation == generation,
+              attempt.peripheralID == peripheralID,
+              attempt.phase == .enablingNotifications || attempt.phase == .handshaking else {
+            if let peripheral = connectedPeripheral {
+                cancelConnectionAttempt(
+                    .securityHandshakeFailed("Missing or stale connected device identity"),
+                    peripheral: peripheral
+                )
+            }
             return
         }
 
+        if requiresSecureChannel {
+            await deviceIdentityStore.trust(peripheralID)
+            // Durable trust is the last awaited prerequisite. Keep the attempt in handshaking
+            // until it finishes so a disconnect in this window takes the pre-ready failure path
+            // and resolves the connection continuation exactly once.
+            guard connectionAttempt?.accepts(
+                generation: generation,
+                peripheralID: peripheral.identifier,
+                phase: .handshaking
+            ) == true else { return }
+        }
+
+        // Publish ready + resolve the continuation without an intervening await. Once delegate
+        // callbacks can observe .ready, there must no longer be an unresolved setup continuation.
         let name = pendingConnectedPeripheralName ?? "Kirole Device"
+        attempt.phase = .ready
+        connectionAttempt = attempt
         connectionState = .connected
         connectedDevice = BLEDevice(
             id: peripheralID,
@@ -1147,19 +1528,65 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
             rssi: 0,
             isConnected: true
         )
+        BLESyncCoordinator.shared.connectionDidBecomeReady(
+            generation: generation,
+            service: self
+        )
         BLEShippingModeCoordinator.shared.handleDeviceReconnected()
         lastConnectedDeviceID = peripheralID
-        if requiresSecureChannel {
-            await deviceIdentityStore.trust(peripheralID)
-            // trust 的 await 期间若发生断连→cleanup→新尝试（代次已换），此刻的
-            // connectCompletion 属于新尝试，不得用旧尝试的结果提前完成它。
-            guard connectGeneration == generation else { return }
-        }
-        connectCompletion?(.success(()))
-        connectCompletion = nil
+        finishConnectionAttempt(.success(()))
+        await drainPreReadyInboundMessages(generation: generation)
         if AppBuildEnvironment.showsHardwareDebugTools {
             await BLEWiFiDebugCoordinator.shared.queryStatus()
         }
+    }
+
+    private func bufferPreReadyInboundMessage(
+        _ message: BLEReceivedMessage,
+        generation: UInt64,
+        peripheral: CBPeripheral
+    ) {
+        guard connectionAttempt?.generation == generation else { return }
+        guard preReadyInboundBuffer.append(message) == .accepted else {
+            cancelConnectionAttempt(.inboundMessageBufferOverflow, peripheral: peripheral)
+            return
+        }
+    }
+
+    private func drainPreReadyInboundMessages(generation: UInt64) async {
+        guard connectionAttempt?.generation == generation,
+              connectionAttempt?.phase == .ready else { return }
+        let messages = preReadyInboundBuffer.drain()
+        enqueueInboundMessages(messages, generation: generation)
+    }
+
+    private func enqueueInboundMessages(
+        _ messages: [BLEReceivedMessage],
+        generation: UInt64
+    ) {
+        inboundDeliveryQueue.append(contentsOf: messages.map { (generation, $0) })
+        guard inboundDeliveryTask == nil else { return }
+        let taskID = UUID()
+        inboundDeliveryTaskID = taskID
+        inboundDeliveryTask = Task { @MainActor [weak self] in
+            await self?.runInboundDeliveryPump(taskID: taskID)
+        }
+    }
+
+    private func runInboundDeliveryPump(taskID: UUID) async {
+        while !Task.isCancelled, !inboundDeliveryQueue.isEmpty {
+            let delivery = inboundDeliveryQueue.removeFirst()
+            guard connectionAttempt?.generation == delivery.generation,
+                  connectionAttempt?.phase == .ready else { continue }
+            await BLEEventHandler.handleReceivedPayload(
+                delivery.message,
+                service: self,
+                connectionGeneration: delivery.generation
+            )
+        }
+        guard inboundDeliveryTaskID == taskID else { return }
+        inboundDeliveryTask = nil
+        inboundDeliveryTaskID = nil
     }
 
     func decodeReceivedMessageForTesting(_ receivedData: Data) throws -> BLEReceivedMessage? {
@@ -1229,6 +1656,10 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
         WiFiAvatarSessionCoordinator.shared.handleDisconnected()
         BLESyncCoordinator.shared.handleOfflineSyncDisconnected()
         AppState.shared.handleCustomAvatarDeviceDisconnected()
+        linkTimeoutTask?.cancel()
+        linkTimeoutTask = nil
+        readinessTimeoutTask?.cancel()
+        readinessTimeoutTask = nil
         handshakeTimeoutTask?.cancel()
         handshakeTimeoutTask = nil
         writeCompletion?(.failure(.disconnected))
@@ -1236,8 +1667,6 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
         activeWriteID = nil
         // ACK 不跨连接；跨连接残留计数会吞掉新连接的第一个真 ACK。
         staleWriteAckFilter.reset()
-        connectCompletion?(.failure(.connectionFailed(nil)))
-        connectCompletion = nil
         securityManager.resetSession()
         // 断连必须丢弃半成品分块重组状态：链路中断时未完成的 Assembly 槽位会永久残留，
         // 累计 8 个后 assembler 槽满，所有后续 Device→App 分块消息（含 0x21 事件补传批次）被静默丢弃。
@@ -1245,6 +1674,13 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
         hasLoggedLegacyChunkHeader = false
         pendingConnectedPeripheralID = nil
         pendingConnectedPeripheralName = nil
+        connectionAttempt = nil
+        pendingAttemptFailure = nil
+        preReadyInboundBuffer.removeAll()
+        inboundDeliveryQueue.removeAll()
+        inboundDeliveryTask?.cancel()
+        inboundDeliveryTask = nil
+        inboundDeliveryTaskID = nil
         connectedPeripheral = nil
         writeCharacteristic = nil
         notifyCharacteristic = nil
@@ -1270,14 +1706,48 @@ extension BLEService: CBCentralManagerDelegate {
         Task { @MainActor in
             switch central.state {
             case .poweredOn:
-                if autoReconnectEffective, connectionState == .disconnected {
+                if reconnectAfterBluetoothPowerCycle {
+                    scheduleBluetoothPowerCycleReconnectIfPossible()
+                    return
+                }
+                if autoReconnectEffective,
+                   BLEConnectionPolicy.canBeginConnect(state: connectionState) {
+                    isIntentionalDisconnect = false
                     _ = await attemptAutoReconnect()
                 }
             case .poweredOff:
-                connectionState = .error("Bluetooth is turned off")
+                // Bluetooth power cycling owns the next recovery path. Invalidate any requested
+                // retry that is sleeping in backoff so it cannot wake and start a second connect.
+                activeConnectionRetryRoundID = nil
+                reconnectTask?.cancel()
+                reconnectTask = nil
+                if let peripheral = connectedPeripheral,
+                   connectionAttempt != nil {
+                    reconnectAfterBluetoothPowerCycle = autoReconnectEffective
+                        && !BLEShippingModeCoordinator.shared.blocksAutomaticBLEWork
+                    cancelConnectionAttempt(
+                        .bluetoothNotAvailable,
+                        peripheral: peripheral,
+                        suppressAutomaticRecovery: true
+                    )
+                } else {
+                    reconnectAfterBluetoothPowerCycle = autoReconnectEffective
+                        && lastConnectedDeviceID != nil
+                    connectionState = .error("Bluetooth is turned off")
+                }
             case .unauthorized:
+                activeConnectionRetryRoundID = nil
+                reconnectTask?.cancel()
+                reconnectTask = nil
+                reconnectAfterBluetoothPowerCycle = false
+                retryPeripheralAfterDisconnect = nil
                 connectionState = .error("Bluetooth permission denied")
             case .unsupported:
+                activeConnectionRetryRoundID = nil
+                reconnectTask?.cancel()
+                reconnectTask = nil
+                reconnectAfterBluetoothPowerCycle = false
+                retryPeripheralAfterDisconnect = nil
                 connectionState = .error("Bluetooth not supported")
             default:
                 break
@@ -1327,7 +1797,19 @@ extension BLEService: CBCentralManagerDelegate {
         // 跨外设残留回调）；同一外设的晚投递回调原理上不可分辨，见 BLEConnectionPolicy。
         let generation = MainActor.assumeIsolated { self.connectGeneration }
         Task { @MainActor in
-            guard shouldProcessCallback(generationAtDelivery: generation, peripheralID: peripheral.identifier) else { return }
+            guard shouldProcessCallback(generationAtDelivery: generation, peripheralID: peripheral.identifier),
+                  var attempt = connectionAttempt,
+                  attempt.accepts(
+                    generation: generation,
+                    peripheralID: peripheral.identifier,
+                    phase: .awaitingLink
+                  ) else { return }
+            linkTimeoutTask?.cancel()
+            linkTimeoutTask = nil
+            attempt.didEstablishLink = true
+            attempt.phase = .discoveringServices
+            connectionAttempt = attempt
+            armReadinessTimeout(generation: generation, peripheral: peripheral)
             connectedPeripheral = peripheral
             peripheral.delegate = self
             peripheral.discoverServices([KiroleBLEUUIDs.serviceUUID])
@@ -1343,9 +1825,9 @@ extension BLEService: CBCentralManagerDelegate {
         Task { @MainActor in
             // 迟到的失败回调被丢时状态留在 .disconnected（同为 idle，不锁新连接），仅损失错误文案。
             guard shouldProcessCallback(generationAtDelivery: generation, peripheralID: peripheral.identifier) else { return }
-            connectionState = .error(error?.localizedDescription ?? "Connection failed")
-            connectCompletion?(.failure(.connectionFailed(error)))
-            connectCompletion = nil
+            let failure = pendingAttemptFailure ?? .connectionFailed(error)
+            finishFailedConnectionAttempt(failure, peripheral: peripheral)
+            scheduleBluetoothPowerCycleReconnectIfPossible()
         }
     }
 
@@ -1361,6 +1843,17 @@ extension BLEService: CBCentralManagerDelegate {
             // 错误完成它的 connectCompletion，自动重连也会与在飞的新尝试打架——整体跳过。
             // 身份不符（含 cleanup 已跑完、connectedPeripheral 已空）同理。
             guard shouldProcessCallback(generationAtDelivery: generation, peripheralID: peripheral.identifier) else { return }
+            let ownsDeviceWakeRecovery = retryPeripheralAfterDisconnect?.identifier
+                == peripheral.identifier
+            if let attempt = connectionAttempt,
+               attempt.shouldFinishAsSetupFailure(
+                hasDeviceWakeRecovery: ownsDeviceWakeRecovery
+               ) {
+                let failure = pendingAttemptFailure ?? .connectionFailed(error)
+                finishFailedConnectionAttempt(failure, peripheral: peripheral)
+                scheduleBluetoothPowerCycleReconnectIfPossible()
+                return
+            }
             // v2.13: 断连不再结束专注；handleDeviceDisconnected 为空操作。
             FocusSessionService.shared.handleDeviceDisconnected()
 
@@ -1368,6 +1861,11 @@ extension BLEService: CBCentralManagerDelegate {
             let wasIntentional = isIntentionalDisconnect
             let shouldAutoReconnect = autoReconnectEffective
             let wasShippingModeActivation = isPendingShippingModeActivation
+            let wasOTAReboot = isPendingOTAReboot
+            let recoveryPeripheral = retryPeripheralAfterDisconnect.flatMap {
+                $0.identifier == peripheral.identifier ? $0 : nil
+            }
+            let shouldResumeAfterBluetoothPowerCycle = reconnectAfterBluetoothPowerCycle
 
             // Notify OTA coordinator so it can transition to awaitingReboot
             // without waiting for a 0x18 response that will never arrive.
@@ -1384,11 +1882,56 @@ extension BLEService: CBCentralManagerDelegate {
 
             cleanup()
 
-            guard BLEConnectionPolicy.shouldAutoReconnect(
+            switch BLEPostDisconnectRecoveryPolicy.owner(
+                shouldResumeAfterBluetoothPowerCycle: shouldResumeAfterBluetoothPowerCycle,
+                hasDeviceWakeRecoveryPeripheral: recoveryPeripheral != nil
+            ) {
+            case .bluetoothPowerCycle:
+                // Bluetooth power recovery supersedes the DeviceWake retry. Keep the power-cycle
+                // flag for poweredOn, but clear the one-shot peripheral so it cannot hijack a
+                // later disconnect after the pending connection succeeds.
+                retryPeripheralAfterDisconnect = nil
+                scheduleBluetoothPowerCycleReconnectIfPossible()
+                return
+            case .deviceWakeTimeout:
+                guard let recoveryPeripheral else { return }
+                retryPeripheralAfterDisconnect = nil
+                isIntentionalDisconnect = false
+                reconnectTask?.cancel()
+                connectionState = .connecting
+                reconnectTask = Task { @MainActor in
+                    try? await Task.sleep(for: BLEConnectionRetryPolicy.delay(afterFailedAttempt: 1) ?? .seconds(1))
+                    guard !Task.isCancelled,
+                          !self.isIntentionalDisconnect,
+                          self.connectionState == .connecting,
+                          !BLEShippingModeCoordinator.shared.blocksAutomaticBLEWork,
+                          let manager = self.centralManager,
+                          manager.state == .poweredOn else { return }
+                    self.connectionState = .disconnected
+                    do {
+                        try await self.connectKnownPeripheralWithRetry(
+                            recoveryPeripheral,
+                            manager: manager
+                        )
+                    } catch is CancellationError {
+                        return
+                    } catch BLEError.disconnected {
+                        return
+                    } catch {
+                        ErrorReporter.log(error, context: "BLEService.deviceWakeRecovery")
+                    }
+                }
+                return
+            case .none:
+                break
+            }
+
+            guard BLEConnectionPolicy.automaticRecoveryAction(
                 isIntentional: wasIntentional,
                 autoReconnectEnabled: shouldAutoReconnect,
-                suppressForShippingMode: wasShippingModeActivation
-            ) else { return }
+                suppressForShippingMode: wasShippingModeActivation,
+                isOTAReboot: wasOTAReboot
+            ) == .pendingKnownPeripheral else { return }
 
             // Apple 警告：不要在 didDisconnect 回调里立刻 connect（会卡 bad state），延迟后再发起。
             reconnectTask?.cancel()
@@ -1410,12 +1953,18 @@ extension BLEService: CBPeripheralDelegate {
 
         Task { @MainActor in
             guard shouldProcessCallback(generationAtDelivery: generation, peripheralID: peripheral.identifier) else { return }
+            guard connectionAttempt?.accepts(
+                generation: generation,
+                peripheralID: peripheral.identifier,
+                phase: .discoveringServices
+            ) == true else { return }
             guard error == nil,
                   let service = services?.first(where: { $0.uuid == KiroleBLEUUIDs.serviceUUID }) else {
-                connectCompletion?(.failure(.serviceNotFound))
-                connectCompletion = nil
+                cancelConnectionAttempt(.serviceNotFound, peripheral: peripheral)
                 return
             }
+
+            connectionAttempt?.phase = .discoveringCharacteristics
 
             peripheral.discoverCharacteristics(
                 [KiroleBLEUUIDs.writeCharacteristicUUID, KiroleBLEUUIDs.notifyCharacteristicUUID],
@@ -1436,9 +1985,13 @@ extension BLEService: CBPeripheralDelegate {
 
         Task { @MainActor in
             guard shouldProcessCallback(generationAtDelivery: generation, peripheralID: peripheralID) else { return }
+            guard connectionAttempt?.accepts(
+                generation: generation,
+                peripheralID: peripheralID,
+                phase: .discoveringCharacteristics
+            ) == true else { return }
             guard error == nil, let chars = characteristics else {
-                connectCompletion?(.failure(.characteristicNotFound))
-                connectCompletion = nil
+                cancelConnectionAttempt(.characteristicNotFound, peripheral: peripheral)
                 return
             }
 
@@ -1447,25 +2000,57 @@ extension BLEService: CBPeripheralDelegate {
                     writeCharacteristic = characteristic
                 } else if characteristic.uuid == KiroleBLEUUIDs.notifyCharacteristicUUID {
                     notifyCharacteristic = characteristic
-                    peripheral.setNotifyValue(true, for: characteristic)
                 }
             }
 
-            if writeCharacteristic != nil, notifyCharacteristic != nil {
+            if writeCharacteristic != nil, let notifyCharacteristic {
                 pendingConnectedPeripheralID = peripheralID
                 pendingConnectedPeripheralName = peripheralName ?? "Kirole Device"
-                Task { @MainActor in
-                    // 内层 Task 有独立调度跳变，准入需再验一次。
-                    guard self.shouldProcessCallback(generationAtDelivery: generation, peripheralID: peripheralID) else { return }
-                    if self.requiresSecureChannel {
-                        await self.startSecurityHandshake(peripheral: peripheral)
-                    } else {
-                        await self.completeSecureConnection()
-                    }
-                }
+                connectionAttempt?.phase = .enablingNotifications
+                peripheral.setNotifyValue(true, for: notifyCharacteristic)
             } else {
-                connectCompletion?(.failure(.characteristicNotFound))
-                connectCompletion = nil
+                cancelConnectionAttempt(.characteristicNotFound, peripheral: peripheral)
+            }
+        }
+    }
+
+    nonisolated public func peripheral(
+        _ peripheral: CBPeripheral,
+        didUpdateNotificationStateFor characteristic: CBCharacteristic,
+        error: Error?
+    ) {
+        let isNotifying = characteristic.isNotifying
+        let characteristicUUID = characteristic.uuid
+        let generation = MainActor.assumeIsolated { self.connectGeneration }
+
+        Task { @MainActor in
+            guard characteristicUUID == KiroleBLEUUIDs.notifyCharacteristicUUID,
+                  shouldProcessCallback(
+                    generationAtDelivery: generation,
+                    peripheralID: peripheral.identifier
+                  ),
+                  connectionAttempt?.accepts(
+                    generation: generation,
+                    peripheralID: peripheral.identifier,
+                    phase: .enablingNotifications
+                  ) == true else { return }
+
+            guard error == nil, isNotifying else {
+                let reason = error?.localizedDescription ?? "isNotifying is false"
+                cancelConnectionAttempt(
+                    .notificationSetupFailed(reason),
+                    peripheral: peripheral
+                )
+                return
+            }
+
+            readinessTimeoutTask?.cancel()
+            readinessTimeoutTask = nil
+            if requiresSecureChannel {
+                connectionAttempt?.phase = .handshaking
+                await startSecurityHandshake(peripheral: peripheral)
+            } else {
+                await completeSecureConnection()
             }
         }
     }
@@ -1526,6 +2111,11 @@ extension BLEService: CBPeripheralDelegate {
                 guard let message = try decodeReceivedMessage(receivedData) else { return }
 
                 if requiresSecureChannel, message.type == BLEDataType.securityHandshake.rawValue {
+                    guard connectionAttempt?.accepts(
+                        generation: generation,
+                        peripheralID: peripheral.identifier,
+                        phase: .handshaking
+                    ) == true else { return }
                     try securityManager.validateHandshakeResponsePayload(message.payload)
                     await completeSecureConnection()
                     return
@@ -1535,18 +2125,37 @@ extension BLEService: CBPeripheralDelegate {
                     return
                 }
 
-                await BLEEventHandler.handleReceivedPayload(message, service: self)
+                BLESyncCoordinator.shared.noteInboundMessage(
+                    type: message.type,
+                    generation: generation
+                )
+
+                guard connectionAttempt?.phase == .ready else {
+                    bufferPreReadyInboundMessage(
+                        message,
+                        generation: generation,
+                        peripheral: peripheral
+                    )
+                    return
+                }
+
+                enqueueInboundMessages([message], generation: generation)
             } catch {
                 ErrorReporter.log(error, context: "BLEService.didUpdateValueFor")
-                connectionState = .error(error.localizedDescription)
                 if requiresSecureChannel,
                    !securityManager.isSessionEstablished,
                    let peripheralID = pendingConnectedPeripheralID {
                     await deviceIdentityStore.block(peripheralID)
                 }
-                connectCompletion?(.failure(.securityHandshakeFailed(error.localizedDescription)))
-                connectCompletion = nil
-                centralManager?.cancelPeripheralConnection(peripheral)
+                if connectionAttempt?.exposesTransportErrorImmediately != true {
+                    cancelConnectionAttempt(
+                        .securityHandshakeFailed(error.localizedDescription),
+                        peripheral: peripheral
+                    )
+                } else {
+                    connectionState = .error(error.localizedDescription)
+                    centralManager?.cancelPeripheralConnection(peripheral)
+                }
             }
         }
     }

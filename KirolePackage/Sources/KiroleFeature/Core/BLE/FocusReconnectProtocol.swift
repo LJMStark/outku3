@@ -72,6 +72,7 @@ public enum FocusReconnectProtocolError: Error, Sendable, Equatable {
     case invalidEndReason(UInt8)
     case invalidResolveResult(UInt8)
     case zeroResolveID
+    case zeroFocusRevision
     case invalidTaskIdLength(Int)
     case invalidTaskId
     case trailingBytes(Int)
@@ -197,6 +198,29 @@ public struct OfflineFocusResolve: Sendable, Equatable {
             bottles: bottles
         )
     }
+
+    func replacingFocusRevision(_ focusRevision: UInt32) -> OfflineFocusResolve {
+        OfflineFocusResolve(
+            resolveID: resolveID,
+            sessionId: sessionId,
+            focusState: focusState,
+            result: result,
+            startTimestamp: startTimestamp,
+            endTimestamp: endTimestamp,
+            elapsedSeconds: elapsedSeconds,
+            focusRevision: focusRevision,
+            phase: phase,
+            bottles: bottles
+        )
+    }
+
+    var revisionFingerprint: Data {
+        // FocusRevision is the allocated version. ResolveID stays in the frozen-content identity:
+        // after a process restart, a new ResolveID must receive a new revision instead of sending
+        // different wire bytes under the revision reserved by the interrupted attempt.
+        let normalized = replacingFocusRevision(1)
+        return (try? FocusReconnectCodec.encode(normalized)) ?? Data()
+    }
 }
 
 public enum FocusReconnectCodec {
@@ -207,6 +231,9 @@ public enum FocusReconnectCodec {
 
     public static func encode(_ resolve: OfflineFocusResolve) throws -> Data {
         guard resolve.resolveID != 0 else { throw FocusReconnectProtocolError.zeroResolveID }
+        guard resolve.focusRevision != 0 else {
+            throw FocusReconnectProtocolError.zeroFocusRevision
+        }
         var payload = Data([0x06])
         payload.appendBigEndian(resolve.resolveID)
         payload.append(resolve.sessionId.bytes)
@@ -269,7 +296,7 @@ public enum FocusReconnectCodec {
             throw FocusReconnectProtocolError.invalidEndReason(endReasonByte)
         }
 
-        return OfflineFocusState(
+        let state = OfflineFocusState(
             focusRevision: payload.bigEndianUInt32(at: 1),
             bootSessionID: payload.bigEndianUInt32(at: 5),
             sessionId: FocusSessionId.read(from: payload, at: 9),
@@ -282,6 +309,10 @@ public enum FocusReconnectCodec {
             lastOperationID: payload.bigEndianUInt32(at: 32 + taskIdLength),
             endReason: endReason
         )
+        guard state.focusRevision != 0 || state.isMeaninglessIdleSnapshot else {
+            throw FocusReconnectProtocolError.zeroFocusRevision
+        }
+        return state
     }
 }
 

@@ -114,6 +114,37 @@ struct BLEDeviceWakeSyncDeduplicationTests {
         #expect(request.hardwareWakeDate == fixture.deviceWakeDate)
     }
 
+    @Test("A DeviceWake arriving during cancellation cleanup survives the cancelled sync")
+    func cancellationCleanupQueuesLateWake() throws {
+        let fixture = try Self.loadFixture()
+        var state = BLEDeviceWakeSyncState()
+
+        let started = state.beginSync(
+            force: false,
+            hardwareWakeDate: nil,
+            taskActionBlocked: false
+        )
+        #expect(started)
+
+        // Cancellation closes the merge window before its first await. A DeviceWake delivered
+        // during the await must become a pending forced sync, not merge into the cancelled run.
+        state.closeDeviceWakeMergeWindow()
+        #expect(!state.activeSyncHadMergedWake)
+        #expect(state.handleDeviceWake(
+            at: fixture.deviceWakeDate,
+            taskActionBlocked: false
+        ) == .enqueueForcedSync)
+
+        state.finishActiveSync(
+            transactionCommitted: false,
+            retryMergedWake: false
+        )
+        let pendingRequest = state.reservePendingSyncIfPossible(taskActionBlocked: false)
+        let request = try #require(pendingRequest)
+        #expect(request.force)
+        #expect(request.hardwareWakeDate == fixture.deviceWakeDate)
+    }
+
     @Test("DeviceWake reserves a dedicated active sync while the coordinator is idle")
     func idleCoordinatorStartsDedicatedWakeSync() throws {
         let fixture = try Self.loadFixture()

@@ -41,6 +41,12 @@ public final class BLESyncCoordinator {
     /// every wake admitted before that close so focus/interruption state cannot miss the transaction.
     private var deviceWakeProcessingCount = 0
     private var deviceWakeProcessingWaiters: [CheckedContinuation<Void, Never>] = []
+    private var deviceWakeTasks: [UUID: Task<Void, Never>] = [:]
+    private var activePerformSyncOwnerID: UUID?
+    private let deviceWakeBarrier = BLEDeviceWakeBarrier()
+    private var deviceWakeFocusFreezeLease: FocusStatusFreezeLease?
+    private var offlineFocusFreezeLease: FocusStatusFreezeLease?
+    private(set) var focusReconciledConnectionGeneration: UInt64?
     private var deferredFocusSessionEndDisplay: DeferredFocusSessionEndDisplay?
     /// Set only while the frozen payloads used by the current 0x25 transaction are being built.
     /// It becomes durable sync metadata only after the device returns RESULT=COMMITTED.
@@ -79,7 +85,77 @@ public final class BLESyncCoordinator {
     }
 
     func handleOfflineSyncDisconnected() {
+        cancelDeviceWakeTasks()
+        if activePerformSyncOwnerID == nil {
+            syncState.resetForDisconnectedConnection()
+        }
         offlineSyncCoordinator.handleDisconnected()
+        focusReconciledConnectionGeneration = nil
+        releaseFocusFreezeLeases()
+    }
+
+    func prepareForConnectionGeneration(_ generation: UInt64) {
+        cancelDeviceWakeTasks()
+        if activePerformSyncOwnerID == nil {
+            syncState.resetForDisconnectedConnection()
+        }
+        deviceWakeBarrier.prepare(generation: generation)
+        offlineSyncCoordinator.preparePreRunInboundCapture()
+        focusReconciledConnectionGeneration = nil
+    }
+
+    func noteInboundMessage(type: UInt8, generation: UInt64) {
+        guard type == EventLogType.deviceWake.rawByte else { return }
+        deviceWakeBarrier.observe(generation: generation)
+    }
+
+    func connectionDidBecomeReady(generation: UInt64, service: BLEService) {
+        guard service.isReadyConnectionGeneration(generation) else { return }
+        deviceWakeBarrier.armWatchdog(generation: generation, timeout: .seconds(5)) { [weak service] in
+            guard let service,
+                  service.isReadyConnectionGeneration(generation) else { return }
+            service.disconnectAndRetryAfterDeviceWakeTimeout()
+        }
+    }
+
+    func cancelDeviceWakeReadinessWatchdog(generation: UInt64) {
+        deviceWakeBarrier.cancelWatchdog(generation: generation)
+    }
+
+    func isFocusReconciled(generation: UInt64) -> Bool {
+        focusReconciledConnectionGeneration == generation
+    }
+
+    private func acquireDeviceWakeFocusFreezeIfNeeded() {
+        guard deviceWakeFocusFreezeLease == nil else { return }
+        deviceWakeFocusFreezeLease = FocusSessionService.shared.acquireFocusStatusFreeze()
+    }
+
+    private func acquireOfflineFocusFreezeIfNeeded() {
+        guard offlineFocusFreezeLease == nil else { return }
+        offlineFocusFreezeLease = FocusSessionService.shared.acquireFocusStatusFreeze()
+    }
+
+    private func releaseOfflineFocusFreezeLease() {
+        guard let lease = offlineFocusFreezeLease else { return }
+        FocusSessionService.shared.releaseFocusStatusFreeze(lease)
+        offlineFocusFreezeLease = nil
+    }
+
+    private func releaseFocusFreezeLeases() {
+        releaseOfflineFocusFreezeLease()
+        if let lease = deviceWakeFocusFreezeLease {
+            FocusSessionService.shared.releaseFocusStatusFreeze(lease)
+            deviceWakeFocusFreezeLease = nil
+        }
+    }
+
+    private func currentReadyGenerationForCancellation(
+        transactionGeneration: UInt64?
+    ) -> UInt64? {
+        let candidate = transactionGeneration ?? bleService.currentConnectionGeneration
+        guard bleService.isReadyConnectionGeneration(candidate) else { return nil }
+        return candidate
     }
 
     func deferFocusSessionEndHardwareDisplay(newlyUnlocked: [String], now: Date) {
@@ -169,29 +245,34 @@ public final class BLESyncCoordinator {
                     return UInt32(clamping: Int(startOfTomorrow.timeIntervalSince1970) - 1)
                 },
                 makeResolveID: makeResolveID,
-                freezeFocusStatus: {
-                    FocusSessionService.shared.isFocusStatusPushFrozen = true
+                freezeFocusStatus: { [weak self] in
+                    self?.acquireOfflineFocusFreezeIfNeeded()
                 },
                 unfreezeFocusStatus: {
-                    FocusSessionService.shared.isFocusStatusPushFrozen = false
+                    // BLESyncCoordinator owns the lease through write-gate release and the
+                    // authoritative post-COMMITTED restore. The protocol helper may finish its
+                    // waiter here, but it must not unfreeze ordinary 0x14 yet.
                 },
                 previewFocusState: { state in
-                    await FocusSessionService.shared.applyReconnectPreview(state)
+                    try await FocusSessionService.shared.applyReconnectPreview(state)
                 },
                 resolveFocus: { state in
-                    await FocusSessionService.shared.resolveReconnect(
+                    try await FocusSessionService.shared.resolveReconnect(
                         state,
                         resolveID: makeResolveID()
                     )
                 },
                 restoreOrdinaryFocusSync: { snapshot, resolve in
-                    await FocusSessionService.shared.restoreOrdinaryFocusSyncAfterResolve(
+                    try await FocusSessionService.shared.restoreOrdinaryFocusSyncAfterResolve(
                         snapshot,
                         resolve: resolve
                     )
                 },
                 abandonPendingFocusResolve: {
                     FocusSessionService.shared.abandonPendingReconnect()
+                },
+                invalidatePendingFocusResolve: {
+                    FocusSessionService.shared.invalidatePendingReconnectAfterInvalidState()
                 }
             )
         )
@@ -273,12 +354,19 @@ public final class BLESyncCoordinator {
         throw BLEError.staleTaskSnapshot
     }
 
-    func performDeviceWakeSync(
+    private func performDeviceWakeSync(
         _ eventLog: EventLog,
-        service: BLEService
+        service: BLEService,
+        generation: UInt64
     ) async {
-        // WeChat 1.3.0 §4: lock ordinary 0x14 on DeviceWake, before any other write path.
-        FocusSessionService.shared.isFocusStatusPushFrozen = true
+        guard !Task.isCancelled,
+              service.isReadyConnectionGeneration(generation) else { return }
+        noteInboundMessage(
+            type: EventLogType.deviceWake.rawByte,
+            generation: generation
+        )
+        // Freeze ordinary 0x14 before any DeviceWake side effect or write can suspend.
+        acquireDeviceWakeFocusFreezeIfNeeded()
         let decision = syncState.handleDeviceWake(
             at: eventLog.timestamp,
             taskActionBlocked: taskActionPresentationCount > 0
@@ -287,14 +375,23 @@ public final class BLESyncCoordinator {
         switch decision {
         case .mergeIntoActiveSync:
             beginDeviceWakeProcessing()
-            await processDeviceWake(eventLog, service: service)
+            _ = await processDeviceWake(
+                eventLog,
+                service: service,
+                generation: generation
+            )
             finishDeviceWakeProcessing()
             return
 
         case .enqueueForcedSync:
             beginDeviceWakeProcessing()
-            await processDeviceWake(eventLog, service: service)
+            let isCurrent = await processDeviceWake(
+                eventLog,
+                service: service,
+                generation: generation
+            )
             finishDeviceWakeProcessing()
+            guard isCurrent else { return }
             schedulePendingSyncIfPossible()
             return
 
@@ -305,10 +402,19 @@ public final class BLESyncCoordinator {
         // DeviceWake must reserve the message boundary before generic event logging, inventory
         // reconciliation, or any other await can let a live 0x14/0x17/0x1B write run first.
         do {
+            guard !Task.isCancelled,
+                  service.isReadyConnectionGeneration(generation) else {
+                finishActiveSyncReservation(transactionCommitted: false, retryMergedWake: false)
+                return
+            }
             try await bleService.beginOfflineSyncWriteSession()
         } catch {
             beginDeviceWakeProcessing()
-            await processDeviceWake(eventLog, service: service)
+            _ = await processDeviceWake(
+                eventLog,
+                service: service,
+                generation: generation
+            )
             finishDeviceWakeProcessing()
             lastSyncSucceeded = false
             bleService.lastSyncFailed = true
@@ -321,15 +427,56 @@ public final class BLESyncCoordinator {
             return
         }
 
+        guard !Task.isCancelled,
+              service.isReadyConnectionGeneration(generation) else {
+            await bleService.endOfflineSyncWriteSession()
+            finishActiveSyncReservation(transactionCommitted: false, retryMergedWake: false)
+            return
+        }
+
         beginDeviceWakeProcessing()
-        await processDeviceWake(eventLog, service: service)
+        let isCurrent = await processDeviceWake(
+            eventLog,
+            service: service,
+            generation: generation
+        )
         finishDeviceWakeProcessing()
+        guard isCurrent else {
+            await bleService.endOfflineSyncWriteSession()
+            finishActiveSyncReservation(transactionCommitted: false, retryMergedWake: false)
+            return
+        }
         await performSync(
             force: true,
             hardwareWakeDate: eventLog.timestamp,
             preacquiredOfflineWriteSession: true,
             activeSyncReservationAlreadyHeld: true
         )
+    }
+
+    /// DeviceWake starts an OfflineSync transaction that waits for later 0x25 notifications.
+    /// Detaching that transaction from the serial inbound delivery pump lets buffered STATE /
+    /// FOCUS_STATE / OP_BATCH messages continue feeding the waiter without reordering them.
+    func enqueueDeviceWakeSync(
+        _ eventLog: EventLog,
+        service: BLEService,
+        generation: UInt64
+    ) {
+        let taskID = UUID()
+        deviceWakeTasks[taskID] = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.performDeviceWakeSync(
+                eventLog,
+                service: service,
+                generation: generation
+            )
+            self.deviceWakeTasks[taskID] = nil
+        }
+    }
+
+    private func cancelDeviceWakeTasks() {
+        deviceWakeTasks.values.forEach { $0.cancel() }
+        deviceWakeTasks.removeAll()
     }
 
     public func performSync(force: Bool = false, hardwareWakeDate: Date? = nil) async {
@@ -358,6 +505,10 @@ public final class BLESyncCoordinator {
                 taskActionBlocked: taskActionPresentationCount > 0
             ) else { return }
         }
+        let syncOwnerID = UUID()
+        precondition(activePerformSyncOwnerID == nil)
+        activePerformSyncOwnerID = syncOwnerID
+        acquireOfflineFocusFreezeIfNeeded()
         var transactionCommitted = false
         var retryMergedWakeOnFailure = true
         defer {
@@ -365,6 +516,9 @@ public final class BLESyncCoordinator {
                 transactionCommitted: transactionCommitted,
                 retryMergedWake: retryMergedWakeOnFailure
             )
+            if activePerformSyncOwnerID == syncOwnerID {
+                activePerformSyncOwnerID = nil
+            }
         }
 
         // Own the complete-message boundary before the first await after accepting this sync.
@@ -375,7 +529,7 @@ public final class BLESyncCoordinator {
                 try await bleService.beginOfflineSyncWriteSession()
                 ownsOfflineWriteSession = true
             } catch {
-                FocusSessionService.shared.isFocusStatusPushFrozen = false
+                releaseFocusFreezeLeases()
                 lastSyncSucceeded = false
                 bleService.lastSyncFailed = true
                 ErrorReporter.log(
@@ -432,34 +586,15 @@ public final class BLESyncCoordinator {
             force: effectiveForce,
             hasPriorityCustomAvatarOperation: hasPriorityCustomAvatarOperation
         ) else {
-            FocusSessionService.shared.isFocusStatusPushFrozen = false
             await bleService.endOfflineSyncWriteSession()
             ownsOfflineWriteSession = false
+            releaseFocusFreezeLeases()
             return
         }
 
-        let timeoutTask = Task { @MainActor in
-            try? await Task.sleep(for: .seconds(self.connectionTimeoutSeconds))
-            guard !Task.isCancelled else { return }
-            // 最坏 0x15 KRI 约 2.24MB / 4472 片，限流下需 4–5 分钟。
-            // 30s 超时到点先等它结束，否则同步收尾会主动提前掐断每次头像传输。
-            while !Task.isCancelled,
-                  self.policy.shouldHoldConnectionForCustomAvatar(
-                    chunkedTransferInFlight: self.bleService.isChunkedTransferInFlight,
-                    operationState: appState.customAvatarOperationState
-                  ) {
-                try? await Task.sleep(for: .seconds(5))
-            }
-            guard !Task.isCancelled else { return }
-            // 硬件调试需要长连接时不因超时主动断连。
-            if self.bleService.connectionState.isConnected,
-               !self.bleService.shouldKeepConnectionOpenForDebug,
-               !self.offlineSyncCoordinator.requiresBLEConnection,
-               self.taskActionPresentationCount == 0 {
-                self.bleService.disconnect()
-            }
-        }
-        defer { timeoutTask.cancel() }
+        var timeoutTask: Task<Void, Never>?
+        defer { timeoutTask?.cancel() }
+        var transactionGeneration: UInt64?
 
         stagedDayPackFingerprint = nil
         stagedTaskStateVersion = nil
@@ -474,26 +609,66 @@ public final class BLESyncCoordinator {
             // keep-alive 模式下连接可能仍保持。已连接就跳过连接步骤——否则 connectKnownPeripheral 会因
             // canBeginConnect=false 抛 .connectionInProgress，导致首次同步后每轮同步/补传全部失败。
             if !bleService.connectionState.isConnected {
-                // Connect with retry: 3 attempts, 1s/2s/4s backoff
-                var connected = false
-                var lastConnectError: Error?
-                for attempt in 0..<3 {
-                    do {
-                        try await bleService.connectToPreferredDevice(timeout: 10)
-                        connected = true
-                        break
-                    } catch {
-                        lastConnectError = error
-                        #if DEBUG
-                        print("[BLESyncCoordinator] Connect attempt \(attempt + 1)/3 failed: \(error.localizedDescription)")
-                        #endif
-                        if attempt < 2 {
-                            try? await Task.sleep(for: .seconds(Double(1 << attempt)))
-                        }
-                    }
+                try await bleService.connectToPreferredDevice(timeout: 10)
+            }
+
+            let generation = bleService.currentConnectionGeneration
+            transactionGeneration = generation
+            let didObserveDeviceWake: Bool
+            do {
+                didObserveDeviceWake = try await deviceWakeBarrier.wait(
+                    generation: generation,
+                    timeout: .seconds(5)
+                )
+            } catch is CancellationError {
+                // Caller cancellation while this run is only waiting for DeviceWake must release
+                // its reservation immediately. It is not a protocol timeout and must not start a
+                // recovery round.
+                syncState.closeDeviceWakeMergeWindow()
+                let retainsReadyConnection = currentReadyGenerationForCancellation(
+                    transactionGeneration: transactionGeneration
+                ) != nil
+                retryMergedWakeOnFailure = retainsReadyConnection
+                    && syncState.activeSyncHadMergedWake
+                if ownsOfflineWriteSession {
+                    await bleService.endOfflineSyncWriteSession()
+                    ownsOfflineWriteSession = false
                 }
-                // 保留底层原因：connectionFailed(error) 的描述会带上 underlying，外层 catch 即可在 Release 看到。
-                guard connected else { throw BLEError.connectionFailed(lastConnectError) }
+                if retainsReadyConnection {
+                    // This task owns only the OfflineSync lease. A DeviceWake delivered during
+                    // gate cleanup owns its separate lease until the forced run finishes.
+                    releaseOfflineFocusFreezeLease()
+                } else {
+                    releaseFocusFreezeLeases()
+                }
+                return
+            }
+            guard didObserveDeviceWake else {
+                if deviceWakeBarrier.claimTimeoutRecovery(generation: generation) {
+                    bleService.disconnectAndRetryAfterDeviceWakeTimeout()
+                }
+                throw BLEError.deviceWakeTimeout
+            }
+
+            // The 30-second sync watchdog starts only after link, GATT, Notify and DeviceWake are
+            // ready. It can no longer consume the first connection's readiness budget.
+            timeoutTask = Task { @MainActor in
+                try? await Task.sleep(for: .seconds(self.connectionTimeoutSeconds))
+                guard !Task.isCancelled else { return }
+                while !Task.isCancelled,
+                      self.policy.shouldHoldConnectionForCustomAvatar(
+                        chunkedTransferInFlight: self.bleService.isChunkedTransferInFlight,
+                        operationState: appState.customAvatarOperationState
+                      ) {
+                    try? await Task.sleep(for: .seconds(5))
+                }
+                guard !Task.isCancelled else { return }
+                if self.bleService.connectionState.isConnected,
+                   !self.bleService.shouldKeepConnectionOpenForDebug,
+                   !self.offlineSyncCoordinator.requiresBLEConnection,
+                   self.taskActionPresentationCount == 0 {
+                    self.bleService.disconnectIfCurrentGeneration(generation)
+                }
             }
 
             // Firmware 1.3.1: Time -> QUERY/STATE -> FOCUS_STATE -> OP_BATCH ->
@@ -518,6 +693,14 @@ public final class BLESyncCoordinator {
             transactionCommitted = true
             await bleService.endOfflineSyncWriteSession()
             ownsOfflineWriteSession = false
+            focusReconciledConnectionGeneration = generation
+            if completion.didResolveFocus {
+                await FocusSessionService.shared.restoreOrdinaryFocusBLEAfterReconnect {
+                    self.releaseFocusFreezeLeases()
+                }
+            } else {
+                releaseFocusFreezeLeases()
+            }
 
             if completion.didCommitDatasets {
                 guard let committedFingerprint = stagedDayPackFingerprint,
@@ -576,6 +759,29 @@ public final class BLESyncCoordinator {
             }
             await appState.flushPriorityCustomAvatarOperationIfNeeded()
             await appState.flushPendingCustomCompanionPushIfNeeded()
+        } catch is CancellationError {
+            // Caller cancellation is not a transport failure. In particular, a cancelled task
+            // from an older generation must never tear down a newer ready connection.
+            // Close the merge window before the first await. A DeviceWake delivered during gate
+            // cleanup will then enqueue its own forced run instead of disappearing into this one.
+            syncState.closeDeviceWakeMergeWindow()
+            let retainsReadyConnection = currentReadyGenerationForCancellation(
+                transactionGeneration: transactionGeneration
+            ) != nil
+            retryMergedWakeOnFailure = retainsReadyConnection
+                && syncState.activeSyncHadMergedWake
+            if ownsOfflineWriteSession {
+                await bleService.endOfflineSyncWriteSession()
+                ownsOfflineWriteSession = false
+            }
+            if retainsReadyConnection {
+                // Keep a DeviceWake-owned lease, if any, but never leak this cancelled run's
+                // OfflineSync lease when no wake arrives.
+                releaseOfflineFocusFreezeLease()
+            } else {
+                releaseFocusFreezeLeases()
+            }
+            return
         } catch {
             lastSyncSucceeded = false
             bleService.lastSyncFailed = true
@@ -586,7 +792,12 @@ public final class BLESyncCoordinator {
             // this connection could satisfy the next run. Reset the BLE generation before any
             // retry so old notifications cannot cross the boundary, even during Focus/debug.
             if !transactionCommitted, bleService.connectionState.isConnected {
-                bleService.disconnect()
+                if case BLEError.deviceWakeTimeout = error {
+                    // Recovery was claimed exactly once by the DeviceWake barrier, either by the
+                    // ready watchdog or by the waiter that reached the same deadline first.
+                } else if let transactionGeneration {
+                    bleService.disconnectIfCurrentGeneration(transactionGeneration)
+                }
             }
             if !transactionCommitted {
                 // A deferred idle/scene frame belongs only to this transaction's OP_BATCH. The
@@ -597,6 +808,9 @@ public final class BLESyncCoordinator {
             if ownsOfflineWriteSession {
                 await bleService.endOfflineSyncWriteSession()
                 ownsOfflineWriteSession = false
+            }
+            if !bleService.connectionState.isConnected {
+                releaseFocusFreezeLeases()
             }
             // 整轮同步失败的最终兜底——必须无条件上报。否则 Release/TestFlight 包（硬件团队拿的就是它）
             // 下 #if DEBUG 被裁剪，sync 失败彻底静默，硬件团队无法区分“没触发同步”和“同步失败了”。
@@ -628,7 +842,9 @@ public final class BLESyncCoordinator {
             chunkedTransferInFlight: bleService.isChunkedTransferInFlight,
             operationState: appState.customAvatarOperationState
            ) {
-            bleService.disconnect()
+            if let transactionGeneration {
+                bleService.disconnectIfCurrentGeneration(transactionGeneration)
+            }
         }
     }
 
@@ -680,7 +896,13 @@ public final class BLESyncCoordinator {
         }
     }
 
-    private func processDeviceWake(_ eventLog: EventLog, service: BLEService) async {
+    private func processDeviceWake(
+        _ eventLog: EventLog,
+        service: BLEService,
+        generation: UInt64
+    ) async -> Bool {
+        guard !Task.isCancelled,
+              service.isReadyConnectionGeneration(generation) else { return false }
         if let firmware = eventLog.firmwareVersion {
             service.deviceFirmwareVersion = firmware
         }
@@ -692,11 +914,18 @@ public final class BLESyncCoordinator {
                 byteLength: inventory.byteLength,
                 reportedCRC32: inventory.crc32
             )
+            guard !Task.isCancelled,
+                  service.isReadyConnectionGeneration(generation) else { return false }
         }
         _ = await BLEEventHandler.processEventLogs([eventLog], service: service)
+        guard !Task.isCancelled,
+              service.isReadyConnectionGeneration(generation) else { return false }
         let appState = AppState.shared
         await appState.ensureInitialLoadComplete()
+        guard !Task.isCancelled,
+              service.isReadyConnectionGeneration(generation) else { return false }
         await appState.recordHardwareWakeActivity(now: eventLog.timestamp)
+        return !Task.isCancelled && service.isReadyConnectionGeneration(generation)
     }
 
     func waitForActiveSyncToFinish() async {

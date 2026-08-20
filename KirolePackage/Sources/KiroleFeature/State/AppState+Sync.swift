@@ -726,6 +726,10 @@ extension AppState {
             guard !Task.isCancelled else { return }
             let effectiveForce = pendingBLESyncForce
             pendingBLESyncForce = false
+            // This slot only owns the debounce delay. Once the sync starts, later requests are
+            // merged by BLESyncCoordinator instead of cancelling an in-flight connection or
+            // OfflineSync transaction through this stale task handle.
+            pendingBLESyncTask = nil
             #if DEBUG
             print("[AppState.requestBLESync] firing performSync (reason=\(reason), force=\(effectiveForce))")
             #endif

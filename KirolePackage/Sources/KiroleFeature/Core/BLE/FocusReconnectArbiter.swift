@@ -56,7 +56,10 @@ public enum FocusReconnectArbiter {
         resolveID: UInt32,
         now: Date = Date()
     ) -> FocusReconnectDecision {
-        let revision = max(app.currentRevision, device.focusRevision) &+ 1
+        let revisionFloor = max(app.currentRevision, device.focusRevision)
+        // The durable ledger replaces this candidate before transmission. Saturating here keeps
+        // the pure decision total; the ledger then rejects a changed verdict at UInt32.max.
+        let revision = revisionFloor == .max ? .max : revisionFloor + 1
         let matchedActive = matchingSession(device.sessionId, in: app.active.map { [$0] } ?? [])
         let matchedHistory = matchingSession(device.sessionId, in: app.history)
 

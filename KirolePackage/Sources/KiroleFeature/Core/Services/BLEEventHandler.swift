@@ -30,7 +30,8 @@ public enum BLEEventHandler {
         _ message: BLEReceivedMessage,
         service: BLEService,
         wifiDebugCoordinator: BLEWiFiDebugCoordinator = .shared,
-        wifiAvatarSessionCoordinator: WiFiAvatarSessionCoordinator = .shared
+        wifiAvatarSessionCoordinator: WiFiAvatarSessionCoordinator = .shared,
+        connectionGeneration: UInt64? = nil
     ) async {
         // OfflineSync is a connection-scoped request/response transaction, not an EventLog.
         // Route it before 0x21 and generic event parsing so STATE/OP_BATCH/RESULT can resume the
@@ -82,7 +83,11 @@ public enum BLEEventHandler {
         }
 
         if eventLog.eventType == .deviceWake {
-            await BLESyncCoordinator.shared.performDeviceWakeSync(eventLog, service: service)
+            BLESyncCoordinator.shared.enqueueDeviceWakeSync(
+                eventLog,
+                service: service,
+                generation: connectionGeneration ?? service.currentConnectionGeneration
+            )
             return
         }
 
@@ -252,7 +257,6 @@ public enum BLEEventHandler {
             )
             Task { @MainActor in
                 guard FocusSessionService.shared.activeSession == nil else { return }
-                FocusSessionService.shared.lastAppliedFocusRevision &+= 1
                 await AppState.shared.syncFocusHardwareDisplay(session: nil)
             }
             return

@@ -123,6 +123,7 @@ struct BuildSecretsLeakTests {
         #expect(AppSecrets.tickTickOAuthEnabled)
     }
 
+    #if os(macOS)
     @Test("Build secrets generator restores the Todoist HTTPS metadata client ID")
     func todoistMetadataURLSurvivesXCConfigCommentParsing() throws {
         let fileManager = FileManager.default
@@ -219,6 +220,7 @@ struct BuildSecretsLeakTests {
         #expect(generated.contains("static let microsoftOAuthEnabled = \"0\" == \"1\""))
         #expect(generated.contains("static let todoistOAuthEnabled = \"0\" == \"1\""))
     }
+    #endif
 
     private func repositoryRootURL() -> URL {
         URL(fileURLWithPath: #filePath)

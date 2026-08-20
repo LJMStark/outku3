@@ -93,6 +93,11 @@ struct BLEDeviceWakeSyncState {
         return pendingRequest
     }
 
+    mutating func resetForDisconnectedConnection() {
+        activeSync = nil
+        pendingRequest = nil
+    }
+
     private func latestDate(_ existing: Date?, _ candidate: Date?) -> Date? {
         switch (existing, candidate) {
         case let (existing?, candidate?):

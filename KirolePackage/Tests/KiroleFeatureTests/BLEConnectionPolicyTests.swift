@@ -40,6 +40,60 @@ struct BLEConnectionPolicyTests {
         #expect(!BLEConnectionPolicy.canBeginConnect(state: .connected))
     }
 
+    @Test("requested connect cannot publish after identity await loses ownership")
+    func requestedConnectPostAwaitAdmission() {
+        #expect(BLEConnectionPolicy.canInstallRequestedAttempt(
+            startingGeneration: 7,
+            currentGeneration: 7,
+            state: .connecting,
+            isIntentionalDisconnect: false,
+            taskCancelled: false
+        ))
+        #expect(!BLEConnectionPolicy.canInstallRequestedAttempt(
+            startingGeneration: 7,
+            currentGeneration: 8,
+            state: .connecting,
+            isIntentionalDisconnect: false,
+            taskCancelled: false
+        ))
+        #expect(!BLEConnectionPolicy.canInstallRequestedAttempt(
+            startingGeneration: 7,
+            currentGeneration: 7,
+            state: .disconnected,
+            isIntentionalDisconnect: true,
+            taskCancelled: false
+        ))
+        #expect(!BLEConnectionPolicy.canInstallRequestedAttempt(
+            startingGeneration: 7,
+            currentGeneration: 7,
+            state: .connecting,
+            isIntentionalDisconnect: false,
+            taskCancelled: true
+        ))
+    }
+
+    @Test("pending reconnect rechecks Bluetooth power after identity awaits")
+    func pendingReconnectPostAwaitAdmission() {
+        #expect(BLEConnectionPolicy.canBeginPendingReconnectAfterAwait(
+            state: .disconnected,
+            managerPoweredOn: true,
+            isIntentionalDisconnect: false,
+            taskCancelled: false
+        ))
+        #expect(!BLEConnectionPolicy.canBeginPendingReconnectAfterAwait(
+            state: .error("Bluetooth is turned off"),
+            managerPoweredOn: false,
+            isIntentionalDisconnect: false,
+            taskCancelled: false
+        ))
+        #expect(!BLEConnectionPolicy.canBeginPendingReconnectAfterAwait(
+            state: .disconnected,
+            managerPoweredOn: true,
+            isIntentionalDisconnect: true,
+            taskCancelled: false
+        ))
+    }
+
     @Test("a connecting candidate never replaces the last successfully connected device")
     func lastKnownDeviceIgnoresConnectingCandidate() {
         let lastConnected = UUID()
@@ -79,6 +133,22 @@ struct BLEConnectionPolicyTests {
             autoReconnectEnabled: true,
             suppressForShippingMode: true
         ))
+    }
+
+    @Test("OTA reboot keeps the existing known-peripheral pending reconnect")
+    func otaRebootKeepsPendingReconnectUntilItHasADedicatedOwner() {
+        #expect(BLEConnectionPolicy.automaticRecoveryAction(
+            isIntentional: false,
+            autoReconnectEnabled: true,
+            suppressForShippingMode: false,
+            isOTAReboot: true
+        ) == .pendingKnownPeripheral)
+        #expect(BLEConnectionPolicy.automaticRecoveryAction(
+            isIntentional: false,
+            autoReconnectEnabled: true,
+            suppressForShippingMode: true,
+            isOTAReboot: true
+        ) == .none)
     }
 
     @Test("WiFi debug keeps BLE open even when generic keep-alive is off")
