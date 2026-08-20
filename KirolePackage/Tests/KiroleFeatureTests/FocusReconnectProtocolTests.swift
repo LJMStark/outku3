@@ -68,6 +68,53 @@ struct FocusReconnectProtocolTests {
         #expect(payload[32] == 0)
     }
 
+    @Test("All-zero idle FOCUS_STATE is a meaningless snapshot")
+    func meaninglessIdleSnapshot() {
+        #expect(FocusWireFixtures.idleZeroFocusState().isMeaninglessIdleSnapshot)
+        #expect(FocusWireFixtures.focusState().isMeaninglessIdleSnapshot == false)
+        let idleWithRevision = FocusWireFixtures.focusState(
+            sessionId: .idle,
+            focusState: .idle,
+            taskID: "",
+            start: 0,
+            elapsed: 0,
+            lastOperationID: 0
+        )
+        #expect(idleWithRevision.isMeaninglessIdleSnapshot == false)
+    }
+
+    @Test("FOCUS_RESOLVE payload equality ignores ResolveID")
+    func resolvePayloadEqualityIgnoresResolveID() {
+        let first = OfflineFocusResolve(
+            resolveID: 1,
+            sessionId: FocusWireFixtures.sessionId,
+            focusState: .active,
+            result: .accepted,
+            startTimestamp: 1_700_000_000,
+            endTimestamp: 0,
+            elapsedSeconds: 120,
+            focusRevision: 4,
+            phase: .building,
+            bottles: 0
+        )
+        let sameVerdict = first.replacingResolveID(99)
+        let differentElapsed = OfflineFocusResolve(
+            resolveID: 1,
+            sessionId: FocusWireFixtures.sessionId,
+            focusState: .active,
+            result: .accepted,
+            startTimestamp: 1_700_000_000,
+            endTimestamp: 0,
+            elapsedSeconds: 400,
+            focusRevision: 4,
+            phase: .building,
+            bottles: 0
+        )
+        #expect(first.matchesPayload(of: sameVerdict))
+        #expect(first.matchesPayload(of: differentElapsed) == false)
+        #expect(sameVerdict.resolveID == 99)
+    }
+
     @Test("FOCUS_RESOLVE rejects a zero ResolveID")
     func focusResolveRejectsZeroID() {
         let resolve = OfflineFocusResolve(

@@ -44,6 +44,7 @@ public final class BLEOfflineSyncCoordinator {
         OfflineFocusState,
         OfflineFocusResolve
     ) async -> Void
+    public typealias AbandonPendingFocusResolve = @MainActor @Sendable () -> Void
 
     public struct Dependencies: Sendable {
         public let synchronizeTime: SynchronizeTime
@@ -61,6 +62,7 @@ public final class BLEOfflineSyncCoordinator {
         public let previewFocusState: PreviewFocus
         public let resolveFocus: ResolveFocus
         public let restoreOrdinaryFocusSync: RestoreOrdinaryFocusSync
+        public let abandonPendingFocusResolve: AbandonPendingFocusResolve
 
         public init(
             synchronizeTime: @escaping SynchronizeTime,
@@ -90,7 +92,8 @@ public final class BLEOfflineSyncCoordinator {
                     bottles: 0
                 )
             },
-            restoreOrdinaryFocusSync: @escaping RestoreOrdinaryFocusSync = { _, _ in }
+            restoreOrdinaryFocusSync: @escaping RestoreOrdinaryFocusSync = { _, _ in },
+            abandonPendingFocusResolve: @escaping AbandonPendingFocusResolve = {}
         ) {
             self.synchronizeTime = synchronizeTime
             self.sendCommand = sendCommand
@@ -107,6 +110,7 @@ public final class BLEOfflineSyncCoordinator {
             self.previewFocusState = previewFocusState
             self.resolveFocus = resolveFocus
             self.restoreOrdinaryFocusSync = restoreOrdinaryFocusSync
+            self.abandonPendingFocusResolve = abandonPendingFocusResolve
         }
     }
 
@@ -146,6 +150,7 @@ public final class BLEOfflineSyncCoordinator {
         case state
         case operationBatch(bootSessionID: UInt32)
         case committed(syncID: UInt32)
+        case focusResolveOutcome(syncID: UInt32)
         case focusState(bootSessionID: UInt32)
     }
 
@@ -208,25 +213,14 @@ public final class BLEOfflineSyncCoordinator {
                 throw BLEOfflineSyncCoordinatorError.invalidInbound
             }
 
-            let state = try await recoverOpenTransactionIfNeeded(
+            let phase = try await runPostQueryPhase(
                 initialState,
+                allowInvalidStateRetry: true,
                 runID: runID
             )
-
-            let focusSnapshot = try await receiveFocusStateIfNeeded(state: state, runID: runID)
-            if let focusSnapshot {
-                await dependencies.previewFocusState(focusSnapshot)
-            }
-
-            let processedCount = try await drainOperations(
-                state: state,
-                runID: runID
-            )
-            let didResolveFocus = try await sendFocusResolveIfNeeded(
-                state: state,
-                snapshot: focusSnapshot,
-                runID: runID
-            )
+            let state = phase.state
+            let processedCount = phase.processedCount
+            let didResolveFocus = phase.didResolveFocus
             try ensureRunIsActive(runID)
 
             let allowCommit = await shouldCommitDatasets(state)
@@ -364,7 +358,15 @@ public final class BLEOfflineSyncCoordinator {
                 return
             case .committed:
                 guard result.targetType == .offlineSync else { return }
-            case .invalidState, .missingDataset, .expired, .invalidPayload, .busy, .internalError:
+            case .invalidState:
+                // FOCUS_RESOLVE 0x10 is a deterministic refusal, not a late STATE.
+                // Deliver it to the waiter for one re-query; do not treat it as COMMITTED.
+                if awaitingFocusResolveResult, result.targetType == .offlineSync {
+                    break
+                }
+                failRun(with: .deviceRejected(result.resultCode))
+                return
+            case .missingDataset, .expired, .invalidPayload, .busy, .internalError:
                 failRun(with: .deviceRejected(result.resultCode))
                 return
             }
@@ -579,6 +581,10 @@ public final class BLEOfflineSyncCoordinator {
             return result.syncID == expectedSync
                 && result.targetType == .offlineSync
                 && result.resultCode == .committed
+        case (.focusResolveOutcome(let expectedSync), .result(let result)):
+            return result.syncID == expectedSync
+                && result.targetType == .offlineSync
+                && (result.resultCode == .committed || result.resultCode == .invalidState)
         case (.focusState(let expectedBoot), .focusState(let state)):
             return state.bootSessionID == expectedBoot
         default:
@@ -639,14 +645,20 @@ public final class BLEOfflineSyncCoordinator {
             }
             return true
         case .result(let result):
-            guard let expectedSyncID else { return false }
-            guard let waiter,
-                  waiter.expectation == .committed(syncID: expectedSyncID) else {
+            guard expectedSyncID != nil else { return false }
+            guard let waiter else { return false }
+            switch waiter.expectation {
+            case .committed(let syncID):
+                return result.syncID == syncID
+                    && result.targetType == .offlineSync
+                    && result.resultCode == .committed
+            case .focusResolveOutcome(let syncID):
+                return result.syncID == syncID
+                    && result.targetType == .offlineSync
+                    && (result.resultCode == .committed || result.resultCode == .invalidState)
+            default:
                 return false
             }
-            return result.syncID == expectedSyncID
-                && result.targetType == .offlineSync
-                && result.resultCode == .committed
         }
     }
 

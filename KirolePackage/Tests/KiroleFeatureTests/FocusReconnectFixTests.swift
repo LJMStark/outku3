@@ -111,28 +111,41 @@ struct FocusReconnectFixTests {
         #expect(service.todaySessions.contains { $0.focusSessionId == activeId && $0.endReason == .completed })
     }
 
-    @Test("The same FocusSessionId reuses ResolveID and a new session gets a fresh one")
+    @Test("Same payload reuses ResolveID; a changed verdict or session gets a new one")
     @MainActor
-    func resolveIDIsReusedForTheSameSession() async {
+    func resolveIDFollowsPayloadNotJustSession() async {
         let service = FocusSessionService.makeForTesting(
             focusGuardService: ReconnectFixFocusGuard(),
             persistenceEnabled: false
         )
+        let samePayload = dummyResolve(resolveID: 11, elapsed: 120)
         let first = service.reuseOrMakeResolveID(
             for: FocusWireFixtures.sessionId,
-            proposed: 11
+            proposed: 11,
+            matching: samePayload
         )
         let retry = service.reuseOrMakeResolveID(
             for: FocusWireFixtures.sessionId,
-            proposed: 99
+            proposed: 99,
+            matching: dummyResolve(resolveID: 99, elapsed: 120)
+        )
+        let changed = service.reuseOrMakeResolveID(
+            for: FocusWireFixtures.sessionId,
+            proposed: 33,
+            matching: dummyResolve(resolveID: 33, elapsed: 180)
         )
         let other = service.reuseOrMakeResolveID(
             for: FocusSessionId(bootSessionID: 2, startOperationID: 9),
-            proposed: 7
+            proposed: 7,
+            matching: dummyResolve(
+                resolveID: 7,
+                sessionId: FocusSessionId(bootSessionID: 2, startOperationID: 9)
+            )
         )
 
         #expect(first == 11)
         #expect(retry == 11)
+        #expect(changed == 33)
         #expect(other == 7)
 
         let reconnecting = FocusSessionService.makeForTesting(
@@ -143,15 +156,23 @@ struct FocusReconnectFixTests {
             FocusWireFixtures.focusState(),
             resolveID: 22
         )
-        let retriedCommand = await reconnecting.resolveReconnect(
-            FocusWireFixtures.focusState(elapsed: 180),
+        let sameSnapshotRetry = await reconnecting.resolveReconnect(
+            FocusWireFixtures.focusState(),
             resolveID: 33
         )
+        let changedSnapshot = await reconnecting.resolveReconnect(
+            FocusWireFixtures.focusState(elapsed: 180),
+            resolveID: 44
+        )
         #expect(firstCommand.resolveID == 22)
-        #expect(retriedCommand.resolveID == 22)
+        #expect(sameSnapshotRetry.resolveID == 22)
+        #expect(sameSnapshotRetry.matchesPayload(of: firstCommand))
+        #expect(changedSnapshot.resolveID == 44)
+        #expect(changedSnapshot.matchesPayload(of: firstCommand) == false)
+        #expect(reconnecting.activeSession == nil)
     }
 
-    @Test("FOCUS_STATE identity fields are stamped onto the adopted session")
+    @Test("FOCUS_STATE identity fields are stamped only after RESULT/COMMITTED")
     @MainActor
     func resolveStampsFirmwareIdentity() async {
         let service = FocusSessionService.makeForTesting(
@@ -162,7 +183,10 @@ struct FocusReconnectFixTests {
             startSource: .deviceOffline,
             lastOperationID: 9
         )
-        _ = await service.resolveReconnect(snapshot, resolveID: 1)
+        let command = await service.resolveReconnect(snapshot, resolveID: 1)
+        #expect(service.activeSession == nil)
+
+        await service.commitPendingReconnect(from: snapshot, resolve: command)
 
         #expect(service.activeSession?.focusSessionId == snapshot.sessionId)
         #expect(service.activeSession?.bootSessionId == snapshot.bootSessionID)
@@ -204,6 +228,25 @@ struct FocusReconnectFixTests {
         #expect(resolved.focusSessionId == FocusWireFixtures.sessionId)
         #expect(resolved.elapsedSeconds == 3_600)
     }
+}
+
+private func dummyResolve(
+    resolveID: UInt32,
+    sessionId: FocusSessionId = FocusWireFixtures.sessionId,
+    elapsed: UInt32 = 120
+) -> OfflineFocusResolve {
+    OfflineFocusResolve(
+        resolveID: resolveID,
+        sessionId: sessionId,
+        focusState: .active,
+        result: .accepted,
+        startTimestamp: FocusWireFixtures.timestamp,
+        endTimestamp: 0,
+        elapsedSeconds: elapsed,
+        focusRevision: 4,
+        phase: .warmup,
+        bottles: 0
+    )
 }
 
 @MainActor

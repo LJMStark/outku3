@@ -189,6 +189,9 @@ public final class BLESyncCoordinator {
                         snapshot,
                         resolve: resolve
                     )
+                },
+                abandonPendingFocusResolve: {
+                    FocusSessionService.shared.abandonPendingReconnect()
                 }
             )
         )
@@ -356,8 +359,12 @@ public final class BLESyncCoordinator {
             ) else { return }
         }
         var transactionCommitted = false
+        var retryMergedWakeOnFailure = true
         defer {
-            finishActiveSyncReservation(transactionCommitted: transactionCommitted)
+            finishActiveSyncReservation(
+                transactionCommitted: transactionCommitted,
+                retryMergedWake: retryMergedWakeOnFailure
+            )
         }
 
         // Own the complete-message boundary before the first await after accepting this sync.
@@ -572,6 +579,9 @@ public final class BLESyncCoordinator {
         } catch {
             lastSyncSucceeded = false
             bleService.lastSyncFailed = true
+            if case BLEOfflineSyncCoordinatorError.deviceRejected(.invalidState) = error {
+                retryMergedWakeOnFailure = false
+            }
             // STATE has no request ID. After a failed QUERY/transaction, a delayed response on
             // this connection could satisfy the next run. Reset the BLE generation before any
             // retry so old notifications cannot cross the boundary, even during Focus/debug.
@@ -636,8 +646,14 @@ public final class BLESyncCoordinator {
         }
     }
 
-    private func finishActiveSyncReservation(transactionCommitted: Bool) {
-        syncState.finishActiveSync(transactionCommitted: transactionCommitted)
+    private func finishActiveSyncReservation(
+        transactionCommitted: Bool,
+        retryMergedWake: Bool = true
+    ) {
+        syncState.finishActiveSync(
+            transactionCommitted: transactionCommitted,
+            retryMergedWake: retryMergedWake
+        )
         let waiters = syncCompletionWaiters
         syncCompletionWaiters.removeAll()
         waiters.forEach { $0.resume() }

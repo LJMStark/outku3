@@ -20,6 +20,7 @@ struct BLEOfflineSyncCoordinatorFocusReconnectTests {
         var unfreezeCount = 0
         var previewed: [OfflineFocusState] = []
         var restored: [(OfflineFocusState, OfflineFocusResolve)] = []
+        var processedOperations: [(bootSessionID: UInt32, operationID: UInt32)] = []
         let snapshot = OfflineDatasetSnapshot(
             taskListPayload: Data([0x02]),
             schedulePayload: Data([0x03]),
@@ -27,7 +28,10 @@ struct BLEOfflineSyncCoordinatorFocusReconnectTests {
         )
 
         func makeCoordinator(
-            responseTimeout: Duration = .seconds(1)
+            responseTimeout: Duration = .seconds(1),
+            resolveFocus: BLEOfflineSyncCoordinator.ResolveFocus? = nil,
+            restoreOrdinaryFocusSync: BLEOfflineSyncCoordinator.RestoreOrdinaryFocusSync? = nil,
+            abandonPendingFocusResolve: @escaping BLEOfflineSyncCoordinator.AbandonPendingFocusResolve = {}
         ) -> BLEOfflineSyncCoordinator {
             BLEOfflineSyncCoordinator(
                 responseTimeout: responseTimeout,
@@ -41,17 +45,45 @@ struct BLEOfflineSyncCoordinatorFocusReconnectTests {
                     sendTaskList: { self.events.append(.taskList($0)) },
                     sendSchedule: { self.events.append(.schedule($0)) },
                     sendDayPack: { self.events.append(.dayPack($0)) },
-                    processOperation: { _, _ in },
+                    processOperation: { bootSessionID, operation in
+                        self.processedOperations.append(
+                            (bootSessionID: bootSessionID, operationID: operation.operationID)
+                        )
+                    },
                     makeSyncID: { 0x0102_0304 },
                     makeValidUntil: { 0x0506_0708 },
                     freezeFocusStatus: { self.freezeCount += 1 },
                     unfreezeFocusStatus: { self.unfreezeCount += 1 },
                     previewFocusState: { self.previewed.append($0) },
-                    restoreOrdinaryFocusSync: { snapshot, resolve in
+                    resolveFocus: resolveFocus ?? { state in
+                        OfflineFocusResolve(
+                            resolveID: 1,
+                            sessionId: state.sessionId,
+                            focusState: state.focusState == .active ? .active : .idle,
+                            result: state.focusState == .active ? .accepted : .closed,
+                            startTimestamp: state.startTimestamp,
+                            endTimestamp: state.endTimestamp,
+                            elapsedSeconds: state.elapsedSeconds,
+                            focusRevision: max(state.focusRevision, 1),
+                            phase: .idle,
+                            bottles: 0
+                        )
+                    },
+                    restoreOrdinaryFocusSync: restoreOrdinaryFocusSync ?? { snapshot, resolve in
                         self.restored.append((snapshot, resolve))
-                    }
+                    },
+                    abandonPendingFocusResolve: abandonPendingFocusResolve
                 )
             )
+        }
+
+        var focusResolves: [OfflineFocusResolve] {
+            events.compactMap { event in
+                if case .command(.focusResolve(let resolve)) = event {
+                    return resolve
+                }
+                return nil
+            }
         }
     }
 
@@ -170,8 +202,27 @@ struct BLEOfflineSyncCoordinatorFocusReconnectTests {
 
     @Test("FOCUS_RESOLVE timeout retries the same payload and keeps 0x14 frozen")
     func timeoutRetriesAndKeepsFreeze() async throws {
+        var nextResolveID: UInt32 = 7
         let recorder = Recorder()
-        let coordinator = recorder.makeCoordinator(responseTimeout: .milliseconds(40))
+        let coordinator = recorder.makeCoordinator(
+            responseTimeout: .milliseconds(40),
+            resolveFocus: { state in
+                let resolveID = nextResolveID
+                nextResolveID += 1
+                return OfflineFocusResolve(
+                    resolveID: resolveID,
+                    sessionId: state.sessionId,
+                    focusState: .active,
+                    result: .accepted,
+                    startTimestamp: state.startTimestamp,
+                    endTimestamp: state.endTimestamp,
+                    elapsedSeconds: state.elapsedSeconds,
+                    focusRevision: max(state.focusRevision, 1),
+                    phase: .idle,
+                    bottles: 0
+                )
+            }
+        )
         coordinator.hasActiveFocusSession = { true }
 
         let task = Task { try await coordinator.synchronize() }
@@ -188,10 +239,8 @@ struct BLEOfflineSyncCoordinatorFocusReconnectTests {
         }
         #expect(recorder.restored.isEmpty)
         #expect(recorder.unfreezeCount == 0)
-        #expect(recorder.events.filter {
-            if case .command(.focusResolve) = $0 { return true }
-            return false
-        }.count == 2)
+        #expect(recorder.focusResolves.count == 2)
+        #expect(recorder.focusResolves[0] == recorder.focusResolves[1])
     }
 
     @Test("NeedsFullSync without FocusSyncPending still waits for FOCUS_STATE and defers COMMIT")
@@ -219,6 +268,153 @@ struct BLEOfflineSyncCoordinatorFocusReconnectTests {
         #expect(completion.didResolveFocus)
         #expect(completion.didCommitDatasets == false)
         #expect(!recorder.events.contains(.snapshot))
+    }
+
+    @Test("All-zero idle FOCUS_STATE without pending or an App session skips FOCUS_RESOLVE")
+    func idleZeroSnapshotWithoutPendingSkipsResolveAndCommits() async throws {
+        let recorder = Recorder()
+        let coordinator = recorder.makeCoordinator()
+        coordinator.hasActiveFocusSession = { false }
+
+        let task = Task { try await coordinator.synchronize() }
+        try await waitUntil("QUERY") {
+            recorder.events.contains(.command(.query))
+        }
+        coordinator.handleInbound(.focusState(FocusWireFixtures.idleZeroFocusState()))
+        coordinator.handleInbound(.state(Self.state(stateFlags: [.needsFullSync])))
+
+        try await waitUntil("COMMIT") {
+            recorder.events.contains(.command(.commit(syncID: 0x0102_0304)))
+        }
+        coordinator.handleInbound(.result(Self.datasetResult()))
+
+        let completion = try await task.value
+        #expect(completion.didResolveFocus == false)
+        #expect(completion.didCommitDatasets)
+        #expect(recorder.unfreezeCount == 1)
+        #expect(!recorder.events.contains { event in
+            if case .command(.focusResolve) = event { return true }
+            return false
+        })
+    }
+
+    @Test("All-zero idle FOCUS_STATE still resolves when FocusSyncPending is set")
+    func idleZeroSnapshotStillResolvesWhenPending() async throws {
+        let recorder = Recorder()
+        let coordinator = recorder.makeCoordinator()
+        coordinator.hasActiveFocusSession = { false }
+
+        let task = Task {
+            try await coordinator.synchronize(shouldCommitDatasets: { _ in false })
+        }
+        try await waitUntil("QUERY") {
+            recorder.events.contains(.command(.query))
+        }
+        coordinator.handleInbound(.state(Self.state(stateFlags: [.dataValid, .focusSyncPending])))
+        coordinator.handleInbound(.focusState(FocusWireFixtures.idleZeroFocusState()))
+
+        try await waitUntil("FOCUS_RESOLVE") {
+            recorder.events.contains { event in
+                if case .command(.focusResolve) = event { return true }
+                return false
+            }
+        }
+        coordinator.handleInbound(.result(Self.focusResult()))
+
+        let completion = try await task.value
+        #expect(completion.didResolveFocus)
+        #expect(recorder.unfreezeCount == 1)
+    }
+
+    @Test("FOCUS_RESOLVE INVALID_STATE requeries once then skips a now-idle snapshot")
+    func invalidStateRequeriesOnceThenSkipsIdle() async throws {
+        let recorder = Recorder()
+        let coordinator = recorder.makeCoordinator()
+        coordinator.hasActiveFocusSession = { false }
+
+        let task = Task { try await coordinator.synchronize() }
+        try await waitUntil("QUERY") {
+            recorder.events.contains(.command(.query))
+        }
+        coordinator.handleInbound(.state(Self.state(
+            stateFlags: [.needsFullSync, .focusSyncPending]
+        )))
+        coordinator.handleInbound(.focusState(FocusWireFixtures.focusState(bootSessionID: 7)))
+
+        try await waitUntil("FOCUS_RESOLVE") {
+            recorder.events.contains { event in
+                if case .command(.focusResolve) = event { return true }
+                return false
+            }
+        }
+        coordinator.handleInbound(.result(Self.focusResult(code: .invalidState)))
+
+        try await waitUntil("second QUERY") {
+            recorder.events.filter { $0 == .command(.query) }.count == 2
+        }
+        coordinator.handleInbound(.focusState(FocusWireFixtures.idleZeroFocusState()))
+        coordinator.handleInbound(.state(Self.state(stateFlags: [.needsFullSync])))
+
+        try await waitUntil("COMMIT") {
+            recorder.events.contains(.command(.commit(syncID: 0x0102_0304)))
+        }
+        coordinator.handleInbound(.result(Self.datasetResult()))
+
+        let completion = try await task.value
+        #expect(completion.didResolveFocus == false)
+        #expect(completion.didCommitDatasets)
+        #expect(recorder.events.filter {
+            if case .command(.focusResolve) = $0 { return true }
+            return false
+        }.count == 1)
+        #expect(recorder.unfreezeCount == 1)
+    }
+
+    @Test("A second FOCUS_RESOLVE INVALID_STATE still rejects and does not unlock")
+    func secondInvalidStateStillRejects() async throws {
+        let recorder = Recorder()
+        let coordinator = recorder.makeCoordinator()
+        coordinator.hasActiveFocusSession = { false }
+
+        let task = Task { try await coordinator.synchronize() }
+        try await waitUntil("QUERY") {
+            recorder.events.contains(.command(.query))
+        }
+        coordinator.handleInbound(.state(Self.state(
+            stateFlags: [.needsFullSync, .focusSyncPending]
+        )))
+        coordinator.handleInbound(.focusState(FocusWireFixtures.focusState(bootSessionID: 7)))
+
+        try await waitUntil("FOCUS_RESOLVE") {
+            recorder.events.contains { event in
+                if case .command(.focusResolve) = event { return true }
+                return false
+            }
+        }
+        coordinator.handleInbound(.result(Self.focusResult(code: .invalidState)))
+
+        try await waitUntil("second QUERY") {
+            recorder.events.filter { $0 == .command(.query) }.count == 2
+        }
+        coordinator.handleInbound(.state(Self.state(
+            stateFlags: [.needsFullSync, .focusSyncPending]
+        )))
+        coordinator.handleInbound(.focusState(FocusWireFixtures.focusState(bootSessionID: 7)))
+
+        try await waitUntil("second FOCUS_RESOLVE") {
+            recorder.events.filter {
+                if case .command(.focusResolve) = $0 { return true }
+                return false
+            }.count == 2
+        }
+        coordinator.handleInbound(.result(Self.focusResult(code: .invalidState)))
+
+        await #expect(throws: BLEOfflineSyncCoordinatorError.deviceRejected(.invalidState)) {
+            _ = try await task.value
+        }
+        #expect(recorder.restored.isEmpty)
+        #expect(recorder.unfreezeCount == 0)
+        #expect(!recorder.events.contains(.command(.commit(syncID: 0x0102_0304))))
     }
 
     @Test("FOCUS_STATE without FocusSyncPending still resolves before ordinary 0x14 unlocks")
@@ -273,17 +469,158 @@ struct BLEOfflineSyncCoordinatorFocusReconnectTests {
         })
     }
 
+    @Test("INVALID_STATE requery drains new ops and does not COMMIT from the old STATE")
+    func invalidStateRequeryUsesNewStateAndPendingOps() async throws {
+        let recorder = Recorder()
+        let coordinator = recorder.makeCoordinator()
+        coordinator.hasActiveFocusSession = { false }
+
+        let task = Task {
+            try await coordinator.synchronize(shouldCommitDatasets: { _ in false })
+        }
+        try await waitUntil("QUERY") {
+            recorder.events.contains(.command(.query))
+        }
+        coordinator.handleInbound(.state(Self.state(
+            stateFlags: [.needsFullSync, .focusSyncPending]
+        )))
+        coordinator.handleInbound(.focusState(FocusWireFixtures.focusState(bootSessionID: 7)))
+
+        try await waitUntil("FOCUS_RESOLVE") {
+            !recorder.focusResolves.isEmpty
+        }
+        coordinator.handleInbound(.result(Self.focusResult(code: .invalidState)))
+
+        try await waitUntil("second QUERY") {
+            recorder.events.filter { $0 == .command(.query) }.count == 2
+        }
+        coordinator.handleInbound(.state(Self.state(
+            stateFlags: [.dataValid],
+            pendingCount: 1,
+            bootSessionID: 8
+        )))
+        coordinator.handleInbound(.operationBatch(.init(
+            bootSessionID: 8,
+            records: [Self.record(3)]
+        )))
+
+        try await waitUntil("OP_ACK") {
+            recorder.events.contains(.command(.opAck(.init(
+                bootSessionID: 8,
+                ackOperationID: 3
+            ))))
+        }
+
+        let completion = try await task.value
+        #expect(completion.didResolveFocus == false)
+        #expect(completion.didCommitDatasets == false)
+        #expect(completion.processedOperationCount == 1)
+        #expect(completion.state.bootSessionID == 8)
+        #expect(completion.state.stateFlags.contains(.needsFullSync) == false)
+        #expect(recorder.processedOperations.count == 1)
+        #expect(recorder.processedOperations.first?.bootSessionID == 8)
+        #expect(recorder.processedOperations.first?.operationID == 3)
+        #expect(!recorder.events.contains(.snapshot))
+        #expect(!recorder.events.contains(.command(.commit(syncID: 0x0102_0304))))
+        #expect(recorder.focusResolves.count == 1)
+        #expect(recorder.unfreezeCount == 1)
+    }
+
+    @Test("INVALID_STATE requery sends a new ResolveID when the snapshot payload changes")
+    func invalidStateRequeryUsesNewResolveWhenSnapshotChanges() async throws {
+        let service = FocusSessionService.makeForTesting(
+            focusGuardService: FocusReconnectTestGuard(),
+            persistenceEnabled: false
+        )
+        var nextID: UInt32 = 10
+        let recorder = Recorder()
+        let coordinator = recorder.makeCoordinator(
+            resolveFocus: { state in
+                let id = nextID
+                nextID += 10
+                return await service.resolveReconnect(state, resolveID: id)
+            },
+            restoreOrdinaryFocusSync: { snapshot, resolve in
+                await service.commitPendingReconnect(from: snapshot, resolve: resolve)
+                recorder.restored.append((snapshot, resolve))
+            },
+            abandonPendingFocusResolve: {
+                service.abandonPendingReconnect()
+            }
+        )
+        coordinator.hasActiveFocusSession = { false }
+
+        let task = Task {
+            try await coordinator.synchronize(shouldCommitDatasets: { _ in false })
+        }
+        try await waitUntil("QUERY") {
+            recorder.events.contains(.command(.query))
+        }
+        let firstSnapshot = FocusWireFixtures.focusState(bootSessionID: 7, elapsed: 120)
+        coordinator.handleInbound(.state(Self.state(
+            stateFlags: [.dataValid, .focusSyncPending]
+        )))
+        coordinator.handleInbound(.focusState(firstSnapshot))
+
+        try await waitUntil("FOCUS_RESOLVE") {
+            recorder.focusResolves.count == 1
+        }
+        #expect(service.activeSession == nil)
+        coordinator.handleInbound(.result(Self.focusResult(
+            syncID: recorder.focusResolves[0].resolveID,
+            code: .invalidState
+        )))
+
+        try await waitUntil("second QUERY") {
+            recorder.events.filter { $0 == .command(.query) }.count == 2
+        }
+        let secondSnapshot = FocusWireFixtures.focusState(bootSessionID: 7, elapsed: 400)
+        coordinator.handleInbound(.state(Self.state(
+            stateFlags: [.dataValid, .focusSyncPending]
+        )))
+        coordinator.handleInbound(.focusState(secondSnapshot))
+
+        try await waitUntil("second FOCUS_RESOLVE") {
+            recorder.focusResolves.count == 2
+        }
+        #expect(service.activeSession == nil)
+        let firstResolve = recorder.focusResolves[0]
+        let secondResolve = recorder.focusResolves[1]
+        #expect(firstResolve.resolveID == 10)
+        #expect(secondResolve.resolveID == 20)
+        #expect(firstResolve.elapsedSeconds == 120)
+        #expect(secondResolve.elapsedSeconds == 400)
+        #expect(firstResolve.matchesPayload(of: secondResolve) == false)
+
+        coordinator.handleInbound(.result(Self.focusResult(syncID: secondResolve.resolveID)))
+
+        let completion = try await task.value
+        #expect(completion.didResolveFocus)
+        #expect(service.activeSession?.focusSessionId == secondSnapshot.sessionId)
+        #expect(recorder.restored.count == 1)
+    }
+
     private static func state(
-        stateFlags: OfflineSyncStateFlags
+        stateFlags: OfflineSyncStateFlags,
+        pendingCount: UInt8 = 0,
+        bootSessionID: UInt32 = 7
     ) -> OfflineSyncState {
         OfflineSyncState(
             activeRevision: 11,
             validUntil: 2_000_000_000,
             datasetMask: .all,
             stateFlags: stateFlags,
-            pendingCount: 0,
-            bootSessionID: 7,
+            pendingCount: pendingCount,
+            bootSessionID: bootSessionID,
             currentSyncID: 0
+        )
+    }
+
+    private static func record(_ operationID: UInt32) -> OfflineSyncOperationRecord {
+        OfflineSyncOperationRecord(
+            operationID: operationID,
+            eventType: 0x01,
+            originalPayload: Data([UInt8(truncatingIfNeeded: operationID)])
         )
     }
 
@@ -315,9 +652,25 @@ struct BLEOfflineSyncCoordinatorFocusReconnectTests {
         while !condition() {
             guard clock.now < deadline else {
                 Issue.record("Timed out waiting for \(description)")
-                return
+                throw BLEOfflineSyncCoordinatorError.timedOut
             }
             try await Task.sleep(for: .milliseconds(1))
         }
     }
+}
+
+@MainActor
+private final class FocusReconnectTestGuard: FocusGuardService {
+    var authorizationStatus: FocusAuthorizationStatus = .notDetermined
+    var isDeepFocusFeatureEnabled = false
+    var isDeepFocusCapable = false
+    var canShowDeepFocusEntry: Bool { false }
+    var selectedApplicationCount = 0
+    var isPickerPresented = false
+    func refreshAuthorizationStatus() async {}
+    func requestAuthorization() async -> FocusAuthorizationStatus { .notDetermined }
+    func presentAppPicker() {}
+    func applyShield(selection: FocusAppSelection) throws {}
+    func clearShield() {}
+    func currentSelection() -> FocusAppSelection? { nil }
 }

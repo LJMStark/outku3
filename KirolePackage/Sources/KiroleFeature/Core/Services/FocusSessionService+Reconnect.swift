@@ -25,35 +25,67 @@ extension FocusSessionService {
 
     func reuseOrMakeResolveID(
         for sessionId: FocusSessionId,
-        proposed: UInt32
+        proposed: UInt32,
+        matching command: OfflineFocusResolve
     ) -> UInt32 {
         let flags = FocusReconnectFlagStore.flags(for: self)
-        if flags.lastResolveID != 0, flags.lastResolveSessionId == sessionId {
+        if flags.lastResolveID != 0,
+           flags.lastResolveSessionId == sessionId,
+           let last = flags.lastResolveCommand,
+           last.matchesPayload(of: command) {
             return flags.lastResolveID
         }
-        let id = proposed == 0 ? 1 : proposed
+        var id = proposed == 0 ? 1 : proposed
+        if id == flags.lastResolveID, flags.lastResolveSessionId == sessionId {
+            id = id == UInt32.max ? 1 : id &+ 1
+        }
         flags.lastResolveID = id
         flags.lastResolveSessionId = sessionId
+        flags.lastResolveCommand = command.replacingResolveID(id)
         return id
     }
 
     func resolveReconnect(_ state: OfflineFocusState, resolveID: UInt32) async -> OfflineFocusResolve {
         let snapshot = reconnectSnapshot()
-        let decision = FocusReconnectArbiter.decide(
+        let proposed = resolveID == 0 ? 1 : resolveID
+        let trial = FocusReconnectArbiter.decide(
             device: state,
             app: snapshot,
-            resolveID: reuseOrMakeResolveID(for: state.sessionId, proposed: resolveID)
+            resolveID: proposed
         )
-        await applyReconnectAction(decision.action)
-        stampReconnectIdentity(from: state, revision: decision.command.focusRevision)
+        let assigned = reuseOrMakeResolveID(
+            for: state.sessionId,
+            proposed: proposed,
+            matching: trial.command
+        )
+        let command = trial.command.replacingResolveID(assigned)
+        let flags = FocusReconnectFlagStore.flags(for: self)
+        flags.lastResolveCommand = command
+        flags.pendingReconnectAction = trial.action
+        return command
+    }
+
+    func commitPendingReconnect(
+        from snapshot: OfflineFocusState,
+        resolve: OfflineFocusResolve
+    ) async {
+        let flags = FocusReconnectFlagStore.flags(for: self)
+        let action = flags.pendingReconnectAction ?? .none
+        flags.pendingReconnectAction = nil
+        await applyReconnectAction(action)
+        stampReconnectIdentity(from: snapshot, revision: resolve.focusRevision)
         suppressVisibleFocusStart = false
-        return decision.command
+    }
+
+    func abandonPendingReconnect() {
+        FocusReconnectFlagStore.flags(for: self).pendingReconnectAction = nil
     }
 
     func restoreOrdinaryFocusSyncAfterResolve(
         _ snapshot: OfflineFocusState,
         resolve: OfflineFocusResolve
     ) async {
+        await commitPendingReconnect(from: snapshot, resolve: resolve)
         if resolve.focusState == .active {
             await sendTaskInPageForReconnect(taskId: snapshot.taskId)
         }

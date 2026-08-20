@@ -7,6 +7,8 @@ final class FocusReconnectFlags {
     var suppressVisibleFocusStart = false
     var lastResolveID: UInt32 = 0
     var lastResolveSessionId = FocusSessionId.idle
+    var lastResolveCommand: OfflineFocusResolve?
+    var pendingReconnectAction: FocusReconnectAction?
 }
 
 @MainActor

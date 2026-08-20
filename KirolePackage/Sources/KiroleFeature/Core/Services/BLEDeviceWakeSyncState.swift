@@ -66,9 +66,12 @@ struct BLEDeviceWakeSyncState {
         activeSync?.acceptsDeviceWake = false
     }
 
-    mutating func finishActiveSync(transactionCommitted: Bool) {
+    mutating func finishActiveSync(
+        transactionCommitted: Bool,
+        retryMergedWake: Bool = true
+    ) {
         guard let activeSync else { return }
-        if activeSync.hadMergedDeviceWake, !transactionCommitted {
+        if activeSync.hadMergedDeviceWake, !transactionCommitted, retryMergedWake {
             enqueue(force: true, hardwareWakeDate: activeSync.hardwareWakeDate)
         }
         self.activeSync = nil

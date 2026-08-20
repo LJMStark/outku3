@@ -116,6 +116,21 @@ public struct OfflineFocusState: Sendable, Equatable {
         self.lastOperationID = lastOperationID
         self.endReason = endReason
     }
+
+    /// Firmware sometimes notifies an empty idle snapshot even when
+    /// `FocusSyncPending` is clear. Revision, session, and operation are all
+    /// zero — not "a session exists or existed".
+    public var isMeaninglessIdleSnapshot: Bool {
+        focusState == .idle
+            && sessionId.isIdle
+            && focusRevision == 0
+            && lastOperationID == 0
+            && startTimestamp == 0
+            && endTimestamp == 0
+            && elapsedSeconds == 0
+            && endReason == .none
+            && taskId.isEmpty
+    }
 }
 
 /// App → Device `0x25 / 0x06` verdict. Payload is exactly 33 bytes.
@@ -153,6 +168,34 @@ public struct OfflineFocusResolve: Sendable, Equatable {
         self.focusRevision = focusRevision
         self.phase = phase
         self.bottles = bottles
+    }
+
+    /// Same FOCUS_RESOLVE verdict, ignoring ResolveID. Same ID must keep this payload.
+    func matchesPayload(of other: OfflineFocusResolve) -> Bool {
+        sessionId == other.sessionId
+            && focusState == other.focusState
+            && result == other.result
+            && startTimestamp == other.startTimestamp
+            && endTimestamp == other.endTimestamp
+            && elapsedSeconds == other.elapsedSeconds
+            && focusRevision == other.focusRevision
+            && phase == other.phase
+            && bottles == other.bottles
+    }
+
+    func replacingResolveID(_ resolveID: UInt32) -> OfflineFocusResolve {
+        OfflineFocusResolve(
+            resolveID: resolveID,
+            sessionId: sessionId,
+            focusState: focusState,
+            result: result,
+            startTimestamp: startTimestamp,
+            endTimestamp: endTimestamp,
+            elapsedSeconds: elapsedSeconds,
+            focusRevision: focusRevision,
+            phase: phase,
+            bottles: bottles
+        )
     }
 }
 

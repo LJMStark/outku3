@@ -66,6 +66,23 @@ enum FocusWireFixtures {
         )
     }
 
+    /// Matches the 1.3.1 wake dump: revision/session/operation all zero, idle.
+    static func idleZeroFocusState(bootSessionID: UInt32 = 7) -> OfflineFocusState {
+        OfflineFocusState(
+            focusRevision: 0,
+            bootSessionID: bootSessionID,
+            sessionId: .idle,
+            focusState: .idle,
+            startSource: .appEstablished,
+            taskId: "",
+            startTimestamp: 0,
+            endTimestamp: 0,
+            elapsedSeconds: 0,
+            lastOperationID: 0,
+            endReason: .none
+        )
+    }
+
     static func encodeFocusState(_ state: OfflineFocusState) -> Data {
         var data = Data([0x83])
         data.appendBigEndian(state.focusRevision)

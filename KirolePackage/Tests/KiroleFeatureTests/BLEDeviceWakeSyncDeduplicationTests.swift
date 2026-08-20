@@ -128,6 +128,29 @@ struct BLEDeviceWakeSyncDeduplicationTests {
         #expect(state.activeHardwareWakeDate == fixture.deviceWakeDate)
     }
 
+    @Test("A deterministic INVALID_STATE failure does not enqueue a merged DeviceWake retry")
+    func deterministicRejectionDoesNotEnqueueMergedWakeRetry() throws {
+        let fixture = try Self.loadFixture()
+        var state = BLEDeviceWakeSyncState()
+
+        let started = state.beginSync(
+            force: false,
+            hardwareWakeDate: nil,
+            taskActionBlocked: false
+        )
+        #expect(started)
+        let wakeDecision = state.handleDeviceWake(
+            at: fixture.deviceWakeDate,
+            taskActionBlocked: false
+        )
+        #expect(wakeDecision == .mergeIntoActiveSync)
+        state.closeDeviceWakeMergeWindow()
+        state.finishActiveSync(transactionCommitted: false, retryMergedWake: false)
+
+        #expect(state.pendingRequest == nil)
+        #expect(!state.isSyncing)
+    }
+
     @Test("An unrelated failed sync does not invent a DeviceWake retry")
     func failedSyncWithoutMergedWakeDoesNotRetryWake() {
         var state = BLEDeviceWakeSyncState()
