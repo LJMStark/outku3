@@ -194,13 +194,14 @@ def asc_token
 end
 
 def latest_build(app)
-  builds = Spaceship::ConnectAPI::Build.all(
-    app_id: app.id,
+  build = Spaceship::ConnectAPI.get_builds(
+    filter: { app: app.id },
+    includes: Spaceship::ConnectAPI::Build::ESSENTIAL_INCLUDES,
     sort:   "-uploadedDate",
     limit:  1
-  )
-  UI.user_error!("No builds found for #{BUNDLE_ID}") if builds.empty?
-  builds.first
+  ).first
+  UI.user_error!("No builds found for #{BUNDLE_ID}") unless build
+  build
 end
 
 def upsert_localization(build, locale, text)
