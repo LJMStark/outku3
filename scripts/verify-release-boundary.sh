@@ -6,6 +6,7 @@
 #   - AppStoreRelease  does NOT contain it
 #   - InternalRelease  contains the internal-tool UI strings
 #   - AppStoreRelease  does NOT contain those strings
+#   - AppStoreRelease  does NOT package repository-only engineering files
 #
 # The marker lives in Kirole/InternalBuildBoundary.swift; keep the string
 # below in sync with it. Run before producing any App Store candidate:
@@ -38,8 +39,10 @@ build() {
 build Kirole-Internal InternalRelease
 build Kirole-AppStore AppStoreRelease
 
-INTERNAL_BIN="$DERIVED/Build/Products/InternalRelease-iphonesimulator/Kirole.app/Kirole"
-APPSTORE_BIN="$DERIVED/Build/Products/AppStoreRelease-iphonesimulator/Kirole.app/Kirole"
+INTERNAL_APP="$DERIVED/Build/Products/InternalRelease-iphonesimulator/Kirole.app"
+APPSTORE_APP="$DERIVED/Build/Products/AppStoreRelease-iphonesimulator/Kirole.app"
+INTERNAL_BIN="$INTERNAL_APP/Kirole"
+APPSTORE_BIN="$APPSTORE_APP/Kirole"
 
 # Search the Mach-O for UTF-8 or UTF-16LE. `strings` misses Swift small-string
 # immediates (<=15 UTF-8 bytes) and UTF-16 literals. InternalBuildBoundary
@@ -94,6 +97,25 @@ for phrase in "${INTERNAL_ONLY_STRINGS[@]}"; do
     fail=1
   else
     echo "PASS  AppStoreRelease binary has no '$phrase'"
+  fi
+done
+
+# Files used by Xcode, local tooling, or backend setup must remain in the
+# repository but must not be copied into the customer application bundle.
+APPSTORE_FORBIDDEN_RESOURCES=(
+  "Kirole.xctestplan"
+  "Secrets.xcconfig.template"
+  "generate-prompt-spec.py"
+  "scripts-generate-build-secrets.sh"
+  "supabase-schema.sql"
+)
+
+for resource in "${APPSTORE_FORBIDDEN_RESOURCES[@]}"; do
+  if find "$APPSTORE_APP" -type f -name "$resource" -print -quit | grep -q .; then
+    echo "FAIL  AppStoreRelease bundle contains engineering file '$resource'"
+    fail=1
+  else
+    echo "PASS  AppStoreRelease bundle has no engineering file '$resource'"
   fi
 done
 

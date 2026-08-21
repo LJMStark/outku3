@@ -9,3 +9,8 @@
 // Paired gate: scripts/verify-release-boundary.sh
 
 #include "Release.xcconfig"
+
+// Keep repository-only build, test, and backend setup files out of the
+// customer bundle. The files remain available to local tooling and
+// InternalRelease is intentionally unchanged.
+EXCLUDED_SOURCE_FILE_NAMES = $(inherited) Kirole.xctestplan Secrets.xcconfig.template generate-prompt-spec.py scripts-generate-build-secrets.sh supabase-schema.sql
