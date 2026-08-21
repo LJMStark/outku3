@@ -9,6 +9,9 @@
 /* Begin PBXBuildFile section */
 		8B41F6832DEDD23B001A66F9 /* KiroleFeature in Frameworks */ = {isa = PBXBuildFile; productRef = 8B41F6822DEDD23B001A66F9 /* KiroleFeature */; };
 		8B41F6852DEDD25C001A66F9 /* KiroleFeature in Frameworks */ = {isa = PBXBuildFile; productRef = 8B41F6842DEDD25C001A66F9 /* KiroleFeature */; };
+		C0DE1B1E0000000000000001 /* BLEWiFiDebugCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE1B1E0000000000000005 /* BLEWiFiDebugCoordinator.swift */; };
+		C0DE1B1E0000000000000003 /* BLEShippingModeCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE1B1E0000000000000006 /* BLEShippingModeCoordinator.swift */; };
+		C0DE1B1E0000000000000004 /* InternalBLEToolsController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE1B1E0000000000000007 /* InternalBLEToolsController.swift */; };
 		8BDA110B2EF200000000000B /* KiroleDeviceActivityMonitor.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 8BDA11012EF2000000000001 /* KiroleDeviceActivityMonitor.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
@@ -47,6 +50,9 @@
 		8B41F6452DEDD0D5001A66F9 /* Kirole.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Kirole.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		8B41F65C2DEDD0D6001A66F9 /* Kirole.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Kirole.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		8BDA11012EF2000000000001 /* KiroleDeviceActivityMonitor.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = KiroleDeviceActivityMonitor.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		C0DE1B1E0000000000000005 /* BLEWiFiDebugCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KirolePackage/Sources/KiroleInternalBLE/BLEWiFiDebugCoordinator.swift; sourceTree = SOURCE_ROOT; };
+		C0DE1B1E0000000000000006 /* BLEShippingModeCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KirolePackage/Sources/KiroleInternalBLE/BLEShippingModeCoordinator.swift; sourceTree = SOURCE_ROOT; };
+		C0DE1B1E0000000000000007 /* InternalBLEToolsController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KirolePackage/Sources/KiroleInternalBLE/InternalBLEToolsController.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -139,6 +145,9 @@
 			children = (
 				8BD71C052DEE41D800CEDD92 /* Config */,
 				8B41F6472DEDD0D5001A66F9 /* Kirole */,
+				C0DE1B1E0000000000000005 /* BLEWiFiDebugCoordinator.swift */,
+				C0DE1B1E0000000000000006 /* BLEShippingModeCoordinator.swift */,
+				C0DE1B1E0000000000000007 /* InternalBLEToolsController.swift */,
 				8BDA11022EF2000000000002 /* KiroleDeviceActivityMonitor */,
 				8B41F65F2DEDD0D6001A66F9 /* KiroleUITests */,
 				8B41F6812DEDD23B001A66F9 /* Frameworks */,
@@ -329,6 +338,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C0DE1B1E0000000000000001 /* BLEWiFiDebugCoordinator.swift in Sources */,
+				C0DE1B1E0000000000000003 /* BLEShippingModeCoordinator.swift in Sources */,
+				C0DE1B1E0000000000000004 /* InternalBLEToolsController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

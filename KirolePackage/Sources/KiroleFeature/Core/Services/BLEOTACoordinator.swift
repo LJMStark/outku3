@@ -84,7 +84,7 @@ public final class BLEOTACoordinator {
     ) {
         self.bleService = bleService
         self.canStartReboot = canStartReboot ?? {
-            !BLEShippingModeCoordinator.shared.blocksAutomaticBLEWork
+            !BLEInternalToolsRuntime.blocksAutomaticBLEWork
         }
     }
 

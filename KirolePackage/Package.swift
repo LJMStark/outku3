@@ -30,10 +30,18 @@ let package = Package(
                 .process("Resources")
             ]
         ),
+        .target(
+            name: "KiroleInternalBLE",
+            dependencies: ["KiroleFeature"],
+            swiftSettings: [
+                .define("KIROLE_INTERNAL_BLE_MODULE")
+            ]
+        ),
         .testTarget(
             name: "KiroleFeatureTests",
             dependencies: [
-                "KiroleFeature"
+                "KiroleFeature",
+                "KiroleInternalBLE",
             ]
         ),
     ]

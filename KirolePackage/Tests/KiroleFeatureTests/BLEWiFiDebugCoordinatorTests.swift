@@ -1,6 +1,7 @@
 import Foundation
 import Testing
-@testable import KiroleFeature
+@_spi(KiroleInternal) @testable import KiroleFeature
+@_spi(KiroleInternal) @testable import KiroleInternalBLE
 
 @MainActor
 @Suite("BLE WiFi PC Debug", .serialized)
@@ -180,15 +181,64 @@ struct BLEWiFiDebugCoordinatorTests {
         #expect(!coordinator.requiresBLEConnection)
     }
 
+    @Test("Only 0x1C bypasses the shipping-mode write block")
+    func onlyShippingModeCommandBypassesShippingModeBlock() async {
+        let shippingCoordinator = BLEShippingModeCoordinator.makeForTesting(
+            disconnectTimeout: .seconds(1),
+            setPendingDisconnect: { _ in },
+            sendCommand: { armExpectedDisconnect in armExpectedDisconnect() }
+        )
+        await shippingCoordinator.enable()
+        #expect(shippingCoordinator.blocksAutomaticBLEWork)
+
+        let wifiCoordinator = BLEWiFiDebugCoordinator.makeForTesting { _ in }
+        InternalBLEToolsController.installForTesting(
+            wifiDebugCoordinator: wifiCoordinator,
+            shippingModeCoordinator: shippingCoordinator
+        )
+        defer { InternalBLEToolsController.uninstallForTesting() }
+
+        do {
+            try await BLEService.shared.sendInternalToolCommand(
+                type: .wifiDebugMode,
+                data: BLEWiFiDebugCommand.query.payload
+            )
+            Issue.record("Expected 0x19 to remain blocked while shipping mode owns the connection")
+        } catch let error as BLEError {
+            guard case .shippingModeActive = error else {
+                Issue.record("Expected shippingModeActive for 0x19, got \(error)")
+                return
+            }
+        } catch {
+            Issue.record("Expected BLEError.shippingModeActive for 0x19, got \(error)")
+        }
+
+        do {
+            try await BLEService.shared.sendInternalToolCommand(
+                type: .shippingMode,
+                data: BLEShippingModeCommand.enable.payload
+            )
+            Issue.record("Expected the disconnected test service to reject 0x1C after the block")
+        } catch let error as BLEError {
+            guard case .notConnected = error else {
+                Issue.record("Expected 0x1C to reach the connection guard, got \(error)")
+                return
+            }
+        } catch {
+            Issue.record("Expected BLEError.notConnected for 0x1C, got \(error)")
+        }
+    }
+
     @Test("0x19 is routed as a live response and never parsed as an EventLog")
     func eventHandlerRoutesLiveResponse() async throws {
         let coordinator = BLEWiFiDebugCoordinator.makeForTesting { _ in }
         await coordinator.queryStatus()
+        InternalBLEToolsController.installForTesting(wifiDebugCoordinator: coordinator)
+        defer { InternalBLEToolsController.uninstallForTesting() }
         let decoded = try #require(BLESimpleDecoder.decode(Data([0x19, 0x02, 0x01, 0x00])))
         await BLEEventHandler.handleReceivedPayload(
             decoded,
-            service: .shared,
-            wifiDebugCoordinator: coordinator
+            service: .shared
         )
 
         #expect(coordinator.state == .on)
@@ -199,10 +249,11 @@ struct BLEWiFiDebugCoordinatorTests {
     func malformedLiveResponseFails() async {
         let coordinator = BLEWiFiDebugCoordinator.makeForTesting { _ in }
         await coordinator.queryStatus()
+        InternalBLEToolsController.installForTesting(wifiDebugCoordinator: coordinator)
+        defer { InternalBLEToolsController.uninstallForTesting() }
         await BLEEventHandler.handleReceivedPayload(
             BLEReceivedMessage(type: 0x19, payload: Data([0x01])),
-            service: .shared,
-            wifiDebugCoordinator: coordinator
+            service: .shared
         )
 
         #expect(coordinator.state == .failed)

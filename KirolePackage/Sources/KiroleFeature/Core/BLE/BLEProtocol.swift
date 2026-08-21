@@ -102,14 +102,6 @@ public enum BLEDataType: UInt8, Sendable {
     case securityHandshake = 0x7F
 }
 
-/// App→Device：ShippingMode (0x1C) 工厂命令。
-/// 设备不回业务 ACK；收到 `enable` 后会主动断开 BLE 并进入运输模式。
-public enum BLEShippingModeCommand: UInt8, Sendable, Equatable {
-    case enable = 0x01
-
-    public var payload: Data { Data([rawValue]) }
-}
-
 // MARK: - WiFi Avatar Session (0x1A)
 //
 // App 经 `0x1A` 让设备启/停 SoftAP 并索取一次性热点凭据与 HTTP 端点；头像字节

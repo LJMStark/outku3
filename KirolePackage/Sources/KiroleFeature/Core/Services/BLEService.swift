@@ -119,9 +119,6 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
     /// didDisconnectPeripheral 靠它把预期中的升级重启断连路由给协调器——§4.17 允许
     /// 固件收到 0x18 后不回应答直接重启，所以 sending 阶段就必须布防，不能等应答。
     var isPendingOTAReboot = false
-    /// ShippingMode(0x1C) 没有业务 ACK，设备主动断连就是唯一成功信号。
-    /// 断连期间必须压住自动重连，否则工厂命令生效后 App 会立刻尝试把设备连回来。
-    var isPendingShippingModeActivation = false
     /// 意外断开后的延迟重连任务，便于在主动断开 / 重新连接时取消。
     private var reconnectTask: Task<Void, Never>?
     private var activeConnectionRetryRoundID: UUID?
@@ -190,16 +187,13 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
         set { UserDefaults.standard.set(newValue, forKey: Keys.keepAliveDebugMode) }
     }
 
-    /// 同步收尾和看门狗是否应保留 BLE。Wi-Fi 调试已开启或正在切换时必须保留，
-    /// 否则 App 会失去关闭热点与查询状态的控制通道。
+    /// 同步收尾和看门狗是否应保留 BLE。内部工具或 WiFi 头像会话正在使用连接时，
+    /// App 不能主动释放控制通道。
     var shouldKeepConnectionOpenForDebug: Bool {
-        // Wi-Fi PC 调试(0x19) 或 WiFi 头像会话(0x1A) 任一需要连接时都必须保住 BLE：
-        // SoftAP 期间不主动断连，否则无法再发 close 停热点或收 0x22 staged。
         BLEConnectionPolicy.shouldKeepConnectionOpenForDebug(
             keepAliveEnabled: keepAliveDebugMode,
-            wifiDebugRequiresConnection: BLEWiFiDebugCoordinator.shared.requiresBLEConnection
-                || WiFiAvatarSessionCoordinator.shared.requiresBLEConnection,
-            shippingModeRequiresConnection: BLEShippingModeCoordinator.shared.requiresCurrentConnection
+            wifiDebugRequiresConnection: WiFiAvatarSessionCoordinator.shared.requiresBLEConnection,
+            shippingModeRequiresConnection: BLEInternalToolsRuntime.requiresBLEConnection
         )
     }
 
@@ -540,7 +534,7 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
             guard !Task.isCancelled,
                   !self.isIntentionalDisconnect,
                   self.connectionState == .connecting,
-                  !BLEShippingModeCoordinator.shared.blocksAutomaticBLEWork else { return }
+                  !BLEInternalToolsRuntime.blocksAutomaticBLEWork else { return }
             self.connectionState = .disconnected
 
             if didEstablishLink, let manager = self.centralManager {
@@ -660,8 +654,8 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
         reconnectTask = nil
         // v2.13: 断连不再结束专注。仍通知 FocusSessionService，该方法现为空操作。
         FocusSessionService.shared.handleDeviceDisconnected()
-        if isPendingShippingModeActivation {
-            BLEShippingModeCoordinator.shared.handleUnconfirmedDisconnect()
+        if BLEInternalToolsRuntime.expectsDeviceDisconnect {
+            BLEInternalToolsRuntime.handleConnectionEnded(intentional: true)
         }
         if let peripheral = connectedPeripheral {
             if var attempt = connectionAttempt {
@@ -695,7 +689,7 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
     /// 再尝试系统已连接设备，最后才回退扫描。任一直连的非致命失败都会继续后续兜底，
     /// 避免旧 UUID 直连超时后直接放弃，让"找不到设备"更脆弱。
     public func connectToPreferredDevice(timeout: TimeInterval = 10) async throws {
-        guard !BLEShippingModeCoordinator.shared.blocksAutomaticBLEWork else {
+        guard !BLEInternalToolsRuntime.blocksAutomaticBLEWork else {
             throw BLEError.shippingModeActive
         }
         let manager = try await poweredOnCentralManager(timeout: 3)
@@ -734,7 +728,7 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
     /// 返回是否成功发起了重连尝试。
     @discardableResult
     public func attemptAutoReconnect() async -> Bool {
-        guard !BLEShippingModeCoordinator.shared.blocksAutomaticBLEWork else { return false }
+        guard !BLEInternalToolsRuntime.blocksAutomaticBLEWork else { return false }
         guard autoReconnectEffective else { return false }
         return await beginPendingReconnect()
     }
@@ -792,7 +786,7 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
               centralManager?.state == .poweredOn,
               connectionAttempt == nil,
               BLEConnectionPolicy.canBeginConnect(state: connectionState),
-              !BLEShippingModeCoordinator.shared.blocksAutomaticBLEWork else { return }
+              !BLEInternalToolsRuntime.blocksAutomaticBLEWork else { return }
         reconnectAfterBluetoothPowerCycle = false
         isIntentionalDisconnect = false
         reconnectTask?.cancel()
@@ -1123,20 +1117,18 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
         try await writeData(type: .otaReboot, data: Data())
     }
 
-    /// 发送 Wi-Fi PC Debug (0x19) 命令。统一走 writeData，secure 模式自动封装为 0x7E。
-    public func sendWiFiDebugCommand(_ command: BLEWiFiDebugCommand) async throws {
-        try await writeData(type: .wifiDebugMode, data: command.payload)
-    }
-
-    /// 发送工厂运输模式命令。写成功只代表帧已写出；最终成功由随后发生的设备断连确认。
-    public func sendShippingModeCommand(
-        _ command: BLEShippingModeCommand = .enable,
-        onWillWrite: @escaping @MainActor @Sendable () -> Void
+    /// Internal TestFlight 专用发送入口。App Store 没有对应的编译期调用方。
+    @_spi(KiroleInternal)
+    public func sendInternalToolCommand(
+        type: BLEDataType,
+        data: Data,
+        onWillWrite: (@MainActor @Sendable () -> Void)? = nil
     ) async throws {
         try await writeData(
-            type: .shippingMode,
-            data: command.payload,
-            onWillWrite: onWillWrite
+            type: type,
+            data: data,
+            onWillWrite: onWillWrite,
+            allowsDuringInternalToolOperation: type == .shippingMode
         )
     }
 
@@ -1157,7 +1149,8 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
         data: Data,
         validateBeforeWrite: PacketWriteValidator? = nil,
         onWillWrite: PacketWillWrite? = nil,
-        progress: (@MainActor @Sendable (_ sentBytes: Int, _ totalBytes: Int) -> Void)? = nil
+        progress: (@MainActor @Sendable (_ sentBytes: Int, _ totalBytes: Int) -> Void)? = nil,
+        allowsDuringInternalToolOperation: Bool = false
     ) async throws {
         try await completeMessageWriteGate.acquire()
         do {
@@ -1166,7 +1159,8 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
                 data: data,
                 validateBeforeWrite: validateBeforeWrite,
                 onWillWrite: onWillWrite,
-                progress: progress
+                progress: progress,
+                allowsDuringInternalToolOperation: allowsDuringInternalToolOperation
             )
             await completeMessageWriteGate.release()
         } catch {
@@ -1180,9 +1174,10 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
         data: Data,
         validateBeforeWrite: PacketWriteValidator? = nil,
         onWillWrite: PacketWillWrite? = nil,
-        progress: (@MainActor @Sendable (_ sentBytes: Int, _ totalBytes: Int) -> Void)? = nil
+        progress: (@MainActor @Sendable (_ sentBytes: Int, _ totalBytes: Int) -> Void)? = nil,
+        allowsDuringInternalToolOperation: Bool = false
     ) async throws {
-        guard type == .shippingMode || !BLEShippingModeCoordinator.shared.blocksAutomaticBLEWork else {
+        guard allowsDuringInternalToolOperation || !BLEInternalToolsRuntime.blocksAutomaticBLEWork else {
             throw BLEError.shippingModeActive
         }
         guard connectionState.isConnected,
@@ -1511,12 +1506,12 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
             rssi: 0,
             isConnected: true
         )
-        BLEShippingModeCoordinator.shared.handleDeviceReconnected()
+        BLEInternalToolsRuntime.handleDeviceReconnected()
         lastConnectedDeviceID = peripheralID
         finishConnectionAttempt(.success(()))
         await drainPreReadyInboundMessages(generation: generation)
         if AppBuildEnvironment.showsHardwareDebugTools {
-            await BLEWiFiDebugCoordinator.shared.queryStatus()
+            await BLEInternalToolsRuntime.connectionDidBecomeReady()
         }
     }
 
@@ -1631,7 +1626,7 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
     }
 
     private func cleanup() {
-        BLEWiFiDebugCoordinator.shared.handleDisconnected()
+        BLEInternalToolsRuntime.handleLinkReset()
         WiFiAvatarSessionCoordinator.shared.handleDisconnected()
         BLESyncCoordinator.shared.handleOfflineSyncDisconnected()
         AppState.shared.handleCustomAvatarDeviceDisconnected()
@@ -1703,7 +1698,7 @@ extension BLEService: CBCentralManagerDelegate {
                 if let peripheral = connectedPeripheral,
                    connectionAttempt != nil {
                     reconnectAfterBluetoothPowerCycle = autoReconnectEffective
-                        && !BLEShippingModeCoordinator.shared.blocksAutomaticBLEWork
+                        && !BLEInternalToolsRuntime.blocksAutomaticBLEWork
                     cancelConnectionAttempt(
                         .bluetoothNotAvailable,
                         peripheral: peripheral,
@@ -1833,7 +1828,7 @@ extension BLEService: CBCentralManagerDelegate {
             // cleanup 会把 Wi-Fi 调试协调器重置为 unknown，故重连判定也必须先快照。
             let wasIntentional = isIntentionalDisconnect
             let shouldAutoReconnect = autoReconnectEffective
-            let wasShippingModeActivation = isPendingShippingModeActivation
+            let wasShippingModeActivation = BLEInternalToolsRuntime.expectsDeviceDisconnect
             let wasOTAReboot = isPendingOTAReboot
             let shouldResumeAfterBluetoothPowerCycle = reconnectAfterBluetoothPowerCycle
 
@@ -1843,11 +1838,7 @@ extension BLEService: CBCentralManagerDelegate {
                 BLEOTACoordinator.shared.handleExpectedDisconnect()
             }
             if wasShippingModeActivation {
-                if wasIntentional {
-                    BLEShippingModeCoordinator.shared.handleUnconfirmedDisconnect()
-                } else {
-                    BLEShippingModeCoordinator.shared.handleExpectedDisconnect()
-                }
+                BLEInternalToolsRuntime.handleConnectionEnded(intentional: wasIntentional)
             }
 
             cleanup()

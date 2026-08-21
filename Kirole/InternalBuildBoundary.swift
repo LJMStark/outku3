@@ -27,7 +27,9 @@ enum InternalBuildBoundary {
     static let toolPhrases =
         "Wi-Fi PC Debug | Focus Debug | Shipping Mode | Start Test Focus Session | 1 second = 1 minute"
 
+    @MainActor
     static func activate() {
+        InternalBLEToolsController.install()
         Logger(subsystem: "com.kirole.app", category: "release-channel")
             .info("Internal distribution channel active: \(marker, privacy: .public) tools: \(toolPhrases, privacy: .public)")
         AppBuildEnvironment.enableInternalHardwareChannel()
@@ -40,6 +42,7 @@ enum InternalBuildBoundary {
         )
     }
     #else
+    @MainActor
     static func activate() {}
 
     static var toolsViews: InternalToolsViews { .empty }

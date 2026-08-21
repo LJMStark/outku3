@@ -29,7 +29,6 @@ public enum BLEEventHandler {
     static func handleReceivedPayload(
         _ message: BLEReceivedMessage,
         service: BLEService,
-        wifiDebugCoordinator: BLEWiFiDebugCoordinator = .shared,
         wifiAvatarSessionCoordinator: WiFiAvatarSessionCoordinator = .shared,
         connectionGeneration: UInt64? = nil
     ) async {
@@ -41,10 +40,9 @@ public enum BLEEventHandler {
             return
         }
 
-        // 0x19 是当前连接内的实时控制应答，不属于可离线重放的 Event Log。
-        // 必须在 EventLog 解析之前截获，否则可能被误丢弃或将来撞上同字节的新事件。
-        if message.type == BLEDataType.wifiDebugMode.rawValue {
-            wifiDebugCoordinator.handleResponse(payload: message.payload)
+        // Internal TestFlight may install handlers for factory/debug frames. App Store leaves the
+        // runtime empty, so those frames are ignored by the normal EventLog parser below.
+        if BLEInternalToolsRuntime.consumeInboundMessage(message) {
             return
         }
 

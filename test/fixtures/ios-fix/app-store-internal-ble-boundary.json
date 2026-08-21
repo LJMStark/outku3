@@ -1,0 +1,30 @@
+{
+  "fixture": "app-store-internal-ble-boundary",
+  "before": {
+    "appStoreSymbols": [
+      "KiroleFeature.BLEWiFiDebugCoordinator",
+      "KiroleFeature.BLEShippingModeCoordinator",
+      "KiroleFeature.BLEService.sendWiFiDebugCommand",
+      "KiroleFeature.BLEService.sendShippingModeCommand"
+    ]
+  },
+  "expected": {
+    "internalReleaseContains": [
+      "Kirole.BLEWiFiDebugCoordinator",
+      "Kirole.BLEShippingModeCoordinator"
+    ],
+    "appStoreReleaseExcludes": [
+      "Kirole.BLEWiFiDebugCoordinator",
+      "Kirole.BLEShippingModeCoordinator",
+      "KiroleFeature.BLEWiFiDebugCoordinator",
+      "KiroleFeature.BLEShippingModeCoordinator"
+    ],
+    "unchangedCustomerBLE": [
+      "connection readiness phases",
+      "Notify and DeviceWake handling",
+      "0x1A WiFi avatar session",
+      "Focus reconnect 1.3.1",
+      "automatic reconnect policy"
+    ]
+  }
+}

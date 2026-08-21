@@ -1,7 +1,9 @@
+#if KIROLE_INTERNAL || KIROLE_INTERNAL_BLE_MODULE
 import Foundation
 import Observation
+@_spi(KiroleInternal) import KiroleFeature
 
-public enum BLEWiFiDebugCommand: UInt8, Sendable, Equatable {
+enum BLEWiFiDebugCommand: UInt8, Sendable, Equatable {
     case disable = 0x00
     case enable = 0x01
     case query = 0x02
@@ -110,7 +112,7 @@ public final class BLEWiFiDebugCoordinator {
         }
     }
 
-    public typealias SendCommand = @MainActor (BLEWiFiDebugCommand) async throws -> Void
+    typealias SendCommand = @MainActor (BLEWiFiDebugCommand) async throws -> Void
 
     public static let shared = BLEWiFiDebugCoordinator()
 
@@ -140,7 +142,10 @@ public final class BLEWiFiDebugCoordinator {
     ) {
         self.responseTimeout = responseTimeout
         self.sendCommand = sendCommand ?? { command in
-            try await BLEService.shared.sendWiFiDebugCommand(command)
+            try await BLEService.shared.sendInternalToolCommand(
+                type: .wifiDebugMode,
+                data: command.payload
+            )
         }
     }
 
@@ -270,3 +275,4 @@ public final class BLEWiFiDebugCoordinator {
         isQuerying = false
     }
 }
+#endif

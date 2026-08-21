@@ -116,7 +116,7 @@ public final class FocusSessionService {
         self.focusRevisionLedger = focusRevisionLedger
         self.focusRevisionDeviceID = focusRevisionDeviceID
         self.canStartSession = canStartSession ?? {
-            !BLEShippingModeCoordinator.shared.blocksAutomaticBLEWork
+            !BLEInternalToolsRuntime.blocksAutomaticBLEWork
         }
         self.focusGuardService = focusGuardService
         self.interruptionDetector = interruptionDetector ?? ScreenTimeInterruptionDetector.shared

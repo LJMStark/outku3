@@ -2,6 +2,7 @@ import CryptoKit
 import Foundation
 import Testing
 @testable import KiroleFeature
+@_spi(KiroleInternal) @testable import KiroleInternalBLE
 
 @Suite("BLESecurity Tests", .serialized)
 struct BLESecurityTests {
@@ -191,7 +192,7 @@ struct BLESecurityTests {
 
         let appPayload = try manager.securePayload(
             type: BLEDataType.wifiDebugMode.rawValue,
-            payload: BLEWiFiDebugCommand.enable.payload
+            payload: Data([0x01])
         )
         let appFrame = BLESimpleEncoder.encode(type: BLEDataType.secureData.rawValue, payload: appPayload)
         let appOpened = try manager.openSecurePayload(appFrame.subdata(in: 3..<appFrame.count))
@@ -209,10 +210,11 @@ struct BLESecurityTests {
         let innerMessage = try manager.openSecurePayload(outerMessage.payload)
         let coordinator = BLEWiFiDebugCoordinator.makeForTesting { _ in }
         await coordinator.queryStatus()
+        InternalBLEToolsController.installForTesting(wifiDebugCoordinator: coordinator)
+        defer { InternalBLEToolsController.uninstallForTesting() }
         await BLEEventHandler.handleReceivedPayload(
             innerMessage,
-            service: .shared,
-            wifiDebugCoordinator: coordinator
+            service: .shared
         )
         #expect(coordinator.state == .on)
         #expect(coordinator.isEnabled)

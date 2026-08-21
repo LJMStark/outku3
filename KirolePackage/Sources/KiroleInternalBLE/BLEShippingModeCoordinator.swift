@@ -1,5 +1,13 @@
+#if KIROLE_INTERNAL || KIROLE_INTERNAL_BLE_MODULE
 import Foundation
 import Observation
+@_spi(KiroleInternal) import KiroleFeature
+
+enum BLEShippingModeCommand: UInt8, Sendable, Equatable {
+    case enable = 0x01
+
+    var payload: Data { Data([rawValue]) }
+}
 
 // MARK: - BLE Shipping Mode Coordinator
 
@@ -25,7 +33,7 @@ public final class BLEShippingModeCoordinator {
         case conflictingDeviceOperation
     }
 
-    public typealias ArmExpectedDisconnect = @MainActor () -> Void
+    public typealias ArmExpectedDisconnect = @MainActor @Sendable () -> Void
     public typealias SendCommand = @MainActor (@escaping ArmExpectedDisconnect) async throws -> Void
     public typealias CanStart = @MainActor () -> Bool
     public typealias SetPendingDisconnect = @MainActor (Bool) -> Void
@@ -50,6 +58,8 @@ public final class BLEShippingModeCoordinator {
         expectedDisconnectArmed || state == .sending || state == .awaitingDisconnect
     }
 
+    var expectsDeviceDisconnect: Bool { expectedDisconnectArmed }
+
     private let disconnectTimeout: Duration
     private let lateDisconnectGrace: Duration
     private let canStart: CanStart
@@ -73,11 +83,11 @@ public final class BLEShippingModeCoordinator {
                 && FocusSessionService.shared.activeSession == nil
                 && !FocusSessionService.shared.isStartingSession
         }
-        self.setPendingDisconnect = setPendingDisconnect ?? { isPending in
-            BLEService.shared.isPendingShippingModeActivation = isPending
-        }
+        self.setPendingDisconnect = setPendingDisconnect ?? { _ in }
         self.sendCommand = sendCommand ?? { armExpectedDisconnect in
-            try await BLEService.shared.sendShippingModeCommand(
+            try await BLEService.shared.sendInternalToolCommand(
+                type: .shippingMode,
+                data: BLEShippingModeCommand.enable.payload,
                 onWillWrite: armExpectedDisconnect
             )
         }
@@ -208,3 +218,4 @@ public final class BLEShippingModeCoordinator {
         lateDisconnectTask = nil
     }
 }
+#endif

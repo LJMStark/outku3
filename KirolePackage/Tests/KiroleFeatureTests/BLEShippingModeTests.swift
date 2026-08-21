@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import KiroleFeature
+@testable import KiroleInternalBLE
 
 @MainActor
 @Suite("BLE Shipping Mode", .serialized)

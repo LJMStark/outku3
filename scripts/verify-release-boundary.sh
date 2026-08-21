@@ -6,6 +6,8 @@
 #   - AppStoreRelease  does NOT contain it
 #   - InternalRelease  contains the internal-tool UI strings
 #   - AppStoreRelease  does NOT contain those strings
+#   - InternalRelease  contains the factory BLE implementations
+#   - AppStoreRelease  does NOT contain the factory BLE implementations
 #   - AppStoreRelease  does NOT package repository-only engineering files
 #
 # The marker lives in Kirole/InternalBuildBoundary.swift; keep the string
@@ -60,6 +62,12 @@ raise SystemExit(1)
 PY
 }
 
+demangle_symbols() {
+  local bin="$1"
+  local output="$2"
+  nm -gj "$bin" 2>/dev/null | xcrun swift-demangle > "$output"
+}
+
 fail=0
 if binary_contains "$INTERNAL_BIN" "$MARKER"; then
   echo "PASS  InternalRelease binary contains the boundary marker"
@@ -97,6 +105,47 @@ for phrase in "${INTERNAL_ONLY_STRINGS[@]}"; do
     fail=1
   else
     echo "PASS  AppStoreRelease binary has no '$phrase'"
+  fi
+done
+
+INTERNAL_SYMBOLS="$DERIVED/InternalRelease.symbols"
+APPSTORE_SYMBOLS="$DERIVED/AppStoreRelease.symbols"
+demangle_symbols "$INTERNAL_BIN" "$INTERNAL_SYMBOLS"
+demangle_symbols "$APPSTORE_BIN" "$APPSTORE_SYMBOLS"
+
+INTERNAL_ONLY_SYMBOLS=(
+  "Kirole.BLEWiFiDebugCoordinator"
+  "Kirole.BLEShippingModeCoordinator"
+)
+
+for symbol in "${INTERNAL_ONLY_SYMBOLS[@]}"; do
+  if grep -Fq "$symbol" "$INTERNAL_SYMBOLS"; then
+    echo "PASS  InternalRelease binary contains '$symbol'"
+  else
+    echo "FAIL  InternalRelease binary is missing '$symbol'"
+    fail=1
+  fi
+  if grep -Fq "$symbol" "$APPSTORE_SYMBOLS"; then
+    echo "FAIL  AppStoreRelease binary contains '$symbol'"
+    fail=1
+  else
+    echo "PASS  AppStoreRelease binary has no '$symbol'"
+  fi
+done
+
+LEGACY_CUSTOMER_SYMBOLS=(
+  "KiroleFeature.BLEWiFiDebugCoordinator"
+  "KiroleFeature.BLEShippingModeCoordinator"
+  "KiroleFeature.BLEService.sendWiFiDebugCommand"
+  "KiroleFeature.BLEService.sendShippingModeCommand"
+)
+
+for symbol in "${LEGACY_CUSTOMER_SYMBOLS[@]}"; do
+  if grep -Fq "$symbol" "$APPSTORE_SYMBOLS"; then
+    echo "FAIL  AppStoreRelease binary contains legacy internal symbol '$symbol'"
+    fail=1
+  else
+    echo "PASS  AppStoreRelease binary has no legacy internal symbol '$symbol'"
   fi
 done
 
