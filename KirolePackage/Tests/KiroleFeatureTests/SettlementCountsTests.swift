@@ -163,6 +163,111 @@ struct SettlementCountsTests {
         #expect(label == "Release Day")
     }
 
+    // MARK: - tomorrowFirstUpLabel（每日总结唯一文案的明日分支）
+
+    @Test("明天有日程时取最早一项，并优先于明天任务")
+    func tomorrowFirstUpPrefersEarliestEvent() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(secondsFromGMT: 0))
+        let now = try #require(calendar.date(from: DateComponents(
+            year: 2026, month: 8, day: 21, hour: 20
+        )))
+        let tomorrow = try #require(calendar.date(byAdding: .day, value: 1, to: now))
+        let later = CalendarEvent(
+            title: "Planning",
+            startTime: try #require(calendar.date(bySettingHour: 14, minute: 0, second: 0, of: tomorrow)),
+            endTime: try #require(calendar.date(bySettingHour: 15, minute: 0, second: 0, of: tomorrow))
+        )
+        let earlier = CalendarEvent(
+            title: "Team Sync",
+            startTime: try #require(calendar.date(bySettingHour: 9, minute: 0, second: 0, of: tomorrow)),
+            endTime: try #require(calendar.date(bySettingHour: 10, minute: 0, second: 0, of: tomorrow))
+        )
+        let task = TaskItem(title: "Ship build", dueDate: tomorrow, priority: .high)
+
+        let label = DayPackGenerator.tomorrowFirstUpLabel(
+            tasks: [task], events: [later, earlier], now: now, calendar: calendar
+        )
+
+        #expect(label == "09:00 Team Sync")
+    }
+
+    @Test("明天没有日程时取优先级最高的未完成任务")
+    func tomorrowFirstUpFallsBackToHighestPriorityTask() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(secondsFromGMT: 0))
+        let now = try #require(calendar.date(from: DateComponents(
+            year: 2026, month: 8, day: 21, hour: 20
+        )))
+        let tomorrow = try #require(calendar.date(byAdding: .day, value: 1, to: now))
+        let low = TaskItem(title: "Buy milk", dueDate: tomorrow, priority: .low)
+        let high = TaskItem(title: "Ship build", dueDate: tomorrow, priority: .high)
+        let completed = TaskItem(
+            title: "Already done", isCompleted: true, dueDate: tomorrow, priority: .high
+        )
+
+        let label = DayPackGenerator.tomorrowFirstUpLabel(
+            tasks: [low, completed, high], events: [], now: now, calendar: calendar
+        )
+
+        #expect(label == "Ship build")
+    }
+
+    @Test("明日任务严格按优先级选择，不让手动展示标记压过高优先级")
+    func tomorrowFirstUpUsesTaskPriorityBeforeDisplayOrigin() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(secondsFromGMT: 0))
+        let now = try #require(calendar.date(from: DateComponents(
+            year: 2026, month: 8, day: 21, hour: 20
+        )))
+        let tomorrow = try #require(calendar.date(byAdding: .day, value: 1, to: now))
+        let manuallySelectedLow = TaskItem(
+            title: "Buy milk", dueDate: nil, priority: .low,
+            todayDisplayDate: tomorrow
+        )
+        let naturallyDueHigh = TaskItem(
+            title: "Ship build", dueDate: tomorrow, priority: .high
+        )
+
+        let label = DayPackGenerator.tomorrowFirstUpLabel(
+            tasks: [manuallySelectedLow, naturallyDueHigh],
+            events: [], now: now, calendar: calendar
+        )
+
+        #expect(label == "Ship build")
+    }
+
+    @Test("明天没有日程或任务时返回空串")
+    func tomorrowFirstUpIsEmptyWithoutPlans() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(secondsFromGMT: 0))
+        let now = try #require(calendar.date(from: DateComponents(
+            year: 2026, month: 8, day: 21, hour: 20
+        )))
+
+        let label = DayPackGenerator.tomorrowFirstUpLabel(
+            tasks: [], events: [], now: now, calendar: calendar
+        )
+
+        #expect(label.isEmpty)
+    }
+
+    @Test("日历同步窗口覆盖今天和明天，且不带入后天")
+    func settlementCalendarSyncWindowCoversExactlyTwoDays() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(secondsFromGMT: 0))
+        let now = try #require(calendar.date(from: DateComponents(
+            year: 2026, month: 8, day: 21, hour: 20, minute: 30
+        )))
+
+        let range = calendar.dayPackEventSyncRange(containing: now)
+
+        #expect(range.lowerBound == calendar.startOfDay(for: now))
+        #expect(range.upperBound == calendar.date(
+            byAdding: .day, value: 2, to: calendar.startOfDay(for: now)
+        ))
+    }
+
     // MARK: - scheduledEventMinutes + settlementQuoteBranch（页面四 金句三分支）
 
     private func timedEvent(minutes: Double, allDay: Bool = false) -> CalendarEvent {

@@ -246,6 +246,54 @@ enum FallbackText {
         return parts.joined(separator: " ")
     }
 
+    /// 单气泡总结的预算兜底。结尾必须保留，因此先放死线/专注硬规则，再在空间允许时补完成数。
+    static func settlementReviewWithEnding(
+        deadlineTitles: [String], focusMinutes: Int,
+        tasksCompleted: Int, tasksTotal: Int,
+        ending: String
+    ) -> String {
+        let limit = DayPackTextBudget.settlementReview
+        let safeEnding = CompanionTextService.enforceByteBudget(
+            ending.asciiSanitizedForEInk(), maxBytes: 72
+        )
+        var required: [String] = []
+
+        let meaningfulTitles = deadlineTitles.filter {
+            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        if let title = meaningfulTitles
+            .map({ $0.asciiSanitizedForEInk().trimmingCharacters(in: .whitespacesAndNewlines) })
+            .first(where: { !$0.isEmpty }) {
+            let compactTitle = CompanionTextService.enforceByteBudget(title, maxBytes: 60)
+            required.append("Deadline: \(compactTitle).")
+        } else if !meaningfulTitles.isEmpty {
+            required.append("Today's deadline item needed attention.")
+        }
+        if focusMinutes > DayPackGenerator.focusMentionThresholdMinutes {
+            required.append("Focus: \(DayPackGenerator.focusDurationLabel(minutes: focusMinutes)).")
+        }
+
+        let completion = tasksTotal > 0
+            ? "Today: \(tasksCompleted)/\(tasksTotal) planned items done."
+            : "Today was light, with nothing planned."
+        let requiredAndEnding = (required + [safeEnding])
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        let withCompletion = ([completion] + required + [safeEnding])
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        if withCompletion.utf8.count <= limit { return withCompletion }
+        if requiredAndEnding.utf8.count <= limit { return requiredAndEnding }
+
+        // 极端长标题已在上面限制为 60B；这里仅防未来模板变长，保住结尾和可解析预算。
+        return CompanionTextService.enforceByteBudget(requiredAndEnding, maxBytes: limit)
+    }
+
+    /// 明天没有安排时的固定收尾。只谈今天，不凭空建议明天增减任务。
+    static func settlementClosingQuote() -> String {
+        "Let today's effort be enough; the evening can be quiet."
+    }
+
     /// 全部完成 → 庆祝收尾（离线兜底；在线走人格管线）。
     static func settlementQuoteCelebration(
         style: CompanionStyle?, customVoice: CompanionPersonaVoice? = nil

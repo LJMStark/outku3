@@ -24,8 +24,8 @@ public struct DayPack: Codable, Sendable {
     // incomplete task title, else "". Computed App-side so firmware just renders it.
     public let firstUp: String
 
-    // 每日总结页（v2.5.30 增、v2.5.31 定稿两段，客户 2026-07-20 拍板"分3部分"系笔误）——
-    // 固件长按"完成当日"时展示：概况点评（死线必提、专注>2h 必提时长）+ 金句/明日鼓励（三分支）。
+    // 每日总结页唯一气泡。完整文案放 settlementReview；settlementQuote 仅保留 Codable/
+    // 1.3.1 字段形状，编码器恒发长度 0，防止旧缓存内容重新上 wire。
     public let settlementReview: String
     public let settlementQuote: String
 
@@ -91,7 +91,6 @@ public struct DayPack: Codable, Sendable {
         parts.append("daySummary=\(daySummary)")
         parts.append("firstUp=\(firstUp)")
         parts.append("settlementReview=\(settlementReview)")
-        parts.append("settlementQuote=\(settlementQuote)")
         parts.append("events.count=\(events.count)")
         for event in events {
             parts.append("event.time=\(event.time)")

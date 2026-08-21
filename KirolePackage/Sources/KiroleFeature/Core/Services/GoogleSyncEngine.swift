@@ -3,7 +3,7 @@ import Foundation
 // MARK: - Injectable Google boundaries
 
 protocol GoogleCalendarSyncServing: Sendable {
-    func fetchTodayEvents() async throws -> [CalendarEvent]
+    func fetchDayPackEvents() async throws -> [CalendarEvent]
 }
 
 protocol GoogleTasksSyncServing: Sendable {
@@ -26,8 +26,8 @@ private struct LiveGoogleCalendarSyncService: GoogleCalendarSyncServing {
         self.api = api
     }
 
-    func fetchTodayEvents() async throws -> [CalendarEvent] {
-        try await api.getTodayEvents()
+    func fetchDayPackEvents() async throws -> [CalendarEvent] {
+        try await api.getDayPackEvents()
     }
 }
 
@@ -413,7 +413,7 @@ public actor GoogleSyncEngine {
             )
         }
 
-        let events = try await calendarAPI.fetchTodayEvents()
+        let events = try await calendarAPI.fetchDayPackEvents()
         try validateOperation(lease)
         #if DEBUG
         print("[GoogleSyncEngine] Full calendar sync events=\(events.count)")

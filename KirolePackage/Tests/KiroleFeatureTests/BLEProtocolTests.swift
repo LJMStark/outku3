@@ -1000,12 +1000,12 @@ struct BLEProtocolTests {
         #expect(readString(from: data, cursor: &cursor) == "09:30 Standup") // FirstUp
         // v2.5.30/v2.5.31 settlement page tail texts
         #expect(readString(from: data, cursor: &cursor) == "You completed 2 of 3 items today.")
-        #expect(readString(from: data, cursor: &cursor) == "A full sweep today. Great work, truly.")
+        #expect(readString(from: data, cursor: &cursor) == "")
         #expect(cursor == data.count)                                       // SettlementQuote is the final field
     }
 
-    @Test("BLEDataEncoder encodeDayPack truncates settlement texts to their budgets (v2.5.30)")
-    func encodeDayPackTruncatesSettlementTexts() {
+    @Test("BLEDataEncoder keeps the review and always encodes the reserved quote field empty")
+    func encodeDayPackKeepsReviewAndEmptiesReservedQuote() {
         let settlement = SettlementData(
             tasksCompleted: 0, tasksTotal: 0, pointsEarned: 0,
             petMood: "happy", summaryMessage: "", encouragementMessage: ""
@@ -1029,12 +1029,12 @@ struct BLEProtocolTests {
         _ = readString(from: data, cursor: &cursor)    // FirstUp
         #expect(data[cursor] == UInt8(DayPackTextBudget.settlementReview))  // 180
         #expect(readString(from: data, cursor: &cursor)?.count == DayPackTextBudget.settlementReview)
-        #expect(data[cursor] == UInt8(DayPackTextBudget.settlementQuote))   // 120
-        #expect(readString(from: data, cursor: &cursor)?.count == DayPackTextBudget.settlementQuote)
+        #expect(data[cursor] == 0)
+        #expect(readString(from: data, cursor: &cursor) == "")
         #expect(cursor == data.count)
     }
 
-    @Test("DayPack fingerprint varies on v2.5.30/31 fields (endTime / settlement texts)")
+    @Test("DayPack fingerprint follows on-wire endTime/review and ignores reserved quote content")
     func dayPackFingerprintVariesOnSettlementFields() {
         let settlement = SettlementData(
             tasksCompleted: 0, tasksTotal: 0, pointsEarned: 0,
@@ -1056,7 +1056,7 @@ struct BLEProtocolTests {
         let base = pack().stableFingerprint()
         #expect(pack(endTime: "11:00").stableFingerprint() != base)
         #expect(pack(review: "r2").stableFingerprint() != base)
-        #expect(pack(quote: "q2").stableFingerprint() != base)
+        #expect(pack(quote: "q2").stableFingerprint() == base)
         #expect(pack().stableFingerprint() == base)
     }
 

@@ -8,6 +8,61 @@ import Testing
 @Suite("DayPack Settlement Texts")
 struct DayPackSettlementTextTests {
 
+    @Test("明天有安排：唯一总结字段以明日事项和鼓励收尾")
+    func settlementReviewEndsWithTomorrowEncouragement() {
+        let ending = DayPackGenerator.settlementEnding(
+            tomorrowFirstUp: "09:00 Team Sync"
+        )
+        let final = DayPackGenerator.mergedSettlementReview(
+            review: "You completed everything planned today.",
+            ending: ending,
+            deadlineTitles: [], focusMinutes: 0,
+            tasksCompleted: 3, tasksTotal: 3
+        )
+
+        #expect(final.contains("09:00 Team Sync"))
+        #expect(final.localizedCaseInsensitiveContains("tomorrow"))
+        #expect(final.utf8.count <= DayPackTextBudget.settlementReview)
+        #expect(!final.contains("\n"))
+    }
+
+    @Test("明天无安排：唯一总结字段以金句收尾")
+    func settlementReviewEndsWithQuoteWithoutTomorrowPlans() {
+        let ending = DayPackGenerator.settlementEnding(
+            tomorrowFirstUp: ""
+        )
+        let final = DayPackGenerator.mergedSettlementReview(
+            review: "You completed everything planned today.",
+            ending: ending,
+            deadlineTitles: [], focusMinutes: 0,
+            tasksCompleted: 3, tasksTotal: 3
+        )
+
+        #expect(!ending.isEmpty)
+        #expect(ending == FallbackText.settlementClosingQuote())
+        #expect(!final.localizedCaseInsensitiveContains("tomorrow:"))
+        #expect(final.hasSuffix(ending))
+        #expect(final.utf8.count <= DayPackTextBudget.settlementReview)
+    }
+
+    @Test("合并总结保留死线与专注硬规则，并始终保留结尾")
+    func mergedSettlementReviewPreservesRequiredFactsAndEnding() {
+        let deadline = "Quarterly filing"
+        let ending = "Tomorrow: 09:00 Team Sync. You've got this."
+        let final = DayPackGenerator.mergedSettlementReview(
+            review: String(repeating: "A detailed review of the day. ", count: 12),
+            ending: ending,
+            deadlineTitles: [deadline], focusMinutes: 150,
+            tasksCompleted: 1, tasksTotal: 4
+        )
+
+        #expect(CompanionTextService.reviewSatisfiesHardRules(
+            final, deadlineTitles: [deadline], focusMinutes: 150
+        ))
+        #expect(final.hasSuffix(ending))
+        #expect(final.utf8.count <= DayPackTextBudget.settlementReview)
+    }
+
     // MARK: - FallbackText.settlementReview（硬规则的确定性保证）
 
     @Test("死线超 8 条：第 9 条起经 overflow 参数并入 review（离线兜底可见）")

@@ -165,9 +165,11 @@ extension AppState {
 
         do {
             let calendar = Calendar.current
-            let startOfDay = calendar.startOfDay(for: Date())
-            let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
-            let appleEvents = try await appleSyncEngine.fetchCalendarEvents(from: startOfDay, to: endOfDay)
+            let range = calendar.dayPackEventSyncRange()
+            let appleEvents = try await appleSyncEngine.fetchCalendarEvents(
+                from: range.lowerBound,
+                to: range.upperBound
+            )
             guard canCommitExternalSync(.apple, generation: syncGeneration) else { return }
             let otherEvents = events.filter { $0.source != .apple }
             events = otherEvents + appleEvents

@@ -29,9 +29,8 @@ public final class DayPackGenerator {
     /// churning (LLM text varies) and forced needless re-pushes.
     private var daySummaryCache: (key: String, text: String)?
 
-    /// 页面四文案缓存（同 daySummaryCache 动机）：key 覆盖全部生成素材（日期、事件摘要含类别、
-    /// 完成数、专注分钟、金句分支），素材不变则复用——不重打 LLM、不搅动指纹。
-    private var settlementTextCache: (key: String, review: String, quote: String)?
+    /// 页面四唯一文案缓存：素材不变时复用，避免重复请求 AI 和无意义的 DayPack 重发。
+    private var settlementReviewCache: (key: String, text: String)?
 
     private init() {}
 
@@ -39,13 +38,15 @@ public final class DayPackGenerator {
         pet: Pet, tasks: [TaskItem], events: [CalendarEvent],
         weather: Weather, deviceMode: DeviceMode,
         userProfile: UserProfile = .default,
-        customCompanions: [CustomCompanion] = [],
+        customCompanions _: [CustomCompanion] = [],
         screenSize: ScreenSize = .fourInch,
         petDialogue: String = ""
     ) async -> DayPack {
-        let todayTasks = tasks.filter { $0.isInTodayDisplay() }
+        let now = Date()
+        let calendar = Calendar.current
+        let todayTasks = tasks.filter { $0.isInTodayDisplay(on: now, calendar: calendar) }
         let todayEvents = events
-            .filter { Calendar.current.isDateInToday($0.startTime) }
+            .filter { calendar.isDate($0.startTime, inSameDayAs: now) }
             .sorted { $0.startTime < $1.startTime }
 
         // v2.5.0: one pet bubble, sourced from the App's currentPetDialogue (the same line the
@@ -86,14 +87,15 @@ public final class DayPackGenerator {
         let firstUp = Self.firstUpLabel(events: todayEvents, fallbackTaskTitle: topTasks.first?.title)
 
         let settlementData = await generateSettlementData(tasks: todayTasks, events: todayEvents, pet: pet, userProfile: userProfile)
-        // 页面四 每日总结（v2.5.30）：概况点评 + 分支金句；素材未变走缓存。
-        let activeCustomCompanion = userProfile.customCompanionId.flatMap { id in
-            customCompanions.first { $0.id == id }
-        }
-        let settlementTexts = await cachedSettlementTexts(
+        // 页面四每日总结：硬件只有一个气泡。完整文案只写 SettlementReview；协议中保留的
+        // SettlementQuote 继续发送长度 0，避免改变 1.3.1 DayPack 的字段顺序。
+        let tomorrowFirstUp = Self.tomorrowFirstUpLabel(
+            tasks: tasks, events: events, now: now, calendar: calendar
+        )
+        let settlementReview = await cachedSettlementReview(
             events: eventSummaries, todayEvents: todayEvents,
-            settlement: settlementData, pet: pet, userProfile: userProfile,
-            activeCustomCompanion: activeCustomCompanion
+            settlement: settlementData,
+            tomorrowFirstUp: tomorrowFirstUp
         )
         return DayPack(
             date: Date(),
@@ -103,8 +105,8 @@ public final class DayPackGenerator {
             petDialogue: bubble,
             daySummary: daySummary,
             firstUp: firstUp,
-            settlementReview: settlementTexts.review,
-            settlementQuote: settlementTexts.quote,
+            settlementReview: settlementReview,
+            settlementQuote: "",
             events: eventSummaries,
             topTasks: topTasks,
             settlementData: settlementData
@@ -152,51 +154,42 @@ public final class DayPackGenerator {
         return text
     }
 
-    /// 页面四两段文案（概况点评 + 分支金句），素材键未变时复用缓存。
+    /// 页面四唯一文案。AI 只生成今日回顾；结尾由本地规则确定：明天有安排时提最早一项并
+    /// 鼓励，没有安排时用固定金句。最终合成后写入 SettlementReview。
     /// key 含事件类别：异步分类晚到（缓存 miss → 下轮 AI 结果落地）时会重新生成——与
     /// Category 进指纹的既有约定同一逻辑，保证死线事件"必提"不被过期缓存吞掉。
-    private func cachedSettlementTexts(
+    private func cachedSettlementReview(
         events: [EventSummary], todayEvents: [CalendarEvent],
-        settlement: SettlementData, pet: Pet, userProfile: UserProfile,
-        activeCustomCompanion: CustomCompanion?,
-        now: Date = Date()
-    ) async -> (review: String, quote: String) {
-        let combinedMinutes = Self.scheduledEventMinutes(events: todayEvents) + settlement.totalFocusMinutes
-        let unfinishedEvents = todayEvents.filter { $0.endTime > now }.count
+        settlement: SettlementData,
+        tomorrowFirstUp: String
+    ) async -> String {
         let overflowDeadlineTitles = Self.overflowDeadlineTitles(events: todayEvents)
-        let branch = Self.settlementQuoteBranch(
-            completed: settlement.tasksCompleted, total: settlement.tasksTotal,
-            unfinishedEvents: unfinishedEvents, combinedMinutes: combinedMinutes
-        )
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd"
-        // key 含当前 IP（内置 rawValue + 自定义 id@updatedAt）：金句是人格口吻，切换伙伴、
-        // 或编辑自定义人设（updatedAt 递增，见 CustomCompanion 注释约定）后必须重新生成。
-        let customStamp = activeCustomCompanion.map {
-            "\($0.id.uuidString)@\($0.updatedAt.timeIntervalSince1970)"
-        } ?? userProfile.customCompanionId?.uuidString ?? "-"
         let key = formatter.string(from: Date()) + "#"
             + events.map { "\($0.time)|\($0.title)|\($0.category.rawValue)" }.joined(separator: "\u{1F}")
-            + "#\(settlement.tasksCompleted)/\(settlement.tasksTotal)#\(settlement.totalFocusMinutes)#\(branch)"
+            + "#\(settlement.tasksCompleted)/\(settlement.tasksTotal)#\(settlement.totalFocusMinutes)"
             + "#\(overflowDeadlineTitles.joined(separator: "|"))"
-            + "#\(userProfile.companionCharacter.rawValue)#\(customStamp)"
-        if let cache = settlementTextCache, cache.key == key { return (cache.review, cache.quote) }
+            + "#tomorrow=\(tomorrowFirstUp)"
+        if let cache = settlementReviewCache, cache.key == key { return cache.text }
 
-        // 两段文案互不依赖，并发生成（同 categorize/daySummary 的既有并发模式）。
-        async let review = textService.generateSettlementReview(
+        let review = await textService.generateSettlementReview(
             events: events, overflowDeadlineTitles: overflowDeadlineTitles,
             focusMinutes: settlement.totalFocusMinutes,
             tasksCompleted: settlement.tasksCompleted, tasksTotal: settlement.tasksTotal
         )
-        async let quote = textService.generateSettlementQuote(
-            branch: branch, petName: pet.name, petMood: pet.mood,
-            tasksCompleted: settlement.tasksCompleted, tasksTotal: settlement.tasksTotal,
-            focusMinutes: settlement.totalFocusMinutes, userProfile: userProfile,
-            customCompanion: activeCustomCompanion
+        let ending = Self.settlementEnding(tomorrowFirstUp: tomorrowFirstUp)
+        let result = Self.mergedSettlementReview(
+            review: review,
+            ending: ending,
+            deadlineTitles: events.filter { $0.category == .deadline }.map(\.title)
+                + overflowDeadlineTitles,
+            focusMinutes: settlement.totalFocusMinutes,
+            tasksCompleted: settlement.tasksCompleted,
+            tasksTotal: settlement.tasksTotal
         )
-        let result = (review: await review, quote: await quote)
-        settlementTextCache = (key, result.review, result.quote)
+        settlementReviewCache = (key, result)
         return result
     }
 
@@ -243,16 +236,109 @@ public final class DayPackGenerator {
     /// all-day event), else the supplied top-task title, else "". Recomputed every sync relative
     /// to `now`, so an event drops to the fallback once it has started.
     nonisolated static func firstUpLabel(
-        events: [CalendarEvent], fallbackTaskTitle: String?, now: Date = Date()
+        events: [CalendarEvent], fallbackTaskTitle: String?, now: Date = Date(),
+        calendar: Calendar = .current
     ) -> String {
         if let next = events.filter({ $0.startTime > now }).min(by: { $0.startTime < $1.startTime }) {
             if next.isAllDay { return next.title }
             let formatter = DateFormatter()
             formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = calendar.timeZone
             formatter.dateFormat = "HH:mm"
             return "\(formatter.string(from: next.startTime)) \(next.title)"
         }
         return fallbackTaskTitle ?? ""
+    }
+
+    /// 明天最早一项：日历事件优先；没有事件时取明天优先级最高的未完成任务。
+    nonisolated static func tomorrowFirstUpLabel(
+        tasks: [TaskItem], events: [CalendarEvent], now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> String {
+        guard let tomorrow = calendar.date(
+            byAdding: .day, value: 1, to: calendar.startOfDay(for: now)
+        ) else { return "" }
+        let tomorrowEvents = events.filter {
+            calendar.isDate($0.startTime, inSameDayAs: tomorrow)
+        }
+        let taskTitle = tasks
+            .filter { $0.isInTodayDisplay(on: tomorrow, calendar: calendar) && !$0.isCompleted }
+            .sorted {
+                if $0.priority.rawValue != $1.priority.rawValue {
+                    return $0.priority.rawValue > $1.priority.rawValue
+                }
+                let lhsDue = $0.dueDate ?? .distantFuture
+                let rhsDue = $1.dueDate ?? .distantFuture
+                if lhsDue != rhsDue { return lhsDue < rhsDue }
+                return $0.id < $1.id
+            }
+            .first?.title
+        return firstUpLabel(
+            events: tomorrowEvents,
+            fallbackTaskTitle: taskTitle,
+            now: tomorrow.addingTimeInterval(-1),
+            calendar: calendar
+        )
+    }
+
+    /// 单气泡结尾：明天有安排时给明日鼓励；没有安排时沿用已有 IP 金句模板。
+    nonisolated static func settlementEnding(
+        tomorrowFirstUp: String
+    ) -> String {
+        let trimmedTomorrow = tomorrowFirstUp.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedTomorrow.isEmpty {
+            let wireLabel = trimmedTomorrow.asciiSanitizedForEInk()
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !wireLabel.isEmpty else {
+                return "Tomorrow has something waiting. You've got this."
+            }
+            let label = CompanionTextService.enforceByteBudget(wireLabel, maxBytes: 40)
+            return "Tomorrow: \(label). You've got this."
+        }
+
+        return FallbackText.settlementClosingQuote()
+    }
+
+    /// 合并成硬件唯一总结字段。优先保留结尾；若 AI 回顾在截短后丢失死线/专注硬规则，使用
+    /// 预算感知的确定性回顾，保证最终字符串不超过 SettlementReview 的 180B。
+    nonisolated static func mergedSettlementReview(
+        review: String,
+        ending: String,
+        deadlineTitles: [String],
+        focusMinutes: Int,
+        tasksCompleted: Int,
+        tasksTotal: Int
+    ) -> String {
+        let normalizedEnding = CompanionTextService.enforceByteBudget(
+            ending.asciiSanitizedForEInk().replacingOccurrences(of: "\n", with: " "),
+            maxBytes: 72
+        )
+        let separatorBytes = normalizedEnding.isEmpty ? 0 : 1
+        let reviewBudget = max(
+            0,
+            DayPackTextBudget.settlementReview - normalizedEnding.utf8.count - separatorBytes
+        )
+        let normalizedReview = review.asciiSanitizedForEInk()
+            .replacingOccurrences(of: "\n", with: " ")
+        let compactReview = CompanionTextService.enforceByteBudget(
+            normalizedReview, maxBytes: reviewBudget
+        ).trimmingCharacters(in: .whitespacesAndNewlines)
+        let candidate = [compactReview, normalizedEnding]
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+
+        if CompanionTextService.reviewSatisfiesHardRules(
+            candidate, deadlineTitles: deadlineTitles, focusMinutes: focusMinutes
+        ) {
+            return candidate
+        }
+        return FallbackText.settlementReviewWithEnding(
+            deadlineTitles: deadlineTitles,
+            focusMinutes: focusMinutes,
+            tasksCompleted: tasksCompleted,
+            tasksTotal: tasksTotal,
+            ending: normalizedEnding
+        )
     }
 
     /// Wire budget for TaskInPage.TaskDescription (protocol §4.8). The verbatim note is truncated

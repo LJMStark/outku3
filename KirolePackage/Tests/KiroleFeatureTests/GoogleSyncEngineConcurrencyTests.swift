@@ -262,14 +262,14 @@ private actor InMemoryGoogleSyncStateStore: GoogleSyncStateStoring {
 }
 
 private struct ImmediateGoogleCalendarSyncStub: GoogleCalendarSyncServing {
-    func fetchTodayEvents() async throws -> [CalendarEvent] { [] }
+    func fetchDayPackEvents() async throws -> [CalendarEvent] { [] }
 }
 
 private actor SuspendedGoogleCalendarSyncStub: GoogleCalendarSyncServing {
     private var continuation: CheckedContinuation<[CalendarEvent], Error>?
     private var fetchWaiters: [CheckedContinuation<Void, Never>] = []
 
-    func fetchTodayEvents() async throws -> [CalendarEvent] {
+    func fetchDayPackEvents() async throws -> [CalendarEvent] {
         signalFetchStarted()
         return try await withCheckedThrowingContinuation { continuation = $0 }
     }

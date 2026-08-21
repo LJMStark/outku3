@@ -139,9 +139,9 @@ struct BLEProtocolSimulationTests {
         #expect(parsedDayPack.petDialogue == "Small steps count.")
         #expect(parsedDayPack.daySummary == "Two events today. Take a break before noon.")
         #expect(parsedDayPack.firstUp == "09:30 HW Sync")
-        // v2.5.30/v2.5.31 tail fields (settlement page texts).
+        // SettlementReview carries the single bubble; SettlementQuote remains an empty placeholder.
         #expect(parsedDayPack.settlementReview == "You completed 1 of 2 planned items. You focused for 2h 5m today.")
-        #expect(parsedDayPack.settlementQuote == "All clear! You finished everything you set out to do.")
+        #expect(parsedDayPack.settlementQuote == "")
         #expect(parsedDayPack.events.map(\.title) == ["HW Sync"])
         #expect(parsedDayPack.events.first?.time == "09:30")
         // v2.5.30 per-event EndTime.
@@ -220,7 +220,7 @@ struct BLEProtocolSimulationTests {
             ("daySummary",  dirty.daySummary,  hw.daySummary),
             ("firstUp",     dirty.firstUp,     hw.firstUp),
             ("settlementReview", dirty.settlementReview, hw.settlementReview),
-            ("settlementQuote",  dirty.settlementQuote,  hw.settlementQuote),
+            ("settlementQuote",  "",                    hw.settlementQuote),
             ("event.title", dirty.events[0].title, hw.events.first?.title ?? ""),
             ("event.desc",  dirty.events[0].description, hw.events.first?.description ?? ""),
             ("task.title",  dirty.topTasks[0].title, hw.topTasks.first?.title ?? ""),

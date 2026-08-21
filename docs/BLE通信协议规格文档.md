@@ -496,8 +496,8 @@ IsCompleted(1) | Priority(1)
 | ...    | SettlementData         | Variable    | -          | 进度/专注数值（见下，**已无文本消息**）|
 | ...    | DaySummary             | 1 + N bytes | 180 bytes  | **一天总结（框②）**：情绪向、**只谈日程**（不含 to-do 任务）的概览 + 一条建议——**繁忙/紧凑给休息建议，空闲则提醒喝水**（v2.6.0 规则）；追加在 `SettlementData` 之后（v2.5.7，见下注）。空串表示尚未生成 |
 | ...    | FirstUp                | 1 + N bytes | 60 bytes   | **下一项（框③）**：「First up:」内容——下一个未来事件「HH:mm 标题」（全天事件仅标题），无未来事件则置顶任务标题，皆无则空串。App 算好下发（v2.5.8，在 DaySummary 之后，见下注）|
-| ...    | SettlementReview       | 1 + N bytes | 180 bytes  | **每日总结页·概况点评**（v2.6.0）：中性面板口吻点评今日日程+专注——**有死线类日程必提、当日专注 >2h 必提专注时长**，其余 AI 自由发挥。空串表示尚未生成（见 §6.4）|
-| ...    | SettlementQuote        | 1 + N bytes | 120 bytes  | **每日总结页·金句/明日鼓励**（v2.6.0）：三分支——全部完成（且当日无未结束日程，v2.6.0）→IP 风格庆祝；未完成且日程+专注 >4h→IP 风格「努力了只是任务太满」；否则固定建议文案（见 §6.4）。**DayPack 当前最后一个字段**（v2.6.0，见下注）|
+| ...    | SettlementReview       | 1 + N bytes | 180 bytes  | **每日总结页唯一气泡的完整文案**：先总结今天；明天有安排时带最早一项并鼓励，没有安排时用金句收尾。**有死线类日程必提、当日专注 >2h 必提专注时长**。空串表示尚未生成（见 §6.4）|
+| ...    | SettlementQuote        | 1 + N bytes | 120 bytes  | **保留字段**：App 当前恒发长度 0；固件必须消费该长度字节但不得渲染。**DayPack 当前最后一个字段**（见下注）|
 
 > **v2.5.0 破坏性变更**：删除旧字段 `MorningGreeting / DailySummary / FirstItem / CurrentScheduleSummary / CompanionPhrase`，收敛为单字段 `PetDialogue`；新增带描述的 `Events[]`（旧协议缺此能力）。固件解析器须按本表重写。
 
@@ -505,7 +505,7 @@ IsCompleted(1) | Priority(1)
 
 > **v2.5.8 追加（FirstUp，框③）**：在 `DaySummary` **之后**再追加 `FirstUp`（≤60 字节，1 字节长度前缀 + UTF-8），承载设计稿页面一框③的「First up:」内容。值由 **App 算好下发**：取**下一个未来事件**（startTime > 当前时刻、最早的一个）格式化为「HH:mm 标题」（全天事件仅标题）；无未来事件则取**置顶（最高优先级未完成）任务**标题；皆无则空串。由 App 算而非固件合成，是沿用 §6.5「App 是显示决策方」——「相对当前时刻的下一个」是 App 侧时间逻辑，固件只渲染。（~~FirstUp 为最后一个字段~~ 自 v2.6.0 起其后还有两个尾字段 `SettlementReview`/`SettlementQuote`，见下注。）
 
-> **v2.6.0 追加（每日总结页两文案，严格解析）**：在 `FirstUp` **之后**依次追加 `SettlementReview`（≤180B）、`SettlementQuote`（≤120B），均为 1 字节长度前缀 + UTF-8，承载客户《电子墨水屏需求》（2026-07-20）「每日总结页」两段内容（客户确认"分3部分"系笔误；页面流转与触发见 §6.4 及固件功能规格文档）。生成规则：`SettlementReview` 中性面板口吻，**有 `Category=0x04` 死线类日程必提该日程、当日专注累计 >2h 必提专注时长**——v2.6.0 起为**输出侧校验**：AI 文本不满足即回退恒满足规则的确定性模板；`SettlementQuote` 三分支——全部完成（任务+已结束日程，**且当日无未结束日程**，v2.6.0）→ IP 人格庆祝语；未完成且「今日日程时长（重叠区间合并计）+ 专注时长」>4h → IP 风格表达「今天已很努力，只是任务定多了，明天可减量」；否则（含恰好 4h）客户指定固定文案。文案随每轮 sync 更新（每日总结页显示的是最近一轮推送的文本；硬件进入该页可用既有 `0x20` 拉新，**无新增入站字节**）。`SettlementQuote` 现为 DayPack **最后一个字段**（v2.6.0 曾有第三尾字段 `TomorrowFirstUp`，客户拍板两部分后于 v2.6.0 在固件实现前撤除），同 §7.1 严格解析：固件须依次读完这两个尾字段才到 payload 末尾（仿真解码器 `parseDayPack` 已同步）。
+> **每日总结页字段规则（严格解析，字段形状不变）**：在 `FirstUp` **之后**仍依次读取 `SettlementReview`（≤180B）、`SettlementQuote`（≤120B），两者都是 1 字节长度前缀 + UTF-8。`SettlementReview` 承载硬件唯一气泡的完整文案：先总结今天；若明天有日历安排，带上最早一项；没有日历安排时，带上优先级最高的未完成明日任务；两者皆无时用金句收尾。有明日安排时在同一段中给出明日鼓励。App 继续做输出侧校验：有 `Category=0x04` 死线类日程必提，当日专注累计 >2h 必提专注时长。`SettlementQuote` 是保留字段，App 当前恒发长度 0；固件必须消费这个长度字节但不得渲染。文案随每轮 sync 更新，硬件进入本页可用既有 `0x20` 拉新，**无新增入站字节、无 Type/Opcode/偏移/字段长度变化**。`SettlementQuote` 仍是 DayPack 最后一个字段，固件须读完后才到 payload 末尾（仿真解码器 `parseDayPack` 已同步）。
 
 **Event 条目：**
 
@@ -1821,14 +1821,17 @@ Gateway(4) | Port(2 BE) | PathLen(1) | Path(N3) | TokenLen(1) | Token(N4) | TTL(
 
 用户在「进行中日程」页**长按按钮「完成当日」**进入；误触保护：**再次长按返回**进行中日程页。触发与页面流转是**固件本地行为**（同 §6.7 状态机原则），**无新增入站字节**——硬件进入本页可发送 v1 `RequestRefresh(0x20)`。App 会立即回 `0x1B` 更新任务清单；总结文案仍来自最近一次 DayPack，完整同步受 §8.5 合并窗与内容指纹约束。
 
-内容两段（自上而下；客户 2026-07-20 确认"分3部分"系笔误、实为两部分，v2.6.0）：
+内容是一个气泡，完整文案放在 DayPack.`SettlementReview`（≤180B）：
 
-1. **概况点评** = DayPack.`SettlementReview`（≤180B，中性面板口吻）。App 生成硬规则：今日含 `Category=0x04` 死线类日程必提该日程；当日专注累计 >2h 必提专注时长；其余 AI 自由发挥。v2.6.0 起为**输出侧校验**——AI 文本不满足硬规则即回退恒满足的确定性兜底模板。
-2. **金句 / 明日鼓励** = DayPack.`SettlementQuote`（≤120B，换行显示）。三分支（App 判定）：日程+任务全部完成**且当日无未结束日程** → IP 人格庆祝式收尾；未全部完成且「今日日程时长（重叠区间合并计）+ 专注时长」>4h → IP 风格表达「今天已很努力，只是任务定多了，明天可减量、从稳定完成开始」；否则（含恰好 4h）→ 客户指定固定文案（"When the schedule is full, plan fewer tasks to leave room for focus."）。
+1. 先总结今天。今日含 `Category=0x04` 死线类日程时必须提到该日程；当日专注累计 >2h 时必须提到专注时长。App 在输出侧校验，不满足就使用确定性兜底。
+2. 明天有日历安排时，带上最早一项并给出明日鼓励。
+3. 明天没有日历安排时，带上优先级最高的未完成明日任务并给出明日鼓励。
+4. 明天没有日历安排也没有未完成任务时，用金句收尾。
+5. `SettlementQuote` 保留在原字段位置，App 当前恒发长度 0；固件必须消费长度字节但不得另画一段文字。
 
 数值区（进度比例等）继续复用 `SettlementData` 定长字段（§4.7，v2.6.0 起分母含全部今日日程）。时长阈值口径备注（v2.6.0）：「>2h 必提」「>4h 分支」均按**整分钟 floor** 判定（2h00m30s 计 120 分钟、不触发 >120），亚分钟误差窗口 <1 分钟，产品可接受。
 
-> 决策记录：两段文案由 App 生成随 DayPack 预推、而非硬件长按时实时请求——BLE 断连是常态（§6.7 同一论证），总结页必须离线可显示；代价是文本最多滞后一个 `0x20` 合并窗（~1 分钟），产品可接受。v2.6.0 曾按 mock 推断第三段「明日预告」（`TomorrowFirstUp`），客户确认为笔误后 v2.6.0 撤除。
+> 决策记录：完整单段文案由 App 生成并随 DayPack 预推，而非硬件长按时实时请求——BLE 断连是常态（§6.7 同一论证），总结页必须离线可显示。明日安排直接合入 `SettlementReview`，不恢复独立的 `TomorrowFirstUp` 字段。文本最多滞后一个 `0x20` 合并窗（~1 分钟），产品可接受。
 
 ---
 
@@ -1877,8 +1880,8 @@ App 首页宠物头顶只有**一个**对话槽 `currentPetDialogue`，由阶段
 | 一天总结段落（框②） | **DaySummary（v2.5.7 新增，面板文本，≤180B）** | 旧：dailySummary 曾删，现作面板文本复活 |
 | 下一项「First up」（框③） | **FirstUp（v2.5.8 新增，App 算，≤60B）** | 旧：仅 firstItem 单行；现为 App 算好的「下一个事件/任务」标签 |
 | 事件卡（时间 + 标题 + 描述） | **Events[]（新增 description）** | 缺（仅 firstItem / scheduleSummary） |
-| 每日总结·概况点评 | **SettlementReview（v2.6.0 新增，≤180B）** | 旧 settlement 双消息 v2.5.0 已删；现按客户规则重生（死线/专注硬规则），见 §6.4 |
-| 每日总结·金句/明日鼓励 | **SettlementQuote（v2.6.0 新增，≤120B）** | 新增（三分支），见 §6.4。（v2.6.0 的 TomorrowFirstUp 已于 v2.6.0 撤除） |
+| 每日总结·唯一气泡 | **SettlementReview（≤180B）** | 完整文案：今日总结 + 明日安排鼓励，或无安排时金句收尾；保留死线/专注硬规则，见 §6.4 |
+| 每日总结·保留字段 | **SettlementQuote（长度固定为 0）** | 字段位置保留供严格解析；固件消费长度字节但不渲染，见 §6.4 |
 | 任务清单 | TopTasks[] | 已有 |
 | 进度条（如 50%） | SettlementData.completed/total | 已有 |
 | 专注任务详情 | TaskInPage(0x11) | 已有 |
@@ -1949,7 +1952,7 @@ App 首页宠物头顶只有**一个**对话槽 `currentPetDialogue`，由阶段
 > ⚠️ **下方 hex 向量是 pre-v2.5.0 旧布局，已废弃，切勿照其实现解析（v2.5.9）。** 它含 `MorningGreeting / DailySummary / FirstItem / CurrentScheduleSummary / CompanionPhrase` 及结算双消息——这些字段 v2.5.0 已删除，与现行 §4.7 完全不符。手工维护逐字节向量会随协议演进错位、反误导固件，故不再在此给出新向量，改为下面的**当前字段顺序** + 指向 App 侧锁步维护的**权威往返自检**。
 >
 > **当前 DayPack(0x10) payload 字段顺序**（详见 §4.7；变长字符串 = 1 字节长度 + UTF-8 内容，长度为 0 的空串也占 1 字节、必须照样消费再前进）：
-> `Year(1) Month(1) Day(1) DeviceMode(1) FocusChallengeEnabled(1) PetDialogue(1+N) EventCount(1) Events[]{Time(1+N) Title(1+N) Description(1+N) Category(1) EndTime(1+N) SupportText(1+N)}×N TaskCount(1) TopTasks[]{TaskId(1+N) Title(1+N) IsCompleted(1) Priority(1)}×N SettlementData(10B 定长) DaySummary(1+N) FirstUp(1+N) SettlementReview(1+N) SettlementQuote(1+N，最后一个字段)`。读完 `SettlementQuote`，解析指针应恰好停在 payload 末尾。（`Category` 为 v2.5.27 的每事件 1 字节类别，见 §4.7 六大类映射表；`EndTime` 与两个结算尾字段为 v2.6.0；`SupportText` 为 v2.10.0 的每事件支持性文字，均见 §4.7。）
+> `Year(1) Month(1) Day(1) DeviceMode(1) FocusChallengeEnabled(1) PetDialogue(1+N) EventCount(1) Events[]{Time(1+N) Title(1+N) Description(1+N) Category(1) EndTime(1+N) SupportText(1+N)}×N TaskCount(1) TopTasks[]{TaskId(1+N) Title(1+N) IsCompleted(1) Priority(1)}×N SettlementData(10B 定长) DaySummary(1+N) FirstUp(1+N) SettlementReview(1+N) SettlementQuote(1B，值固定为 0，最后一个字段)`。读完 `SettlementQuote` 的长度字节，解析指针应恰好停在 payload 末尾。（`Category` 为 v2.5.27 的每事件 1 字节类别，见 §4.7 六大类映射表；`EndTime` 与两个结算尾字段为 v2.6.0；`SupportText` 为 v2.10.0 的每事件支持性文字，均见 §4.7。）
 >
 > **权威自检（推荐固件对照）**：App 侧 `BLEProtocolSimulationSupport.swift::parseDayPack()` 按上序逐字段读回并 `requireEnd()`（任何尾部多余字节即报错），与 `BLEDataEncoder.encodeDayPack` 在 `BLEProtocolSimulationTests` 做往返断言；编解码**锁步维护**，是当前布局的权威字节级参考。固件实现解析器后，可请 App 侧据此导出一条与现行布局一致的具体 hex 向量。
 

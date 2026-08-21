@@ -112,6 +112,15 @@ public actor GoogleCalendarAPI {
         return try await getEventsAcrossCalendars(timeMin: startOfDay, timeMax: endOfDay)
     }
 
+    /// DayPack settlement needs today's events plus tomorrow's earliest event.
+    func getDayPackEvents() async throws -> [CalendarEvent] {
+        let range = Calendar.current.dayPackEventSyncRange()
+        return try await getEventsAcrossCalendars(
+            timeMin: range.lowerBound,
+            timeMax: range.upperBound
+        )
+    }
+
     /// 获取本周事件
     public func getWeekEvents() async throws -> [CalendarEvent] {
         let calendar = Calendar.current
