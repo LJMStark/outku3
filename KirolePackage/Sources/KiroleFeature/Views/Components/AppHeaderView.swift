@@ -81,25 +81,13 @@ public struct AppHeaderView: View {
                     }
 
                     if appState.weather.hasData {
-                        HStack(spacing: 6) {
-                            HStack(spacing: 4) {
-                                Image(systemName: appState.weather.condition.rawValue)
-                                    .font(.system(size: 14))
-                                    .foregroundStyle(.white.opacity(0.9))
-                                Text("\(appState.weather.highTemp)\u{00B0}/\(appState.weather.lowTemp)\u{00B0}")
-                                    .font(.system(size: 14))
-                                    .foregroundStyle(.white.opacity(0.9))
-                            }
-
-                            if let legalURL = URL(string: appState.weather.attributionLegalURLString) {
-                                Link(destination: legalURL) {
-                                    Text("\u{F8FF} Weather")
-                                        .font(.system(size: 11, weight: .semibold))
-                                        .foregroundStyle(.white.opacity(0.8))
-                                }
-                                .accessibilityLabel("Apple Weather attribution")
-                                .accessibilityIdentifier("Home_WeatherAttribution")
-                            }
+                        HStack(spacing: 4) {
+                            Image(systemName: appState.weather.condition.rawValue)
+                                .font(.system(size: 14))
+                                .foregroundStyle(.white.opacity(0.9))
+                            Text("\(appState.weather.highTemp)\u{00B0}/\(appState.weather.lowTemp)\u{00B0}")
+                                .font(.system(size: 14))
+                                .foregroundStyle(.white.opacity(0.9))
                         }
                     }
                 }

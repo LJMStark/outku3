@@ -143,9 +143,14 @@ struct SettingsToggleSwitch: View {
 // MARK: - About / Data Sources Section
 
 private struct SettingsAboutSection: View {
+    @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
-    private static let appleWeatherLegalURL = URL(string: "https://weatherkit.apple.com/legal-attribution.html")!
     private static let privacyPolicyURL = URL(string: "https://kirole.681023.xyz/privacy.html")!
+
+    private var appleWeatherLegalURL: URL {
+        URL(string: appState.weather.attributionLegalURLString)
+            ?? URL(string: Weather.appleWeatherLegalURLString)!
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -183,7 +188,7 @@ private struct SettingsAboutSection: View {
             .accessibilityHint("Opens the Kirole privacy policy")
             .accessibilityIdentifier("Settings_PrivacyPolicy")
 
-            Link(destination: Self.appleWeatherLegalURL) {
+            Link(destination: appleWeatherLegalURL) {
                 HStack(spacing: 12) {
                     Image(systemName: "cloud.sun.fill")
                         .font(.system(size: 16))
@@ -194,9 +199,13 @@ private struct SettingsAboutSection: View {
                         Text("Weather")
                             .font(.system(size: 15, weight: .medium))
                             .foregroundStyle(theme.colors.primaryText)
-                        Text("Provided by \u{F8FF} Weather")
-                            .font(.system(size: 12))
-                            .foregroundStyle(theme.colors.secondaryText)
+                        AppleWeatherAttributionMark(
+                            markURLString: appState.weather.attributionCombinedMarkLightURLString,
+                            serviceName: appState.weather.attributionServiceName,
+                            height: 13,
+                            fallbackFont: .system(size: 12),
+                            fallbackColor: theme.colors.secondaryText
+                        )
                     }
 
                     Spacer()

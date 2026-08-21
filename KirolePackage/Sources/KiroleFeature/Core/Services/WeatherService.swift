@@ -48,6 +48,7 @@ public final class WeatherService: NSObject {
             let appleWeather = try await weatherService.weather(for: location)
             let current = appleWeather.currentWeather
             let dailyForecast = appleWeather.dailyForecast.first
+            let attribution = await resolvedAttribution()
 
             // BLE protocol (docs/BLE通信协议规格文档.md §4.5) defines Weather temperature
             // as a signed int8 in *Celsius*. The App is the source of truth for that byte,
@@ -61,7 +62,9 @@ public final class WeatherService: NSObject {
                 condition: mapCondition(current.condition),
                 location: await reverseGeocode(location),
                 hasData: true,
-                attributionLegalURLString: await resolvedAttributionURLString()
+                attributionLegalURLString: attribution.legalURLString,
+                attributionCombinedMarkLightURLString: attribution.combinedMarkLightURLString,
+                attributionServiceName: attribution.serviceName
             )
 
             cachedWeather = weather
@@ -98,12 +101,26 @@ public final class WeatherService: NSObject {
         }
     }
 
-    private func resolvedAttributionURLString() async -> String {
+    private struct ResolvedAttribution {
+        let legalURLString: String
+        let combinedMarkLightURLString: String?
+        let serviceName: String
+    }
+
+    private func resolvedAttribution() async -> ResolvedAttribution {
         do {
             let attribution = try await weatherService.attribution
-            return attribution.legalPageURL.absoluteString
+            return ResolvedAttribution(
+                legalURLString: attribution.legalPageURL.absoluteString,
+                combinedMarkLightURLString: attribution.combinedMarkLightURL.absoluteString,
+                serviceName: attribution.serviceName
+            )
         } catch {
-            return Weather.appleWeatherLegalURLString
+            return ResolvedAttribution(
+                legalURLString: Weather.appleWeatherLegalURLString,
+                combinedMarkLightURLString: nil,
+                serviceName: "Weather"
+            )
         }
     }
 

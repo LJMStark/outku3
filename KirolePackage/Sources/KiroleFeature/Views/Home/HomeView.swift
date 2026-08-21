@@ -86,6 +86,8 @@ public struct HomeView: View {
                             DaySectionView(date: dataSource.dateForOffset(0), showPet: true)
                                 .background(daySectionPositionTracker(for: dataSource.dateForOffset(0)))
 
+                            AppleWeatherAttributionFooter()
+
                             // Remaining days (offset 1+)
                             ForEach(dataSource.dayOffsets.dropFirst(), id: \.self) { offset in
                                 DaySectionView(

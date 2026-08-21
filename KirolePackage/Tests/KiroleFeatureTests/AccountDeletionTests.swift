@@ -313,6 +313,12 @@ struct CustomerSettingsAccountPolicyTests {
         let header = try sourceFile(
             path: "KirolePackage/Sources/KiroleFeature/Views/Components/AppHeaderView.swift"
         )
+        let home = try sourceFile(
+            path: "KirolePackage/Sources/KiroleFeature/Views/Home/HomeView.swift"
+        )
+        let weatherAttribution = try sourceFile(
+            path: "KirolePackage/Sources/KiroleFeature/Views/Components/AppleWeatherAttributionMark.swift"
+        )
 
         #expect(settings.contains("Settings_PrivacyPolicy"))
         #expect(settings.contains("https://kirole.681023.xyz/privacy.html"))
@@ -320,8 +326,10 @@ struct CustomerSettingsAccountPolicyTests {
         #expect(session.contains("Settings_SignOut"))
         #expect(session.contains("Settings_DeleteAccount"))
         #expect(session.contains("Delete Account"))
-        #expect(header.contains("Home_WeatherAttribution"))
-        #expect(header.contains("\\u{F8FF} Weather"))
+        #expect(!header.contains("\\u{F8FF} Weather"))
+        #expect(!header.contains("Home_WeatherAttribution"))
+        #expect(home.contains("AppleWeatherAttributionFooter()"))
+        #expect(weatherAttribution.contains("Home_WeatherAttribution"))
     }
 
     @Test("Settings expose only the four supported integrations")

@@ -7,10 +7,16 @@ public struct Weather: Sendable, Codable {
     public var condition: WeatherCondition
     public var location: String
     /// True only when populated from a successful WeatherKit fetch.
-    /// Drives whether the home header renders the weather chip + Apple Weather attribution (Guideline 5.2.5).
+    /// Drives whether the home renders weather data and its attribution footer.
     public var hasData: Bool
     /// Legal attribution URL from WeatherKit, or Apple's published fallback.
     public var attributionLegalURLString: String
+    /// Official Apple Weather marks returned by WeatherKit.
+    /// Runtime-only: intentionally omitted from CodingKeys so existing stored
+    /// and transmitted Weather JSON keeps its original shape.
+    public var attributionCombinedMarkLightURLString: String?
+    /// Provider name used while the official remote mark is loading or unavailable.
+    public var attributionServiceName: String
 
     public static let appleWeatherLegalURLString = "https://weatherkit.apple.com/legal-attribution.html"
 
@@ -21,7 +27,9 @@ public struct Weather: Sendable, Codable {
         condition: WeatherCondition = .sunny,
         location: String = "San Francisco",
         hasData: Bool = false,
-        attributionLegalURLString: String = Weather.appleWeatherLegalURLString
+        attributionLegalURLString: String = Weather.appleWeatherLegalURLString,
+        attributionCombinedMarkLightURLString: String? = nil,
+        attributionServiceName: String = "Weather"
     ) {
         self.temperature = temperature
         self.highTemp = highTemp
@@ -30,6 +38,8 @@ public struct Weather: Sendable, Codable {
         self.location = location
         self.hasData = hasData
         self.attributionLegalURLString = attributionLegalURLString
+        self.attributionCombinedMarkLightURLString = attributionCombinedMarkLightURLString
+        self.attributionServiceName = attributionServiceName
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -48,6 +58,8 @@ public struct Weather: Sendable, Codable {
             String.self,
             forKey: .attributionLegalURLString
         ) ?? Weather.appleWeatherLegalURLString
+        self.attributionCombinedMarkLightURLString = nil
+        self.attributionServiceName = "Weather"
     }
 }
 
