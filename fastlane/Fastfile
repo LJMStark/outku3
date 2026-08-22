@@ -3,9 +3,10 @@ require "spaceship"
 default_platform(:ios)
 
 BUNDLE_ID = "com.kirole.app"
+INTERNAL_HARDWARE_GROUP_NAME = "Kirole Hardware Internal"
 
 platform :ios do
-  desc "Internal TestFlight pipeline (hardware/firmware acceptance channel): increment build → archive Kirole-Internal (InternalRelease, KIROLE_INTERNAL defined) → upload → set notes → distribute to external groups. NEVER promote this binary to App Store — use the appstore lane from a tagged commit instead (AGENTS.md Release Channel Policy)."
+  desc "Internal TestFlight pipeline (hardware/firmware acceptance channel): increment build → archive Kirole-Internal (InternalRelease, KIROLE_INTERNAL defined) → upload → set notes → distribute to the manual internal hardware group and external groups. NEVER promote this binary to App Store — use the appstore lane from a tagged commit instead (AGENTS.md Release Channel Policy)."
   lane :release do |options|
     en_text = resolve_notes(options)
 
@@ -40,7 +41,8 @@ platform :ios do
     # 4. Set localized notes + distribute via Spaceship
     Spaceship::ConnectAPI.token = asc_token
     app   = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
-    build = latest_build(app)
+    build = build_by_number(app, new_build)
+    assign_to_internal_hardware_group(app, build)
 
     upsert_localization(build, "en-US", en_text)
     UI.message("✓ English notes set")
@@ -95,7 +97,8 @@ platform :ios do
     upload_to_testflight(
       api_key:                           api_key,
       skip_waiting_for_build_processing: false,
-      distribute_external:               false
+      distribute_external:               false,
+      skip_submission:                    true
     )
     UI.success("Done — App Store candidate #{new_build} uploaded to App Store Connect. Attach it to a version manually after the submission gates pass.")
   end
@@ -108,7 +111,7 @@ platform :ios do
     Spaceship::ConnectAPI.token = token
 
     app   = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
-    build = latest_build(app)
+    build = latest_hardware_build(app)
 
     app_version = build.pre_release_version ? build.pre_release_version.version : "?"
     UI.message("Updating notes for v#{app_version} (build #{build.version})")
@@ -121,7 +124,7 @@ platform :ios do
     en_text = resolve_notes(options)
     Spaceship::ConnectAPI.token = asc_token
     app   = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
-    build = latest_build(app)
+    build = latest_hardware_build(app)
     UI.message("▶ Finishing build #{build.version} — en notes + external distribution + beta review")
     upsert_localization(build, "en-US", en_text)
     UI.success("✓ English notes set")
@@ -133,7 +136,7 @@ platform :ios do
   lane :status do
     Spaceship::ConnectAPI.token = asc_token
     app   = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
-    build = latest_build(app)
+    build = latest_hardware_build(app)
     app_version = build.pre_release_version ? build.pre_release_version.version : "?"
     UI.message("Latest build: v#{app_version} (#{build.version}), uploaded #{build.uploaded_date}")
     UI.message("processingState: #{build.processing_state}")
@@ -193,15 +196,45 @@ def asc_token
   )
 end
 
-def latest_build(app)
+def build_by_number(app, number)
   build = Spaceship::ConnectAPI.get_builds(
-    filter: { app: app.id },
+    filter: { app: app.id, version: number.to_s },
     includes: Spaceship::ConnectAPI::Build::ESSENTIAL_INCLUDES,
     sort:   "-uploadedDate",
     limit:  1
   ).first
-  UI.user_error!("No builds found for #{BUNDLE_ID}") unless build
+  UI.user_error!("Build #{number} not found for #{BUNDLE_ID}") unless build
   build
+end
+
+def internal_hardware_group(app)
+  groups = Spaceship::ConnectAPI.get_beta_groups(filter: { app: app.id })
+                                  .all_pages.flat_map(&:to_models)
+                                  .select do |group|
+    group.is_internal_group && group.name == INTERNAL_HARDWARE_GROUP_NAME
+  end
+  UI.user_error!("Expected exactly one #{INTERNAL_HARDWARE_GROUP_NAME.inspect} group") unless groups.one?
+  UI.user_error!("#{INTERNAL_HARDWARE_GROUP_NAME.inspect} must use manual build assignment") if groups.first.has_access_to_all_builds
+  groups.first
+end
+
+def assign_to_internal_hardware_group(app, build)
+  client = Spaceship::ConnectAPI
+  group = internal_hardware_group(app)
+  linked_groups = client.get_beta_groups(filter: { builds: build.id })
+                        .all_pages.flat_map(&:to_models)
+  return UI.message("✓ Build #{build.version} already belongs to #{group.name}") if linked_groups.any? { |item| item.id == group.id }
+
+  client.add_beta_groups_to_build(build_id: build.id, beta_group_ids: [group.id])
+  UI.message("✓ Build #{build.version} added to #{group.name}")
+end
+
+def latest_hardware_build(app)
+  assigned_build = internal_hardware_group(app).fetch_builds
+                                               .reject(&:expired)
+                                               .max_by(&:uploaded_date)
+  UI.user_error!("No active builds found in #{INTERNAL_HARDWARE_GROUP_NAME.inspect}") unless assigned_build
+  build_by_number(app, assigned_build.version)
 end
 
 def upsert_localization(build, locale, text)

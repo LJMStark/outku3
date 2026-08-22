@@ -34,7 +34,7 @@ NOTES = <<~TEXT.strip
   - In-app path: Settings -> Data Sources -> Privacy Policy
   - Account deletion: Settings -> Delete Account
 
-  WeatherKit: local weather is provided by Apple Weather. The home header and Settings show the Apple Weather mark and legal attribution link.
+  WeatherKit: local weather is provided by Apple Weather. The Home attribution footer after Today and the Settings data-source row show the Apple Weather mark and legal attribution link.
 
   Family Controls / Screen Time: used only for optional Deep Focus interruption detection and temporary blocking of apps the user selects during a user-started focus session. Standard focus does not block apps.
 
