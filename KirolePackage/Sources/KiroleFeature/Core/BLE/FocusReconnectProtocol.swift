@@ -118,19 +118,22 @@ public struct OfflineFocusState: Sendable, Equatable {
         self.endReason = endReason
     }
 
-    /// Firmware sometimes notifies an empty idle snapshot even when
-    /// `FocusSyncPending` is clear. Revision, session, and operation are all
-    /// zero — not "a session exists or existed".
-    public var isMeaninglessIdleSnapshot: Bool {
+    /// An idle snapshot with no session or operation content. A nonzero revision
+    /// still carries a version floor even though there is no state to arbitrate.
+    public var isContentEmptyIdleSnapshot: Bool {
         focusState == .idle
             && sessionId.isIdle
-            && focusRevision == 0
             && lastOperationID == 0
             && startTimestamp == 0
             && endTimestamp == 0
             && elapsedSeconds == 0
             && endReason == .none
             && taskId.isEmpty
+    }
+
+    /// The revision-zero form is a wire sentinel and carries no version floor.
+    public var isMeaninglessIdleSnapshot: Bool {
+        focusRevision == 0 && isContentEmptyIdleSnapshot
     }
 }
 

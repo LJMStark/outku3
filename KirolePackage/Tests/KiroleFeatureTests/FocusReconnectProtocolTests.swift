@@ -80,10 +80,12 @@ struct FocusReconnectProtocolTests {
         #expect(payload[32] == 0)
     }
 
-    @Test("All-zero idle FOCUS_STATE is a meaningless snapshot")
+    @Test("Content-empty idle FOCUS_STATE keeps a historical revision as a valid snapshot")
     func meaninglessIdleSnapshot() {
         #expect(FocusWireFixtures.idleZeroFocusState().isMeaninglessIdleSnapshot)
+        #expect(FocusWireFixtures.idleZeroFocusState().isContentEmptyIdleSnapshot)
         #expect(FocusWireFixtures.focusState().isMeaninglessIdleSnapshot == false)
+        #expect(FocusWireFixtures.focusState().isContentEmptyIdleSnapshot == false)
         let idleWithRevision = FocusWireFixtures.focusState(
             sessionId: .idle,
             focusState: .idle,
@@ -93,6 +95,7 @@ struct FocusReconnectProtocolTests {
             lastOperationID: 0
         )
         #expect(idleWithRevision.isMeaninglessIdleSnapshot == false)
+        #expect(idleWithRevision.isContentEmptyIdleSnapshot)
     }
 
     @Test("FOCUS_RESOLVE payload equality ignores ResolveID")

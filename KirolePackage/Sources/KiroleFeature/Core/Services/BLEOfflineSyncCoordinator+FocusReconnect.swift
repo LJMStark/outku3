@@ -31,9 +31,10 @@ extension BLEOfflineSyncCoordinator {
         state: OfflineSyncState,
         snapshot: OfflineFocusState
     ) -> Bool {
-        !state.stateFlags.contains(.focusSyncPending)
+        state.pendingCount == 0
+            && !state.stateFlags.contains(.focusSyncPending)
             && !hasActiveFocusSession()
-            && snapshot.isMeaninglessIdleSnapshot
+            && snapshot.isContentEmptyIdleSnapshot
     }
 
     struct PostQueryPhase: Equatable {

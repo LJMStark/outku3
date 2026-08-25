@@ -62,10 +62,12 @@ struct FocusReconnectFixTests {
             persistenceEnabled: false
         )
 
-        try await service.applyReconnectPreview(FocusWireFixtures.focusState())
+        let activeSnapshot = FocusWireFixtures.focusState(revision: 38)
+        try await service.applyReconnectPreview(activeSnapshot)
         #expect(service.activeSession == nil)
         #expect(service.suppressVisibleFocusStart == false)
         #expect(service.todaySessions.isEmpty)
+        #expect(service.lastAppliedFocusRevision == activeSnapshot.focusRevision)
 
         try await service.applyReconnectPreview(
             FocusWireFixtures.focusState(

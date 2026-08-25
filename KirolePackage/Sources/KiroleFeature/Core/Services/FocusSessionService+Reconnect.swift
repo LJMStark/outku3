@@ -56,6 +56,9 @@ extension FocusSessionService {
             deviceID: deviceID,
             floor: state.focusRevision
         )
+        // Preview does not adopt the device session, but its applied revision is
+        // still the lower bound for the next authoritative App 0x14.
+        lastAppliedFocusRevision = max(lastAppliedFocusRevision, state.focusRevision)
     }
 
     func reuseOrMakeResolveID(
