@@ -380,7 +380,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = KiroleDeviceActivityMonitor/KiroleDeviceActivityMonitor.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 652;
+				CURRENT_PROJECT_VERSION = 653;
 				DEVELOPMENT_TEAM = 93SL23NPNG;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = KiroleDeviceActivityMonitor/Info.plist;
@@ -483,7 +483,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 652;
+				CURRENT_PROJECT_VERSION = 653;
 				DEVELOPMENT_TEAM = 93SL23NPNG;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Kirole;
@@ -571,7 +571,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 652;
+				CURRENT_PROJECT_VERSION = 653;
 				DEVELOPMENT_TEAM = 93SL23NPNG;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Kirole;
@@ -725,7 +725,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 652;
+				CURRENT_PROJECT_VERSION = 653;
 				DEVELOPMENT_TEAM = 93SL23NPNG;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Kirole;
@@ -754,7 +754,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 652;
+				CURRENT_PROJECT_VERSION = 653;
 				DEVELOPMENT_TEAM = 93SL23NPNG;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Kirole;
@@ -807,7 +807,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = KiroleDeviceActivityMonitor/KiroleDeviceActivityMonitor.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 652;
+				CURRENT_PROJECT_VERSION = 653;
 				DEVELOPMENT_TEAM = 93SL23NPNG;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = KiroleDeviceActivityMonitor/Info.plist;
@@ -833,7 +833,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = KiroleDeviceActivityMonitor/KiroleDeviceActivityMonitor.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 652;
+				CURRENT_PROJECT_VERSION = 653;
 				DEVELOPMENT_TEAM = 93SL23NPNG;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = KiroleDeviceActivityMonitor/Info.plist;
@@ -873,7 +873,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = KiroleDeviceActivityMonitor/KiroleDeviceActivityMonitor.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 652;
+				CURRENT_PROJECT_VERSION = 653;
 				DEVELOPMENT_TEAM = 93SL23NPNG;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = KiroleDeviceActivityMonitor/Info.plist;
