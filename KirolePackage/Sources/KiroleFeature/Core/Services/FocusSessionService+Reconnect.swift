@@ -38,6 +38,10 @@ extension FocusSessionService {
         set { FocusReconnectFlagStore.flags(for: self).lastAppliedFocusRevision = newValue }
     }
 
+    func ordinaryFocusRevisionFloor(for session: FocusSession?) -> UInt32 {
+        max(session?.focusRevision ?? 0, lastAppliedFocusRevision)
+    }
+
     /// When the device snapshot is `endedPending`, replayed EnterTaskIn must not open the focus UI.
     public var suppressVisibleFocusStart: Bool {
         get { FocusReconnectFlagStore.flags(for: self).suppressVisibleFocusStart }
@@ -161,7 +165,10 @@ extension FocusSessionService {
         // Release only after TaskInPage has crossed the wire. Calling code can atomically drop its
         // final transaction lease here, immediately before the fresh authoritative 0x14 is built.
         releaseFocusStatusBarrier()
-        await AppState.shared.syncFocusHardwareDisplay(session: activeSession)
+        await AppState.shared.syncFocusHardwareDisplay(
+            session: activeSession,
+            mustAdvanceRevisionBeyondFloor: true
+        )
     }
 
     func reconnectSnapshot() -> FocusReconnectAppSnapshot {

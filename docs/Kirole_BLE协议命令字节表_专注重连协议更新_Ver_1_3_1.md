@@ -1206,6 +1206,7 @@
 | 1 | Notify Enabled | 发送 DeviceWake | 建立本次连接上下文 | DeviceWake 已接收 | 立即下发旧 0x14 |
 | 2 | DeviceWake 后 | 发送 OfflineSync STATE | 检查 PendingCount/FocusSyncPending | STATE 已解析 | 跳过待补报检查 |
 | 3 | 存在或曾存在会话 | 发送 FOCUS_STATE | 冻结普通 FocusStatus 下发 | 快照已接收 | 用 App idle 覆盖设备 active |
+| 3A | PendingCount=0、FocusSyncPending=0 且 FOCUS_STATE 为内容全空 idle | 保持 idle，无待裁决状态 | 不发 FOCUS_RESOLVE；吸收 FocusRevision 下限后恢复普通 0x14 | 新 0x14 的 FocusRevision 严格大于设备快照 | 把 App 本地 active 误判成设备待裁决状态 |
 | 4 | PendingCount>0 | 按 OperationID 发送 OP_BATCH | 幂等、顺序处理完整批次 | 连续处理到最大 ID | 部分失败仍越级 ACK |
 | 5 | 操作处理完成 | 收到 FOCUS_RESOLVE 后返回 RESULT | 发送 OP_ACK（如有）+ FOCUS_RESOLVE | 收到匹配 ResolveID 的 RESULT/COMMITTED | 先删队列后确认 |
 | 6 | 收到 RESULT/COMMITTED | 应用权威状态并恢复心跳 | 解除 focusSyncLocked，恢复普通业务同步 | ResolveID / TargetType / ResultCode 均匹配 | 立即发送 OfflineSync COMMIT；重复创建或结算 |

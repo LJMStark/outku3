@@ -981,6 +981,7 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
         taskTitle: String?,
         segmentSeconds: UInt32,
         focusRevisionFloor: UInt32,
+        mustAdvanceRevisionBeyondFloor: Bool = false,
         focusSessionId: FocusSessionId = .idle,
         focusState: FocusWireState = .idle
     ) async throws {
@@ -999,11 +1000,20 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
         )
         try await completeMessageWriteGate.acquire()
         do {
-            let revision = try await focusRevisionLedger.prepare(
-                deviceID: deviceID,
-                fingerprint: fingerprint,
-                floor: focusRevisionFloor
-            )
+            let revision: UInt32
+            if mustAdvanceRevisionBeyondFloor {
+                revision = try await focusRevisionLedger.prepareAdvancingAboveFloor(
+                    deviceID: deviceID,
+                    fingerprint: fingerprint,
+                    floor: focusRevisionFloor
+                )
+            } else {
+                revision = try await focusRevisionLedger.prepare(
+                    deviceID: deviceID,
+                    fingerprint: fingerprint,
+                    floor: focusRevisionFloor
+                )
+            }
             let payload = BLEDataEncoder.encodeFocusStatus(
                 phase: phase,
                 energyBottles: energyBottles,

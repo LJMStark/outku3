@@ -1,6 +1,16 @@
 import Foundation
 
 extension AppState {
+    static func shouldDeduplicateFocusStatus(
+        mustAdvanceRevisionBeyondFloor: Bool,
+        isSamePayload: Bool,
+        elapsedSinceLastSend: TimeInterval?
+    ) -> Bool {
+        !mustAdvanceRevisionBeyondFloor
+            && isSamePayload
+            && elapsedSinceLastSend.map { $0 < 2.0 } == true
+    }
+
     func registerUsageActivity(now: Date = Date()) async {
         let savedConsecutiveDays = await localStorage.loadConsecutiveDays()
         let savedLastUsageDate = await localStorage.loadLastUsageDate()
@@ -177,7 +187,11 @@ extension AppState {
         #endif
     }
 
-    func syncFocusHardwareDisplay(session: FocusSession?, now: Date = Date()) async {
+    func syncFocusHardwareDisplay(
+        session: FocusSession?,
+        now: Date = Date(),
+        mustAdvanceRevisionBeyondFloor: Bool = false
+    ) async {
         guard !FocusSessionService.shared.isFocusStatusPushFrozen else { return }
         // 专注页、硬件帧和结束结算读同一个快照，调试倍率与手动快进因此不会只作用在界面上。
         // session == nil 时服务返回 idle 快照，保留原有的空闲状态推送。
@@ -190,13 +204,16 @@ extension AppState {
         let focusBottles = FocusEnergyCalculator.displayBottles(forEarned: progress.earnedEnergyBottles)
         let focusState: FocusWireState = session == nil ? .idle : .active
         let sessionId = session?.focusSessionId ?? .idle
-        let revision = session?.focusRevision ?? FocusSessionService.shared.lastAppliedFocusRevision
+        let revision = FocusSessionService.shared.ordinaryFocusRevisionFloor(for: session)
 
         // Real BLE push (all builds)
         // 短窗同内容去重，防前台化双观察者背靠背推同帧：见 AppState.lastFocusStatusDedupKey。
         let dedupKey = "\(focusState)|\(revision)|\(sessionId.bootSessionID)|\(focusPhase)|\(focusBottles)|\(elapsedSeconds)|\(segmentSeconds)|\(session?.taskTitle ?? "")"
-        let isDuplicateWithinWindow = dedupKey == lastFocusStatusDedupKey
-            && lastFocusStatusSentAt.map { now.timeIntervalSince($0) < 2.0 } == true
+        let isDuplicateWithinWindow = Self.shouldDeduplicateFocusStatus(
+            mustAdvanceRevisionBeyondFloor: mustAdvanceRevisionBeyondFloor,
+            isSamePayload: dedupKey == lastFocusStatusDedupKey,
+            elapsedSinceLastSend: lastFocusStatusSentAt.map { now.timeIntervalSince($0) }
+        )
         if BLEService.shared.connectionState.isConnected, !isDuplicateWithinWindow {
             // 先占住去重窗再 await：设备唤醒、定时器、打断恢复可能并发进入，若成功后才写标记，
             // 同一帧会在首个 0x14 仍发送中时重复排队。失败时撤销占位，让下一次立即重试。
@@ -210,6 +227,7 @@ extension AppState {
                     taskTitle: session?.taskTitle,
                     segmentSeconds: segmentSeconds,
                     focusRevisionFloor: revision,
+                    mustAdvanceRevisionBeyondFloor: mustAdvanceRevisionBeyondFloor,
                     focusSessionId: sessionId,
                     focusState: focusState
                 )

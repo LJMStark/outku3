@@ -68,7 +68,24 @@ actor FocusRevisionLedger {
             deviceID: deviceID,
             fingerprint: fingerprint,
             floor: floor,
-            recoverCorruptStore: false
+            recoverCorruptStore: false,
+            allowExactRetryAtFloor: true
+        )
+    }
+
+    /// Reconnect restore must advance beyond the revision just observed on the device. Once the
+    /// new revision is reserved, an identical retry still reuses it because it is above `floor`.
+    func prepareAdvancingAboveFloor(
+        deviceID: UUID,
+        fingerprint: Data,
+        floor: UInt32
+    ) async throws -> UInt32 {
+        try await prepare(
+            deviceID: deviceID,
+            fingerprint: fingerprint,
+            floor: floor,
+            recoverCorruptStore: false,
+            allowExactRetryAtFloor: false
         )
     }
 
@@ -83,7 +100,8 @@ actor FocusRevisionLedger {
             deviceID: deviceID,
             fingerprint: fingerprint,
             floor: floor,
-            recoverCorruptStore: true
+            recoverCorruptStore: true,
+            allowExactRetryAtFloor: true
         )
     }
 
@@ -119,7 +137,8 @@ actor FocusRevisionLedger {
         deviceID: UUID,
         fingerprint: Data,
         floor: UInt32,
-        recoverCorruptStore: Bool
+        recoverCorruptStore: Bool,
+        allowExactRetryAtFloor: Bool
     ) async throws -> UInt32 {
         await preparationGate.acquire()
         do {
@@ -128,7 +147,8 @@ actor FocusRevisionLedger {
                 deviceID: deviceID,
                 fingerprint: fingerprint,
                 floor: floor,
-                recoverCorruptStore: recoverCorruptStore
+                recoverCorruptStore: recoverCorruptStore,
+                allowExactRetryAtFloor: allowExactRetryAtFloor
             )
             await preparationGate.release()
             return revision
@@ -142,7 +162,8 @@ actor FocusRevisionLedger {
         deviceID: UUID,
         fingerprint: Data,
         floor: UInt32,
-        recoverCorruptStore: Bool
+        recoverCorruptStore: Bool,
+        allowExactRetryAtFloor: Bool
     ) async throws -> UInt32 {
         let snapshot: FocusRevisionLedgerSnapshot
         do {
@@ -156,7 +177,8 @@ actor FocusRevisionLedger {
         if let existing,
            existing.revision > 0,
            existing.fingerprint == fingerprint,
-           existing.revision >= floor {
+           existing.revision >= floor,
+           allowExactRetryAtFloor || existing.revision > floor {
             return existing.revision
         }
 

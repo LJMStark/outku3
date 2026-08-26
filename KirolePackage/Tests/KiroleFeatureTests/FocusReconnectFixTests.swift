@@ -82,6 +82,52 @@ struct FocusReconnectFixTests {
         #expect(service.todaySessions.isEmpty)
     }
 
+    @Test("Ordinary active restore uses the device snapshot as its revision floor")
+    @MainActor
+    func ordinaryActiveRestoreUsesDeviceRevisionFloor() async throws {
+        let service = FocusSessionService.makeForTesting(
+            focusGuardService: ReconnectFixFocusGuard(),
+            persistenceEnabled: false
+        )
+        await service.startSession(
+            taskId: "local-active",
+            taskTitle: "Local active",
+            startTime: Date(timeIntervalSince1970: 1_700_000_000),
+            focusSessionId: FocusSessionId(bootSessionID: 1, startOperationID: 1)
+        )
+        let localRevision = try #require(service.activeSession?.focusRevision)
+        let deviceSnapshot = FocusWireFixtures.focusState(
+            revision: localRevision + 37,
+            sessionId: .idle,
+            focusState: .idle,
+            taskID: "",
+            start: 0,
+            end: 0,
+            elapsed: 0,
+            lastOperationID: 0,
+            endReason: .none
+        )
+
+        try await service.applyReconnectPreview(deviceSnapshot)
+
+        #expect(service.ordinaryFocusRevisionFloor(for: service.activeSession) == deviceSnapshot.focusRevision)
+    }
+
+    @Test("Reconnect restore bypasses the ordinary two-second FocusStatus dedup window")
+    @MainActor
+    func reconnectRestoreBypassesRecentFocusStatusDedup() {
+        #expect(AppState.shouldDeduplicateFocusStatus(
+            mustAdvanceRevisionBeyondFloor: false,
+            isSamePayload: true,
+            elapsedSinceLastSend: 0.5
+        ))
+        #expect(AppState.shouldDeduplicateFocusStatus(
+            mustAdvanceRevisionBeyondFloor: true,
+            isSamePayload: true,
+            elapsedSinceLastSend: 0.5
+        ) == false)
+    }
+
     @Test("Same task with a different session id replaces the active session")
     @MainActor
     func conflictingSessionIdReplacesActiveSession() async {

@@ -25,6 +25,13 @@ public final class BLESyncCoordinator {
 
     public static let shared = BLESyncCoordinator()
 
+    static func shouldRestoreOrdinaryFocusAfterReconnect(
+        didResolveFocus: Bool,
+        hasActiveFocusSession: Bool
+    ) -> Bool {
+        didResolveFocus || hasActiveFocusSession
+    }
+
     let bleService = BLEService.shared
     let dayPackGenerator = DayPackGenerator.shared
     let localStorage = LocalStorage.shared
@@ -697,7 +704,13 @@ public final class BLESyncCoordinator {
             await bleService.endOfflineSyncWriteSession()
             ownsOfflineWriteSession = false
             focusReconciledConnectionGeneration = generation
-            if completion.didResolveFocus {
+            // An empty idle device snapshot needs no FOCUS_RESOLVE, even when the App still owns
+            // an active session. In that case restore the ordinary active 0x14 after releasing the
+            // reconnect barrier instead of leaving the device idle until a later periodic refresh.
+            if Self.shouldRestoreOrdinaryFocusAfterReconnect(
+                didResolveFocus: completion.didResolveFocus,
+                hasActiveFocusSession: FocusSessionService.shared.activeSession != nil
+            ) {
                 await FocusSessionService.shared.restoreOrdinaryFocusBLEAfterReconnect {
                     self.releaseFocusFreezeLeases()
                 }

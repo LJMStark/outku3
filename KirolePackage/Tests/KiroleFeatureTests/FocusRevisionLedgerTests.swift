@@ -172,6 +172,33 @@ struct FocusRevisionLedgerTests {
         #expect(raisedFloor == 13)
     }
 
+    @Test("Reconnect restore advances when an exact local retry equals the device floor")
+    func reconnectRestoreAdvancesAboveEqualDeviceFloor() async throws {
+        let ledger = FocusRevisionLedger(persistence: FocusRevisionMemoryPersistence())
+        let deviceID = UUID()
+        let fingerprint = Data("same-active-state".utf8)
+        let localRevision = try await ledger.prepare(
+            deviceID: deviceID,
+            fingerprint: fingerprint,
+            floor: 37
+        )
+
+        let restoredRevision = try await ledger.prepareAdvancingAboveFloor(
+            deviceID: deviceID,
+            fingerprint: fingerprint,
+            floor: localRevision
+        )
+        let retryRevision = try await ledger.prepareAdvancingAboveFloor(
+            deviceID: deviceID,
+            fingerprint: fingerprint,
+            floor: localRevision
+        )
+
+        #expect(localRevision == 38)
+        #expect(restoredRevision == 39)
+        #expect(retryRevision == restoredRevision)
+    }
+
     @Test("A new ledger instance reuses the durable fingerprint and revision")
     func restartReusesDurableRevision() async throws {
         let persistence = FocusRevisionMemoryPersistence()
