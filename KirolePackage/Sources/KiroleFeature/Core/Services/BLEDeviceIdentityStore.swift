@@ -10,12 +10,10 @@ public actor BLEDeviceIdentityStore {
 
     private let defaults: UserDefaults
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaultsSuiteName: String? = nil) {
+        let defaults = defaultsSuiteName.flatMap(UserDefaults.init(suiteName:)) ?? .standard
         self.defaults = defaults
-    }
-
-    init(defaultsSuiteName: String) {
-        self.defaults = UserDefaults(suiteName: defaultsSuiteName) ?? .standard
+        defaults.removeObject(forKey: Keys.blockedDeviceIDs)
     }
 
     public func hasTrustedDevices() -> Bool {

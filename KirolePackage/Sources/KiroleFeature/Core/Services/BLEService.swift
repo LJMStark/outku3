@@ -2064,11 +2064,6 @@ extension BLEService: CBPeripheralDelegate {
                 enqueueInboundMessages([message], generation: generation)
             } catch {
                 ErrorReporter.log(error, context: "BLEService.didUpdateValueFor")
-                if requiresSecureChannel,
-                   !securityManager.isSessionEstablished,
-                   let peripheralID = pendingConnectedPeripheralID {
-                    await deviceIdentityStore.block(peripheralID)
-                }
                 if connectionAttempt?.exposesTransportErrorImmediately != true {
                     cancelConnectionAttempt(
                         .securityHandshakeFailed(error.localizedDescription),

@@ -4,6 +4,23 @@ import Testing
 
 @Suite("BLE Device Identity Store Tests")
 struct BLEDeviceIdentityStoreTests {
+    @Test("Initializing the store clears blocked devices left by older builds")
+    func initializationClearsLegacyBlockedDevices() async throws {
+        let suiteName = "BLEDeviceIdentityStoreTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+
+        let blockedID = UUID()
+        defaults.set([blockedID.uuidString], forKey: "ble.blocked.device.ids")
+
+        let store = BLEDeviceIdentityStore(defaultsSuiteName: suiteName)
+
+        #expect(await !store.isBlocked(blockedID))
+        #expect(await store.blockedDeviceCount() == 0)
+    }
+
     @Test("Clearing device identities removes trusted and blocked devices")
     func clearDeviceIdentities() async throws {
         let suiteName = "BLEDeviceIdentityStoreTests.\(UUID().uuidString)"

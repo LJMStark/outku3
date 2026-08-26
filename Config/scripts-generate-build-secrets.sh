@@ -40,7 +40,11 @@ fi
 SUPABASE_URL_VALUE="$(escape_swift "${SUPABASE_URL_RAW}")"
 SUPABASE_ANON_KEY_VALUE="$(escape_swift "${SUPABASE_ANON_KEY:-$(recover_from_xcconfig SUPABASE_ANON_KEY)}")"
 OPENROUTER_API_KEY_VALUE="$(escape_swift "${OPENROUTER_API_KEY:-}")"
-if [[ -z "${BLE_SHARED_SECRET:-}" ]]; then
+if [[ "${CONFIGURATION:-}" == "InternalRelease" ]]; then
+  # Hardware integration stays on the unsigned development channel until the
+  # firmware team explicitly enables the matching shared secret.
+  BLE_SHARED_SECRET=""
+elif [[ -z "${BLE_SHARED_SECRET:-}" ]]; then
   BLE_SHARED_SECRET="$(recover_from_xcconfig BLE_SHARED_SECRET)"
 fi
 # Device / archive AppStoreRelease must fail closed. Simulator builds stay

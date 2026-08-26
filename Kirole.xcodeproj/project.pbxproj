@@ -316,6 +316,7 @@
 /* Begin PBXShellScriptBuildPhase section */
 		8BF0E0012EF0000000A0C001 /* Generate Build Secrets */ = {
 			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
 			files = (
 			);
