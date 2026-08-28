@@ -54,6 +54,10 @@ public final class BLESyncCoordinator {
     private var deviceWakeFocusFreezeLease: FocusStatusFreezeLease?
     private var offlineFocusFreezeLease: FocusStatusFreezeLease?
     private(set) var focusReconciledConnectionGeneration: UInt64?
+    /// Connection generation proven to be running pre-`0x25` firmware (< v2.12.0). Such a device
+    /// answers nothing, so re-running the transaction would only repeat the 8s timeout and tear
+    /// down the very link the customer needs to reach the WiFi/OTA controls that fix it.
+    private var offlineSyncUnsupportedGeneration: UInt64?
     private var deferredFocusSessionEndDisplay: DeferredFocusSessionEndDisplay?
     /// Set only while the frozen payloads used by the current 0x25 transaction are being built.
     /// It becomes durable sync metadata only after the device returns RESULT=COMMITTED.
@@ -98,6 +102,7 @@ public final class BLESyncCoordinator {
         }
         offlineSyncCoordinator.handleDisconnected()
         focusReconciledConnectionGeneration = nil
+        offlineSyncUnsupportedGeneration = nil
         releaseFocusFreezeLeases()
     }
 
@@ -109,6 +114,7 @@ public final class BLESyncCoordinator {
         deviceWakeBarrier.prepare(generation: generation)
         offlineSyncCoordinator.preparePreRunInboundCapture()
         focusReconciledConnectionGeneration = nil
+        offlineSyncUnsupportedGeneration = nil
     }
 
     func noteInboundMessage(type: UInt8, generation: UInt64) {
@@ -608,6 +614,29 @@ public final class BLESyncCoordinator {
 
             let generation = bleService.currentConnectionGeneration
             transactionGeneration = generation
+
+            // This connection already proved it runs pre-0x25 firmware. Leave it alone: every
+            // dataset it would receive (DayPack/TaskList/Schedule) has gone through a flag-day
+            // layout change it cannot parse, and re-arming the transaction only rebuilds the
+            // 8s-timeout/disconnect loop that keeps the user from reaching the upgrade controls.
+            if offlineSyncUnsupportedGeneration == generation {
+                retryMergedWakeOnFailure = false
+                await BLEDeviceWakeDeferredSyncExit.finish(
+                    closeDeviceWakeMergeWindow: {
+                        self.syncState.closeDeviceWakeMergeWindow()
+                    },
+                    ownsOfflineWriteSession: ownsOfflineWriteSession,
+                    endOfflineWriteSession: {
+                        await self.bleService.endOfflineSyncWriteSession()
+                    },
+                    releaseOfflineFocusFreezeLease: {
+                        self.releaseOfflineFocusFreezeLease()
+                    }
+                )
+                ownsOfflineWriteSession = false
+                return
+            }
+
             let didObserveDeviceWake: Bool
             do {
                 didObserveDeviceWake = try await deviceWakeBarrier.wait(
@@ -804,11 +833,20 @@ public final class BLESyncCoordinator {
             if case BLEOfflineSyncCoordinatorError.deviceRejected(.invalidState) = error {
                 retryMergedWakeOnFailure = false
             }
+            // Pre-0x25 firmware never replies, so the generation fence below has no late STATE to
+            // fence off — and tearing the link down would strand the customer in a reconnect loop
+            // with no stable window to trigger the firmware upgrade that fixes this. Remember the
+            // verdict so later syncs on this connection exit before writing anything.
+            if case BLEOfflineSyncCoordinatorError.offlineSyncUnsupported = error {
+                offlineSyncUnsupportedGeneration = transactionGeneration
+                retryMergedWakeOnFailure = false
+            }
             // STATE has no request ID. After a failed QUERY/transaction, a delayed response on
             // this connection could satisfy the next run. Reset the BLE generation before any
             // retry so old notifications cannot cross the boundary, even during Focus/debug.
             if !transactionCommitted, bleService.connectionState.isConnected {
-                if let transactionGeneration {
+                if let transactionGeneration,
+                   offlineSyncUnsupportedGeneration != transactionGeneration {
                     bleService.disconnectIfCurrentGeneration(transactionGeneration)
                 }
             }
@@ -855,7 +893,11 @@ public final class BLESyncCoordinator {
             chunkedTransferInFlight: bleService.isChunkedTransferInFlight,
             operationState: appState.customAvatarOperationState
            ) {
-            if let transactionGeneration {
+            // Pre-0x25 firmware is exempt from the pulse-sync disconnect too: with keep-alive off
+            // this would close the link seconds after the capability verdict, restoring the same
+            // reconnect churn from the other side.
+            if let transactionGeneration,
+               offlineSyncUnsupportedGeneration != transactionGeneration {
                 bleService.disconnectIfCurrentGeneration(transactionGeneration)
             }
         }

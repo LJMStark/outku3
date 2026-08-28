@@ -18,6 +18,10 @@ public enum BLEOfflineSyncCoordinatorError: Error, Sendable, Equatable {
     case operationIDGap(previous: UInt32, current: UInt32)
     case operationCountExceeded(expected: Int, actual: Int)
     case deviceRejected(OfflineSyncResultCode)
+    /// The wait expired without a single `0x25` byte ever arriving on this connection.
+    /// Firmware predating v2.12.0 logs `Unknown App→Device cmd: 0x25` and stays silent, so this
+    /// is a capability verdict, not a transport fault — the caller must not fence the link.
+    case offlineSyncUnsupported
 }
 
 /// Owns the ordering barrier for one wake-triggered OfflineSync transaction.
@@ -164,6 +168,10 @@ public final class BLEOfflineSyncCoordinator {
     private var acceptsPreRunInbound = false
     private var preRunMailbox: [OfflineSyncInboundMessage] = []
     private var preRunTerminalError: BLEOfflineSyncCoordinatorError?
+    /// True once any `0x25` frame — well-formed or not — has arrived on this connection.
+    /// Distinguishes "the device speaks OfflineSync but this reply was late/lost" from
+    /// "the firmware has no `0x25` handler at all". Reset per connection generation.
+    private(set) var didObserveOfflineSyncInbound = false
     var didFreezeFocusStatus = false
     /// Firmware 1.3.1: keep `0x14` frozen until FOCUS_RESOLVE gets RESULT/COMMITTED.
     var awaitingFocusResolveResult = false
@@ -342,6 +350,7 @@ public final class BLEOfflineSyncCoordinator {
     /// Accepts a decoded 0x25 inbound message. Messages for another boot or sync remain inert in
     /// the bounded mailbox and can never satisfy the current phase.
     public func handleInbound(_ inbound: OfflineSyncInboundMessage) {
+        didObserveOfflineSyncInbound = true
         guard activeRunID != nil else {
             guard acceptsPreRunInbound, preRunTerminalError == nil else { return }
             guard preRunMailbox.count < mailboxLimit else {
@@ -394,6 +403,9 @@ public final class BLEOfflineSyncCoordinator {
     /// Decodes only the inner 0x25 payload. The BLE simple-frame Type/Length bytes are removed by
     /// the caller before delivery.
     public func handleInbound(payload: Data) {
+        // A malformed 0x25 still proves the firmware has an OfflineSync handler, so mark the
+        // capability before decoding rather than only on the success path.
+        didObserveOfflineSyncInbound = true
         do {
             handleInbound(try OfflineSyncCodec.decodeInbound(payload))
         } catch {
@@ -412,12 +424,14 @@ public final class BLEOfflineSyncCoordinator {
         acceptsPreRunInbound = true
         preRunMailbox.removeAll(keepingCapacity: true)
         preRunTerminalError = nil
+        didObserveOfflineSyncInbound = false
     }
 
     public func handleDisconnected() {
         acceptsPreRunInbound = false
         preRunMailbox.removeAll(keepingCapacity: true)
         preRunTerminalError = nil
+        didObserveOfflineSyncInbound = false
         guard activeRunID != nil else { return }
         failRun(with: .disconnected)
     }
@@ -571,10 +585,14 @@ public final class BLEOfflineSyncCoordinator {
             } catch {
                 return
             }
-            self?.finishWaiter(
-                waiterID,
-                throwing: BLEOfflineSyncCoordinatorError.timedOut
-            )
+            guard let self else { return }
+            // Silence across the whole connection means no `0x25` handler exists (firmware older
+            // than v2.12.0). Report that as a capability verdict so the caller keeps the link
+            // instead of fencing a generation that has no late reply to fence.
+            let verdict: BLEOfflineSyncCoordinatorError = self.didObserveOfflineSyncInbound
+                ? .timedOut
+                : .offlineSyncUnsupported
+            self.finishWaiter(waiterID, throwing: verdict)
         }
     }
 

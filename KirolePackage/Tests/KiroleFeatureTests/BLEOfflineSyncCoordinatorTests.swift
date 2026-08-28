@@ -657,16 +657,42 @@ struct BLEOfflineSyncCoordinatorTests {
         _ = try? await first.value
     }
 
-    @Test("Times out when STATE never arrives")
-    func queryTimesOut() async {
+    @Test("Reports unsupported when the device never speaks 0x25 at all")
+    func queryTimesOutAsUnsupported() async {
         let recorder = Recorder()
         let coordinator = recorder.makeCoordinator(responseTimeout: .milliseconds(30))
 
-        await #expect(throws: BLEOfflineSyncCoordinatorError.timedOut) {
+        // Firmware older than v2.12.0 logs "Unknown App→Device cmd: 0x25" and answers nothing.
+        // The verdict must be the capability error, so BLESyncCoordinator keeps the link alive.
+        await #expect(throws: BLEOfflineSyncCoordinatorError.offlineSyncUnsupported) {
             _ = try await coordinator.synchronize()
         }
         #expect(!coordinator.isRunning)
+        #expect(!coordinator.didObserveOfflineSyncInbound)
         #expect(!recorder.events.contains(.command(.abort(syncID: 0x0102_0304))))
+    }
+
+    @Test("Times out when STATE never arrives but the device does speak 0x25")
+    func queryTimesOut() async throws {
+        let recorder = Recorder()
+        let coordinator = recorder.makeCoordinator(responseTimeout: .milliseconds(300))
+        let task = Task { try await coordinator.synchronize() }
+
+        try await waitUntil("QUERY") { recorder.events.contains(.command(.query)) }
+        // Stale batch: dropped as irrelevant to this run, but it proves the firmware implements
+        // OfflineSync. A supported device whose STATE is merely late must stay on `.timedOut` so
+        // the generation fence still runs — there really could be a delayed reply to fence off.
+        coordinator.handleInbound(
+            .operationBatch(
+                OfflineSyncOperationBatch(bootSessionID: 9, records: [Self.record(1)])
+            )
+        )
+        #expect(coordinator.didObserveOfflineSyncInbound)
+
+        await #expect(throws: BLEOfflineSyncCoordinatorError.timedOut) {
+            _ = try await task.value
+        }
+        #expect(!coordinator.isRunning)
     }
 
     @Test("Disconnect releases the current waiter")
