@@ -237,10 +237,19 @@ public final class AuthManager {
     /// 使用 Apple 登录
     public func signInWithApple() async throws {
         authState = .authenticating
+        #if DEBUG
+        print("[AppleSignIn] start")
+        #endif
 
         do {
             let result = try await appleSignInService.signIn()
+            #if DEBUG
+            print("[AppleSignIn] authorization ok user=\(result.userIdentifier.prefix(10))… tokenLen=\(result.identityTokenString?.count ?? -1) email=\(result.email ?? "nil")")
+            #endif
             let supabaseUser = try await signInToSupabase(withAppleIDToken: result.identityTokenString)
+            #if DEBUG
+            print("[AppleSignIn] supabase ok id=\(supabaseUser.id)")
+            #endif
             try completeAppleSignIn(
                 userIdentifier: result.userIdentifier,
                 email: result.email,
@@ -248,6 +257,9 @@ public final class AuthManager {
                 supabaseUser: supabaseUser
             )
         } catch {
+            #if DEBUG
+            print("[AppleSignIn] failed: \(error)")
+            #endif
             handleAuthenticationError(error)
             throw error
         }

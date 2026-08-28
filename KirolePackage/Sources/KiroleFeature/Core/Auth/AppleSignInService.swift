@@ -35,6 +35,9 @@ public final class AppleSignInService: NSObject, Sendable {
             )
 
             controller.delegate = delegate
+            #if DEBUG
+            print("[AppleSignInService] performRequests()")
+            #endif
             controller.performRequests()
         }
     }
@@ -110,6 +113,9 @@ private final class AppleSignInDelegate: NSObject, ASAuthorizationControllerDele
             return
         }
 
+        #if DEBUG
+        print("[AppleSignInService] didCompleteWithAuthorization tokenBytes=\(credential.identityToken?.count ?? -1) codeBytes=\(credential.authorizationCode?.count ?? -1)")
+        #endif
         let result = AppleSignInResult(
             userIdentifier: credential.user,
             email: credential.email,
@@ -125,6 +131,9 @@ private final class AppleSignInDelegate: NSObject, ASAuthorizationControllerDele
         controller: ASAuthorizationController,
         didCompleteWithError error: Error
     ) {
+        #if DEBUG
+        print("[AppleSignInService] didCompleteWithError: \(error)")
+        #endif
         if let authError = error as? ASAuthorizationError {
             switch authError.code {
             case .canceled:

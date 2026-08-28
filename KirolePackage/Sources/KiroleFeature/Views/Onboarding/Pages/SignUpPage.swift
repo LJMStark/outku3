@@ -86,6 +86,9 @@ public struct SignUpPage: View {
                                     onboardingState.currentPage = incompletePage
                                     return
                                 }
+                                #if DEBUG
+                                print("[SignUpPage] Google button tapped")
+                                #endif
                                 guard validateCustomCompanionConnection() else { return }
                                 isSigningIn = true
                                 Task { @MainActor in
@@ -128,6 +131,9 @@ public struct SignUpPage: View {
 
                             // Apple Sign In
                             Button {
+                                #if DEBUG
+                                print("[SignUpPage] Apple button tapped, firstIncompletePage=\(String(describing: onboardingState.firstIncompletePage))")
+                                #endif
                                 if let incompletePage = onboardingState.firstIncompletePage {
                                     onboardingState.currentPage = incompletePage
                                     return
@@ -176,6 +182,9 @@ public struct SignUpPage: View {
 
                         // Skip for now
                         Button {
+                            #if DEBUG
+                            print("[SignUpPage] Skip button tapped")
+                            #endif
                             if let incompletePage = onboardingState.firstIncompletePage {
                                 onboardingState.currentPage = incompletePage
                                 return
@@ -198,6 +207,9 @@ public struct SignUpPage: View {
     }
 
     private func completeOnboardingIfReady() {
+        #if DEBUG
+        print("[SignUpPage] completeOnboardingIfReady, authState.isAuthenticated=\(AuthManager.shared.authState.isAuthenticated)")
+        #endif
         guard validateCustomCompanionConnection() else { return }
         signInError = nil
         appState.completeOnboarding(with: onboardingState.profile)
