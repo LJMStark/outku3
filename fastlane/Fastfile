@@ -5,113 +5,71 @@ default_platform(:ios)
 BUNDLE_ID = "com.kirole.app"
 INTERNAL_HARDWARE_GROUP_NAME = "Kirole Hardware Internal"
 
+# Two binaries, three audiences (AGENTS.md "Release Channel Policy"):
+#   internal → Kirole-Internal / InternalRelease  → TestFlight "Kirole Hardware Internal" only
+#   external → Kirole-AppStore / AppStoreRelease  → TestFlight external groups + Beta App Review
+#   appstore → Kirole-AppStore / AppStoreRelease  → App Store Connect binary only
+# external and appstore archive the SAME configuration: promote the build number
+# external testers verified instead of archiving a third binary. Neither lane
+# ever hands an Internal binary to external testers.
 platform :ios do
-  desc "Internal TestFlight pipeline (hardware/firmware acceptance channel): increment build → archive Kirole-Internal (InternalRelease, KIROLE_INTERNAL defined) → upload → set notes → distribute to the manual internal hardware group and external groups. NEVER promote this binary to App Store — use the appstore lane from a tagged commit instead (AGENTS.md Release Channel Policy)."
-  lane :release do |options|
+  desc "Internal TestFlight pipeline (hardware/firmware acceptance channel): increment build → archive Kirole-Internal (InternalRelease, KIROLE_INTERNAL defined) → upload → set notes → assign to the manual 'Kirole Hardware Internal' group ONLY. Never reaches external testers and is NEVER promoted to App Store (AGENTS.md Release Channel Policy)."
+  lane :internal do |options|
     en_text = resolve_notes(options)
 
-    # 1. Bump build number
-    new_build = increment_build_number(xcodeproj: "Kirole.xcodeproj")
-    UI.message("▶ Build number → #{new_build}")
+    new_build = archive_and_upload(scheme: "Kirole-Internal", configuration: "InternalRelease")
 
-    # 2. Archive + export IPA (Automatic Signing switches to Distribution cert).
-    # -allowProvisioningUpdates lets Xcode regenerate the App Store distribution
-    # profile on demand — required so a missing/stale profile self-heals instead
-    # of silently falling back to a Development profile (which breaks app-store export).
-    gym(
-      workspace:     "Kirole.xcworkspace",
-      scheme:        "Kirole-Internal",
-      configuration: "InternalRelease",
-      export_method: "app-store",
-      xcargs:        "-allowProvisioningUpdates"
-    )
-
-    # 3. Upload to TestFlight and wait for Apple processing
-    api_key = app_store_connect_api_key(
-      key_id:       ENV.fetch("ASC_KEY_ID")   { UI.user_error!("ASC_KEY_ID not set") },
-      issuer_id:    ENV.fetch("ASC_ISSUER_ID") { UI.user_error!("ASC_ISSUER_ID not set") },
-      key_filepath: ENV.fetch("ASC_KEY_PATH")  { UI.user_error!("ASC_KEY_PATH not set") }
-    )
-    upload_to_testflight(
-      api_key:                           api_key,
-      skip_waiting_for_build_processing: false,
-      distribute_external:               false
-    )
-
-    # 4. Set localized notes + distribute via Spaceship
     Spaceship::ConnectAPI.token = asc_token
     app   = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
     build = build_by_number(app, new_build)
     assign_to_internal_hardware_group(app, build)
+    set_release_notes(build, en_text, options)
 
-    upsert_localization(build, "en-US", en_text)
-    UI.message("✓ English notes set")
-
-    zh_text = options[:zh_text]
-    if zh_text.nil? && options[:zh_file]
-      path = File.expand_path(options[:zh_file])
-      zh_text = File.read(path).strip if File.exist?(path)
-    end
-    if zh_text && !zh_text.empty?
-      upsert_localization(build, "zh-Hans", zh_text)
-      UI.message("✓ Chinese notes set")
-    end
-
-    distribute_to_external_groups(app, build)
-    UI.success("Done — build #{new_build} released to external testers")
+    UI.success("Done — internal build #{new_build} assigned to #{INTERNAL_HARDWARE_GROUP_NAME}")
   end
 
-  desc "App Store candidate pipeline: verify release-channel boundary → increment build → archive Kirole-AppStore (AppStoreRelease, no KIROLE_INTERNAL) → upload binary to App Store Connect. No TestFlight groups, no notes, no beta review. Attaching the build to an App Store version and submitting stays manual, gated on validate-assets.sh submission passing and SUBMISSION-RECORD.md being READY."
+  desc "External TestFlight pipeline (customer-candidate channel): secure-channel gate → release-boundary gate → increment build → archive Kirole-AppStore (AppStoreRelease, no KIROLE_INTERNAL, internal tools compiled out) → upload → set notes → distribute to every external group + submit Beta App Review. Same configuration as the App Store candidate: submit this build number to the App Store instead of archiving again."
+  lane :external do |options|
+    en_text = resolve_notes(options)
+
+    # Fail closed before any build-number bump once the firmware-readiness
+    # switch is on; with it off the archive intentionally ships plaintext BLE.
+    require_ble_secret_if_secure_channel_enabled
+    run_release_boundary_gate
+
+    new_build = archive_and_upload(scheme: "Kirole-AppStore", configuration: "AppStoreRelease")
+
+    Spaceship::ConnectAPI.token = asc_token
+    app   = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
+    build = build_by_number(app, new_build)
+    set_release_notes(build, en_text, options)
+    distribute_to_external_groups(app, build)
+
+    UI.success("Done — external build #{new_build} released to external testers")
+  end
+
+  desc "App Store candidate pipeline: secure-channel gate → release-boundary gate → increment build → archive Kirole-AppStore (AppStoreRelease, no KIROLE_INTERNAL) → upload binary to App Store Connect. No TestFlight groups, no notes, no beta review. Prefer promoting the build external testers verified; use this lane only when a fresh archive is required. Attaching the build to an App Store version and submitting stays manual, gated on validate-assets.sh submission passing and SUBMISSION-RECORD.md being READY."
   lane :appstore do
-    # Fail closed before any build-number bump: an empty BLE_SHARED_SECRET
-    # would ship the unsigned development channel in the customer binary.
-    require_appstore_ble_secret
+    # Fail closed before any build-number bump once the firmware-readiness
+    # switch is on; with it off the archive intentionally ships plaintext BLE.
+    require_ble_secret_if_secure_channel_enabled
+    run_release_boundary_gate
 
-    # Paired compile-out gate: fails the lane before archiving if the
-    # KIROLE_INTERNAL marker leaks into the App Store configuration.
-    # Fastlane `sh` runs with cwd = fastlane/; resolve from the Fastfile
-    # so this always hits repo scripts/verify-release-boundary.sh.
-    boundary_script = File.expand_path(
-      "../scripts/verify-release-boundary.sh",
-      File.dirname(FastlaneCore::FastlaneFolder.fastfile_path)
-    )
-    UI.user_error!("Missing #{boundary_script}") unless File.file?(boundary_script)
-    sh(boundary_script)
-
-    new_build = increment_build_number(xcodeproj: "Kirole.xcodeproj")
-    UI.message("▶ App Store candidate build number → #{new_build}")
-
-    gym(
-      workspace:     "Kirole.xcworkspace",
-      scheme:        "Kirole-AppStore",
-      configuration: "AppStoreRelease",
-      export_method: "app-store",
-      xcargs:        "-allowProvisioningUpdates"
-    )
-
-    api_key = app_store_connect_api_key(
-      key_id:       ENV.fetch("ASC_KEY_ID")   { UI.user_error!("ASC_KEY_ID not set") },
-      issuer_id:    ENV.fetch("ASC_ISSUER_ID") { UI.user_error!("ASC_ISSUER_ID not set") },
-      key_filepath: ENV.fetch("ASC_KEY_PATH")  { UI.user_error!("ASC_KEY_PATH not set") }
-    )
-    upload_to_testflight(
-      api_key:                           api_key,
-      skip_waiting_for_build_processing: false,
-      distribute_external:               false,
-      skip_submission:                    true
+    new_build = archive_and_upload(
+      scheme:          "Kirole-AppStore",
+      configuration:   "AppStoreRelease",
+      skip_submission: true
     )
     UI.success("Done — App Store candidate #{new_build} uploaded to App Store Connect. Attach it to a version manually after the submission gates pass.")
   end
 
-  desc "Update TestFlight What to Test notes only (zh-Hans)"
+  desc "Update TestFlight What to Test notes only (zh-Hans). Targets build:<number>, else the most recently uploaded build."
   lane :notes do |options|
     text = resolve_notes(options)
 
-    token = asc_token
-    Spaceship::ConnectAPI.token = token
-
+    Spaceship::ConnectAPI.token = asc_token
     app   = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
-    build = latest_hardware_build(app)
+    build = target_build(app, options)
 
     app_version = build.pre_release_version ? build.pre_release_version.version : "?"
     UI.message("Updating notes for v#{app_version} (build #{build.version})")
@@ -119,12 +77,12 @@ platform :ios do
     UI.success("Done — v#{app_version}(#{build.version}) notes updated")
   end
 
-  desc "Finish a release that uploaded+processed OK but died at external distribution (e.g. SSL EOF after Internal distribution). Idempotent: notes upsert + beta-review submit both skip if already done. Operates on the latest build — no archive/upload, no build bump."
+  desc "Finish an external release that uploaded+processed OK but died before distribution (e.g. SSL EOF). Idempotent: notes upsert + beta-review submit both skip if already done. Targets build:<number>, else the most recently uploaded build — no archive/upload, no build bump."
   lane :finish_external do |options|
     en_text = resolve_notes(options)
     Spaceship::ConnectAPI.token = asc_token
     app   = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
-    build = latest_hardware_build(app)
+    build = target_build(app, options)
     UI.message("▶ Finishing build #{build.version} — en notes + external distribution + beta review")
     upsert_localization(build, "en-US", en_text)
     UI.success("✓ English notes set")
@@ -132,48 +90,133 @@ platform :ios do
     UI.success("Done — build #{build.version} distributed to external testers")
   end
 
-  desc "Verify the latest TestFlight build actually landed: processing state + beta review state. Run after every release — a fastlane 'Done' line alone is not proof (process can be killed mid-upload)."
+  desc "Verify the latest TestFlight builds actually landed, per channel: processing state + beta review state for the newest internal-group build and the newest external-group build. Run after every release — a fastlane 'Done' line alone is not proof (process can be killed mid-upload)."
   lane :status do
     Spaceship::ConnectAPI.token = asc_token
-    app   = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
-    build = latest_hardware_build(app)
-    app_version = build.pre_release_version ? build.pre_release_version.version : "?"
-    UI.message("Latest build: v#{app_version} (#{build.version}), uploaded #{build.uploaded_date}")
-    UI.message("processingState: #{build.processing_state}")
-    detail = Spaceship::ConnectAPI.get_build_beta_details(filter: { build: build.id }).first
-    if detail
-      UI.message("internalBuildState: #{detail.internal_build_state}")
-      UI.message("externalBuildState: #{detail.external_build_state}")
+    app = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
+
+    internal_build = latest_hardware_build(app)
+    report_build_status("Internal (#{INTERNAL_HARDWARE_GROUP_NAME})", internal_build)
+
+    external_build = latest_external_build(app)
+    if external_build
+      report_build_status("External (customer candidate)", external_build)
+    else
+      UI.important("External: no active build in any external group")
     end
-    UI.success("Done — build #{build.version}: #{build.processing_state} / external=#{detail&.external_build_state}")
+
+    UI.success("Done — internal #{internal_build.version} / external #{external_build&.version || '-'}")
   end
 end
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
-def require_appstore_ble_secret
-  secret = ENV["BLE_SHARED_SECRET"].to_s.strip
-  if secret.empty?
-    secrets_path = File.expand_path(
-      "../Config/Secrets.xcconfig",
-      File.dirname(FastlaneCore::FastlaneFolder.fastfile_path)
-    )
-    if File.file?(secrets_path)
-      File.foreach(secrets_path) do |line|
-        next if line.strip.start_with?("//")
-        if line =~ /^\s*BLE_SHARED_SECRET\s*=\s*(.*)$/
-          secret = Regexp.last_match(1).to_s.strip.gsub("$()", "")
-        end
-      end
+# Reads a `KEY = value` line from the git-ignored Config/Secrets.xcconfig,
+# stripping the `$()` sentinel used to survive xcconfig's `//` comment pass.
+def secrets_xcconfig_value(key)
+  secrets_path = File.expand_path(
+    "../Config/Secrets.xcconfig",
+    File.dirname(FastlaneCore::FastlaneFolder.fastfile_path)
+  )
+  return "" unless File.file?(secrets_path)
+
+  value = ""
+  File.foreach(secrets_path) do |line|
+    next if line.strip.start_with?("//")
+    if line =~ /^\s*#{Regexp.escape(key)}\s*=\s*(.*)$/
+      value = Regexp.last_match(1).to_s.strip.gsub("$()", "")
     end
   end
+  value
+end
+
+# Firmware-readiness switch for the signed BLE channel (BLE protocol §3.3 /
+# §4.17). Mirrors Config/scripts-generate-build-secrets.sh: 0 = firmware has no
+# shared secret yet, every archive ships plaintext; 1 = both sides confirmed.
+def ble_secure_channel_enabled?
+  raw = ENV["BLE_SECURE_CHANNEL_ENABLED"].to_s.strip
+  raw = secrets_xcconfig_value("BLE_SECURE_CHANNEL_ENABLED") if raw.empty?
+  raw == "1"
+end
+
+# Customer-candidate archives (external TestFlight + App Store) fail closed
+# before any build-number bump when the switch is on and the secret is
+# missing. With the switch off the secret is ignored by the build script, so
+# there is nothing to require — say so loudly instead of silently archiving.
+def require_ble_secret_if_secure_channel_enabled
+  unless ble_secure_channel_enabled?
+    UI.important(
+      "BLE_SECURE_CHANNEL_ENABLED is not 1 — archiving the plaintext BLE channel " \
+      "the firmware currently implements (BLE_SHARED_SECRET is ignored)."
+    )
+    return
+  end
+
+  secret = ENV["BLE_SHARED_SECRET"].to_s.strip
+  secret = secrets_xcconfig_value("BLE_SHARED_SECRET") if secret.empty?
   return unless secret.empty?
 
   UI.user_error!(
-    "App Store builds require BLE_SHARED_SECRET. " \
-    "Set it in Config/Secrets.xcconfig or the environment. " \
-    "An empty value ships the unsigned BLE development channel."
+    "BLE_SECURE_CHANNEL_ENABLED=1 but BLE_SHARED_SECRET is empty. " \
+    "Set it in Config/Secrets.xcconfig or the environment, or flip the switch back to 0. " \
+    "An empty value would ship the unsigned BLE development channel."
   )
+end
+
+# Paired compile-out gate: fails the lane before archiving if the
+# KIROLE_INTERNAL marker or any internal-tool string leaks into the
+# AppStoreRelease configuration. Fastlane `sh` runs with cwd = fastlane/;
+# resolve from the Fastfile so this always hits repo scripts/.
+def run_release_boundary_gate
+  boundary_script = File.expand_path(
+    "../scripts/verify-release-boundary.sh",
+    File.dirname(FastlaneCore::FastlaneFolder.fastfile_path)
+  )
+  UI.user_error!("Missing #{boundary_script}") unless File.file?(boundary_script)
+  sh(boundary_script)
+end
+
+# Bump → archive → upload → wait for processing. Returns the new build number.
+# -allowProvisioningUpdates lets Xcode regenerate the App Store distribution
+# profile on demand — required so a missing/stale profile self-heals instead
+# of silently falling back to a Development profile (which breaks app-store export).
+# skip_submission: true keeps pilot from touching tester distribution at all
+# (App Store candidates); TestFlight lanes distribute via Spaceship afterwards.
+def archive_and_upload(scheme:, configuration:, skip_submission: false)
+  new_build = increment_build_number(xcodeproj: "Kirole.xcodeproj")
+  UI.message("▶ #{scheme} (#{configuration}) build number → #{new_build}")
+
+  gym(
+    workspace:     "Kirole.xcworkspace",
+    scheme:        scheme,
+    configuration: configuration,
+    export_method: "app-store",
+    xcargs:        "-allowProvisioningUpdates"
+  )
+
+  upload_to_testflight(
+    api_key:                           asc_api_key,
+    skip_waiting_for_build_processing: false,
+    distribute_external:               false,
+    skip_submission:                   skip_submission
+  )
+  new_build
+end
+
+# en-US notes are mandatory; zh-Hans comes from zh_text:/zh_file: when given.
+def set_release_notes(build, en_text, options)
+  upsert_localization(build, "en-US", en_text)
+  UI.message("✓ English notes set")
+
+  zh_text = options[:zh_text]
+  if zh_text.nil? && options[:zh_file]
+    path = File.expand_path(options[:zh_file])
+    zh_text = File.read(path).strip if File.exist?(path)
+  end
+  return unless zh_text && !zh_text.empty?
+
+  upsert_localization(build, "zh-Hans", zh_text)
+  UI.message("✓ Chinese notes set")
 end
 
 def resolve_notes(options)
@@ -188,12 +231,47 @@ def resolve_notes(options)
   end
 end
 
+def asc_api_key
+  app_store_connect_api_key(
+    key_id:       ENV.fetch("ASC_KEY_ID")   { UI.user_error!("ASC_KEY_ID not set") },
+    issuer_id:    ENV.fetch("ASC_ISSUER_ID") { UI.user_error!("ASC_ISSUER_ID not set") },
+    key_filepath: ENV.fetch("ASC_KEY_PATH")  { UI.user_error!("ASC_KEY_PATH not set") }
+  )
+end
+
 def asc_token
   Spaceship::ConnectAPI::Token.create(
     key_id:    ENV.fetch("ASC_KEY_ID")   { UI.user_error!("ASC_KEY_ID not set") },
     issuer_id: ENV.fetch("ASC_ISSUER_ID") { UI.user_error!("ASC_ISSUER_ID not set") },
     filepath:  ENV.fetch("ASC_KEY_PATH")  { UI.user_error!("ASC_KEY_PATH not set") }
   )
+end
+
+# build:<number> when given, otherwise the most recently uploaded build of the
+# app regardless of group membership — an external build that died before
+# distribution is in no group yet, so group-scoped lookups cannot find it.
+def target_build(app, options)
+  return build_by_number(app, options[:build]) if options[:build]
+
+  build = Spaceship::ConnectAPI.get_builds(
+    filter:   { app: app.id },
+    includes: Spaceship::ConnectAPI::Build::ESSENTIAL_INCLUDES,
+    sort:     "-uploadedDate",
+    limit:    1
+  ).first
+  UI.user_error!("No builds found for #{BUNDLE_ID}") unless build
+  build
+end
+
+def report_build_status(label, build)
+  app_version = build.pre_release_version ? build.pre_release_version.version : "?"
+  UI.message("#{label}: v#{app_version} (#{build.version}), uploaded #{build.uploaded_date}")
+  UI.message("  processingState: #{build.processing_state}")
+  detail = Spaceship::ConnectAPI.get_build_beta_details(filter: { build: build.id }).first
+  return unless detail
+
+  UI.message("  internalBuildState: #{detail.internal_build_state}")
+  UI.message("  externalBuildState: #{detail.external_build_state}")
 end
 
 def build_by_number(app, number)
@@ -235,6 +313,19 @@ def latest_hardware_build(app)
                                                .max_by(&:uploaded_date)
   UI.user_error!("No active builds found in #{INTERNAL_HARDWARE_GROUP_NAME.inspect}") unless assigned_build
   build_by_number(app, assigned_build.version)
+end
+
+# Newest non-expired build assigned to any external group, or nil. Builds
+# distributed before the lane split (≤ 656) are Internal-configuration
+# binaries that reached external testers via the old combined lane.
+def latest_external_build(app)
+  external_groups = Spaceship::ConnectAPI.get_beta_groups(filter: { app: app.id })
+                                         .all_pages.flat_map(&:to_models)
+                                         .reject(&:is_internal_group)
+  assigned_build = external_groups.flat_map(&:fetch_builds)
+                                  .reject(&:expired)
+                                  .max_by(&:uploaded_date)
+  assigned_build && build_by_number(app, assigned_build.version)
 end
 
 def upsert_localization(build, locale, text)

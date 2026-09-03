@@ -7,7 +7,7 @@ description: TestFlight 发布（/release 或 fastlane）的前/中/后验收标
 
 ## 适用
 
-- 跑 `/release` 或 `fastlane ios release` 的前、中、后
+- 跑 `/release`（`fastlane ios internal`）或 `/release external`（`fastlane ios external`）的前、中、后
 - 判断"这次发布算不算成功"
 - 准备第一次 App Store 正式提审时（特别闸一节）
 

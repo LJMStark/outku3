@@ -62,10 +62,14 @@ SSL EOF 的另一种死法：上传+处理都成功，死在设 notes / 加外�
 
 | lane | 用途 |
 |---|---|
-| `release` | 全流程：bump → gym → upload → notes → 外部组 + **自动提交 beta review** |
-| `status` | 发布后核实（processingState / internal / external build state）|
-| `finish_external` | 半路死掉后的幂等收尾 |
-| `notes` | 只改 What to Test 文案 |
+| `internal` | 内部通道：bump → gym `Kirole-Internal` → upload → notes → **只进** "Kirole Hardware Internal" 手动组（不进外部组、不提 beta review） |
+| `external` | 外部通道：密钥开关门 + `verify-release-boundary.sh` → bump → gym `Kirole-AppStore` → upload → notes → 所有外部组 + **自动提交 beta review**。与 App Store 候选同配置，提交 App Store 直接选这个 build 号 |
+| `appstore` | 仅上传 App Store 候选二进制，不进任何组（优先 promote external 验过的 build，别重复打包） |
+| `status` | 发布后核实，**按通道分别**报 internal 组 / external 组最新 build 的 processingState / build state |
+| `finish_external` | 半路死掉后的幂等收尾；默认对**最近上传**的 build 操作（半死的 external build 还不在任何组里），可 `build:N` 指定 |
+| `notes` | 只改 What to Test 文案；同样默认最近上传的 build，可 `build:N` |
+
+> 2026-09-03 拆分前（≤ build 656）外部组收到的都是 `Kirole-Internal` 包（旧 `release` lane 内外一起发）。拆分后外部组只收 `AppStoreRelease` 包，调试工具消失是预期。
 
 `distribute_to_external_groups` 里的注释就是 543 事件的尸检报告，改 Fastfile 前先读它。
 
