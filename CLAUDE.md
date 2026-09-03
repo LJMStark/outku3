@@ -186,30 +186,35 @@ xcodebuild -workspace Kirole.xcworkspace -scheme Kirole \
 
 ### TestFlight Release (Full Pipeline)
 ```bash
-# Full release: auto-increment build → archive → upload → set notes → distribute external group
 # /release slash command (auto-generates English notes from git log, uses Haiku model)
-/release
+/release            # internal channel → Kirole-Internal → "Kirole Hardware Internal" group only
+/release external   # external channel → Kirole-AppStore → all external groups + Beta App Review
 
 # Or via fastlane directly (English notes required; zh_text optional)
-fastlane ios release text:"Bug fixes and UI improvements"
-fastlane ios release text:"English notes" zh_text:"中文说明"
+fastlane ios internal text:"Bug fixes and UI improvements"
+fastlane ios external text:"English notes" zh_text:"中文说明"
 
-# Notes-only update (no build, no distribution)
+# Notes-only update (no build, no distribution; build:N to target a specific build)
 fastlane ios notes text:"说明内容"
 
-# App Store candidate (2026-08-15+): boundary gate → archive Kirole-AppStore → upload binary only
+# App Store candidate binary only — prefer promoting the build external testers verified
 fastlane ios appstore
+
+# Per-channel landing check (run after every release)
+fastlane ios status
 ```
 
-Pipeline steps (automated): `increment_build_number` → `gym` (archive ~3 min) → `upload_to_testflight` (processing ~5 min) → set en-US + zh-Hans notes → distribute to external group **kirole**.
+Pipeline steps (automated): `increment_build_number` → `gym` (archive ~3 min) → `upload_to_testflight` (processing ~5 min) → set en-US + zh-Hans notes → assign to the hardware group (`internal`) or distribute to external groups + Beta App Review (`external`).
 
-**Release channels are split (2026-08-15, AGENTS.md "Release Channel Policy")**: `release` archives the `Kirole-Internal` scheme (`InternalRelease` configuration, defines `KIROLE_INTERNAL`) — the hardware/firmware acceptance channel. `appstore` requires a non-empty `BLE_SHARED_SECRET`, then archives `Kirole-AppStore` (`AppStoreRelease`, no `KIROLE_INTERNAL`) after `scripts/verify-release-boundary.sh` proves the boundary marker and internal-tool strings are compiled out. `KIROLE_INTERNAL` is only visible to app-shell (`Kirole/`) sources — Xcode does not forward custom-configuration compilation conditions into SwiftPM packages, so never gate package code with it.
+**Two binaries, three audiences (AGENTS.md "Release Channel Policy", 2026-09-03 lane split)**: `internal` archives `Kirole-Internal` (`InternalRelease`, defines `KIROLE_INTERNAL`) — the hardware/firmware acceptance channel, never handed to external testers. `external` and `appstore` both archive `Kirole-AppStore` (`AppStoreRelease`, no `KIROLE_INTERNAL`) after `scripts/verify-release-boundary.sh` proves the boundary marker and internal-tool strings are compiled out; the App Store submission promotes the build number external testers verified instead of archiving a third binary. `KIROLE_INTERNAL` is only visible to app-shell (`Kirole/`) sources — Xcode does not forward custom-configuration compilation conditions into SwiftPM packages, so never gate package code with it.
+
+**BLE secret is a firmware-readiness switch, not a channel property.** `BLE_SECURE_CHANNEL_ENABLED` in `Config/Secrets.xcconfig` (single source of truth, currently `0`) decides whether any archive enters `.secure` mode. At `0` every configuration ships the plaintext BLE channel the firmware actually implements (BLE protocol §3.3: secure handshake is a second-phase item never confirmed with the hardware team) and `BLE_SHARED_SECRET` is ignored; flip to `1` only after the secret has been generated with the hardware team, provisioned on devices, and confirmed per protocol §4.17 — then customer-candidate archives fail closed on an empty secret. App Store candidates 651 / 655 were archived in `.secure` mode with a secret the firmware never received; they cannot pair with any device and must not be released.
 
 Credentials: `fastlane/.env` (git-ignored) — copy from `fastlane/.env.template` and fill `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_PATH`.
 
 **Verify the build actually landed.** `upload_to_testflight` can be killed mid-upload (process timeout / transient `SSL_read` EOF), leaving the build number bumped locally + an archive on disk but **nothing on App Store Connect** — a "Done" line or local archive is not proof. Confirm via the ASC API (latest build number + `processing_state` + beta-review state). Run the release detached/in background so one timeout can't kill the upload; transient SSL errors are retryable.
 
-**Before App Store submission:** internal Settings / Focus Debug UI is compiled only into `InternalRelease` (`Kirole/Internal/`, `#if KIROLE_INTERNAL`). `showsHardwareDebugTools` stays off unless the Internal app shell enables the hardware channel. `fastlane ios appstore` fails closed if `BLE_SHARED_SECRET` is empty. Remaining blockers are screenshots, store copy, privacy questionnaire, WeatherKit attribution on weather-display pages, and hardware-claim evidence — not the debug-tool wash.
+**Before App Store submission:** internal Settings / Focus Debug UI is compiled only into `InternalRelease` (`Kirole/Internal/`, `#if KIROLE_INTERNAL`). `showsHardwareDebugTools` stays off unless the Internal app shell enables the hardware channel. `fastlane ios external` / `appstore` fail closed on an empty `BLE_SHARED_SECRET` only when `BLE_SECURE_CHANNEL_ENABLED = 1`. Remaining blockers are screenshots, store copy, privacy questionnaire, WeatherKit attribution on weather-display pages, and hardware-claim evidence — not the debug-tool wash.
 
 ### E-ink Simulator (hardware-free UI preview)
 ```bash

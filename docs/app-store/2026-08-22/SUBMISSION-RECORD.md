@@ -4,6 +4,8 @@ Status: BLOCKED
 
 The candidate is blocked on the candidate-device smoke test and final App Privacy verification. No pending item below may be changed to PASS without its named evidence.
 
+> **2026-09-03 addendum — Builds 651 and 655 are not releasable.** Both were archived with a non-empty `BLE_SHARED_SECRET` (from `fastlane/.env`) and therefore run in `.secure` mode. Firmware 1.3.1 has never received that secret (BLE protocol §3.3 / §4.17: secure handshake is a second-phase item, never confirmed with the hardware team), so these binaries cannot pair with any device — the "Real-device smoke test: PENDING" line below can never pass. The fail-closed rule was replaced by the firmware-readiness switch `BLE_SECURE_CHANNEL_ENABLED` (currently `0`, AGENTS.md "Release Channel Policy"); the next customer candidate must come from `fastlane ios external`, be verified by external testers on real devices, and be promoted to the App Store by build number.
+
 ## Candidate identity
 
 - Candidate date: 2026-08-22
