@@ -1,4 +1,19 @@
 import Foundation
+import os
+
+/// 专注重连裁决的取证日志。**不受 `showsHardwareDebugTools` 门控**——客户包也要留痕。
+///
+/// 起因（2026-09-03）：客户设备陷入「连上 ~10 秒即断、反复重连」。固件日志显示
+/// FOCUS_RESOLVE 被回 `INVALID_STATE(0x10)`，但固件的 hex dump 每帧只打 32 字节，
+/// 而 `0x83 FOCUS_STATE` 整帧 39 字节——末尾 7 字节（elapsedSeconds 低半、
+/// lastOperationID、endReason）恰好被截断，而它们正是 `isContentEmptyIdleSnapshot`
+/// 的判据。App 这一侧本就把整帧解码成了结构体，落一行日志即可定案，
+/// 不必等固件改打印。
+///
+/// Console.app 过滤：subsystem `com.kirole.app` + category `FocusReconnect`。
+private enum FocusReconnectLog {
+    static let logger = Logger(subsystem: "com.kirole.app", category: "FocusReconnect")
+}
 
 extension BLEOfflineSyncCoordinator {
     func receiveFocusStateIfNeeded(
@@ -96,7 +111,9 @@ extension BLEOfflineSyncCoordinator {
             releaseFocusResolveWaitIfNeeded()
             return .resolved(false)
         }
-        if shouldSkipFocusResolve(state: state, snapshot: snapshot) {
+        let skip = shouldSkipFocusResolve(state: state, snapshot: snapshot)
+        logFocusSnapshot(state: state, snapshot: snapshot, skipped: skip)
+        if skip {
             dependencies.abandonPendingFocusResolve()
             releaseFocusResolveWaitIfNeeded()
             return .resolved(false)
@@ -105,6 +122,44 @@ extension BLEOfflineSyncCoordinator {
             snapshot: snapshot,
             allowInvalidStateRetry: allowInvalidStateRetry,
             runID: runID
+        )
+    }
+
+    /// 落一行 key=value 取证日志：设备快照的**每个**字段 + 喂给 `shouldSkipFocusResolve`
+    /// 的 STATE 字段 + 两个 idle 谓词的结论。
+    ///
+    /// `contentEmptyIdle` 与 `arbiterIdle` 分开打是刻意的——前者是 8 条件的
+    /// `isContentEmptyIdleSnapshot`（决定发不发裁决），后者是 `FocusReconnectArbiter`
+    /// 短路用的 2 条件（决定裁决内容）。两者不一致时 App 会「判定有残留却裁决为空」，
+    /// 这一行日志能直接把这种组合钉出来。
+    ///
+    /// taskId 只打长度不打内容：它是任务标识而非标题，但日志不需要它的值。
+    private func logFocusSnapshot(
+        state: OfflineSyncState,
+        snapshot: OfflineFocusState,
+        skipped: Bool
+    ) {
+        let arbiterIdle = snapshot.focusState == .idle && snapshot.sessionId.isIdle
+        FocusReconnectLog.logger.notice(
+            """
+            FocusState rev=\(snapshot.focusRevision, privacy: .public) \
+            boot=\(snapshot.bootSessionID, privacy: .public) \
+            sessionBoot=\(snapshot.sessionId.bootSessionID, privacy: .public) \
+            sessionOp=\(snapshot.sessionId.startOperationID, privacy: .public) \
+            state=\(snapshot.focusState.rawValue, privacy: .public) \
+            startSrc=\(snapshot.startSource.rawValue, privacy: .public) \
+            taskIdLen=\(snapshot.taskId.count, privacy: .public) \
+            start=\(snapshot.startTimestamp, privacy: .public) \
+            end=\(snapshot.endTimestamp, privacy: .public) \
+            elapsed=\(snapshot.elapsedSeconds, privacy: .public) \
+            lastOpID=\(snapshot.lastOperationID, privacy: .public) \
+            endReason=\(snapshot.endReason.rawValue, privacy: .public) \
+            | pending=\(state.pendingCount, privacy: .public) \
+            flags=0x\(String(format: "%02X", state.stateFlags.rawValue), privacy: .public) \
+            | contentEmptyIdle=\(snapshot.isContentEmptyIdleSnapshot, privacy: .public) \
+            arbiterIdle=\(arbiterIdle, privacy: .public) \
+            skipResolve=\(skipped, privacy: .public)
+            """
         )
     }
 
@@ -144,6 +199,22 @@ extension BLEOfflineSyncCoordinator {
         guard case .result(let result) = inbound else {
             throw BLEOfflineSyncCoordinatorError.invalidInbound
         }
+        // 配对取证：把 App 发出去的裁决和设备回的结果码打在一起。日志里
+        // `FocusResolve -> result=0x10` 紧跟前一行 `FocusState ...`，即可判定
+        // 「设备报了什么 → App 裁决了什么 → 设备为什么拒」这条完整因果。
+        FocusReconnectLog.logger.notice(
+            """
+            FocusResolve id=\(resolve.resolveID, privacy: .public) \
+            verdictState=\(resolve.focusState.rawValue, privacy: .public) \
+            verdictResult=\(resolve.result.rawValue, privacy: .public) \
+            verdictRev=\(resolve.focusRevision, privacy: .public) \
+            sessionBoot=\(resolve.sessionId.bootSessionID, privacy: .public) \
+            sessionOp=\(resolve.sessionId.startOperationID, privacy: .public) \
+            -> syncID=\(result.syncID, privacy: .public) \
+            target=0x\(String(format: "%02X", result.targetType.rawValue), privacy: .public) \
+            result=0x\(String(format: "%02X", result.resultCode.rawValue), privacy: .public)
+            """
+        )
         if result.syncID == resolve.resolveID,
            result.targetType == .offlineSync,
            result.resultCode == .committed {

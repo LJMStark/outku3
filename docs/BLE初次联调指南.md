@@ -264,6 +264,15 @@ Result：`00 applied`、`01 alreadyApplied`、`02 taskNotFound`、`03 invalidReq
 
 DEBUG 包与 TestFlight 包可用 Console.app（或 `log stream`）过滤 `subsystem:com.kirole.app category:BLE` 查看 App 的 BLE 收发帧摘要：TX 记录 `type/len`，RX 记录 `len/firstByte`。可据此判断「固件发出的帧 App 有没有收到」「App 写出的帧类型 / 长度对不对」。正式 App Store 包关闭此日志，且不记录完整 payload。
 
+### 想知道专注重连（`0x25`）为什么被拒
+
+过滤 `subsystem:com.kirole.app category:FocusReconnect`。**该 category 在所有包（含正式包）都开着**，与上面只在 DEBUG / TestFlight 可见的 `category:BLE` 不同。每轮裁决落两行：
+
+- `FocusState …` —— App 把设备 `0x83 FOCUS_STATE` **解码后的每个字段**（`rev` / `sessionBoot` / `sessionOp` / `state` / `taskIdLen` / `start` / `end` / `elapsed` / `lastOpID` / `endReason`），加上喂给跳过判定的 STATE 字段（`pending` / `flags`），以及三个结论（`contentEmptyIdle` / `arbiterIdle` / `skipResolve`）。
+- `FocusResolve … -> result=0xNN` —— App 发出的裁决内容与设备回的结果码配对。
+
+它解决的是固件侧 hex dump 的截断问题：`0x83` 整帧 39 字节（1 类型 + 1 长度 + 37 payload），而固件日志每帧只打 32 字节，末尾 7 字节（`elapsedSeconds` 低半、`lastOperationID`、`endReason`）看不到——这三个字段恰好决定 App 判不判「空闲快照仍带残留」，进而决定发不发 FOCUS_RESOLVE。建议固件侧也把 hex dump 按实际帧长输出（≥3 行 / 48 字节），两边对照更快定位。
+
 ### 收到 `0x14` 不知道怎么解释
 
 先看方向：
