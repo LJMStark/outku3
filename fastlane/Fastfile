@@ -351,6 +351,24 @@ def distribute_to_external_groups(app, build)
                      .all_pages.flat_map(&:to_models)
   external   = all_groups.reject(&:is_internal_group)
 
+  # Choke point for "reaches external testers": refuse an InternalRelease binary.
+  # Only the `internal` lane assigns to the hardware group, so membership in it
+  # identifies a build with Focus Debug / Shipping Mode / Wi-Fi PC Debug compiled
+  # in. Without this guard, `finish_external` with no build:N resolves to the most
+  # recently uploaded build — run it right after `fastlane ios internal` and the
+  # internal binary lands in every external group, which is exactly what splitting
+  # the lanes was meant to stop.
+  hardware_group = internal_hardware_group(app)
+  linked_groups  = client.get_beta_groups(filter: { builds: build.id })
+                         .all_pages.flat_map(&:to_models)
+  if linked_groups.any? { |item| item.id == hardware_group.id }
+    UI.user_error!(
+      "Build #{build.version} belongs to #{hardware_group.name} — that is an " \
+      "InternalRelease binary with internal tools compiled in and must never reach " \
+      "external testers. Pass build:<number> for the external candidate instead."
+    )
+  end
+
   if external.empty?
     UI.important("No external beta groups found — skipping distribution")
     return

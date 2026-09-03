@@ -277,7 +277,7 @@ xcodebuild -workspace Kirole.xcworkspace \
 5. 测试员在 TestFlight App **下拉刷新**(不一定有推送通知)。
 
 **根治(均已完成)**:
-- `fastlane release` 现在分发后**自动提交 Beta App Review**(`submit_for_beta_review`,幂等);
+- `fastlane ios external`(2026-09-03 拆 lane 前叫 `release`)分发后**自动提交 Beta App Review**(`submit_for_beta_review`,幂等);外部分发只走这条 lane,`internal` 只进硬件组、不提交审核;
 - `Config/Info.plist` 已声明 `ITSAppUsesNonExemptEncryption=false`,build 567 起自动免出口合规询问。
 
 > 区分两件事:① **没提交审核** = 外部永远看不到(主因,fastlane 旧版漏了这步);② 卡「准备提交」= 没答合规(次因,挡在提交之前)。两者现已分别根治。
