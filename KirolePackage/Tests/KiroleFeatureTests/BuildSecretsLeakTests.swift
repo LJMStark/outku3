@@ -103,6 +103,23 @@ struct BuildSecretsLeakTests {
         #expect(generatedSecrets.contains("static let bleSharedSecret = \"\""))
     }
 
+    /// A typo must not read as "off": silently shipping plaintext is the exact
+    /// class of misconfiguration this switch exists to prevent.
+    @Test(
+        "An illegal firmware-readiness switch value fails the build",
+        arguments: ["true", "01", "yes", "2", " 1"]
+    )
+    func illegalSecureChannelSwitchValueFailsClosed(value: String) throws {
+        let result = try runBuildSecretsGenerator(
+            configuration: "AppStoreRelease",
+            bleSharedSecret: "app-store-security-secret",
+            secureChannelEnabled: value
+        )
+
+        #expect(result.terminationStatus != 0)
+        #expect(result.generatedSecrets == nil)
+    }
+
     @Test("AppStoreRelease keeps the configured BLE shared secret once the switch is on")
     func appStoreReleaseEmbedsBLESharedSecret() throws {
         let result = try runBuildSecretsGenerator(

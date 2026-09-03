@@ -111,38 +111,50 @@ extension BLEOfflineSyncCoordinator {
             releaseFocusResolveWaitIfNeeded()
             return .resolved(false)
         }
-        let skip = shouldSkipFocusResolve(state: state, snapshot: snapshot)
-        logFocusSnapshot(state: state, snapshot: snapshot, skipped: skip)
-        if skip {
+        if shouldSkipFocusResolve(state: state, snapshot: snapshot) {
             dependencies.abandonPendingFocusResolve()
             releaseFocusResolveWaitIfNeeded()
             return .resolved(false)
         }
         return try await sendFocusResolveOnce(
+            state: state,
             snapshot: snapshot,
             allowInvalidStateRetry: allowInvalidStateRetry,
             runID: runID
         )
     }
 
-    /// 落一行 key=value 取证日志：设备快照的**每个**字段 + 喂给 `shouldSkipFocusResolve`
-    /// 的 STATE 字段 + 两个 idle 谓词的结论。
+    /// 裁决被拒时落一行 key=value 取证日志：设备快照的每个字段 + 喂给
+    /// `shouldSkipFocusResolve` 的 STATE 字段 + 两个 idle 谓词的结论 + App 实际
+    /// 发出的整份裁决 + 设备的结果码。一行读完「设备报了什么 → App 裁决了什么
+    /// → 设备为什么拒」。
+    ///
+    /// **只在 `resultCode != .committed` 时打**：成功轮次不留痕，客户包里因此没有
+    /// 常驻诊断日志（AGENTS.md「Release Channel Policy」要求 App Store 包不含内部
+    /// 诊断）。异常仍然留痕，是因为这类「两端对同一状态理解不一致」的故障只在客户
+    /// 现场出现，而客户包没有任何其他 BLE 日志（`BLEService` 的 TX/RX 摘要受
+    /// `showsHardwareDebugTools` 门控）。
     ///
     /// `contentEmptyIdle` 与 `arbiterIdle` 分开打是刻意的——前者是 8 条件的
     /// `isContentEmptyIdleSnapshot`（决定发不发裁决），后者是 `FocusReconnectArbiter`
-    /// 短路用的 2 条件（决定裁决内容）。两者不一致时 App 会「判定有残留却裁决为空」，
-    /// 这一行日志能直接把这种组合钉出来。
+    /// 短路用的 2 条件（决定裁决内容）。两者不一致时 App 会「判定有残留却裁决为空」。
     ///
-    /// taskId 只打长度不打内容：它是任务标识而非标题，但日志不需要它的值。
-    private func logFocusSnapshot(
+    /// 出站侧打**全部** wire 字段：时间戳 / phase / bottles 同样可能是设备拒绝的理由，
+    /// 少打一个就可能白跑一轮取证。taskId 只打长度不打内容。整数字段用 `.public`：
+    /// 打码后无法比对，取证价值归零；这些是协议整数，不含用户文本。
+    private func logRejectedFocusResolve(
         state: OfflineSyncState,
         snapshot: OfflineFocusState,
-        skipped: Bool
+        resolve: OfflineFocusResolve,
+        result: OfflineSyncResult
     ) {
         let arbiterIdle = snapshot.focusState == .idle && snapshot.sessionId.isIdle
         FocusReconnectLog.logger.notice(
             """
-            FocusState rev=\(snapshot.focusRevision, privacy: .public) \
+            FocusResolve REJECTED result=0x\(String(format: "%02X", result.resultCode.rawValue), privacy: .public) \
+            target=0x\(String(format: "%02X", result.targetType.rawValue), privacy: .public) \
+            syncID=\(result.syncID, privacy: .public) \
+            | device rev=\(snapshot.focusRevision, privacy: .public) \
             boot=\(snapshot.bootSessionID, privacy: .public) \
             sessionBoot=\(snapshot.sessionId.bootSessionID, privacy: .public) \
             sessionOp=\(snapshot.sessionId.startOperationID, privacy: .public) \
@@ -154,11 +166,21 @@ extension BLEOfflineSyncCoordinator {
             elapsed=\(snapshot.elapsedSeconds, privacy: .public) \
             lastOpID=\(snapshot.lastOperationID, privacy: .public) \
             endReason=\(snapshot.endReason.rawValue, privacy: .public) \
-            | pending=\(state.pendingCount, privacy: .public) \
+            | state pending=\(state.pendingCount, privacy: .public) \
             flags=0x\(String(format: "%02X", state.stateFlags.rawValue), privacy: .public) \
+            | verdict id=\(resolve.resolveID, privacy: .public) \
+            sessionBoot=\(resolve.sessionId.bootSessionID, privacy: .public) \
+            sessionOp=\(resolve.sessionId.startOperationID, privacy: .public) \
+            state=\(resolve.focusState.rawValue, privacy: .public) \
+            result=\(resolve.result.rawValue, privacy: .public) \
+            start=\(resolve.startTimestamp, privacy: .public) \
+            end=\(resolve.endTimestamp, privacy: .public) \
+            elapsed=\(resolve.elapsedSeconds, privacy: .public) \
+            rev=\(resolve.focusRevision, privacy: .public) \
+            phase=\(resolve.phase.wireByte, privacy: .public) \
+            bottles=\(resolve.bottles, privacy: .public) \
             | contentEmptyIdle=\(snapshot.isContentEmptyIdleSnapshot, privacy: .public) \
-            arbiterIdle=\(arbiterIdle, privacy: .public) \
-            skipResolve=\(skipped, privacy: .public)
+            arbiterIdle=\(arbiterIdle, privacy: .public)
             """
         )
     }
@@ -187,6 +209,7 @@ extension BLEOfflineSyncCoordinator {
     }
 
     private func sendFocusResolveOnce(
+        state: OfflineSyncState,
         snapshot: OfflineFocusState,
         allowInvalidStateRetry: Bool,
         runID: UUID
@@ -199,22 +222,14 @@ extension BLEOfflineSyncCoordinator {
         guard case .result(let result) = inbound else {
             throw BLEOfflineSyncCoordinatorError.invalidInbound
         }
-        // 配对取证：把 App 发出去的裁决和设备回的结果码打在一起。日志里
-        // `FocusResolve -> result=0x10` 紧跟前一行 `FocusState ...`，即可判定
-        // 「设备报了什么 → App 裁决了什么 → 设备为什么拒」这条完整因果。
-        FocusReconnectLog.logger.notice(
-            """
-            FocusResolve id=\(resolve.resolveID, privacy: .public) \
-            verdictState=\(resolve.focusState.rawValue, privacy: .public) \
-            verdictResult=\(resolve.result.rawValue, privacy: .public) \
-            verdictRev=\(resolve.focusRevision, privacy: .public) \
-            sessionBoot=\(resolve.sessionId.bootSessionID, privacy: .public) \
-            sessionOp=\(resolve.sessionId.startOperationID, privacy: .public) \
-            -> syncID=\(result.syncID, privacy: .public) \
-            target=0x\(String(format: "%02X", result.targetType.rawValue), privacy: .public) \
-            result=0x\(String(format: "%02X", result.resultCode.rawValue), privacy: .public)
-            """
-        )
+        if result.resultCode != .committed {
+            logRejectedFocusResolve(
+                state: state,
+                snapshot: snapshot,
+                resolve: resolve,
+                result: result
+            )
+        }
         if result.syncID == resolve.resolveID,
            result.targetType == .offlineSync,
            result.resultCode == .committed {

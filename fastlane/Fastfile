@@ -77,12 +77,12 @@ platform :ios do
     UI.success("Done — v#{app_version}(#{build.version}) notes updated")
   end
 
-  desc "Finish an external release that uploaded+processed OK but died before distribution (e.g. SSL EOF). Idempotent: notes upsert + beta-review submit both skip if already done. Targets build:<number>, else the most recently uploaded build — no archive/upload, no build bump."
+  desc "Finish an external release that uploaded+processed OK but died before distribution (e.g. SSL EOF). Idempotent: notes upsert + beta-review submit both skip if already done. build:<number> is REQUIRED — no archive/upload, no build bump."
   lane :finish_external do |options|
     en_text = resolve_notes(options)
     Spaceship::ConnectAPI.token = asc_token
     app   = Spaceship::ConnectAPI::App.find(BUNDLE_ID)
-    build = target_build(app, options)
+    build = target_build(app, options, require_explicit: true)
     UI.message("▶ Finishing build #{build.version} — en notes + external distribution + beta review")
     upsert_localization(build, "en-US", en_text)
     UI.success("✓ English notes set")
@@ -136,6 +136,12 @@ end
 def ble_secure_channel_enabled?
   raw = ENV["BLE_SECURE_CHANNEL_ENABLED"].to_s.strip
   raw = secrets_xcconfig_value("BLE_SECURE_CHANNEL_ENABLED") if raw.empty?
+  raw = "0" if raw.empty?
+  # Mirror Config/scripts-generate-build-secrets.sh: reject anything but 0/1
+  # rather than treating a typo as "off" and silently archiving plaintext.
+  unless %w[0 1].include?(raw)
+    UI.user_error!("BLE_SECURE_CHANNEL_ENABLED must be exactly 0 or 1 (got #{raw.inspect}).")
+  end
   raw == "1"
 end
 
@@ -250,8 +256,21 @@ end
 # build:<number> when given, otherwise the most recently uploaded build of the
 # app regardless of group membership — an external build that died before
 # distribution is in no group yet, so group-scoped lookups cannot find it.
-def target_build(app, options)
+#
+# `require_explicit:` is for lanes that distribute outward. "Most recently
+# uploaded" cannot tell an InternalRelease binary from a customer candidate:
+# if the internal lane dies between upload and group assignment, its build is
+# in no group and no after-the-fact check can identify it. Naming the build is
+# the only sound way to pick one for external distribution.
+def target_build(app, options, require_explicit: false)
   return build_by_number(app, options[:build]) if options[:build]
+
+  if require_explicit
+    UI.user_error!(
+      "Pass build:<number> — refusing to guess which build to distribute externally. " \
+      "Run `fastlane ios status` to find the external candidate's build number."
+    )
+  end
 
   build = Spaceship::ConnectAPI.get_builds(
     filter:   { app: app.id },

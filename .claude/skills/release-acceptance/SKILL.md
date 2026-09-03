@@ -1,6 +1,6 @@
 ---
 name: release-acceptance
-description: TestFlight 发布（/release 或 fastlane）的前/中/后验收标准（全量测试绿、build 号交给 lane 自增、ASC status 复核），以及上架 App Store 前的特别闸（恢复 showsHardwareDebugTools 调试门控等）。NOT for 分发出问题后的排查（去 testflight-distribution-runbook）。本页管"凭什么算发成功"。
+description: TestFlight 发布（/release internal|external 或 fastlane）的前/中/后验收标准（全量测试绿、build 号交给 lane 自增、ASC status 按通道复核），以及上架 App Store 前仍未销的闸。NOT for 分发出问题后的排查（去 testflight-distribution-runbook）。本页管"凭什么算发成功"。
 ---
 
 # 发布验收标准
@@ -46,10 +46,16 @@ description: TestFlight 发布（/release 或 fastlane）的前/中/后验收标
 
 这些是联调期"临时全开"的东西，正式包**必须**关回去：
 
-- [ ] **恢复调试门控**：`AppBuildEnvironment.swift:36` `showsHardwareDebugTools` 现在恒 `true`
-  （`cdf1dc7`，build 573 起）。改回 `#if DEBUG return true #else return isTestFlight #endif`
-  （改法写在同文件注释里）。不恢复=正式用户能看到硬件调试区+frame trace。
-- [ ] **重新评估 keep-alive 默认值**：现默认开（`82a8d6c` 为联调设），正式包应回到省电默认。
+- [x] ~~**恢复调试门控**~~ — **已由编译期边界根治（2026-08-15/17，2026-09-03 复核）**。
+  `showsHardwareDebugTools` 默认关，只有 Internal app shell 的
+  `InternalBuildBoundary.activate()` 会打开；内部工具 UI 在 `Kirole/Internal/` 的
+  `#if KIROLE_INTERNAL` 里，`AppStoreRelease` 根本编译不进去。
+  `scripts/verify-release-boundary.sh` 是配对门控（marker / 5 条 UI 串 / 2 个 coordinator
+  符号在 AppStore 产物中全部缺席），2026-09-03 全 PASS。**不要再手改这个旗。**
+- [x] ~~**重新评估 keep-alive 默认值**~~ — **已被产品决策取代**：BLE 常开是客户要求、
+  写进协议 v2.17.0 §2.5（设备进屏保/低功耗后仍须保持广播与已建连接可达），省电由设备侧
+  电源管理实现。客户包强制常开且无开关（`BLEConnectionPolicy.customerKeepAliveForcedOn`），
+  内部包保留 Settings 开关。**不要"回到省电默认"。**
 - [ ] 出口合规**无需**再动：`ITSAppUsesNonExemptEncryption=false` 已永久声明（`c2da95f`）。
 - [ ] App Store 正式提审流程本身未固化——第一次走的时候把踩的坑记回
   `failure-archaeology` 并把流程沉淀成文档。

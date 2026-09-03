@@ -49,7 +49,15 @@ OPENROUTER_API_KEY_VALUE="$(escape_swift "${OPENROUTER_API_KEY:-}")"
 # has no key (App Store candidate 655 was archived that way).
 # Single source of truth: BLE_SECURE_CHANNEL_ENABLED in Config/Secrets.xcconfig.
 BLE_SECURE_CHANNEL_ENABLED="${BLE_SECURE_CHANNEL_ENABLED:-$(recover_from_xcconfig BLE_SECURE_CHANNEL_ENABLED)}"
-if [[ "${BLE_SECURE_CHANNEL_ENABLED:-0}" != "1" ]]; then
+BLE_SECURE_CHANNEL_ENABLED="${BLE_SECURE_CHANNEL_ENABLED:-0}"
+# Reject anything but 0/1 instead of treating it as "off". A typo such as
+# `true`, `01` or `yes` would otherwise silently ship the plaintext channel —
+# the same class of silent misconfiguration this switch exists to prevent.
+if [[ "${BLE_SECURE_CHANNEL_ENABLED}" != "0" && "${BLE_SECURE_CHANNEL_ENABLED}" != "1" ]]; then
+  echo "error: BLE_SECURE_CHANNEL_ENABLED must be exactly 0 or 1 (got '${BLE_SECURE_CHANNEL_ENABLED}')." >&2
+  exit 1
+fi
+if [[ "${BLE_SECURE_CHANNEL_ENABLED}" != "1" ]]; then
   BLE_SHARED_SECRET=""
 elif [[ -z "${BLE_SHARED_SECRET:-}" ]]; then
   BLE_SHARED_SECRET="$(recover_from_xcconfig BLE_SHARED_SECRET)"
@@ -57,7 +65,7 @@ fi
 # Once the switch is on, device / archive AppStoreRelease must fail closed.
 # Simulator builds stay allowed so scripts/verify-release-boundary.sh and
 # local Settings smoke can still run with an empty development secret.
-if [[ "${BLE_SECURE_CHANNEL_ENABLED:-0}" == "1" && "${CONFIGURATION:-}" == "AppStoreRelease" && "${PLATFORM_NAME:-}" == "iphoneos" && -z "${BLE_SHARED_SECRET:-}" ]]; then
+if [[ "${BLE_SECURE_CHANNEL_ENABLED}" == "1" && "${CONFIGURATION:-}" == "AppStoreRelease" && "${PLATFORM_NAME:-}" == "iphoneos" && -z "${BLE_SHARED_SECRET:-}" ]]; then
   echo "error: BLE_SECURE_CHANNEL_ENABLED=1 but BLE_SHARED_SECRET is empty — AppStoreRelease device/archive builds fail closed (empty would ship an unsigned BLE channel)." >&2
   exit 1
 fi
