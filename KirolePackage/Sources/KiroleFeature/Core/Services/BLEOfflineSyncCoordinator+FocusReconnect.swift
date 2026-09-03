@@ -48,7 +48,7 @@ extension BLEOfflineSyncCoordinator {
     ) -> Bool {
         state.pendingCount == 0
             && !state.stateFlags.contains(.focusSyncPending)
-            && snapshot.isContentEmptyIdleSnapshot
+            && snapshot.hasNoArbitrableFocusContent
     }
 
     struct PostQueryPhase: Equatable {
@@ -135,9 +135,17 @@ extension BLEOfflineSyncCoordinator {
     /// 现场出现，而客户包没有任何其他 BLE 日志（`BLEService` 的 TX/RX 摘要受
     /// `showsHardwareDebugTools` 门控）。
     ///
-    /// `contentEmptyIdle` 与 `arbiterIdle` 分开打是刻意的——前者是 8 条件的
-    /// `isContentEmptyIdleSnapshot`（决定发不发裁决），后者是 `FocusReconnectArbiter`
-    /// 短路用的 2 条件（决定裁决内容）。两者不一致时 App 会「判定有残留却裁决为空」。
+    /// 三个 idle 判据分开打是刻意的，它们各管一件事、可以互不一致：
+    /// - `noArbitrable` = `hasNoArbitrableFocusContent`，决定**发不发**裁决
+    ///   （`shouldSkipFocusResolve` 用它；忽略 revision / lastOperationID 两个水位）
+    /// - `arbiterIdle` = `FocusReconnectArbiter` 的 2 条件短路，决定**发什么**
+    /// - `wireEmptyIdle` = `isContentEmptyIdleSnapshot`，字节表允许的 rev=0 哨兵形状
+    ///   （比前者多要求 `lastOperationID == 0`）
+    ///
+    /// `noArbitrable=false` + `arbiterIdle=true` 就是 2026-09-03 那次故障的指纹：
+    /// App「判定有残留却裁决为空」。`wireEmptyIdle=false` + `noArbitrable=true`
+    /// 则说明固件在空闲快照里带了非零 `lastOperationID`——偏离书面合同，
+    /// App 侧容忍但需要提给硬件团队。
     ///
     /// 出站侧打**全部** wire 字段：时间戳 / phase / bottles 同样可能是设备拒绝的理由，
     /// 少打一个就可能白跑一轮取证。taskId 只打长度不打内容。整数字段用 `.public`：
@@ -179,7 +187,8 @@ extension BLEOfflineSyncCoordinator {
             rev=\(resolve.focusRevision, privacy: .public) \
             phase=\(resolve.phase.wireByte, privacy: .public) \
             bottles=\(resolve.bottles, privacy: .public) \
-            | contentEmptyIdle=\(snapshot.isContentEmptyIdleSnapshot, privacy: .public) \
+            | noArbitrable=\(snapshot.hasNoArbitrableFocusContent, privacy: .public) \
+            wireEmptyIdle=\(snapshot.isContentEmptyIdleSnapshot, privacy: .public) \
             arbiterIdle=\(arbiterIdle, privacy: .public)
             """
         )

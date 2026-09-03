@@ -118,27 +118,33 @@ public struct OfflineFocusState: Sendable, Equatable {
         self.endReason = endReason
     }
 
-    /// An idle snapshot with no session content. `focusRevision` and
-    /// `lastOperationID` are both **watermarks, not content**: they survive a
-    /// finished session and say nothing about state left to arbitrate, so
-    /// neither participates here.
+    /// Idle with nothing left to arbitrate. `focusRevision` and
+    /// `lastOperationID` are excluded because neither is arbitrable content:
+    /// the revision is a version floor, and `LastOperationID` is defined by the
+    /// byte table as "最近相关操作 ID — 用于诊断与完整性检查", i.e. a diagnostic
+    /// watermark of the last operation the device touched.
     ///
-    /// `lastOperationID` was excluded on 2026-09-03 after a reproduced customer
-    /// failure. A device that had just completed a focus session reported
+    /// **This deliberately tolerates a firmware deviation.** The written
+    /// contract (byte table Ver 1.3.1 §3A and 专注状态重连协议变更 Ver 1.3.1)
+    /// requires the no-arbitration baseline to carry a zero 最后操作 as well.
+    /// Firmware 0.1.16 does not: reproduced on device 2026-09-03, a unit that
+    /// had just completed a focus session reported
     /// `state=idle sessionId=0 taskId="" start=end=elapsed=0 endReason=none`
-    /// with `lastOperationID=2` — the operation watermark of that finished
-    /// session. Counting it as content made `shouldSkipFocusResolve` false, so
-    /// the App sent a FOCUS_RESOLVE; `FocusReconnectArbiter.decide` then
-    /// short-circuits on `focusState == .idle && sessionId.isIdle` and produced
-    /// an all-zero idle verdict. The device answered INVALID_STATE (0x10), the
-    /// 0x25 transaction never committed, and the sync round tore the link down
-    /// — a connect / ~10s / disconnect loop. Byte table Ver 1.3.1 §3A is
-    /// explicit that this snapshot must NOT be resolved: absorb the revision
-    /// floor and resume ordinary 0x14.
+    /// with `lastOperationID=2`. Treating that as content made
+    /// `shouldSkipFocusResolve` false, so the App sent a FOCUS_RESOLVE;
+    /// `FocusReconnectArbiter.decide` short-circuits on
+    /// `focusState == .idle && sessionId.isIdle` and produced an all-zero idle
+    /// verdict, which the device rejected with INVALID_STATE (0x10). The 0x25
+    /// transaction never committed and the failed sync round tore the link
+    /// down, giving a connect / ~10s / disconnect loop.
     ///
-    /// Same class as the `focusRevision` exclusion in 6c77aec ("tolerate
-    /// revision-only idle focus snapshots"), which missed this second watermark.
-    public var isContentEmptyIdleSnapshot: Bool {
+    /// Tolerating it here is the App-side unblock; the deviation itself is a
+    /// proposal for the hardware team (either firmware zeroes the field on an
+    /// empty idle snapshot, or the contract drops it from the baseline).
+    ///
+    /// Only `shouldSkipFocusResolve` may use this. The wire sentinel keeps the
+    /// stricter definition below — see `isMeaninglessIdleSnapshot`.
+    public var hasNoArbitrableFocusContent: Bool {
         focusState == .idle
             && sessionId.isIdle
             && startTimestamp == 0
@@ -146,6 +152,16 @@ public struct OfflineFocusState: Sendable, Equatable {
             && elapsedSeconds == 0
             && endReason == .none
             && taskId.isEmpty
+    }
+
+    /// The exact shape the byte table permits for a zero-revision snapshot:
+    /// everything in `hasNoArbitrableFocusContent` **plus** a zero
+    /// `LastOperationID` (byte table Ver 1.3.1, FocusRevision row). Kept strict
+    /// on purpose — this one validates the wire, and accepting a sentinel the
+    /// contract forbids would hide a firmware fault rather than route it to the
+    /// hardware team.
+    public var isContentEmptyIdleSnapshot: Bool {
+        hasNoArbitrableFocusContent && lastOperationID == 0
     }
 
     /// The revision-zero form is a wire sentinel and carries no version floor.

@@ -111,7 +111,35 @@ struct FocusReconnectProtocolTests {
             elapsed: 0,
             lastOperationID: 2
         )
-        #expect(idleWithOperationWatermark.isContentEmptyIdleSnapshot)
+        // Nothing to arbitrate: the App must not send a FOCUS_RESOLVE.
+        #expect(idleWithOperationWatermark.hasNoArbitrableFocusContent)
+        // …but the byte table's rev=0 sentinel requires a zero LastOperationID,
+        // so the stricter wire predicate must still reject this shape. Keeping
+        // the two apart is what stops the tolerance from reaching the decoder.
+        #expect(idleWithOperationWatermark.isContentEmptyIdleSnapshot == false)
+        #expect(idleWithOperationWatermark.isMeaninglessIdleSnapshot == false)
+    }
+
+    /// The byte table permits FocusRevision = 0 only for a fully empty idle
+    /// sentinel, LastOperationID included. Tolerating the operation watermark
+    /// for arbitration must not loosen that: a zero-revision snapshot carrying
+    /// a watermark is still malformed and has to fail decoding.
+    @Test("Zero-revision snapshot carrying an operation watermark is rejected on decode")
+    func zeroRevisionWithOperationWatermarkFailsDecode() throws {
+        let malformed = FocusWireFixtures.focusState(
+            revision: 0,
+            sessionId: .idle,
+            focusState: .idle,
+            taskID: "",
+            start: 0,
+            elapsed: 0,
+            lastOperationID: 2
+        )
+        let payload = FocusWireFixtures.encodeFocusState(malformed)
+
+        #expect(throws: FocusReconnectProtocolError.zeroFocusRevision) {
+            _ = try FocusReconnectCodec.decodeFocusState(payload)
+        }
     }
 
     @Test("FOCUS_RESOLVE payload equality ignores ResolveID")
