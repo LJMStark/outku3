@@ -40,18 +40,25 @@ fi
 SUPABASE_URL_VALUE="$(escape_swift "${SUPABASE_URL_RAW}")"
 SUPABASE_ANON_KEY_VALUE="$(escape_swift "${SUPABASE_ANON_KEY:-$(recover_from_xcconfig SUPABASE_ANON_KEY)}")"
 OPENROUTER_API_KEY_VALUE="$(escape_swift "${OPENROUTER_API_KEY:-}")"
-if [[ "${CONFIGURATION:-}" == "InternalRelease" ]]; then
-  # Hardware integration stays on the unsigned development channel until the
-  # firmware team explicitly enables the matching shared secret.
+# The BLE secure channel is gated by firmware readiness, not by release
+# channel (BLE protocol §3.3 / §4.17): an App package without a secret runs
+# the plaintext MVP mode the firmware actually implements, and secure mode may
+# only be enabled after both sides explicitly confirm the firmware holds the
+# same secret. Until then every configuration — AppStoreRelease included —
+# must ship plaintext: a signed customer binary cannot pair with firmware that
+# has no key (App Store candidate 655 was archived that way).
+# Single source of truth: BLE_SECURE_CHANNEL_ENABLED in Config/Secrets.xcconfig.
+BLE_SECURE_CHANNEL_ENABLED="${BLE_SECURE_CHANNEL_ENABLED:-$(recover_from_xcconfig BLE_SECURE_CHANNEL_ENABLED)}"
+if [[ "${BLE_SECURE_CHANNEL_ENABLED:-0}" != "1" ]]; then
   BLE_SHARED_SECRET=""
 elif [[ -z "${BLE_SHARED_SECRET:-}" ]]; then
   BLE_SHARED_SECRET="$(recover_from_xcconfig BLE_SHARED_SECRET)"
 fi
-# Device / archive AppStoreRelease must fail closed. Simulator builds stay
-# allowed so scripts/verify-release-boundary.sh and local Settings smoke
-# can still run with an empty development secret.
-if [[ "${CONFIGURATION:-}" == "AppStoreRelease" && "${PLATFORM_NAME:-}" == "iphoneos" && -z "${BLE_SHARED_SECRET:-}" ]]; then
-  echo "error: AppStoreRelease device/archive builds require BLE_SHARED_SECRET (empty would ship an unsigned BLE channel)." >&2
+# Once the switch is on, device / archive AppStoreRelease must fail closed.
+# Simulator builds stay allowed so scripts/verify-release-boundary.sh and
+# local Settings smoke can still run with an empty development secret.
+if [[ "${BLE_SECURE_CHANNEL_ENABLED:-0}" == "1" && "${CONFIGURATION:-}" == "AppStoreRelease" && "${PLATFORM_NAME:-}" == "iphoneos" && -z "${BLE_SHARED_SECRET:-}" ]]; then
+  echo "error: BLE_SECURE_CHANNEL_ENABLED=1 but BLE_SHARED_SECRET is empty — AppStoreRelease device/archive builds fail closed (empty would ship an unsigned BLE channel)." >&2
   exit 1
 fi
 BLE_SHARED_SECRET_VALUE="$(escape_swift "${BLE_SHARED_SECRET:-}")"
