@@ -67,24 +67,48 @@ struct BuildSecretsLeakTests {
         #expect(AppSecrets.bleSharedSecret == "ble-secret")
     }
 
-    @Test("InternalRelease stays on plaintext BLE during hardware integration")
-    func internalReleaseDoesNotEmbedBLESharedSecret() throws {
+    // The BLE secure channel is gated by firmware readiness, not by release channel
+    // (BLE protocol §3.3 / §4.17, AGENTS.md "Release Channel Policy"). The switch is
+    // BLE_SECURE_CHANNEL_ENABLED; these tests pin both of its sides.
+
+    @Test(
+        "Every configuration ships plaintext BLE while the firmware-readiness switch is off",
+        arguments: ["InternalRelease", "AppStoreRelease"]
+    )
+    func secureChannelDisabledClearsBLESharedSecret(configuration: String) throws {
         let result = try runBuildSecretsGenerator(
-            configuration: "InternalRelease",
-            bleSharedSecret: "must-not-enter-internal-build"
+            configuration: configuration,
+            bleSharedSecret: "must-not-enter-any-build",
+            secureChannelEnabled: "0"
         )
         let generatedSecrets = try #require(result.generatedSecrets)
 
         #expect(result.terminationStatus == 0)
         #expect(generatedSecrets.contains("static let bleSharedSecret = \"\""))
-        #expect(!generatedSecrets.contains("must-not-enter-internal-build"))
+        #expect(!generatedSecrets.contains("must-not-enter-any-build"))
     }
 
-    @Test("AppStoreRelease keeps the configured BLE shared secret")
+    /// An absent switch must behave like `0`: firmware that was never handed a secret
+    /// cannot answer a signed channel, so plaintext is the safe default.
+    @Test("A missing firmware-readiness switch defaults to plaintext BLE")
+    func absentSecureChannelSwitchDefaultsToPlaintext() throws {
+        let result = try runBuildSecretsGenerator(
+            configuration: "AppStoreRelease",
+            bleSharedSecret: "must-not-enter-any-build",
+            secureChannelEnabled: nil
+        )
+        let generatedSecrets = try #require(result.generatedSecrets)
+
+        #expect(result.terminationStatus == 0)
+        #expect(generatedSecrets.contains("static let bleSharedSecret = \"\""))
+    }
+
+    @Test("AppStoreRelease keeps the configured BLE shared secret once the switch is on")
     func appStoreReleaseEmbedsBLESharedSecret() throws {
         let result = try runBuildSecretsGenerator(
             configuration: "AppStoreRelease",
-            bleSharedSecret: "app-store-security-secret"
+            bleSharedSecret: "app-store-security-secret",
+            secureChannelEnabled: "1"
         )
         let generatedSecrets = try #require(result.generatedSecrets)
 
@@ -94,11 +118,12 @@ struct BuildSecretsLeakTests {
         ))
     }
 
-    @Test("AppStoreRelease device builds fail closed without a BLE shared secret")
+    @Test("AppStoreRelease device builds fail closed when the switch is on but the secret is empty")
     func appStoreReleaseRejectsMissingBLESharedSecret() throws {
         let result = try runBuildSecretsGenerator(
             configuration: "AppStoreRelease",
-            bleSharedSecret: ""
+            bleSharedSecret: "",
+            secureChannelEnabled: "1"
         )
 
         #expect(result.terminationStatus != 0)
@@ -141,9 +166,12 @@ struct BuildSecretsLeakTests {
         #expect(!handler.contains("deviceIdentityStore.block("))
     }
 
+    /// `secureChannelEnabled: nil` omits the variable entirely, exercising the
+    /// "switch not configured yet" path (must default to plaintext).
     private func runBuildSecretsGenerator(
         configuration: String,
-        bleSharedSecret: String
+        bleSharedSecret: String,
+        secureChannelEnabled: String?
     ) throws -> (terminationStatus: Int32, generatedSecrets: String?) {
         let fileManager = FileManager.default
         let temporaryRoot = fileManager.temporaryDirectory
@@ -171,12 +199,20 @@ struct BuildSecretsLeakTests {
                 .appending(path: "Config/scripts-generate-build-secrets.sh")
                 .path()
         ]
-        process.environment = ProcessInfo.processInfo.environment.merging([
+        var overrides = [
             "SRCROOT": temporaryRoot.path(),
             "CONFIGURATION": configuration,
             "PLATFORM_NAME": "iphoneos",
             "BLE_SHARED_SECRET": bleSharedSecret,
-        ]) { _, override in override }
+        ]
+        // The inherited environment must not leak a real switch value into the
+        // "switch absent" case, so remove the key rather than passing it empty.
+        var environment = ProcessInfo.processInfo.environment
+        environment.removeValue(forKey: "BLE_SECURE_CHANNEL_ENABLED")
+        if let secureChannelEnabled {
+            overrides["BLE_SECURE_CHANNEL_ENABLED"] = secureChannelEnabled
+        }
+        process.environment = environment.merging(overrides) { _, override in override }
 
         try process.run()
         process.waitUntilExit()
