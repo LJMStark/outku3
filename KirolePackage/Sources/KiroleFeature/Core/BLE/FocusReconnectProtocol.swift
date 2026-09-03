@@ -118,12 +118,29 @@ public struct OfflineFocusState: Sendable, Equatable {
         self.endReason = endReason
     }
 
-    /// An idle snapshot with no session or operation content. A nonzero revision
-    /// still carries a version floor even though there is no state to arbitrate.
+    /// An idle snapshot with no session content. `focusRevision` and
+    /// `lastOperationID` are both **watermarks, not content**: they survive a
+    /// finished session and say nothing about state left to arbitrate, so
+    /// neither participates here.
+    ///
+    /// `lastOperationID` was excluded on 2026-09-03 after a reproduced customer
+    /// failure. A device that had just completed a focus session reported
+    /// `state=idle sessionId=0 taskId="" start=end=elapsed=0 endReason=none`
+    /// with `lastOperationID=2` — the operation watermark of that finished
+    /// session. Counting it as content made `shouldSkipFocusResolve` false, so
+    /// the App sent a FOCUS_RESOLVE; `FocusReconnectArbiter.decide` then
+    /// short-circuits on `focusState == .idle && sessionId.isIdle` and produced
+    /// an all-zero idle verdict. The device answered INVALID_STATE (0x10), the
+    /// 0x25 transaction never committed, and the sync round tore the link down
+    /// — a connect / ~10s / disconnect loop. Byte table Ver 1.3.1 §3A is
+    /// explicit that this snapshot must NOT be resolved: absorb the revision
+    /// floor and resume ordinary 0x14.
+    ///
+    /// Same class as the `focusRevision` exclusion in 6c77aec ("tolerate
+    /// revision-only idle focus snapshots"), which missed this second watermark.
     public var isContentEmptyIdleSnapshot: Bool {
         focusState == .idle
             && sessionId.isIdle
-            && lastOperationID == 0
             && startTimestamp == 0
             && endTimestamp == 0
             && elapsedSeconds == 0

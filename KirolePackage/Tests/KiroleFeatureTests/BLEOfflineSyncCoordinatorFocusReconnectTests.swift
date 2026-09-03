@@ -501,6 +501,45 @@ struct BLEOfflineSyncCoordinatorFocusReconnectTests {
         #expect(recorder.focusResolves.isEmpty)
     }
 
+    /// Field-for-field replay of the 2026-09-03 customer reproduction: after a
+    /// focus session was completed on the device, its idle FOCUS_STATE still
+    /// carried that session's operation watermark. Resolving it earned
+    /// INVALID_STATE and the failed transaction tore the link down on every
+    /// reconnect. Values taken from the captured FocusReconnect log line
+    /// (device rev=4 lastOpID=2, STATE pending=0 flags=dataValid).
+    @Test("Idle FOCUS_STATE carrying only an operation watermark skips FOCUS_RESOLVE")
+    func operationWatermarkOnlyIdleSnapshotSkipsResolve() async throws {
+        let recorder = Recorder()
+        let coordinator = recorder.makeCoordinator(responseTimeout: .milliseconds(40))
+        coordinator.hasActiveFocusSession = { false }
+        let snapshot = FocusWireFixtures.focusState(
+            revision: 4,
+            bootSessionID: 276_091_262,
+            sessionId: .idle,
+            focusState: .idle,
+            startSource: .appEstablished,
+            taskID: "",
+            start: 0,
+            end: 0,
+            elapsed: 0,
+            lastOperationID: 2,
+            endReason: .none
+        )
+
+        let task = Task {
+            try await coordinator.synchronize(shouldCommitDatasets: { _ in false })
+        }
+        try await waitUntil("QUERY") {
+            recorder.events.contains(.command(.query))
+        }
+        coordinator.handleInbound(.focusState(snapshot))
+        coordinator.handleInbound(.state(Self.state(stateFlags: [.dataValid])))
+
+        let completion = try await task.value
+        #expect(completion.didResolveFocus == false)
+        #expect(recorder.focusResolves.isEmpty)
+    }
+
     @Test("Revision-only idle FOCUS_STATE with queued operations still resolves")
     func revisionOnlyIdleSnapshotWithPendingOperationsStillResolves() async throws {
         let recorder = Recorder()

@@ -96,6 +96,22 @@ struct FocusReconnectProtocolTests {
         )
         #expect(idleWithRevision.isMeaninglessIdleSnapshot == false)
         #expect(idleWithRevision.isContentEmptyIdleSnapshot)
+
+        // Reproduced 2026-09-03: a device that had just completed a focus
+        // session reports an otherwise-empty idle snapshot carrying only the
+        // operation watermark of that finished session. Treating the watermark
+        // as content made the App send a FOCUS_RESOLVE the device answers with
+        // INVALID_STATE, which tore the link down every reconnect. Byte table
+        // Ver 1.3.1 §3A: this snapshot must not be resolved.
+        let idleWithOperationWatermark = FocusWireFixtures.focusState(
+            sessionId: .idle,
+            focusState: .idle,
+            taskID: "",
+            start: 0,
+            elapsed: 0,
+            lastOperationID: 2
+        )
+        #expect(idleWithOperationWatermark.isContentEmptyIdleSnapshot)
     }
 
     @Test("FOCUS_RESOLVE payload equality ignores ResolveID")
