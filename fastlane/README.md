@@ -53,7 +53,7 @@ Update TestFlight What to Test notes only (zh-Hans). Targets build:<number>, els
 [bundle exec] fastlane ios finish_external
 ```
 
-Finish an external release that uploaded+processed OK but died before distribution (e.g. SSL EOF). Idempotent: notes upsert + beta-review submit both skip if already done. Targets build:<number>, else the most recently uploaded build — no archive/upload, no build bump.
+Finish an external release that uploaded+processed OK but died before distribution (e.g. SSL EOF). Idempotent: notes upsert + beta-review submit both skip if already done. build:<number> is REQUIRED — no archive/upload, no build bump.
 
 ### ios status
 
