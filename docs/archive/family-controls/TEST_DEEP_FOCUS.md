@@ -1,4 +1,20 @@
-# Deep Focus 功能测试指南
+# Deep Focus 功能测试指南（已归档）
+
+> **已归档 2026-09-04，不要照此执行。** 本文写于 2026-02-26；专注打断检测已于 **2026-07-10（build 601）整体重写**——旧的回前台信号被删除，改由独立的 `KiroleDeviceActivityMonitor` appex 检测「专注期间使用干扰 App ≥1 分钟」。本文全文未提该扩展，因此覆盖不到当前最需要真机验收的那条链路。
+>
+> **现行依据：**
+> - 打断检测规格：`docs/2026-07-09-spec.md` D-1 / D-2 / D-3
+> - 架构与常量镜像规则（`Bridge` 三常量必须两侧同改）：`CLAUDE.md` → DeviceActivityMonitor 小节
+> - 代码：`KirolePackage/Sources/KiroleFeature/Core/Services/FocusGuardService.swift`（protocol + `ScreenTimeFocusGuardService`）、`FocusSessionService.swift`、`KiroleDeviceActivityMonitor/`
+>
+> **归档时逐条核实的错误**（保留原文不改，仅在此列明）：
+> 1. 「在 `AppState.swift` 中确认 `static let DEEP_FOCUS_FEATURE_ENABLED = true`」——AppState 里没有这个常量。真身是 `AppSecrets.deepFocusFeatureEnabled`（`Core/Config/AppSecrets.swift`），由 `Kirole/KiroleApp.swift` 从 `BuildSecrets` 注入，源头是 `Config/Secrets.xcconfig` 的 `DEEP_FOCUS_FEATURE_ENABLED`（当前为 `1`）。
+> 2. 「代码实现 `Core/FocusGuardService.swift`」——实际在 `Core/Services/FocusGuardService.swift`。
+> 3. 「配置说明 `FAMILY_CONTROLS_SETUP.md`」——已随本文归档到同目录。
+> 4. 「预期日志 `[FocusGuardService] …`」——该文件里没有任何日志语句，这些输出从未存在。
+> 5. 「设备 iOS 版本 >= 15.0」——项目下限是 iOS 17.0（`Config/Shared.xcconfig`）。
+>
+> 仍然成立的部分：Settings → Focus Protection 的手动走查步骤、`Info.plist` 的 `NSFamilyControlsUsageDescription`、`SettingsFocusSection.swift` 与 `FocusProtectionTests.swift` 两处路径。
 
 ## 前置条件
 

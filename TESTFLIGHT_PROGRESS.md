@@ -284,7 +284,7 @@ xcodebuild -workspace Kirole.xcworkspace -scheme Kirole \
 - `SUBMIT_APPLICATION_NOW.md` - 快速提交指南
 
 ### 测试文档
-- `TEST_DEEP_FOCUS.md` - Deep Focus 功能测试指南
+- ~~`TEST_DEEP_FOCUS.md`~~ - 已于 2026-09-04 归档到 `docs/archive/family-controls/`（写于 2026-02-26，未覆盖 2026-07-10 重写的 DeviceActivityMonitor 打断检测，且含 5 处失效指路）。打断检测验收依据改看 `docs/2026-07-09-spec.md` D-1/D-2/D-3
 - `check_testflight_ready.sh` - TestFlight 准备检查脚本
 - `verify_family_controls.sh` - Family Controls 配置验证脚本
 - `refresh_provisioning_profile.sh` - Provisioning Profile 刷新脚本
