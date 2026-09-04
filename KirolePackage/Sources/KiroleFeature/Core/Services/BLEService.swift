@@ -1055,7 +1055,18 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
     }
 
     /// 发起事件补传请求(0x20)。返回值仅表示请求帧是否成功写出（不代表设备已回传——回传走后续
-    /// 0x21 eventLogBatch 路径）。补传是核心功能，调用方据此判定整轮同步成败。
+    /// 0x21 eventLogBatch 路径）。
+    ///
+    /// **⚠️ 当前无生产调用点。** 离线补传自 2026-08-13（`1475c11`）起改由 `0x25 OfflineSync`
+    /// 的 `OP_BATCH` 承担，本方法与 `requestEventLogs(since:)` 一并成为未接线的能力。
+    /// 2026-09-03 真机验证过取代关系：杀掉 App → 在设备上离线完成任务 → 重连，
+    /// `operationID` 5/6 经 `OP_BATCH` 完整补传。此前这里写着「补传是核心功能，调用方据此
+    /// 判定整轮同步成败」——那句话在没有调用方之后就成了假的，故删除。
+    ///
+    /// 保留而不删除：`0x20` 仍在硬件团队的字节表 Ver 1.3.1 §4.13 里，是否正式废弃由他们定稿
+    /// （见 `docs/BLE通信协议规格文档.md` §4.13 的现状说明）。**接回调用点前先确认固件确实
+    /// 应答 `0x20`**——旧描述里那道「15 秒收不到 `0x21` 即断连」的 fail-closed 屏障若在
+    /// 对端不应答时恢复，会直接造出连上即断的重连循环。
     @discardableResult
     public func requestEventLogsIfNeeded() async -> Bool {
         let since = await localStorage.loadLastEventLogTimestamp() ?? 0
