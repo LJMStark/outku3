@@ -262,11 +262,16 @@ public actor LocalStorage {
             return (data, 0)
         }
 
+        // Microsoft is deliberately absent from both sets. This filter runs on every load, so
+        // listing "Outlook Calendar" / "outlook" here would silently drop each synced event at the
+        // next launch — sync would look successful and the data would simply be gone, with no
+        // error anywhere. Keep this list in step with `EventSource` / `ExternalProvider`: a raw
+        // value that still exists in those enums must never appear here.
         let retiredSources: Set<String> = [
-            "Outlook Calendar", "Microsoft To Do", "Todoist", "TickTick", "Notion", "Taskade",
+            "Todoist", "TickTick", "Notion", "Taskade",
         ]
         let retiredProviders: Set<String> = [
-            "outlook", "microsoftToDo", "todoist", "tickTick", "notion", "taskade",
+            "todoist", "tickTick", "notion", "taskade",
         ]
         let retained = records.filter { record in
             if let source = record["source"] as? String, retiredSources.contains(source) {

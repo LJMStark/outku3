@@ -50,6 +50,8 @@ private extension ExternalSyncTarget {
             self = .google
         case .appleCalendar, .appleReminders:
             self = .apple
+        case .outlookCalendar, .microsoftToDo:
+            self = .microsoft
         }
     }
 }

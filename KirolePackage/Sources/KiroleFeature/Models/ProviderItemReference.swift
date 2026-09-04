@@ -53,4 +53,9 @@ public enum ExternalProvider: String, Sendable, Codable, CaseIterable {
     case appleReminders
     case googleCalendar
     case googleTasks
+    case outlook
+    /// Reachable from `MicrosoftSyncEngine` but never surfaced: `IntegrationType.microsoftToDo`
+    /// is not in `displayOrder`, so no Settings row can turn it on. Present because the engine
+    /// shares one account and one state store with Outlook Calendar.
+    case microsoftToDo
 }

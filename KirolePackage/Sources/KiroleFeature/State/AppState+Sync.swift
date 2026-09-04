@@ -3,6 +3,7 @@ import Foundation
 enum ExternalSyncTarget: CaseIterable, Hashable, Sendable {
     case google
     case apple
+    case microsoft
 }
 
 extension AppState {
@@ -44,6 +45,10 @@ extension AppState {
             targets.append(.apple)
         }
 
+        if isIntegrationConnected(.outlookCalendar) {
+            targets.append(.microsoft)
+        }
+
         return targets
     }
 
@@ -59,6 +64,8 @@ extension AppState {
                 await syncGoogleData()
             case .apple:
                 await syncAppleData()
+            case .microsoft:
+                await syncMicrosoftData()
             }
         }
     }
@@ -301,11 +308,25 @@ extension AppState {
         )
     }
 
+    // MARK: - Shared Failure Reporting
+
+    /// Maps a provider sync failure onto the two surfaces the user can actually see: the gear
+    /// badge (`lastError`) and the per-integration row in Settings (`remoteSyncErrors`).
+    /// Internal rather than private because per-provider orchestration lives in its own file
+    /// (e.g. `AppState+MicrosoftSync.swift`).
+    func recordProviderSyncFailure(_ error: Error, provider: String, context: String) {
+        let appError = AppError.sync(component: provider, underlying: error.localizedDescription)
+        lastError = UserFacingErrorMapper.message(for: appError)
+        remoteSyncErrors[provider] = lastError
+        ErrorReporter.log(appError, context: context)
+    }
+
     // MARK: - Post-Sync Hooks
 
     /// Every public sync* MUST end with this so all external sources trigger
     /// consistent home companion refresh after data merge.
-    private func applyPostSyncHooks() async {
+    /// Internal rather than private for the same reason as `recordProviderSyncFailure`.
+    func applyPostSyncHooks() async {
         await updatePetState()
         await refreshSharedPetDialogueIfNeeded()
         await refreshHomeCompanionPresentation()

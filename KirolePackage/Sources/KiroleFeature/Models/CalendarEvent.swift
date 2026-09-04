@@ -124,11 +124,17 @@ public struct CalendarEvent: Identifiable, Sendable, Codable {
 public enum EventSource: String, Sendable, Codable {
     case apple = "Apple Calendar"
     case google = "Google Calendar"
+    case outlook = "Outlook Calendar"
+    /// See `ExternalProvider.microsoftToDo` — carried by the shared Microsoft engine, never
+    /// reachable from Settings.
+    case microsoftToDo = "Microsoft To Do"
 
     public var iconName: String {
         switch self {
         case .apple: return "apple.logo"
         case .google: return "g.circle.fill"
+        case .outlook: return "calendar.badge.clock"
+        case .microsoftToDo: return "checkmark.circle"
         }
     }
 }

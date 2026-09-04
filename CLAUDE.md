@@ -52,13 +52,13 @@ Kirole 是 **硬件优先的宠物陪伴产品**：硬件 E-ink 设备是用户�
 KiroleFeature/
 ├── Core/
 │   ├── AppEnvironmentValues.swift   # EnvironmentKey definitions for all 4 singletons
-│   ├── Auth/                        # Google/Apple sign-in + KeychainService
+│   ├── Auth/                        # Google/Apple sign-in + MicrosoftAuthService (MSAL, Outlook Calendar) + KeychainService
 │   ├── BLE/                         # BLEProtocol.swift + TaskListSnapshotProtocol.swift (0x1B) + OfflineSyncProtocol.swift / OfflineDatasetSnapshot.swift (0x25) + FocusReconnectProtocol.swift / FocusReconnectArbiter.swift (FOCUS_STATE 0x83 / FOCUS_RESOLVE 0x06) + ScheduleV2Codec.swift (0x03 v2)
 │   ├── Config/                      # AppSecrets (xcconfig-injected secrets), AppBuildEnvironment (debug-tool gating)
 │   ├── Error/                       # ErrorReporter
 │   ├── InternalToolsViews.swift     # Slot struct the Internal app shell fills with debug UI; `.empty` in customer builds
-│   ├── Network/                     # OpenAIService, CompanionTextService, PromptSanitizer, SimulatorBridge, PromptSpec.generated.swift + Google API clients
-│   ├── Services/                    # BLE runtime (BLEService, BLESyncCoordinator, BLEOfflineSyncCoordinator[+FocusReconnect/+Operations], BLEEventHandler, BLEDataEncoder, BLEPacketizer, BLESecurityManager, BLEOTACoordinator, BLEInternalToolsRuntime…) + FocusSessionService[+Reconnect/+Statistics], FocusReconnectFlagStore, FocusInterruptionDetector, DayPackGenerator, WiFiAvatarTransfer/… + Apple/Google sync engines
+│   ├── Network/                     # OpenAIService, CompanionTextService, PromptSanitizer, SimulatorBridge, PromptSpec.generated.swift + Google API clients + MicrosoftGraphClient/Models/TimeZoneResolver
+│   ├── Services/                    # BLE runtime (BLEService, BLESyncCoordinator, BLEOfflineSyncCoordinator[+FocusReconnect/+Operations], BLEEventHandler, BLEDataEncoder, BLEPacketizer, BLESecurityManager, BLEOTACoordinator, BLEInternalToolsRuntime…) + FocusSessionService[+Reconnect/+Statistics], FocusReconnectFlagStore, FocusInterruptionDetector, DayPackGenerator, WiFiAvatarTransfer/… + Apple/Google/Microsoft sync engines
 │   ├── Storage/                     # LocalStorage, SupabaseClient, SyncManager
 │   └── Util/
 ├── Design/                          # Theme.swift (3 themes), FontScale.swift
@@ -88,11 +88,11 @@ Four `@Observable` singletons injected at `ContentView` via `.environment()`:
 
 **Persistence & secrets (the two most-connected non-UI nodes — touch them carefully):**
 - `LocalStorage` (`Core/Storage/`) — the JSON + `UserDefaults` persistence hub for tasks, pet, focus & gamify state. Mutations through its *resettable* keys are exactly what the parallel-test lock below guards.
-- `KeychainService` (`Core/Auth/`) — stores Google OAuth tokens, the Apple user identifier, and the OpenAI/OpenRouter API key. Never persist a credential anywhere else.
+- `KeychainService` (`Core/Auth/`) — stores Google OAuth tokens, the Apple user identifier, the Microsoft account metadata (MSAL keeps the tokens themselves in its own `com.microsoft.adalcache` group), and the OpenAI/OpenRouter API key. Never persist a credential anywhere else. Its `clearRetiredProviderCredentials()` sweep runs on every launch — a **live** provider must never appear in `Keys.retiredProviderCredentials`.
 
 **AppState extension map** — where to put code:
 - User-triggered mutations → `AppState+Actions.swift`
-- Remote sync (Google/Apple) → `AppState+Sync.swift`
+- Remote sync (Google/Apple) → `AppState+Sync.swift`; Microsoft/Outlook → `AppState+MicrosoftSync.swift`
 - Provider sync generation guard (stale-sync-commit prevention) → `AppState+ExternalSyncGeneration.swift`
 - Sign-out provider data cleanup → `AppState+SignOut.swift`
 - Initial data loading → `AppState+Loading.swift`
@@ -103,6 +103,16 @@ Four `@Observable` singletons injected at `ContentView` via `.environment()`:
 - Third-party integration state → `AppState+Integrations.swift`
 - WiFi avatar transport routing → `AppState+WiFiAvatarTransport.swift`
 - Persistence helpers (`persistTasks`, `persistPet`) → `AppState.swift` main file
+
+### Calendar Sync Sources (coexistence model)
+Three calendar sources: **Google Calendar**, **Apple Calendar**, **Outlook Calendar**.
+
+- **Google ⟷ Apple stay mutually exclusive** (`IntegrationCoordinator.conflictingIntegration`): an iCloud account commonly subscribes to the same Google calendar, and the wire only carries 8 events (`ScheduleV2Codec.maxEvents`), so duplicates would evict real ones. **Outlook returns `nil` — it coexists with either.** Do not "fix" this asymmetry; it is the product decision (2026-09-04).
+- **Outlook is read-only** (`Calendars.Read` only, `EditingCapabilities`). Its events cannot be edited from Kirole.
+- **Release gate**: `IntegrationType.isAvailable` reads `AppSecrets.microsoftOAuthEnabled` (`MICROSOFT_OAUTH_ENABLED`, default `0`). Settings lists `availableDisplayOrder`, so a gated provider never renders a row. Flip to `1` only after Azure registration **and** real-account acceptance.
+- **Microsoft To Do is modelled but never shipped**: `IntegrationType.microsoftToDo` is absent from `displayOrder`, and `AppState+MicrosoftSync.includesMicrosoftTodo` is pinned `false`. The engine carries it because one MSAL account and one state store back both Microsoft surfaces.
+- **BLE impact is capacity only, not format.** `ScheduleV2Codec` encodes `time/title/description/category/endTime/supportText` — no source, no event ID — so adding a calendar source needs no firmware, protocol-doc or Feishu change. What it does change is competition for the 8-event budget (`DayPackGenerator.overflowDeadlineTitles` is the existing overflow fallback).
+- **Two cleanup routines must never list a live provider.** `LocalStorage.removingRetiredProviderRecords` (drops matching records on every load) and `KeychainService.Keys.retiredProviderCredentials` (swept on every launch from `AuthManager.initialize()`). Adding a source to `EventSource`/`ExternalProvider` without removing it from these lists causes silent data loss with no error.
 
 ### UI Stack
 SwiftUI with **Model-View only** — no ViewModels. Tab-based nav via `AppState.selectedTab`. Custom `AppHeaderView` fixed at top (outside `ScrollView`); no native `TabView`.
@@ -187,7 +197,7 @@ xcodebuild -workspace Kirole.xcworkspace -scheme Kirole \
 ```
 
 ### Test Suite Notes
-- **~125 test files** in `KirolePackage/Tests/KiroleFeatureTests/` (`KiroleUITests/` is an untouched XCUITest scaffold — the "no XCTest" rule is about package tests, not that target). BLE is the most heavily covered surface (`BLEProtocolTests`, `BLESecurityTests`, `BLESyncPolicyTests`, `BLEWriteGateTests`, `BLEConnectionPolicyTests`, `BLEEventHandlerTests`, `BLEProtocolSimulationTests`, `BLEOTACoordinatorTests`, `BLEOfflineSyncCoordinatorTests`, `FocusReconnectArbiterTests` / `FocusReconnectProtocolTests` / `FocusReconnectFixTests`, `ScheduleV2CodecTests`), followed by focus/sync/companion logic. Wire-format or reconnect changes must run the reconnect + OfflineSync + Schedule v2 suites, not only `BLEProtocolTests`.
+- **~134 test files** in `KirolePackage/Tests/KiroleFeatureTests/` (`KiroleUITests/` is an untouched XCUITest scaffold — the "no XCTest" rule is about package tests, not that target). BLE is the most heavily covered surface (`BLEProtocolTests`, `BLESecurityTests`, `BLESyncPolicyTests`, `BLEWriteGateTests`, `BLEConnectionPolicyTests`, `BLEEventHandlerTests`, `BLEProtocolSimulationTests`, `BLEOTACoordinatorTests`, `BLEOfflineSyncCoordinatorTests`, `FocusReconnectArbiterTests` / `FocusReconnectProtocolTests` / `FocusReconnectFixTests`, `ScheduleV2CodecTests`), followed by focus/sync/companion logic. Wire-format or reconnect changes must run the reconnect + OfflineSync + Schedule v2 suites, not only `BLEProtocolTests`.
 - **`BLEDataEncoder` has a strict mirror decoder in the test layer.** `BLEProtocolSimulationSupport.swift`'s `parseDayPack` / `parseWeather` re-parse the exact wire bytes and call `requireEnd()` (any trailing byte throws `trailingBytes`). So **any field added to `encodeDayPack` / `encodeWeather` MUST be read back in the matching `parse*` before `requireEnd()`** — even an empty length-prefixed string appends a byte and trips it — and the fixture + `Simulated*` struct + round-trip assertion updated. `BLEProtocolTests` walks the cursor by hand and will *not* catch a desync; run the **full** `swift test` (which includes `BLEProtocolSimulationTests`) after any wire-format change, not just `BLEProtocolTests`.
 - **Parallel-test isolation (CRITICAL):** Swift Testing runs suites concurrently. Any test that mutates global `UserDefaults.standard` — i.e. anything going through `LocalStorage` resettable keys, focus energy bottles, or gamify storage — MUST wrap its body in `await SharedPersistenceTestLock.shared.withLock { ... }` (`Tests/.../SharedPersistenceTestLock.swift`) or it flakes intermittently. Suites that assert state on shared singletons (e.g. `BLEService.shared.isPendingOTAReboot` in `BLEOTACoordinatorTests`) must be `@Suite(..., .serialized)` — in-suite parallel tests interleave at `await` points and clobber the flag. **Adding a new key to `LocalStorage.resettableUserDefaultKeys` can make previously-green tests flaky.** If a suite flakes, run it alone first (`swift test --filter SuiteName`) to confirm an isolation problem before changing production code.
 - **Which runner:** `swift test` (package-only, fast) for logic/services; the simulator host (`xcodebuild ... test`, or XcodeBuildMCP `test_sim`) only when the test exercises app-shell / UI lifecycle. `Kirole.xctestplan` coordinates the full run.
@@ -268,6 +278,8 @@ SUPABASE_ANON_KEY = ...
 BLE_SECURE_CHANNEL_ENABLED = 0 # firmware-readiness switch, strictly 0 or 1 (anything else fails the build)
 BLE_SHARED_SECRET =            # ignored while the switch is 0; required by external/appstore lanes once it is 1
 OPENROUTER_API_KEY = ...       # OpenRouter key used by OpenAIService (was OPENAI_API_KEY)
+MICROSOFT_OAUTH_CLIENT_ID =    # Azure public client (PKCE, no secret) for Outlook Calendar
+MICROSOFT_OAUTH_ENABLED = 0    # Outlook release gate, strictly 0 or 1 (anything else fails the build)
 ```
 For TestFlight automation, copy `fastlane/.env.template` → `fastlane/.env` and fill in `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_PATH`.
 

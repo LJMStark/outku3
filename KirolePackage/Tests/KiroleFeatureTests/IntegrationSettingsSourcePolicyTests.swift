@@ -13,7 +13,9 @@ struct IntegrationSettingsSourcePolicyTests {
         ))
     }
 
-    @Test("Customer Settings is generated from the four-source model")
+    /// Guards against a retired provider quietly coming back. Microsoft was restored deliberately
+    /// (Outlook Calendar); the other five stay retired and must not reappear in the model.
+    @Test("Customer Settings is generated from the supported source model")
     func settingsUseTheSupportedSourceList() throws {
         let settings = try settingsIntegrationSource()
         let model = try integrationTypeSource()
@@ -22,12 +24,14 @@ struct IntegrationSettingsSourcePolicyTests {
         #expect(model.contains("case appleCalendar"))
         #expect(model.contains("case appleReminders"))
         #expect(model.contains("case googleTasks"))
+        #expect(model.contains("case outlookCalendar"))
         #expect(!model.contains("case notion"))
         #expect(!model.contains("case taskade"))
-        #expect(!model.contains("case microsoftToDo"))
         #expect(!model.contains("case todoist"))
         #expect(!model.contains("case tickTick"))
-        #expect(settings.contains("IntegrationType.displayOrder"))
+        // The connect list must honour the release gate, so a provider whose Azure registration and
+        // real-account acceptance have not passed cannot reach customer Settings.
+        #expect(settings.contains("IntegrationType.availableDisplayOrder"))
         #expect(!settings.contains("ProviderProjectSelectionSheet"))
     }
 
