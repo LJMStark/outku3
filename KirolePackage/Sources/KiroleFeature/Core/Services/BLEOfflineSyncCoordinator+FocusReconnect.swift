@@ -3,6 +3,12 @@ import os
 
 /// 专注重连裁决的取证日志。**不受 `showsHardwareDebugTools` 门控**——客户包也要留痕。
 ///
+/// 这是 AGENTS.md「Release Channel Policy」下**一条经登记的例外**（"Narrow exception —
+/// authorised fault records" 的授权记录表），不是那条禁令本身允许的行为：禁令原文要求
+/// 内部诊断在 App Store 包中缺席，本记录靠满足四个条件才获批——仅异常路径触发、不含
+/// 任何用户文本、不提供任何操作能力、并登记进 `scripts/verify-release-boundary.sh` 的
+/// 白名单（未登记的新诊断照样会被门禁拦下）。改动本记录的触发条件或字段前先回读那一节。
+///
 /// 起因（2026-09-03）：客户设备陷入「连上 ~10 秒即断、反复重连」。固件日志显示
 /// FOCUS_RESOLVE 被回 `INVALID_STATE(0x10)`，但固件的 hex dump 每帧只打 32 字节，
 /// 而 `0x83 FOCUS_STATE` 整帧 39 字节——末尾 7 字节（elapsedSeconds 低半、
@@ -129,11 +135,11 @@ extension BLEOfflineSyncCoordinator {
     /// 发出的整份裁决 + 设备的结果码。一行读完「设备报了什么 → App 裁决了什么
     /// → 设备为什么拒」。
     ///
-    /// **只在 `resultCode != .committed` 时打**：成功轮次不留痕，客户包里因此没有
-    /// 常驻诊断日志（AGENTS.md「Release Channel Policy」要求 App Store 包不含内部
-    /// 诊断）。异常仍然留痕，是因为这类「两端对同一状态理解不一致」的故障只在客户
-    /// 现场出现，而客户包没有任何其他 BLE 日志（`BLEService` 的 TX/RX 摘要受
-    /// `showsHardwareDebugTools` 门控）。
+    /// **只在 `resultCode != .committed` 时打**——这是 AGENTS.md 授权例外的第 1 个条件
+    /// （仅异常路径），不是「因此就合规了」：成功轮次不留痕只是把留痕面缩到最小，
+    /// 获批还要同时满足不含用户文本、不提供操作能力、已登记进门禁白名单。异常仍然留痕，
+    /// 是因为这类「两端对同一状态理解不一致」的故障只在客户现场出现，而客户包没有任何
+    /// 其他 BLE 日志（`BLEService` 的 TX/RX 摘要受 `showsHardwareDebugTools` 门控）。
     ///
     /// 三个 idle 判据分开打是刻意的，它们各管一件事、可以互不一致：
     /// - `noArbitrable` = `hasNoArbitrableFocusContent`，决定**发不发**裁决

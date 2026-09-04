@@ -149,6 +149,47 @@ for symbol in "${LEGACY_CUSTOMER_SYMBOLS[@]}"; do
   fi
 done
 
+# Diagnostic os.Logger categories reachable from the customer binary.
+#
+# AGENTS.md "Release Channel Policy" bans internal diagnostics from
+# AppStoreRelease, with one narrow exception for passive, anomaly-only fault
+# records (see the authorised-records table there). This check enforces the
+# "Registered" condition of that exception: every logger category compiled
+# into the customer binary must appear below. A new ungated diagnostic
+# therefore fails the gate instead of shipping unnoticed — which is the whole
+# point of allow-listing rather than simply dropping the rule.
+#
+# Adding a category here is a policy decision: it must first satisfy all four
+# conditions in AGENTS.md and be listed in that table.
+AUTHORISED_CUSTOMER_LOG_CATEGORIES=(
+  "FocusReconnect"
+)
+
+# Categories that must never reach the customer binary. These back capabilities
+# (raw frame traces, factory tooling), not fault records.
+INTERNAL_ONLY_LOG_CATEGORIES=(
+  "BLEDisconnect"
+)
+
+for category in "${AUTHORISED_CUSTOMER_LOG_CATEGORIES[@]}"; do
+  if binary_contains "$APPSTORE_BIN" "$category"; then
+    echo "PASS  AppStoreRelease binary carries authorised log category '$category'"
+  else
+    # Not fatal on its own, but the table in AGENTS.md is then stale.
+    echo "FAIL  AppStoreRelease binary is missing authorised log category '$category' (AGENTS.md table is out of date?)"
+    fail=1
+  fi
+done
+
+for category in "${INTERNAL_ONLY_LOG_CATEGORIES[@]}"; do
+  if binary_contains "$APPSTORE_BIN" "$category"; then
+    echo "FAIL  AppStoreRelease binary contains internal-only log category '$category'"
+    fail=1
+  else
+    echo "PASS  AppStoreRelease binary has no internal-only log category '$category'"
+  fi
+done
+
 # Files used by Xcode, local tooling, or backend setup must remain in the
 # repository but must not be copied into the customer application bundle.
 APPSTORE_FORBIDDEN_RESOURCES=(

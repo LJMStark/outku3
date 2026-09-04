@@ -64,6 +64,19 @@ Kirole has exactly **two distributed binaries** reaching **three audiences**. Lo
 - Internal-only capabilities must be protected at the implementation boundary with `#if KIROLE_INTERNAL` or an equivalent build-time exclusion. Hiding a SwiftUI row is insufficient if services, logging, timers, BLE commands, or mutable test behavior remain active.
 - Internal-only scope includes Wi-Fi PC Debug, the Keep Alive **toggle**, Focus Debug and virtual time, test focus sessions, raw BLE diagnostic summaries, Shipping Mode and other factory commands, engineering OTA flows, environment/source diagnostics, and future hardware bring-up tools. MVP still keeps the BLE link open on both channels; only the Settings switch is Internal-only.
 - Internal diagnostics are **never promoted** to App Store. Keep their implementation available to the hardware team through Internal TestFlight, but keep them absent from the App Store binary.
+- **Narrow exception — authorised fault records.** The rule above targets *capabilities*: anything that lets someone act on the device (Wi-Fi PC Debug, Shipping Mode, factory commands, virtual time) must be compiled out, no exceptions. A passive log line that only records what already went wrong grants no capability, and customer builds otherwise carry **no** BLE logging at all — so a failure that only reproduces on a customer's device would be undiagnosable. Such a record may ship in `AppStoreRelease` only when it meets **all** of:
+  1. **Anomaly-only** — emitted on a failure/rejection path, never on the success path or on a timer.
+  2. **No user content** — protocol integers, enum raw values and identifiers only. No task titles, event names, pet names, companion text or any other user-authored string; length-only where a string must be characterised.
+  3. **No capability** — read-only observation; it must not expose a command, toggle or mutable test behaviour.
+  4. **Registered** — listed in the table below *and* allow-listed in `scripts/verify-release-boundary.sh`, so a new ungated diagnostic still fails the gate.
+
+  Authorised records:
+
+  | Category | Site | Fires on | Why it must reach customer builds |
+  |----------|------|----------|-----------------------------------|
+  | `FocusReconnect` | `BLEOfflineSyncCoordinator+FocusReconnect.swift` | A device rejects a `FOCUS_RESOLVE` verdict (non-`committed` RESULT) | The 2026-09-03 connect/~10s/disconnect loop was only diagnosable because the decoded `0x83` fields were visible; the firmware's own hex dump truncates them, and the customer build has no other BLE logging |
+
+  Anything not in this table is still covered by the blanket rule.
 - Never embed secrets in either binary or diagnostic output. Production security configuration, including BLE secure-channel inputs, must come from the production build configuration and must fail closed when required values are missing **once the capability they protect exists on the other side**. The BLE secure channel is gated by the firmware-readiness switch `BLE_SECURE_CHANNEL_ENABLED` in `Config/Secrets.xcconfig` (single source of truth), not by release channel: BLE protocol §3.3 / §4.17 define the plaintext MVP mode as the contract until both sides explicitly confirm the firmware holds the shared secret. With the switch at `0` every configuration — `AppStoreRelease` included — ships plaintext BLE and `BLE_SHARED_SECRET` is ignored; with it at `1` customer-candidate archives fail closed on an empty secret. A signed customer binary against firmware that has no key cannot pair with any device, which is strictly worse than the unsigned local link the firmware actually implements.
 - Add paired gate tests: Internal builds must prove required diagnostics are present; App Store builds must prove the same UI, behavior, logs, commands, and side effects are absent. A receipt-based runtime check may be used only as a temporary defense-in-depth signal, never as the primary release boundary.
 
