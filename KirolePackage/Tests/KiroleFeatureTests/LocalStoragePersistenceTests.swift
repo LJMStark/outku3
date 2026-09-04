@@ -49,7 +49,13 @@ struct LocalStoragePersistenceTests {
             userDefaults: defaults
         )
 
-        #expect(!fileManager.fileExists(atPath: documents.appendingPathComponent("microsoft_sync_state.json").path))
+        // Microsoft is a live provider again, and MicrosoftSyncStateStore keeps these two files in
+        // this same Documents directory. This cleanup runs on every launch, so removing them would
+        // drop the Outlook delta link and the stored accountID each cold start — and a nil account
+        // marker reads as an account switch, which lets one failed post-launch sync replace (empty)
+        // every Microsoft snapshot.
+        #expect(fileManager.fileExists(atPath: documents.appendingPathComponent("microsoft_sync_state.json").path))
+        #expect(fileManager.fileExists(atPath: documents.appendingPathComponent("microsoft_todo_outbox.json").path))
         #expect(!fileManager.fileExists(atPath: providerDirectory.path))
         #expect(defaults.object(forKey: "integrations.selectedProjects.todoist") == nil)
         #expect(defaults.object(forKey: "integrations.ticktick.region") == nil)

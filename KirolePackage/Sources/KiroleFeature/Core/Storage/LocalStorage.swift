@@ -295,13 +295,14 @@ public actor LocalStorage {
         applicationSupportDirectory: URL,
         userDefaults: UserDefaults = .standard
     ) throws {
-        let documentFiles = ["microsoft_sync_state.json", "microsoft_todo_outbox.json"]
-        for filename in documentFiles {
-            let url = documentsDirectory.appendingPathComponent(filename, isDirectory: false)
-            if fileManager.fileExists(atPath: url.path) {
-                try fileManager.removeItem(at: url)
-            }
-        }
+        // `microsoft_sync_state.json` and `microsoft_todo_outbox.json` used to be deleted here.
+        // They are `MicrosoftSyncStateStore`'s live files (it defaults to this same Documents
+        // directory), and this runs from `AppState+Loading` on every launch — so deleting them
+        // would drop the Outlook delta link *and* the stored accountID on each cold start. The
+        // engine compares `state.accountID` against the signed-in account, so a nil marker reads
+        // as an account switch, and `applyMicrosoftFailedSyncResult` replaces every Microsoft
+        // snapshot on a changed account: one failed first sync after launch would then wipe the
+        // user's Outlook events. Do not re-add a live provider's files to this cleanup.
 
         let providerDirectory = applicationSupportDirectory
             .appendingPathComponent("com.kirole.app", isDirectory: true)
