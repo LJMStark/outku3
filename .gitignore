@@ -12,10 +12,13 @@ xcuserdata/
 
 ## IDE
 .cursor/
-# .claude/ 默认忽略（settings/commands/worktrees 属本机私有），
-# 但 skills/ 是入库的仓库知识文档；reactcomponents 例外（含 node_modules）
+# .claude/ 默认忽略（settings/worktrees/PRPs 属本机私有），
+# 但 skills/ 是入库的仓库知识文档，commands/ 是 /release、/baseline-ui 等
+# 仓库工作流入口（2026-09-04 起入库，否则 fresh clone 没有 /release）；
+# reactcomponents 例外（含 node_modules）
 .claude/*
 !.claude/skills/
+!.claude/commands/
 .claude/skills/reactcomponents/
 .vscode/
 .idea/
