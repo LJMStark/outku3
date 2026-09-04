@@ -31,6 +31,27 @@ struct MicrosoftGraphDateTimeTimeZone: Codable, Sendable, Equatable {
         Self.parse(dateTime, graphTimeZone: timeZone)
     }
 
+    /// All-day events are calendar dates, not instants. Graph still sends them as
+    /// `2026-09-05T00:00:00.0000000` with a zone attached, so reading them as an instant puts the
+    /// event on the previous day for every user west of that zone — with `outlook.timezone="UTC"`
+    /// requested, that is all of the Americas. Rebuild from the date components against
+    /// `Calendar.current` (read fresh on each access, so a time-zone change resolves correctly),
+    /// mirroring how `GoogleEventDateTime.asDate` handles Google's floating `yyyy-MM-dd`.
+    var floatingDate: Date? {
+        let parts = dateTime.prefix(10).split(separator: "-")
+        guard parts.count == 3,
+              let year = Int(parts[0]),
+              let month = Int(parts[1]),
+              let day = Int(parts[2]) else {
+            return date
+        }
+        var components = DateComponents()
+        components.year = year
+        components.month = month
+        components.day = day
+        return Calendar.current.date(from: components) ?? date
+    }
+
     nonisolated static func parse(_ value: String, graphTimeZone: String) -> Date? {
         let hasExplicitOffset = value.hasSuffix("Z") || value.dropFirst(10).contains("+")
             || value.dropFirst(10).contains("-")

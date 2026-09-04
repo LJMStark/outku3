@@ -24,8 +24,11 @@ extension MicrosoftSyncEngine {
                 byID.removeValue(forKey: reference.stableLocalID)
                 continue
             }
-            guard let start = change.start?.date,
-                  let end = change.end?.date else {
+            // All-day events must be read as calendar dates, not UTC instants — see
+            // `MicrosoftGraphDateTimeTimeZone.floatingDate`.
+            let isAllDay = change.isAllDay ?? false
+            guard let start = isAllDay ? change.start?.floatingDate : change.start?.date,
+                  let end = isAllDay ? change.end?.floatingDate : change.end?.date else {
                 continue
             }
             let existing = byID[reference.stableLocalID]
@@ -44,7 +47,7 @@ extension MicrosoftSyncEngine {
                 },
                 description: change.bodyPreview,
                 location: change.location?.displayName,
-                isAllDay: change.isAllDay ?? false,
+                isAllDay: isAllDay,
                 syncStatus: .synced,
                 lastModified: change.lastModified ?? existing?.lastModified ?? Date(),
                 videoMeetingURL: VideoMeetingURLDetector.detect(

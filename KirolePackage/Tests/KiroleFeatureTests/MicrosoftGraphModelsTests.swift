@@ -101,4 +101,37 @@ struct MicrosoftGraphModelsTests {
             previousRemoteStatus: nil
         ) == .notStarted)
     }
+
+    /// Graph sends all-day events as `2026-09-05T00:00:00` plus a zone. Reading that as an instant
+    /// lands on Sep 4 for anyone west of the zone, and both `ScheduleV2Codec.dayRows` and
+    /// `DayPackGenerator` bucket events with the *local* calendar — so the event would show up on
+    /// the wrong day on the device. The assertions below hold in any host time zone: a floating
+    /// date must be local midnight on the stated calendar day.
+    @Test("All-day events resolve to the local calendar day, not a UTC instant")
+    func allDayEventsUseFloatingDate() throws {
+        let value = MicrosoftGraphDateTimeTimeZone(
+            dateTime: "2026-09-05T00:00:00.0000000",
+            timeZone: "UTC"
+        )
+        let floating = try #require(value.floatingDate)
+        let calendar = Calendar.current
+        let components = calendar.dateComponents([.year, .month, .day], from: floating)
+
+        #expect(components.year == 2026)
+        #expect(components.month == 9)
+        #expect(components.day == 5)
+        #expect(calendar.startOfDay(for: floating) == floating)
+    }
+
+    /// Timed events keep instant semantics — the floating path must not swallow the clock time.
+    @Test("Timed events keep their instant, unaffected by the floating-date path")
+    func timedEventsKeepInstantSemantics() throws {
+        let value = MicrosoftGraphDateTimeTimeZone(
+            dateTime: "2026-09-05T14:30:00.0000000",
+            timeZone: "UTC"
+        )
+        let expected = try #require(ISO8601DateFormatter().date(from: "2026-09-05T14:30:00Z"))
+
+        #expect(value.date == expected)
+    }
 }
