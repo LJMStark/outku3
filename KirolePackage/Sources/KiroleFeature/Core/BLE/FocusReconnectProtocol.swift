@@ -168,6 +168,18 @@ public struct OfflineFocusState: Sendable, Equatable {
     public var isMeaninglessIdleSnapshot: Bool {
         focusRevision == 0 && isContentEmptyIdleSnapshot
     }
+
+    /// Whether `FocusReconnectArbiter.decide` takes its idle short-circuit for
+    /// this snapshot — deliberately weaker than `hasNoArbitrableFocusContent`,
+    /// which is what makes the two disagree on a watermark-only idle snapshot.
+    ///
+    /// Owned here so the arbiter and the forensic log read the *same* predicate.
+    /// The log's job is to report which judgement the arbiter actually made; a
+    /// copy of the condition would keep reporting the old answer after the
+    /// short-circuit changed, and a log that silently lies is worse than none.
+    public var takesIdleShortCircuit: Bool {
+        focusState == .idle && sessionId.isIdle
+    }
 }
 
 /// App → Device `0x25 / 0x06` verdict. Payload is exactly 33 bytes.

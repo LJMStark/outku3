@@ -63,7 +63,7 @@ public enum FocusReconnectArbiter {
         let matchedActive = matchingSession(device.sessionId, in: app.active.map { [$0] } ?? [])
         let matchedHistory = matchingSession(device.sessionId, in: app.history)
 
-        if device.focusState == .idle && device.sessionId.isIdle {
+        if device.takesIdleShortCircuit {
             return decision(
                 resolveID: resolveID,
                 sessionId: .idle,

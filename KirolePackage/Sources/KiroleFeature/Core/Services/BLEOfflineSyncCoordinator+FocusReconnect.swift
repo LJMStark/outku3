@@ -162,7 +162,7 @@ extension BLEOfflineSyncCoordinator {
         resolve: OfflineFocusResolve,
         result: OfflineSyncResult
     ) {
-        let arbiterIdle = snapshot.focusState == .idle && snapshot.sessionId.isIdle
+        let arbiterIdle = snapshot.takesIdleShortCircuit
         FocusReconnectLog.logger.notice(
             """
             FocusResolve REJECTED result=0x\(String(format: "%02X", result.resultCode.rawValue), privacy: .public) \

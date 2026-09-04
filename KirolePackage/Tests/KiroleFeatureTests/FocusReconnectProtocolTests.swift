@@ -118,6 +118,44 @@ struct FocusReconnectProtocolTests {
         // the two apart is what stops the tolerance from reaching the decoder.
         #expect(idleWithOperationWatermark.isContentEmptyIdleSnapshot == false)
         #expect(idleWithOperationWatermark.isMeaninglessIdleSnapshot == false)
+
+        // The exact disagreement behind the 2026-09-03 disconnect loop: the
+        // arbiter short-circuits to an all-zero idle verdict while the skip
+        // predicate says there is content, so the App rules empty a snapshot it
+        // just judged non-empty. Both predicates are now named, so the forensic
+        // log reports them rather than re-deriving either.
+        #expect(idleWithOperationWatermark.takesIdleShortCircuit)
+        #expect(idleWithOperationWatermark.hasNoArbitrableFocusContent)
+    }
+
+    /// `FocusReconnectArbiter.decide` must branch on the same predicate the
+    /// forensic log reports as `arbiterIdle`. A copy of the condition would keep
+    /// logging the old answer after the short-circuit changed — a log that lies
+    /// about which judgement was made is worse than no log, since it is the only
+    /// BLE record a customer build carries.
+    @Test("Arbiter idle short-circuit and its logged predicate stay one source")
+    func arbiterIdleShortCircuitMatchesLoggedPredicate() throws {
+        let watermarkOnly = FocusWireFixtures.focusState(
+            sessionId: .idle,
+            focusState: .idle,
+            taskID: "",
+            start: 0,
+            elapsed: 0,
+            lastOperationID: 2
+        )
+        let decision = FocusReconnectArbiter.decide(
+            device: watermarkOnly,
+            app: FocusReconnectAppSnapshot(active: nil, history: [], currentRevision: 0),
+            resolveID: 7
+        )
+
+        // Short-circuit taken => all-zero idle verdict, which is what the device
+        // rejected with INVALID_STATE.
+        #expect(watermarkOnly.takesIdleShortCircuit)
+        #expect(decision.command.focusState == .idle)
+        #expect(decision.command.sessionId.isIdle)
+        #expect(decision.command.elapsedSeconds == 0)
+        #expect(decision.action == .none)
     }
 
     /// The byte table permits FocusRevision = 0 only for a fully empty idle
