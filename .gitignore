@@ -97,6 +97,10 @@ fastlane/release-*.log
 docs/*.pdf
 docs/*.docx
 docs/*.xls
+# 审核/演示录屏原片（几十 MB 一个）：线上版本已托管在 website/review/，
+# 原片留本地或飞书，不入库。只限 docs/ 顶层，website/review/*.mp4 仍跟踪。
+docs/*.mp4
+docs/*.mov
 docs/Outku 硬件产品规格文档*.md
 docs/Kirole 设备离线运行协议改动方案_Ver_1_0_0.md
 docs/Kirole_BLE协议命令字节表_离线运行协议更新_Ver_1_1_0.xlsx
