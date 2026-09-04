@@ -40,6 +40,15 @@ extension AuthManager {
         }
         await MicrosoftSyncEngine.shared.finishAccountTransition(transition)
         MicrosoftSyncCommitGate.finishTransition(commitBoundary)
+
+        // Consent is per-scope: the user (or a tenant policy) can complete sign-in while declining
+        // Calendars.Read, and `authorize` still returns an account. Without this check Settings
+        // would show Outlook as connected while every sync failed on a missing scope, leaving the
+        // user to guess that the cure is to disconnect and reconnect. Google's connect path makes
+        // the same check via `hasRequiredAccess`.
+        guard await microsoftAuthService.hasAccess(to: capability) else {
+            throw MicrosoftAuthError.missingRequiredScope
+        }
         isMicrosoftConnected = true
         updateMicrosoftCapabilityState(capability)
     }

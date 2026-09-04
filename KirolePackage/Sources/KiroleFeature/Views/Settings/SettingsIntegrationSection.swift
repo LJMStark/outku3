@@ -15,8 +15,11 @@ public struct SettingsIntegrationSection: View {
 
     public init() {}
 
+    /// Mirrors `AppState.isIntegrationConnected`: a provider behind a closed release gate must not
+    /// appear as connected either, or a gate-0 build would still show a row for a device that
+    /// connected under a gate-1 build.
     private var connectedIntegrations: [Integration] {
-        appState.integrations.filter { $0.isConnected }
+        appState.integrations.filter { $0.isConnected && $0.type.isAvailable }
     }
 
     private var connectedTypes: Set<IntegrationType> {

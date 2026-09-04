@@ -273,6 +273,12 @@ public actor MicrosoftGraphClient {
                 )
                 try await Task.sleep(for: .seconds(retryDelay))
                 continue
+            case 400...499 where Self.indicatesExpiredSyncState(response.data):
+                // Graph documents delta-token expiry as a 40x carrying `syncStateNotFound` /
+                // `resyncRequired`, not specifically 410. Matching on the status code alone leaves
+                // the dead cursor in state, so every later sync replays the same bad token and the
+                // integration never recovers until the window is rebuilt weeks later.
+                throw MicrosoftGraphError.deltaTokenExpired
             default:
                 throw MicrosoftGraphError.httpError(
                     response.statusCode,
@@ -325,6 +331,22 @@ public actor MicrosoftGraphClient {
             return min(serverDelay, 60)
         }
         return min(pow(2, Double(attempt)), 8)
+    }
+
+    /// Graph error codes that mean "your delta cursor is gone, start a fresh sync".
+    private static let expiredSyncStateCodes: Set<String> = [
+        "syncstatenotfound",
+        "syncstatemoved",
+        "resyncrequired",
+    ]
+
+    private nonisolated static func indicatesExpiredSyncState(_ data: Data) -> Bool {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let error = object["error"] as? [String: Any],
+              let code = error["code"] as? String else {
+            return false
+        }
+        return expiredSyncStateCodes.contains(code.lowercased())
     }
 
     private nonisolated static func errorMessage(from data: Data) -> String? {

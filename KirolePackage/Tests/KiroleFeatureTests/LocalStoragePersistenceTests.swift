@@ -251,4 +251,46 @@ struct LocalStoragePersistenceTests {
         #expect(fileManager.fileExists(atPath: pendingCandidate.path))
         #expect(fileManager.fileExists(atPath: unrelated.path))
     }
+
+    /// `markIntegrationSynced` does not always write an `IntegrationType.rawValue`: Google Calendar
+    /// and Google Tasks share one `"Google"` row, and Outlook reports under `"Microsoft"` because a
+    /// single account backs both Microsoft surfaces. Filtering the stored map on `rawValue` alone
+    /// dropped both on every launch, so a successful sync read "Not synced yet" after a cold start.
+    @Test("Sync timestamps survive relaunch for providers whose key is a display name")
+    func integrationSyncKeysCoverDisplayNameProviders() {
+        let keys = LocalStorage.knownIntegrationSyncKeys
+
+        #expect(keys.contains("Google"))
+        #expect(keys.contains("Microsoft"))
+        #expect(keys.contains(IntegrationType.appleCalendar.rawValue))
+        #expect(keys.contains(IntegrationType.appleReminders.rawValue))
+        // Still bounded: an arbitrary leftover key must not be retained.
+        #expect(!keys.contains("Todoist"))
+        #expect(!keys.contains("TickTick"))
+    }
+
+    /// Sign-out, account deletion and schema resets all sweep `Files.persisted`. The Microsoft
+    /// state files live in the same Documents directory and hold the delta cursor plus the
+    /// accountID, so leaving them out would carry one identity's cursor into the next. `Files` is
+    /// file-private, so this asserts on the source rather than widening visibility for a test.
+    @Test("Microsoft sync state files are listed for reset and sign-out sweeps")
+    func microsoftStateFilesArePersistedAndSwept() throws {
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appending(path: "KirolePackage/Sources/KiroleFeature/Core/Storage/LocalStorage.swift"),
+            encoding: .utf8
+        )
+        let persistedList = try #require(
+            source.range(of: "static let persisted = [").map { range in
+                String(source[range.upperBound...].prefix(while: { $0 != "]" }))
+            }
+        )
+
+        #expect(persistedList.contains("microsoftSyncState"))
+        #expect(persistedList.contains("microsoftTodoOutbox"))
+    }
 }

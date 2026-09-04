@@ -436,23 +436,28 @@ final class MicrosoftTokenProvider {
         return token.accessToken
     }
 
+    /// Our own metadata is the only record that the user connected Outlook *to Kirole*. This used
+    /// to adopt a lone MSAL account when the metadata was missing, which quietly undid sign-out:
+    /// `clearAll()` removes the metadata but not MSAL's shared `com.microsoft.adalcache` entry, so
+    /// the next launch re-adopted the previous user's account, silently restored `Calendars.Read`,
+    /// and let `ensureMicrosoftAccess` short-circuit — reconnecting to someone else's calendar with
+    /// no account picker. An MSAL cache entry is evidence that *some* app authorized that account,
+    /// never that this user connected it here. Adoption now happens only through `authorize`.
     private func resolvedMetadata() async throws -> MicrosoftAccountMetadata? {
+        guard let stored = await metadataStore.load() else { return nil }
         let identifiers: [String]
         do {
             identifiers = try client.accountIdentifiers()
         } catch {
             return nil
         }
-        if let stored = await metadataStore.load(), identifiers.contains(stored.accountID) {
-            return stored
-        }
-        guard identifiers.count == 1, let identifier = identifiers.first else {
+        guard identifiers.contains(stored.accountID) else {
+            // MSAL no longer holds the account (removed by another app, or the cache was reset):
+            // our metadata is stale and would only produce failing silent-token requests.
             try await metadataStore.clear()
             return nil
         }
-        let recovered = MicrosoftAccountMetadata(accountID: identifier, grantedScopes: [])
-        try await metadataStore.save(recovered)
-        return recovered
+        return stored
     }
 
     private nonisolated static func minimalGrantedScopes(

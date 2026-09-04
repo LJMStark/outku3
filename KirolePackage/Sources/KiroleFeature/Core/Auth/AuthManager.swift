@@ -61,6 +61,7 @@ public final class AuthManager {
     @ObservationIgnored var accountDeletionRemoteOverride: (@Sendable () async throws -> Void)?
     @ObservationIgnored var accountDeletionLocalResetOverride: (@MainActor () async -> Void)?
     @ObservationIgnored var googleSyncStateResetOverride: (@MainActor () async throws -> Void)?
+    @ObservationIgnored var microsoftSyncStateResetOverride: (@MainActor () async throws -> Void)?
     @ObservationIgnored var googleSyncActivationOverride: (@MainActor () async throws -> Void)?
     @ObservationIgnored var googleDisconnectOverride: (@MainActor () async -> Void)?
     @ObservationIgnored var customCompanionSignOutCleanup: @MainActor () async throws -> Void = {
@@ -471,6 +472,16 @@ public final class AuthManager {
         } catch {
             AppState.shared.lastError = error.localizedDescription
             ErrorReporter.log(error, context: "AuthManager.signOut.resetGoogleSyncState")
+            return
+        }
+
+        // Same fail-closed contract as Google: if provider state cannot be cleared, abort rather
+        // than present a successful sign-out that leaves the previous identity's cursor behind.
+        do {
+            try await resetMicrosoftSyncStateForAccountTransition()
+        } catch {
+            AppState.shared.lastError = error.localizedDescription
+            ErrorReporter.log(error, context: "AuthManager.signOut.resetMicrosoftSyncState")
             return
         }
 

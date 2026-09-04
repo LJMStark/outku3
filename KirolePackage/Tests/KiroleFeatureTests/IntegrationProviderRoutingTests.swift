@@ -54,6 +54,27 @@ struct IntegrationProviderRoutingTests {
         #expect(coordinator.conflictingIntegration(for: .microsoftToDo) == nil)
     }
 
+    /// The release gate has to work as a rollback, not just as a launch guard. A device that
+    /// connected under `MICROSOFT_OAUTH_ENABLED = 1` keeps its persisted connection switch, so a
+    /// later gate-0 build must treat that provider as disconnected — otherwise it would keep
+    /// syncing Outlook in the background and still render a Settings row.
+    @Test("A closed release gate reads as disconnected, not merely unlistable")
+    @MainActor
+    func closedGateDisablesExistingConnection() {
+        let state = AppState(loadLocalDataOnInit: false)
+        state.integrations = IntegrationCoordinator().setIntegrationStatus(
+            integrations: Integration.defaultIntegrations,
+            type: .outlookCalendar,
+            isConnected: true
+        )
+
+        // AppSecrets.microsoftOAuthEnabled is false in tests, so the gate is closed.
+        #expect(IntegrationType.outlookCalendar.isAvailable == false)
+        #expect(state.integrations.contains { $0.type == .outlookCalendar && $0.isConnected })
+        #expect(state.isIntegrationConnected(.outlookCalendar) == false)
+        #expect(!state.connectedExternalSyncTargets().contains(.microsoft))
+    }
+
     @Test("Disconnect removes only the selected Apple source data")
     @MainActor
     func scopedCleanup() {
