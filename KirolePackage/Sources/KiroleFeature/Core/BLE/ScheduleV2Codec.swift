@@ -68,10 +68,15 @@ public enum ScheduleV2Codec {
         return data
     }
 
+    /// Sorts before truncating. `AppState.events` is built by concatenating provider segments
+    /// (`events.filter { $0.source != .outlook } + result.events`), so it arrives ordered by
+    /// provider, not by time. Consuming it raw would hand the whole 8-row budget to whichever
+    /// provider happens to be first and silently drop the other source's earlier meetings — which
+    /// only became reachable once a second calendar source could be connected alongside the first.
     public static func encode(_ events: [CalendarEvent], now: Date = Date()) -> Data {
         let calendar = Calendar(identifier: .gregorian)
         var encoded: [Event] = []
-        for event in events {
+        for event in events.sorted(by: { $0.startTime < $1.startTime }) {
             encoded.append(contentsOf: dayRows(from: event, on: now, calendar: calendar))
             if encoded.count >= maxEvents { break }
         }
