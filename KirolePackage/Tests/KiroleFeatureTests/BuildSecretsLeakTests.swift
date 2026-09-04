@@ -16,8 +16,15 @@ struct BuildSecretsLeakTests {
         #expect(!contents.contains("OAUTH_CLIENT_SECRET"))
     }
 
+    /// A public-client ID is not a secret — MSAL and Google Sign-In both ship theirs inside the app
+    /// bundle (see `GIDClientID` in Config/Info.plist). Client *secrets* are the ones that must stay
+    /// server-side, in Supabase Edge Functions. So client IDs are gated by an explicit allow-list
+    /// rather than banned outright: a provider whose client ID is itself sensitive because it pairs
+    /// with a secret in a server-side exchange (TickTick / Dida) still fails this test.
     @Test("App-side build config does not emit OAuth client secrets")
     func appBuildConfigDoesNotEmitOAuthClientSecrets() throws {
+        let allowedPublicClientIDKeys: Set<String> = ["MICROSOFT_OAUTH_CLIENT_ID"]
+        let clientIDKeyPattern = /[A-Z][A-Z0-9]*_OAUTH_CLIENT_ID/
         let root = repositoryRootURL()
         let appSideFiles = [
             root.appending(path: "Config/scripts-generate-build-secrets.sh"),
@@ -27,7 +34,14 @@ struct BuildSecretsLeakTests {
         for url in appSideFiles {
             let contents = try String(contentsOf: url, encoding: .utf8)
             #expect(!contents.contains("OAUTH_CLIENT_SECRET"))
-            #expect(!contents.contains("OAUTH_CLIENT_ID"))
+            #expect(!contents.lowercased().contains("clientsecret"))
+
+            let referencedKeys = Set(contents.matches(of: clientIDKeyPattern).map { String($0.output) })
+            let unexpectedKeys = referencedKeys.subtracting(allowedPublicClientIDKeys).sorted()
+            #expect(
+                unexpectedKeys.isEmpty,
+                "\(url.lastPathComponent) references non-allow-listed OAuth client IDs: \(unexpectedKeys)"
+            )
         }
     }
 
@@ -183,12 +197,85 @@ struct BuildSecretsLeakTests {
         #expect(!handler.contains("deviceIdentityStore.block("))
     }
 
+    // MARK: - Outlook Calendar release gate (MICROSOFT_OAUTH_ENABLED)
+
+    /// The gate is what keeps Outlook Calendar out of customer Settings until Azure registration
+    /// and real-account acceptance pass. Absent must read as "off", never as "on".
+    @Test("A missing Outlook gate defaults to disabled")
+    func absentMicrosoftGateDefaultsToDisabled() throws {
+        let result = try runBuildSecretsGenerator(
+            configuration: "AppStoreRelease",
+            bleSharedSecret: "",
+            secureChannelEnabled: nil
+        )
+        let generatedSecrets = try #require(result.generatedSecrets)
+
+        #expect(result.terminationStatus == 0)
+        #expect(generatedSecrets.contains("static let microsoftOAuthEnabled = \"0\" == \"1\""))
+        #expect(generatedSecrets.contains("static let microsoftClientId = \"\""))
+    }
+
+    @Test("The Outlook gate embeds the client ID once it is on")
+    func microsoftGateEmbedsClientID() throws {
+        let result = try runBuildSecretsGenerator(
+            configuration: "AppStoreRelease",
+            bleSharedSecret: "",
+            secureChannelEnabled: nil,
+            microsoftOAuthEnabled: "1",
+            microsoftClientId: "11111111-2222-3333-4444-555555555555"
+        )
+        let generatedSecrets = try #require(result.generatedSecrets)
+
+        #expect(result.terminationStatus == 0)
+        #expect(generatedSecrets.contains(
+            "static let microsoftClientId = \"11111111-2222-3333-4444-555555555555\""
+        ))
+        #expect(generatedSecrets.contains("static let microsoftOAuthEnabled = \"1\" == \"1\""))
+    }
+
+    /// Shipping the row without a client ID would put a control in Settings whose every tap fails.
+    @Test("Enabling Outlook without a client ID fails the build")
+    func microsoftGateWithoutClientIDFailsClosed() throws {
+        let result = try runBuildSecretsGenerator(
+            configuration: "AppStoreRelease",
+            bleSharedSecret: "",
+            secureChannelEnabled: nil,
+            microsoftOAuthEnabled: "1",
+            microsoftClientId: ""
+        )
+
+        #expect(result.terminationStatus != 0)
+        #expect(result.generatedSecrets == nil)
+    }
+
+    /// Same reasoning as the BLE switch: a typo must fail loudly instead of silently hiding the row
+    /// and sending the next reader to hunt through the Azure portal.
+    @Test(
+        "An illegal Outlook gate value fails the build",
+        arguments: ["true", "01", "yes", "2", " 1"]
+    )
+    func illegalMicrosoftGateValueFailsClosed(value: String) throws {
+        let result = try runBuildSecretsGenerator(
+            configuration: "AppStoreRelease",
+            bleSharedSecret: "",
+            secureChannelEnabled: nil,
+            microsoftOAuthEnabled: value,
+            microsoftClientId: "11111111-2222-3333-4444-555555555555"
+        )
+
+        #expect(result.terminationStatus != 0)
+        #expect(result.generatedSecrets == nil)
+    }
+
     /// `secureChannelEnabled: nil` omits the variable entirely, exercising the
-    /// "switch not configured yet" path (must default to plaintext).
+    /// "switch not configured yet" path (must default to plaintext). The same
+    /// applies to `microsoftOAuthEnabled`.
     private func runBuildSecretsGenerator(
         configuration: String,
         bleSharedSecret: String,
-        secureChannelEnabled: String?
+        secureChannelEnabled: String?,
+        microsoftOAuthEnabled: String? = nil,
+        microsoftClientId: String? = nil
     ) throws -> (terminationStatus: Int32, generatedSecrets: String?) {
         let fileManager = FileManager.default
         let temporaryRoot = fileManager.temporaryDirectory
@@ -226,8 +313,16 @@ struct BuildSecretsLeakTests {
         // "switch absent" case, so remove the key rather than passing it empty.
         var environment = ProcessInfo.processInfo.environment
         environment.removeValue(forKey: "BLE_SECURE_CHANNEL_ENABLED")
+        environment.removeValue(forKey: "MICROSOFT_OAUTH_ENABLED")
+        environment.removeValue(forKey: "MICROSOFT_OAUTH_CLIENT_ID")
         if let secureChannelEnabled {
             overrides["BLE_SECURE_CHANNEL_ENABLED"] = secureChannelEnabled
+        }
+        if let microsoftOAuthEnabled {
+            overrides["MICROSOFT_OAUTH_ENABLED"] = microsoftOAuthEnabled
+        }
+        if let microsoftClientId {
+            overrides["MICROSOFT_OAUTH_CLIENT_ID"] = microsoftClientId
         }
         process.environment = environment.merging(overrides) { _, override in override }
 

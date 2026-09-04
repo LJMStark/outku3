@@ -14,12 +14,31 @@ struct GoogleProviderCleanupTests {
         try rawKeychain.set("retired", key: "notion_access_token")
         try rawKeychain.set("retired", key: "todoist_token_set")
 
-        try keychain.clearRetiredProviderCredentials(microsoftAccessGroup: nil)
+        try keychain.clearRetiredProviderCredentials()
 
         #expect(keychain.getGoogleAccessToken() == "google")
         #expect(try rawKeychain.get("notion_access_token") == nil)
         #expect(try rawKeychain.get("todoist_token_set") == nil)
         try keychain.clearAll()
+    }
+
+    /// Outlook Calendar is a live provider again. The every-launch retirement sweep runs from
+    /// `AuthManager.initialize()`, so if Microsoft were still on the retired list the user would
+    /// look connected and then be silently signed out at the next cold start.
+    @Test("launch cleanup preserves Microsoft account metadata")
+    func retiredCredentialCleanupPreservesMicrosoft() throws {
+        let serviceName = "com.kirole.tests.retired-credentials-microsoft.\(UUID().uuidString)"
+        let keychain = KeychainService(service: serviceName)
+        let metadata = Data("microsoft-account".utf8)
+        try keychain.saveMicrosoftAccountMetadata(metadata)
+
+        try keychain.clearRetiredProviderCredentials()
+
+        #expect(try keychain.getMicrosoftAccountMetadata() == metadata)
+
+        // Sign-out / account deletion must still clear it.
+        try keychain.clearAll()
+        #expect(try keychain.getMicrosoftAccountMetadata() == nil)
     }
 
     @Test("A failed pre-authorization reset preserves the existing Google connection")

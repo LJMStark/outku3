@@ -52,12 +52,14 @@ public final class KeychainService: @unchecked Sendable {
             todoistTokenSet,
         ] + tickTickTokenSets + tickTickPendingAuthorizations
 
+        // Microsoft is deliberately absent: Outlook Calendar is a live provider again, so its
+        // account metadata must survive relaunch. It stays in `all` (sign-out / account deletion
+        // still clear it) — only the every-launch retirement sweep skips it.
         static let retiredProviderCredentials = [
             notionAccessToken,
             notionWorkspaceId,
             taskadeAccessToken,
             taskadeRefreshToken,
-            microsoftAccountMetadata,
             todoistTokenSet,
         ] + tickTickTokenSets + tickTickPendingAuthorizations
     }
@@ -296,12 +298,31 @@ public final class KeychainService: @unchecked Sendable {
         getOpenAIAPIKey() != nil
     }
 
+    // MARK: - Microsoft Account Metadata
+
+    /// Only the selected MSAL account identifier and its granted Graph scopes. Access and refresh
+    /// tokens live in MSAL's own `com.microsoft.adalcache` keychain group — never mirror them here.
+    func saveMicrosoftAccountMetadata(_ data: Data) throws {
+        try keychain.set(data, key: Keys.microsoftAccountMetadata)
+    }
+
+    func getMicrosoftAccountMetadata() throws -> Data? {
+        try keychain.getData(Keys.microsoftAccountMetadata)
+    }
+
+    func clearMicrosoftAccountMetadata() throws {
+        try keychain.remove(Keys.microsoftAccountMetadata)
+    }
+
     // Removed providers keep their old key names only for upgrade cleanup. This is idempotent and
     // runs before any current provider is restored, so a retired OAuth token cannot linger just
     // because its old Settings row no longer exists.
-    func clearRetiredProviderCredentials(
-        microsoftAccessGroup: String? = "93SL23NPNG.com.microsoft.adalcache"
-    ) throws {
+    //
+    // This sweep must never touch the `com.microsoft.adalcache` keychain access group. It used to
+    // `SecItemDelete` that whole group while Microsoft was retired; running that against a live
+    // Outlook integration would wipe MSAL's token cache on every launch — the user would appear
+    // signed in, then be silently signed out at the next cold start.
+    func clearRetiredProviderCredentials() throws {
         var firstError: Error?
         for key in Keys.retiredProviderCredentials {
             do {
@@ -314,24 +335,6 @@ public final class KeychainService: @unchecked Sendable {
                 firstError = firstError ?? error
                 ErrorReporter.log(
                     .persistence(operation: "delete", target: "retired_provider_credentials", underlying: error.localizedDescription),
-                    context: "KeychainService.clearRetiredProviderCredentials"
-                )
-            }
-        }
-
-        if let microsoftAccessGroup {
-            let status = SecItemDelete([
-                kSecClass: kSecClassGenericPassword,
-                kSecAttrAccessGroup: microsoftAccessGroup,
-            ] as CFDictionary)
-            if status != errSecSuccess, status != errSecItemNotFound {
-                firstError = firstError ?? KeychainCleanupError.credentialDeletionFailed
-                ErrorReporter.log(
-                    .persistence(
-                        operation: "delete",
-                        target: "retired_microsoft_credentials",
-                        underlying: "OSStatus \(status)"
-                    ),
                     context: "KeychainService.clearRetiredProviderCredentials"
                 )
             }

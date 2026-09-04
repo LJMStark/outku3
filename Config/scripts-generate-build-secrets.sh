@@ -71,6 +71,23 @@ if [[ "${BLE_SECURE_CHANNEL_ENABLED}" == "1" && "${CONFIGURATION:-}" == "AppStor
 fi
 BLE_SHARED_SECRET_VALUE="$(escape_swift "${BLE_SHARED_SECRET:-}")"
 DEEP_FOCUS_FEATURE_ENABLED_VALUE="$(escape_swift "${DEEP_FOCUS_FEATURE_ENABLED:-0}")"
+# Microsoft Entra public client (PKCE, no secret) for Outlook Calendar. The client ID is a plain
+# GUID with no `//`, so it does not need the xcconfig comment-pass recovery the URL settings use.
+MICROSOFT_OAUTH_CLIENT_ID_VALUE="$(escape_swift "${MICROSOFT_OAUTH_CLIENT_ID:-$(recover_from_xcconfig MICROSOFT_OAUTH_CLIENT_ID)}")"
+MICROSOFT_OAUTH_ENABLED="${MICROSOFT_OAUTH_ENABLED:-$(recover_from_xcconfig MICROSOFT_OAUTH_ENABLED)}"
+MICROSOFT_OAUTH_ENABLED="${MICROSOFT_OAUTH_ENABLED:-0}"
+# Same strictness as BLE_SECURE_CHANNEL_ENABLED: a typo such as `true` or `01` would silently
+# leave Outlook Calendar hidden and send the next reader hunting through Azure instead of here.
+if [[ "${MICROSOFT_OAUTH_ENABLED}" != "0" && "${MICROSOFT_OAUTH_ENABLED}" != "1" ]]; then
+  echo "error: MICROSOFT_OAUTH_ENABLED must be exactly 0 or 1 (got '${MICROSOFT_OAUTH_ENABLED}')." >&2
+  exit 1
+fi
+# Enabling the gate without a client ID ships a row whose every connect attempt fails.
+if [[ "${MICROSOFT_OAUTH_ENABLED}" == "1" && -z "${MICROSOFT_OAUTH_CLIENT_ID_VALUE}" ]]; then
+  echo "error: MICROSOFT_OAUTH_ENABLED=1 but MICROSOFT_OAUTH_CLIENT_ID is empty — register the Azure public client first." >&2
+  exit 1
+fi
+MICROSOFT_OAUTH_ENABLED_VALUE="$(escape_swift "${MICROSOFT_OAUTH_ENABLED}")"
 
 # AI provider base URL — contains `//`, so it hits the same xcconfig comment-pass
 # truncation as SUPABASE_URL; recover from the raw xcconfig line when truncated.
@@ -94,6 +111,8 @@ enum BuildSecrets {
     static let openRouterAPIKey = "${OPENROUTER_API_KEY_VALUE}"
     static let bleSharedSecret = "${BLE_SHARED_SECRET_VALUE}"
     static let deepFocusFeatureEnabled = "${DEEP_FOCUS_FEATURE_ENABLED_VALUE}" == "1"
+    static let microsoftClientId = "${MICROSOFT_OAUTH_CLIENT_ID_VALUE}"
+    static let microsoftOAuthEnabled = "${MICROSOFT_OAUTH_ENABLED_VALUE}" == "1"
     static let openAIBaseURL = "${OPENAI_BASE_URL_VALUE}"
     static let chatModelID = "${OPENAI_MODEL_VALUE}"
     static let fallbackAPIKey = "${FALLBACK_API_KEY_VALUE}"

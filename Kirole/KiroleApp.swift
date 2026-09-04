@@ -31,6 +31,8 @@ struct KiroleApp: App {
             openRouterAPIKey: BuildSecrets.openRouterAPIKey,
             bleSharedSecret: BuildSecrets.bleSharedSecret,
             deepFocusFeatureEnabled: BuildSecrets.deepFocusFeatureEnabled,
+            microsoftClientId: BuildSecrets.microsoftClientId,
+            microsoftOAuthEnabled: BuildSecrets.microsoftOAuthEnabled,
             openAIBaseURL: BuildSecrets.openAIBaseURL,
             chatModelID: BuildSecrets.chatModelID,
             fallbackAPIKey: BuildSecrets.fallbackAPIKey
