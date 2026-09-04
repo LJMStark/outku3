@@ -11,4 +11,4 @@
 - For data persistence, prefer SwiftData, Supabase (for synced data), or raw persistence (UserDefaults / JSON). Never use CoreData or CloudKit. For simple cases, prefer UserDefaults over SwiftData.
 - Always provide `accessibilityLabel` and `accessibilityIdentifier` for interactive UI elements.
 - Never log sensitive information or use insecure network calls. Secrets come from `Config/Secrets.xcconfig`, never from `Info.plist`.
-- Canonical project rules, architecture, and workflow details: see `AGENTS.md` and `CLAUDE.md` at the repo root. Additional Swift/SwiftUI guidance lives in [`.cursor/rules/`](../.cursor/rules/).
+- Canonical project rules, architecture, and workflow details: see `AGENTS.md` and `CLAUDE.md` at the repo root. Task-specific playbooks (wire changes, asset changes, flaky tests, release acceptance) live in [`.claude/skills/`](../.claude/skills/) — start at `kirole-atlas/SKILL.md`.

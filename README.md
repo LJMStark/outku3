@@ -7,8 +7,8 @@ A modern iOS application using a **workspace + SPM package** architecture for cl
 This template includes **opinionated rules files** for popular AI coding assistants. These files establish coding standards, architectural patterns, and best practices for modern iOS development using the latest APIs and Swift features.
 
 ### Included Rules Files
-- **Claude Code**: `CLAUDE.md` - Claude Code rules
-- **Cursor**: `.cursor/*.mdc` - Cursor-specific rules
+- **All agents**: `AGENTS.md` - canonical rules, BLE protocol summary, release policy
+- **Claude Code**: `CLAUDE.md` - Claude Code rules; `.claude/skills/` - repo-specific playbooks (router: `kirole-atlas`); `.claude/commands/` - `/release`, `/baseline-ui`
 - **GitHub Copilot**: `.github/copilot-instructions.md` - GitHub Copilot rules
 
 ### Customization Options

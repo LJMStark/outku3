@@ -392,7 +392,7 @@ OPENROUTER_API_KEY = ...
 Full commented reference: `Config/Secrets.xcconfig.template`.
 
 ## 8. Development Workflow
-1. Read `.cursor/rules/` for domain-specific rules. BLE / focus reconnect changes start from the 1.3.1 docs listed in §2, not from memory or old flowcharts.
+1. Read the matching playbook in `.claude/skills/` (router: `.claude/skills/kirole-atlas/SKILL.md`) before acting. BLE / focus reconnect changes start from the 1.3.1 docs listed in §2, not from memory or old flowcharts.
 2. Develop in `KirolePackage/Sources/KiroleFeature/`.
 3. Verify via tests, strict concurrency check, and regression coverage (`HomeCompanionPresentationTests`, `PromptDebuggerView`). After wire or reconnect edits run `FocusReconnect*`, `BLEOfflineSyncCoordinatorTests`, `ScheduleV2CodecTests`, and `BLEProtocolSimulationTests`.
 4. Follow secret config logic (via build-generated constants, not info.plist). Local dev uses `.env` logic. 

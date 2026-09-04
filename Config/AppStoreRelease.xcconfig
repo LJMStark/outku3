@@ -4,8 +4,11 @@
 // MUST NOT define KIROLE_INTERNAL. Internal/debug UI, behavior, logging,
 // factory commands, and test shortcuts are compiled out at the app-target
 // boundary. Do not add compilation conditions here without a product decision.
-// Device/archive builds fail closed if BLE_SHARED_SECRET is empty
-// (Config/scripts-generate-build-secrets.sh + fastlane ios appstore).
+// BLE secure channel is a firmware-readiness switch, not a channel property:
+// with BLE_SECURE_CHANNEL_ENABLED = 0 (current) this configuration ships the
+// plaintext BLE link the firmware implements and BLE_SHARED_SECRET is blanked;
+// only at 1 do device/archive builds and fastlane ios external / appstore fail
+// closed on an empty secret (Config/scripts-generate-build-secrets.sh).
 // Paired gate: scripts/verify-release-boundary.sh
 
 #include "Release.xcconfig"
