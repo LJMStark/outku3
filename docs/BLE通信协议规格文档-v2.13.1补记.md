@@ -3,7 +3,7 @@
 **日期:** 2026-08-19  
 **原因:** `docs/BLE通信协议规格文档.md` 已超过仓库单文件行数上限，本补记回写与硬件 Ver 1.3.0 冲突的条目。合并进主规格前，以本文件 + 固件原文为准。
 
-> **已过时。** 硬件 Ver 1.3.1 覆盖了本补记里「FOCUS_RESOLVE 无 RESULT / 发出即解锁」和「NeedsFullSync 仍可在 active 时 COMMIT」两句。请改读 `docs/BLE通信协议规格文档-v2.13.2补记.md`。
+> **已过时。** 硬件 Ver 1.3.1 覆盖了本补记里「FOCUS_RESOLVE 无 RESULT / 发出即解锁」和「NeedsFullSync 仍可在 active 时 COMMIT」两句。现行口径已回写主规格：请读 `docs/BLE通信协议规格文档.md` v2.13.3 §4.23.2 / §4.23.4 / §5.15。
 
 权威阅读顺序（历史，仅 1.3.0）：
 

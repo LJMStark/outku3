@@ -1,8 +1,8 @@
 # Kirole BLE 通信协议规格文档
 
-**版本:** v2.13.0
-**更新日期:** 2026-08-18
-**状态:** v2.13.0 对齐硬件 Ver 1.3.0：BLE 断连不再结束专注；`0x25` 增加 `FocusSyncPending` / `FOCUS_STATE` / `FOCUS_RESOLVE`；`0x14` FocusStatus、Enter/Complete/Skip 与 `0x03` Schedule 全部切到 v2。与固件必须同日切换，不兼容旧帧。v2.12.0 的 OfflineSync 底盘与 `TaskList(0x02)` 破坏性布局仍生效。
+**版本:** v2.13.3
+**更新日期:** 2026-09-04
+**状态:** v2.13.3 对齐硬件 Ver 1.3.1：`FOCUS_RESOLVE` 只在收到 `RESULT(SyncID=ResolveID, TargetType=0x25, ResultCode=COMMITTED)` 后才解除 `0x14` 冻结；活动专注期间不进入 OfflineSync `BEGIN/COMMIT`；`EventLogBatch(0x21)` 批内 `0x10/0x11/0x12` 记录与实时事件同为 v2（§4.23、§5.15）。v2.13.0 的专注重连 + Schedule v2 flag-day（硬件 Ver 1.3.0）其余内容不变：BLE 断连不再结束专注；`0x25` 含 `FocusSyncPending` / `FOCUS_STATE` / `FOCUS_RESOLVE`；`0x14` FocusStatus、Enter/Complete/Skip 与 `0x03` Schedule 全部为 v2，不兼容旧帧。v2.12.0 的 OfflineSync 底盘与 `TaskList(0x02)` 破坏性布局仍生效。
 
 v2.11.0 的运输模式、v2.10.1 的在线 Complete/Skip 时序、v2.9.0 的严格请求、OperationID 幂等和 `0x1B` 权威快照仍生效。App 是任务最终状态来源；GATT `.withResponse` 只代表传输确认，不能替代业务确认。`0x25 COMMITTED` 只确认三份离线数据已由设备原子提交，不替代任务动作的 `0x1B` 业务确认。
 
@@ -100,6 +100,7 @@ v2.11.0 的运输模式、v2.10.1 的在线 Complete/Skip 时序、v2.9.0 的严
 | v2.11.0 | 2026-08-12 | **新增工厂运输模式 `ShippingMode(0x1C)`**：App→Device payload 固定为 `0x01`，明文完整帧为 `1C 00 01 01`；无业务 ACK，设备主动断开是唯一成功信号。App 在 GATT 写入完成或报错后等待断连 10 秒，界面超时后再保留 2 秒一次性宽限期；期限内的迟到断连仍确认成功并禁止自动重连，超过期限则不再作为运输模式成功信号。专注或 OTA 期间不发送。长按电源键 10 秒或接入 USB 电源 10 秒唤醒，唤醒后固件自动关闭运输模式。§2.4/§4.1/§4.22/附录 A |
 | v2.12.0 | 2026-08-13 | **新增 `OfflineSync(0x25)` + `TaskList(0x02)` 破坏性升级**：① 双向 `0x25` 提供 `QUERY/STATE`、离线操作 `OP_BATCH/OP_ACK`、`BEGIN/COMMIT/ABORT/RESULT`，App 只在匹配 `COMMITTED` 后确认设备已原子替换 TaskList/Schedule/DayPack；② `0x02` Task 条目由旧 `Title + IsCompleted` 改为 `TaskId + Title + IsCompleted + Priority`，无 SubVersion 兼容窗口，旧解析器会从第一个 TaskId 长度开始整体错位；③ App 对 OP_BATCH 中不支持的 EventType 记日志后跳过并累计 ACK，避免未知类型永久堵住后续合法操作；受支持但格式损坏的操作仍停止 ACK。§2.4/§4.1/§4.3/§4.23/§5.2/§8.4/附录 A |
 | v2.13.0 | 2026-08-18 | **专注重连 + Schedule v2（硬件 Ver 1.3.0，flag-day）**：① BLE 断连不再结束专注；重连顺序 `DeviceWake → STATE → FOCUS_STATE → OP_BATCH → OP_ACK + FOCUS_RESOLVE`，裁决完成前禁止普通 `0x14`。② STATE bit4=`FocusSyncPending(0x10)`；App→Dev `0x25/0x06 FOCUS_RESOLVE` 正好 33B；Dev→App `0x25/0x83 FOCUS_STATE` 为 37+N。FOCUS_RESOLVE 的 RESULT 用 ResolveID 当 SyncID、TargetType=`0x25`、ResultCode=`accepted`。③ `0x14` 改为 SubVersion `0x02` + Revision + SessionId(8) + FocusState + Phase + Bottles + ElapsedSeconds(4) + TaskTitle + SegmentSeconds(4)。④ Enter/Complete/Skip 只收 v2：`0x02 | OpID(4) | SessionId(8) | TaskId(1+N) | Ts(4)`，Complete/Skip 再加 ElapsedSeconds(4)。⑤ Schedule `0x03` 改为日期头 + 六字段行；Description 不得空；旧 title+固定 HH:mm 整包拒。零事件金样 `02 1A 08 12 00`。§4.4/§4.11/§4.23/§5.3–5.5/§8.7 |
+| v2.13.3 | 2026-09-04 | **对齐硬件 Ver 1.3.1（无新增字节；合并 v2.13.1 / v2.13.2 补记，补记文件转为历史记录）**：① `FOCUS_RESOLVE` 应答：设备回 `RESULT(SyncID=ResolveID, TargetType=0x25)`，**只有 `ResultCode=COMMITTED(0x02)` 才解除 `0x14` 冻结**；`ACCEPTED(0x00)` 表示已接收未落地，App 继续等待；超时重试复用同一 ResolveID 与同一 payload。`ResolveResult` 是 App 的裁决结论，`RESULT.ResultCode` 是设备的执行应答，两者不混用。② 活动专注期间 App **不进入** OfflineSync `BEGIN/COMMIT`（含 `NeedsFullSync`），待提交数据延后到退出专注后的下一轮；专注重连不要求发 DayPack，普通 `0x10` 只更新业务数据、不退出 TaskIn，`COMMIT` 不能代替专注裁决。③ §5.15 批内 `0x10/0x11/0x12` 记录与 §5.3–5.5 实时事件同为 v2：`0x10` 记录 `19+N`，`0x11/0x12` 记录 `23+N`，旧格式整批丢弃。§4.23.2/§4.23.4/§5.15 |
 
 | 术语 | 定义 |
 |---------------|------------------------------------------------------|
@@ -1206,7 +1207,7 @@ StartTimestamp(4 BE) | EndTimestamp(4 BE) | ElapsedSeconds(4 BE) |
 FocusRevision(4 BE) | Phase(1) | Bottles(1)
 ```
 
-ResolveID 必须非零。设备用 `RESULT(TargetType=0x25, ResultCode=accepted, SyncID=ResolveID)` 确认。ResolveResult：`0x00=accepted` / `0x01=closed` / `0x02=conflictResolved` / `0x03=rejected` / `0xFF=internalError`。瓶子与阶段只按权威 elapsed 重算，禁止两边相加；显示瓶封顶 5。
+ResolveID 必须非零。设备必须回 `RESULT(SyncID=ResolveID, TargetType=0x25)` 作为执行应答（硬件 Ver 1.3.1）：**只有 `ResultCode=COMMITTED(0x02)` 才解除 `focusSyncLocked` / 普通 `0x14` 冻结**；`ACCEPTED(0x00)` 表示已接收但未落地，App 继续等待；超时重试复用同一 ResolveID 与同一 payload。`ResolveResult` 是 App 的裁决结论，`RESULT.ResultCode` 是设备的执行应答，两者不得混用。ResolveResult：`0x00=accepted` / `0x01=closed` / `0x02=conflictResolved` / `0x03=rejected` / `0xFF=internalError`。瓶子与阶段只按权威 elapsed 重算，禁止两边相加；显示瓶封顶 5。
 
 #### 4.23.3 Device→App payload
 
@@ -1308,9 +1309,9 @@ Record = OperationID(4 BE) | EventType(1) |
 3. 如果这条 STATE 的 `transactionOpen=1`，App 先按 CurrentSyncID 发 ABORT，清空第一轮已缓存的 STATE/OP_BATCH，再发第二次 QUERY；后续流程只使用第二条 STATE。设备必须在第二条 STATE 后重新发送仍待处理的 OP_BATCH，不能等待第一轮 OP_BATCH 的 ACK。
 4. 若最终 STATE 含 `focusSyncPending`，设备在 STATE 之后、OP_BATCH 之前发 `FOCUS_STATE`。App 立即冻结普通 `0x14`，按快照做 preview（`endedPending` 时抑制可见进入），再继续后面步骤。
 5. App 按最终 STATE 的 PendingCount 接收 OP_BATCH，并按 OperationID 顺序处理每条操作。每批处理完成后回一条累计 OP_ACK；设备保留未确认记录。
-6. 若本轮收过 `FOCUS_STATE`，App 在 OP_ACK 之后发 `FOCUS_RESOLVE`（33B）。设备回 `RESULT(TargetType=0x25, ResultCode=accepted, SyncID=ResolveID)` 后，App 才解除 `0x14` 冻结。
+6. 若本轮收过 `FOCUS_STATE`，App 在 OP_ACK 之后发 `FOCUS_RESOLVE`（33B）。设备回 `RESULT(SyncID=ResolveID, TargetType=0x25, ResultCode=committed)` 后，App 才解除 `0x14` 冻结；`accepted` 只是中间状态，App 继续等待；超时按同一 ResolveID、同一 payload 重试。
 7. 如果最终 STATE 的 `operationOverflow=1`，App 在处理并 ACK 尚存操作（以及必要的 FOCUS_RESOLVE）后结束本轮，不发 BEGIN。
-8. App 冻结同一版本的 `0x02`、`0x03`、`0x10` payload，发 `BEGIN`，再按这个顺序发送三份数据。设备只写暂存区，不应在中途替换当前显示数据。
+8. **仅当裁决后设备处于 idle 时**才进入本步：App 冻结同一版本的 `0x02`、`0x03`、`0x10` payload，发 `BEGIN`，再按这个顺序发送三份数据。活动专注期间 App **不进入** `BEGIN/COMMIT`（含 `NeedsFullSync`），本轮在 OP_ACK / FOCUS_RESOLVE 后直接结束，待提交数据延后到退出专注后的下一轮；专注重连不要求发 DayPack，普通 `0x10` 只更新业务数据、不会退出 TaskIn，`COMMIT` 也不能代替专注裁决。设备只写暂存区，不应在中途替换当前显示数据。
 9. App 发 `COMMIT`。设备校验 SyncID、DatasetMask、Revision、有效期和三份完整 payload；全部通过才原子替换正式数据，并回匹配的 `RESULT(0x25, committed)`。
 10. 任一步超时、断连、坏帧或错误 RESULT 都使本轮失败。BEGIN 之后失败时 App 尽力发送 ABORT；无论 ABORT 是否送达，设备都必须保留上一份已提交数据，下次 QUERY 会恢复未完成事务。
 
@@ -1616,10 +1617,11 @@ BLE Notify 特征开启后，固件**主动**向 App 发送此帧，表示「设
 - `0x18`：`StatusCode(1B)`（记录总长 2B；OTAResult 可作为历史结果进入批次）
 - `0x40`：`BatteryLevel`（记录总长 2B）
 - `0x16`, `0x17`：`Timestamp(4B)`（记录总长 5B）
-- `0x10`：`Length(1B)+TaskId(NB)+Timestamp(4B)`（记录总长 `2+N+4`）
-- `0x11~0x12`（v2.9.0）：`SubVersion(0x01)+OperationID(4B BE)+TaskIdLength(1B)+TaskId(NB)+Timestamp(4B BE)`（记录总长 `11+N`）
+- `0x10`（v2.13.0 起，与 §5.3 实时帧同布局）：`SubVersion(0x02)+OperationID(4B BE)+FocusSessionId(8B)+TaskIdLength(1B)+TaskId(NB)+StartTimestamp(4B BE)`（记录总长 `19+N`）
+- `0x11~0x12`（v2.13.0 起，与 §5.4/§5.5 实时帧同布局）：`SubVersion(0x02)+OperationID(4B BE)+FocusSessionId(8B)+TaskIdLength(1B)+TaskId(NB)+EndTimestamp(4B BE)+ElapsedSeconds(4B BE)`（记录总长 `23+N`）
+- 以上三种记录的 SubVersion 非 `0x02`、OperationID=0 或长度不符（旧 `6+N` / v2.9 `11+N` 格式）时，整批丢弃
 - `0x13~0x15`：`Length(1B)+Id(NB)`（记录总长 `2+N`）
-- `RequestRefresh(0x20)` 是实时控制请求，**禁止进入本批次**；固件升级 v2.9.0 时必须清空可能含旧 `0x11/0x12/0x20` 格式的离线环形缓冲，不能把旧记录交给新解析器。
+- `RequestRefresh(0x20)` 是实时控制请求，**禁止进入本批次**；固件升级到 v2.13.x 时必须清空可能含旧格式 `0x10/0x11/0x12/0x20` 记录的离线环形缓冲，不能把旧记录交给新解析器。
 - `WiFiDebugResult(0x19)` 是连接期实时状态应答，**不属于事件日志，不得出现在本批次**；若混入，App 会按未知记录处理并丢弃整批。
 - App 严格校验整批长度：必须正好解析出 `Count` 条记录，且无尾部多余字节；任意一条记录类型未知、长度不足或格式错误时，整批丢弃。
 
