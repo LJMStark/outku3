@@ -18,6 +18,14 @@ public final class AuthManager {
     public private(set) var googleCalendarAccessLevel: GoogleCalendarAccessLevel = .none
     public private(set) var hasTasksAccess: Bool = false
 
+    // `internal(set)` rather than `private(set)`: the Microsoft connect/disconnect flow lives in
+    // `AuthManager+Microsoft.swift`, which cannot write a `private(set)` property.
+    public internal(set) var isMicrosoftConnected: Bool = false
+    public internal(set) var hasMicrosoftCalendarAccess: Bool = false
+    /// Microsoft To Do never reaches Settings (see `IntegrationType.microsoftToDo`); the flag
+    /// exists because one MSAL account backs both Microsoft surfaces.
+    public internal(set) var hasMicrosoftTodoAccess: Bool = false
+
     public var hasCalendarAccess: Bool {
         googleCalendarAccessLevel.canRead
     }
@@ -41,7 +49,11 @@ public final class AuthManager {
 
     private let appleSignInService = AppleSignInService.shared
     private let googleSignInService = GoogleSignInService.shared
+    let microsoftAuthService = MicrosoftAuthService.shared
     private let keychainService: KeychainService
+    /// Injected so tests can exercise the connect flow without depending on the build-time
+    /// `MICROSOFT_OAUTH_ENABLED` gate.
+    @ObservationIgnored let microsoftAvailability: @MainActor (IntegrationType) -> Bool
     let supabaseService = SupabaseService.shared
     @ObservationIgnored var providerDataSignOutCleanupOverride: (@MainActor () async throws -> Void)?
     @ObservationIgnored var localCredentialSignOutCleanupOverride: (@MainActor () throws -> Void)?
@@ -49,14 +61,19 @@ public final class AuthManager {
     @ObservationIgnored var accountDeletionRemoteOverride: (@Sendable () async throws -> Void)?
     @ObservationIgnored var accountDeletionLocalResetOverride: (@MainActor () async -> Void)?
     @ObservationIgnored var googleSyncStateResetOverride: (@MainActor () async throws -> Void)?
+    @ObservationIgnored var microsoftSyncStateResetOverride: (@MainActor () async throws -> Void)?
     @ObservationIgnored var googleSyncActivationOverride: (@MainActor () async throws -> Void)?
     @ObservationIgnored var googleDisconnectOverride: (@MainActor () async -> Void)?
     @ObservationIgnored var customCompanionSignOutCleanup: @MainActor () async throws -> Void = {
         try await AppState.shared.prepareCustomCompanionDataForSignOut()
     }
 
-    init(keychainService: KeychainService = .shared) {
+    init(
+        keychainService: KeychainService = .shared,
+        microsoftAvailability: @escaping @MainActor (IntegrationType) -> Bool = { $0.isAvailable }
+    ) {
         self.keychainService = keychainService
+        self.microsoftAvailability = microsoftAvailability
     }
 
     // MARK: - Initialization
@@ -99,6 +116,11 @@ public final class AuthManager {
             promoteCurrentUser(with: supabaseUser, googleResult: restoredGoogleResult)
         }
 
+        // Step D: Microsoft state comes from MSAL's own keychain cache, so it restores offline and
+        // independently of the Google/Supabase identity above.
+        isMicrosoftConnected = await microsoftAuthService.isConnected()
+        hasMicrosoftCalendarAccess = await microsoftAuthService.hasAccess(to: .outlookCalendar)
+        hasMicrosoftTodoAccess = await microsoftAuthService.hasAccess(to: .todo)
     }
 
     /// Step A: hydrate `currentUser` from Keychain so the UI can show an
@@ -453,6 +475,16 @@ public final class AuthManager {
             return
         }
 
+        // Same fail-closed contract as Google: if provider state cannot be cleared, abort rather
+        // than present a successful sign-out that leaves the previous identity's cursor behind.
+        do {
+            try await resetMicrosoftSyncStateForAccountTransition()
+        } catch {
+            AppState.shared.lastError = error.localizedDescription
+            ErrorReporter.log(error, context: "AuthManager.signOut.resetMicrosoftSyncState")
+            return
+        }
+
         do {
             try await customCompanionSignOutCleanup()
         } catch {
@@ -506,6 +538,14 @@ public final class AuthManager {
         isGoogleConnected = false
         googleCalendarAccessLevel = .none
         hasTasksAccess = false
+        // `MicrosoftTokenProvider.isConnected()` reads the account metadata in our own Keychain,
+        // which `clearAll()` has already removed by this point — so clearing these flags is what
+        // makes the disconnect stick, and the state cannot resurrect on the next launch.
+        // MSAL's own `com.microsoft.adalcache` entry is not revoked here; only an explicit
+        // `disconnectMicrosoft()` enumerates and removes cached accounts.
+        isMicrosoftConnected = false
+        hasMicrosoftCalendarAccess = false
+        hasMicrosoftTodoAccess = false
         appleSignInService.clearCredentials()
     }
 

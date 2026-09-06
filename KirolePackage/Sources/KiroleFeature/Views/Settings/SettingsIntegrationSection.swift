@@ -15,8 +15,11 @@ public struct SettingsIntegrationSection: View {
 
     public init() {}
 
+    /// Mirrors `AppState.isIntegrationConnected`: a provider behind a closed release gate must not
+    /// appear as connected either, or a gate-0 build would still show a row for a device that
+    /// connected under a gate-1 build.
     private var connectedIntegrations: [Integration] {
-        appState.integrations.filter { $0.isConnected }
+        appState.integrations.filter { $0.isConnected && $0.type.isAvailable }
     }
 
     private var connectedTypes: Set<IntegrationType> {
@@ -24,7 +27,9 @@ public struct SettingsIntegrationSection: View {
     }
 
     private var filteredTypes: [IntegrationType] {
-        let connectableTypes = IntegrationType.displayOrder.filter { !connectedTypes.contains($0) }
+        // `availableDisplayOrder`, not `displayOrder`: a provider still behind its release gate
+        // stays out of the list entirely rather than showing an unusable row.
+        let connectableTypes = IntegrationType.availableDisplayOrder.filter { !connectedTypes.contains($0) }
         if searchText.isEmpty { return connectableTypes }
         return connectableTypes.filter { $0.rawValue.localizedCaseInsensitiveContains(searchText) }
     }
@@ -36,7 +41,7 @@ public struct SettingsIntegrationSection: View {
                 .foregroundStyle(theme.colors.primaryText)
 
             VStack(alignment: .leading, spacing: 16) {
-                Text("For best results, it is recommended to only have 1-2 of your most important calendars enabled at once.")
+                Text("Connect Google and Apple together. Choose your most important calendars to keep your schedule clear.")
                     .font(.system(size: 12))
                     .foregroundStyle(theme.colors.secondaryText)
                     .lineSpacing(2)
@@ -77,7 +82,13 @@ public struct SettingsIntegrationSection: View {
             }
         } message: {
             if let target = disconnectTarget {
-                Text("Are you sure you want to disconnect \(target.rawValue)?")
+                if target == .outlookCalendar || target == .microsoftToDo {
+                    // Deliberately does not mention Microsoft To Do: it is never shown in Settings,
+                    // so naming it here would describe something the user has never seen.
+                    Text("Disconnect Outlook Calendar? Your Microsoft account will be signed out and its synced events removed from Kirole.")
+                } else {
+                    Text("Are you sure you want to disconnect \(target.rawValue)?")
+                }
             }
         }
         .sheet(item: $appleCalendarSelectionIntent) { intent in
@@ -187,6 +198,7 @@ public struct SettingsIntegrationSection: View {
         case .googleCalendar, .googleTasks: return "Google"
         case .appleCalendar: return "Apple Calendar"
         case .appleReminders: return "Apple Reminders"
+        case .outlookCalendar, .microsoftToDo: return "Microsoft"
         }
     }
 
@@ -256,7 +268,11 @@ public struct SettingsIntegrationSection: View {
                 await connectAppleCalendarIntegration()
             case .appleReminders:
                 await connectAppleRemindersIntegration()
+            case .outlookCalendar, .microsoftToDo:
+                try await connectMicrosoftIntegration(type)
             }
+        } catch is CancellationError {
+            // User dismissed the MSAL web sheet.
         } catch GoogleSignInError.canceled {
             // 用户主动关掉 Google 登录窗，不显示错误。
         } catch {
@@ -283,6 +299,12 @@ public struct SettingsIntegrationSection: View {
         await appState.syncGoogleData()
     }
 
+    private func connectMicrosoftIntegration(_ type: IntegrationType) async throws {
+        try await authManager.ensureMicrosoftAccess(for: type)
+        appState.updateIntegrationStatus(type, isConnected: true)
+        await appState.syncMicrosoftData()
+    }
+
     private func connectAppleCalendarIntegration() async {
         await AppleSyncEngine.shared.setEventCalendarSelectionMode(.nativeAppleCalendar)
         let granted = await appState.requestAppleCalendarAccess()
@@ -306,7 +328,7 @@ public struct SettingsIntegrationSection: View {
             return authManager.hasCalendarAccess
         case .googleTasks:
             return authManager.hasTasksAccess
-        case .appleCalendar, .appleReminders:
+        case .appleCalendar, .appleReminders, .outlookCalendar, .microsoftToDo:
             return false
         }
     }
@@ -317,6 +339,10 @@ public struct SettingsIntegrationSection: View {
             return "Google Calendar permission was not granted."
         case .googleTasks:
             return "Google Tasks permission was not granted."
+        case .outlookCalendar:
+            return "Outlook Calendar permission was not granted."
+        case .microsoftToDo:
+            return "Microsoft To Do permission was not granted."
         case .appleCalendar, .appleReminders:
             return "Google permission was not granted."
         }
@@ -342,6 +368,19 @@ public struct SettingsIntegrationSection: View {
             appState.updateIntegrationStatus(type, isConnected: false)
         case .appleCalendar, .appleReminders:
             appState.updateIntegrationStatus(type, isConnected: false)
+        case .outlookCalendar, .microsoftToDo:
+            // Both Microsoft surfaces share one MSAL account and token cache, so disconnect is a
+            // single privacy boundary — a capability must not keep stale scopes behind.
+            do {
+                try await authManager.disconnectMicrosoft()
+            } catch {
+                let message = "Could not disconnect \(type.rawValue)."
+                appState.lastError = message
+                appState.remoteSyncErrors["Microsoft"] = message
+                return
+            }
+            appState.updateIntegrationStatus(.outlookCalendar, isConnected: false)
+            appState.updateIntegrationStatus(.microsoftToDo, isConnected: false)
         }
     }
 }
@@ -478,6 +517,8 @@ private struct IntegrationIcon: View {
             return Color.blue
         case .googleCalendar, .googleTasks:
             return Color.white
+        case .outlookCalendar, .microsoftToDo:
+            return Color(hex: "0078D4")
         }
     }
 }

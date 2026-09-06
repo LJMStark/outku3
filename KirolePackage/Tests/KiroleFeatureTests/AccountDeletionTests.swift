@@ -332,10 +332,11 @@ struct CustomerSettingsAccountPolicyTests {
         #expect(weatherAttribution.contains("Home_WeatherAttribution"))
     }
 
-    @Test("Settings expose only the four supported integrations")
+    @Test("Settings expose only the supported integrations")
     func displayOrderContainsOnlySupportedIntegrations() {
         #expect(IntegrationType.displayOrder == [
             .googleCalendar,
+            .outlookCalendar,
             .appleCalendar,
             .appleReminders,
             .googleTasks,

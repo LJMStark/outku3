@@ -17,6 +17,17 @@ enum ExternalSyncDispatcher {
             try await syncGoogleTask(task, action: action)
         case .apple:
             try await syncAppleTask(task, action: action)
+        case .outlook:
+            // Outlook is a calendar source and never produces tasks; it is listed for exhaustive
+            // matching only, since `EventSource` is shared by tasks and events.
+            throw ExternalEditingError.integrationReadOnly("Outlook Calendar")
+        case .microsoftToDo:
+            switch action {
+            case .updateCompletion:
+                try await MicrosoftSyncEngine.shared.pushTodoCompletion(task)
+            case .delete:
+                throw ExternalEditingError.integrationReadOnly("Microsoft To Do")
+            }
         }
     }
 
@@ -44,6 +55,8 @@ enum ExternalSyncDispatcher {
             syncedTask.remoteUpdatedAt = Date()
             syncedTask.syncStatus = .synced
             return syncedTask
+        case .outlook, .microsoftToDo:
+            throw ExternalEditingError.integrationReadOnly(componentName(for: task.source))
         }
     }
 
@@ -90,6 +103,8 @@ enum ExternalSyncDispatcher {
             syncedEvent.localId = event.localId
             syncedEvent.syncStatus = .synced
             return syncedEvent
+        case .outlook, .microsoftToDo:
+            throw ExternalEditingError.integrationReadOnly(componentName(for: event.source))
         }
     }
 
@@ -101,6 +116,10 @@ enum ExternalSyncDispatcher {
             return "Google Tasks"
         case .apple:
             return "Apple Reminders"
+        case .outlook:
+            return "Outlook Calendar"
+        case .microsoftToDo:
+            return "Microsoft To Do"
         }
     }
 

@@ -69,6 +69,11 @@ public struct AppleCalendarSelectionSheet: View {
                 Text("These calendars are read through Apple Calendar. Kirole does not store CalDAV or Exchange passwords.")
                     .font(.footnote)
                     .foregroundStyle(theme.colors.secondaryText)
+                if appState.isIntegrationConnected(.googleCalendar) {
+                    Text("If a calendar is already connected through Google, deselect its copy here to avoid duplicates.")
+                        .font(.footnote)
+                        .foregroundStyle(theme.colors.secondaryText)
+                }
             }
 
             ForEach(groupedAccounts, id: \.accountIdentifier) { group in

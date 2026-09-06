@@ -10,6 +10,9 @@ public struct CalendarEvent: Identifiable, Sendable, Codable {
     public var appleEventId: String?
     public var appleCalendarId: String?
     public var externalReference: ProviderItemReference?
+    /// Server UID used only to identify mirrored calendar occurrences for presentation.
+    /// Provider IDs above remain authoritative for persistence and write-back.
+    public var iCalendarUID: String?
     public var title: String
     public var startTime: Date
     public var endTime: Date
@@ -32,6 +35,7 @@ public struct CalendarEvent: Identifiable, Sendable, Codable {
         appleEventId: String? = nil,
         appleCalendarId: String? = nil,
         externalReference: ProviderItemReference? = nil,
+        iCalendarUID: String? = nil,
         title: String,
         startTime: Date,
         endTime: Date,
@@ -51,6 +55,7 @@ public struct CalendarEvent: Identifiable, Sendable, Codable {
         self.appleEventId = appleEventId
         self.appleCalendarId = appleCalendarId
         self.externalReference = externalReference
+        self.iCalendarUID = iCalendarUID
         self.title = title
         self.startTime = startTime
         self.endTime = endTime
@@ -98,6 +103,7 @@ public struct CalendarEvent: Identifiable, Sendable, Codable {
             id: googleLocalID(eventID: googleEvent.id, calendarID: googleCalendarId),
             googleEventId: googleEvent.id,
             googleCalendarId: googleCalendarId,
+            iCalendarUID: googleEvent.iCalUID,
             title: googleEvent.summary ?? "Untitled Event",
             startTime: startDate,
             endTime: endDate,
@@ -124,11 +130,17 @@ public struct CalendarEvent: Identifiable, Sendable, Codable {
 public enum EventSource: String, Sendable, Codable {
     case apple = "Apple Calendar"
     case google = "Google Calendar"
+    case outlook = "Outlook Calendar"
+    /// See `ExternalProvider.microsoftToDo` — carried by the shared Microsoft engine, never
+    /// reachable from Settings.
+    case microsoftToDo = "Microsoft To Do"
 
     public var iconName: String {
         switch self {
         case .apple: return "apple.logo"
         case .google: return "g.circle.fill"
+        case .outlook: return "calendar.badge.clock"
+        case .microsoftToDo: return "checkmark.circle"
         }
     }
 }

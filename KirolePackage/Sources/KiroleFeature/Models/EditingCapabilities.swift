@@ -79,6 +79,15 @@ extension TaskItem {
                 supportsNotes: true,
                 guidance: "Google Tasks doesn't support priority, and due dates save the date only."
             )
+        case .outlook, .microsoftToDo:
+            return TaskEditCapabilities(
+                isEditable: false,
+                supportsTitle: false,
+                supportsPriority: false,
+                dueDatePrecision: .unsupported,
+                supportsNotes: false,
+                guidance: "\(source.rawValue) items are read-only in Kirole."
+            )
         }
     }
 }
@@ -94,6 +103,13 @@ extension CalendarEvent {
                 )
             }
             return EventEditCapabilities(isEditable: true)
+        case .outlook, .microsoftToDo:
+            // Outlook Calendar is read-only in Kirole: the sync path uses Calendars.Read only, so
+            // there is no write scope to send an edit with.
+            return EventEditCapabilities(
+                isEditable: false,
+                guidance: "Edit this event in \(source.rawValue) for now."
+            )
         case .google:
             guard googleCalendarWriteAccess else {
                 return EventEditCapabilities(

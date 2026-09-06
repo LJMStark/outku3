@@ -18,9 +18,24 @@ public struct Integration: Identifiable, Sendable, Codable {
 
 public enum IntegrationType: String, Sendable, Codable, CaseIterable {
     case googleCalendar = "Google Calendar"
+    case outlookCalendar = "Outlook Calendar"
     case appleCalendar = "Apple Calendar"
     case appleReminders = "Apple Reminders"
     case googleTasks = "Google Tasks"
+    /// Not in `displayOrder`, so it can never be switched on from Settings. It exists because
+    /// `MicrosoftSyncEngine` shares one MSAL account and one state store across both Microsoft
+    /// surfaces; `AppState.syncMicrosoftData()` always passes `includeTodo: false`.
+    case microsoftToDo = "Microsoft To Do"
+
+    /// Runtime release gate. Outlook Calendar stays hidden until the Azure registration and
+    /// real-account acceptance behind `MICROSOFT_OAUTH_ENABLED` have passed — a client ID alone
+    /// still fails every connect attempt.
+    public var isAvailable: Bool {
+        switch self {
+        case .outlookCalendar, .microsoftToDo: AppSecrets.microsoftOAuthEnabled
+        default: true
+        }
+    }
 
     public var iconName: String {
         switch self {
@@ -28,10 +43,20 @@ public enum IntegrationType: String, Sendable, Codable, CaseIterable {
         case .googleTasks: return "checkmark.circle.fill"
         case .appleCalendar: return "calendar"
         case .appleReminders: return "checklist"
+        case .outlookCalendar: return "calendar.badge.clock"
+        case .microsoftToDo: return "checkmark.circle"
         }
     }
 
+    /// Every type the app knows how to connect. `microsoftToDo` is deliberately absent — see the
+    /// case comment.
     public static var displayOrder: [IntegrationType] {
-        [.googleCalendar, .appleCalendar, .appleReminders, .googleTasks]
+        [.googleCalendar, .outlookCalendar, .appleCalendar, .appleReminders, .googleTasks]
+    }
+
+    /// Customer Settings only lists providers that passed their release gate. A gated source stays
+    /// out of the list entirely instead of showing a "Coming Soon" row.
+    public static var availableDisplayOrder: [IntegrationType] {
+        displayOrder.filter(\.isAvailable)
     }
 }

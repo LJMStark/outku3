@@ -62,6 +62,13 @@ public final class AppState {
 
     // Tasks & Events
     public var events: [CalendarEvent] = []
+    /// Shared by the timeline, companion context and frozen hardware datasets.
+    public var presentationEvents: [CalendarEvent] {
+        CalendarEventPresentation.events(
+            from: events,
+            googleCalendarWriteAccess: AuthManager.shared.hasCalendarWriteAccess
+        )
+    }
     public var tasks: [TaskItem] = [] {
         didSet {
             recordTaskMutations(from: oldValue, to: tasks)
@@ -241,6 +248,7 @@ public final class AppState {
     let googleSyncEngine = GoogleSyncEngine.shared
     let eventKitService = EventKitService.shared
     let appleSyncEngine = AppleSyncEngine.shared
+    let microsoftSyncEngine = MicrosoftSyncEngine.shared
     #if os(iOS)
     let weatherService = WeatherService.shared
     #endif
@@ -394,6 +402,8 @@ extension Integration {
             Integration(name: "Apple Reminders", iconName: "checklist", isConnected: true, type: .appleReminders),
             Integration(name: "Google Calendar", iconName: "calendar.badge.clock", isConnected: false, type: .googleCalendar),
             Integration(name: "Google Tasks", iconName: "checkmark.circle", isConnected: false, type: .googleTasks),
+            // Microsoft To Do is absent on purpose — see IntegrationType.microsoftToDo.
+            Integration(name: "Outlook Calendar", iconName: "calendar.badge.clock", isConnected: false, type: .outlookCalendar),
         ]
     }
 }

@@ -346,6 +346,10 @@ private struct EventSourceIconView: View {
                 Image(systemName: "apple.logo")
                     .font(.system(size: size * 0.85))
                     .foregroundStyle(Color.black.opacity(0.75))
+            case .outlook, .microsoftToDo:
+                Image(systemName: source.iconName)
+                    .font(.system(size: size * 0.85))
+                    .foregroundStyle(Color(red: 0.0, green: 0.36, blue: 0.71))
             }
         }
         .frame(width: size, height: size)

@@ -101,6 +101,40 @@ struct ScheduleV2CodecTests {
         #expect(!row.description.isEmpty)
     }
 
+    /// `AppState.events` is assembled by concatenating provider segments
+    /// (`events.filter { $0.source != .outlook } + result.events`), so it is ordered by provider,
+    /// not by time. With a single calendar source that was invisible — one segment, already in
+    /// order. With Google and Outlook both connected, taking `prefix(8)` off the raw array would
+    /// fill the whole wire budget from whichever provider happens to be first and drop the other
+    /// source's morning meetings entirely.
+    @Test("The 8-event wire budget goes to the earliest events, not the first provider")
+    func multiSourceBudgetIsOrderedByTime() {
+        let calendar = Calendar(identifier: .gregorian)
+        let day = calendar.startOfDay(for: Date())
+        func event(hour: Int, title: String, source: EventSource) -> CalendarEvent {
+            CalendarEvent(
+                title: title,
+                startTime: calendar.date(byAdding: .hour, value: hour, to: day)!,
+                endTime: calendar.date(byAdding: .hour, value: hour + 1, to: day)!,
+                source: source,
+                description: "Detail"
+            )
+        }
+
+        // Provider-segment order: eight afternoon Google events, then a 07:00 Outlook meeting.
+        let events = (12...19).map { event(hour: $0, title: "Google \($0)", source: .google) }
+            + [event(hour: 7, title: "Outlook Standup", source: .outlook)]
+
+        let payload = ScheduleV2Codec.encode(events, now: day)
+        var cursor = 5
+        let firstTime = readString(payload, &cursor)
+        let firstTitle = readString(payload, &cursor)
+
+        #expect(payload[4] == UInt8(ScheduleV2Codec.maxEvents))
+        #expect(firstTime == "07:00")
+        #expect(firstTitle == "Outlook Standup")
+    }
+
     private func readString(_ data: Data, _ cursor: inout Int) -> String {
         let length = Int(data[cursor])
         cursor += 1

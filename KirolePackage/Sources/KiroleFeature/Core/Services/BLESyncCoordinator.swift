@@ -319,7 +319,7 @@ public final class BLESyncCoordinator {
             // second AppState read, feed all three dataset encoders in this transaction.
             let pet = appState.pet
             let tasks = appState.tasks
-            let events = appState.events
+            let events = appState.presentationEvents
             let weather = appState.weather
             let deviceMode = appState.deviceMode
             let userProfile = appState.userProfile

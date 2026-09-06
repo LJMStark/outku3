@@ -459,9 +459,9 @@ struct AppStateTests {
             state.updateIntegrationStatus(.googleCalendar, isConnected: false)
         }
 
-        @Test("Connecting Google Calendar disconnects Apple Calendar and clears Apple events")
+        @Test("Connecting Google Calendar preserves Apple Calendar and both sources' events")
         @MainActor
-        func connectingGoogleCalendarDisconnectsAppleCalendar() {
+        func connectingGoogleCalendarPreservesAppleCalendar() {
             let state = AppState.makeForTesting()
             let originalIntegrations = state.integrations
             let originalEvents = state.events
@@ -494,14 +494,15 @@ struct AppStateTests {
             let appleCalendar = state.integrations.first { $0.type == .appleCalendar }
             let googleCalendar = state.integrations.first { $0.type == .googleCalendar }
 
-            #expect(appleCalendar?.isConnected == false)
+            #expect(appleCalendar?.isConnected == true)
             #expect(googleCalendar?.isConnected == true)
-            #expect(state.events.contains { $0.source == .apple } == false)
+            #expect(state.events.contains { $0.source == .apple })
+            #expect(state.events.contains { $0.source == .google })
         }
 
-        @Test("Connecting Apple Reminders disconnects Google Tasks and clears Google tasks")
+        @Test("Connecting Apple Reminders preserves Google Tasks and both sources' tasks")
         @MainActor
-        func connectingAppleRemindersDisconnectsGoogleTasks() {
+        func connectingAppleRemindersPreservesGoogleTasks() {
             let state = AppState.makeForTesting()
             let originalIntegrations = state.integrations
             let originalTasks = state.tasks
@@ -530,9 +531,10 @@ struct AppStateTests {
             let googleTasks = state.integrations.first { $0.type == .googleTasks }
             let appleReminders = state.integrations.first { $0.type == .appleReminders }
 
-            #expect(googleTasks?.isConnected == false)
+            #expect(googleTasks?.isConnected == true)
             #expect(appleReminders?.isConnected == true)
-            #expect(state.tasks.contains { $0.source == .google } == false)
+            #expect(state.tasks.contains { $0.source == .google })
+            #expect(state.tasks.contains { $0.source == .apple })
         }
     }
 

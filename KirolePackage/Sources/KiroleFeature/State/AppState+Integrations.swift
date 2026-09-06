@@ -1,8 +1,13 @@
 import Foundation
 
 extension AppState {
+    /// A gated provider counts as disconnected, not merely unlistable. The release gate has to be
+    /// able to switch a provider off after the fact: a device that connected under a build with
+    /// `MICROSOFT_OAUTH_ENABLED = 1` keeps its persisted connection switch, so without this check
+    /// a later gate-0 build would go on syncing Outlook in the background — the gate could stop new
+    /// connections but never stop existing ones, which is the case an emergency rollback needs.
     func isIntegrationConnected(_ type: IntegrationType) -> Bool {
-        integrationCoordinator.hasIntegration(type, integrations: integrations)
+        type.isAvailable && integrationCoordinator.hasIntegration(type, integrations: integrations)
     }
 
     public func syncIntegrationStatusFromAuth() {
@@ -47,10 +52,6 @@ extension AppState {
     public func updateIntegrationStatus(_ type: IntegrationType, isConnected: Bool) {
         hasExplicitIntegrationConnectionPreferences = true
         invalidateExternalSyncResults(for: type)
-        if isConnected {
-            disconnectConflictingIntegration(for: type)
-        }
-
         setIntegrationStatus(type, isConnected: isConnected)
 
         if !isConnected {
@@ -88,17 +89,6 @@ extension AppState {
                 reportPersistenceError(error, operation: "save", target: "integration_connections.json")
             }
         }
-    }
-
-    func disconnectConflictingIntegration(for type: IntegrationType) {
-        guard let conflictingType = integrationCoordinator.conflictingIntegration(for: type),
-              isIntegrationConnected(conflictingType) else {
-            return
-        }
-
-        invalidateExternalSyncResults(for: conflictingType)
-        setIntegrationStatus(conflictingType, isConnected: false)
-        cleanupDisconnectedIntegrationData(for: conflictingType)
     }
 
     func cleanupDisconnectedIntegrationData(for type: IntegrationType) {

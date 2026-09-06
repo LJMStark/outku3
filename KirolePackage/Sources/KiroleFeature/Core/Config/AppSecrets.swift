@@ -8,6 +8,12 @@ public enum AppSecrets {
         var openRouterAPIKey: String?
         var bleSharedSecret: String?
         var deepFocusFeatureEnabled: Bool
+        /// Microsoft Entra public-client (PKCE, no secret) application ID for Outlook Calendar.
+        var microsoftClientId: String?
+        /// Release gate: Outlook Calendar stays out of Settings until Azure registration and
+        /// real-account acceptance pass. A client ID alone is not enough — see
+        /// `IntegrationType.isAvailable`.
+        var microsoftOAuthEnabled: Bool
         /// Optional AI base URL override (e.g. an OpenAI-compatible gateway). nil → OpenRouter default.
         var openAIBaseURL: String?
         /// Optional chat model override. nil → `OpenAIService.defaultChatModelID` OpenRouter default.
@@ -19,7 +25,8 @@ public enum AppSecrets {
 
     private static let lock = OSAllocatedUnfairLock(
         initialState: Storage(
-            deepFocusFeatureEnabled: false
+            deepFocusFeatureEnabled: false,
+            microsoftOAuthEnabled: false
         )
     )
 
@@ -29,6 +36,8 @@ public enum AppSecrets {
         openRouterAPIKey: String?,
         bleSharedSecret: String?,
         deepFocusFeatureEnabled: Bool = false,
+        microsoftClientId: String? = nil,
+        microsoftOAuthEnabled: Bool = false,
         openAIBaseURL: String? = nil,
         chatModelID: String? = nil,
         fallbackAPIKey: String? = nil
@@ -39,6 +48,8 @@ public enum AppSecrets {
             storage.openRouterAPIKey = normalize(openRouterAPIKey)
             storage.bleSharedSecret = normalize(bleSharedSecret)
             storage.deepFocusFeatureEnabled = deepFocusFeatureEnabled
+            storage.microsoftClientId = normalize(microsoftClientId)
+            storage.microsoftOAuthEnabled = microsoftOAuthEnabled
             storage.openAIBaseURL = normalizeURL(openAIBaseURL)
             storage.chatModelID = normalize(chatModelID)
             storage.fallbackAPIKey = normalize(fallbackAPIKey)
@@ -62,6 +73,16 @@ public enum AppSecrets {
 
     public static var deepFocusFeatureEnabled: Bool {
         lock.withLock { $0.deepFocusFeatureEnabled }
+    }
+
+    /// Microsoft Entra public-client application ID; nil → every Outlook connect attempt fails.
+    public static var microsoftClientId: String? {
+        lock.withLock { $0.microsoftClientId }
+    }
+
+    /// Outlook Calendar release gate. False → the row never reaches customer Settings.
+    public static var microsoftOAuthEnabled: Bool {
+        lock.withLock { $0.microsoftOAuthEnabled }
     }
 
     /// Optional AI base URL override; nil → `OpenAIService` falls back to the OpenRouter default.

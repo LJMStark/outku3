@@ -44,19 +44,6 @@ final class IntegrationCoordinator {
         return result
     }
 
-    func conflictingIntegration(for type: IntegrationType) -> IntegrationType? {
-        switch type {
-        case .googleCalendar:
-            return .appleCalendar
-        case .appleCalendar:
-            return .googleCalendar
-        case .googleTasks:
-            return .appleReminders
-        case .appleReminders:
-            return .googleTasks
-        }
-    }
-
     func cleanupDisconnectedData(
         for type: IntegrationType,
         events: [CalendarEvent],
@@ -71,6 +58,10 @@ final class IntegrationCoordinator {
             return (events, tasks.filter { $0.source != .apple })
         case .googleTasks:
             return (events, tasks.filter { $0.source != .google })
+        case .outlookCalendar:
+            return (events.filter { $0.source != .outlook }, tasks)
+        case .microsoftToDo:
+            return (events, tasks.filter { $0.source != .microsoftToDo })
         }
     }
 }

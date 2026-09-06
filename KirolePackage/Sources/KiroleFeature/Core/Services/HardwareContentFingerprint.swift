@@ -22,7 +22,7 @@ enum HardwareContentFingerprint {
     ) -> String {
         structural(
             tasks: appState.tasks,
-            events: appState.events,
+            events: appState.presentationEvents,
             now: now,
             screenSize: screenSize,
             deviceMode: appState.deviceMode,

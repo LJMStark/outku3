@@ -42,7 +42,7 @@ private extension TaskItem {
         switch source {
         case .apple:
             return appleReminderId != nil || appleExternalId != nil || appleListId != nil
-        case .google:
+        case .google, .outlook, .microsoftToDo:
             return true
         }
     }
@@ -55,7 +55,7 @@ private extension CalendarEvent {
         switch source {
         case .apple:
             return appleEventId != nil || appleCalendarId != nil
-        case .google:
+        case .google, .outlook, .microsoftToDo:
             return true
         }
     }

@@ -685,8 +685,11 @@ extension AppState {
         switch action {
         case .updateCompletion:
             switch task.source {
-            case .google, .apple:
+            case .google, .apple, .microsoftToDo:
                 return .remote
+            case .outlook:
+                // Calendar source: it owns events, not tasks, and has no write scope.
+                return .localOnly
             }
         case .delete:
             switch task.source {
@@ -694,6 +697,10 @@ extension AppState {
                 return (task.googleTaskListId != nil && task.googleTaskId != nil) ? .remote : .localOnly
             case .apple:
                 return task.appleReminderId != nil ? .remote : .localOnly
+            case .outlook, .microsoftToDo:
+                // Neither Microsoft surface supports remote deletion; hide it locally instead of
+                // surfacing an error the user cannot act on.
+                return .localOnly
             }
         }
     }

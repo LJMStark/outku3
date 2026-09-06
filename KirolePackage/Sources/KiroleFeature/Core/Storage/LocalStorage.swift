@@ -49,6 +49,12 @@ public actor LocalStorage {
         static let activeFocusSession = "focus_session_active.json"
         static let outbox = "outbox.json"
         static let googleSyncMetadata = "google_sync_metadata.json"
+        /// Owned by `MicrosoftSyncStateStore`, which writes into this same Documents directory.
+        /// They are listed here so sign-out, account deletion and schema resets clear them —
+        /// without that, a stale delta cursor and accountID survive into the next identity and the
+        /// engine resumes incrementally against another user's snapshot.
+        static let microsoftSyncState = "microsoft_sync_state.json"
+        static let microsoftTodoOutbox = "microsoft_todo_outbox.json"
         static let companionUsageState = "companion_usage_state.json"
         static let integrationConnections = "integration_connections.json"
         static let sharedCompanionDialogue = "shared_companion_dialogue.json"
@@ -77,6 +83,7 @@ public actor LocalStorage {
             behaviorSummary, onboardingProfile,
             deepFocusSelection, activeFocusSession,
             outbox, googleSyncMetadata, companionUsageState,
+            microsoftSyncState, microsoftTodoOutbox,
             integrationConnections,
             sharedCompanionDialogue,
             customCompanions,
@@ -262,11 +269,22 @@ public actor LocalStorage {
             return (data, 0)
         }
 
+        // Outlook Calendar is deliberately absent: this filter runs on every load, so listing it
+        // would silently drop each synced event at the next launch — sync would look successful and
+        // the data would simply be gone, with no error anywhere.
+        //
+        // Microsoft To Do stays listed. It exists in `EventSource` only because one MSAL account
+        // backs both Microsoft surfaces; it is not a shipped integration, and `includesMicrosoftTodo`
+        // is false, so it can never be re-fetched. Without this entry, To Do records restored from
+        // an older install or a backup would come back to life, reach the hardware through
+        // `encodeTaskList`, and a completion could even be written back to Graph.
+        //
+        // Rule: an entry here must be unreachable through `IntegrationType.displayOrder`.
         let retiredSources: Set<String> = [
-            "Outlook Calendar", "Microsoft To Do", "Todoist", "TickTick", "Notion", "Taskade",
+            "Microsoft To Do", "Todoist", "TickTick", "Notion", "Taskade",
         ]
         let retiredProviders: Set<String> = [
-            "outlook", "microsoftToDo", "todoist", "tickTick", "notion", "taskade",
+            "microsoftToDo", "todoist", "tickTick", "notion", "taskade",
         ]
         let retained = records.filter { record in
             if let source = record["source"] as? String, retiredSources.contains(source) {
@@ -290,13 +308,14 @@ public actor LocalStorage {
         applicationSupportDirectory: URL,
         userDefaults: UserDefaults = .standard
     ) throws {
-        let documentFiles = ["microsoft_sync_state.json", "microsoft_todo_outbox.json"]
-        for filename in documentFiles {
-            let url = documentsDirectory.appendingPathComponent(filename, isDirectory: false)
-            if fileManager.fileExists(atPath: url.path) {
-                try fileManager.removeItem(at: url)
-            }
-        }
+        // `microsoft_sync_state.json` and `microsoft_todo_outbox.json` used to be deleted here.
+        // They are `MicrosoftSyncStateStore`'s live files (it defaults to this same Documents
+        // directory), and this runs from `AppState+Loading` on every launch — so deleting them
+        // would drop the Outlook delta link *and* the stored accountID on each cold start. The
+        // engine compares `state.accountID` against the signed-in account, so a nil marker reads
+        // as an account switch, and `applyMicrosoftFailedSyncResult` replaces every Microsoft
+        // snapshot on a changed account: one failed first sync after launch would then wipe the
+        // user's Outlook events. Do not re-add a live provider's files to this cleanup.
 
         let providerDirectory = applicationSupportDirectory
             .appendingPathComponent("com.kirole.app", isDirectory: true)
@@ -426,9 +445,19 @@ public actor LocalStorage {
         try save(times, to: Files.integrationSyncTimes)
     }
 
+    /// Keys the app actually writes through `markIntegrationSynced`. Not every one is an
+    /// `IntegrationType.rawValue`: Google Calendar and Google Tasks share a single `"Google"` row
+    /// in Settings, and Outlook reports under `"Microsoft"` because one account backs both
+    /// Microsoft surfaces. Filtering on `IntegrationType(rawValue:)` alone therefore dropped both
+    /// providers' timestamps on every launch — a successful sync would read "Not synced yet" after
+    /// a cold start, while Apple (whose keys happen to be raw values) survived.
+    nonisolated static var knownIntegrationSyncKeys: Set<String> {
+        Set(IntegrationType.allCases.map(\.rawValue)).union(["Google", "Microsoft"])
+    }
+
     public func loadIntegrationSyncTimes() throws -> [String: Date] {
         let stored = try load([String: Date].self, from: Files.integrationSyncTimes) ?? [:]
-        let retained = stored.filter { IntegrationType(rawValue: $0.key) != nil }
+        let retained = stored.filter { Self.knownIntegrationSyncKeys.contains($0.key) }
         if retained.count != stored.count {
             try save(retained, to: Files.integrationSyncTimes)
         }
