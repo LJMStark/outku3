@@ -5,18 +5,67 @@ import UIKit
 @MainActor
 private final class KiroleAppDelegate: NSObject, UIApplicationDelegate {
     func application(
+        _ application: UIApplication,
+        configurationForConnecting connectingSceneSession: UISceneSession,
+        options: UIScene.ConnectionOptions
+    ) -> UISceneConfiguration {
+        // SwiftUI keeps ownership of WindowGroup and its window; only add URL callbacks.
+        let configuration = UISceneConfiguration(
+            name: nil,
+            sessionRole: connectingSceneSession.role
+        )
+        if connectingSceneSession.role == .windowApplication {
+            configuration.delegateClass = KiroleSceneDelegate.self
+        }
+        return configuration
+    }
+
+    func application(
         _ app: UIApplication,
         open url: URL,
         options: [UIApplication.OpenURLOptionsKey: Any] = [:]
     ) -> Bool {
-        // MSAL must see the callback first. With Microsoft Authenticator installed, MSAL uses the
-        // broker: authorization returns through `msauth.com.kirole.app://auth` into the app rather
-        // than through ASWebAuthenticationSession, and without `handleMSALResponse` the interactive
-        // token request never completes. Simulator checks cannot catch this — there is no broker
-        // there, so the session consumes its own callback.
-        if MicrosoftAuthService.handleRedirectURL(
+        KiroleOAuthURLRouter.handle(
             url,
             sourceApplication: options[.sourceApplication] as? String
+        )
+    }
+}
+
+@MainActor
+private final class KiroleSceneDelegate: NSObject, UIWindowSceneDelegate {
+    func scene(
+        _ scene: UIScene,
+        willConnectTo session: UISceneSession,
+        options connectionOptions: UIScene.ConnectionOptions
+    ) {
+        route(connectionOptions.urlContexts)
+    }
+
+    func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
+        route(URLContexts)
+    }
+
+    private func route(_ contexts: Set<UIOpenURLContext>) {
+        for context in contexts {
+            KiroleOAuthURLRouter.handle(
+                context.url,
+                sourceApplication: context.options.sourceApplication
+            )
+        }
+    }
+}
+
+@MainActor
+private enum KiroleOAuthURLRouter {
+    @discardableResult
+    static func handle(_ url: URL, sourceApplication: String?) -> Bool {
+        // Broker responses arrive through the scene lifecycle in SwiftUI. Forward the real
+        // source application so MSAL can validate it, before trying the other OAuth providers.
+        // Each system callback routes here once; WindowGroup must not also consume the URL.
+        if MicrosoftAuthService.handleRedirectURL(
+            url,
+            sourceApplication: sourceApplication
         ) {
             return true
         }
