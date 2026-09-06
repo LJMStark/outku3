@@ -41,7 +41,7 @@ public struct SettingsIntegrationSection: View {
                 .foregroundStyle(theme.colors.primaryText)
 
             VStack(alignment: .leading, spacing: 16) {
-                Text("For best results, it is recommended to only have 1-2 of your most important calendars enabled at once.")
+                Text("Connect Google and Apple together. Choose your most important calendars to keep your schedule clear.")
                     .font(.system(size: 12))
                     .foregroundStyle(theme.colors.secondaryText)
                     .lineSpacing(2)

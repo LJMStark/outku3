@@ -37,21 +37,57 @@ struct IntegrationProviderRoutingTests {
         #expect(!Integration.defaultIntegrations.contains { $0.type == .microsoftToDo })
     }
 
-    /// The coexistence model: Google and Apple stay mutually exclusive (an iCloud account commonly
-    /// subscribes to the same Google calendar, and the hardware wire only carries 8 events, so
-    /// duplicates would evict real ones). Outlook has no such overlap and coexists with either.
-    @Test("Outlook coexists with Google and Apple, which stay mutually exclusive")
+    @Test("Connecting Google preserves Apple calendars, reminders and in-flight results")
     @MainActor
     func coexistenceModel() {
-        let coordinator = IntegrationCoordinator()
+        let state = AppState.makeForTesting()
+        state.events = [CalendarEvent(id: "apple", title: "Apple", startTime: .now, endTime: .now)]
+        state.tasks = [TaskItem(id: "apple-task", title: "Apple", source: .apple)]
+        let appleGeneration = state.externalSyncGeneration(for: .apple)
 
-        #expect(coordinator.conflictingIntegration(for: .googleCalendar) == .appleCalendar)
-        #expect(coordinator.conflictingIntegration(for: .appleCalendar) == .googleCalendar)
-        #expect(coordinator.conflictingIntegration(for: .googleTasks) == .appleReminders)
-        #expect(coordinator.conflictingIntegration(for: .appleReminders) == .googleTasks)
+        state.updateIntegrationStatus(.googleCalendar, isConnected: true)
+        state.updateIntegrationStatus(.googleTasks, isConnected: true)
 
-        #expect(coordinator.conflictingIntegration(for: .outlookCalendar) == nil)
-        #expect(coordinator.conflictingIntegration(for: .microsoftToDo) == nil)
+        #expect(state.isIntegrationConnected(.appleCalendar))
+        #expect(state.isIntegrationConnected(.appleReminders))
+        #expect(state.isIntegrationConnected(.googleCalendar))
+        #expect(state.isIntegrationConnected(.googleTasks))
+        #expect(state.connectedExternalSyncTargets() == [.google, .apple])
+        #expect(state.events.map(\.id) == ["apple"])
+        #expect(state.tasks.map(\.id) == ["apple-task"])
+        #expect(state.canCommitExternalSync(.apple, generation: appleGeneration))
+    }
+
+    @Test("Both calendar connection orders survive persistence and disconnect independently",
+          arguments: [true, false])
+    @MainActor
+    func calendarConnectionOrder(googleFirst: Bool) {
+        let state = AppState.makeForTesting()
+        let order: [IntegrationType] = googleFirst
+            ? [.googleCalendar, .appleCalendar] : [.appleCalendar, .googleCalendar]
+        for type in order {
+            state.integrations = state.integrationCoordinator.setIntegrationStatus(
+                integrations: state.integrations, type: type, isConnected: false
+            )
+        }
+        for type in order {
+            state.updateIntegrationStatus(type, isConnected: true)
+        }
+        let states = Dictionary(uniqueKeysWithValues: state.integrations.map { ($0.type.rawValue, $0.isConnected) })
+        let restored = state.integrationCoordinator.applyConnectionStates(states, to: Integration.defaultIntegrations)
+        for type in order {
+            #expect(state.integrationCoordinator.hasIntegration(type, integrations: restored))
+        }
+        state.events = [
+            CalendarEvent(id: "google", title: "G", startTime: .now, endTime: .now, source: .google),
+            CalendarEvent(id: "apple", title: "A", startTime: .now, endTime: .now, source: .apple),
+        ]
+        let disconnected = order[0]
+        let survivingSource: EventSource = googleFirst ? .apple : .google
+        state.updateIntegrationStatus(disconnected, isConnected: false)
+        #expect(!state.isIntegrationConnected(disconnected))
+        #expect(state.isIntegrationConnected(order[1]))
+        #expect(state.events.map(\.source) == [survivingSource])
     }
 
     /// The release gate has to work as a rollback, not just as a launch guard. A device that

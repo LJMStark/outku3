@@ -52,10 +52,6 @@ extension AppState {
     public func updateIntegrationStatus(_ type: IntegrationType, isConnected: Bool) {
         hasExplicitIntegrationConnectionPreferences = true
         invalidateExternalSyncResults(for: type)
-        if isConnected {
-            disconnectConflictingIntegration(for: type)
-        }
-
         setIntegrationStatus(type, isConnected: isConnected)
 
         if !isConnected {
@@ -93,17 +89,6 @@ extension AppState {
                 reportPersistenceError(error, operation: "save", target: "integration_connections.json")
             }
         }
-    }
-
-    func disconnectConflictingIntegration(for type: IntegrationType) {
-        guard let conflictingType = integrationCoordinator.conflictingIntegration(for: type),
-              isIntegrationConnected(conflictingType) else {
-            return
-        }
-
-        invalidateExternalSyncResults(for: conflictingType)
-        setIntegrationStatus(conflictingType, isConnected: false)
-        cleanupDisconnectedIntegrationData(for: conflictingType)
     }
 
     func cleanupDisconnectedIntegrationData(for type: IntegrationType) {

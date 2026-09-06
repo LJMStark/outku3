@@ -34,7 +34,7 @@ extension BLESyncCoordinator {
             let dayPack = await dayPackGenerator.generateDayPack(
                 pet: appState.pet,
                 tasks: appState.tasks,
-                events: appState.events,
+                events: appState.presentationEvents,
                 weather: appState.weather,
                 deviceMode: appState.deviceMode,
                 userProfile: appState.userProfile,

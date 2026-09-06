@@ -44,27 +44,6 @@ final class IntegrationCoordinator {
         return result
     }
 
-    /// Google and Apple stay mutually exclusive because an iCloud account commonly subscribes to
-    /// the same Google calendar, so enabling both yields duplicate events — and the hardware wire
-    /// only carries the first 8 (`ScheduleV2Codec.maxEvents`), so duplicates would evict real ones.
-    ///
-    /// Microsoft has no such overlap and returns `nil`: Outlook Calendar coexists with either
-    /// Google or Apple.
-    func conflictingIntegration(for type: IntegrationType) -> IntegrationType? {
-        switch type {
-        case .googleCalendar:
-            return .appleCalendar
-        case .appleCalendar:
-            return .googleCalendar
-        case .googleTasks:
-            return .appleReminders
-        case .appleReminders:
-            return .googleTasks
-        case .outlookCalendar, .microsoftToDo:
-            return nil
-        }
-    }
-
     func cleanupDisconnectedData(
         for type: IntegrationType,
         events: [CalendarEvent],

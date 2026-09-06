@@ -195,7 +195,7 @@ extension AppState {
                 }
                 return (lhs.dueDate ?? .distantFuture) < (rhs.dueDate ?? .distantFuture)
             }
-        let todayEvents = events
+        let todayEvents = presentationEvents
             .filter { Calendar.current.isDateInToday($0.startTime) }
             .sorted { $0.startTime < $1.startTime }
         let topTaskTitles = todayTasks

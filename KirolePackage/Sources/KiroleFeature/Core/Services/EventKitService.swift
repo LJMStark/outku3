@@ -124,6 +124,7 @@ public actor EventKitService {
                 appleEventId: eventIdentifier.isEmpty ? nil : eventIdentifier,
                 appleCalendarId: event.calendar?.calendarIdentifier,
                 externalReference: externalReference,
+                iCalendarUID: event.calendarItemExternalIdentifier,
                 title: event.title ?? "Untitled Event",
                 startTime: event.startDate,
                 endTime: event.endDate,

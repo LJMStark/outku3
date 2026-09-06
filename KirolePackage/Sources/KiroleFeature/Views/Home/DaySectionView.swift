@@ -8,7 +8,7 @@ struct DaySectionView: View {
 
     private var eventsForDay: [CalendarEvent] {
         let calendar = Calendar.current
-        return appState.events
+        return appState.presentationEvents
             .filter { calendar.isDate($0.startTime, inSameDayAs: date) }
             .sorted { $0.startTime < $1.startTime }
     }

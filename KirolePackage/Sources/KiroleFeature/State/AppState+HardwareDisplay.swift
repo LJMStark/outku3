@@ -154,7 +154,7 @@ extension AppState {
             .filter { !$0.isCompleted }
             .prefix(3)
             .map(\.title)
-        let upcomingEventTitles = events
+        let upcomingEventTitles = presentationEvents
             .filter { $0.startTime >= now }
             .sorted { $0.startTime < $1.startTime }
             .prefix(2)

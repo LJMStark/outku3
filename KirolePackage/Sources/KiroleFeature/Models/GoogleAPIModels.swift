@@ -35,6 +35,7 @@ public struct GoogleCalendarEvent: Codable, Sendable {
     public let status: String?
     public let updated: String?
     public let etag: String?
+    public var iCalUID: String? = nil
 }
 
 public struct GoogleDateTime: Codable, Sendable {

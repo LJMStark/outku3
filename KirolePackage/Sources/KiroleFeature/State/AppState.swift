@@ -62,6 +62,13 @@ public final class AppState {
 
     // Tasks & Events
     public var events: [CalendarEvent] = []
+    /// Shared by the timeline, companion context and frozen hardware datasets.
+    public var presentationEvents: [CalendarEvent] {
+        CalendarEventPresentation.events(
+            from: events,
+            googleCalendarWriteAccess: AuthManager.shared.hasCalendarWriteAccess
+        )
+    }
     public var tasks: [TaskItem] = [] {
         didSet {
             recordTaskMutations(from: oldValue, to: tasks)

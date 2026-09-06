@@ -81,6 +81,8 @@ struct BuildSecretsLeakTests {
         #expect(AppSecrets.bleSharedSecret == "ble-secret")
     }
 
+    #if os(macOS)
+    // Running the build script requires Foundation.Process, which is unavailable on iOS.
     // The BLE secure channel is gated by firmware readiness, not by release channel
     // (BLE protocol §3.3 / §4.17, AGENTS.md "Release Channel Policy"). The switch is
     // BLE_SECURE_CHANNEL_ENABLED; these tests pin both of its sides.
@@ -161,6 +163,8 @@ struct BuildSecretsLeakTests {
         #expect(result.generatedSecrets == nil)
     }
 
+    #endif
+
     @Test("Xcode always regenerates secrets when switching release channels")
     func buildSecretsPhaseAlwaysRuns() throws {
         let projectURL = repositoryRootURL().appending(path: "Kirole.xcodeproj/project.pbxproj")
@@ -197,6 +201,7 @@ struct BuildSecretsLeakTests {
         #expect(!handler.contains("deviceIdentityStore.block("))
     }
 
+    #if os(macOS)
     // MARK: - Outlook Calendar release gate (MICROSOFT_OAUTH_ENABLED)
 
     /// The gate is what keeps Outlook Calendar out of customer Settings until Azure registration
@@ -335,6 +340,8 @@ struct BuildSecretsLeakTests {
             : nil
         return (process.terminationStatus, generatedSecrets)
     }
+
+    #endif
 
     private func repositoryRootURL() -> URL {
         URL(fileURLWithPath: #filePath)
