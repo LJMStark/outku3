@@ -16,3 +16,7 @@
 #include "Release.xcconfig"
 
 SWIFT_ACTIVE_COMPILATION_CONDITIONS = $(inherited) KIROLE_INTERNAL
+
+// Enable Outlook Calendar for internal acceptance after loading the shared defaults.
+// The build-secrets generator still requires a configured Microsoft public client ID.
+MICROSOFT_OAUTH_ENABLED = 1
