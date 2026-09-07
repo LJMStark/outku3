@@ -129,11 +129,16 @@ public struct EventDetailModal: View {
                 .padding(.bottom, 8)
 
             // Header
+            //
+            // A source label, not a link. No provider deep link is fetched for any calendar
+            // source — Google's `htmlLink`, Graph's `webLink` and the EventKit identifier are
+            // all absent from `CalendarEvent` — so an "Open In" affordance had nothing to open
+            // and read as a broken button on all three sources.
             HStack {
                 HStack(spacing: 6) {
-                    Text("Open In")
+                    Text("From")
                         .font(.system(size: 14))
-                        .foregroundStyle(theme.colors.primaryText)
+                        .foregroundStyle(theme.colors.secondaryText)
 
                     EventSourceIconView(source: event.source, size: 14)
 
@@ -141,11 +146,10 @@ public struct EventDetailModal: View {
                         .font(.system(size: 14))
                         .foregroundStyle(theme.colors.primaryText)
                         .lineLimit(1)
-
-                    Image(systemName: "arrow.up.forward.square")
-                        .font(.system(size: 12))
-                        .foregroundStyle(theme.colors.secondaryText)
                 }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("From \(event.source.rawValue)")
+                .accessibilityIdentifier("EventDetail_Source")
 
                 Spacer()
 
@@ -181,15 +185,13 @@ public struct EventDetailModal: View {
                             if let desc = event.description, !desc.isEmpty {
                                 Divider().padding(.leading, 48)
                                 EventDetailRow(icon: "text.alignleft", showPencil: false) {
-                                    VStack(alignment: .leading, spacing: 8) {
-                                        Text(desc)
-                                            .font(.system(size: 14))
-                                            .foregroundStyle(theme.colors.primaryText)
-                                            .lineSpacing(2)
-                                        Text("Tap to expand")
-                                            .font(.system(size: 12))
-                                            .foregroundStyle(theme.colors.secondaryText.opacity(0.8))
-                                    }
+                                    // No `lineLimit`, so the description is already shown in
+                                    // full. The former "Tap to expand" hint had no gesture
+                                    // behind it and implied hidden text that was never there.
+                                    Text(desc)
+                                        .font(.system(size: 14))
+                                        .foregroundStyle(theme.colors.primaryText)
+                                        .lineSpacing(2)
                                 }
                             }
                         }
