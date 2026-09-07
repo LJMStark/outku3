@@ -4,6 +4,7 @@ public struct Integration: Identifiable, Sendable, Codable {
     public let id: UUID
     public var name: String
     public var iconName: String
+    /// Persisted sync preference. Apple integrations also require current full EventKit access.
     public var isConnected: Bool
     public var type: IntegrationType
 
@@ -51,7 +52,7 @@ public enum IntegrationType: String, Sendable, Codable, CaseIterable {
     /// Every type the app knows how to connect. `microsoftToDo` is deliberately absent — see the
     /// case comment.
     public static var displayOrder: [IntegrationType] {
-        [.googleCalendar, .outlookCalendar, .appleCalendar, .appleReminders, .googleTasks]
+        [.googleCalendar, .googleTasks, .outlookCalendar, .appleCalendar, .appleReminders]
     }
 
     /// Customer Settings only lists providers that passed their release gate. A gated source stays

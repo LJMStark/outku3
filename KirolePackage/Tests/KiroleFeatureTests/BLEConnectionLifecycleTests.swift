@@ -259,13 +259,15 @@ struct BLEConnectionLifecycleTests {
 
         let task = Task { @MainActor in
             try await BLEConnectionRetryRunner.run(
+                startingAttempt: 6,
                 connect: {
                     connectCalls += 1
                     throw BLEError.connectionTimeout
                 },
-                wait: { _ in
+                wait: { delay in
+                    #expect(delay == .seconds(30))
                     didEnterWait = true
-                    try await Task.sleep(for: .seconds(30))
+                    try await Task.sleep(for: delay)
                 },
                 didWait: { didWaitCalls += 1 },
                 didCancel: { cancellationCleanups += 1 }
@@ -275,12 +277,14 @@ struct BLEConnectionLifecycleTests {
         while !didEnterWait {
             await Task.yield()
         }
+        let cancelledAt = ContinuousClock.now
         task.cancel()
 
         do {
             try await task.value
             Issue.record("Expected CancellationError")
         } catch is CancellationError {
+            #expect(cancelledAt.duration(to: .now) < .seconds(2))
             #expect(connectCalls == 1)
             #expect(didWaitCalls == 0)
             #expect(cancellationCleanups == 1)

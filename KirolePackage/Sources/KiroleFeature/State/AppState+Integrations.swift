@@ -7,7 +7,7 @@ extension AppState {
     /// a later gate-0 build would go on syncing Outlook in the background — the gate could stop new
     /// connections but never stop existing ones, which is the case an emergency rollback needs.
     func isIntegrationConnected(_ type: IntegrationType) -> Bool {
-        type.isAvailable && integrationCoordinator.hasIntegration(type, integrations: integrations)
+        isIntegrationEnabled(type) && (applePermission(for: type).map { $0 == .fullAccess } ?? true)
     }
 
     public func syncIntegrationStatusFromAuth() {
@@ -56,6 +56,10 @@ extension AppState {
 
         if !isConnected {
             cleanupDisconnectedIntegrationData(for: type)
+            if type == .appleCalendar || type == .appleReminders {
+                remoteSyncErrors.removeValue(forKey: type.rawValue)
+                remoteSyncWarnings.removeValue(forKey: type.rawValue)
+            }
         }
 
         reconcileAppleChangeObserver()

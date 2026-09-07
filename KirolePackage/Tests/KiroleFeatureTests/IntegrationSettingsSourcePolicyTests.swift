@@ -35,6 +35,17 @@ struct IntegrationSettingsSourcePolicyTests {
         #expect(!settings.contains("ProviderProjectSelectionSheet"))
     }
 
+    @Test("Unavailable Apple permissions keep a connection and system-settings recovery path")
+    func applePermissionRecoveryIsReachable() throws {
+        let settings = try settingsIntegrationSource()
+        let content = try sourceFile(path: "KirolePackage/Sources/KiroleFeature/ContentView.swift")
+        #expect(settings.contains("appState.isIntegrationConnected($0.type)"))
+        #expect(settings.contains("applePermissionRecovery(for: type)"))
+        #expect(settings.contains("UIApplication.openSettingsURLString"))
+        #expect(content.contains("await appState.refreshApplePermissions(syncRestoredAccess: true)"))
+        #expect(!settings.contains("isConnected: granted"))
+    }
+
     private func settingsIntegrationSource() throws -> String {
         try sourceFile(
             path: "KirolePackage/Sources/KiroleFeature/Views/Settings/SettingsIntegrationSection.swift"

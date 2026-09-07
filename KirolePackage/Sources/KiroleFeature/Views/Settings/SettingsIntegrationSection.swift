@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 // MARK: - Settings Integration Section
 
@@ -19,7 +22,9 @@ public struct SettingsIntegrationSection: View {
     /// appear as connected either, or a gate-0 build would still show a row for a device that
     /// connected under a gate-1 build.
     private var connectedIntegrations: [Integration] {
-        appState.integrations.filter { $0.isConnected && $0.type.isAvailable }
+        IntegrationType.availableDisplayOrder.compactMap { type in
+            appState.integrations.first { $0.type == type }
+        }.filter { appState.isIntegrationConnected($0.type) }
     }
 
     private var connectedTypes: Set<IntegrationType> {
@@ -66,6 +71,10 @@ public struct SettingsIntegrationSection: View {
             .background(theme.colors.cardBackground)
             .clipShape(RoundedRectangle(cornerRadius: 24))
             .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
+        }
+        .task {
+            await appState.ensureInitialLoadComplete()
+            await appState.refreshApplePermissions(syncRestoredAccess: true)
         }
         .alert("Disconnect Integration", isPresented: Binding(
             get: { disconnectTarget != nil },
@@ -247,12 +256,48 @@ public struct SettingsIntegrationSection: View {
                     .disabled(isConnecting || isDisconnecting)
                     .opacity((isConnecting || isDisconnecting) ? 0.5 : 1.0)
 
+                    applePermissionRecovery(for: type)
+
                     if index < types.count - 1 {
                         Divider().padding(.leading, 52)
                     }
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private func applePermissionRecovery(for type: IntegrationType) -> some View {
+        if let permission = appState.applePermission(for: type),
+           let message = permission.message(for: type) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(message)
+                    .font(.system(size: 12))
+                    .foregroundStyle(theme.colors.secondaryText)
+                    .accessibilityIdentifier("Integration_Permission_\(type.rawValue)")
+                #if canImport(UIKit)
+                if permission.needsSettings {
+                    Button("Open Settings") { openApplePermissionSettings(for: type) }
+                        .accessibilityIdentifier("Integration_Settings_\(type.rawValue)")
+                }
+                #endif
+                if appState.isIntegrationEnabled(type), permission != .notDetermined {
+                    Button("Disconnect \(type.rawValue)") { disconnectTarget = type }
+                        .accessibilityIdentifier("Integration_Disconnect_\(type.rawValue)")
+                }
+            }
+            .font(.system(size: 12, weight: .medium))
+            .padding(.horizontal, 4)
+            .padding(.bottom, 12)
+        }
+    }
+
+    private func openApplePermissionSettings(for type: IntegrationType) {
+        #if canImport(UIKit)
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        appState.updateIntegrationStatus(type, isConnected: true)
+        UIApplication.shared.open(url)
+        #endif
     }
 
     private func connectIntegration(_ type: IntegrationType) async {
@@ -306,17 +351,27 @@ public struct SettingsIntegrationSection: View {
     }
 
     private func connectAppleCalendarIntegration() async {
+        await appState.refreshApplePermissions()
+        appState.updateIntegrationStatus(.appleCalendar, isConnected: true)
+        if appState.appleCalendarPermission.needsSettings {
+            openApplePermissionSettings(for: .appleCalendar)
+            return
+        }
         await AppleSyncEngine.shared.setEventCalendarSelectionMode(.nativeAppleCalendar)
         let granted = await appState.requestAppleCalendarAccess()
-        appState.updateIntegrationStatus(.appleCalendar, isConnected: granted)
         if granted {
             await appState.syncAppleCalendarEvents()
         }
     }
 
     private func connectAppleRemindersIntegration() async {
+        await appState.refreshApplePermissions()
+        appState.updateIntegrationStatus(.appleReminders, isConnected: true)
+        if appState.appleRemindersPermission.needsSettings {
+            openApplePermissionSettings(for: .appleReminders)
+            return
+        }
         let granted = await appState.requestAppleRemindersAccess()
-        appState.updateIntegrationStatus(.appleReminders, isConnected: granted)
         if granted {
             await appState.syncAppleReminders()
         }

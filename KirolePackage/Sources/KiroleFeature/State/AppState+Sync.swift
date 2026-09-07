@@ -56,6 +56,7 @@ extension AppState {
         // 等启动本地加载完成再同步：否则会抢在集成连接状态恢复之前按 defaultIntegrations(Apple=true)
         // 同步，把用户刚断开/清掉的 Apple 数据又导入回来（B4 启动竞态）。
         await ensureInitialLoadComplete()
+        await refreshApplePermissions()
         syncIntegrationStatusFromAuth()
 
         for target in connectedExternalSyncTargets() {
@@ -164,6 +165,7 @@ extension AppState {
     }
 
     public func syncAppleCalendarEvents() async {
+        await refreshApplePermissions()
         guard isIntegrationConnected(.appleCalendar) else { return }
         let syncGeneration = externalSyncGeneration(for: .apple)
 
@@ -187,13 +189,16 @@ extension AppState {
         } catch {
             guard canCommitExternalSync(.apple, generation: syncGeneration) else { return }
             let appError = AppError.sync(component: "Apple Calendar", underlying: error.localizedDescription)
-            lastError = UserFacingErrorMapper.message(for: appError)
+            await refreshApplePermissions()
+            lastError = appleCalendarPermission.message(for: .appleCalendar)
+                ?? UserFacingErrorMapper.message(for: appError)
             remoteSyncErrors["Apple Calendar"] = lastError
             ErrorReporter.log(appError, context: "AppState.syncAppleCalendarEvents")
         }
     }
 
     public func syncAppleReminders() async {
+        await refreshApplePermissions()
         guard isIntegrationConnected(.appleReminders) else { return }
         let syncGeneration = externalSyncGeneration(for: .apple)
 
@@ -212,7 +217,9 @@ extension AppState {
         } catch {
             guard canCommitExternalSync(.apple, generation: syncGeneration) else { return }
             let appError = AppError.sync(component: "Apple Reminders", underlying: error.localizedDescription)
-            lastError = UserFacingErrorMapper.message(for: appError)
+            await refreshApplePermissions()
+            lastError = appleRemindersPermission.message(for: .appleReminders)
+                ?? UserFacingErrorMapper.message(for: appError)
             remoteSyncErrors["Apple Reminders"] = lastError
             ErrorReporter.log(appError, context: "AppState.syncAppleReminders")
         }
@@ -222,6 +229,7 @@ extension AppState {
         // 纵深防御：syncAppleData 是 public，且 Apple change observer 回调会直接调它（绕过
         // syncConnectedExternalData）。自带等待，确保任何入口都不会在集成连接状态恢复前导入。
         await ensureInitialLoadComplete()
+        await refreshApplePermissions()
         guard let syncGeneration = beginExternalSync(.apple) else { return }
         defer { finishExternalSync(.apple, generation: syncGeneration) }
 
@@ -241,11 +249,19 @@ extension AppState {
     }
 
     public func requestAppleCalendarAccess() async -> Bool {
-        await eventKitService.requestCalendarAccess()
+        _ = await eventKitService.requestCalendarAccess()
+        await refreshApplePermissions()
+        let granted = appleCalendarPermission == .fullAccess
+        if !granted { recordApplePermissionFailure(for: .appleCalendar) }
+        return granted
     }
 
     public func requestAppleRemindersAccess() async -> Bool {
-        await eventKitService.requestRemindersAccess()
+        _ = await eventKitService.requestRemindersAccess()
+        await refreshApplePermissions()
+        let granted = appleRemindersPermission == .fullAccess
+        if !granted { recordApplePermissionFailure(for: .appleReminders) }
+        return granted
     }
 
     public func setupAppleChangeObserver() async {

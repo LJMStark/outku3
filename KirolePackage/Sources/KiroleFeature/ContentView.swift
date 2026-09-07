@@ -257,6 +257,8 @@ public struct ContentView: View {
                     isFocusScreenHidden = false
                 }
                 Task {
+                    await appState.ensureInitialLoadComplete()
+                    await appState.refreshApplePermissions(syncRestoredAccess: true)
                     await appState.handleAppDidBecomeActive()
                     if appState.hasCompletedInitialHomeLoad {
                         await SyncScheduler.shared.syncOnResume()

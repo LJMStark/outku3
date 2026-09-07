@@ -11,6 +11,8 @@ public struct DeviceModeSection: View {
     @State private var isScanButtonPressed = false
     @State private var scannedDevices: [BLEDevice] = []
     @State private var connectingDeviceID: UUID?
+    @State private var connectionAttemptID: UUID?
+    @State private var connectionTask: Task<Void, Never>?
 
     public init() {}
 
@@ -20,10 +22,9 @@ public struct DeviceModeSection: View {
 
             VStack(spacing: 12) {
                 deviceCard
+                connectionAction
 
                 if !bleService.connectionState.isConnected {
-                    connectionAction
-
                     if !visibleDevices.isEmpty {
                         discoveredDeviceList
                     }
@@ -152,21 +153,26 @@ public struct DeviceModeSection: View {
                 .accessibilityIdentifier("Settings_DeviceFindHardware")
                 .disabled(!canStartScan)
 
-                if bleService.connectionState.isConnected {
+                if bleService.connectionState == .connecting || bleService.connectionState.isConnected {
                     Button {
+                        connectionAttemptID = nil
+                        connectionTask?.cancel()
+                        connectionTask = nil
+                        connectingDeviceID = nil
                         bleService.disconnect()
                         scannedDevices = []
                         scanError = nil
                     } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 13, weight: .bold))
+                        Text(bleService.connectionState == .connecting ? "Cancel" : "Disconnect")
+                            .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(theme.colors.secondaryText)
-                            .frame(width: 38, height: 38)
+                            .padding(.horizontal, 12)
+                            .frame(height: 38)
                             .background(theme.colors.cardBackground)
-                            .clipShape(Circle())
+                            .clipShape(Capsule())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Disconnect hardware")
+                    .accessibilityLabel(bleService.connectionState == .connecting ? "Cancel hardware connection" : "Disconnect hardware")
                     .accessibilityIdentifier("Settings_DeviceDisconnect")
                 }
             }
@@ -187,7 +193,7 @@ public struct DeviceModeSection: View {
         VStack(spacing: 8) {
             ForEach(visibleDevices) { device in
                 Button {
-                    Task { await connect(to: device) }
+                    connect(to: device)
                 } label: {
                     HStack(spacing: 12) {
                         Image(systemName: "display")
@@ -226,7 +232,7 @@ public struct DeviceModeSection: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Connect to \(device.name)")
                 .accessibilityIdentifier("Settings_DeviceConnect_\(device.id.uuidString)")
-                .disabled(connectingDeviceID != nil)
+                .disabled(connectingDeviceID != nil || bleService.connectionState == .connecting)
             }
         }
     }
@@ -293,6 +299,10 @@ public struct DeviceModeSection: View {
             return "Connected to \(device.name)."
         }
 
+        if bleService.connectionState == .connecting {
+            return "Waiting for your Kirole device. Cancel to search again."
+        }
+
         if isScanInFlight {
             return "Searching nearby Kirole devices."
         }
@@ -326,17 +336,31 @@ public struct DeviceModeSection: View {
         }
     }
 
-    private func connect(to device: BLEDevice) async {
+    private func connect(to device: BLEDevice) {
+        guard connectingDeviceID == nil else { return }
+        let attemptID = UUID()
         scanError = nil
+        connectionAttemptID = attemptID
         connectingDeviceID = device.id
         bleService.stopScanning()
-        defer { connectingDeviceID = nil }
-
-        do {
-            try await bleService.connect(to: device)
-            scannedDevices = []
-        } catch {
-            scanError = error.localizedDescription
+        connectionTask = Task { @MainActor in
+            guard connectionAttemptID == attemptID, !Task.isCancelled else { return }
+            defer {
+                // A cancelled attempt may finish after the user has already started another one.
+                if connectionAttemptID == attemptID {
+                    connectingDeviceID = nil
+                    connectionAttemptID = nil
+                    connectionTask = nil
+                }
+            }
+            do {
+                try await bleService.connect(to: device)
+                guard connectionAttemptID == attemptID, !Task.isCancelled else { return }
+                scannedDevices = []
+            } catch {
+                guard connectionAttemptID == attemptID, !Task.isCancelled else { return }
+                scanError = error.localizedDescription
+            }
         }
     }
 }

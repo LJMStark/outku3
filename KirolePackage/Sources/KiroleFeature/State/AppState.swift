@@ -99,6 +99,12 @@ public final class AppState {
 
     // Integrations
     public var integrations: [Integration] = Integration.defaultIntegrations
+    var appleCalendarPermission = AppleIntegrationPermission.current(for: .appleCalendar)
+    var appleRemindersPermission = AppleIntegrationPermission.current(for: .appleReminders)
+    @ObservationIgnored
+    var applePermissionProvider: () -> (calendar: AppleIntegrationPermission, reminders: AppleIntegrationPermission) = {
+        (.current(for: .appleCalendar), .current(for: .appleReminders))
+    }
     /// Once connection preferences have been loaded or bootstrapped, auth scopes must not
     /// silently turn a user-disabled integration back on.
     @ObservationIgnored var hasExplicitIntegrationConnectionPreferences = false
@@ -287,7 +293,11 @@ public final class AppState {
     }
 
     static func makeForTesting() -> AppState {
-        AppState(loadLocalDataOnInit: false)
+        let state = AppState(loadLocalDataOnInit: false)
+        state.appleCalendarPermission = .fullAccess
+        state.appleRemindersPermission = .fullAccess
+        state.applePermissionProvider = { (.fullAccess, .fullAccess) }
+        return state
     }
 
     func taskMutationGeneration(for taskID: String) -> UInt64 {

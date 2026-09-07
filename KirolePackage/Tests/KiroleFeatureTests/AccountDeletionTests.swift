@@ -336,10 +336,10 @@ struct CustomerSettingsAccountPolicyTests {
     func displayOrderContainsOnlySupportedIntegrations() {
         #expect(IntegrationType.displayOrder == [
             .googleCalendar,
+            .googleTasks,
             .outlookCalendar,
             .appleCalendar,
             .appleReminders,
-            .googleTasks,
         ])
     }
 
