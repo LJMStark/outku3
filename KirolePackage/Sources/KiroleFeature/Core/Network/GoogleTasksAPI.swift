@@ -283,12 +283,15 @@ public actor GoogleTasksAPI {
         formatter.formatOptions = [.withInternetDateTime]
         let dueString = task.dueDate.map { formatter.string(from: $0) }
 
+        // Whole-task write: a nil `notes`/`due` here is the user having cleared the field, so
+        // it has to reach Google as an explicit null rather than an omitted key.
         let updateRequest = GoogleTaskUpdateRequest(
             title: task.title,
             notes: task.notes,
             due: dueString,
             status: task.isCompleted ? "completed" : "needsAction",
-            completed: task.isCompleted ? formatter.string(from: Date()) : nil
+            completed: task.isCompleted ? formatter.string(from: Date()) : nil,
+            writesClearedFields: true
         )
 
         let remoteTask: GoogleTask = try await networkClient.patch(

@@ -137,19 +137,59 @@ public struct GoogleTaskListsResponse: Codable, Sendable {
 
 // MARK: - Google Task Update Request
 
-public struct GoogleTaskUpdateRequest: Codable, Sendable {
+/// Encode-only: this is a PATCH body and is never decoded. `NetworkClient.patch` needs the
+/// body to be `Encodable` alone.
+///
+/// Google Tasks reads an omitted key as "leave this field unchanged", while Swift's synthesized
+/// encoder drops every nil via `encodeIfPresent`. A whole-task write therefore has to send
+/// `notes` and `due` as explicit JSON null, or clearing them round-trips as a no-op and the
+/// response hands back the value the user just removed. Partial writes must keep omitting them
+/// so they never wipe a field they were not given.
+public struct GoogleTaskUpdateRequest: Encodable, Sendable {
     public let title: String?
     public let notes: String?
     public let due: String?
     public let status: String?
     public let completed: String?
+    /// `true` only for a whole-task write, where a nil `notes`/`due` means the user cleared it.
+    private let writesClearedFields: Bool
 
-    public init(title: String? = nil, notes: String? = nil, due: String? = nil, status: String? = nil, completed: String? = nil) {
+    public init(
+        title: String? = nil,
+        notes: String? = nil,
+        due: String? = nil,
+        status: String? = nil,
+        completed: String? = nil,
+        writesClearedFields: Bool = false
+    ) {
         self.title = title
         self.notes = notes
         self.due = due
         self.status = status
         self.completed = completed
+        self.writesClearedFields = writesClearedFields
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case title, notes, due, status, completed
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        // Never nil on a whole-task write, and absent on the completion-only writes below.
+        try container.encodeIfPresent(title, forKey: .title)
+        try container.encodeIfPresent(status, forKey: .status)
+        // Google clears `completed` itself when `status` becomes needsAction, so a null here
+        // would be redundant rather than corrective.
+        try container.encodeIfPresent(completed, forKey: .completed)
+
+        for (value, key) in [(notes, CodingKeys.notes), (due, CodingKeys.due)] {
+            if let value {
+                try container.encode(value, forKey: key)
+            } else if writesClearedFields {
+                try container.encodeNil(forKey: key)
+            }
+        }
     }
 
     public static func markCompleted() -> GoogleTaskUpdateRequest {
