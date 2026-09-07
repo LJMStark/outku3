@@ -56,7 +56,7 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
     /// Last known device battery level (0-100). Updated on DeviceWake and LowBattery events.
     /// nil until the device reports a level.
     public internal(set) var deviceBatteryLevel: Int?
-    /// 最近一次实时 DeviceWake(0x30) 上报的固件版本（协议 v2.5.19+；旧固件为 nil）。
+    /// Firmware reported by DeviceWake in this connection; never reused across devices or reconnects.
     public internal(set) var deviceFirmwareVersion: FirmwareVersion?
     /// 0x22 设备结果回调。AppState 按 operationID 过滤迟到结果并推进持久化操作状态。
     @ObservationIgnored
@@ -345,6 +345,7 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
         }
         // 同步占位（@MainActor 串行保证原子）。新连接周期开始，清除主动断开标记。
         connectionState = .connecting
+        deviceFirmwareVersion = nil
         isIntentionalDisconnect = false
         connectGeneration &+= 1
         let generation = connectGeneration
@@ -760,6 +761,7 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
         ) else { return false }
 
         connectionState = .connecting
+        deviceFirmwareVersion = nil
         isIntentionalDisconnect = false
         connectGeneration &+= 1
         securityManager.resetSession()
@@ -1680,6 +1682,7 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
         writeCharacteristic = nil
         notifyCharacteristic = nil
         connectedDevice = nil
+        deviceFirmwareVersion = nil
         connectionState = .disconnected
     }
 

@@ -140,7 +140,7 @@ struct SettingsToggleSwitch: View {
     }
 }
 
-// MARK: - About / Data Sources Section
+// MARK: - About Section
 
 private struct SettingsAboutSection: View {
     @Environment(AppState.self) private var appState
@@ -152,9 +152,25 @@ private struct SettingsAboutSection: View {
             ?? URL(string: Weather.appleWeatherLegalURLString)!
     }
 
+    private var appVersion: String? {
+        guard let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
+              !version.isEmpty else { return nil }
+        guard let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String,
+              !build.isEmpty else { return version }
+        return "\(version) (\(build))"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SettingsSectionHeader(title: "Data Sources")
+            SettingsSectionHeader(title: "About Kirole")
+
+            SettingsVersionRow(
+                title: "App Version",
+                value: appVersion ?? "Unavailable",
+                icon: "info.circle",
+                identifier: "Settings_AppVersion",
+                copyValue: appVersion
+            )
 
             Link(destination: Self.privacyPolicyURL) {
                 HStack(spacing: 12) {

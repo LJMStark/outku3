@@ -25,6 +25,7 @@ public struct SettingsBLESection: View {
             if hasStoredIdentity {
                 pairedDeviceCard
             }
+            firmwareVersionCard
             screenSizeCard
 
             #if DEBUG
@@ -50,6 +51,29 @@ public struct SettingsBLESection: View {
         } message: {
             Text("This disconnects the current device and removes its pairing record. You can pair a Kirole device again afterward.")
         }
+    }
+
+    private var firmwareVersionCard: some View {
+        let version = bleService.connectionState.isConnected
+            ? bleService.deviceFirmwareVersion?.description
+            : nil
+        let status: String
+        switch bleService.connectionState {
+        case .connected:
+            status = "Not reported"
+        case .connecting:
+            status = "Connecting…"
+        default:
+            status = "Connect to view"
+        }
+
+        return SettingsVersionRow(
+            title: "Firmware Version",
+            value: version ?? status,
+            icon: "cpu",
+            identifier: "Settings_FirmwareVersion",
+            copyValue: version
+        )
     }
 
     private var pairedDeviceCard: some View {
