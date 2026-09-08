@@ -214,14 +214,12 @@ public struct EventDetailModal: View {
                         }
                     }
 
-                    // Repeat Card
-                    EventDetailCard {
-                        EventDetailRow(icon: "arrow.2.squarepath", showPencil: true, onPencilTap: { showEditSheet = true }) {
-                            Text("Does not repeat")
-                                .font(.system(size: 14))
-                                .foregroundStyle(theme.colors.primaryText)
-                        }
-                    }
+                    // No Repeat card: nothing in the app knows an event's recurrence. No provider
+                    // model fetches it (Google `recurrence`, Graph `recurringEventId`, EventKit
+                    // `recurrenceRules` are all unread), CalendarEvent has no field for it, and
+                    // EventEditSheet has no control to change it. The card used to state "Does not
+                    // repeat" unconditionally — wrong for every recurring event — behind a pencil
+                    // that opened a sheet which could not edit repetition either.
 
                     // Email Card
                     if !event.participants.isEmpty {
