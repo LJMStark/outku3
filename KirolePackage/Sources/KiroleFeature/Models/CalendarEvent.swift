@@ -81,6 +81,29 @@ public struct CalendarEvent: Identifiable, Sendable, Codable {
         return "\(minutes)m"
     }
 
+    /// Whether the timeline should list this event under `day`: the day it starts on, plus every
+    /// day it continues into. An Outlook all-day event covering Sep 7–8 arrives as
+    /// Sep 7 00:00 → Sep 9 00:00 and used to appear under Sep 7 alone.
+    ///
+    /// The span test is half-open — `endTime > dayStart`, never `>=` — because an all-day event
+    /// ends at the *next* midnight. `>=` would list that Sep 7–8 event under Sep 9 as well, and
+    /// would push a 23:00–24:00 event into the following morning.
+    ///
+    /// The start-day clause is kept as its own branch so this rule can only ever add days: it
+    /// matches everything the previous `isDate(startTime, inSameDayAs:)` filter matched, including
+    /// a zero-length event sitting exactly on midnight, which the span test alone would drop.
+    ///
+    /// **Timeline only.** The hardware path — `ScheduleV2Codec`, `HardwareContentFingerprint`,
+    /// `DayPackGenerator` — filters by start day deliberately, and `EventSummary.init(from:)`
+    /// already clamps a multi-day event to `"23:59"` on that day. Widening those would spend
+    /// several of the 8 `ScheduleV2Codec.maxEvents` slots on repeats of one event.
+    public func covers(day: Date, calendar: Calendar = .current) -> Bool {
+        if calendar.isDate(startTime, inSameDayAs: day) { return true }
+        let dayStart = calendar.startOfDay(for: day)
+        guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else { return false }
+        return startTime < dayEnd && endTime > dayStart
+    }
+
     // 从 Google API 响应创建
     public static func from(
         googleEvent: GoogleCalendarEvent,

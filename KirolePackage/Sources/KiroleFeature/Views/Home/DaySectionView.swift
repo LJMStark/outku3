@@ -6,10 +6,12 @@ struct DaySectionView: View {
 
     @Environment(AppState.self) private var appState
 
+    /// Multi-day events list under every day they cover, not just the day they start on — see
+    /// `CalendarEvent.covers(day:calendar:)` for why the span test is half-open, and why the
+    /// hardware encoders keep filtering by start day instead.
     private var eventsForDay: [CalendarEvent] {
-        let calendar = Calendar.current
-        return appState.presentationEvents
-            .filter { calendar.isDate($0.startTime, inSameDayAs: date) }
+        appState.presentationEvents
+            .filter { $0.covers(day: date) }
             .sorted { $0.startTime < $1.startTime }
     }
 
