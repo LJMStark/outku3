@@ -39,7 +39,7 @@ Kirole 是 **硬件优先的宠物陪伴产品**：硬件 E-ink 设备是用户�
 
 ## Development Rules
 1. After any frontend / UI change, rebuild and launch the simulator to visually verify. Do not mark UI work complete without this check.
-2. The project is in rapid iteration: `LocalStorage`, `UserDefaults`, on-device JSON, and BLE payload shapes are disposable. Prefer resetting local data over writing migration shims until hardware/TestFlight consumers exist (see AGENTS.md §2 "Current Phase Policy").
+2. **Shipped since 2026-09-08 — local data is no longer disposable.** The old "reset local data instead of migrating" rule expired when the app reached the App Store. Never reset a customer's `LocalStorage` / `UserDefaults` / on-device JSON, and make every new field on a persisted model (`CalendarEvent`, `TaskItem`, `Pet`, `FocusSession`, …) **Optional** — Swift's synthesized `Codable` then stays backward compatible with JSON written by older builds and no migration code is needed. A non-Optional addition throws `keyNotFound` and silently takes the whole file with it. BLE payloads are unaffected: they were already a flag-day firmware contract. Full boundary: AGENTS.md §2 "Current Phase Policy".
 
 ## Architecture at a Glance
 
