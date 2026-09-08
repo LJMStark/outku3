@@ -69,7 +69,7 @@ struct DayTimelineView: View {
                 }
             } else {
                 ForEach(Array(events.enumerated()), id: \.element.id) { index, event in
-                    TimelineEventCardRow(event: event, delay: 0)
+                    TimelineEventCardRow(event: event, day: date, delay: 0)
 
                     if showPet && index == min(petInsertAfter - 1, events.count - 1) {
                         HaikuSectionView(delay: 0)
@@ -140,17 +140,33 @@ struct TimelineEmptyStateRow: View {
 
 struct TimelineEventCardRow: View {
     let event: CalendarEvent
+    /// The day this row sits under. A multi-day event renders once per covered day, so the row
+    /// shows that day's slice — otherwise a day the event only continues into would repeat the
+    /// original start time and the event's whole span, e.g. "22:00 / 4h" on the morning after.
+    let day: Date
     let delay: Double
 
     @Environment(AppState.self) private var appState
     @Environment(ThemeManager.self) private var theme
     @State private var appeared = false
 
+    private var daySlice: DateInterval? { event.slice(on: day) }
+
+    private var timeText: String {
+        guard !event.isAllDay else { return "All Day" }
+        return AppDateFormatters.time.string(from: daySlice?.start ?? event.startTime)
+    }
+
+    private var durationText: String {
+        guard !event.isAllDay else { return "All Day" }
+        return CalendarEvent.durationText(for: daySlice?.duration ?? event.duration)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Time header
             HStack {
-                Text(event.isAllDay ? "All Day" : AppDateFormatters.time.string(from: event.startTime))
+                Text(timeText)
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(theme.colors.secondaryText)
                     .frame(width: 64, alignment: .leading)
@@ -166,7 +182,7 @@ struct TimelineEventCardRow: View {
 
                 EventCardView(
                     title: event.title,
-                    duration: event.isAllDay ? "All Day" : event.durationText,
+                    duration: durationText,
                     participants: event.participants.count,
                     description: event.description ?? "",
                     source: event.source,

@@ -111,8 +111,13 @@ public enum ScheduleV2Codec {
             ]
         }
 
-        let dayStart = calendar.startOfDay(for: day)
-        guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else { return [] }
+        // `dateInterval` rather than startOfDay + 1 day: on a DST day that springs forward at
+        // midnight (America/Santiago, 2027-09-05) the day begins at 01:00, and adding a calendar
+        // day lands on 01:00 the next morning — an hour past the real boundary, which pulled a
+        // 00:30 event from the following day into this one.
+        guard let dayInterval = calendar.dateInterval(of: .day, for: day) else { return [] }
+        let dayStart = dayInterval.start
+        let dayEnd = dayInterval.end
         let start = event.startTime
         let end = event.endTime
         guard start < dayEnd, end > dayStart else { return [] }

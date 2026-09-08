@@ -96,6 +96,74 @@ struct CalendarEventDayCoverageTests {
         #expect(subject.covers(day: date(8), calendar: calendar))
     }
 
+    // MARK: - Day boundaries under DST
+
+    @Test("A day that springs forward at midnight does not absorb the next day's early events")
+    func dstMidnightShiftDoesNotAbsorbNextDay() throws {
+        var santiago = Calendar(identifier: .gregorian)
+        santiago.timeZone = try #require(TimeZone(identifier: "America/Santiago"))
+
+        let dstDay = try #require(santiago.date(from: DateComponents(year: 2027, month: 9, day: 5)))
+        let dayInterval = try #require(santiago.dateInterval(of: .day, for: dstDay))
+        // Premise check: Chile jumps 00:00 to 01:00, so this day starts at 01:00 and runs 23h.
+        // `startOfDay + 1 day` therefore lands at 01:00 the next morning — an hour past the real
+        // boundary — which is exactly the window the events below fall into.
+        #expect(dayInterval.duration == 23 * 3600)
+        let naiveEnd = try #require(santiago.date(byAdding: .day, value: 1, to: dayInterval.start))
+        #expect(naiveEnd > dayInterval.end)
+
+        let nextDay = try #require(santiago.date(from: DateComponents(year: 2027, month: 9, day: 6)))
+        let earlyNextMorning = try #require(
+            santiago.date(from: DateComponents(year: 2027, month: 9, day: 6, hour: 0, minute: 30))
+        )
+        let subject = CalendarEvent(
+            title: "Next morning",
+            startTime: earlyNextMorning,
+            endTime: earlyNextMorning.addingTimeInterval(1800)
+        )
+
+        #expect(!subject.covers(day: dstDay, calendar: santiago))
+        #expect(subject.covers(day: nextDay, calendar: santiago))
+        // The wire encoder carried the same boundary bug independently of the timeline.
+        #expect(ScheduleV2Codec.dayRows(from: subject, on: dstDay, calendar: santiago).isEmpty)
+        #expect(ScheduleV2Codec.dayRows(from: subject, on: nextDay, calendar: santiago).count == 1)
+    }
+
+    // MARK: - Per-day slices drive what the timeline prints
+
+    @Test("A continuation day shows its own slice, not the previous day's start time")
+    func continuationDayShowsItsOwnSlice() throws {
+        let subject = event(start: date(7, 22), end: date(8, 2))
+
+        let firstDay = try #require(subject.slice(on: date(7), calendar: calendar))
+        let secondDay = try #require(subject.slice(on: date(8), calendar: calendar))
+
+        #expect(firstDay.start == date(7, 22))
+        #expect(firstDay.end == date(8))
+        // The reported defect: this used to print 22:00 and the event's whole 4h span.
+        #expect(secondDay.start == date(8))
+        #expect(secondDay.end == date(8, 2))
+        #expect(CalendarEvent.durationText(for: secondDay.duration) == "2h")
+    }
+
+    @Test("A single-day event slices to itself, so its row is unchanged")
+    func sameDayEventSlicesToItself() throws {
+        let subject = event(start: date(7, 17), end: date(7, 18))
+
+        let slice = try #require(subject.slice(on: date(7), calendar: calendar))
+
+        #expect(slice.start == subject.startTime)
+        #expect(slice.end == subject.endTime)
+        #expect(CalendarEvent.durationText(for: slice.duration) == subject.durationText)
+    }
+
+    @Test("A day the event does not cover has no slice")
+    func uncoveredDayHasNoSlice() {
+        let subject = event(start: date(7, 17), end: date(7, 18))
+
+        #expect(subject.slice(on: date(8), calendar: calendar) == nil)
+    }
+
     @Test("For timed events the wire already agreed with the timeline, and still slices per day")
     func timedEventAgreesWithTheWire() {
         let subject = event(start: date(7, 22), end: date(8, 2))

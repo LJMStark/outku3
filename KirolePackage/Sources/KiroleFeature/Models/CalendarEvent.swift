@@ -74,8 +74,14 @@ public struct CalendarEvent: Identifiable, Sendable, Codable {
     }
 
     public var durationText: String {
-        let hours = Int(duration / 3600)
-        let minutes = Int((duration.truncatingRemainder(dividingBy: 3600)) / 60)
+        Self.durationText(for: duration)
+    }
+
+    /// Shared by `durationText` and the timeline, which formats a single day's slice of a
+    /// multi-day event rather than the event's whole span.
+    public static func durationText(for interval: TimeInterval) -> String {
+        let hours = Int(interval / 3600)
+        let minutes = Int((interval.truncatingRemainder(dividingBy: 3600)) / 60)
         if hours > 0 && minutes > 0 { return "\(hours)h \(minutes)m" }
         if hours > 0 { return "\(hours)h" }
         return "\(minutes)m"
@@ -99,9 +105,24 @@ public struct CalendarEvent: Identifiable, Sendable, Codable {
     /// several of the 8 `ScheduleV2Codec.maxEvents` slots on repeats of one event.
     public func covers(day: Date, calendar: Calendar = .current) -> Bool {
         if calendar.isDate(startTime, inSameDayAs: day) { return true }
-        let dayStart = calendar.startOfDay(for: day)
-        guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else { return false }
-        return startTime < dayEnd && endTime > dayStart
+        guard let dayInterval = calendar.dateInterval(of: .day, for: day) else { return false }
+        return startTime < dayInterval.end && endTime > dayInterval.start
+    }
+
+    /// The part of this event that falls inside `day`, clamped to that day's real bounds, or
+    /// `nil` when the event does not cover the day.
+    ///
+    /// The timeline formats this instead of `startTime`/`duration`, so a day the event merely
+    /// continues into reads "00:00" and that day's own length, rather than repeating the previous
+    /// day's start time next to the whole event's span. Same slicing `ScheduleV2Codec.dayRows`
+    /// already applies on the wire.
+    public func slice(on day: Date, calendar: Calendar = .current) -> DateInterval? {
+        guard covers(day: day, calendar: calendar),
+              let dayInterval = calendar.dateInterval(of: .day, for: day) else { return nil }
+        let sliceStart = max(startTime, dayInterval.start)
+        let sliceEnd = min(endTime, dayInterval.end)
+        guard sliceEnd >= sliceStart else { return nil }
+        return DateInterval(start: sliceStart, end: sliceEnd)
     }
 
     // 从 Google API 响应创建
