@@ -1,0 +1,35 @@
+{
+  "checked_at": "2026-09-07T00:24:49Z",
+  "app_id": "6759663377",
+  "version": "2.0.2",
+  "version_id": "90468642-7fa9-4744-a2de-34da920286c2",
+  "build": "661",
+  "build_id": "60fcb5e8-6a26-4803-a529-ece0981f0424",
+  "version_state": "WAITING_FOR_REVIEW",
+  "review_submission_id": "0352112a-ed0a-4047-a3ba-0d83ca5ddc4a",
+  "review_submission_state": "WAITING_FOR_REVIEW",
+  "submitted_date": "2026-09-07T00:24:47.15Z",
+  "submitted_for_review": true,
+  "real_device_smoke": "WAIVED_BY_USER_AFTER_SOURCE_DIFF_VERIFIED",
+  "source_diff": "Version and build numbers only; application code unchanged from released 2.0.1(659)",
+  "screenshots": [
+    {
+      "id": "7dee544e-fce5-4a01-9b6a-47cf4d21e98b",
+      "filename": "01-a-gentler-start.png",
+      "md5": "a2467e01a836be7c61c040c2372feff1",
+      "state": "COMPLETE"
+    },
+    {
+      "id": "b39956f0-d970-4b28-942e-5823156097e9",
+      "filename": "02-a-little-company.png",
+      "md5": "f40a437001cf7d8326ed9b58f3877738",
+      "state": "COMPLETE"
+    },
+    {
+      "id": "7e271731-2797-4a65-9a75-a945bc2d8376",
+      "filename": "03-room-to-focus.png",
+      "md5": "bc4011357343ea75232699841b2b61c1",
+      "state": "COMPLETE"
+    }
+  ]
+}

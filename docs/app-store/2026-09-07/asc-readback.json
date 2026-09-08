@@ -1,0 +1,48 @@
+{
+  "checked_at": "2026-09-06T17:26:14Z",
+  "app_id": "6759663377",
+  "version": "2.0.2",
+  "version_id": "90468642-7fa9-4744-a2de-34da920286c2",
+  "status": "PREPARE_FOR_SUBMISSION",
+  "locale": "en-US",
+  "screenshot_display_type": "APP_IPHONE_67",
+  "screenshot_set_id": "16cdf176-73c9-4f92-aedc-3a85f34967d2",
+  "screenshots": [
+    {
+      "id": "7dee544e-fce5-4a01-9b6a-47cf4d21e98b",
+      "filename": "01-a-gentler-start.png",
+      "md5": "a2467e01a836be7c61c040c2372feff1",
+      "state": "COMPLETE"
+    },
+    {
+      "id": "b39956f0-d970-4b28-942e-5823156097e9",
+      "filename": "02-a-little-company.png",
+      "md5": "f40a437001cf7d8326ed9b58f3877738",
+      "state": "COMPLETE"
+    },
+    {
+      "id": "7e271731-2797-4a65-9a75-a945bc2d8376",
+      "filename": "03-room-to-focus.png",
+      "md5": "bc4011357343ea75232699841b2b61c1",
+      "state": "COMPLETE"
+    }
+  ],
+  "previous_screenshots": [
+    {
+      "id": "dcb66844-c937-40a3-bf84-c4b9ae5d2709",
+      "filename": "01-home-timeline.png",
+      "md5": "9bdc2a7a69e38640296cd1e7ed1525a6"
+    },
+    {
+      "id": "96a08608-c277-42b9-9329-664d158f2ec6",
+      "filename": "02-pet-today.png",
+      "md5": "2dadf1e02e4a6d4926276990bdadd5ca"
+    },
+    {
+      "id": "6361e7e4-c23a-4e4b-a07b-47592723b2be",
+      "filename": "03-settings-privacy.png",
+      "md5": "5168b115b4fa6bc2170aa31506b8f147"
+    }
+  ],
+  "submitted_for_review": false
+}
