@@ -1402,6 +1402,11 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
             // HIGH-1: strong capture — no retain cycle (@MainActor task, singleton service)
             let writeID = UUID()
             activeWriteID = writeID
+            // Latency is sampled in `writeCompletion` below rather than here, because the timeout
+            // path finishes through that same closure — recording in both would count one write
+            // twice. Internal builds install a recorder; customer builds leave the probe empty.
+            let writeStartedAt = ContinuousClock.now
+            let measuredPacketType = packet.first
             let timeoutTask = Task { @MainActor in
                 try await Task.sleep(for: .seconds(5))
                 guard self.activeWriteID == writeID else { return }
@@ -1417,6 +1422,17 @@ public final class BLEService: NSObject, TaskListSnapshotSending {
 
             try await withCheckedThrowingContinuation { continuation in
                 writeCompletion = { result in
+                    let outcome: BLEWriteOutcome
+                    switch result {
+                    case .success: outcome = .acknowledged
+                    case .failure(.writeTimeout): outcome = .timedOut
+                    case .failure: outcome = .failed
+                    }
+                    BLEWriteLatencyProbe.record(
+                        packetType: measuredPacketType,
+                        latency: writeStartedAt.duration(to: .now),
+                        outcome: outcome
+                    )
                     switch result {
                     case .success:
                         continuation.resume()

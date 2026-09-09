@@ -169,6 +169,11 @@ AUTHORISED_CUSTOMER_LOG_CATEGORIES=(
 # (raw frame traces, factory tooling), not fault records.
 INTERNAL_ONLY_LOG_CATEGORIES=(
   "BLEDisconnect"
+  # Kebab-case: this check is a raw byte-substring search, and the probe's seam types
+  # (BLEWriteLatencyProbe / BLEWriteLatencyRecording) are compiled into the customer binary by
+  # design. A PascalCase category sharing their stem would match those symbols and fail forever
+  # without anything having leaked.
+  "ble-write-ack"
 )
 
 for category in "${AUTHORISED_CUSTOMER_LOG_CATEGORIES[@]}"; do

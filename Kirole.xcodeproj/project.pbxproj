@@ -12,6 +12,7 @@
 		C0DE1B1E0000000000000001 /* BLEWiFiDebugCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE1B1E0000000000000005 /* BLEWiFiDebugCoordinator.swift */; };
 		C0DE1B1E0000000000000003 /* BLEShippingModeCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE1B1E0000000000000006 /* BLEShippingModeCoordinator.swift */; };
 		C0DE1B1E0000000000000004 /* InternalBLEToolsController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE1B1E0000000000000007 /* InternalBLEToolsController.swift */; };
+		C0DE1B1E0000000000000008 /* BLEWriteLatencyRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE1B1E0000000000000009 /* BLEWriteLatencyRecorder.swift */; };
 		8BDA110B2EF200000000000B /* KiroleDeviceActivityMonitor.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 8BDA11012EF2000000000001 /* KiroleDeviceActivityMonitor.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
@@ -53,6 +54,7 @@
 		C0DE1B1E0000000000000005 /* BLEWiFiDebugCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KirolePackage/Sources/KiroleInternalBLE/BLEWiFiDebugCoordinator.swift; sourceTree = SOURCE_ROOT; };
 		C0DE1B1E0000000000000006 /* BLEShippingModeCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KirolePackage/Sources/KiroleInternalBLE/BLEShippingModeCoordinator.swift; sourceTree = SOURCE_ROOT; };
 		C0DE1B1E0000000000000007 /* InternalBLEToolsController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KirolePackage/Sources/KiroleInternalBLE/InternalBLEToolsController.swift; sourceTree = SOURCE_ROOT; };
+		C0DE1B1E0000000000000009 /* BLEWriteLatencyRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KirolePackage/Sources/KiroleInternalBLE/BLEWriteLatencyRecorder.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -148,6 +150,7 @@
 				C0DE1B1E0000000000000005 /* BLEWiFiDebugCoordinator.swift */,
 				C0DE1B1E0000000000000006 /* BLEShippingModeCoordinator.swift */,
 				C0DE1B1E0000000000000007 /* InternalBLEToolsController.swift */,
+				C0DE1B1E0000000000000009 /* BLEWriteLatencyRecorder.swift */,
 				8BDA11022EF2000000000002 /* KiroleDeviceActivityMonitor */,
 				8B41F65F2DEDD0D6001A66F9 /* KiroleUITests */,
 				8B41F6812DEDD23B001A66F9 /* Frameworks */,
@@ -342,6 +345,7 @@
 				C0DE1B1E0000000000000001 /* BLEWiFiDebugCoordinator.swift in Sources */,
 				C0DE1B1E0000000000000003 /* BLEShippingModeCoordinator.swift in Sources */,
 				C0DE1B1E0000000000000004 /* InternalBLEToolsController.swift in Sources */,
+				C0DE1B1E0000000000000008 /* BLEWriteLatencyRecorder.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -30,6 +30,9 @@ enum InternalBuildBoundary {
     @MainActor
     static func activate() {
         InternalBLEToolsController.install()
+        // Measures real firmware write-ACK latency so the hardcoded 5s write timeout can be
+        // re-chosen from device data. Observation only — installs no capability.
+        BLEWriteLatencyRecorder.install()
         Logger(subsystem: "com.kirole.app", category: "release-channel")
             .info("Internal distribution channel active: \(marker, privacy: .public) tools: \(toolPhrases, privacy: .public)")
         AppBuildEnvironment.enableInternalHardwareChannel()
