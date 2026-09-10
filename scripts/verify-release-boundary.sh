@@ -9,6 +9,9 @@
 #   - InternalRelease  contains the factory BLE implementations
 #   - AppStoreRelease  does NOT contain the factory BLE implementations
 #   - AppStoreRelease  does NOT package repository-only engineering files
+#   - AppStoreRelease  declares its own MICROSOFT_OAUTH_ENABLED instead of
+#     inheriting one from the git-ignored Secrets.xcconfig, and the build
+#     emitted that same value
 #
 # The marker lives in Kirole/InternalBuildBoundary.swift; keep the string
 # below in sync with it. Run before producing any App Store candidate:
@@ -194,6 +197,42 @@ for category in "${INTERNAL_ONLY_LOG_CATEGORIES[@]}"; do
     echo "PASS  AppStoreRelease binary has no internal-only log category '$category'"
   fi
 done
+
+# Feature gates the customer channel must declare for itself.
+#
+# Shared.xcconfig includes the git-ignored Config/Secrets.xcconfig, which also
+# sets MICROSOFT_OAUTH_ENABLED. A channel that does not declare the key adopts
+# whatever the local machine carries — a value absent from version control and
+# from every diff. So the check is not "the gate equals 0"; it is "the customer
+# value is stated in the customer channel's own file", which holds whichever way
+# the product decision goes.
+declared_gate="$(
+  { grep -E '^[[:space:]]*MICROSOFT_OAUTH_ENABLED[[:space:]]*=' Config/AppStoreRelease.xcconfig || true; } \
+    | tail -n1 | sed -E 's/.*=[[:space:]]*//' | tr -d '[:space:]'
+)"
+if [ "$declared_gate" = "0" ] || [ "$declared_gate" = "1" ]; then
+  echo "PASS  AppStoreRelease.xcconfig declares MICROSOFT_OAUTH_ENABLED = $declared_gate"
+else
+  echo "FAIL  AppStoreRelease.xcconfig must declare MICROSOFT_OAUTH_ENABLED explicitly (0 or 1); found '${declared_gate:-<none>}'"
+  fail=1
+fi
+
+# Cross-check the value the generator actually emitted. AppStoreRelease is the
+# last configuration built above and the Generate Build Secrets phase runs on
+# every build, so this file holds the customer value right now. A mismatch means
+# the declaration was overridden after the include, or the generator resolved a
+# different source than the one reviewed above.
+GENERATED_SECRETS="Kirole/BuildSecrets.generated.swift"
+if [ ! -f "$GENERATED_SECRETS" ]; then
+  echo "FAIL  $GENERATED_SECRETS missing — the Generate Build Secrets phase did not run"
+  fail=1
+elif grep -q "static let microsoftOAuthEnabled = \"${declared_gate}\" == \"1\"" "$GENERATED_SECRETS"; then
+  echo "PASS  AppStoreRelease build emitted microsoftOAuthEnabled from the declared gate ($declared_gate)"
+else
+  echo "FAIL  AppStoreRelease build emitted a microsoftOAuthEnabled that contradicts the declared gate ($declared_gate):"
+  grep -n "microsoftOAuthEnabled" "$GENERATED_SECRETS" || true
+  fail=1
+fi
 
 # Files used by Xcode, local tooling, or backend setup must remain in the
 # repository but must not be copied into the customer application bundle.

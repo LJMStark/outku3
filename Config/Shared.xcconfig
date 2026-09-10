@@ -18,8 +18,8 @@ PRODUCT_BUNDLE_IDENTIFIER = com.kirole.app
 // 必须一起改：Apple 要求扩展的 CFBundleShortVersionString 与主 App 一致）。
 // 此处保持与 pbxproj 同值，纯粹为了不误导读者——2026-09-03 这里停在 1.0
 // 而线上已是 2.0，害人白查了一轮。
-MARKETING_VERSION = 2.0.3
-CURRENT_PROJECT_VERSION = 663
+MARKETING_VERSION = 2.1.0
+CURRENT_PROJECT_VERSION = 665
 
 // ==========================================
 // Platform Configuration

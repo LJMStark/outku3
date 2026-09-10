@@ -17,3 +17,17 @@
 // customer bundle. The files remain available to local tooling and
 // InternalRelease is intentionally unchanged.
 EXCLUDED_SOURCE_FILE_NAMES = $(inherited) Kirole.xctestplan Secrets.xcconfig.template generate-prompt-spec.py scripts-generate-build-secrets.sh supabase-schema.sql
+
+// Outlook Calendar gate — declared here on purpose, not inherited.
+//
+// Release.xcconfig -> Shared.xcconfig -> Secrets.xcconfig (git-ignored) also
+// sets this key. Without a declaration below, the customer channel silently
+// adopts whatever value a local machine happens to carry: flipping Secrets to 1
+// for a bring-up session would ship the Outlook entry point on the very next
+// archive, with nothing in version control recording that it changed. Declaring
+// it here — after the include, so it wins — makes the customer-facing value
+// reviewable in a diff.
+//
+// 1 as of 2026-09-10: Outlook Calendar is a shipped customer integration.
+// Paired assertion: scripts/verify-release-boundary.sh
+MICROSOFT_OAUTH_ENABLED = 1
